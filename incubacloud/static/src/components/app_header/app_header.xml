@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates>
+
+    <t t-name="incubacloud.AppHeader">
+        <header class="ic-header">
+
+            <!-- Logo -->
+            <div class="ic-header-logo" t-on-click="goHome">
+                <svg class="ic-header-logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="28" height="28">
+                    <defs><linearGradient id="ic-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#3B82F6"/><stop offset="100%" stop-color="#1E3A8A"/></linearGradient></defs>
+                    <rect width="256" height="256" rx="60" fill="url(#ic-logo-grad)"/>
+                    <g transform="translate(56, 56) scale(6)" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+                        <path d="M12 15V5"/><path d="M9 8l3-3 3 3"/>
+                    </g>
+                </svg>
+                <span class="ic-header-logo-text">IncubaCloud</span>
+            </div>
+
+            <!-- Breadcrumb / Project switcher -->
+            <div class="ic-header-breadcrumb">
+                <t t-if="insideProject">
+                    <span class="ic-header-crumb ic-header-crumb--link"
+                          t-on-click="goProjects">Projects</span>
+                    <span class="ic-header-crumb-sep">›</span>
+                    <div class="ic-header-switcher-wrap">
+                        <button class="ic-header-crumb ic-header-crumb--active"
+                                t-on-click="toggleProjectSwitcher"
+                                t-att-aria-expanded="state.showProjectSwitcher ? 'true' : 'false'"
+                                aria-haspopup="listbox">
+                            <t t-esc="currentProjectName || 'Project'"/>
+                            <span class="ic-header-chevron" aria-hidden="true">▾</span>
+                        </button>
+                        <t t-if="state.showProjectSwitcher">
+                            <div class="ic-header-switcher-dropdown">
+                                <input type="text"
+                                       class="ic-header-switcher-search"
+                                       placeholder="Search projects..."
+                                       aria-label="Search projects"
+                                       t-on-input="onProjectSearch"
+                                       t-att-value="state.projectSearch"/>
+                                <ul class="ic-header-switcher-list">
+                                    <t t-foreach="filteredProjects" t-as="p" t-key="p.id">
+                                        <li class="ic-header-switcher-item"
+                                            t-on-click="() => this.selectProject(p)">
+                                            <span class="ic-header-switcher-name" t-esc="p.name"/>
+                                            <span class="ic-header-switcher-meta">
+                                                <t t-if="p.odoo_version" t-esc="p.odoo_version"/>
+                                            </span>
+                                        </li>
+                                    </t>
+                                    <t t-if="!filteredProjects.length">
+                                        <li class="ic-header-switcher-empty">No projects found</li>
+                                    </t>
+                                </ul>
+                                <t t-if="env.permissions?.can_create_project">
+                                    <div class="ic-header-switcher-footer">
+                                        <button class="ic-header-switcher-create"
+                                                t-on-click="createProject">+ Create new project</button>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+                    </div>
+                </t>
+            </div>
+
+            <!-- Spacer -->
+            <div class="ic-header-spacer"/>
+
+            <!-- Jobs slide-over (Consultant+) -->
+            <t t-if="env.permissions?.can_edit_instance">
+                <button class="ic-header-icon-btn" t-on-click="openJobs" title="Job History"
+                        aria-label="Job history">
+                    <i class="fa fa-clock-o" aria-hidden="true"/>
+                </button>
+            </t>
+
+            <!-- Alerts slide-over (Consultant+) -->
+            <t t-if="env.permissions?.can_edit_instance">
+                <button class="ic-header-icon-btn ic-header-alerts" t-on-click="goToAlerts" title="Alerts"
+                        aria-label="Alerts">
+                    <i class="fa fa-bell-o" aria-hidden="true"/>
+                    <t t-if="props.alertCount > 0">
+                        <span class="ic-header-alert-badge" t-esc="props.alertCount"/>
+                    </t>
+                </button>
+            </t>
+
+            <!-- User menu -->
+            <div class="ic-header-user-wrap">
+                <button class="ic-header-user-btn" t-on-click="toggleUserMenu"
+                        aria-label="User menu"
+                        t-att-aria-expanded="state.showUserMenu ? 'true' : 'false'"
+                        aria-haspopup="menu">
+                    <img t-att-class="'ic-header-avatar-img' + (state.avatarLoaded ? '' : ' ic-hidden')"
+                         t-att-src="state.avatarUrl"
+                         t-on-load="onAvatarLoad"
+                         alt=""/>
+                    <span t-att-class="'ic-header-avatar' + (state.avatarLoaded ? ' ic-hidden' : '')"
+                          t-esc="initials"/>
+                    <span class="ic-header-user-name" t-esc="state.userName"/>
+                    <span class="ic-header-chevron">▾</span>
+                </button>
+                <t t-if="state.showUserMenu">
+                    <div class="ic-header-user-dropdown">
+                        <div class="ic-header-user-info">
+                            <span class="ic-header-user-info-name" t-esc="state.userName"/>
+                            <span class="ic-header-user-info-login" t-esc="state.userLogin"/>
+                        </div>
+                        <div class="ic-header-user-sep"/>
+                        <button class="ic-header-user-action" t-on-click="openNotifModal">
+                            <i class="fa fa-bell-o" aria-hidden="true"/> Notifications
+                        </button>
+                        <div class="ic-header-user-sep"/>
+                        <button class="ic-header-user-action" t-on-click="exitToErp">
+                            <i class="fa fa-sign-out" aria-hidden="true"/> Exit
+                        </button>
+                    </div>
+                </t>
+            </div>
+
+        </header>
+
+        <!-- Notification preferences modal -->
+        <t t-if="state.showNotifModal">
+            <div class="ic-confirm-overlay" t-on-click="closeNotifModal">
+                <div class="ic-confirm-box" t-on-click.stop="">
+                    <h3 class="ic-confirm-title">
+                        <i class="fa fa-bell-o"/> Notification Preferences
+                    </h3>
+                    <p class="ic-confirm-message">
+                        Choose when to receive email notifications for cloud jobs.
+                        In-app notifications are always shown.
+                    </p>
+                    <div class="ic-form-grid" style="margin: 12px 0;">
+                        <div class="ic-form-row">
+                            <label>Email notifications</label>
+                            <select t-on-change="(ev) => { state.notifLevel = ev.target.value; }">
+                                <option value="all"
+                                        t-att-selected="state.notifLevel === 'all'">
+                                    All events (success + failure)
+                                </option>
+                                <option value="failures"
+                                        t-att-selected="state.notifLevel === 'failures'">
+                                    Failures only
+                                </option>
+                                <option value="none"
+                                        t-att-selected="state.notifLevel === 'none'">
+                                    None
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="ic-confirm-actions">
+                        <button class="ic-confirm-btn-cancel" t-on-click="closeNotifModal">Cancel</button>
+                        <button class="ic-confirm-btn-ok"
+                                t-att-disabled="state.notifSaving"
+                                t-on-click="saveNotifPrefs">
+                            <t t-if="state.notifSaving">Saving…</t>
+                            <t t-else="">Save</t>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </t>
+
+</templates>

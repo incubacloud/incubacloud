@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="20" stdDeviation="25" flood-color="#000000" flood-opacity="0.5" />
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.3" />
+    </filter>
+    <linearGradient id="sidebarGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#0B0F19" />
+    </linearGradient>
+  </defs>
+  <circle cx="450" cy="300" r="250" fill="#3B82F6" opacity="0.15" filter="blur(80px)" />
+  <g filter="url(#shadow)">
+    <rect x="40" y="40" width="820" height="520" rx="16" fill="url(#bgGradient)" stroke="#334155" stroke-width="2"/>
+    <path d="M40 56C40 47.1634 47.1634 40 56 40H220V560H56C47.1634 560 40 552.837 40 544V56Z" fill="url(#sidebarGradient)"/>
+    <line x1="220" y1="40" x2="220" y2="560" stroke="#334155" stroke-width="1" />
+    <rect x="60" y="65" width="24" height="24" rx="6" fill="#3B82F6" />
+    <rect x="95" y="70" width="80" height="14" rx="4" fill="#E2E8F0" />
+    <rect x="60" y="130" width="60" height="10" rx="3" fill="#64748B" />
+    <circle cx="68" cy="165" r="4" fill="#10B981" />
+    <rect x="82" y="160" width="80" height="10" rx="3" fill="#94A3B8" opacity="0.5"/>
+    <rect x="50" y="185" width="160" height="36" rx="6" fill="#3B82F6" opacity="0.15" />
+    <circle cx="68" cy="203" r="4" fill="#3B82F6" />
+    <rect x="82" y="198" width="50" height="10" rx="3" fill="#3B82F6" />
+    <rect x="175" y="198" width="25" height="10" rx="3" fill="#3B82F6" opacity="0.5"/>
+    <rect x="60" y="270" width="50" height="10" rx="3" fill="#64748B" />
+    <rect x="60" y="295" width="14" height="14" rx="3" fill="#94A3B8" opacity="0.3"/>
+    <rect x="82" y="297" width="50" height="10" rx="3" fill="#94A3B8" opacity="0.3"/>
+    <text x="260" y="100" font-family="system-ui, sans-serif" font-size="28" font-weight="bold" fill="#F8FAFC">staging</text>
+    <rect x="365" y="85" width="45" height="16" rx="4" fill="#334155" />
+    <circle cx="435" cy="93" r="5" fill="#10B981" />
+    <text x="448" y="98" font-family="system-ui, sans-serif" font-size="14" fill="#10B981">Running</text>
+    <rect x="260" y="130" width="90" height="32" rx="6" fill="#3B82F6" opacity="0.1" stroke="#3B82F6" stroke-width="1"/>
+    <rect x="275" y="142" width="60" height="8" rx="2" fill="#3B82F6" />
+    <rect x="360" y="130" width="80" height="32" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <rect x="380" y="142" width="40" height="8" rx="2" fill="#94A3B8" />
+    <rect x="450" y="130" width="70" height="32" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <rect x="470" y="142" width="30" height="8" rx="2" fill="#94A3B8" />
+    <rect x="530" y="130" width="32" height="32" rx="6" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <rect x="541" y="142" width="10" height="8" rx="2" fill="#94A3B8" />
+    <rect x="260" y="190" width="280" height="160" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <text x="280" y="220" font-family="system-ui, sans-serif" font-size="11" font-weight="bold" fill="#94A3B8" letter-spacing="1">INFRASTRUCTURE</text>
+    <rect x="280" y="240" width="60" height="10" rx="2" fill="#64748B" opacity="0.6"/>
+    <text x="520" y="249" font-family="system-ui, sans-serif" font-size="13" fill="#F8FAFC" text-anchor="end">hetzner1</text>
+    <line x1="280" y1="260" x2="520" y2="260" stroke="#334155" stroke-width="1" stroke-dasharray="2 2"/>
+    <rect x="280" y="275" width="40" height="10" rx="2" fill="#64748B" opacity="0.6"/>
+    <text x="520" y="284" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" fill="#3B82F6" text-anchor="end">19.0</text>
+    <line x1="280" y1="295" x2="520" y2="295" stroke="#334155" stroke-width="1" stroke-dasharray="2 2"/>
+    <rect x="280" y="310" width="70" height="10" rx="2" fill="#64748B" opacity="0.6"/>
+    <text x="520" y="319" font-family="system-ui, sans-serif" font-size="13" fill="#F8FAFC" text-anchor="end">17</text>
+    <rect x="560" y="190" width="280" height="160" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <text x="580" y="220" font-family="system-ui, sans-serif" font-size="11" font-weight="bold" fill="#94A3B8" letter-spacing="1">CONFIGURATION</text>
+    <rect x="580" y="240" width="50" height="10" rx="2" fill="#64748B" opacity="0.6"/>
+    <rect x="700" y="240" width="120" height="10" rx="2" fill="#3B82F6" opacity="0.8"/>
+    <line x1="580" y1="260" x2="820" y2="260" stroke="#334155" stroke-width="1" stroke-dasharray="2 2"/>
+    <rect x="580" y="275" width="40" height="10" rx="2" fill="#64748B" opacity="0.6"/>
+    <rect x="780" y="275" width="40" height="10" rx="2" fill="#F8FAFC" opacity="0.8"/>
+    <line x1="580" y1="295" x2="820" y2="295" stroke="#334155" stroke-width="1" stroke-dasharray="2 2"/>
+    <rect x="580" y="310" width="45" height="10" rx="2" fill="#64748B" opacity="0.6"/>
+    <circle cx="765" cy="315" r="4" fill="#10B981" />
+    <text x="775" y="319" font-family="system-ui, sans-serif" font-size="12" fill="#10B981">Configured</text>
+    <rect x="260" y="370" width="580" height="170" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+    <text x="280" y="400" font-family="system-ui, sans-serif" font-size="11" font-weight="bold" fill="#94A3B8" letter-spacing="1">RECENT ACTIVITY</text>
+    <line x1="288" y1="420" x2="288" y2="520" stroke="#334155" stroke-width="2" />
+    <circle cx="288" cy="430" r="5" fill="#10B981" />
+    <rect x="310" y="425" width="110" height="12" rx="3" fill="#F8FAFC" />
+    <rect x="430" y="423" width="40" height="16" rx="4" fill="#10B981" opacity="0.2"/>
+    <text x="438" y="435" font-family="system-ui, sans-serif" font-size="10" fill="#10B981">Done</text>
+    <rect x="310" y="445" width="200" height="8" rx="2" fill="#94A3B8" opacity="0.6"/>
+    <rect x="310" y="460" width="80" height="6" rx="2" fill="#64748B" opacity="0.4"/>
+    <circle cx="288" cy="490" r="5" fill="#EF4444" />
+    <rect x="310" y="485" width="110" height="12" rx="3" fill="#F8FAFC" />
+    <rect x="430" y="483" width="45" height="16" rx="4" fill="#EF4444" opacity="0.2"/>
+    <text x="438" y="495" font-family="system-ui, sans-serif" font-size="10" fill="#EF4444">Failed</text>
+    <rect x="310" y="505" width="350" height="8" rx="2" fill="#EF4444" opacity="0.6"/>
+    <rect x="310" y="520" width="80" height="6" rx="2" fill="#64748B" opacity="0.4"/>
+    <rect x="760" y="495" width="60" height="24" rx="4" fill="#334155" stroke="#475569" stroke-width="1"/>
+    <text x="790" y="511" font-family="system-ui, sans-serif" font-size="10" fill="#F8FAFC" text-anchor="middle">Retry</text>
+  </g>
+</svg>

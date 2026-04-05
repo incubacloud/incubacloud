@@ -1,0 +1,563 @@
+// ── Host Detail Page ──────────────────────────────────────────────────────────
+
+.ic-host-detail {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 24px;
+    background: $background;
+    color: $text-primary;
+    overflow: hidden;
+}
+
+// ── Loading / error states ─────────────────────────────────────────────────────
+
+.ic-detail-loading {
+    padding: 40px;
+    text-align: center;
+    color: $text-secondary;
+    font-size: 14px;
+}
+
+.ic-detail-error-state {
+    padding: 40px;
+    text-align: center;
+    color: $state-error;
+
+    button {
+        margin-top: 16px;
+        background: none;
+        border: 1px solid $border;
+        border-radius: 6px;
+        padding: 6px 14px;
+        color: $text-secondary;
+        cursor: pointer;
+        font-size: 13px;
+
+        &:hover { color: $text-primary; }
+    }
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────────
+
+.ic-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid $border;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.ic-btn-back {
+    background: none;
+    border: 1px solid $border;
+    border-radius: $radius-md;
+    padding: 5px 12px;
+    color: $text-secondary;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color $duration-fast ease, border-color $duration-fast ease, background $duration-fast ease;
+
+    &:hover {
+        color: $text-primary;
+        border-color: rgba($text-primary, 0.3);
+        background: rgba($border, 0.15);
+    }
+}
+
+.ic-detail-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+
+    h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        color: $text-primary;
+    }
+}
+
+.ic-detail-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: $text-secondary;
+}
+
+.ic-detail-probed { opacity: 0.75; }
+
+// ── Main tabs ──────────────────────────────────────────────────────────────────
+
+.ic-detail-tabs {
+    display: flex;
+    gap: 2px;
+    margin-top: 20px;
+    border-bottom: 2px solid rgba($border, 0.5);
+    flex-shrink: 0;
+}
+
+.ic-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: $text-secondary;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+
+    &:hover { color: $text-primary; }
+
+    &.active {
+        color: $primary-blue;
+        border-bottom-color: $primary-blue;
+        font-weight: 600;
+    }
+}
+
+// ── Body ───────────────────────────────────────────────────────────────────────
+// .ic-detail-body is now in app.scss (shared across detail views)
+
+// ── Form grid ──────────────────────────────────────────────────────────────────
+
+.ic-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 24px;
+    max-width: 860px;
+}
+
+.ic-form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+
+    &.ic-form-row-full { grid-column: 1 / -1; }
+
+    label {
+        font-size: 11px;
+        font-weight: 600;
+        color: $text-secondary;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    input,
+    select,
+    textarea {
+        background: $surface;
+        border: 1px solid $border;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 13px;
+        color: $text-primary;
+        transition: border-color 0.15s;
+        font-family: inherit;
+
+        &::placeholder { color: $text-secondary; opacity: 0.6; }
+
+        &:focus {
+            outline: none;
+            border-color: $primary-blue;
+            background: $surface-light;
+        }
+    }
+
+    select  { cursor: pointer; }
+    textarea { resize: vertical; }
+}
+
+.ic-form-hint {
+    font-size: 12px;
+    color: $text-secondary;
+    font-style: italic;
+    margin: 0;
+}
+
+// ── Traefik: domain + password row above editors ───────────────────────────────
+
+.ic-traefik-meta {
+    margin-bottom: 20px;
+}
+
+// ── File sub-tabs ──────────────────────────────────────────────────────────────
+
+.ic-file-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 0;
+}
+
+.ic-file-tab {
+    background: $code-bg-alt;
+    border: 1px solid rgba(#fff, 0.08);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-family: $font-mono;
+    color: rgba($code-text, 0.45);
+    cursor: pointer;
+    margin-right: 2px;
+    transition: color $duration-fast ease, background $duration-fast ease;
+
+    &:hover { color: rgba($code-text, 0.75); }
+
+    &.active {
+        background: $code-bg;
+        color: $code-text;
+        border-color: rgba(#fff, 0.12);
+    }
+}
+
+// ── Code editor ────────────────────────────────────────────────────────────────
+
+.ic-code-editor-wrap {
+    display: flex;
+    border: 1px solid $code-border;
+    border-radius: 0 $radius-md $radius-md $radius-md;
+    background: $code-bg;
+    overflow: hidden;
+    // Fill remaining vertical space in the body
+    height: calc(100vh - 340px);
+    min-height: 240px;
+}
+
+.ic-code-gutter {
+    background: $code-gutter-bg;
+    padding: 12px 10px 12px 8px;
+    border-right: 1px solid $code-border;
+    text-align: right;
+    user-select: none;
+    flex-shrink: 0;
+    // Hidden scrollbar — only scrolled programmatically in sync with textarea
+    overflow-y: scroll;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar { display: none; }
+}
+
+.ic-line-num {
+    font-family: $font-mono;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: $code-gutter-text;
+    min-width: 28px;
+}
+
+.ic-code-area {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 12px 14px;
+    font-family: $font-mono;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: $code-text;
+    resize: none;
+    tab-size: 2;
+    overflow-y: scroll;
+
+    &:focus { outline: none; }
+
+    &::selection {
+        background: rgba(#2563EB, 0.35);
+    }
+}
+
+// ── Footer ─────────────────────────────────────────────────────────────────────
+
+.ic-detail-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid rgba($border, 0.5);
+    flex-shrink: 0;
+}
+
+.ic-btn-save {
+    background: $primary-blue;
+    color: #fff;
+    border: none;
+    border-radius: $radius-md;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity $duration-fast ease;
+
+    &:hover:not(:disabled) { opacity: 0.88; }
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+.ic-btn-secondary-action {
+    background: rgba($primary-blue, 0.1);
+    color: $primary-blue;
+    border: 1px solid rgba($primary-blue, 0.35);
+    border-radius: $radius-md;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background $duration-fast ease, border-color $duration-fast ease;
+
+    &:hover:not(:disabled) {
+        background: rgba($primary-blue, 0.18);
+        border-color: $primary-blue;
+    }
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+// ── Whitelist tab ──────────────────────────────────────────────────────────────
+
+.ic-whitelist-panel { max-width: 640px; }
+
+.ic-whitelist-desc {
+    font-size: 12px;
+    color: $text-secondary;
+    margin-bottom: 16px;
+    line-height: 1.6;
+
+    code {
+        background: $surface-light;
+        border: 1px solid $border;
+        border-radius: 3px;
+        padding: 1px 5px;
+        font-size: 11px;
+        font-family: 'Courier New', Courier, monospace;
+    }
+}
+
+.ic-whitelist-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 12px;
+    border: 1px solid $border;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.ic-whitelist-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: 'Courier New', Courier, monospace;
+    color: $text-primary;
+    border-bottom: 1px solid rgba($border, 0.5);
+
+    &:last-child { border-bottom: none; }
+    &:hover { background: $surface-light; }
+}
+
+.ic-whitelist-hostname { flex: 1; }
+
+.ic-whitelist-remove {
+    background: none;
+    border: none;
+    color: $text-secondary;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover {
+        color: $state-error;
+        background: rgba($state-error, 0.08);
+    }
+}
+
+.ic-whitelist-empty {
+    padding: 16px 12px;
+    font-size: 12px;
+    color: $text-secondary;
+    font-style: italic;
+    text-align: center;
+}
+
+.ic-whitelist-add {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+
+    input {
+        flex: 1;
+        background: $surface;
+        border: 1px solid $border;
+        border-radius: 6px;
+        padding: 7px 10px;
+        font-size: 13px;
+        font-family: 'Courier New', Courier, monospace;
+        color: $text-primary;
+        transition: border-color 0.15s;
+
+        &::placeholder { color: $text-secondary; opacity: 0.6; }
+
+        &:focus {
+            outline: none;
+            border-color: $primary-blue;
+            background: $surface-light;
+        }
+    }
+}
+
+.ic-whitelist-add-btn {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: $text-primary;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, background 0.15s;
+
+    &:hover { border-color: $primary-blue; color: $primary-blue; }
+}
+
+.ic-whitelist-apply-btn {
+    background: $primary-blue;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+
+    &:hover { opacity: 0.88; }
+}
+
+// ── Audit log filter bar ─────────────────────────────────────────────────────
+
+.ic-audit-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+
+    input, select {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        color: $text-primary;
+        font-size: 0.8125rem;
+        padding: 5px 10px;
+        height: 32px;
+
+        &:focus {
+            outline: none;
+            border-color: rgba($primary-blue, 0.5);
+        }
+
+        option { background: #1e293b; }
+    }
+
+    .ic-audit-search  { width: 180px; }
+    .ic-audit-select  { width: 160px; }
+    .ic-audit-date    { width: 130px; }
+
+    .ic-audit-date-sep {
+        color: $text-muted;
+        font-size: 0.75rem;
+        flex-shrink: 0;
+    }
+
+    .ic-audit-spacer { flex: 1; min-width: 8px; }
+
+    .ic-audit-apply-btn {
+        height: 32px;
+        padding: 0 14px;
+        font-size: 0.8125rem;
+        border-radius: 6px;
+        background: $primary-blue;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        white-space: nowrap;
+
+        &:hover { background: darken($primary-blue, 8%); }
+    }
+
+    .ic-audit-reset-btn {
+        height: 32px;
+        padding: 0 12px;
+        font-size: 0.8125rem;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.08);
+        color: $text-secondary;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        cursor: pointer;
+        white-space: nowrap;
+
+        &:hover { background: rgba(255, 255, 255, 0.12); }
+    }
+
+    .ic-audit-purge-btn {
+        height: 32px;
+        padding: 0 12px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        border-radius: $radius-md;
+        background: rgba($state-error, 0.1);
+        color: $state-error;
+        border: 1px solid rgba($state-error, 0.25);
+        cursor: pointer;
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: background $duration-fast ease, border-color $duration-fast ease;
+
+        &:hover:not(:disabled) {
+            background: rgba($state-error, 0.18);
+            border-color: rgba($state-error, 0.45);
+        }
+        &:disabled { opacity: 0.45; cursor: not-allowed; }
+    }
+}
+
+// ── Footer buttons ──────────────────────────────────────────────────────────────
+
+.ic-btn-delete {
+    background: transparent;
+    color: $state-error;
+    border: 1px solid $state-error;
+    border-radius: $radius-md;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background $duration-fast ease, opacity $duration-fast ease;
+    margin-right: auto; // push to the left
+
+    &:hover:not(:disabled) { background: rgba($state-error, 0.1); }
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}

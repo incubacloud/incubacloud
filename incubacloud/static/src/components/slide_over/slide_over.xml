@@ -1,0 +1,44 @@
+<templates>
+<t t-name="incubacloud.SlideOver">
+
+    <!-- Backdrop -->
+    <div class="ic-slideover-backdrop" t-on-click="props.onClose"/>
+
+    <!-- Panel -->
+    <div t-att-class="'ic-slideover-panel' + (props.expanded ? ' ic-slideover-expanded' : '')"
+         role="dialog" aria-modal="true" aria-label="Side panel">
+
+        <!-- Header -->
+        <div class="ic-slideover-header">
+            <h2 class="ic-slideover-title" t-esc="title"/>
+            <div class="ic-slideover-header-actions">
+                <button class="ic-slideover-btn"
+                        t-att-title="props.expanded ? 'Collapse' : 'Expand'"
+                        t-att-aria-label="props.expanded ? 'Collapse panel' : 'Expand panel'"
+                        t-on-click="props.onToggleSize">
+                    <i t-att-class="'fa ' + (props.expanded ? 'fa-compress' : 'fa-expand')"/>
+                </button>
+                <button class="ic-slideover-btn" title="Close"
+                        aria-label="Close panel"
+                        t-on-click="props.onClose">
+                    <i class="fa fa-times"/>
+                </button>
+            </div>
+        </div>
+
+        <!-- Body -->
+        <div class="ic-slideover-body">
+            <t t-if="props.panel === 'jobs'">
+                <JobHistory embedded="true"
+                            instance_id="props.instanceId || false"
+                            host_id="props.hostId || false"/>
+            </t>
+            <t t-if="props.panel === 'alerts'">
+                <AlertHistory embedded="true"/>
+            </t>
+        </div>
+
+    </div>
+
+</t>
+</templates>

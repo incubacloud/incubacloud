@@ -1,0 +1,252 @@
+<templates>
+
+    <t t-name="incubacloud.BackupBackendDetail">
+        <div class="ic-host-detail">
+
+            <t t-if="state.loading">
+                <div class="ic-detail-loading">Loading…</div>
+            </t>
+
+            <t t-elif="state.backend">
+
+                <!-- Header -->
+                <div class="ic-detail-header">
+                    <button class="ic-btn-back" t-on-click="goBack">← Backup Backends</button>
+                    <div class="ic-detail-title">
+                        <h1>
+                            <t t-if="isNew">New Backup Backend</t>
+                            <t t-else="" t-esc="state.backend.name"/>
+                        </h1>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="ic-detail-tabs">
+                    <button t-att-class="state.tab === 'general' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('general')">General</button>
+                    <button t-att-class="state.tab === 'storage' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('storage')">Storage</button>
+                    <button t-att-class="state.tab === 'notifications' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('notifications')">Notifications</button>
+                    <button t-att-class="state.tab === 'advanced' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('advanced')">Advanced</button>
+                </div>
+
+                <!-- Tab content -->
+                <div class="ic-detail-body">
+
+                    <!-- ── General ──────────────────────────────────────── -->
+                    <t t-if="state.tab === 'general'">
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Name <span class="ic-required">*</span></label>
+                                <input type="text"
+                                       placeholder="My S3 Backup"
+                                       t-att-value="state.form.name"
+                                       t-on-input="(ev) => this.onInput('name', ev)"/>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Type</label>
+                                <select disabled="1">
+                                    <option value="s3">S3 Compatible</option>
+                                </select>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Image Version</label>
+                                <input type="text"
+                                       placeholder="latest"
+                                       t-att-value="state.form.backup_image_version"
+                                       t-on-input="(ev) => this.onInput('backup_image_version', ev)"/>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- ── Storage ──────────────────────────────────────── -->
+                    <t t-if="state.tab === 'storage'">
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>Bucket <span class="ic-required">*</span></label>
+                                <input type="text"
+                                       placeholder="my-backup-bucket"
+                                       t-att-value="state.form.s3_bucket"
+                                       t-on-input="(ev) => this.onInput('s3_bucket', ev)"/>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Path</label>
+                                <input type="text"
+                                       placeholder="backups"
+                                       t-att-value="state.form.s3_path"
+                                       t-on-input="(ev) => this.onInput('s3_path', ev)"/>
+                            </div>
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Endpoint URL
+                                    <span class="ic-form-note"> — leave empty for AWS S3</span>
+                                </label>
+                                <input type="text"
+                                       placeholder="https://s3.us-east-1.amazonaws.com"
+                                       t-att-value="state.form.s3_endpoint_url"
+                                       t-on-input="(ev) => this.onInput('s3_endpoint_url', ev)"/>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Access Key ID</label>
+                                <input type="text"
+                                       t-att-value="state.form.s3_access_key_id"
+                                       t-on-input="(ev) => this.onInput('s3_access_key_id', ev)"/>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Secret Access Key</label>
+                                <PasswordInput
+                                    hasValue="state.has_s3_secret_access_key"
+                                    model="'cloud.backup.backend'"
+                                    recordId="props.backend_id || null"
+                                    fieldName="'s3_secret_access_key'"
+                                    onChange="(val) => this.onPasswordChange('s3_secret_access_key', val)"/>
+                            </div>
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Passphrase</label>
+                                <PasswordInput
+                                    hasValue="state.has_passphrase"
+                                    model="'cloud.backup.backend'"
+                                    recordId="props.backend_id || null"
+                                    fieldName="'passphrase'"
+                                    onChange="(val) => this.onPasswordChange('passphrase', val)"/>
+                            </div>
+                            <t t-if="backupDst">
+                                <div class="ic-form-row ic-form-row-full">
+                                    <label>Backup Destination (preview)</label>
+                                    <code class="ic-host-ip" style="display:block;padding:6px 10px;font-size:12px">
+                                        <t t-esc="backupDst"/>
+                                    </code>
+                                </div>
+                            </t>
+                        </div>
+                    </t>
+
+                    <!-- ── Notifications ─────────────────────────────────── -->
+                    <t t-if="state.tab === 'notifications'">
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>From</label>
+                                <input type="email"
+                                       placeholder="backups@example.com"
+                                       t-att-value="state.form.email_from"
+                                       t-on-input="(ev) => this.onInput('email_from', ev)"/>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>To</label>
+                                <input type="email"
+                                       placeholder="admin@example.com"
+                                       t-att-value="state.form.email_to"
+                                       t-on-input="(ev) => this.onInput('email_to', ev)"/>
+                            </div>
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Report on success</label>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox"
+                                           t-att-checked="state.form.smtp_report_success"
+                                           t-on-change="(ev) => this.onCheckbox('smtp_report_success', ev)"/>
+                                    <span>Send email notification on successful backup</span>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+
+                    <!-- ── Advanced ──────────────────────────────────────── -->
+                    <t t-if="state.tab === 'advanced'">
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>Retention Period</label>
+                                <input type="text"
+                                       placeholder="3M"
+                                       t-att-value="state.form.backup_retention"
+                                       t-on-input="(ev) => this.onInput('backup_retention', ev)"/>
+                                <span class="ic-form-note">Examples: 3M (3 months), 30D (30 days), 1Y (1 year)</span>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Timezone</label>
+                                <input type="text"
+                                       placeholder="UTC"
+                                       t-att-value="state.form.backup_tz"
+                                       t-on-input="(ev) => this.onInput('backup_tz', ev)"/>
+                            </div>
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Deletion cron</label>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox"
+                                           t-att-checked="state.form.deletion_via_cron"
+                                           t-on-change="(ev) => this.onCheckbox('deletion_via_cron', ev)"/>
+                                    <span>Enable automatic cleanup of old backups</span>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+
+                </div>
+
+                <!-- Footer -->
+                <div class="ic-detail-footer">
+                    <t t-if="!isNew">
+                        <button class="ic-btn-danger"
+                                t-att-disabled="state.deleting"
+                                t-on-click="deleteBackend">
+                            <i class="fa fa-trash"/>
+                            <t t-if="state.deleting"> Deleting…</t>
+                            <t t-else=""> Delete</t>
+                        </button>
+                    </t>
+                    <div style="flex: 1;"/>
+                    <t t-if="!isNew">
+                        <button class="ic-btn-secondary-action"
+                                t-att-disabled="state.testing"
+                                t-on-click="testConnection">
+                            <t t-if="state.testing">Testing…</t>
+                            <t t-else="">Test Connection</t>
+                        </button>
+                    </t>
+                    <button class="ic-btn-save"
+                            t-att-disabled="state.saving"
+                            t-on-click="save">
+                        <t t-if="state.saving">
+                            <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
+                            <t t-if="isNew">Creating…</t>
+                            <t t-else="">Saving…</t>
+                        </t>
+                        <t t-else="">
+                            <t t-if="isNew">Create Backend</t>
+                            <t t-else="">Save changes</t>
+                        </t>
+                    </button>
+                </div>
+
+            </t>
+
+            <!-- Error state -->
+            <t t-elif="state.error">
+                <div class="ic-detail-error-state" role="alert">
+                    <p t-esc="state.error"/>
+                    <button t-on-click="goBack">← Back to Backup Backends</button>
+                </div>
+            </t>
+
+            <!-- Confirm dialog -->
+            <t t-if="state.confirmDialog">
+                <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
+                    <div class="ic-confirm-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
+                        <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel"
+                                    t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
+                            <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
+                                    t-on-click="() => state.confirmDialog.onConfirm()">
+                                <t t-esc="state.confirmDialog.confirmLabel"/>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+        </div>
+    </t>
+
+</templates>

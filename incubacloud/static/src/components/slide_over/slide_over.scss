@@ -1,0 +1,98 @@
+// ── Slide-over panel ─────────────────────────────────────────────────────────
+
+.ic-slideover-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 1000;
+    animation: ic-fade-in 0.2s ease;
+}
+
+.ic-slideover-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 60%;
+    min-width: 480px;
+    max-width: 960px;
+    background: $background;
+    z-index: 1001;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.25);
+    animation: ic-slide-in 0.25s ease;
+    transition: width 0.2s ease, max-width 0.2s ease;
+
+    &.ic-slideover-expanded {
+        width: 92%;
+        max-width: none;
+    }
+}
+
+// ── Header ───────────────────────────────────────────────────────────────────
+
+.ic-slideover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid $border;
+    flex-shrink: 0;
+}
+
+.ic-slideover-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: $text-primary;
+}
+
+.ic-slideover-header-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.ic-slideover-btn {
+    background: none;
+    border: none;
+    color: $text-secondary;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background 0.15s ease, color 0.15s ease;
+
+    &:hover {
+        background: $surface-light;
+        color: $text-primary;
+    }
+}
+
+// ── Body ─────────────────────────────────────────────────────────────────────
+
+.ic-slideover-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+
+    // Embedded components fill the panel
+    > .ic-job-history,
+    > .ic-alert-history {
+        height: 100%;
+    }
+}
+
+// ── Animations ───────────────────────────────────────────────────────────────
+
+@keyframes ic-slide-in {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+}
+
+@keyframes ic-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}

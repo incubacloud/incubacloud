@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="action_cloud_github_event" model="ir.actions.act_window">
+            <field name="name">GitHub Webhook Events</field>
+            <field name="res_model">cloud.github.event</field>
+            <field name="view_mode">list,form</field>
+        </record>
+
+        <record id="view_cloud_github_event_list" model="ir.ui.view">
+            <field name="name">cloud.github.event.list</field>
+            <field name="model">cloud.github.event</field>
+            <field name="arch" type="xml">
+                <list string="GitHub Webhook Events" decoration-muted="processed" create="false">
+                    <field name="create_date" string="Received"/>
+                    <field name="event_type"/>
+                    <field name="action"/>
+                    <field name="delivery_id"/>
+                    <field name="processed"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_cloud_github_event_form" model="ir.ui.view">
+            <field name="name">cloud.github.event.form</field>
+            <field name="model">cloud.github.event</field>
+            <field name="arch" type="xml">
+                <form string="GitHub Webhook Event" create="false" edit="false">
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="create_date" string="Received"/>
+                                <field name="event_type"/>
+                                <field name="action"/>
+                                <field name="delivery_id"/>
+                                <field name="processed"/>
+                            </group>
+                            <group>
+                                <field name="error" invisible="not error"/>
+                            </group>
+                        </group>
+                        <separator string="Payload"/>
+                        <field name="payload" widget="ace" options="{'mode': 'json'}"/>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+    </data>
+</odoo>

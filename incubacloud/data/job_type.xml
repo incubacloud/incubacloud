@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="host_probe" model="cloud.job.type">
+            <field name="name">Host Probe</field>
+            <field name="code">host_probe</field>
+            <field name="apply_to">host</field>
+            <field name="description">Probes the host to check its status and availability.</field>
+
+        </record>
+
+        <record id="host_metrics" model="cloud.job.type">
+            <field name="name">Host Metrics</field>
+            <field name="code">host_metrics</field>
+            <field name="apply_to">host</field>
+            <field name="description">Collects CPU cores, total RAM and disk health from the host.</field>
+
+        </record>
+
+        <record id="deploy_instance" model="cloud.job.type">
+            <field name="name">Deploy Instance</field>
+            <field name="code">deploy_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Deploys a doodba instance via copier on the target host.</field>
+        </record>
+
+        <record id="full_setup" model="cloud.job.type">
+            <field name="name">Setup Host</field>
+            <field name="code">full_setup</field>
+            <field name="apply_to">host</field>
+            <field name="description">Full host setup: checks OS/disk, installs all tools, deploys Traefik.</field>
+        </record>
+
+        <record id="setup_host" model="cloud.job.type">
+            <field name="name">Setup Host</field>
+            <field name="code">setup_host</field>
+            <field name="apply_to">host</field>
+            <field name="description">Installs deployment tools (pipx, copier, invoke, pre-commit) on the host.</field>
+        </record>
+
+        <record id="setup_traefik" model="cloud.job.type">
+            <field name="name">Setup Traefik</field>
+            <field name="code">setup_traefik</field>
+            <field name="apply_to">host</field>
+            <field name="description">Deploys the Traefik reverse proxy on the host.</field>
+        </record>
+
+        <record id="start_instance" model="cloud.job.type">
+            <field name="name">Start Instance</field>
+            <field name="code">start_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Starts a stopped doodba instance (docker compose up -d).</field>
+        </record>
+
+        <record id="stop_instance" model="cloud.job.type">
+            <field name="name">Stop Instance</field>
+            <field name="code">stop_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Stops a running doodba instance (docker compose stop).</field>
+        </record>
+
+        <record id="restart_instance" model="cloud.job.type">
+            <field name="name">Restart Instance</field>
+            <field name="code">restart_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Restarts a doodba instance (docker compose restart).</field>
+        </record>
+
+        <record id="pause_instance" model="cloud.job.type">
+            <field name="name">Pause Instance</field>
+            <field name="code">pause_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Pauses a running doodba instance (docker compose pause).</field>
+        </record>
+
+        <record id="rebuild_instance" model="cloud.job.type">
+            <field name="name">Rebuild Instance</field>
+            <field name="code">rebuild_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Rebuilds the Odoo Docker image without cache (docker compose build --pull --no-cache odoo).</field>
+        </record>
+
+        <record id="delete_instance" model="cloud.job.type">
+            <field name="name">Delete Instance</field>
+            <field name="code">delete_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Stops and removes a doodba instance from the host.</field>
+        </record>
+
+        <record id="restore_instance" model="cloud.job.type">
+            <field name="name">Restore Database</field>
+            <field name="code">restore_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Restores a doodba instance database from a .zip backup file.</field>
+        </record>
+
+        <record id="export_instance" model="cloud.job.type">
+            <field name="name">Export for Development</field>
+            <field name="code">export_instance</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Packages the instance folder as a tarball (respecting .gitignore) and makes it available for download.</field>
+        </record>
+
+        <record id="setup_whitelist" model="cloud.job.type">
+            <field name="name">Setup Whitelist</field>
+            <field name="code">setup_whitelist</field>
+            <field name="apply_to">host</field>
+            <field name="description">Creates or updates ~/globalwhitelist/docker-compose.yaml and brings whitelist proxy services up.</field>
+        </record>
+
+        <record id="delete_host" model="cloud.job.type">
+            <field name="name">Delete Host</field>
+            <field name="code">delete_host</field>
+            <field name="apply_to">host</field>
+            <field name="description">Stops Traefik, removes the traefik directory and archives the host record.</field>
+        </record>
+
+        <record id="docker_prune" model="cloud.job.type">
+            <field name="name">Docker Prune</field>
+            <field name="code">docker_prune</field>
+            <field name="apply_to">host</field>
+            <field name="description">Reclaims disk space by removing unused Docker containers, images, networks and build cache (docker system prune -af).</field>
+        </record>
+
+        <record id="backup_list" model="cloud.job.type">
+            <field name="name">List Backups</field>
+            <field name="code">backup_list</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Lists available backups via duplicity collection-status.</field>
+        </record>
+
+        <record id="backup_create" model="cloud.job.type">
+            <field name="name">Create Backup</field>
+            <field name="code">backup_create</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Creates a manual backup (duplicity for production, click-odoo-backupdb for others).</field>
+        </record>
+
+        <record id="backup_download" model="cloud.job.type">
+            <field name="name">Download Backup</field>
+            <field name="code">backup_download</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Downloads a specific backup from duplicity as a ZIP file.</field>
+        </record>
+
+        <record id="backup_restore" model="cloud.job.type">
+            <field name="name">Restore Backup</field>
+            <field name="code">backup_restore</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Restores a production instance from a duplicity backup (destructive operation).</field>
+        </record>
+
+        <record id="clone_to_staging" model="cloud.job.type">
+            <field name="name">Clone Data</field>
+            <field name="code">clone_data</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Copies production database and filestore into a target instance.</field>
+        </record>
+
+        <record id="instance_health" model="cloud.job.type">
+            <field name="name">Instance Health Check</field>
+            <field name="code">instance_health</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Checks container state, HTTP health, CPU/memory peaks and error log count for a deployed instance.</field>
+        </record>
+
+    </data>
+</odoo>

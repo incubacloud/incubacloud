@@ -1,0 +1,535 @@
+// ── Page layout ──────────────────────────────────────────────────────────────
+
+.ic-job-history {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    padding: 24px;
+    gap: 20px;
+    color: $text-primary;
+
+    &::-webkit-scrollbar { width: 4px; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+}
+
+// ── Alert context banner ──────────────────────────────────────────────────────
+
+.alert-mode-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    background: rgba($state-warning, 0.12);
+    border: 1px solid rgba($state-warning, 0.3);
+    color: $state-warning;
+    font-size: 13px;
+
+    .btn-link {
+        background: none;
+        border: none;
+        padding: 0;
+        color: $state-warning;
+        text-decoration: underline;
+        cursor: pointer;
+        font-size: 13px;
+    }
+}
+
+.filters-hidden { display: none; }
+
+// ── Header ────────────────────────────────────────────────────────────────────
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.history-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.history-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: $text-primary;
+    margin: 0;
+}
+
+.back-btn {
+    background: none;
+    border: 1px solid $border;
+    color: $text-secondary;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: color 0.15s, border-color 0.15s;
+
+    &:hover {
+        color: $text-primary;
+        border-color: lighten($border, 10%);
+    }
+}
+
+.refresh-btn {
+    background: none;
+    border: 1px solid $border;
+    color: $text-secondary;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: color 0.15s;
+
+    &:hover { color: $text-primary; }
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+
+.history-filters {
+    background: $surface-light;
+    border: 1px solid $border;
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.filter-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: $text-secondary;
+    width: 72px;
+    flex-shrink: 0;
+}
+
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+}
+
+.filter-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.filter-select,
+.filter-input {
+    background: $surface;
+    border: 1px solid $border;
+    color: $text-primary;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    outline: none;
+
+    &:focus { border-color: $primary-blue; }
+}
+
+.filter-select { min-width: 140px; }
+.filter-input  { min-width: 170px; }
+
+.btn-apply {
+    background: $primary-blue;
+    border: none;
+    color: white;
+    padding: 6px 14px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+
+    &:hover { background: $primary-dark; }
+}
+
+.btn-reset {
+    background: none;
+    border: 1px solid $border;
+    color: $text-secondary;
+    padding: 6px 14px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+
+    &:hover { color: $text-primary; }
+}
+
+// ── State chips ───────────────────────────────────────────────────────────────
+
+.state-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.state-chip {
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid $border;
+    background: none;
+    color: $text-secondary;
+    transition: all 0.15s;
+
+    &:hover {
+        border-color: lighten($border, 15%);
+        color: $text-primary;
+    }
+
+    &.active { color: white; border-color: transparent; }
+
+    &.state-chip-pending.active, &.state-chip-enqueued.active, &.state-chip-wait_dependencies.active {
+        background: $state-neutral;
+    }
+    &.state-chip-started.active    { background: $primary-blue; }
+    &.state-chip-done.active       { background: $state-ok; }
+    &.state-chip-failed.active     { background: $state-error; }
+    &.state-chip-cancelled.active  { background: darken($state-neutral, 10%); }
+}
+
+// ── Gantt ─────────────────────────────────────────────────────────────────────
+
+.gantt-section {
+    background: $surface-light;
+    border: 1px solid $border;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.gantt-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 1px solid $border;
+}
+
+.gantt-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: $text-secondary;
+}
+
+.gantt-window-btns {
+    display: flex;
+    gap: 4px;
+}
+
+.gantt-win-btn {
+    background: none;
+    border: 1px solid $border;
+    color: $text-secondary;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.15s;
+
+    &:hover { color: $text-primary; }
+    &.active {
+        background: $primary-blue;
+        border-color: $primary-blue;
+        color: white;
+    }
+}
+
+.gantt-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: $text-secondary;
+    font-size: 13px;
+}
+
+$gantt-label-w: 240px;
+$gantt-row-h: 44px;
+
+.gantt-axis {
+    display: flex;
+    height: 30px;
+    border-bottom: 1px solid $border;
+    background: darken($surface-light, 3%);
+}
+
+.gantt-label-col {
+    width: $gantt-label-w;
+    flex-shrink: 0;
+    border-right: 1px solid $border;
+}
+
+.gantt-track-col {
+    flex: 1;
+    position: relative;
+}
+
+.gantt-tick {
+    position: absolute;
+    font-size: 10px;
+    color: $text-secondary;
+    top: 50%;
+    transform: translateX(-50%) translateY(-50%);
+    white-space: nowrap;
+
+    &:first-child  { transform: translateY(-50%); }
+    &:last-child   { transform: translateX(-100%) translateY(-50%); }
+}
+
+.gantt-body {
+    max-height: 150px;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar { width: 4px; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+}
+
+.gantt-row {
+    display: flex;
+    height: $gantt-row-h;
+    border-bottom: 1px solid rgba($border, 0.4);
+    transition: background 0.1s;
+
+    &:last-child { border-bottom: none; }
+    &:hover { background: rgba(255, 255, 255, 0.025); }
+}
+
+.gantt-label {
+    width: $gantt-label-w;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-right: 1px solid $border;
+    overflow: hidden;
+}
+
+.gantt-label-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.gantt-label-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: $text-primary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gantt-label-trigger {
+    font-size: 9px;
+    color: $text-secondary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    .fa-github { margin-right: 2px; }
+}
+
+.col-trigger {
+    display: block;
+    font-size: 10px;
+    color: $text-secondary;
+
+    .fa-github { margin-right: 2px; }
+}
+
+.gantt-label-host {
+    font-size: 10px;
+    color: $text-secondary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.state-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+
+    &.state-dot-pending, &.state-dot-enqueued,
+    &.state-dot-wait_dependencies, &.state-dot-cancelled { background: $state-neutral; }
+    &.state-dot-started  { background: $primary-blue; }
+    &.state-dot-done     { background: $state-ok; }
+    &.state-dot-failed   { background: $state-error; }
+}
+
+.gantt-track {
+    flex: 1;
+    position: relative;
+    background: repeating-linear-gradient(
+        90deg,
+        rgba($border, 0.12) 0,
+        rgba($border, 0.12) 1px,
+        transparent 1px,
+        transparent calc(100% / 6)
+    );
+}
+
+.gantt-bar {
+    position: absolute;
+    top: 8px;
+    height: calc(#{$gantt-row-h} - 16px);
+    border-radius: 4px;
+    min-width: 4px;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: opacity 0.1s, box-shadow 0.1s;
+
+    &:hover {
+        opacity: 1;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
+    }
+
+    &.gantt-state-pending,
+    &.gantt-state-enqueued,
+    &.gantt-state-wait_dependencies { background: $state-neutral; }
+    &.gantt-state-started {
+        background: $primary-blue;
+        box-shadow: 0 0 6px rgba($primary-blue, 0.4);
+        opacity: 1;
+    }
+    &.gantt-state-done    { background: $state-ok; }
+    &.gantt-state-failed  { background: $state-error; }
+    &.gantt-state-cancelled { background: darken($state-neutral, 8%); }
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+
+.history-table-wrap {
+    background: $surface-light;
+    border: 1px solid $border;
+    border-radius: 8px;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar { width: 4px; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+    scrollbar-width: thin;
+    scrollbar-color: $border transparent;
+}
+
+.history-empty {
+    padding: 32px;
+    text-align: center;
+    color: $text-secondary;
+    font-size: 13px;
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+
+    thead tr {
+        border-bottom: 1px solid $border;
+        background: darken($surface-light, 2%);
+    }
+
+    th {
+        text-align: left;
+        padding: 9px 14px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: $text-secondary;
+        white-space: nowrap;
+    }
+
+    td {
+        padding: 9px 14px;
+        border-bottom: 1px solid rgba($border, 0.5);
+        color: $text-secondary;
+        vertical-align: middle;
+    }
+
+    .history-row {
+        transition: background 0.1s;
+        &:hover { background: rgba(255,255,255,0.03); }
+        &:last-child td { border-bottom: none; }
+    }
+
+    .history-row-link {
+        cursor: pointer;
+        &:hover { background: rgba(255,255,255,0.05); }
+        &:hover .history-log-hint { opacity: 1; }
+    }
+
+    .history-log-hint {
+        font-size: 0.6875rem;
+        color: rgba($text-secondary, 0.5);
+        margin-left: 8px;
+        opacity: 0;
+        transition: opacity 0.15s;
+        white-space: nowrap;
+
+        i { margin-right: 3px; }
+    }
+
+    .col-name   { color: $text-primary; font-weight: 500; }
+    .col-host   { font-size: 12px; }
+    .col-date   { font-size: 12px; white-space: nowrap; }
+    .col-dur    { font-size: 12px; white-space: nowrap; display: flex; align-items: center; }
+}
+
+
+.history-loading {
+    padding: 48px;
+    text-align: center;
+    color: $text-secondary;
+    font-size: 14px;
+}
+
+// ── Reuse job-badge from job_drawer ───────────────────────────────────────────
+
+.job-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 2px 7px;
+    border-radius: 999px;
+}
+
+.state-pending, .state-enqueued, .state-wait_dependencies {
+    background: rgba($state-neutral, 0.15);
+    color: $state-neutral;
+}
+.state-started   { background: rgba($primary-blue, 0.15); color: $primary-blue; }
+.state-done      { background: rgba($state-ok, 0.12);     color: $state-ok; }
+.state-failed    { background: rgba($state-error, 0.12);  color: $state-error; }
+.state-cancelled { background: rgba($state-neutral, 0.1); color: $state-neutral; }

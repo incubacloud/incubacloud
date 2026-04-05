@@ -1,0 +1,58 @@
+<templates>
+
+    <t t-name="incubacloud.TagSelector">
+        <div class="ic-tag-selector">
+
+            <!-- Selected tags as chips -->
+            <div class="ic-tag-chips">
+                <t t-foreach="props.selected" t-as="tag" t-key="tag.id">
+                    <span class="ic-tag-chip" t-att-style="tagStyle(tag)">
+                        <span class="ic-tag-dot" t-att-style="tagDotStyle(tag)"/>
+                        <t t-esc="tag.name"/>
+                        <button class="ic-tag-remove"
+                                t-on-click="() => this.props.onRemove(tag.id)">×</button>
+                    </span>
+                </t>
+
+                <!-- Input -->
+                <input
+                    class="ic-tag-input"
+                    type="text"
+                    placeholder="Add tag…"
+                    t-att-value="state.input"
+                    t-on-input="onInput"
+                    t-on-focus="onFocus"
+                    t-on-blur="onBlur"
+                />
+            </div>
+
+            <!-- Dropdown (opt = item in filtered list, avoids collision with outer "tag") -->
+            <t t-if="state.open">
+                <div class="ic-tag-dropdown">
+                    <t t-foreach="filtered" t-as="opt" t-key="opt.id">
+                        <div class="ic-tag-option"
+                             t-on-mousedown.prevent="() => this.selectTag(opt)">
+                            <span class="ic-tag-dot" t-att-style="tagDotStyle(opt)"/>
+                            <span t-esc="opt.name"/>
+                        </div>
+                    </t>
+                    <t t-if="showCreate">
+                        <div class="ic-tag-option ic-tag-create"
+                             t-on-mousedown.prevent="createTag">
+                            <t t-if="state.creating">Creating…</t>
+                            <t t-else="">
+                                <span class="ic-tag-create-icon">+</span>
+                                Create "<t t-esc="state.input.trim()"/>"
+                            </t>
+                        </div>
+                    </t>
+                    <t t-if="!filtered.length and !showCreate">
+                        <div class="ic-tag-option ic-tag-empty">No tags found</div>
+                    </t>
+                </div>
+            </t>
+
+        </div>
+    </t>
+
+</templates>

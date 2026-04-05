@@ -1,0 +1,124 @@
+<t t-name="incubacloud.JobDrawer">
+    <aside class="job-panel">
+
+        <!-- Header -->
+        <div class="job-panel-header">
+            <span class="job-panel-title">
+                <i class="fa fa-history"/> Jobs
+            </span>
+            <t t-if="runningCount">
+                <span class="job-panel-running">
+                    <span class="job-toggle-spinner"/>
+                    <t t-esc="runningCount"/>
+                </span>
+            </t>
+        </div>
+
+        <!-- Timeline -->
+        <div class="job-list">
+            <t t-if="!state.jobs.length">
+                <div class="job-panel-empty">No recent jobs</div>
+            </t>
+            <t t-foreach="state.jobs" t-as="job" t-key="job.id">
+                <div t-att-class="'job-entry ' + jobClass(job)">
+
+                    <!-- Dot + date -->
+                    <div class="job-time-row">
+                        <span class="job-date" t-esc="formatDate(job.create_date)"/>
+                    </div>
+
+                    <!-- Card -->
+                    <div class="job-card">
+
+                        <!-- Name + badge -->
+                        <div class="job-header">
+                            <span class="job-name" t-esc="job.name"/>
+                            <span t-att-class="'job-badge state-' + job.state"
+                                  t-esc="stateName(job)"/>
+                        </div>
+
+                        <!-- Webhook trigger -->
+                        <t t-if="job.trigger === 'webhook'">
+                            <div class="job-trigger">
+                                <i class="fa fa-github"/>
+                                <span t-esc="job.push_sha"/>
+                                <t t-esc="job.push_message"/>
+                            </div>
+                        </t>
+
+                        <!-- Host + user -->
+                        <div class="job-meta">
+                            <span t-esc="job.host"/>
+                            <t t-if="job.user_name">
+                                <span class="job-meta-sep"> · </span>
+                                <span class="job-meta-user" t-esc="job.user_name"/>
+                            </t>
+                        </div>
+
+                        <!-- System progress message -->
+                        <t t-if="job.last_system_message">
+                            <div class="job-message">
+                                <span class="job-message-arrow">↳</span>
+                                <span t-esc="job.last_system_message"/>
+                            </div>
+                        </t>
+
+                        <!-- Actions -->
+                        <div class="job-actions">
+                            <button t-on-click="() => this.openLog(job)">
+                                <i class="fa fa-file-text-o"/> Log
+                            </button>
+                            <t t-if="['pending', 'enqueued', 'wait_dependencies', 'started'].includes(job.state)">
+                                <button class="danger" t-on-click="() => this.cancelJob(job)">
+                                    <i class="fa fa-times"/> Cancel
+                                </button>
+                            </t>
+                            <t t-if="job.state === 'failed'">
+                                <button t-on-click="() => this.retryJob(job)">
+                                    <i class="fa fa-refresh"/> Retry
+                                </button>
+                            </t>
+                            <t t-if="job.state === 'blocked'">
+                                <button t-on-click="() => env.toggleSlideOver('alerts')">
+                                    <i class="fa fa-exclamation-triangle"/> Resolve
+                                </button>
+                            </t>
+                            <t t-if="job.state === 'done' and job.download_url">
+                                <a class="job-download-btn" t-att-href="job.download_url" download="">
+                                    <i class="fa fa-download"/> Download
+                                </a>
+                            </t>
+                        </div>
+
+                    </div>
+
+                </div>
+            </t>
+        </div>
+
+        <!-- Footer -->
+        <div class="job-panel-footer">
+            <button class="link" t-on-click="goToHistory">
+                <i class="fa fa-list"/> View all jobs
+            </button>
+        </div>
+
+        <!-- Confirm dialog -->
+        <t t-if="state.confirmDialog">
+            <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
+                <div class="ic-confirm-box" t-on-click.stop="">
+                    <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
+                    <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
+                    <div class="ic-confirm-actions">
+                        <button class="ic-confirm-btn-cancel" t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
+                        <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
+                                t-on-click="() => state.confirmDialog.onConfirm()">
+                            <t t-esc="state.confirmDialog.confirmLabel"/>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </t>
+
+    </aside>
+</t>

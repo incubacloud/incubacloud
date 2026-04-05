@@ -1,0 +1,118 @@
+@use "../../scss/variables" as *;
+
+// ─── SearchSelect ─────────────────────────────────────────────────────────────
+
+.ic-search-select {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+
+    // ── Input row ─────────────────────────────────────────────────────────
+
+    &__input-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    &__input {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 28px 6px 10px; // right room for chevron/spinner
+        background: $surface-light;
+        border: 1px solid $border;
+        border-radius: 6px;
+        color: $text-primary;
+        font-size: 13px;
+        transition: border-color 0.15s;
+
+        &::placeholder { color: $text-secondary; }
+
+        &:focus {
+            outline: none;
+            border-color: $primary-blue;
+        }
+
+        &:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+    }
+
+    &__chevron,
+    &__spinner {
+        position: absolute;
+        right: 8px;
+        pointer-events: none;
+        color: $text-secondary;
+        font-size: 11px;
+    }
+
+    &__spinner {
+        // fa-spin already provides the animation — no extra keyframes needed
+        top: 50%;
+        transform: translateY(-50%);
+    }
+
+    &--open &__input {
+        border-color: $primary-blue;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+
+    // ── Dropdown ──────────────────────────────────────────────────────────
+    // position:fixed + coordinates are set via inline style (_computeDropdownStyle)
+    // so the dropdown escapes any overflow:hidden/auto ancestor (e.g. modal body).
+
+    &__dropdown {
+        position: fixed; // fallback; overridden by inline style from JS
+        background: $surface-light;
+        border: 1px solid $primary-blue;
+        border-top: none;
+        border-bottom-left-radius: 6px;
+        border-bottom-right-radius: 6px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        z-index: 9999;
+        max-height: 220px;
+        overflow-y: auto;
+    }
+
+    // ── Options ───────────────────────────────────────────────────────────
+
+    &__option {
+        padding: 7px 12px;
+        font-size: 13px;
+        color: $text-primary;
+        cursor: pointer;
+
+        &:hover { background: rgba($primary-blue, 0.12); }
+
+        &--selected {
+            color: $primary-blue;
+            font-weight: 600;
+        }
+
+        &--empty {
+            color: $text-secondary;
+            font-style: italic;
+        }
+
+        &--create {
+            color: $primary-blue;
+            font-weight: 500;
+        }
+
+        &--hint {
+            color: $text-secondary;
+            cursor: default;
+            font-size: 12px;
+            padding: 8px 12px;
+
+            &:hover { background: none; }
+        }
+    }
+}
+
+@keyframes ic-spin {
+    to { transform: rotate(360deg); }
+}

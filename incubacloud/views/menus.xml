@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+
+    <menuitem
+        id="incubacloud_menu_root"
+        name="Cloud"
+        web_icon="incubacloud,static/description/icon.png"
+        sequence="40"
+        action="action_go_to_cloud_app"
+    />
+
+</odoo>

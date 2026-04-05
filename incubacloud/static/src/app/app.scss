@@ -1,0 +1,977 @@
+.ic-hidden { display: none !important; }
+
+.ic-app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: $background;
+  color: $text-primary;
+  font-family: $font-sans;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+// ── Body (below header): sidebar + main ──────────────────────────
+.ic-body {
+  display: flex;
+  flex: 1;
+  min-height: 0; // allow children to scroll
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────
+.ic-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: $surface;
+  border-right: 1px solid $border;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.ic-sidebar-nav {
+  padding: 8px 0;
+
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+      padding: 8px 16px;
+      cursor: pointer;
+      color: $text-secondary;
+      font-size: 14px;
+      transition: background $duration-fast ease, color $duration-fast ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+
+      > .fa {
+        width: 16px;
+        text-align: center;
+        font-size: 14px;
+        opacity: 0.7;
+      }
+
+      &:hover {
+        background: $surface-light;
+        color: $text-primary;
+      }
+
+      &.active {
+        background: $primary-blue;
+        color: white;
+        font-weight: 500;
+
+        > .fa { opacity: 1; }
+      }
+
+      &.ic-nav-section-label {
+        padding: 16px 16px 4px;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: $text-secondary;
+        opacity: 0.6;
+        cursor: default;
+
+        &:hover {
+          background: transparent;
+          color: $text-secondary;
+        }
+      }
+    }
+  }
+}
+
+// ── Main content ─────────────────────────────────────────────────
+.ic-main {
+  flex-grow: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+// ── Dashboard grid (shared across all list/dashboard views) ──────────
+.ic-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+
+  .ic-empty-state { grid-column: 1 / -1; text-align: center; }
+  .ic-detail-loading { grid-column: 1 / -1; }
+}
+
+.ic-dashboard-search {
+  width: 100%;
+  max-width: 420px;
+
+  input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: $radius-md;
+    border: 1px solid $border;
+    background: $surface;
+    color: $text-primary;
+    font-size: 14px;
+    transition: border-color $duration-fast ease, background $duration-fast ease, box-shadow $duration-fast ease;
+
+    &::placeholder { color: $text-secondary; }
+    &:focus {
+      outline: none;
+      border-color: $primary-blue;
+      background: $surface-light;
+      box-shadow: 0 0 0 2px rgba($primary-blue, 0.2);
+    }
+  }
+}
+
+.ic-dashboard-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// ── Detail body (shared across host/instance/project detail views) ──
+.ic-detail-body {
+  flex: 1;
+  padding: 24px 0;
+  overflow-y: auto;
+  min-height: 0;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+}
+
+// ── Toggle switch ───────────────────────────────────────────────
+
+.ic-toggle {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+
+  input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+}
+
+.ic-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba($border, 0.6);
+  border-radius: 20px;
+  transition: background 0.2s;
+
+  &::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 3px;
+    bottom: 3px;
+    background: $text-primary;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+}
+
+.ic-toggle input:checked + .ic-toggle-slider {
+  background: $primary-blue;
+
+  &::before { transform: translateX(16px); }
+}
+
+.ic-form-hint {
+  font-weight: 400;
+  font-size: 0.6875rem;
+  color: $text-secondary;
+}
+
+// ── Typography scale ─────────────────────────────────────────────────────────
+// Applied within .ic-app scope to avoid leaking into Odoo backend
+
+.ic-app {
+    // Page title (H1) — 22px, bold
+    .ic-page-title,
+    h1.ic-title {
+        font-size: 1.375rem;
+        font-weight: 700;
+        color: $text-primary;
+        margin: 0;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+    }
+
+    // Section label (H2) — 11px, uppercase, muted — use for panel/card headers
+    .ic-section-label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: $text-secondary;
+        margin: 0 0 $space-3;
+    }
+
+    // Sub-section / card title (H3) — 15px, semibold
+    .ic-card-title {
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: $text-primary;
+        margin: 0;
+    }
+
+    // Body secondary — 13px, muted
+    .ic-body-secondary {
+        font-size: 0.8125rem;
+        color: $text-secondary;
+        line-height: 1.5;
+    }
+}
+
+// ── Shared dialogs ──────────────────────────────────────────────
+
+.ic-confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(6px);
+}
+
+.ic-confirm-box {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-xl;
+    padding: $space-6 $space-6 $space-5;
+    max-width: $modal-sm;
+    width: calc(100% - 40px);
+}
+
+.ic-confirm-title {
+    margin: 0 0 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: $text-primary;
+}
+
+.ic-confirm-message {
+    margin: 0 0 24px;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: $text-secondary;
+}
+
+.ic-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.ic-form-grid {
+    display: flex;
+    flex-direction: column;
+    gap: $space-3;
+}
+
+.ic-form-row {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+
+    label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: $text-secondary;
+    }
+
+    select {
+        width: 100%;
+        background: $surface-light;
+        color: $text-primary;
+        border: 1px solid $border;
+        border-radius: $radius-md;
+        padding: 8px 10px;
+        font-size: 0.8125rem;
+        cursor: pointer;
+        transition: border-color $duration-fast ease;
+
+        &:focus { outline: none; border-color: $primary-blue; }
+    }
+}
+
+.ic-confirm-btn-cancel {
+    padding: 7px 16px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    background: none;
+    border: 1px solid $border;
+    border-radius: $radius-md;
+    color: $text-secondary;
+    cursor: pointer;
+    transition: background $duration-fast ease, color $duration-fast ease, border-color $duration-fast ease;
+
+    &:hover {
+        background: $surface-light;
+        color: $text-primary;
+        border-color: rgba($text-secondary, 0.5);
+    }
+}
+
+.ic-confirm-btn-ok {
+    padding: 7px 16px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border: none;
+    border-radius: $radius-md;
+    cursor: pointer;
+    transition: opacity $duration-fast ease, background $duration-fast ease;
+    background: $primary-blue;
+    color: #fff;
+
+    &:hover:not(:disabled) { opacity: 0.88; }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    &.danger {
+        background: $state-error;
+    }
+}
+
+// ── Restore database dialog ─────────────────────────────────────
+
+.ic-restore-box {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-xl;
+    padding: $space-6 $space-6 $space-5;
+    width: $modal-md;
+    max-width: calc(100% - 40px);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.ic-restore-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    .ic-confirm-title { margin: 0; }
+}
+
+.ic-restore-instance-name {
+    font-size: 0.8125rem;
+    color: $text-secondary;
+    font-weight: 400;
+}
+
+.ic-restore-modes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ic-restore-mode {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+
+    input[type="radio"] { margin-top: 3px; flex-shrink: 0; accent-color: $primary-blue; }
+
+    &.active {
+        border-color: rgba($primary-blue, 0.5);
+        background: rgba($primary-blue, 0.05);
+    }
+
+    &:hover:not(.active) { background: rgba($border, 0.15); }
+}
+
+.ic-restore-mode-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ic-restore-mode-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: $text-primary;
+}
+
+.ic-restore-mode-hint {
+    font-size: 0.6875rem;
+    color: $text-secondary;
+}
+
+.ic-restore-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px dashed rgba($border, 0.8);
+    border-radius: 8px;
+    padding: 24px 16px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 0.75rem;
+    color: $text-secondary;
+    transition: border-color 0.15s, background 0.15s;
+
+    &:hover {
+        border-color: $primary-blue;
+        background: rgba($primary-blue, 0.04);
+        color: $text-primary;
+    }
+
+    strong { color: $text-primary; }
+}
+
+.ic-restore-file-input { display: none; }
+
+.ic-restore-drop-icon {
+    font-size: 1.375rem;
+    color: $text-secondary;
+    &.ok { color: $state-ok; }
+}
+
+.ic-restore-rsync-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: $text-secondary;
+    line-height: 1.6;
+    strong { color: $text-primary; }
+}
+
+.ic-restore-rsync-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ic-restore-rsync-cmd {
+    flex: 1;
+    min-width: 0;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba($border, 0.6);
+    border-radius: 6px;
+    padding: 10px 14px;
+    overflow-x: auto;
+
+    &::-webkit-scrollbar { height: 4px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+    scrollbar-width: thin;
+    scrollbar-color: $border transparent;
+
+    code {
+        font-family: $font-mono;
+        font-size: 0.75rem;
+        color: $state-ok;
+        white-space: pre;
+        user-select: all;
+    }
+}
+
+.ic-restore-copy-btn {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba($border, 0.2);
+    border: 1px solid rgba($border, 0.5);
+    border-radius: 6px;
+    color: $text-secondary;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: all 0.12s;
+
+    &:hover {
+        background: rgba($border, 0.4);
+        color: $text-primary;
+    }
+
+    .fa-check { color: $state-ok; }
+}
+
+.ic-restore-error {
+    font-size: 0.75rem;
+    color: $state-error;
+    background: rgba($state-error, 0.08);
+    border: 1px solid rgba($state-error, 0.25);
+    border-radius: 6px;
+    padding: 8px 12px;
+}
+
+// ── Connect as user dialog ──────────────────────────────────────
+
+.ic-connect-box {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-xl;
+    padding: $space-6 $space-6 $space-5;
+    width: $modal-sm;
+    max-width: calc(100% - 40px);
+    display: flex;
+    flex-direction: column;
+    gap: $space-4;
+}
+
+.ic-connect-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    .ic-confirm-title { margin: 0; }
+}
+
+.ic-connect-loading,
+.ic-connect-empty {
+    font-size: 0.8125rem;
+    color: $text-secondary;
+    text-align: center;
+    padding: 12px 0;
+    .fa-spinner { margin-right: 6px; }
+}
+
+.ic-connect-user-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.ic-connect-user-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover { background: $surface-light; }
+    &--disabled { opacity: 0.5; pointer-events: none; }
+}
+
+.ic-connect-user-icon {
+    color: $text-secondary;
+    font-size: 0.875rem;
+    width: 16px;
+    text-align: center;
+}
+
+.ic-connect-user-name {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: $text-primary;
+    flex: 1;
+}
+
+.ic-connect-user-login {
+    font-size: 0.6875rem;
+    color: $text-secondary;
+}
+
+// ── Conflict-blocked dialog ─────────────────────────────────────
+
+.ic-conflict-box {
+    background: $surface-light;
+    border: 1px solid $state-warning;
+    border-radius: $radius-lg;
+    padding: $space-6 $space-6;
+    width: $modal-md;
+    max-width: 95vw;
+    box-shadow: $shadow-lg;
+}
+
+.ic-conflict-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+
+    h3 {
+        margin: 0;
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: $text-primary;
+    }
+}
+
+.ic-conflict-icon {
+    font-size: 1.25rem;
+    color: $state-warning;
+    flex-shrink: 0;
+}
+
+.ic-conflict-description {
+    font-size: 0.8125rem;
+    color: $text-secondary;
+    margin: 0 0 16px;
+    line-height: 1.5;
+    strong { color: $text-primary; }
+}
+
+.ic-conflict-table-wrap {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 20px;
+}
+
+.ic-conflict-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+
+    th {
+        padding: 7px 12px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 0.6875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: $text-secondary;
+        border-bottom: 1px solid $border;
+    }
+
+    td { padding: 7px 12px; }
+    tr:not(:last-child) td { border-bottom: 1px solid $border; }
+}
+
+.ic-conflict-pkg {
+    font-weight: 600;
+    color: $text-primary;
+    font-family: $font-mono;
+}
+
+.ic-conflict-ver {
+    color: $text-secondary;
+    font-family: $font-mono;
+    &--incoming { color: $state-warning; }
+}
+
+// ── Override Odoo dialogs (error, confirm) inside our SPA ──────────────────
+// These render outside .ic-app via MainComponentsContainer, so we scope
+// to the global level — our bundle only loads on /cloud routes.
+
+.modal-backdrop {
+    background: rgba(0, 0, 0, 0.7) !important;
+}
+
+.modal .modal-content {
+    background: $surface-light !important;
+    color: $text-primary !important;
+    border: 1px solid rgba($border, 0.5) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6) !important;
+}
+
+.modal .modal-header {
+    background: $surface !important;
+    border-bottom: 1px solid rgba($border, 0.4) !important;
+    border-radius: 10px 10px 0 0 !important;
+
+    .modal-title { color: $text-primary !important; }
+    .btn-close { filter: invert(1) !important; }
+}
+
+.modal .modal-body {
+    color: $text-secondary !important;
+}
+
+.modal .modal-footer {
+    background: $surface !important;
+    border-top: 1px solid rgba($border, 0.4) !important;
+    border-radius: 0 0 10px 10px !important;
+
+    .btn {
+        border-radius: 6px;
+        font-weight: 600;
+    }
+    .btn-primary, .btn-secondary {
+        background: $primary-blue !important;
+        border-color: $primary-blue !important;
+        color: #fff !important;
+    }
+}
+
+.o_error_dialog {
+    pre {
+        color: $text-secondary !important;
+        background: rgba($border, 0.15) !important;
+        border-radius: 6px !important;
+    }
+}
+
+// ── Empty states ─────────────────────────────────────────────────────────────
+
+.ic-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+}
+
+.ic-empty-icon {
+    font-size: 2.25rem;
+    color: $text-secondary;
+    opacity: 0.4;
+    margin-bottom: 16px;
+}
+
+.ic-empty-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 6px;
+}
+
+.ic-empty-hint {
+    font-size: 0.8125rem;
+    color: $text-secondary;
+    max-width: 320px;
+    line-height: 1.5;
+}
+
+.ic-empty-action {
+    margin-top: $space-4;
+    padding: 7px 18px;
+    background: rgba($primary-blue, 0.12);
+    border: 1px solid rgba($primary-blue, 0.35);
+    border-radius: $radius-md;
+    color: $primary-blue;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background $duration-fast ease, border-color $duration-fast ease;
+
+    &:hover:not(:disabled) {
+        background: rgba($primary-blue, 0.2);
+        border-color: $primary-blue;
+    }
+}
+
+// ── Reduced motion ──────────────────────────────────────────────────────────
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+// ── Focus states ────────────────────────────────────────────────────────────
+
+:focus-visible {
+    outline: 2px solid $primary-blue;
+    outline-offset: 2px;
+}
+
+// Buttons and interactive elements
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+select:focus-visible {
+    outline: 2px solid $primary-blue;
+    outline-offset: 2px;
+}
+
+// Inputs use border-color + box-shadow for focus instead of outline
+input:focus-visible,
+textarea:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba($primary-blue, 0.3);
+}
+
+// ── Cursor pointer ──────────────────────────────────────────────────────────
+
+button,
+[role="button"],
+.ic-action-btn,
+.ic-sidebar-nav li,
+.ic-psidebar-item,
+.ic-pc-card,
+.ic-project-card,
+.ic-host-card,
+.ic-tl-item,
+.ic-ov-link,
+.ic-header-logo,
+.ic-header-crumb--link,
+.ic-header-icon-btn,
+.ic-header-user-btn,
+.ic-header-switcher-item,
+summary {
+    cursor: pointer;
+}
+
+// ── Touch targets (44px minimum — Apple HIG) ───────────────────────────────
+
+.ic-action-btn.ic-ab-secondary {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 5px 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ic-header-icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.ic-psidebar-clone-btn,
+.ic-psidebar-add-btn {
+    min-width: 36px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+// ── Press feedback ──────────────────────────────────────────────────────────
+
+button:active:not(:disabled),
+[role="button"]:active:not(:disabled) {
+    transform: scale(0.97);
+    transition: transform 80ms ease;
+}
+
+// ── Responsive ──────────────────────────────────────────────────────────────
+
+@media (max-width: 768px) {
+    .ic-sidebar {
+        position: fixed;
+        left: -200px;
+        top: 0;
+        bottom: 0;
+        z-index: 100;
+        transition: left 0.2s ease;
+
+        &.ic-sidebar-open {
+            left: 0;
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+        }
+    }
+
+    .ic-body {
+        flex-direction: column;
+    }
+
+    .ic-main {
+        padding: 0 12px;
+    }
+
+    .ic-hero {
+        padding: 12px 14px;
+    }
+
+    .ic-hero-actions {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .ic-overview-cards {
+        grid-template-columns: 1fr !important;
+    }
+
+    .ic-header-user-name {
+        display: none;
+    }
+
+    .ic-header-breadcrumb {
+        max-width: 40vw;
+        overflow: hidden;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    .ic-sidebar {
+        width: 180px;
+    }
+
+    .ic-overview-cards {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+// ── Skeleton loaders ────────────────────────────────────────────────────────
+
+.ic-skeleton {
+    background: linear-gradient(
+        90deg,
+        $surface-light 25%,
+        rgba($border, 0.4) 50%,
+        $surface-light 75%
+    );
+    background-size: 200% 100%;
+    animation: ic-skeleton-pulse 1.5s ease-in-out infinite;
+    border-radius: 4px;
+}
+
+.ic-skeleton-text {
+    @extend .ic-skeleton;
+    height: 12px;
+    margin-bottom: 8px;
+
+    &.ic-skeleton-sm { width: 60%; }
+    &.ic-skeleton-md { width: 80%; }
+    &.ic-skeleton-lg { width: 100%; }
+}
+
+.ic-skeleton-card {
+    @extend .ic-skeleton;
+    height: 120px;
+    border-radius: 8px;
+}
+
+.ic-skeleton-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+
+    .ic-skeleton-label {
+        @extend .ic-skeleton;
+        height: 10px;
+        width: 80px;
+    }
+
+    .ic-skeleton-value {
+        @extend .ic-skeleton;
+        height: 10px;
+        width: 100px;
+    }
+}
+
+@keyframes ic-skeleton-pulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}

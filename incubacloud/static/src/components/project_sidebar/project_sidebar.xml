@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates>
+
+    <t t-name="incubacloud.ProjectSidebar">
+        <div class="ic-psidebar">
+
+            <!-- Back to projects -->
+            <button class="ic-psidebar-back" t-on-click="goBack">
+                <i class="fa fa-arrow-left"/> Projects
+            </button>
+
+            <t t-if="state.loading">
+                <div class="ic-psidebar-loading" style="padding: 12px;">
+                    <div class="ic-skeleton-text ic-skeleton-sm"/>
+                    <div class="ic-skeleton-text ic-skeleton-lg" style="margin-top: 8px;"/>
+                    <div class="ic-skeleton-text ic-skeleton-md" style="margin-top: 4px;"/>
+                    <div class="ic-skeleton-text ic-skeleton-sm" style="margin-top: 12px;"/>
+                    <div class="ic-skeleton-text ic-skeleton-lg" style="margin-top: 8px;"/>
+                </div>
+            </t>
+
+            <t t-else="">
+
+                <!-- Instances grouped by environment -->
+                <t t-foreach="['production', 'staging']" t-as="envKey" t-key="envKey">
+                    <div class="ic-psidebar-section">
+                        <div class="ic-psidebar-section-header">
+                            <span class="ic-psidebar-section-label"
+                                  t-esc="envLabel(envKey)"/>
+                            <t t-if="env.permissions?.can_create_instance">
+                                <button class="ic-psidebar-add-btn" title="New instance"
+                                        t-on-click="() => this.createInstance(envKey)">
+                                    <i class="fa fa-plus"/>
+                                </button>
+                            </t>
+                        </div>
+                        <t t-foreach="grouped[envKey] || []" t-as="inst" t-key="inst.id">
+                            <div t-att-class="'ic-psidebar-item' + (selectedId === inst.id ? ' active' : '')"
+                                 t-on-click="() => this.selectInstance(inst)">
+                                <span t-att-class="'ic-psidebar-dot ' + statusDot(inst)"/>
+                                <span class="ic-psidebar-item-name" t-esc="inst.name"/>
+                                <t t-if="inst.pr_number">
+                                    <span class="ic-pr-badge">PR #<t t-esc="inst.pr_number"/></span>
+                                </t>
+                                <t t-if="env.permissions?.can_clone_to_staging and inst.deployed and inst.environment === 'production' and inst.status !== 'provisioning'">
+                                    <button class="ic-psidebar-clone-btn" title="Clone to Staging"
+                                            t-on-click.stop="() => this.cloneToStaging(inst)">
+                                        <i class="fa fa-arrow-down"/>
+                                    </button>
+                                </t>
+                                <span class="ic-psidebar-item-ver" t-esc="inst.odoo_version || ''"/>
+                            </div>
+                        </t>
+                        <t t-if="!(grouped[envKey] || []).length">
+                            <div class="ic-psidebar-empty">—</div>
+                        </t>
+                    </div>
+                </t>
+
+                <!-- Project config section (PM+) -->
+                <t t-if="env.permissions?.can_create_project">
+                    <div class="ic-psidebar-sep"/>
+                    <div class="ic-psidebar-section">
+                        <div class="ic-psidebar-section-header">
+                            <span class="ic-psidebar-section-label">Project</span>
+                        </div>
+                        <div t-att-class="'ic-psidebar-item' + (['project_detail', 'project_settings'].includes(activeSection) ? ' active' : '')"
+                             t-on-click="goProjectSettings">
+                            <i class="fa fa-cog ic-psidebar-icon"/>
+                            <span class="ic-psidebar-item-name">Settings</span>
+                        </div>
+                    </div>
+                </t>
+
+            </t>
+
+            <!-- Clone to staging modal -->
+            <t t-if="state.cloneModal">
+                <div class="ic-confirm-overlay" t-on-click="() => { state.cloneModal = null; }">
+                    <div class="ic-confirm-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title">Clone to Staging</h3>
+                        <p class="ic-confirm-message">
+                            Create a staging copy with the production database.
+                        </p>
+                        <div class="ic-clone-input">
+                            <label>Staging name</label>
+                            <input type="text"
+                                   t-att-value="state.cloneModal.name"
+                                   t-on-input="(ev) => { state.cloneModal.name = ev.target.value; }"/>
+                        </div>
+                        <t t-if="state.cloneModal.error">
+                            <div class="ic-restore-error" t-esc="state.cloneModal.error"/>
+                        </t>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel"
+                                    t-on-click="() => { state.cloneModal = null; }">Cancel</button>
+                            <button class="ic-confirm-btn-ok"
+                                    t-att-disabled="!state.cloneModal.name.trim() or state.cloneModal.loading"
+                                    t-on-click="doClone">
+                                <t t-if="state.cloneModal.loading">
+                                    <i class="fa fa-spinner fa-spin"/> Cloning…
+                                </t>
+                                <t t-else="">
+                                    <i class="fa fa-arrow-down"/> Clone
+                                </t>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

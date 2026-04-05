@@ -1,0 +1,281 @@
+import { Component, useState, onMounted, onWillUnmount, onWillStart, useSubEnv } from "@odoo/owl";
+import { rpc } from "@web/core/network/rpc";
+import { ProjectDashboard } from "../components/project_dashboard/project_dashboard";
+import { ProjectDetail } from "../components/project_detail/project_detail";
+
+import { HostsDashboard } from "../components/hosts_dashboard/hosts_dashboard";
+import { HostDetail } from "../components/host_detail/host_detail";
+import { InstanceDetail } from "../components/instance_detail/instance_detail";
+import { Settings } from "../components/settings/settings";
+import { BackupBackendsList } from "../components/backup_backend_detail/backup_backends_list";
+import { BackupBackendDetail } from "../components/backup_backend_detail/backup_backend_detail";
+import { SlideOver } from "../components/slide_over/slide_over";
+import { AppHeader } from "../components/app_header/app_header";
+import { ProjectSidebar } from "../components/project_sidebar/project_sidebar";
+import { MainComponentsContainer } from "@web/core/main_components_container";
+import { ToastContainer } from "../toast/toast_container";
+import { createToastService } from "../toast/toast";
+
+const _BASE = "/cloud";
+
+// ── Route extension registry ─────────────────────────────────────────────────
+// Private modules call registerRoute() to add SPA routes without modifying core.
+const _routeExtensions = [];
+
+/**
+ * Register an additional SPA route from a third-party module.
+ * @param {string}   name  - route identifier (e.g. 'custom_page')
+ * @param {function} parse - (parts: string[]) => params object | null
+ * @param {function} build - (params: object) => URL string
+ */
+export function registerRoute(name, parse, build) {
+    _routeExtensions.push({ name, parse, build });
+}
+
+export function _parseRoute(pathname) {
+    const path = pathname.startsWith(_BASE) ? pathname.slice(_BASE.length) : "/";
+    const parts = path.split("/").filter(Boolean);
+
+    if (!parts.length) return { route: "projects", params: {} };
+
+    switch (parts[0]) {
+        case "projects": {
+            if (parts.length === 1) return { route: "projects", params: {} };
+            if (parts[1] === "new") return { route: "new_project", params: {} };
+            const pid = parseInt(parts[1]);
+            if (isNaN(pid)) return { route: "projects", params: {} };
+            if (parts[2] === "settings") return { route: "project_settings", params: { project_id: pid } };
+            if (parts.length === 2) return { route: "project_detail", params: { project_id: pid } };
+            if (parts[2] === "instances") {
+                if (parts.length === 3) return { route: "project_detail", params: { project_id: pid } };
+                if (parts[3] === "new") {
+                    const env = new URLSearchParams(window.location.search).get("env") || undefined;
+                    return { route: "create_instance", params: { project_id: pid, ...(env ? { environment: env } : {}) } };
+                }
+                const iid = parseInt(parts[3]);
+                if (!isNaN(iid)) return { route: "instance_detail", params: { project_id: pid, instance_id: iid } };
+            }
+            return { route: "project_detail", params: { project_id: pid } };
+        }
+        case "hosts": {
+            if (parts.length === 1) return { route: "hosts", params: {} };
+            if (parts[1] === "new") return { route: "new_host", params: {} };
+            const hid = parseInt(parts[1]);
+            if (!isNaN(hid)) {
+                return { route: "host_detail", params: { host_id: hid } };
+            }
+            return { route: "hosts", params: {} };
+        }
+        case "settings": return { route: "settings", params: {} };
+        case "backup-backends": {
+            if (parts.length === 1) return { route: "backup_backends", params: {} };
+            if (parts[1] === "new") return { route: "new_backup_backend", params: {} };
+            const bid = parseInt(parts[1]);
+            if (!isNaN(bid)) return { route: "backup_backend_detail", params: { backend_id: bid } };
+            return { route: "backup_backends", params: {} };
+        }
+        default: {
+            for (const ext of _routeExtensions) {
+                const params = ext.parse(parts);
+                if (params !== null) return { route: ext.name, params };
+            }
+            return { route: "projects", params: {} };
+        }
+    }
+}
+
+export function _buildUrl(route, params = {}) {
+    switch (route) {
+        case "projects":          return `${_BASE}/projects`;
+        case "new_project":        return `${_BASE}/projects/new`;
+        case "project_detail":    return `${_BASE}/projects/${params.project_id}`;
+        case "project_settings":  return `${_BASE}/projects/${params.project_id}/settings`;
+
+        case "create_instance": {
+            const qs = params.environment ? `?env=${params.environment}` : "";
+            return `${_BASE}/projects/${params.project_id}/instances/new${qs}`;
+        }
+        case "instance_detail":   return `${_BASE}/projects/${params.project_id}/instances/${params.instance_id}`;
+        case "hosts":             return `${_BASE}/hosts`;
+        case "new_host":          return `${_BASE}/hosts/new`;
+        case "host_detail":       return `${_BASE}/hosts/${params.host_id}`;
+
+        case "settings":              return `${_BASE}/settings`;
+        case "backup_backends":       return `${_BASE}/backup-backends`;
+        case "new_backup_backend":    return `${_BASE}/backup-backends/new`;
+        case "backup_backend_detail": return `${_BASE}/backup-backends/${params.backend_id}`;
+        default: {
+            for (const ext of _routeExtensions) {
+                if (ext.name === route) return ext.build(params);
+            }
+            return _BASE;
+        }
+    }
+}
+
+export class Chrome extends Component {
+    static components = { AppHeader, ProjectSidebar, ProjectDashboard, ProjectDetail, HostsDashboard, HostDetail, InstanceDetail, Settings, BackupBackendsList, BackupBackendDetail, SlideOver, MainComponentsContainer, ToastContainer };
+
+    get isInsideProject() {
+        const r = this.state.route;
+        return ["project_detail", "project_settings", "create_instance", "instance_detail"].includes(r)
+            && !!this.state.params.project_id;
+    }
+    static props = { disableLoader: Function };
+
+    setup() {
+        const initial = _parseRoute(window.location.pathname);
+        this.state = useState({
+            route: initial.route,
+            params: initial.params,
+            features: {},
+            role: 'stakeholder',
+            permissions: {},
+            userName: '',
+            userLogin: '',
+            avatarUrl: '',
+            alertCount: 0,
+            projectName: "",
+            slideOver: null,  // { panel: "jobs"|"alerts", instanceId }
+        });
+
+        this._pollAlertCount = async () => {
+            try {
+                const data = await rpc('/cloud/get_alert_count', {});
+                this.state.alertCount = data.count;
+            } catch (_e) { console.debug("Alert count fetch skipped:", _e); }
+        };
+        this._alertTimer = null;
+
+        onWillStart(async () => {
+            try {
+                const config = await rpc("/cloud/get_config", {});
+                this.state.features = config.features || {};
+                this.state.role = config.role || 'stakeholder';
+                this.state.permissions = config.permissions || {};
+                if (config.user) {
+                    this.state.userName = config.user.name || '';
+                    this.state.userLogin = config.user.login || '';
+                    this.state.avatarUrl = config.user.avatar_url || '';
+                }
+            } catch (_e) { console.warn("Failed to load initial config:", _e); }
+        });
+
+        this._onPopState = () => {
+            const { route, params } = _parseRoute(window.location.pathname);
+            this.state.route = route;
+            this.state.params = params;
+        };
+
+        onMounted(() => {
+            this.props.disableLoader();
+            window.addEventListener("popstate", this._onPopState);
+            this._pollAlertCount();
+            this._alertTimer = setInterval(this._pollAlertCount, 30000);
+        });
+
+        onWillUnmount(() => {
+            window.removeEventListener("popstate", this._onPopState);
+            clearInterval(this._alertTimer);
+        });
+
+        const appState = this.state;
+        const pollAlertCount = this._pollAlertCount;
+        let _alertReturnUrl = null;
+        // Toast notification service
+        const { toastApi, toasts, dismissToast } = createToastService();
+
+        // Project data cache — loaded once, used for instant instance switching
+        let _projectCache = null;  // { projectId, data: { project, instances, hosts, backup_backends } }
+        // Sidebar callback registry — sidebar registers itself, instance_detail calls it
+        let _sidebarRefresh = null;
+        let _sidebarGetNext = null;
+        useSubEnv({
+            toast: toastApi,
+            toasts,
+            dismissToast,
+            getProjectCache: () => _projectCache,
+            setProjectCache: (projectId, data) => {
+                _projectCache = { projectId, data };
+            },
+            updateCacheInstance: (instanceId, instData) => {
+                if (_projectCache) {
+                    _projectCache.data.instances[instanceId] = instData;
+                }
+            },
+            invalidateProjectCache: () => { _projectCache = null; },
+            registerSidebar: (refresh, getNext) => {
+                _sidebarRefresh = refresh;
+                _sidebarGetNext = getNext;
+            },
+            unregisterSidebar: () => {
+                _sidebarRefresh = null;
+                _sidebarGetNext = null;
+            },
+            refreshSidebar: async () => _sidebarRefresh?.(),
+            getNextInstance: (excludeId) => _sidebarGetNext?.(excludeId),
+            setAlertReturnUrl: (url) => { _alertReturnUrl = url; },
+            getAlertReturnUrl: () => _alertReturnUrl,
+            get alertCount() { return appState.alertCount; },
+            get role() { return appState.role; },
+            get permissions() { return appState.permissions; },
+            get userInfo() {
+                return {
+                    name: appState.userName,
+                    login: appState.userLogin,
+                    avatarUrl: appState.avatarUrl,
+                };
+            },
+            get currentRoute() {
+                return {
+                    route: appState.route,
+                    params: appState.params,
+                    projectName: appState.projectName,
+                };
+            },
+            setProjectName: (name) => { appState.projectName = name; },
+            refreshAlertCount: () => pollAlertCount(),
+            toggleSlideOver: (panel, instanceId = false, hostId = false) => {
+                if (appState.slideOver && appState.slideOver.panel === panel) {
+                    appState.slideOver = null;
+                } else {
+                    appState.slideOver = { panel, instanceId, hostId, expanded: false };
+                }
+            },
+            closeSlideOver: () => {
+                appState.slideOver = null;
+            },
+            navigate: (route, params = {}) => {
+                if (route === "logout") {
+                    window.location.href = "/";
+                    return;
+                }
+                const url = _buildUrl(route, params);
+                history.pushState(null, "", url);
+                appState.route = route;
+                appState.params = params;
+                // Clear project name when navigating away from project context
+                const projectRoutes = [
+                    "project_detail", "project_settings", "create_instance",
+                    "instance_detail", "project_hub",
+                ];
+                if (!projectRoutes.includes(route)) {
+                    appState.projectName = "";
+                }
+            },
+            get features() { return appState.features; },
+        });
+    }
+
+    closeSlideOver() {
+        this.state.slideOver = null;
+    }
+
+    toggleSlideOverSize() {
+        if (this.state.slideOver) {
+            this.state.slideOver.expanded = !this.state.slideOver.expanded;
+        }
+    }
+}
+
+Chrome.template = "incubacloud.AppShell";

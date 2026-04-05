@@ -1,0 +1,68 @@
+version: "3.8"
+
+services:
+  proxy:
+    image: traefik:v2.11
+    networks:
+      shared:
+      private:
+      public:
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - dockersocket
+    restart: unless-stopped
+    privileged: true
+    tty: true
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./config.yml:/etc/traefik/config.yml:ro
+      - ./certs:/etc/certs:rw,Z
+      - acme:/etc/traefik/acme:rw,Z
+    #
+    # Note: when used in docker-compose.yml all dollar signs in the hash need to be doubled for escaping.
+    # To create user:password pair, it's possible to use this command:
+    # echo $(htpasswd -nB traefik-admin) | sed -e s/\\$/\\$\\$/g
+    #
+    # Also note that dollar signs should NOT be doubled when they not evaluated (e.g. Ansible docker_container module).
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=shared"
+      - "traefik.http.routers.api.rule=Host(`traefik.mycustomdomain.com`)"
+      - "traefik.http.middlewares.auth.basicauth.users=traefik-admin:$$2y$$05$$lWtaMlJ6n..SR4eARZZAQujreBcZF6SY1fXG7aebELcjWGZfm6qqe"
+      - "traefik.http.routers.api.tls.certResolver=letsencrypt"
+      - "traefik.http.routers.api.entrypoints=https"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.routers.api.middlewares=auth"
+
+  dockersocket:
+    image: tecnativa/docker-socket-proxy
+    privileged: true
+    networks:
+      private:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      SERVICES: 1
+      SWARM: 1
+      TASKS: 1
+    restart: unless-stopped
+
+networks:
+  shared:
+    internal: true
+    driver_opts:
+      encrypted: 1
+
+  private:
+    internal: true
+    driver_opts:
+      encrypted: 1
+
+  public:
+
+volumes:
+  acme:

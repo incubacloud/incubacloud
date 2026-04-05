@@ -1,0 +1,79 @@
+<templates>
+
+    <t t-name="incubacloud.BackupBackendsList">
+        <div class="ic-dashboard">
+
+            <!-- Header -->
+            <div class="ic-dashboard-header">
+                <h1>Backup Backends</h1>
+                <div class="ic-dashboard-search">
+                    <input type="text" placeholder="Search backends…"
+                           aria-label="Search backends"
+                           t-on-input="onSearchInput"/>
+                </div>
+            </div>
+
+            <!-- Grid -->
+            <div class="ic-dashboard-grid">
+
+                <!-- Action card first -->
+                <div class="ic-action-card" t-on-click="newBackend">
+                    <i class="fa fa-plus ic-action-card-icon"/>
+                    <span class="ic-action-card-label">New Backend</span>
+                </div>
+
+                <t t-if="state.visible_backends.length === 0 and !state.loading">
+                    <div class="ic-empty-state">
+                        <i class="fa fa-shield ic-empty-icon"/>
+                        <div class="ic-empty-title">No backup backends configured</div>
+                        <div class="ic-empty-hint">Set up an S3-compatible backend to enable automated backups for your instances.</div>
+                    </div>
+                </t>
+
+                <t t-if="state.loading">
+                    <div class="ic-detail-loading">Loading…</div>
+                </t>
+
+                <t t-foreach="state.visible_backends" t-as="b" t-key="b.id">
+                    <div class="ic-host-card status-compatible"
+                         t-on-click="() => this.openBackend(b.id)">
+
+                        <!-- Card header: name + type badge -->
+                        <div class="ic-ic-header">
+                            <h3 class="ic-ic-name" t-esc="b.name"/>
+                            <div class="ic-ic-header-spacer"/>
+                            <div class="ic-ic-status">
+                                <span class="ic-ic-status-dot st-host-compatible"/>
+                                <span class="ic-ic-status-label" t-esc="b.backend_type"/>
+                            </div>
+                        </div>
+
+                        <!-- Meta: destination + endpoint -->
+                        <div class="ic-host-meta">
+                            <t t-if="b.backup_dst">
+                                <code class="ic-ic-host-chip" t-esc="b.backup_dst"/>
+                            </t>
+                        </div>
+
+                        <!-- Instance count -->
+                        <div class="ic-host-footer-meta">
+                            <span class="ic-instances">
+                                <t t-esc="b.instance_count"/> instance<t t-if="b.instance_count !== 1">s</t>
+                            </span>
+                        </div>
+
+                    </div>
+                </t>
+
+            </div>
+
+            <t t-if="state.error">
+                <div class="ic-detail-error-state" role="alert">
+                    <p t-esc="state.error"/>
+                </div>
+            </t>
+
+        </div>
+    </t>
+
+</templates>

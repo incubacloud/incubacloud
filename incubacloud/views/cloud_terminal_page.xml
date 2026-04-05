@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<template id="cloud_terminal_page" name="Cloud Instance Terminal">&lt;!DOCTYPE html&gt;
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Terminal — <t t-esc="instance_name"/> / <t t-esc="service"/></title>
+
+    <!-- xterm.js from CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        .terminal-header {
+            background: #2d2d2d;
+            border-bottom: 1px solid #3e3e3e;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        .terminal-title {
+            flex: 1;
+            font-size: 13px;
+            color: #ccc;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .terminal-title strong { color: #fff; }
+
+        .terminal-badge {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: #1e3a4a;
+            color: #60b8e0;
+        }
+
+        .terminal-badge.connected { background: #1e3a1e; color: #60c060; }
+        .terminal-badge.error     { background: #3a1e1e; color: #e06060; }
+        .terminal-badge.closed    { background: #3a3a3a; color: #999; }
+        .terminal-badge.idle      { background: #4a3a1a; color: #e0a040; }
+        .terminal-badge.paused    { background: #2a2a2a; color: #888; }
+
+        /* ── Terminal body ── */
+        #terminal-container {
+            flex: 1;
+            padding: 4px;
+            overflow: hidden;
+        }
+
+        .xterm { height: 100%; }
+        .xterm-viewport { overflow-y: hidden !important; }
+
+        /* ── Footer ── */
+        .terminal-footer {
+            background: #2d2d2d;
+            border-top: 1px solid #3e3e3e;
+            padding: 5px 16px;
+            font-size: 11px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="terminal-header">
+        <div class="terminal-title">
+            <strong><t t-esc="instance_name"/></strong> / <t t-esc="service"/>
+        </div>
+        <span id="conn-badge" class="terminal-badge">Connecting…</span>
+    </div>
+
+    <div id="terminal-container"></div>
+
+    <div class="terminal-footer">
+        <span id="status-text">Establishing SSH connection…</span>
+        <span id="size-text">—</span>
+    </div>
+
+    <script type="text/javascript">
+        var odoo = <t t-out="json.dumps({'csrf_token': csrf_token, '__session_info__': session_info})"/>;
+
+        (function () {
+            var SESSION_ID   = '<t t-esc="session_id"/>';
+            var CSRF         = odoo.csrf_token;
+            var POLL_MS      = 80;
+            var IDLE_WARN_S  = 90;   // show warning this many seconds before timeout
+            var TIMEOUT_S    = 120;  // must match SESSION_TIMEOUT on the server
+
+            var badge      = document.getElementById('conn-badge');
+            var statusText = document.getElementById('status-text');
+            var sizeText   = document.getElementById('size-text');
+
+            // ── xterm.js ──────────────────────────────────────────────────
+            var term = new Terminal({
+                cursorBlink: true,
+                fontSize: 13,
+                fontFamily: "'Cascadia Code', 'Fira Mono', Consolas, monospace",
+                theme: {
+                    background: '#1e1e1e',
+                    foreground: '#d4d4d4',
+                    cursor: '#60b8e0',
+                },
+                allowProposedApi: true,
+            });
+
+            var fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(document.getElementById('terminal-container'));
+            fitAddon.fit();
+
+            function updateSizeText() {
+                sizeText.textContent = term.cols + '×' + term.rows;
+            }
+            updateSizeText();
+
+            // ── JSON-RPC helper ───────────────────────────────────────────
+            function rpc(path, params) {
+                return fetch(path, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Csrf-Token': CSRF,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        jsonrpc: '2.0', method: 'call', id: Date.now(), params: params,
+                    }),
+                }).then(function (r) { return r.json(); }).then(function (r) { return r.result; });
+            }
+
+            // ── Base64 helpers ────────────────────────────────────────────
+            function b64ToUint8(b64) {
+                var bin = atob(b64);
+                var arr = new Uint8Array(bin.length);
+                for (var i = 0; i &lt; bin.length; i++) arr[i] = bin.charCodeAt(i);
+                return arr;
+            }
+
+            function uint8ToB64(arr) {
+                var bin = '';
+                arr.forEach(function (b) { bin += String.fromCharCode(b); });
+                return btoa(bin);
+            }
+
+            // ── Input → server ────────────────────────────────────────────
+            term.onData(function (data) {
+                var encoded = uint8ToB64(new TextEncoder().encode(data));
+                rpc('/cloud/terminal/' + SESSION_ID + '/input', { data: encoded }).catch(function () {});
+            });
+
+            term.onBinary(function (data) {
+                var arr = new Uint8Array(data.length);
+                for (var i = 0; i &lt; data.length; i++) arr[i] = data.charCodeAt(i) &amp; 255;
+                rpc('/cloud/terminal/' + SESSION_ID + '/input', { data: uint8ToB64(arr) }).catch(function () {});
+            });
+
+            // ── Resize ────────────────────────────────────────────────────
+            var _resizeTimer = null;
+            function onResize() {
+                clearTimeout(_resizeTimer);
+                _resizeTimer = setTimeout(function () {
+                    fitAddon.fit();
+                    updateSizeText();
+                    rpc('/cloud/terminal/' + SESSION_ID + '/resize', {
+                        cols: term.cols, rows: term.rows,
+                    }).catch(function () {});
+                }, 100);
+            }
+            window.addEventListener('resize', onResize);
+
+            // ── Output polling ────────────────────────────────────────────
+            var afterSeq    = 0;
+            var polling     = true;
+            var paused      = false;  // true when tab is hidden
+
+            function setBadge(cls, text) {
+                badge.className = 'terminal-badge ' + cls;
+                badge.textContent = text;
+            }
+
+            function onClosed(reason) {
+                polling = false;
+                setBadge('closed', 'Closed');
+                if (reason === 'timeout') {
+                    var msg = '\r\n\x1b[33m⏱  Session closed due to inactivity. Open a new terminal to reconnect.\x1b[0m\r\n';
+                    term.write(new TextEncoder().encode(msg));
+                    statusText.textContent = 'Session expired (idle timeout).';
+                } else {
+                    statusText.textContent = 'Session closed.';
+                }
+            }
+
+            function poll() {
+                if (paused) {
+                    setTimeout(poll, 500);
+                    return;
+                }
+                rpc('/cloud/terminal/' + SESSION_ID + '/output', { after_seq: afterSeq })
+                    .then(function (result) {
+                        if (!result) return;
+
+                        if (result.connected &amp;&amp; badge.className.indexOf('connected') === -1) {
+                            setBadge('connected', 'Connected');
+                            statusText.textContent = 'Connected';
+                        }
+
+                        (result.chunks || []).forEach(function (chunk) {
+                            afterSeq = Math.max(afterSeq, chunk.seq);
+                            term.write(b64ToUint8(chunk.data));
+                        });
+
+                        // Idle warning
+                        var idle = result.idle_seconds || 0;
+                        var remaining = TIMEOUT_S - idle;
+                        if (!result.closed &amp;&amp; !result.error &amp;&amp; remaining &lt;= IDLE_WARN_S) {
+                            setBadge('idle', 'Idle ' + Math.ceil(remaining) + 's');
+                            statusText.textContent = 'Closing in ' + Math.ceil(remaining) + 's due to inactivity — press any key to reset.';
+                        } else if (result.connected &amp;&amp; !result.closed &amp;&amp; !result.error) {
+                            // Restore badge if idle cleared
+                            if (badge.className.indexOf('idle') !== -1) {
+                                setBadge('connected', 'Connected');
+                                statusText.textContent = 'Connected';
+                            }
+                        }
+
+                        if (result.error) {
+                            polling = false;
+                            setBadge('error', 'Error');
+                            statusText.textContent = 'Error: ' + result.error;
+                        } else if (result.closed) {
+                            onClosed(result.close_reason);
+                        }
+                    })
+                    .catch(function () {
+                        statusText.textContent = 'Connection error — retrying…';
+                    })
+                    .finally(function () {
+                        if (polling) setTimeout(poll, POLL_MS);
+                    });
+            }
+
+            poll();
+
+            // ── Pause when tab is hidden, resume when visible ─────────────
+            document.addEventListener('visibilitychange', function () {
+                if (document.hidden) {
+                    paused = true;
+                    if (badge.className.indexOf('closed') === -1 &amp;&amp;
+                        badge.className.indexOf('error') === -1) {
+                        setBadge('paused', 'Paused');
+                    }
+                } else {
+                    paused = false;
+                    // Restore badge if we were connected
+                    if (badge.className.indexOf('paused') !== -1) {
+                        setBadge('connected', 'Connected');
+                        statusText.textContent = 'Connected';
+                    }
+                }
+            });
+
+            // ── Cleanup on page close ─────────────────────────────────────
+            window.addEventListener('beforeunload', function () {
+                polling = false;
+                fetch('/cloud/terminal/' + SESSION_ID + '/close', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Csrf-Token': CSRF },
+                    keepalive: true,
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'call', id: 0, params: {} }),
+                });
+            });
+        })();
+    </script>
+
+</body>
+</html>
+</template>
+</odoo>

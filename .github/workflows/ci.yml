@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: ["19.0"]
+  pull_request:
+    branches: ["19.0"]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  lint:
+    name: Lint (refurb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install refurb
+        run: pip install refurb
+
+      - name: Run refurb
+        run: refurb incubacloud/ incubacloud_connect/
+
+  test:
+    name: Tests
+    runs-on: ubuntu-22.04
+    container: ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: test_odoo
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: postgres
+      PGUSER: odoo
+      PGPASSWORD: odoo
+      PGDATABASE: test_odoo
+      ADDONS_DIR: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install extra dependencies
+        run: pip install 'asyncssh==2.13.2' boto3 freezegun PyYAML
+
+      - name: Fetch OCA dependencies
+        run: |
+          git clone --depth 1 --branch 19.0 https://github.com/OCA/queue.git /opt/odoo/addons-oca/queue
+          ln -s /opt/odoo/addons-oca/queue/queue_job /opt/odoo/addons/queue_job
+
+      - name: Install addons
+        run: oca_install_addons
+
+      - name: Initialize test database
+        run: oca_init_test_database
+
+      - name: Run tests
+        run: oca_run_tests

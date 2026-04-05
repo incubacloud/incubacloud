@@ -1,0 +1,143 @@
+// ── Project Card ──────────────────────────────────────────────────────────────
+
+.ic-project-card {
+    background: $surface-light;
+    border: 1px solid $border;
+    border-left: 3px solid $state-neutral;
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+
+    &:hover {
+        background: rgba($primary-blue, 0.04);
+        border-color: rgba($primary-blue, 0.3);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    &.status-ok      { border-left-color: $state-ok; }
+    &.status-warning { border-left-color: $state-warning; }
+    &.status-error   { border-left-color: $state-error; }
+}
+
+// ── Header ───────────────────────────────────────────────────────────────────
+
+.ic-pc-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ic-pc-version {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba($border, 0.4);
+    color: $text-secondary;
+}
+
+.ic-pc-name {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: $text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+// ── Status dot variants ────────────────────────────────────────────────────────
+
+.ic-ic-status-dot {
+    &.st-proj-ok      { background: $state-ok; }
+    &.st-proj-warning { background: $state-warning; }
+    &.st-proj-error   { background: $state-error; }
+}
+
+// ── Body ──────────────────────────────────────────────────────────────────────
+
+.ic-project-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.ic-project-desc {
+    margin: 0;
+    font-size: 12px;
+    color: $text-secondary;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.ic-pc-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ic-project-envs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    flex: 1;
+}
+
+.ic-pc-inst-count {
+    font-size: 11px;
+    color: $text-secondary;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+
+    i { font-size: 10px; }
+}
+
+.ic-env-chip {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba($border, 0.4);
+    color: $text-secondary;
+
+    &.env-production { background: rgba($state-ok, 0.12);     color: $state-ok; }
+    &.env-staging    { background: rgba($primary-blue, 0.12); color: $primary-blue; }
+}
+
+// ── Tag badges ────────────────────────────────────────────────────────────────
+
+.ic-project-tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.ic-project-tag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+
+    .ic-tag-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+}

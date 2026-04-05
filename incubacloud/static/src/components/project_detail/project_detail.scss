@@ -1,0 +1,385 @@
+// ── Project status badge (reuses .ic-status-badge colors but with project states) ──
+
+.ic-proj-status-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding: 3px 8px;
+    border-radius: 999px;
+
+    &.status-ok      { background: rgba($state-ok, 0.12);      color: $state-ok; }
+    &.status-warning { background: rgba($state-warning, 0.15); color: $state-warning; }
+    &.status-error   { background: rgba($state-error, 0.12);   color: $state-error; }
+}
+
+// ── Onboarding (no instances) ────────────────────────────────────────────────
+
+.ic-onboarding {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px 24px;
+    text-align: center;
+}
+
+.ic-onboarding-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba($primary-blue, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+
+    .fa {
+        font-size: 32px;
+        color: $primary-blue;
+        opacity: 0.7;
+    }
+}
+
+.ic-onboarding-title {
+    margin: 0 0 8px;
+    font-size: 20px;
+    font-weight: 700;
+    color: $text-primary;
+}
+
+.ic-onboarding-desc {
+    margin: 0 0 32px;
+    font-size: 13px;
+    color: $text-secondary;
+    max-width: 360px;
+    line-height: 1.6;
+
+    strong { color: $text-primary; }
+}
+
+.ic-onboarding-cards {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.ic-onboarding-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 160px;
+    padding: 24px 16px;
+    border: 1px dashed rgba($border, 0.8);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: $surface-light;
+
+    .fa {
+        font-size: 22px;
+        color: $text-secondary;
+        transition: color 0.2s;
+    }
+
+    &:hover {
+        border-style: solid;
+        background: rgba($primary-blue, 0.04);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    &.env-production:hover {
+        border-color: $state-ok;
+        .fa { color: $state-ok; }
+    }
+
+    &.env-staging:hover {
+        border-color: $primary-blue;
+        .fa { color: $primary-blue; }
+    }
+
+}
+
+.ic-onboarding-card-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: $text-primary;
+}
+
+.ic-onboarding-card-hint {
+    font-size: 11px;
+    color: $text-secondary;
+}
+
+// ── Tab count bubble ─────────────────────────────────────────────────────────
+
+.ic-tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgba($border, 0.5);
+    font-size: 10px;
+    font-weight: 700;
+    color: $text-secondary;
+    margin-left: 5px;
+    vertical-align: middle;
+}
+
+.ic-tab.active .ic-tab-count {
+    background: rgba($primary-blue, 0.2);
+    color: $primary-blue;
+}
+
+// ── Repositories table ────────────────────────────────────────────────────────
+
+.ic-repos-table {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-width: 900px;
+}
+
+.ic-repo-header {
+    display: grid;
+    grid-template-columns: 160px 1fr 140px 36px;
+    gap: 8px;
+    padding: 0 6px 6px;
+    border-bottom: 1px solid rgba($border, 0.5);
+
+    span {
+        font-size: 10px;
+        font-weight: 600;
+        color: $text-secondary;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+}
+
+.ic-repo-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 140px 36px;
+    gap: 8px;
+    align-items: center;
+
+    input {
+        background: $surface;
+        border: 1px solid $border;
+        border-radius: 5px;
+        padding: 7px 9px;
+        font-size: 12px;
+        color: $text-primary;
+        font-family: inherit;
+        width: 100%;
+
+        &::placeholder { color: $text-secondary; opacity: 0.5; }
+
+        &:focus {
+            outline: none;
+            border-color: $primary-blue;
+            background: $surface-light;
+        }
+    }
+}
+
+.ic-repo-remove {
+    background: none;
+    border: 1px solid rgba($state-error, 0.3);
+    border-radius: 4px;
+    color: rgba($state-error, 0.6);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1;
+    padding: 0;
+
+    &:hover {
+        background: rgba($state-error, 0.1);
+        color: $state-error;
+        border-color: $state-error;
+    }
+}
+
+.ic-repos-empty {
+    padding: 20px 0;
+    font-size: 13px;
+    color: $text-secondary;
+    font-style: italic;
+    text-align: center;
+}
+
+.ic-btn-add-repo {
+    align-self: flex-start;
+    background: none;
+    border: 1px dashed rgba($border, 0.8);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: $text-secondary;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    &:hover {
+        color: $text-primary;
+        border-color: $primary-blue;
+        border-style: solid;
+    }
+}
+
+// ── Dependencies tab ──────────────────────────────────────────────────────────
+
+.ic-deps-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+}
+
+.ic-deps-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: rgba($surface-light, 0.8);
+    border: 1px solid rgba($border, 0.6);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.ic-deps-notice-body {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.ic-deps-added   { color: $state-ok; font-weight: 600; }
+.ic-deps-dup     { color: $text-secondary; }
+.ic-deps-conflict {
+    color: $state-warning;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.ic-deps-notice-dismiss {
+    background: none;
+    border: none;
+    color: $text-secondary;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    flex-shrink: 0;
+
+    &:hover { color: $text-primary; }
+}
+
+// ── Members panel ────────────────────────────────────────────────────────
+
+.ic-members-panel {
+    max-width: 600px;
+}
+
+.ic-members-add {
+    margin-bottom: 12px;
+
+    input {
+        width: 100%;
+        padding: 8px 12px;
+        background: $surface-light;
+        border: 1px solid rgba($border, 0.4);
+        border-radius: 6px;
+        color: $text-primary;
+        font-size: 13px;
+
+        &::placeholder { color: $text-secondary; opacity: 0.6; }
+        &:focus { outline: none; border-color: $primary-blue; }
+    }
+}
+
+.ic-members-results {
+    background: $surface-light;
+    border: 1px solid rgba($primary-blue, 0.2);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.ic-member-result {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: $text-secondary;
+
+    &:hover { background: rgba($primary-blue, 0.08); color: $text-primary; }
+
+    i { color: $primary-blue; }
+    small { margin-left: auto; opacity: 0.6; }
+}
+
+.ic-members-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ic-member-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: $surface-light;
+    border-radius: 6px;
+
+    i { color: $text-secondary; }
+}
+
+.ic-member-name {
+    color: $text-primary;
+    flex: 1;
+}
+
+.ic-member-remove {
+    background: none;
+    border: none;
+    color: $text-secondary;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+
+    &:hover { color: #e74c3c; background: rgba(#e74c3c, 0.1); }
+}
+
+.ic-unsaved-hint {
+    font-size: 12px;
+    color: $state-warning;
+    margin-right: 8px;
+    animation: ic-fade-in 0.3s ease;
+}
+
+@keyframes ic-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

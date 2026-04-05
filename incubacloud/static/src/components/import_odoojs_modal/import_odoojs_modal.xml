@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <t t-name="incubacloud.ImportProjectModal">
+        <div class="ic-modal-overlay" t-on-click="onOverlayClick">
+            <div class="ic-modal ic-modal--import" t-on-click.stop="">
+
+                <!-- Header -->
+                <header class="ic-modal__header">
+                    <div class="ic-import-header">
+                        <span class="ic-import-badge">GitHub</span>
+                        <h3>Import project from GitHub</h3>
+                    </div>
+                    <button t-if="state.step !== 'progress'"
+                            class="ic-modal__close" t-on-click="close">✕</button>
+                </header>
+
+                <!-- ── Step: Input (URL + Branch) ─────────────────────── -->
+                <t t-if="state.step === 'input'">
+                    <section class="ic-modal__body">
+                        <p class="ic-import-hint">
+                            Paste the GitHub URL of your project. We will automatically
+                            detect the project type (doodba / odoo.sh / simple), import
+                            all repositories, and create a production instance.
+                        </p>
+
+                        <div class="ic-form-group">
+                            <label>GitHub repository URL <span class="required">*</span></label>
+                            <div class="ic-import-url-row">
+                                <input
+                                    type="url"
+                                    t-model="state.repoUrl"
+                                    placeholder="https://github.com/your-org/your-project"
+                                    t-on-keydown="onUrlKeydown"
+                                    t-on-blur="onUrlBlur"
+                                />
+                                <span t-if="state.loadingBranches" class="ic-repo-spinner"
+                                      title="Fetching branches…">⟳</span>
+                            </div>
+                            <div t-if="state.branchError" class="ic-repo-fetch-error"
+                                 t-esc="state.branchError"/>
+                        </div>
+
+                        <div class="ic-form-group">
+                            <label>Branch</label>
+                            <SearchSelect
+                                options="state.branches"
+                                value="state.branch"
+                                onChange="(v) => { state.branch = v; }"
+                                placeholder="'main'"
+                                loading="state.loadingBranches"
+                                allowFreeText="true"
+                                emptyLabel="'— select branch —'"
+                            />
+                        </div>
+                    </section>
+
+                    <footer class="ic-modal__footer">
+                        <button class="ic-btn ic-btn--secondary" t-on-click="close">
+                            Cancel
+                        </button>
+                        <button
+                            class="ic-btn ic-btn--primary"
+                            t-on-click="doImport"
+                            t-att-disabled="!isUrlValid">
+                            Import
+                        </button>
+                    </footer>
+                </t>
+
+                <!-- ── Step: Progress ─────────────────────────────────── -->
+                <t t-if="state.step === 'progress'">
+                    <section class="ic-modal__body">
+                        <div class="ic-import-progress">
+                            <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
+                                <div class="ic-import-progress-item done">
+                                    <i class="fa fa-check-circle"/>
+                                    <span t-esc="msg.text"/>
+                                </div>
+                            </t>
+                            <div class="ic-import-progress-item pending">
+                                <div class="ic-import-loading-spinner"/>
+                                <span>Importing project…</span>
+                            </div>
+                        </div>
+                    </section>
+                    <footer class="ic-modal__footer"/>
+                </t>
+
+                <!-- ── Step: Done ─────────────────────────────────────── -->
+                <t t-if="state.step === 'done'">
+                    <section class="ic-modal__body">
+                        <div class="ic-import-progress">
+                            <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
+                                <div class="ic-import-progress-item done">
+                                    <i class="fa fa-check-circle"/>
+                                    <span t-esc="msg.text"/>
+                                </div>
+                            </t>
+                        </div>
+                    </section>
+                    <footer class="ic-modal__footer">
+                        <button class="ic-btn ic-btn--primary" t-on-click="goToInstance">
+                            Go to instance
+                        </button>
+                    </footer>
+                </t>
+
+                <!-- ── Step: Error ────────────────────────────────────── -->
+                <t t-if="state.step === 'error'">
+                    <section class="ic-modal__body">
+                        <div class="ic-import-progress">
+                            <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
+                                <div class="ic-import-progress-item done">
+                                    <i class="fa fa-check-circle"/>
+                                    <span t-esc="msg.text"/>
+                                </div>
+                            </t>
+                        </div>
+                        <div class="ic-alert ic-alert--error" role="alert" style="margin-top: 16px;">
+                            <t t-esc="state.error"/>
+                        </div>
+                    </section>
+                    <footer class="ic-modal__footer ic-modal__footer--between">
+                        <button class="ic-btn ic-btn--secondary" t-on-click="retry">
+                            ← Try again
+                        </button>
+                        <button class="ic-btn ic-btn--secondary" t-on-click="close">
+                            Close
+                        </button>
+                    </footer>
+                </t>
+
+            </div>
+        </div>
+    </t>
+
+</templates>

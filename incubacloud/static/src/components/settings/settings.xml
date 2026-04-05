@@ -1,0 +1,394 @@
+<templates>
+
+    <t t-name="incubacloud.Settings">
+        <div class="ic-settings">
+
+            <div class="ic-detail-header">
+                <div class="ic-detail-title">
+                    <h1>Settings</h1>
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="ic-detail-tabs">
+                <button t-att-class="state.tab === 'general' ? 'ic-tab active' : 'ic-tab'"
+                        t-on-click="() => this.setTab('general')">General</button>
+                <button t-att-class="state.tab === 'github' ? 'ic-tab active' : 'ic-tab'"
+                        t-on-click="() => this.setTab('github')">GitHub</button>
+            </div>
+
+            <t t-if="state.loading">
+                <div class="ic-detail-loading">Loading…</div>
+            </t>
+
+            <t t-else="">
+                <div class="ic-detail-body">
+
+                <!-- ── General tab ─────────────────────────────────────────── -->
+                <t t-if="state.tab === 'general'">
+                    <div class="ic-settings-section">
+                        <div class="ic-settings-section-header">
+                            <div>
+                                <h2 class="ic-settings-section-title">Host Auto-Assignment</h2>
+                                <p class="ic-settings-section-desc">
+                                    When enabled, new instances will be automatically placed on the
+                                    host with the most available resources. When disabled, a host
+                                    must be selected manually.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>Auto-assign hosts</label>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox"
+                                           t-att-checked="state.form.autoassign_enabled"
+                                           t-on-change="toggleAutoassign"/>
+                                    <span>Enable automatic host assignment</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ic-settings-section">
+                        <div class="ic-settings-section-header">
+                            <div>
+                                <h2 class="ic-settings-section-title">Default Backup Backend</h2>
+                                <p class="ic-settings-section-desc">
+                                    The default backup backend used for production instances when
+                                    no specific backend is selected at the project or instance level.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>Backup Backend</label>
+                                <select t-on-change="(ev) => this.onBackendChange(ev)">
+                                    <option value="">— None —</option>
+                                    <t t-foreach="state.backupBackends" t-as="bb" t-key="bb.id">
+                                        <option t-att-value="bb.id"
+                                                t-att-selected="state.form.default_backup_backend_id === bb.id">
+                                            <t t-esc="bb.name"/>
+                                        </option>
+                                    </t>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ic-settings-section">
+                        <div class="ic-settings-section-header">
+                            <div>
+                                <h2 class="ic-settings-section-title">Audit Log Retention</h2>
+                                <p class="ic-settings-section-desc">
+                                    Automatically purge audit log entries older than the specified
+                                    number of days. Set to 0 to keep all records indefinitely.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>Retention period (days)</label>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <input type="number" min="0" class="filter-input"
+                                           style="width:120px;"
+                                           t-att-value="state.form.audit_log_retention_days"
+                                           t-on-change="(ev) => { state.form.audit_log_retention_days = parseInt(ev.target.value) || 0; }"/>
+                                    <button class="ic-btn ic-btn-secondary ic-audit-purge-btn"
+                                            t-att-disabled="state.auditPurging"
+                                            t-on-click="purgeAuditLogs">
+                                        <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
+                                        Purge old logs now
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </t>
+
+
+<!-- ── GitHub tab ─────────────────────────────────────────── -->
+                <t t-if="state.tab === 'github'">
+                    <div class="ic-settings-section">
+
+                        <div class="ic-settings-section-header">
+                            <div>
+                                <h2 class="ic-settings-section-title">GitHub App</h2>
+                                <p class="ic-settings-section-desc">
+                                    Connect a GitHub App to enable auto-rebuilds and repository access.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- ── Step indicator ── -->
+                        <div class="ic-gh-steps">
+                            <div t-att-class="'ic-gh-step' + (currentStep > 1 ? ' done' : '') + (currentStep === 1 ? ' active' : '')">
+                                <span class="ic-gh-step-num">
+                                    <t t-if="currentStep > 1"><i class="fa fa-check"/></t>
+                                    <t t-else="">1</t>
+                                </span>
+                                <span class="ic-gh-step-label">Create App</span>
+                            </div>
+                            <div class="ic-gh-step-connector"/>
+                            <div t-att-class="'ic-gh-step' + (currentStep > 2 ? ' done' : '') + (currentStep === 2 ? ' active' : '')">
+                                <span class="ic-gh-step-num">
+                                    <t t-if="currentStep > 2"><i class="fa fa-check"/></t>
+                                    <t t-else="">2</t>
+                                </span>
+                                <span class="ic-gh-step-label">Install on Org</span>
+                            </div>
+                            <div class="ic-gh-step-connector"/>
+                            <div t-att-class="'ic-gh-step' + (currentStep === 3 ? ' done active' : '')">
+                                <span class="ic-gh-step-num">
+                                    <t t-if="currentStep === 3"><i class="fa fa-check"/></t>
+                                    <t t-else="">3</t>
+                                </span>
+                                <span class="ic-gh-step-label">Connected</span>
+                            </div>
+                        </div>
+
+                        <!-- ── Step 1: Create App ── -->
+                        <t t-if="currentStep === 1">
+                            <div class="ic-gh-card ic-gh-card--active">
+                                <div class="ic-gh-card-icon"><i class="fa fa-github"/></div>
+                                <div class="ic-gh-card-body">
+                                    <h3 class="ic-gh-card-title">Create your GitHub App</h3>
+                                    <p class="ic-gh-card-desc">
+                                        IncubaCloud will redirect you to GitHub to create a GitHub App
+                                        pre-configured with the right permissions and webhook URL.
+                                        The app will be created in your GitHub account — you can then
+                                        install it on any organization you manage.
+                                    </p>
+                                    <t t-if="!state.isHttps">
+                                        <p class="ic-gh-card-warning">
+                                            <i class="fa fa-lock"/> Automatic setup requires HTTPS.
+                                            Configure manually below.
+                                        </p>
+                                    </t>
+                                    <div class="ic-gh-card-actions">
+                                        <button class="ic-btn ic-btn-primary"
+                                                t-on-click="createOnGitHub"
+                                                t-att-disabled="!state.isHttps">
+                                            <i class="fa fa-github"/> Create App on GitHub →
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Step 2: Install on Org ── -->
+                        <t t-if="currentStep === 2">
+                            <div class="ic-gh-card ic-gh-card--active">
+                                <div class="ic-gh-card-icon ic-gh-card-icon--pending">
+                                    <i class="fa fa-building"/>
+                                </div>
+                                <div class="ic-gh-card-body">
+                                    <h3 class="ic-gh-card-title">Install on your organization</h3>
+                                    <p class="ic-gh-card-desc">
+                                        Your GitHub App was created. Now install it on the GitHub
+                                        organization that owns your repositories. Click the button below
+                                        — GitHub will let you choose which organization and repositories
+                                        to grant access.
+                                    </p>
+                                    <div class="ic-gh-install-hint">
+                                        <i class="fa fa-info-circle"/>
+                                        After installing, come back here and click
+                                        <strong>Check installation</strong>. The Installation ID
+                                        is auto-detected from the webhook.
+                                    </div>
+                                    <div class="ic-gh-card-actions">
+                                        <button class="ic-btn ic-btn-primary"
+                                                t-on-click="openInstallUrl">
+                                            <i class="fa fa-github"/> Install on Organization →
+                                        </button>
+                                        <button class="ic-btn ic-btn-secondary"
+                                                t-on-click="refresh">
+                                            ↻ Check installation
+                                        </button>
+                                    </div>
+                                    <t t-if="!state.installUrl">
+                                        <p class="ic-gh-card-hint">
+                                            No install URL available — go to
+                                            <strong>github.com → Settings → Applications → GitHub Apps</strong>
+                                            and install your app manually.
+                                        </p>
+                                    </t>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Step 3: Connected ── -->
+                        <t t-if="currentStep === 3">
+                            <div class="ic-gh-card ic-gh-card--connected">
+                                <div class="ic-gh-card-icon ic-gh-card-icon--ok">
+                                    <i class="fa fa-check-circle"/>
+                                </div>
+                                <div class="ic-gh-card-body">
+                                    <h3 class="ic-gh-card-title">GitHub App connected</h3>
+                                    <div class="ic-gh-status-grid">
+                                        <span class="ic-gh-status-label">App ID</span>
+                                        <span class="ic-gh-status-value" t-esc="state.form.app_id"/>
+                                        <span class="ic-gh-status-label">Installation ID</span>
+                                        <span class="ic-gh-status-value" t-esc="state.form.installation_id"/>
+                                        <t t-if="state.slug">
+                                            <span class="ic-gh-status-label">App name</span>
+                                            <span class="ic-gh-status-value" t-esc="state.slug"/>
+                                        </t>
+                                        <span class="ic-gh-status-label">Private key</span>
+                                        <span class="ic-gh-status-value">
+                                            <t t-if="state.hasPrivateKey">
+                                                <i class="fa fa-lock"/> Stored
+                                            </t>
+                                            <t t-else="">Not set</t>
+                                        </span>
+                                        <span class="ic-gh-status-label">PAT</span>
+                                        <span class="ic-gh-status-value">
+                                            <t t-if="state.hasPat">
+                                                <i class="fa fa-lock"/> Stored
+                                            </t>
+                                            <t t-else="">Not configured</t>
+                                        </span>
+                                    </div>
+                                    <div class="ic-gh-card-actions">
+                                        <button class="ic-btn ic-btn-secondary"
+                                                t-on-click="testConnection"
+                                                t-att-disabled="state.testing">
+                                            <t t-if="state.testing">Testing…</t>
+                                            <t t-else="">Test connection</t>
+                                        </button>
+                                        <button class="ic-btn ic-btn-secondary"
+                                                t-on-click="detectInstallation"
+                                                title="Fetch installation ID from GitHub API — useful if the app was reinstalled">
+                                            ↻ Re-detect installation
+                                        </button>
+                                        <button class="ic-btn ic-btn-danger"
+                                                t-on-click="disconnectApp">
+                                            <i class="fa fa-unlink"/> Disconnect App
+                                        </button>
+                                    </div>
+                                    <t t-if="state.ghActionMsg">
+                                        <p t-att-class="'ic-gh-inline-msg ic-gh-inline-msg--' + state.ghActionMsg.type"
+                                           t-esc="state.ghActionMsg.message"/>
+                                    </t>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Manual configuration (collapsed) ── -->
+                        <div class="ic-gh-manual-toggle" t-on-click="toggleManual">
+                            <i t-att-class="'fa ' + (state.showManual ? 'fa-chevron-down' : 'fa-chevron-right')"/>
+                            Configure manually
+                        </div>
+
+                        <t t-if="state.showManual">
+                            <div class="ic-gh-manual">
+                                <div class="ic-form-grid">
+
+                                    <div class="ic-form-row">
+                                        <label>App ID <span class="ic-required">*</span></label>
+                                        <input type="text"
+                                               placeholder="123456"
+                                               t-att-value="state.form.app_id"
+                                               t-on-input="(ev) => this.onInput('app_id', ev)"/>
+                                    </div>
+
+                                    <div class="ic-form-row">
+                                        <label>Installation ID</label>
+                                        <input type="text"
+                                               placeholder="auto-detected after org install, or enter manually"
+                                               t-att-value="state.form.installation_id"
+                                               t-on-input="(ev) => this.onInput('installation_id', ev)"/>
+                                    </div>
+
+                                    <div class="ic-form-row">
+                                        <label>Webhook Secret</label>
+                                        <input type="text"
+                                               placeholder="auto-filled via Create App"
+                                               t-att-value="state.form.webhook_secret"
+                                               t-on-input="(ev) => this.onInput('webhook_secret', ev)"/>
+                                    </div>
+
+                                    <div class="ic-form-row ic-form-row-full">
+                                        <label>Private Key (PEM)</label>
+                                        <t t-if="state.hasPrivateKey">
+                                            <p class="ic-settings-hint">
+                                                Key stored. Leave blank to keep, or paste a new key to replace.
+                                            </p>
+                                        </t>
+                                        <textarea rows="6"
+                                                  class="ic-settings-pem"
+                                                  placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
+                                                  t-att-value="state.form.private_key"
+                                                  t-on-input="(ev) => this.onInput('private_key', ev)"/>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- PAT — independent of GitHub App -->
+                        <hr class="ic-settings-separator"/>
+                        <h4 class="ic-settings-subtitle">Personal Access Token (PAT)</h4>
+                        <p class="ic-settings-desc">
+                            Fallback token for accessing private repositories the GitHub App cannot reach (e.g. odoo/enterprise).
+                        </p>
+                        <t t-if="state.hasPat">
+                            <p class="ic-settings-hint">
+                                PAT stored. Leave blank to keep, or paste a new one to replace.
+                            </p>
+                        </t>
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Personal Access Token</label>
+                                <input type="password"
+                                       placeholder="ghp_xxxxxxxxxxxx"
+                                       t-att-value="state.form.github_pat"
+                                       t-on-input="(ev) => this.onInput('github_pat', ev)"/>
+                            </div>
+                        </div>
+
+                    </div>
+                </t>
+
+                </div><!-- /ic-detail-body -->
+
+                <!-- ── Unified footer (persists across all tabs) ────────── -->
+                <div class="ic-detail-footer">
+                    <t t-if="hasUnsavedChanges">
+                        <span class="ic-unsaved-hint">Unsaved changes</span>
+                    </t>
+                    <button class="ic-btn-save"
+                            t-att-disabled="state.saving"
+                            t-on-click="save">
+                        <t t-if="state.saving">
+                            <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>Saving…
+                        </t>
+                        <t t-else="">Save changes</t>
+                    </button>
+                </div>
+
+            </t>
+
+        </div>
+
+        <!-- Confirmation dialog -->
+        <t t-if="state.confirmDialog">
+            <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
+                <div class="ic-confirm-box" t-on-click.stop="">
+                    <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
+                    <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
+                    <div class="ic-confirm-actions">
+                        <button class="ic-confirm-btn-cancel" t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
+                        <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
+                                t-on-click="() => state.confirmDialog.onConfirm()">
+                            <t t-esc="state.confirmDialog.confirmLabel"/>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </t>
+
+    </t>
+
+</templates>

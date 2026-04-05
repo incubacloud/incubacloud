@@ -1,0 +1,14 @@
+<templates>
+    <t t-name="incubacloud.ToastContainer">
+        <div class="ic-toast-container" role="status" aria-live="polite" aria-atomic="false">
+            <t t-foreach="toasts" t-as="t" t-key="t.id">
+                <div t-att-class="'ic-toast ic-toast--' + t.type + (t.dismissing ? ' ic-toast--out' : '')">
+                    <i t-att-class="'fa ' + t.icon" aria-hidden="true"/>
+                    <span class="ic-toast-msg" t-esc="t.message"/>
+                    <button class="ic-toast-close" t-on-click="() => this.dismiss(t.id)"
+                            aria-label="Dismiss notification">&#x2715;</button>
+                </div>
+            </t>
+        </div>
+    </t>
+</templates>

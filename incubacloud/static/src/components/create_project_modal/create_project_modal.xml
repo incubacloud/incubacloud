@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+   <t t-name="incubacloud.CreateProjectModal">
+        <div class="ic-modal-overlay" t-on-click="onOverlayClick">
+            <div class="ic-modal ic-modal--m" t-on-click.stop="">
+
+            <!-- Header -->
+            <header class="ic-modal__header">
+                <h3>Create project</h3>
+                <button class="ic-modal__close" t-on-click="close">
+                ✕
+                </button>
+            </header>
+
+            <!-- Body -->
+            <section class="ic-modal__body">
+                <div class="ic-form-group">
+                <label>Name <span class="required">*</span></label>
+                <input
+                    type="text"
+                    t-model="state.name"
+                    placeholder="customer-x"
+                />
+                <small>Logical grouping for instances</small>
+                </div>
+
+                <div class="ic-form-group">
+                <label>Description</label>
+                <textarea
+                    rows="3"
+                    t-model="state.description"
+                    placeholder="Optional description"
+                />
+                </div>
+
+                <div class="ic-form-group">
+                <label>Tags</label>
+                <TagSelector
+                    selected="state.selectedTags"
+                    available="state.allTags"
+                    onAdd.bind="addTag"
+                    onRemove.bind="removeTag"
+                    onCreate.bind="createTag"
+                />
+                </div>
+
+                <t t-if="state.error">
+                <div class="ic-alert ic-alert--error" role="alert">
+                    <t t-esc="state.error"/>
+                </div>
+                </t>
+            </section>
+
+            <!-- Footer -->
+            <footer class="ic-modal__footer">
+                <button class="ic-btn ic-btn--secondary" t-on-click="close">
+                    Cancel
+                </button>
+                <button
+                    class="ic-btn ic-btn--primary"
+                    t-on-click="create"
+                    t-att-disabled="!isValid || state.loading">
+                    <t t-if="state.loading">Creating…</t>
+                    <t t-else="">Create project</t>
+                </button>
+            </footer>
+
+            </div>
+        </div>
+    </t>
+
+</templates>

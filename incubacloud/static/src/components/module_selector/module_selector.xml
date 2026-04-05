@@ -1,0 +1,89 @@
+<templates>
+
+    <t t-name="incubacloud.ModuleSelector">
+        <div class="ic-module-selector"
+             t-att-class="{ 'ic-module-selector--disabled': props.disabled }">
+
+            <!-- Chips row -->
+            <div class="ic-module-chips">
+
+                <!-- Empty label chip (ALL / NONE / etc.) -->
+                <t t-if="props.showEmpty and isEmpty">
+                    <span class="ic-module-chip ic-module-chip--all"
+                          t-esc="props.emptyLabel"/>
+                </t>
+
+                <!-- Selected module chips -->
+                <t t-if="!isEmpty">
+                    <t t-foreach="selected" t-as="mod" t-key="mod">
+                        <span t-att-class="'ic-module-chip' + (overlapError and (props.blockedSet and props.blockedSet.has(mod)) ? ' ic-module-chip--conflict' : '')">
+                            <t t-esc="mod"/>
+                            <button class="ic-module-chip-remove"
+                                    t-on-click="() => this.remove(mod)">×</button>
+                        </span>
+                    </t>
+                    <!-- Reset button (clear all → back to empty state) -->
+                    <button class="ic-module-reset-all"
+                            t-on-click="resetToEmpty"
+                            t-att-title="'Reset to ' + (props.resetLabel or props.emptyLabel)">
+                        ← <t t-esc="props.resetLabel or props.emptyLabel"/>
+                    </button>
+                </t>
+
+                <!-- Text input (shown when not disabled) -->
+                <t t-if="!props.disabled">
+                    <input class="ic-module-input"
+                           type="text"
+                           t-att-placeholder="props.placeholder"
+                           t-att-value="state.input"
+                           t-on-input="onInput"
+                           t-on-focus="onFocus"
+                           t-on-blur="onBlur"/>
+                    <span t-if="props.loading"
+                          class="ic-repo-spinner"
+                          title="Fetching modules…">⟳</span>
+                </t>
+
+            </div>
+
+            <!-- Dropdown -->
+            <t t-if="state.open and !props.disabled">
+                <div class="ic-module-dropdown">
+                    <t t-if="props.loading">
+                        <div class="ic-module-option ic-module-option--loading">
+                            Loading modules…
+                        </div>
+                    </t>
+                    <t t-elif="props.error">
+                        <div class="ic-module-option ic-module-option--error"
+                             t-esc="props.error"/>
+                    </t>
+                    <t t-else="">
+                        <t t-foreach="filtered" t-as="mod" t-key="mod">
+                            <div class="ic-module-option"
+                                 t-on-mousedown.prevent="() => this.add(mod)"
+                                 t-esc="mod"/>
+                        </t>
+                        <t t-if="showCreate">
+                            <div class="ic-module-option ic-module-option--create"
+                                 t-on-mousedown.prevent="() => this.add(state.input.trim())">
+                                + Add "<t t-esc="state.input.trim()"/>"
+                            </div>
+                        </t>
+                        <t t-if="!filtered.length and !showCreate and !props.loading">
+                            <div class="ic-module-option ic-module-option--empty">
+                                No modules found
+                            </div>
+                        </t>
+                    </t>
+                </div>
+            </t>
+
+            <!-- Overlap validation error -->
+            <div t-if="overlapError" class="ic-module-overlap-error"
+                 t-esc="overlapError"/>
+
+        </div>
+    </t>
+
+</templates>
