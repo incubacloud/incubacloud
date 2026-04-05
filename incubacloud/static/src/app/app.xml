@@ -1,0 +1,125 @@
+<templates>
+
+    <t t-name="incubacloud.AppShell">
+        <div class="ic-app">
+
+            <!-- Header (top bar) -->
+            <AppHeader alertCount="state.alertCount"
+                       currentRoute="state.route"
+                       projectName="state.projectName"
+                       projectId="state.params.project_id || 0"/>
+
+            <!-- Body: sidebar + main -->
+            <div class="ic-body">
+
+                <!-- Sidebar: global nav OR project sidebar -->
+                <aside class="ic-sidebar" role="navigation" aria-label="Main navigation">
+                    <t t-if="isInsideProject">
+                        <ProjectSidebar t-key="state.params.project_id"
+                                        projectId="state.params.project_id"
+                                        currentRoute="state.route"
+                                        selectedInstanceId="state.params.instance_id || 0"/>
+                    </t>
+                    <t t-else="">
+                        <nav class="ic-sidebar-nav" aria-label="Global navigation">
+                            <ul>
+                                <li t-att-class="{ active: ['projects','new_project'].includes(state.route) }"
+                                    t-att-aria-current="['projects','new_project'].includes(state.route) ? 'page' : undefined"
+                                    t-on-click="() => env.navigate('projects')">
+                                    <i class="fa fa-folder-o" aria-hidden="true"/> Projects
+                                </li>
+                                <t t-if="env.permissions?.can_manage_hosts">
+                                    <li t-att-class="{ active: ['hosts','host_detail','new_host'].includes(state.route) }"
+                                        t-att-aria-current="['hosts','host_detail','new_host'].includes(state.route) ? 'page' : undefined"
+                                        t-on-click="() => env.navigate('hosts')">
+                                        <i class="fa fa-server" aria-hidden="true"/> Hosts
+                                    </li>
+                                </t>
+
+                                <t t-if="env.permissions?.can_manage_settings">
+                                    <li t-att-class="{ active: ['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) }"
+                                        t-att-aria-current="['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) ? 'page' : undefined"
+                                        t-on-click="() => env.navigate('backup_backends')">
+                                        <i class="fa fa-shield" aria-hidden="true"/> Backup Backends
+                                    </li>
+
+                                    <li class="ic-nav-section-label" aria-hidden="true">Configuration</li>
+
+                                    <li t-att-class="{ active: state.route === 'settings' }"
+                                        t-att-aria-current="state.route === 'settings' ? 'page' : undefined"
+                                        t-on-click="() => env.navigate('settings')">
+                                        <i class="fa fa-cog" aria-hidden="true"/> Settings
+                                    </li>
+                                </t>
+                            </ul>
+                        </nav>
+                    </t>
+                </aside>
+
+                <!-- Main content -->
+                <main class="ic-main" role="main">
+                    <t t-if="state.route === 'projects'">
+                        <ProjectDashboard/>
+                    </t>
+                    <t t-if="state.route === 'new_project' and env.permissions?.can_create_project">
+                        <ProjectDetail/>
+                    </t>
+                    <t t-if="state.route === 'project_detail'">
+                        <ProjectDetail project_id="state.params.project_id" embedded="true"/>
+                    </t>
+                    <t t-if="state.route === 'project_settings'">
+                        <ProjectDetail project_id="state.params.project_id" embedded="true"/>
+                    </t>
+<t t-if="state.route === 'hosts' and env.permissions?.can_manage_hosts">
+                        <HostsDashboard/>
+                    </t>
+                    <t t-if="state.route === 'host_detail' and env.permissions?.can_manage_hosts">
+                        <HostDetail host_id="state.params.host_id"/>
+                    </t>
+                    <t t-if="state.route === 'new_host' and env.permissions?.can_manage_hosts">
+                        <HostDetail/>
+                    </t>
+                    <t t-if="state.route === 'create_instance' and env.permissions?.can_create_instance">
+                        <InstanceDetail
+                            project_id="state.params.project_id"
+                            environment="state.params.environment"
+                            embedded="true"/>
+                    </t>
+                    <t t-if="state.route === 'instance_detail'">
+                        <InstanceDetail
+                            t-key="state.params.instance_id"
+                            instance_id="state.params.instance_id"
+                            project_id="state.params.project_id"
+                            embedded="true"/>
+                    </t>
+<t t-if="state.route === 'settings' and env.permissions?.can_manage_settings">
+                        <Settings/>
+                    </t>
+                    <t t-if="state.route === 'backup_backends' and env.permissions?.can_manage_settings">
+                        <BackupBackendsList/>
+                    </t>
+                    <t t-if="state.route === 'new_backup_backend' and env.permissions?.can_manage_settings">
+                        <BackupBackendDetail/>
+                    </t>
+                    <t t-if="state.route === 'backup_backend_detail' and env.permissions?.can_manage_settings">
+                        <BackupBackendDetail backend_id="state.params.backend_id"/>
+                    </t>
+                </main>
+            </div>
+        </div>
+
+        <!-- Slide-over panel (jobs / alerts) -->
+        <t t-if="state.slideOver">
+            <SlideOver panel="state.slideOver.panel"
+                       instanceId="state.slideOver.instanceId || false"
+                       hostId="state.slideOver.hostId || false"
+                       expanded="state.slideOver.expanded || false"
+                       onClose="() => this.closeSlideOver()"
+                       onToggleSize="() => this.toggleSlideOverSize()"/>
+        </t>
+
+        <MainComponentsContainer/>
+        <ToastContainer/>
+    </t>
+
+</templates>

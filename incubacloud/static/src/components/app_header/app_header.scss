@@ -1,0 +1,310 @@
+.ic-header {
+  display: flex;
+  align-items: center;
+  height: 48px;
+  padding: 0 16px;
+  background: $surface;
+  border-bottom: 1px solid $border;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+// ── Logo ─────────────────────────────────────────────────────────
+.ic-header-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover .ic-header-logo-text { color: $text-primary; }
+}
+
+.ic-header-logo-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.ic-header-logo-text {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: $text-secondary;
+  transition: color 0.15s;
+}
+
+// ── Breadcrumb ───────────────────────────────────────────────────
+.ic-header-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.ic-header-crumb {
+  font-size: 0.85rem;
+  color: $text-secondary;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+
+  &--link:hover { color: $text-primary; }
+
+  &--active {
+    color: $text-primary;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+
+    &:hover { background: $surface-light; }
+  }
+}
+
+.ic-header-crumb-sep {
+  color: $text-secondary;
+  font-size: 0.85rem;
+  opacity: 0.5;
+}
+
+.ic-header-chevron {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+// ── Project switcher dropdown ────────────────────────────────────
+.ic-header-switcher-wrap {
+  position: relative;
+}
+
+.ic-header-switcher-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 320px;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.ic-header-switcher-search {
+  width: 100%;
+  padding: 10px 12px;
+  background: $surface-light;
+  border: none;
+  border-bottom: 1px solid $border;
+  color: $text-primary;
+  font-size: 0.85rem;
+  outline: none;
+
+  &::placeholder { color: $text-secondary; }
+}
+
+.ic-header-switcher-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 280px;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 3px;
+    &:hover { background: rgba(148, 163, 184, 0.5); }
+  }
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.ic-header-switcher-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.1s;
+
+  &:hover { background: $surface-light; }
+}
+
+.ic-header-switcher-name {
+  font-size: 0.85rem;
+  color: $text-primary;
+}
+
+.ic-header-switcher-meta {
+  font-size: 0.75rem;
+  color: $text-secondary;
+}
+
+.ic-header-switcher-empty {
+  padding: 12px;
+  text-align: center;
+  color: $text-secondary;
+  font-size: 0.85rem;
+}
+
+.ic-header-switcher-footer {
+  border-top: 1px solid $border;
+  padding: 6px;
+}
+
+.ic-header-switcher-create {
+  width: 100%;
+  padding: 8px;
+  background: none;
+  border: none;
+  color: $primary-blue;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+
+  &:hover { background: $surface-light; }
+}
+
+// ── Spacer ───────────────────────────────────────────────────────
+.ic-header-spacer {
+  flex: 1;
+}
+
+// ── Header icon buttons (jobs, alerts) ───────────────────────────
+.ic-header-icon-btn {
+  position: relative;
+  background: none;
+  border: none;
+  color: $text-secondary;
+  font-size: 1rem;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+
+  &:hover { background: $surface-light; color: $text-primary; }
+
+  .ic-header-alert-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: $state-error;
+    color: white;
+    font-size: 0.625rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+}
+
+// ── User menu ────────────────────────────────────────────────────
+.ic-header-user-wrap {
+  position: relative;
+}
+
+.ic-header-user-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: $text-primary;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &:hover { background: $surface-light; }
+}
+
+.ic-header-avatar-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.ic-header-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: $primary-blue;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ic-header-user-name {
+  font-size: 0.85rem;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ic-header-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 220px;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.ic-header-user-info {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ic-header-user-info-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: $text-primary;
+}
+
+.ic-header-user-info-login {
+  font-size: 0.75rem;
+  color: $text-secondary;
+}
+
+.ic-header-user-sep {
+  height: 1px;
+  background: $border;
+}
+
+.ic-header-user-action {
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: $text-secondary;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &:hover { background: $surface-light; color: $text-primary; }
+}

@@ -1,0 +1,280 @@
+// ── Layout ────────────────────────────────────────────────────────────────────
+
+.ic-overview {
+    padding: $space-6;
+    color: $text-primary;
+    background-color: $background;
+
+    h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0;
+        color: $text-primary;
+        letter-spacing: -0.015em;
+    }
+    h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: $text-primary;
+    }
+}
+
+.ic-overview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.ic-overview-actions {
+    display: flex;
+    gap: 10px;
+}
+
+// ── Buttons ───────────────────────────────────────────────────────────────────
+
+.ic-btn-create {
+    background-color: $accent;
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: $radius-md;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity $duration-fast ease;
+
+    &:hover:not(:disabled) { opacity: 0.88; }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.ic-btn-secondary {
+    background: none;
+    color: $text-secondary;
+    border: 1px solid $border;
+    padding: 7px 16px;
+    border-radius: $radius-md;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color $duration-fast ease, border-color $duration-fast ease, background $duration-fast ease;
+
+    &:hover:not(:disabled) { color: $text-primary; border-color: rgba($text-primary, 0.3); }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ── KPI cards ─────────────────────────────────────────────────────────────────
+
+.ic-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.ic-kpi-card {
+    background-color: $surface;
+    border-radius: 12px;
+    padding: 20px 16px 16px;
+    border: 1px solid $border;
+    border-left: 4px solid $border;
+    cursor: pointer;
+    transition: border-color 0.15s;
+
+    &:hover { border-color: $primary-blue; }
+
+    &.kpi-warning { border-left-color: $state-warning; }
+    &.kpi-ok      { border-left-color: $state-ok; }
+}
+
+.ic-kpi-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $text-secondary;
+    margin-bottom: 8px;
+}
+
+.ic-kpi-value {
+    display: block;
+    font-size: 32px;
+    font-weight: 700;
+    color: $text-primary;
+    line-height: 1;
+}
+
+// ── Panels ────────────────────────────────────────────────────────────────────
+
+.ic-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+}
+
+.ic-panel {
+    background-color: $surface-light;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid $border;
+
+    h2 {
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: $text-secondary;
+        margin: 0 0 12px;
+    }
+}
+
+.ic-panel-empty {
+    color: $text-secondary;
+    font-style: italic;
+    font-size: 13px;
+    margin: 0;
+    padding: 8px 0;
+}
+
+.ic-panel-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+        padding: 8px 0;
+        border-bottom: 1px solid rgba($border, 0.5);
+
+        &:last-child { border-bottom: none; }
+    }
+}
+
+// ── Alert rows ────────────────────────────────────────────────────────────────
+
+.ic-alert-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    &.level-warning .ic-alert-row-icon { color: $state-warning; }
+    &.level-critical .ic-alert-row-icon { color: $state-error; }
+}
+
+.ic-alert-row-icon {
+    font-size: 0.875rem;
+    flex-shrink: 0;
+    color: $state-neutral;
+    width: 14px;
+    text-align: center;
+}
+
+.ic-alert-row-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+
+    &.ic-alert-row-link {
+        cursor: pointer;
+        border-radius: 4px;
+        padding: 2px 4px;
+        margin: -2px -4px;
+
+        &:hover .ic-alert-row-host { text-decoration: underline; }
+    }
+}
+
+.ic-alert-row-host {
+    font-size: 11px;
+    font-weight: 600;
+    color: $text-primary;
+}
+
+.ic-alert-row-msg {
+    font-size: 11px;
+    color: $text-secondary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ic-alert-row-resolve-hint {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: $state-warning;
+    opacity: 0.85;
+    white-space: nowrap;
+}
+
+.ic-alert-row-dismiss {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: $text-secondary;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 2px;
+    opacity: 0.5;
+    flex-shrink: 0;
+
+    &:hover { opacity: 1; }
+}
+
+// ── Job rows ──────────────────────────────────────────────────────────────────
+
+.ic-job-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ic-job-state-badge {
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    border-radius: 999px;
+
+    &.state-done       { background: rgba($state-ok, 0.15);      color: $state-ok; }
+    &.state-failed     { background: rgba($state-error, 0.15);   color: $state-error; }
+    &.state-started    { background: rgba($primary-blue, 0.15);  color: $primary-blue; }
+    &.state-cancelled  { background: rgba($state-neutral, 0.15); color: $state-neutral; }
+    &.state-pending,
+    &.state-enqueued,
+    &.state-wait_dependencies {
+        background: rgba($state-warning, 0.15);
+        color: $state-warning;
+    }
+}
+
+.ic-job-row-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.ic-job-row-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: $text-primary;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ic-job-row-host {
+    font-size: 11px;
+    color: $text-secondary;
+}
+
+.ic-job-row-time {
+    font-size: 11px;
+    color: $text-secondary;
+    flex-shrink: 0;
+    white-space: nowrap;
+}

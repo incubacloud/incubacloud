@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<template id="cloud_instance_logs" name="Cloud Instance Logs">&lt;!DOCTYPE html&gt;
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Logs — <t t-esc="instance_name"/></title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        .hdr {
+            background: #2d2d2d;
+            border-bottom: 1px solid #3e3e3e;
+            padding: 8px 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .dots { display: flex; gap: 6px; align-items: center; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot-red    { background: #ff5f57; }
+        .dot-yellow { background: #ffbd2e; }
+        .dot-green  { background: #28c840; }
+
+        .title {
+            font-size: 12px;
+            color: #ccc;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        select, input[type="text"] {
+            background: #3a3a3a;
+            color: #d4d4d4;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 4px 8px;
+            font-size: 12px;
+            font-family: inherit;
+            outline: none;
+        }
+        select:focus, input[type="text"]:focus { border-color: #60b8e0; }
+
+        #svc-select { cursor: pointer; }
+
+        #search-input {
+            flex: 1;
+            min-width: 140px;
+            max-width: 280px;
+        }
+        #search-input::placeholder { color: #666; }
+
+        .btn {
+            padding: 4px 12px;
+            border-radius: 5px;
+            border: none;
+            font-size: 12px;
+            font-family: inherit;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .btn-live-off { background: #3a3a3a; color: #ccc; }
+        .btn-live-off:hover { background: #4a4a4a; }
+        .btn-live-on  { background: #1e3a4a; color: #60b8e0; border: 1px solid #60b8e083; }
+
+        .hdr-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+        .line-count { font-size: 11px; color: #666; white-space: nowrap; }
+
+        /* ── Terminal ── */
+        .terminal {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 16px;
+        }
+        .terminal::-webkit-scrollbar { width: 6px; }
+        .terminal::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+        .log-line {
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #c9d1d9;
+        }
+        .log-line.hl { background: rgba(255, 220, 50, 0.12); border-radius: 2px; }
+
+        .empty-msg {
+            color: #555;
+            font-style: italic;
+            padding: 20px 0;
+        }
+
+        /* ── Footer ── */
+        .footer {
+            background: #2d2d2d;
+            border-top: 1px solid #3e3e3e;
+            padding: 5px 14px;
+            font-size: 11px;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        #status-text { transition: color 0.2s; }
+        #status-text.loading { color: #60b8e0; }
+        #status-text.error   { color: #e06060; }
+    </style>
+</head>
+<body>
+
+    <div class="hdr">
+        <div class="dots">
+            <div class="dot dot-red"/>
+            <div class="dot dot-yellow"/>
+            <div class="dot dot-green"/>
+        </div>
+
+        <span class="title"><t t-esc="instance_name"/> — <t t-esc="instance_host"/></span>
+
+        <select id="svc-select">
+            <t t-foreach="services" t-as="svc">
+                <option t-att-value="svc" t-esc="svc"/>
+            </t>
+        </select>
+
+        <input id="search-input" type="text" placeholder="🔍 filter logs…"/>
+
+        <div class="hdr-right">
+            <button id="btn-live" class="btn btn-live-off">▶ Live</button>
+            <span class="line-count" id="line-count">0 lines</span>
+        </div>
+    </div>
+
+    <div class="terminal" id="terminal">
+        <div class="empty-msg" id="empty-msg">Select a service to load logs.</div>
+    </div>
+
+    <div class="footer">
+        <span id="status-text">Ready.</span>
+        <span id="filter-info" style="display:none; color:#888;"></span>
+    </div>
+
+    <script type="text/javascript">
+        var odoo = <t t-out="json.dumps({'csrf_token': csrf_token, '__session_info__': session_info})"/>;
+
+        (function () {
+            var INSTANCE_ID = <t t-esc="instance_id"/>;
+            var POLL_MS     = 4000;
+            var LINES       = 500;
+
+            var allLines   = [];   // all fetched lines
+            var query      = '';   // current search query
+            var liveTimer  = null;
+
+            var terminal    = document.getElementById('terminal');
+            var svcSelect   = document.getElementById('svc-select');
+            var searchInput = document.getElementById('search-input');
+            var btnLive     = document.getElementById('btn-live');
+            var statusEl    = document.getElementById('status-text');
+            var lineCountEl = document.getElementById('line-count');
+            var emptyMsg    = document.getElementById('empty-msg');
+            var filterInfo  = document.getElementById('filter-info');
+
+            /* ── RPC ── */
+            function rpc(method, params) {
+                return fetch('/web/dataset/call_kw', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Csrf-Token': odoo.csrf_token,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        jsonrpc: '2.0', method: 'call', id: Date.now(),
+                        params: {
+                            model: 'cloud.instance', method: 'dummy',
+                            args: [], kwargs: {},
+                        },
+                    }),
+                }).then(function (r) { return r.json(); });
+            }
+
+            function fetchJson(url, body) {
+                return fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Csrf-Token': odoo.csrf_token,
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'call', id: Date.now(), params: body }),
+                }).then(function (r) { return r.json(); }).then(function (r) { return r.result; });
+            }
+
+            /* ── Render ── */
+            function render() {
+                var filtered = query
+                    ? allLines.filter(function (l) { return l.toLowerCase().indexOf(query) !== -1; })
+                    : allLines;
+
+                // remove old log lines (keep emptyMsg node)
+                while (terminal.firstChild) terminal.removeChild(terminal.firstChild);
+                terminal.appendChild(emptyMsg);
+
+                if (filtered.length === 0) {
+                    emptyMsg.style.display = '';
+                    emptyMsg.textContent   = allLines.length ? 'No lines match the filter.' : 'No log output.';
+                } else {
+                    emptyMsg.style.display = 'none';
+                    var frag = document.createDocumentFragment();
+                    filtered.forEach(function (line) {
+                        var div = document.createElement('div');
+                        div.className = 'log-line' + (query ? ' hl' : '');
+                        div.textContent = line;
+                        frag.appendChild(div);
+                    });
+                    terminal.appendChild(frag);
+                }
+
+                lineCountEl.textContent = (query
+                    ? filtered.length + ' / ' + allLines.length
+                    : allLines.length) + ' lines';
+
+                if (query) {
+                    filterInfo.style.display = '';
+                    filterInfo.textContent   = 'Filtering: "' + query + '"';
+                } else {
+                    filterInfo.style.display = 'none';
+                }
+
+                // always scroll to bottom
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+
+            /* ── Fetch logs ── */
+            function fetchLogs() {
+                var svc = svcSelect.value;
+                if (!svc) return;
+                setStatus('loading', 'Loading…');
+                fetchJson('/cloud/fetch_container_logs', {
+                    instance_id: INSTANCE_ID,
+                    service:     svc,
+                    lines:       LINES,
+                }).then(function (result) {
+                    if (!result) { setStatus('error', 'No response.'); return; }
+                    if (result.ok) {
+                        allLines = result.lines || [];
+                        render();
+                        setStatus('', svc + ' — ' + new Date().toLocaleTimeString());
+                    } else {
+                        setStatus('error', result.error || 'Error.');
+                    }
+                }).catch(function () {
+                    setStatus('error', 'Connection error.');
+                });
+            }
+
+            function setStatus(cls, text) {
+                statusEl.className    = cls;
+                statusEl.textContent  = text;
+            }
+
+            /* ── Live toggle ── */
+            function startLive() {
+                if (liveTimer) return;
+                fetchLogs();
+                liveTimer = setInterval(fetchLogs, POLL_MS);
+                btnLive.textContent = '⏸ Live';
+                btnLive.className   = 'btn btn-live-on';
+            }
+
+            function stopLive() {
+                clearInterval(liveTimer);
+                liveTimer = null;
+                btnLive.textContent = '▶ Live';
+                btnLive.className   = 'btn btn-live-off';
+            }
+
+            btnLive.addEventListener('click', function () {
+                if (liveTimer) { stopLive(); } else { startLive(); }
+            });
+
+            /* ── Service change ── */
+            svcSelect.addEventListener('change', function () {
+                allLines = [];
+                render();
+                fetchLogs();
+            });
+
+            /* ── Search ── */
+            var searchTimer = null;
+            searchInput.addEventListener('input', function () {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(function () {
+                    query = searchInput.value.toLowerCase().trim();
+                    render();
+                }, 200);
+            });
+
+            /* ── Init ── */
+            if (svcSelect.options.length) {
+                fetchLogs();
+            }
+        })();
+    </script>
+
+</body>
+</html>
+</template>
+</odoo>

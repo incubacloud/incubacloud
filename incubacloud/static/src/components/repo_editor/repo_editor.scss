@@ -1,0 +1,442 @@
+@use '../variables' as *;
+
+// ─── Repo editor card ─────────────────────────────────────────────────────────
+
+.ic-repo-editor {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 14px 16px;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 8px;
+    margin-bottom: 10px;
+
+    // Common input / select reset — dark theme
+    input, select {
+        background: $surface-light;
+        border: 1px solid $border;
+        border-radius: 6px;
+        color: $text-primary;
+        font-size: 13px;
+        padding: 6px 10px;
+        outline: none;
+        transition: border-color 0.15s;
+
+        &:focus {
+            border-color: $primary-blue;
+        }
+
+        &:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        &::placeholder {
+            color: $text-secondary;
+        }
+    }
+
+    select {
+        appearance: none;
+        padding-right: 28px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239CA3AF' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+    }
+}
+
+// ─── Fields wrapper ───────────────────────────────────────────────────────────
+
+.ic-repo-editor-fields {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+// ─── URL row ──────────────────────────────────────────────────────────────────
+
+.ic-repo-editor-url {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .ic-repo-url-input {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+.ic-repo-remove-btn {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: $text-secondary;
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 6px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover {
+        color: $state-error;
+        background: rgba($state-error, 0.1);
+    }
+}
+
+// ─── Inline spinner / error ───────────────────────────────────────────────────
+
+.ic-repo-spinner {
+    color: $text-secondary;
+    font-size: 14px;
+    animation: ic-spin 1s linear infinite;
+    display: inline-block;
+}
+
+@keyframes ic-spin {
+    to { transform: rotate(360deg); }
+}
+
+.ic-repo-fetch-error {
+    font-size: 11px;
+    color: $state-error;
+    margin-top: -2px;
+}
+
+// ─── Branch row ───────────────────────────────────────────────────────────────
+
+.ic-repo-editor-branch,
+.ic-repo-editor-addons {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.ic-repo-field-label {
+    flex-shrink: 0;
+    width: 60px;
+    padding-top: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $text-secondary;
+}
+
+.ic-repo-editor-branch .ic-search-select {
+    flex: 1;
+    min-width: 0;
+}
+
+// ─── Freeze button ───────────────────────────────────────────────────────────
+
+.ic-repo-freeze-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: 1px solid $border;
+    border-radius: 6px;
+    color: $text-secondary;
+    font-size: 12px;
+    padding: 5px 8px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+
+    &:hover:not(:disabled) {
+        color: $text-primary;
+        border-color: $text-secondary;
+    }
+
+    &:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+    }
+
+    &.frozen {
+        color: $state-warning;
+        border-color: rgba($state-warning, 0.4);
+        background: rgba($state-warning, 0.08);
+
+        &:hover:not(:disabled) {
+            color: lighten($state-warning, 10%);
+            border-color: rgba($state-warning, 0.6);
+        }
+    }
+}
+
+.ic-repo-sha {
+    font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+}
+
+// ─── Addons / module selector ─────────────────────────────────────────────────
+
+.ic-repo-editor-addons {
+    align-items: flex-start;
+    position: relative;
+}
+
+.ic-module-selector {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+
+    &--disabled {
+        pointer-events: none;
+        opacity: 0.4;
+    }
+}
+
+.ic-module-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    background: $surface-light;
+    border: 1px solid $border;
+    border-radius: 6px;
+    min-height: 34px;
+    min-width: 0;      // prevent flex blowout — chips must NOT grow the sidebar
+    width: 100%;       // constrain to parent regardless of chip content
+    box-sizing: border-box;
+    cursor: text;
+
+    &:focus-within {
+        border-color: $primary-blue;
+    }
+}
+
+// Module pill (specific module selected)
+.ic-module-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 12px;
+    background: rgba($primary-blue, 0.15);
+    color: lighten($primary-blue, 20%);
+    white-space: nowrap;
+    max-width: 100%;       // chip can't be wider than its container
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+// "ALL" pill
+.ic-module-chip--all {
+    background: rgba($state-ok, 0.15);
+    color: $state-ok;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.ic-module-chip-remove {
+    background: none;
+    border: none;
+    color: inherit;
+    opacity: 0.7;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 1px;
+    cursor: pointer;
+
+    &:hover { opacity: 1; }
+}
+
+.ic-module-reset-all {
+    background: none;
+    border: none;
+    color: $text-secondary;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.15s;
+
+    &:hover { color: $text-primary; }
+}
+
+input.ic-module-input {
+    border: none;
+    background: transparent;
+    padding: 2px 4px;
+    flex: 1;
+    min-width: 60px;   // smaller minimum so chips don't force the container wider
+    max-width: 100%;   // never overflow parent
+    font-size: 12px;
+}
+
+// ─── Module dropdown ──────────────────────────────────────────────────────────
+
+.ic-module-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: $surface-light;
+    border: 1px solid $border;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.ic-module-option {
+    padding: 7px 12px;
+    font-size: 12px;
+    color: $text-primary;
+    cursor: pointer;
+    border-radius: 4px;
+
+    &:hover { background: rgba($primary-blue, 0.12); }
+
+    &--create {
+        color: $primary-blue;
+        font-weight: 500;
+    }
+
+    &--loading,
+    &--empty {
+        color: $text-secondary;
+        cursor: default;
+
+        &:hover { background: none; }
+    }
+
+    &--error {
+        color: $state-error;
+        cursor: default;
+
+        &:hover { background: none; }
+    }
+}
+
+// ─── Repos list wrapper (replaces old table/grid) ─────────────────────────────
+
+.ic-repos-list {
+    display: flex;
+    flex-direction: column;
+    padding: 0 16px 8px 0;
+
+    .ic-repos-empty {
+        color: $text-secondary;
+        font-size: 13px;
+        padding: 20px 0;
+        text-align: center;
+    }
+
+    // ── Compact horizontal layout: URL + branch side-by-side, addons below ──
+    .ic-repo-editor-fields {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .ic-repo-editor-url { flex: 1; }
+
+    .ic-repo-editor-branch {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+
+        .ic-repo-field-label { display: none; }
+
+        .ic-search-select {
+            width: 120px;
+            flex-shrink: 0;
+        }
+
+        select,
+        input { width: 100%; }
+    }
+
+    // Error message and addons selector always occupy their own line
+    .ic-repo-fetch-error,
+    .ic-repo-editor-addons { flex: 0 0 100%; }
+}
+
+.ic-repos-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.ic-repos-search {
+    margin-left: auto;
+    width: 200px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid $border;
+    background: $surface-light;
+    color: $text-primary;
+    font-size: 12px;
+
+    &::placeholder { color: $text-secondary; }
+    &:focus {
+        outline: none;
+        border-color: $primary-blue;
+    }
+}
+
+.ic-btn-freeze-all {
+    background: transparent;
+    border: 1px solid $border;
+    border-radius: 6px;
+    color: $text-secondary;
+    font-size: 12px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    &:hover:not(:disabled) {
+        color: $state-warning;
+        border-color: rgba($state-warning, 0.5);
+    }
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    &.unfreeze:hover:not(:disabled) {
+        color: $text-primary;
+        border-color: $text-secondary;
+    }
+}
+
+.ic-btn-add-repo {
+    align-self: flex-start;
+    background: transparent;
+    border: 1px dashed $border;
+    border-radius: 6px;
+    color: $text-secondary;
+    font-size: 12px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+
+    &:hover {
+        border-color: $primary-blue;
+        color: $primary-blue;
+    }
+}

@@ -1,0 +1,52 @@
+<templates>
+
+    <t t-name="incubacloud.ProjectCard">
+        <div t-att-class="'ic-project-card status-' + props.project.status"
+             t-on-click="onEnterProject">
+
+            <!-- Card header: version + status -->
+            <div class="ic-pc-header">
+                <span class="ic-pc-version" t-if="props.project.odoo_version"
+                      t-esc="props.project.odoo_version"/>
+                <div class="ic-ic-header-spacer"/>
+                <div class="ic-ic-status">
+                    <span t-att-class="'ic-ic-status-dot st-proj-' + props.project.status"/>
+                    <span class="ic-ic-status-label" t-esc="statusLabel(props.project.status)"/>
+                </div>
+            </div>
+
+            <!-- Project name -->
+            <h3 class="ic-pc-name" t-esc="props.project.name"/>
+
+            <!-- Body: description + environments + tags -->
+            <div class="ic-project-card-body">
+                <t t-if="props.project.description">
+                    <p class="ic-project-desc" t-esc="props.project.description"/>
+                </t>
+                <div class="ic-pc-meta">
+                    <div class="ic-project-envs">
+                        <t t-foreach="props.project.environments" t-as="env" t-key="env">
+                            <span t-att-class="'ic-env-chip env-' + env" t-esc="env"/>
+                        </t>
+                    </div>
+                    <span class="ic-pc-inst-count">
+                        <i class="fa fa-cubes"/>
+                        <t t-esc="props.project.instance_count"/>
+                    </span>
+                </div>
+                <t t-if="props.project.tags and props.project.tags.length">
+                    <div class="ic-project-tag-list">
+                        <t t-foreach="props.project.tags" t-as="tag" t-key="tag.id">
+                            <span class="ic-project-tag-badge" t-att-style="tagBadgeStyle(tag)">
+                                <span class="ic-tag-dot" t-att-style="tagDotStyle(tag)"/>
+                                <t t-esc="tag.name"/>
+                            </span>
+                        </t>
+                    </div>
+                </t>
+            </div>
+
+        </div>
+    </t>
+
+</templates>

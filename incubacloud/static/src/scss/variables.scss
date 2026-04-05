@@ -1,0 +1,82 @@
+// ── Color tokens ────────────────────────────────────────────────────────────
+$primary-blue: #2563EB;
+$primary-dark: #1E40AF;
+$accent: #F97316;         // orange — primary CTAs (Deploy, Create)
+$accent-dark: #EA580C;    // orange hover
+
+$background: #0F172A;
+$surface: #111827;
+$surface-light: #1F2937;
+$text-primary: #E5E7EB;
+$text-secondary: #94A3B8;  // slate-400 — more neutral, consistent contrast
+$border: #334155;
+
+$state-ok: #22C55E;
+$state-warning: #F59E0B;
+$state-error: #EF4444;
+$state-neutral: #6B7280;
+
+// ── Toast colors ──────────────────────────────────────────────────────────────
+$toast-success-bg:     #1a3a2a;
+$toast-success-border: #2d6b48;
+$toast-success-text:   #7ee2a8;
+
+$toast-error-bg:       #3a1a1a;
+$toast-error-border:   #6b2d2d;
+$toast-error-text:     #f0a0a0;
+
+$toast-warning-bg:     #3a2e1a;
+$toast-warning-border: #6b5a2d;
+$toast-warning-text:   #f0d080;
+
+$toast-info-bg:        #1a2a3a;
+$toast-info-border:    #2d4a6b;
+$toast-info-text:      #90c0f0;
+
+// ── Code editor (dark GitHub-style theme) ───────────────────────────────────
+$code-bg: #0d1117;
+$code-bg-alt: #161b22;
+$code-text: #e6edf3;
+$code-border: #30363d;
+$code-line-highlight: #1c2128;
+$code-gutter-bg: #161b22;
+$code-gutter-text: #6e7681;
+
+// ── Typography ──────────────────────────────────────────────────────────────
+$font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+
+// ── Transition durations ────────────────────────────────────────────────────
+$duration-fast: 150ms;
+$duration-normal: 250ms;
+$duration-slow: 350ms;
+
+// ── Spacing scale (8px base) ─────────────────────────────────────────────────
+$space-1: 4px;
+$space-2: 8px;
+$space-3: 12px;
+$space-4: 16px;
+$space-5: 20px;
+$space-6: 24px;
+$space-8: 32px;
+$space-10: 40px;
+$space-12: 48px;
+
+// ── Border radius scale ───────────────────────────────────────────────────────
+$radius-sm: 4px;
+$radius-md: 6px;
+$radius-lg: 10px;
+$radius-xl: 12px;
+$radius-2xl: 16px;
+$radius-pill: 9999px;
+
+// ── Elevation / shadow scale ──────────────────────────────────────────────────
+$shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.4);
+$shadow-md:  0 4px 12px rgba(0, 0, 0, 0.5);
+$shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.6);
+$shadow-xl:  0 16px 40px rgba(0, 0, 0, 0.7);
+
+// ── Modal widths ──────────────────────────────────────────────────────────────
+$modal-sm: 420px;   // confirm dialogs
+$modal-md: 540px;   // create/edit forms
+$modal-lg: 680px;   // restore db, conflict resolution

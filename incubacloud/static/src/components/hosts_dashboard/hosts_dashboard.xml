@@ -1,0 +1,110 @@
+<templates>
+
+    <t t-name="incubacloud.HostsDashboard">
+        <div class="ic-dashboard">
+
+            <!-- Header -->
+            <div class="ic-dashboard-header">
+                <h1>Hosts</h1>
+                <div class="ic-dashboard-search">
+                    <input type="text" placeholder="Search hosts…" aria-label="Search hosts" t-on-input="onSearchInput"/>
+                </div>
+            </div>
+
+            <!-- Grid -->
+            <div class="ic-dashboard-grid">
+
+                <!-- Action card first -->
+                <div class="ic-action-card" t-on-click="onAddHost">
+                    <i class="fa fa-plus ic-action-card-icon"/>
+                    <span class="ic-action-card-label">Add Host</span>
+                </div>
+
+                <t t-if="state.visible_hosts.length === 0">
+                    <div class="ic-empty-state">
+                        <i class="fa fa-server ic-empty-icon"/>
+                        <div class="ic-empty-title">No hosts configured</div>
+                        <div class="ic-empty-hint">Add a server to start deploying Odoo instances.</div>
+                    </div>
+                </t>
+
+                <t t-foreach="state.visible_hosts" t-as="host" t-key="host.id">
+                    <div t-att-class="'ic-host-card status-' + host.status"
+                         t-on-click="() => this.onViewHost(host)">
+
+                        <!-- Card header: name + status -->
+                        <div class="ic-ic-header">
+                            <h3 class="ic-ic-name" t-esc="host.name"/>
+                            <div class="ic-ic-header-spacer"/>
+                            <div class="ic-ic-status">
+                                <span t-att-class="'ic-ic-status-dot st-host-' + host.status"/>
+                                <span class="ic-ic-status-label" t-esc="statusLabel(host.status)"/>
+                            </div>
+                        </div>
+
+                        <!-- Meta: ip + specs inline -->
+                        <div class="ic-host-meta">
+                            <t t-if="host.ip_address">
+                                <code class="ic-ic-host-chip" t-esc="host.ip_address"/>
+                            </t>
+                            <t t-if="hasMetrics(host)">
+                                <span class="ic-spec-chip"><t t-esc="host.cpu_cores"/> cores</span>
+                                <span class="ic-spec-chip"><t t-esc="formatRam(host.ram_total_gb)"/> RAM</span>
+                            </t>
+                        </div>
+
+                        <!-- Disk -->
+                        <div class="ic-host-metrics">
+                            <t t-if="hasMetrics(host)">
+                                <t t-call="incubacloud.HostMetricBar">
+                                    <t t-set="label" t-value="'Disk'"/>
+                                    <t t-set="value" t-value="host.disk"/>
+                                    <t t-set="cls" t-value="barClass(host.disk)"/>
+                                    <t t-set="extra" t-value="diskExtra(host)"/>
+                                </t>
+                            </t>
+                            <t t-else="">
+                                <div class="ic-metrics-placeholder">
+                                    No specs yet — run Check from the host page
+                                </div>
+                            </t>
+                        </div>
+
+                        <!-- Instance count + last probed -->
+                        <div class="ic-host-footer-meta">
+                            <span class="ic-instances">
+                                <t t-esc="host.instance_count"/> instance<t t-if="host.instance_count !== 1">s</t>
+                            </span>
+                            <t t-if="host.last_probed">
+                                <span class="ic-last-probed">
+                                    · <t t-esc="timeAgo(host.last_probed)"/>
+                                </span>
+                            </t>
+                        </div>
+
+                    </div>
+                </t>
+
+            </div>
+        </div>
+
+    </t>
+
+    <!-- Metric bar partial -->
+    <t t-name="incubacloud.HostMetricBar">
+        <div class="ic-host-metric">
+            <span class="ic-metric-label" t-esc="label"/>
+            <div class="ic-bar">
+                <div t-att-class="'ic-bar-fill ' + cls"
+                     t-att-style="'width:' + value + '%'"/>
+            </div>
+            <div class="ic-metric-right">
+                <span class="ic-metric-value"><t t-esc="value"/>%</span>
+                <t t-if="extra">
+                    <span class="ic-metric-extra" t-esc="extra"/>
+                </t>
+            </div>
+        </div>
+    </t>
+
+</templates>

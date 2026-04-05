@@ -1,0 +1,43 @@
+global:
+  sendAnonymousUsage: false
+
+providers:
+  docker:
+    endpoint: "http://dockersocket:2375"
+    watch: true
+    exposedByDefault: false
+    network: traefik_shared
+
+  file:
+    filename: /etc/traefik/config.yml
+    watch: true
+
+# Uncomment for DEBUG logs
+# log:
+#   level: DEBUG
+
+entryPoints:
+  http:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: https
+          scheme: https
+  https:
+    http:
+      tls: "true"
+    address: ":443"
+
+api:
+  dashboard: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "mail@mycustomdomain.com"
+      storage: "acme.json"
+      # CA server to use.
+      # UnComment the line to use Let's Encrypt's staging server
+      #caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      tlsChallenge: {}

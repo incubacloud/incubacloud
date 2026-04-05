@@ -1,0 +1,205 @@
+<templates>
+
+    <t t-name="incubacloud.RemoteFileBrowser">
+        <div class="ic-modal-overlay" t-on-click.self="props.onCancel">
+            <div class="ic-modal ic-modal--filebrowser" t-on-click.stop="">
+
+                <header class="ic-modal__header">
+                    <h3>Import Instance from Host</h3>
+                    <button t-if="state.step !== 'importing'"
+                            class="ic-modal__close" t-on-click="props.onCancel">✕</button>
+                </header>
+
+                <!-- ── Browse step ────────────────────────────────── -->
+                <t t-if="state.step === 'browse'">
+                    <section class="ic-modal__body">
+
+                        <!-- Breadcrumb -->
+                        <div class="ic-fb-breadcrumb">
+                            <t t-foreach="breadcrumbs" t-as="bc" t-key="bc.path">
+                                <span class="ic-fb-bc-item"
+                                      t-on-click="() => this.onClickBreadcrumb(bc.path)"
+                                      t-esc="bc.name"/>
+                                <t t-if="!bc_last">
+                                    <span class="ic-fb-bc-sep">/</span>
+                                </t>
+                            </t>
+                        </div>
+
+                        <t t-if="state.loading">
+                            <div class="ic-fb-loading">
+                                <div class="ic-import-loading-spinner"/>
+                                <span>Loading directory…</span>
+                            </div>
+                        </t>
+
+                        <t t-elif="state.error">
+                            <div class="ic-alert ic-alert--error" role="alert" t-esc="state.error"/>
+                        </t>
+
+                        <t t-else="">
+                            <!-- Current dir is doodba badge -->
+                            <t t-if="state.isDoodba">
+                                <div class="ic-fb-doodba-badge">
+                                    <i class="fa fa-check-circle"/>
+                                    Doodba instance detected
+                                    <t t-if="state.copierInfo.project_name">
+                                        — <strong t-esc="state.copierInfo.project_name"/>
+                                    </t>
+                                    <t t-if="state.copierInfo.odoo_version">
+                                        (Odoo <t t-esc="state.copierInfo.odoo_version"/>)
+                                    </t>
+                                </div>
+                            </t>
+
+                            <!-- Directory listing -->
+                            <div class="ic-fb-list">
+                                <!-- Parent dir -->
+                                <t t-if="state.parentPath">
+                                    <div class="ic-fb-entry ic-fb-entry-dir"
+                                         t-on-click="goUp">
+                                        <i class="fa fa-level-up"/>
+                                        <span>..</span>
+                                    </div>
+                                </t>
+
+                                <t t-foreach="state.entries" t-as="entry" t-key="entry.name">
+                                    <div t-att-class="'ic-fb-entry ic-fb-entry-dir'
+                                         + (entry.is_doodba ? ' ic-fb-entry-doodba' : '')
+                                         + (entry.already_imported ? ' ic-fb-entry-imported' : '')"
+                                         t-on-click="() => this.onClickDir(entry)">
+                                        <i t-att-class="entry.is_doodba ? 'fa fa-cube' : 'fa fa-folder'"/>
+                                        <span t-esc="entry.name"/>
+                                        <t t-if="entry.is_doodba">
+                                            <span class="ic-fb-badge ic-fb-badge-doodba">doodba</span>
+                                        </t>
+                                        <t t-if="entry.already_imported">
+                                            <span class="ic-fb-badge ic-fb-badge-imported">imported</span>
+                                        </t>
+                                    </div>
+                                </t>
+
+                                <t t-if="!state.entries.length and !state.parentPath">
+                                    <div class="ic-fb-empty">Empty directory</div>
+                                </t>
+                            </div>
+                        </t>
+                    </section>
+
+                    <footer class="ic-modal__footer ic-modal__footer--between">
+                        <div class="ic-fb-path-display">
+                            <code t-esc="state.currentPath"/>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="ic-btn ic-btn--secondary" t-on-click="props.onCancel">
+                                Cancel
+                            </button>
+                            <button class="ic-btn ic-btn--primary"
+                                    t-att-disabled="!state.isDoodba or state.alreadyImported"
+                                    t-on-click="selectCurrent">
+                                <t t-if="state.alreadyImported">Already imported</t>
+                                <t t-else="">Select</t>
+                            </button>
+                        </div>
+                    </footer>
+                </t>
+
+                <!-- ── Confirm step ───────────────────────────────── -->
+                <t t-if="state.step === 'confirm'">
+                    <section class="ic-modal__body">
+                        <div class="ic-fb-confirm">
+                            <div class="ic-fb-confirm-row">
+                                <span class="ic-fb-confirm-label">Path</span>
+                                <code t-esc="state.currentPath"/>
+                            </div>
+                            <t t-if="state.copierInfo.project_name">
+                                <div class="ic-fb-confirm-row">
+                                    <span class="ic-fb-confirm-label">Project</span>
+                                    <span t-esc="state.copierInfo.project_name"/>
+                                </div>
+                            </t>
+                            <t t-if="state.copierInfo.odoo_version">
+                                <div class="ic-fb-confirm-row">
+                                    <span class="ic-fb-confirm-label">Odoo Version</span>
+                                    <span t-esc="state.copierInfo.odoo_version"/>
+                                </div>
+                            </t>
+                        </div>
+                        <p class="ic-import-hint" style="margin-top: 16px;">
+                            This will create a project and instance in IncubaCloud mapped to
+                            this directory. The running instance will not be affected.
+                        </p>
+                    </section>
+                    <footer class="ic-modal__footer ic-modal__footer--between">
+                        <button class="ic-btn ic-btn--secondary" t-on-click="backToBrowse">
+                            ← Back
+                        </button>
+                        <button class="ic-btn ic-btn--primary" t-on-click="doImport">
+                            Import
+                        </button>
+                    </footer>
+                </t>
+
+                <!-- ── Importing step ─────────────────────────────── -->
+                <t t-if="state.step === 'importing'">
+                    <section class="ic-modal__body">
+                        <div class="ic-import-progress">
+                            <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
+                                <div class="ic-import-progress-item done">
+                                    <i class="fa fa-check-circle"/>
+                                    <span t-esc="msg.text"/>
+                                </div>
+                            </t>
+                            <div class="ic-import-progress-item pending">
+                                <div class="ic-import-loading-spinner"/>
+                                <span>Importing instance…</span>
+                            </div>
+                        </div>
+                    </section>
+                    <footer class="ic-modal__footer"/>
+                </t>
+
+                <!-- ── Done step ──────────────────────────────────── -->
+                <t t-if="state.step === 'done'">
+                    <section class="ic-modal__body">
+                        <div class="ic-import-progress">
+                            <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
+                                <div class="ic-import-progress-item done">
+                                    <i class="fa fa-check-circle"/>
+                                    <span t-esc="msg.text"/>
+                                </div>
+                            </t>
+                        </div>
+                    </section>
+                    <footer class="ic-modal__footer">
+                        <button class="ic-btn ic-btn--primary" t-on-click="goToInstance">
+                            Go to instance
+                        </button>
+                    </footer>
+                </t>
+
+                <!-- ── Error step ─────────────────────────────────── -->
+                <t t-if="state.step === 'error'">
+                    <section class="ic-modal__body">
+                        <div class="ic-import-progress">
+                            <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
+                                <div class="ic-import-progress-item done">
+                                    <i class="fa fa-check-circle"/>
+                                    <span t-esc="msg.text"/>
+                                </div>
+                            </t>
+                        </div>
+                        <div class="ic-alert ic-alert--error" role="alert" style="margin-top: 16px;"
+                             t-esc="state.error"/>
+                    </section>
+                    <footer class="ic-modal__footer ic-modal__footer--between">
+                        <button class="ic-btn ic-btn--secondary" t-on-click="retry">← Try again</button>
+                        <button class="ic-btn ic-btn--secondary" t-on-click="props.onCancel">Close</button>
+                    </footer>
+                </t>
+
+            </div>
+        </div>
+    </t>
+
+</templates>

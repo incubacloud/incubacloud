@@ -1,0 +1,155 @@
+.ic-modal--filebrowser {
+    width: 640px;
+    max-height: 80vh;
+}
+
+// ── Breadcrumb ──────────────────────────────────────────────────────────────
+
+.ic-fb-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+
+.ic-fb-bc-item {
+    color: $primary-blue;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+
+    &:hover { background: rgba($primary-blue, 0.1); }
+    &:last-child { color: $text-primary; cursor: default; }
+    &:last-child:hover { background: none; }
+}
+
+.ic-fb-bc-sep {
+    color: $text-secondary;
+    opacity: 0.5;
+}
+
+// ── Directory listing ───────────────────────────────────────────────────────
+
+.ic-fb-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 400px;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar { width: 4px; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+}
+
+.ic-fb-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: $text-primary;
+    transition: background 0.12s;
+
+    &:hover { background: $surface-light; }
+
+    i { width: 16px; text-align: center; color: $text-secondary; }
+}
+
+.ic-fb-entry-doodba {
+    i { color: $state-ok; }
+}
+
+.ic-fb-entry-imported {
+    opacity: 0.5;
+}
+
+.ic-fb-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    margin-left: auto;
+}
+
+.ic-fb-badge-doodba {
+    background: rgba($state-ok, 0.15);
+    color: $state-ok;
+}
+
+.ic-fb-badge-imported {
+    background: rgba($text-secondary, 0.15);
+    color: $text-secondary;
+}
+
+.ic-fb-empty {
+    padding: 24px;
+    text-align: center;
+    color: $text-secondary;
+    font-size: 13px;
+}
+
+.ic-fb-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px;
+    color: $text-secondary;
+    font-size: 13px;
+}
+
+// ── Doodba detected banner ──────────────────────────────────────────────────
+
+.ic-fb-doodba-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+    background: rgba($state-ok, 0.08);
+    border: 1px solid rgba($state-ok, 0.2);
+    color: $state-ok;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+// ── Path display in footer ──────────────────────────────────────────────────
+
+.ic-fb-path-display {
+    flex: 1;
+    min-width: 0;
+
+    code {
+        font-size: 11px;
+        color: $text-secondary;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: block;
+    }
+}
+
+// ── Confirm step ────────────────────────────────────────────────────────────
+
+.ic-fb-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ic-fb-confirm-row {
+    display: flex;
+    gap: 12px;
+    font-size: 13px;
+}
+
+.ic-fb-confirm-label {
+    font-weight: 600;
+    color: $text-secondary;
+    min-width: 100px;
+}

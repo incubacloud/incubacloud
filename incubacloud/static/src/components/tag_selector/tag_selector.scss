@@ -1,0 +1,113 @@
+// ── Tag Selector ───────────────────────────────────────────────────────────────
+
+.ic-tag-selector {
+    position: relative;
+    width: 100%;
+}
+
+// ── Selected chips + input row ─────────────────────────────────────────────────
+
+.ic-tag-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-height: 36px;
+    padding: 4px 8px;
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 6px;
+    cursor: text;
+}
+
+.ic-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ic-tag-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.ic-tag-remove {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-left: 2px;
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.6;
+    cursor: pointer;
+    color: inherit;
+
+    &:hover { opacity: 1; }
+}
+
+.ic-tag-input {
+    flex: 1;
+    min-width: 80px;
+    background: none;
+    border: none;
+    outline: none;
+    color: $text-primary;
+    font-size: 12px;
+    padding: 2px 0;
+
+    &::placeholder { color: $text-secondary; opacity: 0.5; }
+}
+
+// ── Dropdown ───────────────────────────────────────────────────────────────────
+
+.ic-tag-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: $surface-light;
+    border: 1px solid $border;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+}
+
+.ic-tag-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: $text-primary;
+    cursor: pointer;
+    transition: background 0.1s;
+
+    &:hover { background: rgba($border, 0.4); }
+}
+
+.ic-tag-create {
+    color: $primary-blue;
+    font-weight: 500;
+}
+
+.ic-tag-create-icon {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    color: $primary-blue;
+}
+
+.ic-tag-empty {
+    color: $text-secondary;
+    cursor: default;
+    &:hover { background: none; }
+}

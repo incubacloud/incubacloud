@@ -1,0 +1,212 @@
+// ── Card ──────────────────────────────────────────────────────────────────────
+
+.ic-host-card {
+    background: $surface-light;
+    border: 1px solid $border;
+    border-left: 3px solid $state-neutral;
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.2s;
+
+    &.status-compatible  { border-left-color: $state-ok; }
+    &.status-degraded    { border-left-color: $state-warning; }
+    &.status-unsupported { border-left-color: $state-error; }
+    &.status-checking    { border-left-color: $primary-blue; }
+    &.status-unknown     { border-left-color: $state-neutral; }
+}
+
+// ── Name inside header (override shared ic-ic-name for inline use) ────────────
+
+.ic-ic-header .ic-ic-name {
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    color: $text-primary;
+}
+
+// ── Meta row: ip + specs inline ───────────────────────────────────────────────
+
+.ic-host-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+// ── Status dot variants ────────────────────────────────────────────────────────
+
+.ic-ic-status-dot {
+    &.st-host-compatible  { background: $state-ok; box-shadow: 0 0 5px rgba($state-ok, 0.5); animation: dot-running-pulse 2s ease-in-out infinite; }
+    &.st-host-degraded    { background: $state-warning; }
+    &.st-host-unsupported { background: $state-error; }
+    &.st-host-checking    { background: $primary-blue; }
+    &.st-host-unknown     { background: $state-neutral; }
+}
+
+// ── Metrics ───────────────────────────────────────────────────────────────────
+
+.ic-host-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+// ── Specs row (CPU cores · RAM total) ─────────────────────────────────────────
+
+.ic-host-specs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ic-spec-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: rgba($border, 0.35);
+    border: 1px solid rgba($border, 0.5);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: $text-primary;
+    white-space: nowrap;
+}
+
+.ic-host-metric {
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.ic-metric-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: $text-secondary;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.ic-bar {
+    height: 6px;
+    background: rgba($border, 0.6);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.ic-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease;
+
+    &.bar-ok      { background: $state-ok; }
+    &.bar-warn    { background: $state-warning; }
+    &.bar-danger  { background: $state-error; }
+    &.bar-empty   { background: $state-neutral; width: 0 !important; }
+}
+
+.ic-metric-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 72px;
+}
+
+.ic-metric-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: $text-primary;
+    white-space: nowrap;
+}
+
+.ic-metric-extra {
+    font-size: 10px;
+    color: $text-secondary;
+    white-space: nowrap;
+}
+
+.ic-metrics-placeholder {
+    font-size: 12px;
+    color: $text-secondary;
+    font-style: italic;
+    padding: 8px 0;
+    text-align: center;
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+
+.ic-host-alerts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ic-alert-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    font-size: 11px;
+
+    &.alert-warning {
+        background: rgba($state-warning, 0.12);
+        color: darken($state-warning, 10%);
+        border-left: 2px solid $state-warning;
+    }
+
+    &.alert-critical {
+        background: rgba($state-error, 0.12);
+        color: darken($state-error, 5%);
+        border-left: 2px solid $state-error;
+    }
+}
+
+.ic-alert-msg {
+    flex: 1;
+    font-weight: 500;
+}
+
+.ic-alert-dismiss {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 15px;
+    padding: 0 2px;
+    line-height: 1;
+
+    &:hover { opacity: 1; }
+}
+
+// ── Push footer to bottom of card regardless of content height ────────────────
+
+.ic-host-card .ic-ic-footer {
+    margin-top: auto;
+}
+
+// ── Footer meta (instance count + last probed) ────────────────────────────────
+
+.ic-host-footer-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: $text-secondary;
+    padding: 2px 0;
+}
+
+.ic-instances {
+    font-weight: 500;
+}
+
+.ic-last-probed {
+    opacity: 0.7;
+}
+

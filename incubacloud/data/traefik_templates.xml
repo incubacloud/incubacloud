@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- noupdate="0" ensures this runs on every upgrade -->
+    <data noupdate="0">
+        <function model="cloud.host" name="init_traefik_templates"/>
+    </data>
+</odoo>

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <t t-name="incubacloud.SearchSelect">
+        <div class="ic-search-select"
+             t-att-class="{
+                 'ic-search-select--open':     state.open,
+                 'ic-search-select--disabled': props.disabled,
+                 'ic-search-select--loading':  props.loading,
+             }">
+
+            <!-- Input row -->
+            <div class="ic-search-select__input-wrap" t-ref="wrap">
+                <input
+                    class="ic-search-select__input"
+                    type="text"
+                    autocomplete="off"
+                    t-att-placeholder="props.loading ? 'Loading…' : props.placeholder"
+                    t-att-disabled="props.disabled || props.loading || null"
+                    t-att-value="displayValue"
+                    t-on-focus="onFocus"
+                    t-on-input="onInput"
+                    t-on-blur="onBlur"
+                />
+                <span class="ic-search-select__chevron" t-if="!props.loading">▾</span>
+                <i class="fa fa-spinner fa-spin ic-search-select__spinner" t-if="props.loading"/>
+            </div>
+
+            <!-- Dropdown (fixed-positioned to escape overflow clipping) -->
+            <t t-if="state.open and !props.loading">
+                <div class="ic-search-select__dropdown" t-att-style="state.dropdownStyle">
+
+                    <!-- Empty placeholder option -->
+                    <t t-if="props.emptyLabel and !state.input">
+                        <div class="ic-search-select__option ic-search-select__option--empty"
+                             t-on-mousedown.prevent="() => this.pick({ value: '', label: '' })">
+                            <t t-esc="props.emptyLabel"/>
+                        </div>
+                    </t>
+
+                    <!-- Filtered options -->
+                    <t t-foreach="filtered" t-as="opt" t-key="opt.value">
+                        <div class="ic-search-select__option"
+                             t-att-class="{ 'ic-search-select__option--selected': props.value === opt.value }"
+                             t-on-mousedown.prevent="() => this.pick(opt)">
+                            <t t-esc="opt.label"/>
+                        </div>
+                    </t>
+
+                    <!-- Free-text create option -->
+                    <t t-if="showFreeTextCreate">
+                        <div class="ic-search-select__option ic-search-select__option--create"
+                             t-on-mousedown.prevent="() => this.pickFreeText()">
+                            Use "<t t-esc="state.input.trim()"/>"
+                        </div>
+                    </t>
+
+                    <!-- No results -->
+                    <t t-if="!filtered.length and !showFreeTextCreate">
+                        <div class="ic-search-select__option ic-search-select__option--hint">
+                            No results
+                        </div>
+                    </t>
+
+                </div>
+            </t>
+
+        </div>
+    </t>
+
+</templates>

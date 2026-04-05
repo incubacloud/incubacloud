@@ -1,0 +1,23 @@
+// ModuleSelector — chip-based addon selector
+// Shares the .ic-module-* classes defined in repo_editor.scss
+
+.ic-module-overlap-error {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--ic-state-danger, #dc3545);
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(220, 53, 69, 0.08);
+}
+
+.ic-module-chip.ic-module-chip--conflict {
+    background: rgba(220, 53, 69, 0.15);
+    border-color: var(--ic-state-danger, #dc3545);
+    color: var(--ic-state-danger, #dc3545);
+}
+
+// Exclude-section heading
+.ic-repo-excludes-label {
+    margin-top: 6px;
+    opacity: 0.75;
+}

@@ -1,0 +1,184 @@
+<templates>
+<t t-name="incubacloud.AlertHistory">
+<div class="ic-alert-history">
+
+    <!-- Header -->
+    <t t-if="!props.embedded">
+        <div class="history-header">
+            <div class="history-header-left">
+                <h1 class="history-title">Alert History</h1>
+            </div>
+            <button class="refresh-btn" t-on-click="loadAlerts">↻ Refresh</button>
+        </div>
+    </t>
+
+    <!-- Filters -->
+    <div class="ah-filters">
+        <span class="filter-label">Show</span>
+        <div class="state-chips">
+            <button t-att-class="'state-chip' + (state.stateFilter === 'all' ? ' active' : '')"
+                    t-on-click="() => this.setFilter('all')">All</button>
+            <button t-att-class="'state-chip' + (state.stateFilter === 'active' ? ' active' : '')"
+                    t-on-click="() => this.setFilter('active')">Active</button>
+            <button t-att-class="'state-chip' + (state.stateFilter === 'dismissed' ? ' active' : '')"
+                    t-on-click="() => this.setFilter('dismissed')">Dismissed</button>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <t t-if="state.loading">
+        <div class="ic-skeleton-list" style="padding: 12px 0;">
+            <t t-foreach="[1,2,3]" t-as="i" t-key="i">
+                <div class="ic-skeleton-row" style="padding: 6px 0;">
+                    <div class="ic-skeleton-label" style="width: 120px;"/>
+                    <div class="ic-skeleton-value" style="width: 200px;"/>
+                </div>
+            </t>
+        </div>
+    </t>
+
+    <t t-else="">
+        <t t-if="!state.alerts.length">
+            <div class="history-empty">No alerts found.</div>
+        </t>
+        <t t-else="">
+            <div class="ah-list">
+                <t t-foreach="state.alerts" t-as="alert" t-key="alert.id">
+                    <div t-att-class="'ah-card ah-level-' + alert.level">
+                        <div class="ah-card-header">
+                            <div class="ah-card-left">
+                                <span t-att-class="'ah-level-badge ah-level-' + alert.level"
+                                      t-esc="alert.level"/>
+                                <t t-if="alert.instance_id and alert.project_id">
+                                    <span class="ah-card-target ah-card-link"
+                                          t-on-click.stop="() => this.goToInstance(alert)"
+                                          t-esc="alert.target or alert.host or '—'"/>
+                                </t>
+                                <t t-else="">
+                                    <span class="ah-card-target"
+                                          t-esc="alert.target or alert.host or '—'"/>
+                                </t>
+                                <span class="ah-card-code" t-esc="alert.code"/>
+                            </div>
+                            <div class="ah-card-right">
+                                <span t-att-class="'ah-state-badge ah-state-' + alert.state"
+                                      t-esc="alert.state"/>
+                                <span class="ah-card-date" t-esc="formatDate(alert.create_date)"/>
+                            </div>
+                        </div>
+                        <div class="ah-card-message" t-esc="alert.message"/>
+                        <div class="ah-card-actions" t-if="alert.state === 'active' or alert.job_id">
+                            <t t-if="alert.state === 'active' and alert.code === 'pip_conflict' and alert.conflict_data and alert.conflict_data.length">
+                                <button class="ah-btn-resolve" t-on-click="() => this.openResolve(alert)">
+                                    <i class="fa fa-wrench"/> Resolve
+                                </button>
+                            </t>
+                            <t t-elif="alert.state === 'active' and alert.code === 'addon_conflict'">
+                                <button class="ah-btn-resolve" t-on-click="() => this.openAddonConflict(alert)">
+                                    <i class="fa fa-wrench"/> Resolve
+                                </button>
+                            </t>
+                            <t t-if="alert.job_id">
+                                <button class="ah-btn-job"
+                                        t-on-click="() => this.openJob(alert.job_id)">
+                                    <i class="fa fa-terminal"/> View job
+                                </button>
+                            </t>
+                            <t t-if="alert.state === 'active' and alert.code !== 'pip_conflict' and alert.code !== 'addon_conflict'">
+                                <button class="ah-btn-dismiss"
+                                        t-on-click="() => this.dismissAlert(alert)">
+                                    <i class="fa fa-check"/> Dismiss
+                                </button>
+                            </t>
+                        </div>
+                    </div>
+                </t>
+            </div>
+        </t>
+    </t>
+
+    <!-- Addon conflict modal -->
+    <t t-if="state.addonConflictModal">
+        <div class="ic-confirm-overlay" t-on-click="closeAddonConflictModal">
+            <div class="ic-confirm-box ah-resolve-box" t-on-click.stop="">
+                <h3 class="ic-confirm-title">Resolve Addon Conflicts</h3>
+                <p class="ah-resolve-sub">
+                    Choose which repo should keep each addon.
+                    The other repo(s) will have it added to their <strong>Excludes</strong> automatically.
+                </p>
+                <div class="ah-conflicts-list">
+                    <t t-foreach="state.addonConflictModal.alert.conflict_data" t-as="c" t-key="c.addon">
+                        <div class="ah-conflict-row">
+                            <span class="ah-conflict-pkg" t-esc="c.addon"/>
+                            <div class="ah-conflict-options">
+                                <t t-foreach="c.repos || []" t-as="repo" t-key="repo">
+                                    <label class="ah-conflict-opt">
+                                        <input type="radio"
+                                               t-att-name="'addon_' + c.addon"
+                                               t-att-checked="state.addonConflictModal.choices[c.addon] === repo"
+                                               t-on-change="() => this.setAddonChoice(c.addon, repo)"/>
+                                        <code t-esc="repo"/>
+                                    </label>
+                                </t>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+                <div class="ic-confirm-actions ah-resolve-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closeAddonConflictModal">Cancel</button>
+                    <button class="ic-confirm-btn-ok" t-on-click="confirmResolveAddon">Apply &amp; Resolve</button>
+                </div>
+            </div>
+        </div>
+    </t>
+
+    <!-- Resolve pip conflict modal -->
+    <t t-if="state.resolveModal">
+        <div class="ic-confirm-overlay" t-on-click="closeResolveModal">
+            <div class="ic-confirm-box ah-resolve-box" t-on-click.stop="">
+                <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
+                <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
+                <div class="ah-conflicts-list">
+                    <t t-foreach="state.resolveModal.alert.conflict_data" t-as="c" t-key="c.name">
+                        <div class="ah-conflict-row">
+                            <span class="ah-conflict-pkg" t-esc="c.name"/>
+                            <div class="ah-conflict-options">
+                                <label class="ah-conflict-opt">
+                                    <input type="radio"
+                                           t-att-name="'conflict_' + c.name"
+                                           t-att-checked="state.resolveModal.choices[c.name] === c.existing"
+                                           t-on-change="() => this.setChoice(c.name, c.existing)"/>
+                                    <code t-esc="c.existing"/>
+                                    <span class="ah-conflict-hint"
+                                          t-esc="'(' + (c.existing_source || 'existing') + ')'"/>
+                                </label>
+                                <label class="ah-conflict-opt">
+                                    <input type="radio"
+                                           t-att-name="'conflict_' + c.name"
+                                           t-att-checked="state.resolveModal.choices[c.name] === c.incoming"
+                                           t-on-change="() => this.setChoice(c.name, c.incoming)"/>
+                                    <code t-esc="c.incoming"/>
+                                    <span class="ah-conflict-hint"
+                                          t-esc="'(' + (c.incoming_source || 'incoming') + ')'"/>
+                                </label>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+                <div class="ic-confirm-actions ah-resolve-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closeResolveModal">Cancel</button>
+                    <t t-if="state.resolveModal.alert.instance_id">
+                        <button class="ic-btn-secondary" t-on-click="resolveManually"
+                                title="Dismiss alert and go to the instance editor to fix pip dependencies manually">
+                            Edit Manually
+                        </button>
+                    </t>
+                    <button class="ic-confirm-btn-ok" t-on-click="confirmResolve">Apply &amp; Resolve</button>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</div>
+</t>
+</templates>

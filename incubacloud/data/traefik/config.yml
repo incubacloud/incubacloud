@@ -1,0 +1,36 @@
+http:
+  middlewares:
+    buffering:
+      buffering:
+        retryExpression: IsNetworkError() && Attempts() < 5
+    compress:
+      compress: "true"
+    secure:
+      headers:
+        forceSTSHeader: "true"
+        sslRedirect: "true"
+    nocrawlers:
+      headers:
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow"
+    doodba:
+      chain:
+        middlewares:
+          - buffering
+          - compress
+          - secure
+    localhost-only:
+      ipWhitelist:
+        sourceRange:
+          - "127.0.0.1/32"
+          - "10.11.0.0/16" # change to your docker subnet
+    prod-headers:
+      headers:
+        customResponseHeaders:
+          # In environment with versioned static files, switch commented
+          # Cache-Control: "private,max-age=31536000"
+          Cache-Control: "private,no-cache"
+    test-headers:
+      headers:
+        customResponseHeaders:
+          Cache-Control: "private,no-cache"

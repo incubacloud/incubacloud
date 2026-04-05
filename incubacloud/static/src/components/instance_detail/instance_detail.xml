@@ -1,0 +1,1534 @@
+<templates>
+
+    <t t-name="incubacloud.InstanceDetail">
+        <div class="ic-host-detail">
+
+            <!-- Loading -->
+            <t t-if="state.loading">
+                <div class="ic-overview" style="padding: 16px 0;">
+                    <div class="ic-overview-cards">
+                        <div class="ic-skeleton-card"/>
+                        <div class="ic-skeleton-card"/>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <div class="ic-skeleton-text ic-skeleton-lg"/>
+                        <div class="ic-skeleton-text ic-skeleton-md"/>
+                        <div class="ic-skeleton-text ic-skeleton-sm"/>
+                    </div>
+                </div>
+            </t>
+
+            <t t-elif="isCreate or state.inst">
+
+                <!-- Header -->
+                <!-- ═══════════════════════════════════════════════════════════
+                     Unified header: name + status + domain + actions
+                     ═══════════════════════════════════════════════════════════ -->
+                <div class="ic-hero">
+                    <t t-if="isCreate">
+                        <div class="ic-hero-top">
+                            <h1 class="ic-hero-name">New Instance</h1>
+                            <span t-att-class="'ic-instance-badge badge-env badge-env-' + state.form.environment"
+                                  t-esc="envLabel(state.form.environment)"/>
+                        </div>
+                    </t>
+                    <t t-if="!isCreate and state.inst">
+                        <!-- Row 1: name + badge + status -->
+                        <div class="ic-hero-top">
+                            <h1 class="ic-hero-name" t-esc="state.inst.name"/>
+                            <span t-att-class="'ic-instance-badge badge-env badge-env-' + state.form.environment"
+                                  t-esc="envLabel(state.form.environment)"/>
+                            <span t-att-class="'ic-ic-status-inline ' + statusClass">
+                                <span t-att-class="'ic-ic-status-dot ' + statusClass"/>
+                                <span t-esc="statusLabel"/>
+                            </span>
+                        </div>
+
+                        <!-- Row 2: actions (primary + tools + danger) -->
+                        <div t-att-class="'ic-hero-actions' + (state.actionLoading ? ' ic-action-loading' : '')">
+                            <!-- Primary actions: Deploy/Rebuild + Connect, Logs, Shell -->
+                            <t t-if="env.permissions?.can_deploy">
+                                <t t-if="!state.inst.deployed and state.inst.host_id">
+                                    <button class="ic-action-btn ic-ab-deploy" title="Deploy"
+                                            t-att-disabled="state.actionLoading"
+                                            t-on-click="() => this.deployInstance()">
+                                        <i t-att-class="state.actionLoading ? 'fa fa-spinner fa-spin' : 'fa fa-rocket'"/>
+                                        <t t-if="state.actionLoading">Deploying…</t>
+                                        <t t-else="">Deploy</t>
+                                    </button>
+                                </t>
+                                <t t-if="state.inst.deployed and state.inst.host_id">
+                                    <button class="ic-action-btn ic-ab-rebuild" title="Rebuild"
+                                            t-att-disabled="state.actionLoading"
+                                            t-on-click="() => this.rebuildInstance()">
+                                        <i t-att-class="state.actionLoading ? 'fa fa-spinner fa-spin' : 'fa fa-wrench'"/>
+                                        <t t-if="state.actionLoading">Rebuilding…</t>
+                                        <t t-else="">Rebuild</t>
+                                    </button>
+                                </t>
+                            </t>
+                            <t t-if="state.inst.deployed and state.inst.running and state.inst.domain">
+                                <button class="ic-action-btn" title="Connect as user"
+                                        t-on-click="() => this.openConnectModal()">
+                                    <i class="fa fa-sign-in"/> Connect
+                                </button>
+                            </t>
+                            <t t-if="state.inst.deployed and env.permissions?.can_view_logs">
+                                <button class="ic-action-btn" title="Logs"
+                                        t-on-click="() => this.viewLogs()">
+                                    <i class="fa fa-terminal"/> Logs
+                                </button>
+                            </t>
+                            <t t-if="state.inst.deployed and state.inst.running and env.permissions?.can_use_terminal and state.inst.host_id">
+                                <button class="ic-action-btn" title="Shell"
+                                        t-on-click="() => this.openShellDialog()">
+                                    <i class="fa fa-code"/> Shell
+                                </button>
+                            </t>
+
+                            <!-- Secondary actions (icon-only) -->
+                            <t t-if="state.inst.deployed">
+                                <div class="ic-action-bar-sep"/>
+                                <t t-if="env.permissions?.can_deploy">
+                                    <t t-if="state.inst.running">
+                                        <button class="ic-action-btn ic-ab-secondary" title="Restart"
+                                                aria-label="Restart instance"
+                                                t-on-click="() => this.instanceAction('restart_instance')">
+                                            <i class="fa fa-refresh"/>
+                                        </button>
+                                        <button class="ic-action-btn ic-ab-secondary ic-ab-stop" title="Stop"
+                                                aria-label="Stop instance"
+                                                t-on-click="() => this.instanceAction('stop_instance')">
+                                            <i class="fa fa-stop"/>
+                                        </button>
+                                    </t>
+                                    <t t-if="!state.inst.running">
+                                        <button class="ic-action-btn ic-ab-secondary ic-ab-start" title="Start"
+                                                aria-label="Start instance"
+                                                t-on-click="() => this.instanceAction('start_instance')">
+                                            <i class="fa fa-play"/>
+                                        </button>
+                                    </t>
+                                </t>
+                                <t t-if="env.permissions?.can_manage_backups">
+                                    <button class="ic-action-btn ic-ab-secondary" title="Restore Database"
+                                            aria-label="Restore database"
+                                            t-on-click="() => this.openRestore()">
+                                        <i class="fa fa-database"/>
+                                    </button>
+                                </t>
+                                <t t-if="env.permissions?.can_export">
+                                    <button class="ic-action-btn ic-ab-secondary" title="Export"
+                                            aria-label="Export instance"
+                                            t-on-click="() => this.exportInstance()">
+                                        <i class="fa fa-download"/>
+                                    </button>
+                                </t>
+                                <t t-if="env.permissions?.can_manage_backups">
+                                    <div class="ic-action-bar-sep"/>
+                                    <button class="ic-action-btn ic-ab-secondary" title="Create Backup"
+                                            aria-label="Create backup"
+                                            t-on-click="() => this.createBackup()">
+                                        <i class="fa fa-plus-circle"/>
+                                    </button>
+                                    <button class="ic-action-btn ic-ab-secondary" title="Download Latest Backup"
+                                            aria-label="Download latest backup"
+                                            t-on-click="() => this.downloadLatestBackup()">
+                                        <i class="fa fa-cloud-download"/>
+                                    </button>
+                                </t>
+                                <!-- Community / extension actions -->
+                                <t t-if="state.inst.custom_actions?.length and env.permissions?.can_deploy">
+                                    <div class="ic-action-bar-sep"/>
+                                    <t t-foreach="state.inst.custom_actions" t-as="action" t-key="action.code">
+                                        <button class="ic-action-btn ic-ab-secondary"
+                                                t-att-title="action.name"
+                                                t-att-aria-label="action.name"
+                                                t-on-click="() => this.instanceAction(action.code)">
+                                            <i t-att-class="'fa ' + (action.action_icon || 'fa-cog')"/>
+                                        </button>
+                                    </t>
+                                </t>
+                                <div class="ic-action-bar-sep"/>
+                            </t>
+                            <t t-if="(state.inst.environment === 'production' and env.permissions?.can_delete_production) or (state.inst.environment !== 'production' and env.permissions?.can_edit_instance)">
+                                <button class="ic-action-btn ic-ab-danger" title="Delete"
+                                        aria-label="Delete instance"
+                                        t-on-click="() => this.deleteInstance()">
+                                    <i class="fa fa-trash-o"/>
+                                </button>
+                            </t>
+                        </div>
+                    </t>
+
+                </div>
+
+                <!-- ═══════════════════════════════════════════════════════════
+                     Overview section (existing instances only, default view)
+                     ═══════════════════════════════════════════════════════════ -->
+                <t t-if="!isCreate and state.tab === 'overview' and state.inst">
+                    <div class="ic-overview">
+
+                        <!-- Two balanced cards -->
+                        <div class="ic-overview-cards">
+
+                            <!-- Infrastructure -->
+                            <div class="ic-ov-card">
+                                <div class="ic-ov-card-title">Infrastructure</div>
+                                <div class="ic-ov-card-body">
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Host</span>
+                                        <span t-esc="state.inst.host || '—'"/>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Odoo</span>
+                                        <span t-esc="state.form.odoo_version || '—'"/>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">PostgreSQL</span>
+                                        <span t-esc="state.form.postgres_version || '—'"/>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Repos</span>
+                                        <span t-esc="(state.form.repos || []).length"/>
+                                    </div>
+                                    <t t-if="state.inst.last_deploy_date">
+                                        <div class="ic-ov-row">
+                                            <span class="ic-ov-label">Last deploy</span>
+                                            <span>
+                                                <t t-esc="timeAgo(state.inst.last_deploy_date)"/>
+                                                <t t-if="state.inst.last_deploy_state">
+                                                    <span t-att-class="'ic-ov-deploy-state ' + jobStateClass(state.inst.last_deploy_state)"
+                                                          t-esc="state.inst.last_deploy_state"/>
+                                                </t>
+                                            </span>
+                                        </div>
+                                    </t>
+                                    <div class="ic-ov-svc-row">
+                                        <t t-foreach="state.inst.compose_services || ['odoo', 'db']" t-as="svc" t-key="svc">
+                                            <div class="ic-ov-svc">
+                                                <span t-att-class="'ic-ov-svc-dot ' + (state.inst.running ? 'svc-up' : 'svc-down')"/>
+                                                <span class="ic-ov-svc-name" t-esc="svc"/>
+                                            </div>
+                                        </t>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Configuration -->
+                            <div class="ic-ov-card">
+                                <div class="ic-ov-card-title">Configuration</div>
+                                <div class="ic-ov-card-body">
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Domain</span>
+                                        <t t-if="state.inst.domain">
+                                            <a t-att-href="'https://' + state.inst.domain"
+                                               target="_blank" class="ic-ov-link"
+                                               t-esc="state.inst.domain"/>
+                                        </t>
+                                        <t t-else=""><span class="ic-ov-muted">—</span></t>
+                                    </div>
+                                    <t t-if="(state.form.domains || []).length > 1">
+                                        <div class="ic-ov-row">
+                                            <span class="ic-ov-label">Aliases</span>
+                                            <span t-esc="(state.form.domains.length - 1) + ' additional'"/>
+                                        </div>
+                                    </t>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">SMTP</span>
+                                        <t t-if="state.form.smtp_relay_host">
+                                            <span class="ic-ov-ok"><i class="fa fa-check"/> <t t-esc="state.form.smtp_relay_host"/></span>
+                                        </t>
+                                        <t t-else=""><span class="ic-ov-muted">not configured</span></t>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Proxy</span>
+                                        <span t-esc="state.form.odoo_proxy || 'traefik'"/>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Backup</span>
+                                        <t t-if="state.inst.effective_backup_backend_id">
+                                            <span class="ic-ov-ok">
+                                                <i class="fa fa-check"/>
+                                                <t t-esc="state.inst.effective_backup_backend_name"/>
+                                            </span>
+                                        </t>
+                                        <t t-else=""><span class="ic-ov-muted">not configured</span></t>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent Activity (Consultant+ only) -->
+                        <div class="ic-ov-activity" t-if="env.permissions?.can_edit_instance">
+                            <div class="ic-ov-activity-title">Recent Activity</div>
+                            <t t-if="state.jobsLoading and !state.jobs.length">
+                                <div class="ic-ov-activity-loading">
+                                    <div class="ic-skeleton-row">
+                                        <div class="ic-skeleton-label"/>
+                                        <div class="ic-skeleton-value"/>
+                                    </div>
+                                    <div class="ic-skeleton-row">
+                                        <div class="ic-skeleton-label"/>
+                                        <div class="ic-skeleton-value"/>
+                                    </div>
+                                </div>
+                            </t>
+                            <t t-elif="!state.jobs.length">
+                                <div class="ic-ov-activity-empty">No activity yet.</div>
+                            </t>
+                            <t t-else="">
+                                <div class="ic-tl">
+                                    <t t-foreach="state.jobs" t-as="job" t-key="job.id">
+                                        <div class="ic-tl-item" t-on-click="() => this.openJobLog(job)">
+                                            <div class="ic-tl-rail">
+                                                <span t-att-class="'ic-tl-dot ' + jobStateClass(job.state) + (isActiveJob(job.state) ? ' ic-tl-pulse' : '')"/>
+                                                <span class="ic-tl-line"/>
+                                            </div>
+                                            <div class="ic-tl-content">
+                                                <div class="ic-tl-header">
+                                                    <i t-att-class="'fa ' + jobIcon(job.job_type_code) + ' ic-tl-icon'"/>
+                                                    <span class="ic-tl-name" t-esc="job.name"/>
+                                                    <span t-att-class="'ic-ov-job-state ' + jobStateClass(job.state)"
+                                                          t-esc="job.state"/>
+                                                    <t t-if="job.has_alert">
+                                                        <span class="ic-tl-alert-badge"
+                                                              t-on-click.stop="() => env.toggleSlideOver('alerts')">
+                                                            <i class="fa fa-exclamation-triangle"/> Action required
+                                                        </span>
+                                                    </t>
+                                                    <span class="ic-tl-log-hint"><i class="fa fa-terminal"/> Log</span>
+                                                </div>
+                                                <t t-if="job.trigger === 'webhook'">
+                                                    <div class="ic-tl-trigger">
+                                                        <i class="fa fa-github"/>
+                                                        <span t-esc="job.push_sha"/>
+                                                        <t t-esc="job.push_message"/>
+                                                        <span class="ic-tl-trigger-by"> by <t t-esc="job.push_by"/></span>
+                                                    </div>
+                                                </t>
+                                                <t t-if="job.last_system_message">
+                                                    <div class="ic-tl-msg" t-esc="job.last_system_message"/>
+                                                </t>
+                                                <div class="ic-tl-footer">
+                                                    <div class="ic-tl-time">
+                                                        <t t-if="job.user_id">
+                                                            <img class="ic-tl-user-avatar"
+                                                                 t-att-src="'/web/image/res.users/' + job.user_id + '/avatar_128'"
+                                                                 t-att-alt="job.user_name"
+                                                                 t-att-title="job.user_name"/>
+                                                            <span class="ic-tl-user-name" t-esc="job.user_name"/>
+                                                            <span class="ic-tl-time-sep">·</span>
+                                                        </t>
+                                                        <span t-esc="formatDate(job.create_date)"/>
+                                                        <span class="ic-tl-ago" t-esc="'(' + timeAgo(job.create_date) + ')'"/>
+                                                    </div>
+                                                    <div class="ic-tl-actions">
+                                                        <t t-if="isActiveJob(job.state)">
+                                                            <button class="ic-tl-action-btn ic-tl-cancel"
+                                                                    t-on-click="(ev) => this.cancelJob(ev, job)">
+                                                                <i class="fa fa-times"/> Cancel
+                                                            </button>
+                                                        </t>
+                                                        <t t-if="job.state === 'failed'">
+                                                            <button class="ic-tl-action-btn"
+                                                                    t-on-click="(ev) => this.retryJob(ev, job)">
+                                                                <i class="fa fa-refresh"/> Retry
+                                                            </button>
+                                                        </t>
+                                                        <t t-if="job.state === 'blocked'">
+                                                            <button class="ic-tl-action-btn ic-tl-resolve"
+                                                                    t-on-click="(ev) => this.goResolveAlert(ev)">
+                                                                <i class="fa fa-exclamation-triangle"/> Resolve
+                                                            </button>
+                                                        </t>
+                                                        <t t-if="job.state === 'done' and job.download_url">
+                                                            <a class="ic-tl-action-btn" t-att-href="job.download_url"
+                                                               download="" t-on-click.stop="">
+                                                                <i class="fa fa-download"/> Download
+                                                            </a>
+                                                        </t>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </div>
+                                <t t-if="hasMoreJobs">
+                                    <button class="ic-ov-load-more" t-on-click="viewAllJobs">
+                                        View all activity <i class="fa fa-arrow-right"/>
+                                    </button>
+                                </t>
+                            </t>
+                        </div>
+
+                    </div>
+                </t>
+
+                <!-- Tabs -->
+                <div class="ic-detail-tabs">
+                    <t t-if="!isCreate">
+                        <button t-att-class="state.tab === 'overview' ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('overview')">Overview</button>
+                    </t>
+                    <!-- Config tabs: Consultant+ only -->
+                    <t t-if="env.permissions?.can_edit_instance">
+                        <button t-att-class="state.tab === 'general'    ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('general')">General</button>
+                        <button t-att-class="state.tab === 'database'   ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('database')">Database</button>
+                        <button t-att-class="state.tab === 'networking' ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('networking')">Networking</button>
+                        <t t-if="!isCreate">
+                            <button t-att-class="state.tab === 'config' ? 'ic-tab active' : 'ic-tab'"
+                                    t-on-click="() => this.setTab('config')">Config</button>
+                        </t>
+                        <button t-att-class="state.tab === 'repos'      ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('repos')">Repos</button>
+                        <button t-att-class="state.tab === 'resources'  ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('resources')">Resources</button>
+                        <button t-att-class="state.tab === 'deps'       ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('deps')">Dependencies</button>
+                        <t t-if="!isCreate and canShowBackups">
+                            <button t-att-class="state.tab === 'backups' ? 'ic-tab active' : 'ic-tab'"
+                                    t-on-click="() => this.setTab('backups')">Backups</button>
+                        </t>
+                    </t>
+                    <t t-if="!isCreate and env.permissions?.can_manage_hosts">
+                        <button t-att-class="state.tab === 'activity' ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('activity')">Audit Logs</button>
+                    </t>
+                </div>
+
+                <!-- Tab content -->
+                <t t-if="state.tab !== 'overview'">
+                    <div class="ic-detail-body">
+
+                        <!-- ── General ──────────────────────────────────────── -->
+                        <t t-if="state.tab === 'general'">
+                            <div class="ic-form-grid">
+                                <t t-if="!isCreate and state.inst.deployed">
+                                    <div class="ic-form-row ic-form-row-full">
+                                        <div class="ic-locked-notice">
+                                            Locked: Name, Host and Odoo Version cannot be changed after deployment.
+                                        </div>
+                                    </div>
+                                </t>
+                                <div class="ic-form-row">
+                                    <label>Name <span class="ic-required">*</span></label>
+                                    <input type="text"
+                                           placeholder="myproject-staging"
+                                           t-att-value="state.form.name"
+                                           t-att-disabled="(!isCreate and state.inst.deployed) || null"
+                                           t-on-input="(ev) => this.onInput('name', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>Host
+                                        <t t-if="!state.autoassignEnabled">
+                                            <span class="ic-required">*</span>
+                                        </t>
+                                    </label>
+                                    <t t-if="!state.hosts.length and !state.autoassignEnabled">
+                                        <span class="ic-form-note">No compatible hosts available.</span>
+                                    </t>
+                                    <t t-else="">
+                                        <select t-att-disabled="(!isCreate and state.inst.deployed) || null"
+                                                t-on-change="onHostSelect">
+                                            <t t-if="state.autoassignEnabled">
+                                                <option value="">Auto (recommended)</option>
+                                            </t>
+                                            <t t-else="">
+                                                <option value="">— select host —</option>
+                                            </t>
+                                            <t t-foreach="state.hosts" t-as="h" t-key="h.id">
+                                                <option t-att-value="h.id"
+                                                        t-att-selected="state.form.host_id === h.id">
+                                                    <t t-esc="h.name"/>
+                                                    (<t t-esc="h.available_cpus"/> CPU / <t t-esc="h.available_ram_gb"/> GB free)
+                                                </option>
+                                            </t>
+                                        </select>
+                                    </t>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>Admin Password</label>
+                                    <PasswordInput
+                                        hasValue="state.has_odoo_admin_password"
+                                        model="'cloud.instance'"
+                                        recordId="props.instance_id || null"
+                                        fieldName="'odoo_admin_password'"
+                                        required="true"
+                                        onChange="(val) => this.onPasswordChange('odoo_admin_password', val)"/>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Database ─────────────────────────────────────── -->
+                        <t t-if="state.tab === 'database'">
+                            <div class="ic-form-grid">
+                                <t t-if="!isCreate and state.inst.deployed">
+                                    <div class="ic-form-row ic-form-row-full">
+                                        <div class="ic-locked-notice">
+                                            Locked: Database fields cannot be changed after deployment.
+                                        </div>
+                                    </div>
+                                </t>
+                                <div class="ic-form-row">
+                                    <label>PostgreSQL Version</label>
+                                    <select t-att-disabled="(!isCreate and state.inst.deployed) || null"
+                                            t-on-change="onPgSelect">
+                                        <t t-foreach="pgVersions" t-as="v" t-key="v">
+                                            <option t-att-value="v"
+                                                    t-att-selected="state.form.postgres_version === v"
+                                                    t-esc="v"/>
+                                        </t>
+                                    </select>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>DB User</label>
+                                    <input type="text"
+                                           placeholder="odoo"
+                                           t-att-disabled="(!isCreate and state.inst.deployed) || null"
+                                           t-att-value="state.form.postgres_username"
+                                           t-on-input="(ev) => this.onInput('postgres_username', ev)"/>
+                                </div>
+                                <div class="ic-form-row ic-form-row-full">
+                                    <label>DB Password</label>
+                                    <PasswordInput
+                                        hasValue="state.has_postgres_password"
+                                        model="'cloud.instance'"
+                                        recordId="props.instance_id || null"
+                                        fieldName="'postgres_password'"
+                                        required="true"
+                                        onChange="(val) => this.onPasswordChange('postgres_password', val)"/>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Networking ───────────────────────────────────── -->
+                        <t t-if="state.tab === 'networking'">
+                            <div class="ic-form-grid">
+                                <div class="ic-form-row ic-form-row-full">
+                                    <label>Domains <span class="ic-section-note">— auto-generated if empty</span></label>
+                                    <div class="ic-domains-list">
+                                        <t t-foreach="state.form.domains || []" t-as="d" t-key="d_index">
+                                            <div class="ic-domain-row">
+                                                <input type="text" class="ic-domain-hostname"
+                                                       placeholder="example.com"
+                                                       t-att-value="d.hostname"
+                                                       t-on-input="(ev) => this.onDomainChange(d_index, 'hostname', ev.target.value)"/>
+                                                <input type="text" class="ic-domain-redirect"
+                                                       placeholder="redirect to (optional)"
+                                                       t-att-value="d.redirect_to"
+                                                       t-on-input="(ev) => this.onDomainChange(d_index, 'redirect_to', ev.target.value)"/>
+                                                <button class="ic-domain-remove" title="Remove"
+                                                        t-on-click="() => this.removeDomain(d_index)">
+                                                    <i class="fa fa-times"/>
+                                                </button>
+                                            </div>
+                                        </t>
+                                        <button class="ic-domain-add" t-on-click="addDomain">
+                                            + Add domain
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>SMTP Host <span class="ic-section-note">— leave empty to skip</span></label>
+                                    <input type="text"
+                                           placeholder="smtp.example.com"
+                                           t-att-value="state.form.smtp_relay_host"
+                                           t-on-input="(ev) => this.onInput('smtp_relay_host', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>SMTP Port</label>
+                                    <input type="number"
+                                           t-att-value="state.form.smtp_relay_port"
+                                           t-on-input="(ev) => this.onInput('smtp_relay_port', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>SMTP Encryption</label>
+                                    <select t-on-change="(ev) => { state.form.smtp_relay_security = ev.target.value; state.saved = false; }">
+                                        <option value="none"    t-att-selected="state.form.smtp_relay_security === 'none'">None</option>
+                                        <option value="starttls" t-att-selected="state.form.smtp_relay_security === 'starttls'">STARTTLS</option>
+                                        <option value="ssl"     t-att-selected="state.form.smtp_relay_security === 'ssl'">SSL/TLS</option>
+                                    </select>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>SMTP User</label>
+                                    <input type="text"
+                                           t-att-value="state.form.smtp_relay_user"
+                                           t-on-input="(ev) => this.onInput('smtp_relay_user', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>SMTP Password</label>
+                                    <PasswordInput
+                                        hasValue="state.has_smtp_relay_password"
+                                        model="'cloud.instance'"
+                                        recordId="props.instance_id || null"
+                                        fieldName="'smtp_relay_password'"
+                                        onChange="(val) => this.onPasswordChange('smtp_relay_password', val)"/>
+                                </div>
+
+                                <!-- Backup backend (production only) -->
+                                <t t-if="state.form.environment === 'production'">
+                                    <div class="ic-form-row ic-form-row-full">
+                                        <label>Backup Backend
+                                            <span class="ic-section-note"> — production only</span>
+                                        </label>
+                                        <select t-on-change="onBackupBackendSelect">
+                                            <option value="">— Use project/global default —</option>
+                                            <t t-foreach="state.backupBackends" t-as="bb" t-key="bb.id">
+                                                <option t-att-value="bb.id"
+                                                        t-att-selected="state.form.backup_backend_id === bb.id">
+                                                    <t t-esc="bb.name"/>
+                                                </option>
+                                            </t>
+                                        </select>
+                                    </div>
+                                </t>
+                                <t t-if="!isCreate">
+                                    <div class="ic-form-row">
+                                        <label>Auto-rebuild
+                                            <span class="ic-form-hint"> — rebuild on push to unfrozen repos</span>
+                                        </label>
+                                        <label class="ic-toggle">
+                                            <input type="checkbox"
+                                                   t-att-checked="state.form.auto_rebuild"
+                                                   t-on-change="(ev) => { state.form.auto_rebuild = ev.target.checked; state.saved = false; }"/>
+                                            <span class="ic-toggle-slider"/>
+                                        </label>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+
+                        <!-- ── Config (edit only) ───────────────────────────── -->
+                        <t t-if="state.tab === 'config'">
+                            <div class="ic-code-editor-wrap">
+                                <div class="ic-code-gutter">
+                                    <t t-foreach="getLineNumbers('odoo_conf')" t-as="n" t-key="n">
+                                        <div class="ic-line-num" t-esc="n"/>
+                                    </t>
+                                </div>
+                                <textarea class="ic-code-area"
+                                          spellcheck="false"
+                                          autocomplete="off"
+                                          autocorrect="off"
+                                          autocapitalize="off"
+                                          t-att-value="state.form.odoo_conf"
+                                          t-on-input="(ev) => this.onInput('odoo_conf', ev)"
+                                          t-on-scroll="onCodeScroll"/>
+                            </div>
+                        </t>
+
+                        <!-- ── Resources ───────────────────────────────────── -->
+                        <t t-if="state.tab === 'resources'">
+                            <div class="ic-form-grid">
+                                <div class="ic-form-section-header"><h3>Odoo</h3></div>
+                                <div class="ic-form-row">
+                                    <label>Memory Limit</label>
+                                    <input type="text"
+                                           t-att-value="state.form.odoo_memory_limit"
+                                           t-on-input="(ev) => this.onInput('odoo_memory_limit', ev)"
+                                           placeholder="2g"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>CPUs</label>
+                                    <input type="number" step="0.25"
+                                           t-att-value="state.form.odoo_cpus"
+                                           t-on-input="(ev) => this.onInput('odoo_cpus', ev)"/>
+                                </div>
+
+                                <div class="ic-form-section-header"><h3>Database</h3></div>
+                                <div class="ic-form-row">
+                                    <label>Memory Limit</label>
+                                    <input type="text"
+                                           t-att-value="state.form.db_memory_limit"
+                                           t-on-input="(ev) => this.onInput('db_memory_limit', ev)"
+                                           placeholder="1g"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>CPUs</label>
+                                    <input type="number" step="0.25"
+                                           t-att-value="state.form.db_cpus"
+                                           t-on-input="(ev) => this.onInput('db_cpus', ev)"/>
+                                </div>
+
+                                <div class="ic-form-section-header"><h3>Backup</h3></div>
+                                <div class="ic-form-row">
+                                    <label>Memory Limit</label>
+                                    <input type="text"
+                                           t-att-value="state.form.backup_memory_limit"
+                                           t-on-input="(ev) => this.onInput('backup_memory_limit', ev)"
+                                           placeholder="512m"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>CPUs</label>
+                                    <input type="number" step="0.05"
+                                           t-att-value="state.form.backup_cpus"
+                                           t-on-input="(ev) => this.onInput('backup_cpus', ev)"/>
+                                </div>
+
+                                <div class="ic-form-section-header"><h3>SMTP</h3></div>
+                                <div class="ic-form-row">
+                                    <label>Memory Limit</label>
+                                    <input type="text"
+                                           t-att-value="state.form.smtp_memory_limit"
+                                           t-on-input="(ev) => this.onInput('smtp_memory_limit', ev)"
+                                           placeholder="256m"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>CPUs</label>
+                                    <input type="number" step="0.05"
+                                           t-att-value="state.form.smtp_cpus"
+                                           t-on-input="(ev) => this.onInput('smtp_cpus', ev)"/>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Dependencies ─────────────────────────────────── -->
+                        <t t-if="state.tab === 'deps'">
+                            <div class="ic-deps-panel">
+                                <t t-if="!isCreate">
+                                    <button class="ic-btn-sync" t-on-click="openSyncModal">
+                                        <i class="fa fa-exchange"/> Sync with project
+                                    </button>
+                                </t>
+                                <div class="ic-deps-section-label">pip.txt — Python</div>
+                                <div class="ic-code-editor-wrap">
+                                    <div class="ic-code-gutter">
+                                        <t t-foreach="getLineNumbers('pipDeps')" t-as="n" t-key="n">
+                                            <div class="ic-line-num" t-esc="n"/>
+                                        </t>
+                                    </div>
+                                    <textarea class="ic-code-area"
+                                              spellcheck="false"
+                                              autocomplete="off"
+                                              autocorrect="off"
+                                              autocapitalize="off"
+                                              t-att-value="state.pipDeps"
+                                              t-on-input="onDepsInput"
+                                              t-on-scroll="onCodeScroll"/>
+                                </div>
+                                <div class="ic-deps-section-label" style="margin-top:16px">apt.txt — System</div>
+                                <div class="ic-code-editor-wrap">
+                                    <div class="ic-code-gutter">
+                                        <t t-foreach="getLineNumbers('aptDeps')" t-as="n" t-key="n">
+                                            <div class="ic-line-num" t-esc="n"/>
+                                        </t>
+                                    </div>
+                                    <textarea class="ic-code-area"
+                                              spellcheck="false"
+                                              autocomplete="off"
+                                              autocorrect="off"
+                                              autocapitalize="off"
+                                              t-att-value="state.aptDeps"
+                                              t-on-input="onAptInput"
+                                              t-on-scroll="onCodeScroll"/>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Backups ──────────────────────────────────────── -->
+                        <t t-if="state.tab === 'backups'">
+                            <div class="ic-backups-panel">
+                                <div class="ic-backups-toolbar">
+                                    <button class="ic-btn-refresh-backups"
+                                            t-att-disabled="state.backupsLoading"
+                                            t-on-click="refreshBackups">
+                                        <i t-att-class="'fa ' + (state.backupsLoading ? 'fa-spinner fa-spin' : 'fa-refresh')"/>
+                                        <t t-if="state.backupsLoading"> Scanning…</t>
+                                        <t t-else=""> Refresh</t>
+                                    </button>
+                                    <button class="ic-btn-create-backup"
+                                            t-att-disabled="state.backupsLoading"
+                                            t-on-click="createBackup">
+                                        <i class="fa fa-plus"/> Create Backup
+                                    </button>
+                                </div>
+
+                                <!-- Info banners -->
+                                <t t-if="state.inst.environment !== 'production' and !state.inst.effective_backup_backend_id">
+                                    <div class="ic-backups-info">
+                                        <i class="fa fa-info-circle"/>
+                                        Manual backups only (ZIP). Stored for 2 hours.
+                                    </div>
+                                </t>
+                                <t t-elif="state.inst.environment === 'production' and !state.inst.effective_backup_backend_id">
+                                    <div class="ic-backups-info ic-backups-warning">
+                                        <i class="fa fa-exclamation-triangle"/>
+                                        No backup backend configured. Assign one in this instance's Networking tab,
+                                        in the project settings, or set a global default in Settings → Backups.
+                                    </div>
+                                </t>
+
+                                <!-- Error -->
+                                <t t-if="state.backupsError">
+                                    <div class="ic-backups-error" role="alert">
+                                        <i class="fa fa-exclamation-triangle"/> <t t-esc="state.backupsError"/>
+                                    </div>
+                                </t>
+
+                                <!-- Empty state -->
+                                <t t-if="!state.backupsLoading and !state.backupsData and !state.backupsError">
+                                    <div class="ic-backups-empty">
+                                        <i class="fa fa-inbox"/> No backups found.
+                                    </div>
+                                </t>
+
+                                <!-- Unified backup table -->
+                                <t t-if="state.backupsData and state.backupsData.backups">
+                                    <t t-if="!state.backupsData.backups.length">
+                                        <div class="ic-backups-empty">
+                                            <i class="fa fa-inbox"/> No backups found.
+                                        </div>
+                                    </t>
+                                    <t t-else="">
+                                        <table class="ic-backup-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Type</th>
+                                                    <th>Date</th>
+                                                    <th>Size</th>
+                                                    <th class="ic-bk-actions-col">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <t t-foreach="state.backupsData.backups" t-as="bk" t-key="bk.id">
+                                                    <tr>
+                                                        <td>
+                                                            <span t-att-class="'ic-backup-type-badge ic-bk-' + bk.type.toLowerCase()">
+                                                                <t t-esc="bk.type"/>
+                                                            </span>
+                                                        </td>
+                                                        <td t-esc="formatBackupDate(bk.time)"/>
+                                                        <td t-esc="bk.size ? formatSize(bk.size) : '—'"/>
+                                                        <td class="ic-bk-actions">
+                                                            <!-- Direct download for backups with attachment -->
+                                                            <t t-if="bk.attachment_id">
+                                                                <a class="ic-bk-action-btn" title="Download"
+                                                                   t-att-href="'/web/content/' + bk.attachment_id + '?download=true'"
+                                                                   download="" t-on-click.stop="">
+                                                                    <i class="fa fa-download"/>
+                                                                </a>
+                                                            </t>
+                                                            <!-- Download via duplicity restore (production) -->
+                                                            <t t-if="!bk.attachment_id">
+                                                                <button class="ic-bk-action-btn" title="Download"
+                                                                        t-on-click="() => this.openDownloadModal(bk.time)">
+                                                                    <i class="fa fa-download"/>
+                                                                </button>
+                                                            </t>
+                                                            <!-- Restore (production only) -->
+                                                            <t t-if="!bk.attachment_id">
+                                                                <button class="ic-bk-action-btn ic-bk-restore-btn" title="Restore"
+                                                                        t-on-click="() => this.openRestoreModal(bk.time)">
+                                                                    <i class="fa fa-undo"/>
+                                                                </button>
+                                                            </t>
+                                                        </td>
+                                                    </tr>
+                                                </t>
+                                            </tbody>
+                                        </table>
+                                    </t>
+                                </t>
+                            </div>
+                        </t>
+
+                        <!-- ── Activity ────────────────────────────────────── -->
+                        <t t-if="state.tab === 'activity'">
+                            <div class="ic-activity-panel">
+
+                                <!-- Filter bar -->
+                                <div class="ic-audit-filters">
+                                    <input class="ic-audit-search" type="text"
+                                           placeholder="Search user or action…"
+                                           t-att-value="state.auditFilter.q"
+                                           t-on-input="(ev) => { state.auditFilter.q = ev.target.value; }"/>
+                                    <select class="ic-audit-select"
+                                            t-on-change="(ev) => { state.auditFilter.action = ev.target.value; }">
+                                        <option value="">All actions</option>
+                                        <t t-foreach="state.auditActions" t-as="act" t-key="act">
+                                            <option t-att-value="act"
+                                                    t-att-selected="state.auditFilter.action === act"
+                                                    t-esc="act"/>
+                                        </t>
+                                    </select>
+                                    <input class="ic-audit-date" type="date"
+                                           t-att-value="state.auditFilter.date_from"
+                                           t-on-change="(ev) => { state.auditFilter.date_from = ev.target.value; }"/>
+                                    <span class="ic-audit-date-sep">→</span>
+                                    <input class="ic-audit-date" type="date"
+                                           t-att-value="state.auditFilter.date_to"
+                                           t-on-change="(ev) => { state.auditFilter.date_to = ev.target.value; }"/>
+                                    <button class="btn-apply" t-on-click="applyAuditFilter">Apply</button>
+                                    <button class="btn-reset" t-on-click="resetAuditFilter">Reset</button>
+                                    <div class="ic-audit-spacer"/>
+                                    <button class="ic-audit-purge-btn"
+                                            t-att-disabled="state.auditPurging"
+                                            t-att-title="'Delete entries older than the configured retention period'"
+                                            t-on-click="purgeAuditLogs">
+                                        <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
+                                        Purge old logs
+                                    </button>
+                                </div>
+
+                                <t t-if="state.auditLogLoading">
+                                    <div class="history-loading">Loading…</div>
+                                </t>
+                                <t t-elif="!state.auditLog.length">
+                                    <div class="ic-empty-state">
+                                        <i class="fa fa-history ic-empty-icon"/>
+                                        <div class="ic-empty-title">No entries found</div>
+                                        <div class="ic-empty-hint">No audit log entries match the current filters.</div>
+                                    </div>
+                                </t>
+                                <t t-else="">
+                                    <table class="history-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>User</th>
+                                                <th>Action</th>
+                                                <th>Details</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="state.auditLog" t-as="entry" t-key="entry.id">
+                                                <tr class="history-row">
+                                                    <td class="col-date" t-esc="formatDate(entry.create_date)"/>
+                                                    <td class="col-user" t-esc="entry.user_name"/>
+                                                    <td class="col-name" t-esc="entry.action"/>
+                                                    <td class="col-msg" t-esc="entry.details || '—'"/>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </t>
+                            </div>
+                        </t>
+
+                        <!-- ── Repos — kept mounted to preserve branch cache ──── -->
+                        <div class="ic-repos-list"
+                             t-att-style="state.tab !== 'repos' ? 'display:none' : ''">
+                            <div class="ic-repos-toolbar">
+                                <button class="ic-btn-add-repo" t-on-click="addRepo">
+                                    + Add repository
+                                </button>
+                                <t t-if="state.form.repos.length">
+                                    <button class="ic-btn-freeze-all" t-on-click="freezeAllRepos"
+                                            t-att-disabled="state.freezingAll"
+                                            title="Pin all repos to their current HEAD">
+                                        <i class="fa fa-lock"/> Freeze all
+                                    </button>
+                                    <button class="ic-btn-freeze-all unfreeze" t-on-click="unfreezeAllRepos"
+                                            title="Unpin all repos — rebuilds will use branch tips">
+                                        <i class="fa fa-unlock-alt"/> Unfreeze all
+                                    </button>
+                                    <input class="ic-repos-search"
+                                           type="text"
+                                           placeholder="Filter repos…"
+                                           aria-label="Filter repositories"
+                                           t-att-value="state.repoSearch"
+                                           t-on-input="(ev) => { state.repoSearch = ev.target.value; }"/>
+                                </t>
+                            </div>
+                            <t t-foreach="filteredRepos" t-as="repo" t-key="repo._origIdx">
+                                <RepoEditor
+                                    repo="repo"
+                                    hasAddons="true"
+                                    repoModel="'cloud.instance.repo'"
+                                    onChange="(field, value) => this.onRepoChange(repo._origIdx, field, value)"
+                                    onRemove="() => this.removeRepo(repo._origIdx)"
+                                    preferredBranch="'' + (state.form.odoo_version || '')"
+                                    onFetchRequirements="(url, branch) => this._fetchAndMergeRequirements(url, branch)"
+                                />
+                            </t>
+                            <t t-if="!state.form.repos.length">
+                                <div class="ic-repos-empty">
+                                    No repositories yet — click Add to link a repo.
+                                </div>
+                            </t>
+                        </div>
+
+                    </div>
+
+                    <!-- Footer (hidden for stakeholders) -->
+                    <t t-if="env.permissions?.can_edit_instance or isCreate">
+                        <div class="ic-detail-footer">
+                            <t t-if="!isValid">
+                                <div class="ic-footer-hint">
+                                    <span class="ic-required">*</span> Name and Host are required.
+                                </div>
+                            </t>
+                            <t t-if="hasUnsavedChanges">
+                                <span class="ic-unsaved-hint">Unsaved changes</span>
+                            </t>
+                            <button class="ic-btn-save"
+                                    t-att-disabled="!isValid || state.saving"
+                                    t-on-click="save">
+                                <t t-if="state.saving">
+                                    <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
+                                    <t t-if="isCreate">Creating…</t>
+                                    <t t-else="">Saving…</t>
+                                </t>
+                                <t t-else="">
+                                    <t t-if="isCreate">Create Instance</t>
+                                    <t t-else="">Save changes</t>
+                                </t>
+                            </button>
+                        </div>
+                    </t>
+
+                </t>
+
+            </t>
+
+            <!-- Error state (edit mode only; create mode shows inline) -->
+            <t t-elif="state.error">
+                <div class="ic-detail-error-state" role="alert">
+                    <p t-esc="state.error"/>
+                    <button t-on-click="goBack">← Back to Instances</button>
+                </div>
+            </t>
+
+            <!-- Pip conflict resolve modal -->
+            <t t-if="state.pipConflictModal">
+                <div class="ic-confirm-overlay" t-on-click="closePipConflictModal">
+                    <div class="ic-confirm-box ah-resolve-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
+                        <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
+                        <div class="ah-conflicts-list">
+                            <t t-foreach="state.pipConflictModal.conflicts" t-as="c" t-key="c.name">
+                                <div class="ah-conflict-row">
+                                    <span class="ah-conflict-pkg" t-esc="c.name"/>
+                                    <div class="ah-conflict-options">
+                                        <label class="ah-conflict-opt">
+                                            <input type="radio"
+                                                   t-att-name="'conflict_' + c.name"
+                                                   t-att-checked="state.pipConflictModal.choices[c.name] === c.existing"
+                                                   t-on-change="() => this.setPipChoice(c.name, c.existing)"/>
+                                            <code t-esc="c.existing"/>
+                                            <span class="ah-conflict-hint"
+                                                  t-esc="'(' + (c.existingSource || 'existing') + ')'"/>
+                                        </label>
+                                        <label class="ah-conflict-opt">
+                                            <input type="radio"
+                                                   t-att-name="'conflict_' + c.name"
+                                                   t-att-checked="state.pipConflictModal.choices[c.name] === c.incoming"
+                                                   t-on-change="() => this.setPipChoice(c.name, c.incoming)"/>
+                                            <code t-esc="c.incoming"/>
+                                            <span class="ah-conflict-hint"
+                                                  t-esc="'(' + (c.incomingSource || 'incoming') + ')'"/>
+                                        </label>
+                                    </div>
+                                </div>
+                            </t>
+                        </div>
+                        <div class="ic-confirm-actions ah-resolve-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="closePipConflictModal">Edit Manually</button>
+                            <button class="ic-confirm-btn-ok" t-on-click="confirmPipResolve">Apply &amp; Resolve</button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Restore database dialog -->
+            <t t-if="state.restoreDialog">
+                <div class="ic-confirm-overlay" t-on-click="closeRestore">
+                    <div class="ic-restore-box" t-on-click.stop="">
+                        <div class="ic-restore-header">
+                            <h3 class="ic-confirm-title">Restore Database</h3>
+                            <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
+                        </div>
+                        <div class="ic-restore-modes">
+                            <label t-att-class="'ic-restore-mode' + (state.restoreDialog.mode === 'browser' ? ' active' : '')">
+                                <input type="radio" name="restore_mode" value="browser"
+                                       t-att-checked="state.restoreDialog.mode === 'browser'"
+                                       t-on-change="() => { state.restoreDialog.mode = 'browser'; }"/>
+                                <div class="ic-restore-mode-body">
+                                    <span class="ic-restore-mode-title">Through your browser</span>
+                                    <span class="ic-restore-mode-hint">Recommended for backups up to 2 GB</span>
+                                </div>
+                            </label>
+                            <label t-att-class="'ic-restore-mode' + (state.restoreDialog.mode === 'rsync' ? ' active' : '')">
+                                <input type="radio" name="restore_mode" value="rsync"
+                                       t-att-checked="state.restoreDialog.mode === 'rsync'"
+                                       t-on-change="() => { state.restoreDialog.mode = 'rsync'; }"/>
+                                <div class="ic-restore-mode-body">
+                                    <span class="ic-restore-mode-title">Through SSH / rsync</span>
+                                    <span class="ic-restore-mode-hint">For larger databases</span>
+                                </div>
+                            </label>
+                        </div>
+                        <t t-if="state.restoreDialog.mode === 'browser'">
+                            <label class="ic-restore-drop">
+                                <input type="file" accept=".zip" class="ic-restore-file-input"
+                                       t-on-change="onRestoreFileChange"/>
+                                <t t-if="!state.restoreDialog.file">
+                                    <i class="fa fa-upload ic-restore-drop-icon"/>
+                                    <span>Click to browse or drop your <strong>.zip</strong> backup</span>
+                                </t>
+                                <t t-else="">
+                                    <i class="fa fa-check-circle ic-restore-drop-icon ok"/>
+                                    <span t-esc="state.restoreDialog.file.name"/>
+                                </t>
+                            </label>
+                        </t>
+                        <t t-if="state.restoreDialog.mode === 'rsync'">
+                            <p class="ic-restore-rsync-hint">
+                                Upload your backup to the server, then click <strong>Import</strong>.
+                            </p>
+                            <div class="ic-restore-rsync-wrap">
+                                <div class="ic-restore-rsync-cmd">
+                                    <code t-esc="rsyncCommand()"/>
+                                </div>
+                                <button class="ic-restore-copy-btn"
+                                        t-on-click="() => this.copyRsyncCmd()"
+                                        t-att-title="state.restoreDialog.copied ? 'Copied!' : 'Copy'">
+                                    <i t-att-class="state.restoreDialog.copied ? 'fa fa-check' : 'fa fa-clipboard'"/>
+                                </button>
+                            </div>
+                        </t>
+                        <t t-if="state.restoreDialog.error">
+                            <div class="ic-restore-error" t-esc="state.restoreDialog.error"/>
+                        </t>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="closeRestore">Cancel</button>
+                            <button class="ic-confirm-btn-ok"
+                                    t-att-disabled="state.restoreDialog.uploading"
+                                    t-on-click="doRestore">
+                                <t t-if="state.restoreDialog.uploading">
+                                    <i class="fa fa-spinner fa-spin"/> Uploading…
+                                </t>
+                                <t t-else=""><i class="fa fa-database"/> Import</t>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Connect as user dialog -->
+            <t t-if="state.connectDialog">
+                <div class="ic-confirm-overlay" t-on-click="closeConnectModal">
+                    <div class="ic-connect-box" t-on-click.stop="">
+                        <div class="ic-connect-header">
+                            <h3 class="ic-confirm-title">Connect as user</h3>
+                            <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
+                        </div>
+                        <t t-if="state.connectDialog.loading">
+                            <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Loading users…</div>
+                        </t>
+                        <t t-elif="state.connectDialog.error">
+                            <div class="ic-restore-error" t-esc="state.connectDialog.error"/>
+                        </t>
+                        <t t-elif="!state.connectDialog.users.length">
+                            <div class="ic-connect-empty">No internal users found.</div>
+                        </t>
+                        <t t-else="">
+                            <ul class="ic-connect-user-list">
+                                <t t-foreach="state.connectDialog.users" t-as="u" t-key="u.id">
+                                    <li class="ic-connect-user-item"
+                                        t-att-class="state.connectDialog.connecting ? 'ic-connect-user-item--disabled' : ''"
+                                        t-on-click="() => this.connectAs(u.id)">
+                                        <i class="fa fa-user ic-connect-user-icon"/>
+                                        <span class="ic-connect-user-name" t-esc="u.name"/>
+                                        <span class="ic-connect-user-login" t-esc="u.login"/>
+                                    </li>
+                                </t>
+                            </ul>
+                            <t t-if="state.connectDialog.connecting">
+                                <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Opening session…</div>
+                            </t>
+                        </t>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="closeConnectModal">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Shell service picker dialog -->
+            <t t-if="state.shellDialog">
+                <div class="ic-confirm-overlay" t-on-click="closeShellDialog">
+                    <div class="ic-connect-box" t-on-click.stop="">
+                        <div class="ic-connect-header">
+                            <h3 class="ic-confirm-title">Open Shell</h3>
+                            <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
+                        </div>
+                        <t t-if="state.shellDialog.opening">
+                            <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Opening terminal…</div>
+                        </t>
+                        <t t-elif="state.shellDialog.error">
+                            <div class="ic-restore-error" t-esc="state.shellDialog.error"/>
+                        </t>
+                        <t t-else="">
+                            <ul class="ic-connect-user-list">
+                                <t t-foreach="state.shellDialog.services" t-as="svc" t-key="svc">
+                                    <li class="ic-connect-user-item" t-on-click="() => this.openShell(svc)">
+                                        <i class="fa fa-cube ic-connect-user-icon"/>
+                                        <span class="ic-connect-user-name" t-esc="svc"/>
+                                    </li>
+                                </t>
+                            </ul>
+                        </t>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="closeShellDialog">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Download backup modal (production) -->
+            <t t-if="state.downloadModal">
+                <div class="ic-confirm-overlay" t-on-click="closeDownloadModal">
+                    <div class="ic-confirm-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title">Download Backup</h3>
+                        <p class="ic-confirm-message">
+                            Backup from <strong t-esc="formatBackupDate(state.downloadModal.time)"/>
+                        </p>
+                        <div class="ic-download-options">
+                            <label class="ic-download-opt">
+                                <input type="radio" name="dl_type" value="dump"
+                                       t-att-checked="state.downloadModal.type === 'dump'"
+                                       t-on-change="() => { state.downloadModal.type = 'dump'; }"/>
+                                <div>
+                                    <strong>SQL dump only</strong>
+                                    <span class="ic-download-hint">Faster, smaller file</span>
+                                </div>
+                            </label>
+                            <label class="ic-download-opt">
+                                <input type="radio" name="dl_type" value="all"
+                                       t-att-checked="state.downloadModal.type === 'all'"
+                                       t-on-change="() => { state.downloadModal.type = 'all'; }"/>
+                                <div>
+                                    <strong>Full (DB + Filestore)</strong>
+                                    <span class="ic-download-hint">Complete backup, larger file</span>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="closeDownloadModal">Cancel</button>
+                            <button class="ic-confirm-btn-ok"
+                                    t-att-disabled="state.downloadModal.loading"
+                                    t-on-click="doDownloadBackup">
+                                <t t-if="state.downloadModal.loading">
+                                    <i class="fa fa-spinner fa-spin"/> Preparing…
+                                </t>
+                                <t t-else="">
+                                    <i class="fa fa-download"/> Download
+                                </t>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Restore backup modal (production, dangerous) -->
+            <t t-if="state.restoreBackupModal">
+                <div class="ic-confirm-overlay" t-on-click="closeRestoreBackupModal">
+                    <div class="ic-confirm-box ic-restore-backup-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title ic-danger-title">
+                            <i class="fa fa-exclamation-triangle"/> Restore Backup
+                        </h3>
+                        <p class="ic-restore-warning">
+                            This will <strong>permanently destroy</strong> the current database
+                            and replace it with the backup from
+                            <strong t-esc="formatBackupDate(state.restoreBackupModal.time)"/>.
+                        </p>
+                        <p class="ic-restore-warning">
+                            This action <strong>cannot be undone</strong>.
+                        </p>
+                        <div class="ic-restore-confirm-input">
+                            <label>Type the instance name to confirm:
+                                <strong t-esc="state.inst.name"/>
+                            </label>
+                            <input type="text"
+                                   placeholder="Instance name"
+                                   t-att-value="state.restoreBackupModal.confirmName"
+                                   t-on-input="(ev) => { state.restoreBackupModal.confirmName = ev.target.value; }"/>
+                        </div>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="closeRestoreBackupModal">Cancel</button>
+                            <button class="ic-confirm-btn-ok danger"
+                                    t-att-disabled="!restoreNameMatches or state.restoreBackupModal.loading"
+                                    t-on-click="doRestoreBackup">
+                                <t t-if="state.restoreBackupModal.loading">
+                                    <i class="fa fa-spinner fa-spin"/> Restoring…
+                                </t>
+                                <t t-else="">
+                                    <i class="fa fa-undo"/> Restore
+                                </t>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Confirm dialog -->
+            <t t-if="state.confirmDialog">
+                <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
+                    <div class="ic-confirm-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
+                        <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
+                            <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
+                                    t-on-click="() => state.confirmDialog.onConfirm()">
+                                <t t-esc="state.confirmDialog.confirmLabel"/>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Sync with project modal -->
+            <t t-if="state.syncModal">
+                <div class="ic-confirm-overlay" t-on-click="closeSyncModal">
+                    <div class="ic-sync-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title">Sync with project</h3>
+                        <p class="ic-sync-sub">
+                            Compare this instance's dependencies and repos with the project template.
+                            Select items to transfer.
+                        </p>
+
+                        <t t-if="state.syncModal.loading">
+                            <div class="ic-sync-loading"><i class="fa fa-spinner fa-spin"/> Comparing…</div>
+                        </t>
+
+                        <t t-elif="state.syncModal.error">
+                            <div class="ic-restore-error" t-esc="state.syncModal.error"/>
+                        </t>
+
+                        <t t-elif="!syncHasDifferences">
+                            <div class="ic-sync-empty">
+                                <i class="fa fa-check-circle"/> Everything is in sync.
+                            </div>
+                        </t>
+
+                        <t t-else="">
+                            <div class="ic-sync-sections">
+                                <!-- PIP section -->
+                                <t t-set="pipDiff" t-value="state.syncModal.diff.pip"/>
+                                <t t-if="pipDiff.only_instance.length or pipDiff.only_project.length or pipDiff.conflicts.length">
+                                    <div class="ic-sync-section">
+                                        <div class="ic-sync-section-title">Python Dependencies (pip)</div>
+                                        <t t-foreach="pipDiff.only_instance" t-as="line" t-key="'pi_' + line">
+                                            <label class="ic-sync-item">
+                                                <input type="checkbox"
+                                                       t-att-checked="state.syncModal.actions.pip.push[line]"
+                                                       t-on-change="() => this.toggleSyncAction('pip', 'push', line)"/>
+                                                <code t-esc="line"/>
+                                                <span class="ic-sync-tag ic-sync-tag-push">instance only</span>
+                                                <span class="ic-sync-direction">→ push to project</span>
+                                            </label>
+                                        </t>
+                                        <t t-foreach="pipDiff.only_project" t-as="line" t-key="'pp_' + line">
+                                            <label class="ic-sync-item">
+                                                <input type="checkbox"
+                                                       t-att-checked="state.syncModal.actions.pip.pull[line]"
+                                                       t-on-change="() => this.toggleSyncAction('pip', 'pull', line)"/>
+                                                <code t-esc="line"/>
+                                                <span class="ic-sync-tag ic-sync-tag-pull">project only</span>
+                                                <span class="ic-sync-direction">← pull to instance</span>
+                                            </label>
+                                        </t>
+                                        <t t-foreach="pipDiff.conflicts" t-as="c" t-key="'pc_' + c.name">
+                                            <div class="ic-sync-conflict">
+                                                <div class="ic-sync-conflict-title">
+                                                    <span class="ic-sync-tag ic-sync-tag-conflict">differs</span>
+                                                    <strong t-esc="c.name"/>
+                                                </div>
+                                                <label class="ic-sync-conflict-opt">
+                                                    <input type="radio" t-att-name="'pip_c_' + c.name"
+                                                           t-att-checked="state.syncModal.actions.pip.conflicts[c.name] === 'instance'"
+                                                           t-on-change="() => this.setSyncConflict('pip', c.name, 'instance')"/>
+                                                    <code t-esc="c.instance_line"/>
+                                                    <span class="ic-sync-hint">(instance)</span>
+                                                </label>
+                                                <label class="ic-sync-conflict-opt">
+                                                    <input type="radio" t-att-name="'pip_c_' + c.name"
+                                                           t-att-checked="state.syncModal.actions.pip.conflicts[c.name] === 'project'"
+                                                           t-on-change="() => this.setSyncConflict('pip', c.name, 'project')"/>
+                                                    <code t-esc="c.project_line"/>
+                                                    <span class="ic-sync-hint">(project)</span>
+                                                </label>
+                                                <label class="ic-sync-conflict-opt">
+                                                    <input type="radio" t-att-name="'pip_c_' + c.name"
+                                                           t-att-checked="!state.syncModal.actions.pip.conflicts[c.name]"
+                                                           t-on-change="() => this.setSyncConflict('pip', c.name, null)"/>
+                                                    <span class="ic-sync-hint">skip</span>
+                                                </label>
+                                            </div>
+                                        </t>
+                                    </div>
+                                </t>
+
+                                <!-- APT section -->
+                                <t t-set="aptDiff" t-value="state.syncModal.diff.apt"/>
+                                <t t-if="aptDiff.only_instance.length or aptDiff.only_project.length or aptDiff.conflicts.length">
+                                    <div class="ic-sync-section">
+                                        <div class="ic-sync-section-title">System Dependencies (apt)</div>
+                                        <t t-foreach="aptDiff.only_instance" t-as="line" t-key="'ai_' + line">
+                                            <label class="ic-sync-item">
+                                                <input type="checkbox"
+                                                       t-att-checked="state.syncModal.actions.apt.push[line]"
+                                                       t-on-change="() => this.toggleSyncAction('apt', 'push', line)"/>
+                                                <code t-esc="line"/>
+                                                <span class="ic-sync-tag ic-sync-tag-push">instance only</span>
+                                                <span class="ic-sync-direction">→ push to project</span>
+                                            </label>
+                                        </t>
+                                        <t t-foreach="aptDiff.only_project" t-as="line" t-key="'ap_' + line">
+                                            <label class="ic-sync-item">
+                                                <input type="checkbox"
+                                                       t-att-checked="state.syncModal.actions.apt.pull[line]"
+                                                       t-on-change="() => this.toggleSyncAction('apt', 'pull', line)"/>
+                                                <code t-esc="line"/>
+                                                <span class="ic-sync-tag ic-sync-tag-pull">project only</span>
+                                                <span class="ic-sync-direction">← pull to instance</span>
+                                            </label>
+                                        </t>
+                                        <t t-foreach="aptDiff.conflicts" t-as="c" t-key="'ac_' + c.name">
+                                            <div class="ic-sync-conflict">
+                                                <div class="ic-sync-conflict-title">
+                                                    <span class="ic-sync-tag ic-sync-tag-conflict">differs</span>
+                                                    <strong t-esc="c.name"/>
+                                                </div>
+                                                <label class="ic-sync-conflict-opt">
+                                                    <input type="radio" t-att-name="'apt_c_' + c.name"
+                                                           t-att-checked="state.syncModal.actions.apt.conflicts[c.name] === 'instance'"
+                                                           t-on-change="() => this.setSyncConflict('apt', c.name, 'instance')"/>
+                                                    <code t-esc="c.instance_line"/>
+                                                    <span class="ic-sync-hint">(instance)</span>
+                                                </label>
+                                                <label class="ic-sync-conflict-opt">
+                                                    <input type="radio" t-att-name="'apt_c_' + c.name"
+                                                           t-att-checked="state.syncModal.actions.apt.conflicts[c.name] === 'project'"
+                                                           t-on-change="() => this.setSyncConflict('apt', c.name, 'project')"/>
+                                                    <code t-esc="c.project_line"/>
+                                                    <span class="ic-sync-hint">(project)</span>
+                                                </label>
+                                                <label class="ic-sync-conflict-opt">
+                                                    <input type="radio" t-att-name="'apt_c_' + c.name"
+                                                           t-att-checked="!state.syncModal.actions.apt.conflicts[c.name]"
+                                                           t-on-change="() => this.setSyncConflict('apt', c.name, null)"/>
+                                                    <span class="ic-sync-hint">skip</span>
+                                                </label>
+                                            </div>
+                                        </t>
+                                    </div>
+                                </t>
+
+                                <!-- Repos section -->
+                                <t t-set="reposDiff" t-value="state.syncModal.diff.repos"/>
+                                <t t-if="reposDiff.only_instance.length or reposDiff.only_project.length or reposDiff.conflicts.length">
+                                    <div class="ic-sync-section">
+                                        <div class="ic-sync-section-title">Repositories</div>
+                                        <t t-foreach="reposDiff.only_instance" t-as="r" t-key="'ri_' + r.url">
+                                            <label class="ic-sync-item">
+                                                <input type="checkbox"
+                                                       t-att-checked="state.syncModal.actions.repos.push[r.url]"
+                                                       t-on-change="() => this.toggleSyncAction('repos', 'push', r.url)"/>
+                                                <code t-esc="r.url"/>
+                                                <span class="ic-sync-hint" t-esc="'@' + r.branch"/>
+                                                <span class="ic-sync-tag ic-sync-tag-push">instance only</span>
+                                                <span class="ic-sync-direction">→ push to project</span>
+                                            </label>
+                                        </t>
+                                        <t t-foreach="reposDiff.only_project" t-as="r" t-key="'rp_' + r.url">
+                                            <label class="ic-sync-item">
+                                                <input type="checkbox"
+                                                       t-att-checked="state.syncModal.actions.repos.pull[r.url]"
+                                                       t-on-change="() => this.toggleSyncAction('repos', 'pull', r.url)"/>
+                                                <code t-esc="r.url"/>
+                                                <span class="ic-sync-hint" t-esc="'@' + r.branch"/>
+                                                <span class="ic-sync-tag ic-sync-tag-pull">project only</span>
+                                                <span class="ic-sync-direction">← pull to instance</span>
+                                            </label>
+                                        </t>
+                                        <t t-foreach="reposDiff.conflicts" t-as="c" t-key="'rc_' + c.url">
+                                            <div class="ic-sync-conflict">
+                                                <div class="ic-sync-conflict-title">
+                                                    <span class="ic-sync-tag ic-sync-tag-conflict">differs</span>
+                                                    <code t-esc="c.url"/>
+                                                </div>
+                                                <t t-foreach="Object.entries(c.fields)" t-as="entry" t-key="entry[0]">
+                                                    <div class="ic-sync-conflict-field">
+                                                        <span class="ic-sync-field-name" t-esc="entry[0]"/>:
+                                                        <span class="ic-sync-hint">
+                                                            instance=<code t-esc="entry[1].instance || '(empty)'"/>
+                                                            project=<code t-esc="entry[1].project || '(empty)'"/>
+                                                        </span>
+                                                    </div>
+                                                </t>
+                                                <div class="ic-sync-conflict-opts">
+                                                    <label class="ic-sync-conflict-opt">
+                                                        <input type="radio" t-att-name="'repo_c_' + c.url"
+                                                               t-att-checked="state.syncModal.actions.repos.conflicts[c.url] === 'instance'"
+                                                               t-on-change="() => this.setSyncConflict('repos', c.url, 'instance')"/>
+                                                        <span>Use instance values</span>
+                                                    </label>
+                                                    <label class="ic-sync-conflict-opt">
+                                                        <input type="radio" t-att-name="'repo_c_' + c.url"
+                                                               t-att-checked="state.syncModal.actions.repos.conflicts[c.url] === 'project'"
+                                                               t-on-change="() => this.setSyncConflict('repos', c.url, 'project')"/>
+                                                        <span>Use project values</span>
+                                                    </label>
+                                                    <label class="ic-sync-conflict-opt">
+                                                        <input type="radio" t-att-name="'repo_c_' + c.url"
+                                                               t-att-checked="!state.syncModal.actions.repos.conflicts[c.url]"
+                                                               t-on-change="() => this.setSyncConflict('repos', c.url, null)"/>
+                                                        <span>Skip</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </t>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel" t-on-click="closeSyncModal">Cancel</button>
+                            <t t-if="syncHasDifferences">
+                                <button class="ic-confirm-btn-ok"
+                                        t-att-disabled="!syncHasSelections or state.syncModal.applying"
+                                        t-on-click="applySyncActions">
+                                    <t t-if="state.syncModal.applying">
+                                        <i class="fa fa-spinner fa-spin"/> Applying…
+                                    </t>
+                                    <t t-else="">Apply selected</t>
+                                </button>
+                            </t>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+            <!-- Blocked deploy dialog -->
+            <t t-if="state.conflictBlocked">
+                <div class="ic-confirm-overlay" t-on-click="() => { state.conflictBlocked = null; }">
+                    <div class="ic-conflict-box" t-on-click.stop="">
+                        <div class="ic-conflict-header">
+                            <span class="ic-conflict-icon">!</span>
+                            <h3>Deploy blocked</h3>
+                        </div>
+                        <p class="ic-conflict-description" t-esc="state.conflictBlocked.message"/>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel"
+                                    t-on-click="() => { state.conflictBlocked = null; }">Close</button>
+                            <button class="ic-confirm-btn-ok"
+                                    t-on-click="() => { state.conflictBlocked = null; env.toggleSlideOver('alerts'); }">
+                                Go to Alerts
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+        </div>
+    </t>
+
+</templates>

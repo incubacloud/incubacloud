@@ -1,0 +1,99 @@
+<templates>
+
+    <t t-name="incubacloud.RepoEditor">
+        <div class="ic-repo-editor">
+
+            <!-- Fields wrapper (URL + branch + addons + excludes) -->
+            <div class="ic-repo-editor-fields">
+
+                <!-- ── URL row ─────────────────────────────────────────── -->
+                <div class="ic-repo-editor-url">
+                    <input type="text"
+                           class="ic-repo-url-input"
+                           placeholder="https://github.com/org/repo"
+                           t-att-value="props.repo.url"
+                           t-on-input="onUrlInput"
+                           t-on-blur="onUrlBlur"/>
+                    <span t-if="state.loadingBranches" class="ic-repo-spinner" title="Fetching branches…">⟳</span>
+                </div>
+
+                <!-- URL / branch error -->
+                <div t-if="state.branchError" class="ic-repo-fetch-error" t-esc="state.branchError"/>
+
+                <!-- ── Branch ──────────────────────────────────────────── -->
+                <div class="ic-repo-editor-branch">
+                    <span class="ic-repo-field-label">Branch</span>
+                    <SearchSelect
+                        options="state.branches"
+                        value="props.repo.branch"
+                        onChange.bind="onBranchChange"
+                        onOpen.bind="onBranchOpen"
+                        placeholder="'main'"
+                        loading="state.loadingBranches"
+                        allowFreeText="true"
+                        emptyLabel="'— select branch —'"
+                    />
+                    <!-- Freeze / Unfreeze toggle -->
+                    <button t-if="!props.hideFreeze"
+                            class="ic-repo-freeze-btn"
+                            t-att-class="{ 'frozen': isFrozen }"
+                            t-att-disabled="state.freezing or (!props.repo.url or !props.repo.branch)"
+                            t-att-title="isFrozen ? 'Pinned to ' + props.repo.commit_sha + ' — click to unfreeze' : 'Freeze to current HEAD'"
+                            t-on-click.stop="toggleFreeze">
+                        <t t-if="state.freezing"><span class="ic-repo-spinner">⟳</span></t>
+                        <t t-else="">
+                            <i t-att-class="isFrozen ? 'fa fa-lock' : 'fa fa-unlock-alt'"/>
+                            <span t-if="isFrozen" class="ic-repo-sha" t-esc="shortSha"/>
+                        </t>
+                    </button>
+                </div>
+
+                <!-- ── Include Modules (instance repos only) ──────────── -->
+                <t t-if="props.hasAddons">
+                    <div class="ic-repo-editor-addons">
+                        <span class="ic-repo-field-label">Modules</span>
+                        <ModuleSelector
+                            value="props.repo.addons || ''"
+                            onChange="(v) => props.onChange('addons', v)"
+                            modules="state.modules"
+                            loading="state.loadingModules"
+                            error="state.moduleError"
+                            disabled="!props.repo.branch"
+                            blockedSet="excludedSet"
+                            placeholder="'Add module…'"
+                            emptyLabel="'ALL'"
+                            resetLabel="'ALL'"
+                            showEmpty="true"
+                            onOpen.bind="onModuleOpen"
+                        />
+                    </div>
+
+                    <!-- ── Exclude Modules ─────────────────────────────── -->
+                    <div class="ic-repo-editor-addons">
+                        <span class="ic-repo-field-label ic-repo-excludes-label">Exclude</span>
+                        <ModuleSelector
+                            value="props.repo.excludes || ''"
+                            onChange="(v) => props.onChange('excludes', v)"
+                            modules="state.modules"
+                            loading="state.loadingModules"
+                            error="state.moduleError"
+                            disabled="!props.repo.branch"
+                            blockedSet="includedSet"
+                            placeholder="'Exclude module…'"
+                            emptyLabel="'NONE'"
+                            resetLabel="'Clear'"
+                            showEmpty="false"
+                            onOpen.bind="onModuleOpen"
+                        />
+                    </div>
+                </t>
+
+            </div><!-- /ic-repo-editor-fields -->
+
+            <!-- Remove button — outside fields so it can be positioned after branch -->
+            <button class="ic-repo-remove-btn" t-on-click="props.onRemove" title="Remove repository">×</button>
+
+        </div>
+    </t>
+
+</templates>

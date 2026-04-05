@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="cron_purge_audit_logs" model="ir.cron">
+        <field name="name">Purge Old Audit Logs</field>
+        <field name="model_id" ref="model_cloud_audit_log"/>
+        <field name="state">code</field>
+        <field name="code">
+ICP = env['ir.config_parameter'].sudo()
+days = int(ICP.get_param('incubacloud.audit_log_retention_days', '90') or 90)
+model._purge_old(days)
+        </field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

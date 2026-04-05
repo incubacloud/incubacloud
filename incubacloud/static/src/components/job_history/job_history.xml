@@ -1,0 +1,250 @@
+<templates>
+<t t-name="incubacloud.JobHistory">
+<div class="ic-job-history">
+
+    <!-- ── Page header ── -->
+    <t t-if="!props.embedded">
+        <div class="history-header">
+            <div class="history-header-left">
+                <h1 class="history-title">Job History</h1>
+            </div>
+            <button class="refresh-btn" t-on-click="loadHistory">↻ Refresh</button>
+        </div>
+    </t>
+
+    <!-- ── Alert context banner ── -->
+    <t t-if="state.alertMode">
+        <div class="alert-mode-banner">
+            Showing job linked to alert ·
+            <button class="btn-link" t-on-click="clearAlertMode">Show all jobs</button>
+        </div>
+    </t>
+
+
+    <!-- ── Filters ── -->
+    <div t-att-class="'history-filters' + (state.alertMode ? ' filters-hidden' : '')">
+
+        <!-- Category chips -->
+        <div class="filter-group">
+            <span class="filter-label">Category</span>
+            <div class="state-chips">
+                <button t-att-class="'state-chip' + (state.filter.job_category === 'operational' ? ' active' : '')"
+                        t-on-click="() => this.setCategory('operational')">Operational</button>
+                <button t-att-class="'state-chip' + (state.filter.job_category === 'admin' ? ' active' : '')"
+                        t-on-click="() => this.setCategory('admin')">Admin</button>
+                <button t-att-class="'state-chip' + (state.filter.job_category === 'all' ? ' active' : '')"
+                        t-on-click="() => this.setCategory('all')">All</button>
+            </div>
+        </div>
+
+        <!-- State chips -->
+        <div class="filter-group">
+            <span class="filter-label">State</span>
+            <div class="state-chips">
+                <t t-foreach="allStateKeys" t-as="s" t-key="s">
+                    <button
+                        t-att-class="'state-chip state-chip-' + s + (state.filter.states.includes(s) ? ' active' : '')"
+                        t-on-click="() => this.toggleState(s)">
+                        <t t-esc="stateLabel(s)"/>
+                    </button>
+                </t>
+            </div>
+        </div>
+
+        <!-- Host + dates -->
+        <div class="filter-row">
+            <div class="filter-group">
+                <span class="filter-label">Host</span>
+                <select class="filter-select" t-on-change="onHostChange">
+                    <option value="">All hosts</option>
+                    <t t-foreach="state.hosts" t-as="h" t-key="h.id">
+                        <option t-att-value="h.id"
+                                t-att-selected="state.filter.host_id == h.id">
+                            <t t-esc="h.name"/>
+                        </option>
+                    </t>
+                </select>
+            </div>
+
+            <div class="filter-group" t-if="state.users.length > 1">
+                <span class="filter-label">User</span>
+                <select class="filter-select" t-on-change="onUserChange">
+                    <option value="">All users</option>
+                    <t t-foreach="state.users" t-as="u" t-key="u.id">
+                        <option t-att-value="u.id"
+                                t-att-selected="state.filter.user_id == u.id">
+                            <t t-esc="u.name"/>
+                        </option>
+                    </t>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <span class="filter-label">From</span>
+                <input type="datetime-local" class="filter-input"
+                       t-att-value="state.filter.date_from"
+                       t-on-change="onDateFromChange"/>
+            </div>
+
+            <div class="filter-group">
+                <span class="filter-label">To</span>
+                <input type="datetime-local" class="filter-input"
+                       t-att-value="state.filter.date_to"
+                       t-on-change="onDateToChange"/>
+            </div>
+
+            <div class="filter-actions">
+                <button class="btn-apply" t-on-click="applyFilter">Apply</button>
+                <button class="btn-reset" t-on-click="resetFilter">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Loading ── -->
+    <t t-if="state.loading">
+        <div class="ic-skeleton-list" style="padding: 16px 0;">
+            <t t-foreach="[1,2,3,4,5]" t-as="i" t-key="i">
+                <div class="ic-skeleton-row" style="padding: 8px 0;">
+                    <div class="ic-skeleton-label" style="width: 160px;"/>
+                    <div class="ic-skeleton-value" style="width: 80px;"/>
+                    <div class="ic-skeleton-value" style="width: 60px;"/>
+                </div>
+            </t>
+        </div>
+    </t>
+
+    <t t-else="">
+
+        <!-- ── Gantt ── -->
+        <div class="gantt-section">
+            <div class="gantt-section-header">
+                <span class="gantt-title">Timeline</span>
+                <div class="gantt-window-btns">
+                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 1 ? ' active' : '')"
+                            t-on-click="() => this.setGanttWindow(1)">1h</button>
+                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 6 ? ' active' : '')"
+                            t-on-click="() => this.setGanttWindow(6)">6h</button>
+                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 24 ? ' active' : '')"
+                            t-on-click="() => this.setGanttWindow(24)">24h</button>
+                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 168 ? ' active' : '')"
+                            t-on-click="() => this.setGanttWindow(168)">7d</button>
+                </div>
+            </div>
+
+            <t t-if="!ganttJobs.length">
+                <div class="ic-empty-state">
+                    <i class="fa fa-calendar-o ic-empty-icon"/>
+                    <div class="ic-empty-title">No jobs in this time window</div>
+                    <div class="ic-empty-hint">Try expanding the time range or adjusting filters.</div>
+                    <button class="ic-empty-action" t-on-click="() => this.setGanttWindow(168)">
+                        <i class="fa fa-expand"/> Show last 7 days
+                    </button>
+                </div>
+            </t>
+            <t t-else="">
+                <!-- X-axis ticks -->
+                <div class="gantt-axis">
+                    <div class="gantt-label-col"/>
+                    <div class="gantt-track-col">
+                        <t t-foreach="ganttTicks" t-as="tick" t-key="tick.pct">
+                            <span class="gantt-tick"
+                                  t-att-style="'left:' + tick.pct + '%'">
+                                <t t-esc="tick.label"/>
+                            </span>
+                        </t>
+                    </div>
+                </div>
+
+                <!-- Rows -->
+                <div class="gantt-body">
+                    <t t-foreach="ganttJobs" t-as="job" t-key="job.id">
+                        <div class="gantt-row">
+                            <div class="gantt-label" t-att-title="job.name + ' · ' + job.host">
+                                <span t-att-class="'state-dot state-dot-' + job.state"/>
+                                <div class="gantt-label-lines">
+                                    <span class="gantt-label-name" t-esc="job.name"/>
+                                    <t t-if="job.trigger === 'webhook'">
+                                        <span class="gantt-label-trigger">
+                                            <i class="fa fa-github"/>
+                                            <t t-esc="job.push_sha"/>
+                                            <t t-esc="job.push_message"/>
+                                        </span>
+                                    </t>
+                                    <span class="gantt-label-host">
+                                        <t t-if="job.instance_name" t-esc="job.instance_name + ' · '"/>
+                                        <t t-esc="job.host"/>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="gantt-track">
+                                <div t-att-class="'gantt-bar gantt-state-' + job.state"
+                                     t-att-style="'left:' + job.ganttLeft.toFixed(2) + '%;width:' + job.ganttWidth.toFixed(2) + '%'"
+                                     t-att-title="stateName(job.state) + ' · ' + formatDuration(job.duration_s)"
+                                     t-on-click="() => this.openLog(job)"/>
+                            </div>
+                        </div>
+                    </t>
+                </div>
+            </t>
+        </div>
+
+        <!-- ── Table ── -->
+        <div class="history-table-wrap">
+            <t t-if="!state.jobs.length">
+                <div class="ic-empty-state">
+                    <i class="fa fa-search ic-empty-icon"/>
+                    <div class="ic-empty-title">No jobs found</div>
+                    <div class="ic-empty-hint">No jobs match the current filters. Try resetting or broadening your criteria.</div>
+                    <button class="ic-empty-action" t-on-click="() => this.resetFilters()">
+                        <i class="fa fa-times-circle"/> Reset filters
+                    </button>
+                </div>
+            </t>
+            <t t-else="">
+                <table class="history-table history-table-clickable">
+                    <thead>
+                        <tr>
+                            <th>State</th>
+                            <th>Job</th>
+                            <th>Instance</th>
+                            <th>Host</th>
+                            <th>User</th>
+                            <th>Date</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <t t-foreach="state.jobs" t-as="job" t-key="job.id">
+                            <tr class="history-row history-row-link"
+                                title="Click to view log"
+                                t-on-click="() => this.openLog(job)">
+                                <td>
+                                    <span t-att-class="'job-badge state-' + job.state"
+                                          t-esc="stateName(job.state)"/>
+                                </td>
+                                <td class="col-name">
+                                    <t t-esc="job.name"/>
+                                    <t t-if="job.trigger === 'webhook'">
+                                        <span class="col-trigger"><i class="fa fa-github"/> <t t-esc="job.push_sha"/> <t t-esc="job.push_message"/></span>
+                                    </t>
+                                </td>
+                                <td class="col-instance" t-esc="job.instance_name || '—'"/>
+                                <td class="col-host" t-esc="job.host"/>
+                                <td class="col-user" t-esc="job.user_name || '—'"/>
+                                <td class="col-date" t-esc="formatDate(job.create_date)"/>
+                                <td class="col-dur">
+                                    <span t-esc="formatDuration(job.duration_s)"/>
+                                    <span class="history-log-hint"><i class="fa fa-terminal"/> Log</span>
+                                </td>
+                            </tr>
+                        </t>
+                    </tbody>
+                </table>
+            </t>
+        </div>
+
+    </t>
+
+</div>
+</t>
+</templates>

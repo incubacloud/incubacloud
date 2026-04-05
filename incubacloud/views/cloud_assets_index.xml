@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+<!-- This contains the tour assets. They are included during testing. -->
+<template id="incubacloud.index" name="Cloud Index">&lt;!DOCTYPE html&gt;
+<html>
+    <head>
+        <title>Cloud</title>
+
+        <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+        <meta http-equiv="content-type" content="text/html, charset=utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+
+        <!-- Inter font: preconnect then load variable weight for best performance -->
+        <link rel="preconnect" href="https://fonts.googleapis.com"/>
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap"/>
+
+        <style> body { background: #0f172a; } </style>
+
+        <script type="text/javascript">
+            var odoo = <t t-out="json.dumps({
+                'csrf_token': request.csrf_token(None),
+                '__session_info__': session_info,
+                'from_backend': from_backend,
+                'debug': debug,
+            })"/>;
+            odoo.loadMenusPromise = Promise.resolve();
+        </script>
+        <t t-call-assets="incubacloud.assets_prod"/>
+    </head>
+    <body class="cloud">
+    </body>
+</html>
+</template>
+
+</odoo>

@@ -1,0 +1,543 @@
+<templates>
+
+    <t t-name="incubacloud.HostDetail">
+        <div class="ic-host-detail">
+
+            <!-- Loading -->
+            <t t-if="state.loading">
+                <div class="ic-detail-loading">Loading host…</div>
+            </t>
+
+            <t t-elif="isNew or state.host">
+
+                <!-- Header -->
+                <div class="ic-detail-header">
+                    <div class="ic-detail-title">
+                        <t t-if="isNew">
+                            <h1>New Host</h1>
+                        </t>
+                        <t t-else="">
+                            <h1 t-esc="state.host.name"/>
+                            <span t-att-class="'ic-status-badge status-badge-' + state.host.status"
+                                  t-esc="statusLabel(state.host.status)"/>
+                        </t>
+                    </div>
+                    <t t-if="!isNew">
+                        <div class="ic-detail-header-meta">
+                            <code class="ic-host-ip">
+                                <t t-esc="state.host.ip_address"/>:<t t-esc="state.host.port || 22"/>
+                            </code>
+                            <span class="ic-detail-probed">
+                                <t t-esc="state.host.instance_count"/> instance<t t-if="state.host.instance_count !== 1">s</t>
+                            </span>
+                        </div>
+                    </t>
+                </div>
+
+                <!-- Action bar (existing hosts only, Manager only) -->
+                <t t-if="!isNew and state.host and env.permissions?.can_manage_hosts">
+                    <div class="ic-action-bar">
+                        <button class="ic-action-btn ic-ab-deploy" title="Check host"
+                                t-on-click="runCheck">
+                            <i class="fa fa-heartbeat"/> Check
+                        </button>
+                        <button class="ic-action-btn ic-ab-rebuild" title="Full setup"
+                                t-on-click="runFullSetup">
+                            <i class="fa fa-wrench"/> Full Setup
+                        </button>
+                        <button class="ic-action-btn" title="Import existing instance"
+                                t-on-click="openImportBrowser">
+                            <i class="fa fa-download"/> Import Instance
+                        </button>
+                        <!-- Community / extension actions -->
+                        <t t-if="state.host.custom_actions?.length">
+                            <div class="ic-action-sep"/>
+                            <t t-foreach="state.host.custom_actions" t-as="action" t-key="action.code">
+                                <button class="ic-action-btn ic-ab-secondary"
+                                        t-att-title="action.name"
+                                        t-att-aria-label="action.name"
+                                        t-on-click="() => this.hostAction(action.code)">
+                                    <i t-att-class="'fa ' + (action.action_icon || 'fa-cog')"/>
+                                </button>
+                            </t>
+                        </t>
+                        <div class="ic-action-sep"/>
+                        <button class="ic-action-btn ic-ab-danger" title="Delete host"
+                                t-on-click="deleteHost">
+                            <i class="fa fa-trash"/> Delete
+                        </button>
+                    </div>
+                </t>
+
+                <!-- ═══════════════════════════════════════════════════════════
+                     Overview section (existing hosts only, default view)
+                     ═══════════════════════════════════════════════════════════ -->
+                <t t-if="!isNew and state.tab === 'overview' and state.host">
+                    <div class="ic-overview">
+
+                        <!-- Status + Info cards (same structure as instance detail) -->
+                        <div class="ic-overview-cards">
+                            <div class="ic-ov-card">
+                                <div class="ic-ov-card-title">Status</div>
+                                <div class="ic-ov-card-body">
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">State</span>
+                                        <span t-att-class="'ic-ov-status status-badge-' + state.host.status">
+                                            <span t-att-class="'ic-ic-status-dot st-host-' + state.host.status"/>
+                                            <t t-esc="statusLabel(state.host.status)"/>
+                                        </span>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">CPU</span>
+                                        <span>
+                                            <t t-if="state.host.cpu_cores" t-esc="state.host.cpu_cores + ' cores'"/>
+                                            <t t-else="">—</t>
+                                        </span>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">RAM</span>
+                                        <span t-esc="formatRam(state.host.ram_total_gb)"/>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Disk</span>
+                                        <span>
+                                            <t t-if="state.host.disk">
+                                                <span t-att-class="state.host.disk >= 85 ? 'ic-ov-danger' : ''"
+                                                      t-esc="state.host.disk + '%'"/>
+                                                <t t-if="diskExtra()">
+                                                    <span class="ic-ov-sub" t-esc="diskExtra()"/>
+                                                </t>
+                                            </t>
+                                            <t t-else="">—</t>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="ic-ov-card">
+                                <div class="ic-ov-card-title">Info</div>
+                                <div class="ic-ov-card-body">
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Domain</span>
+                                        <span t-esc="state.host.wildcard_domain || '—'"/>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Instances</span>
+                                        <span t-esc="state.host.instance_count"/>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">Traefik</span>
+                                        <span t-att-class="state.host.traefik_deployed ? 'ic-ov-ok' : ''">
+                                            <t t-if="state.host.traefik_deployed">Deployed</t>
+                                            <t t-else="">Not deployed</t>
+                                        </span>
+                                    </div>
+                                    <t t-if="state.host.last_probed">
+                                        <div class="ic-ov-row">
+                                            <span class="ic-ov-label">Last check</span>
+                                            <span t-esc="timeAgo(state.host.last_probed)"/>
+                                        </div>
+                                    </t>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent Activity (timeline — same structure as instance detail) -->
+                        <div class="ic-ov-activity">
+                            <div class="ic-ov-activity-title">Recent Activity</div>
+                            <t t-if="state.jobsLoading and !state.jobs.length">
+                                <div class="ic-ov-activity-loading">Loading…</div>
+                            </t>
+                            <t t-elif="!state.jobs.length">
+                                <div class="ic-ov-activity-empty">No activity yet.</div>
+                            </t>
+                            <t t-else="">
+                                <div class="ic-tl">
+                                    <t t-foreach="state.jobs" t-as="job" t-key="job.id">
+                                        <div class="ic-tl-item" t-on-click="() => this.openLog(job)">
+                                            <div class="ic-tl-rail">
+                                                <span t-att-class="'ic-tl-dot ' + jobStateClass(job.state) + (isActiveJob(job.state) ? ' ic-tl-pulse' : '')"/>
+                                                <span class="ic-tl-line"/>
+                                            </div>
+                                            <div class="ic-tl-content">
+                                                <div class="ic-tl-header">
+                                                    <i t-att-class="'fa ' + jobIcon(job.job_type_code) + ' ic-tl-icon'"/>
+                                                    <span class="ic-tl-name" t-esc="job.name"/>
+                                                    <span t-att-class="'ic-ov-job-state ' + jobStateClass(job.state)"
+                                                          t-esc="job.state"/>
+                                                    <t t-if="job.has_alert">
+                                                        <span class="ic-tl-alert-badge"
+                                                              t-on-click.stop="() => env.toggleSlideOver('alerts')">
+                                                            <i class="fa fa-exclamation-triangle"/> Action required
+                                                        </span>
+                                                    </t>
+                                                    <span class="ic-tl-log-hint"><i class="fa fa-terminal"/> Log</span>
+                                                </div>
+                                                <t t-if="job.last_system_message">
+                                                    <div class="ic-tl-msg" t-esc="job.last_system_message"/>
+                                                </t>
+                                                <div class="ic-tl-footer">
+                                                    <div class="ic-tl-time">
+                                                        <span t-esc="formatDate(job.create_date)"/>
+                                                        <span class="ic-tl-ago" t-esc="'(' + timeAgo(job.create_date) + ')'"/>
+                                                    </div>
+                                                    <div class="ic-tl-actions">
+                                                        <t t-if="isActiveJob(job.state)">
+                                                            <button class="ic-tl-action-btn ic-tl-cancel"
+                                                                    t-on-click="(ev) => this.cancelJob(ev, job)">
+                                                                <i class="fa fa-times"/> Cancel
+                                                            </button>
+                                                        </t>
+                                                        <t t-if="job.state === 'failed'">
+                                                            <button class="ic-tl-action-btn"
+                                                                    t-on-click="(ev) => this.retryJob(ev, job)">
+                                                                <i class="fa fa-refresh"/> Retry
+                                                            </button>
+                                                        </t>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </div>
+                                <t t-if="hasMoreJobs">
+                                    <button class="ic-ov-load-more" t-on-click="viewAllJobs">
+                                        View all activity <i class="fa fa-arrow-right"/>
+                                    </button>
+                                </t>
+                            </t>
+                        </div>
+
+                    </div>
+                </t>
+
+                <!-- Tabs -->
+                <div class="ic-detail-tabs">
+                    <t t-if="!isNew">
+                        <button t-att-class="state.tab === 'overview' ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('overview')">Overview</button>
+                    </t>
+                    <button t-att-class="state.tab === 'general' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('general')">General</button>
+                    <button t-att-class="state.tab === 'connection' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('connection')">Connection</button>
+                    <button t-att-class="state.tab === 'traefik' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('traefik')">Traefik</button>
+                    <button t-att-class="state.tab === 'whitelist' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('whitelist')">Whitelist</button>
+                    <t t-if="!isNew and env.permissions?.can_manage_hosts">
+                        <button t-att-class="state.tab === 'activity' ? 'ic-tab active' : 'ic-tab'"
+                                t-on-click="() => this.setTab('activity')">Audit Logs</button>
+                    </t>
+                </div>
+
+                <!-- Tab content -->
+                <t t-if="state.tab !== 'overview'">
+                    <div class="ic-detail-body">
+
+                        <!-- ── General tab ──────────────────────────────────────── -->
+                        <t t-if="state.tab === 'general'">
+                            <div class="ic-form-grid">
+                                <div class="ic-form-row">
+                                    <label>Name <span class="ic-required">*</span></label>
+                                    <input type="text"
+                                           t-att-value="state.form.name"
+                                           t-on-input="(ev) => this.onInput('name', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>IP Address <span class="ic-required">*</span></label>
+                                    <input type="text" placeholder="192.168.1.1"
+                                           t-att-value="state.form.ip_address"
+                                           t-on-input="(ev) => this.onInput('ip_address', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>Port <span class="ic-required">*</span></label>
+                                    <input type="number"
+                                           t-att-value="state.form.port"
+                                           t-on-input="(ev) => this.onInput('port', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>Tags</label>
+                                    <input type="text" placeholder="tag1, tag2, …"
+                                           t-att-value="state.form.tags"
+                                           t-on-input="(ev) => this.onInput('tags', ev)"/>
+                                </div>
+                                <div class="ic-form-row ic-form-row-full">
+                                    <label>Description</label>
+                                    <textarea rows="4"
+                                              t-att-value="state.form.description"
+                                              t-on-input="(ev) => this.onInput('description', ev)"/>
+                                </div>
+                                <div class="ic-form-row ic-form-row-full">
+                                    <label>Auto-assignment</label>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox"
+                                               t-att-checked="state.form.exclude_from_autoassign"
+                                               t-on-change="(ev) => { this.state.form.exclude_from_autoassign = ev.target.checked; }"/>
+                                        <span>Exclude from auto-assignment</span>
+                                    </div>
+                                    <span class="ic-form-note">
+                                        When checked, this host will not be selected automatically for new instances.
+                                    </span>
+                                </div>
+                            </div>
+                        </t>
+
+                        <!-- ── Connection tab ───────────────────────────────────── -->
+                        <t t-if="state.tab === 'connection'">
+                            <div class="ic-form-grid">
+                                <div class="ic-form-row">
+                                    <label>User <span class="ic-required">*</span></label>
+                                    <input type="text" placeholder="ubuntu"
+                                           t-att-value="state.form.user"
+                                           t-on-input="(ev) => this.onInput('user', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>Login Type <span class="ic-required">*</span></label>
+                                    <select t-on-change="(ev) => this.onSelect('login_type', ev)">
+                                        <option value="ssh_key"
+                                                t-att-selected="state.form.login_type === 'ssh_key'">SSH Key</option>
+                                        <option value="password"
+                                                t-att-selected="state.form.login_type === 'password'">Password</option>
+                                    </select>
+                                </div>
+                                <t t-if="state.form.login_type === 'password'">
+                                    <div class="ic-form-row ic-form-row-full">
+                                        <label>Password</label>
+                                        <PasswordInput
+                                            hasValue="state.has_password"
+                                            model="'cloud.host'"
+                                            recordId="props.host_id || null"
+                                            fieldName="'password'"
+                                            required="true"
+                                            onChange="(val) => this.onPasswordChange('password', val)"/>
+                                    </div>
+                                </t>
+                                <t t-else="">
+                                    <div class="ic-form-row ic-form-row-full">
+                                        <label>SSH Private Key <span class="ic-required">*</span></label>
+                                        <input type="file" accept=".pem,.key,.txt"
+                                               t-on-change="onKeyFileChange"/>
+                                        <t t-if="!isNew and !state.form.key_file">
+                                            <span class="ic-form-note">Leave empty to keep the current key.</span>
+                                        </t>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+
+                        <!-- ── Traefik tab ──────────────────────────────────────── -->
+                        <t t-if="state.tab === 'traefik'">
+                            <div class="ic-form-grid ic-traefik-meta">
+                                <div class="ic-form-row">
+                                    <label>Wildcard Domain <span class="ic-required">*</span></label>
+                                    <input type="text" placeholder="example.com"
+                                           t-att-value="state.form.wildcard_domain"
+                                           t-on-input="(ev) => this.onInput('wildcard_domain', ev)"/>
+                                </div>
+                                <div class="ic-form-row">
+                                    <label>Panel Password</label>
+                                    <PasswordInput
+                                        hasValue="state.has_traefik_panel_password"
+                                        model="'cloud.host'"
+                                        recordId="props.host_id || null"
+                                        fieldName="'traefik_panel_password'"
+                                        onChange="(val) => this.onPasswordChange('traefik_panel_password', val)"/>
+                                </div>
+                            </div>
+                            <div class="ic-file-tabs">
+                                <t t-foreach="traefikFiles" t-as="f" t-key="f.key">
+                                    <button t-att-class="state.traefik_file === f.key ? 'ic-file-tab active' : 'ic-file-tab'"
+                                            t-on-click="() => this.setTraefikFile(f.key)">
+                                        <t t-esc="f.label"/>
+                                    </button>
+                                </t>
+                            </div>
+                            <div class="ic-code-editor-wrap">
+                                <div class="ic-code-gutter">
+                                    <t t-foreach="getLineNumbers(state.traefik_file)" t-as="n" t-key="n">
+                                        <div class="ic-line-num" t-esc="n"/>
+                                    </t>
+                                </div>
+                                <textarea class="ic-code-area" spellcheck="false"
+                                          autocomplete="off" autocorrect="off" autocapitalize="off"
+                                          t-att-value="state.form[state.traefik_file]"
+                                          t-on-input="(ev) => this.onInput(state.traefik_file, ev)"
+                                          t-on-scroll="onCodeScroll"/>
+                            </div>
+                        </t>
+
+                        <!-- ── Whitelist tab ────────────────────────────────────── -->
+                        <t t-if="state.tab === 'whitelist'">
+                            <div class="ic-whitelist-panel">
+                                <p class="ic-whitelist-desc">
+                                    Hostnames that test instances on this host can reach
+                                    through the <code>globalwhitelist</code> proxy.
+                                    Click <strong>Apply Whitelist</strong> to push changes.
+                                </p>
+                                <ul class="ic-whitelist-list">
+                                    <t t-foreach="state.form.whitelist" t-as="hostname" t-key="hostname">
+                                        <li class="ic-whitelist-item">
+                                            <span class="ic-whitelist-hostname" t-esc="hostname"/>
+                                            <button class="ic-whitelist-remove" title="Remove"
+                                                    t-on-click="() => this.removeWhitelistEntry(hostname)">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </li>
+                                    </t>
+                                    <t t-if="state.form.whitelist.length === 0">
+                                        <li class="ic-whitelist-empty">No hosts in whitelist.</li>
+                                    </t>
+                                </ul>
+                                <div class="ic-whitelist-add">
+                                    <input type="text" placeholder="e.g. api.example.com"
+                                           t-att-value="state.form.newWhitelistEntry"
+                                           t-on-input="(ev) => { state.form.newWhitelistEntry = ev.target.value; }"
+                                           t-on-keydown="onWhitelistKeydown"/>
+                                    <button class="ic-whitelist-add-btn"
+                                            t-on-click="() => this.addWhitelistEntry()">
+                                        <i class="fa fa-plus"/> Add
+                                    </button>
+                                </div>
+                                <t t-if="!isNew">
+                                    <div class="ic-whitelist-apply-row">
+                                        <button class="ic-whitelist-apply-btn" t-on-click="applyWhitelist">
+                                            <i class="fa fa-upload"/> Apply Whitelist on Host
+                                        </button>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+
+                        <!-- ── Activity ─────────────────────────────────────── -->
+                        <t t-if="state.tab === 'activity'">
+                            <div class="ic-activity-panel">
+
+                                <!-- Filter bar -->
+                                <div class="ic-audit-filters">
+                                    <input class="ic-audit-search" type="text"
+                                           placeholder="Search user or action…"
+                                           t-att-value="state.auditFilter.q"
+                                           t-on-input="(ev) => { state.auditFilter.q = ev.target.value; }"/>
+                                    <select class="ic-audit-select"
+                                            t-on-change="(ev) => { state.auditFilter.action = ev.target.value; }">
+                                        <option value="">All actions</option>
+                                        <t t-foreach="state.auditActions" t-as="act" t-key="act">
+                                            <option t-att-value="act"
+                                                    t-att-selected="state.auditFilter.action === act"
+                                                    t-esc="act"/>
+                                        </t>
+                                    </select>
+                                    <input class="ic-audit-date" type="date"
+                                           t-att-value="state.auditFilter.date_from"
+                                           t-on-change="(ev) => { state.auditFilter.date_from = ev.target.value; }"/>
+                                    <span class="ic-audit-date-sep">→</span>
+                                    <input class="ic-audit-date" type="date"
+                                           t-att-value="state.auditFilter.date_to"
+                                           t-on-change="(ev) => { state.auditFilter.date_to = ev.target.value; }"/>
+                                    <button class="btn-apply" t-on-click="applyAuditFilter">Apply</button>
+                                    <button class="btn-reset" t-on-click="resetAuditFilter">Reset</button>
+                                    <div class="ic-audit-spacer"/>
+                                    <button class="ic-audit-purge-btn"
+                                            t-att-disabled="state.auditPurging"
+                                            title="Delete entries older than the configured retention period"
+                                            t-on-click="purgeAuditLogs">
+                                        <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
+                                        Purge old logs
+                                    </button>
+                                </div>
+
+                                <t t-if="state.auditLogLoading">
+                                    <div class="history-loading">Loading…</div>
+                                </t>
+                                <t t-elif="!state.auditLog.length">
+                                    <div class="ic-empty-state">
+                                        <i class="fa fa-history ic-empty-icon"/>
+                                        <div class="ic-empty-title">No entries found</div>
+                                        <div class="ic-empty-hint">No audit log entries match the current filters.</div>
+                                    </div>
+                                </t>
+                                <t t-else="">
+                                    <table class="history-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>User</th>
+                                                <th>Action</th>
+                                                <th>Details</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <t t-foreach="state.auditLog" t-as="entry" t-key="entry.id">
+                                                <tr class="history-row">
+                                                    <td class="col-date" t-esc="formatDate(entry.create_date)"/>
+                                                    <td class="col-user" t-esc="entry.user_name"/>
+                                                    <td class="col-name" t-esc="entry.action"/>
+                                                    <td class="col-msg" t-esc="entry.details || '—'"/>
+                                                </tr>
+                                            </t>
+                                        </tbody>
+                                    </table>
+                                </t>
+                            </div>
+                        </t>
+
+                    </div>
+
+                    <!-- Footer: save / feedback (config tabs only, not activity) -->
+                    <div t-if="state.tab !== 'activity'" class="ic-detail-footer">
+                        <button class="ic-btn-save"
+                                t-att-disabled="state.saving"
+                                t-on-click="save">
+                            <t t-if="state.saving">
+                                <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
+                                <t t-if="isNew">Creating…</t>
+                                <t t-else="">Saving…</t>
+                            </t>
+                            <t t-else="">
+                                <t t-if="isNew">Create Host</t>
+                                <t t-else="">Save changes</t>
+                            </t>
+                        </button>
+                    </div>
+                </t>
+
+            </t>
+
+            <!-- Error state -->
+            <t t-elif="state.error">
+                <div class="ic-detail-error-state" role="alert">
+                    <p t-esc="state.error"/>
+                    <button t-on-click="goBack">← Back to Hosts</button>
+                </div>
+            </t>
+
+            <!-- Import instance file browser -->
+            <t t-if="state.showImportBrowser and props.host_id">
+                <RemoteFileBrowser
+                    hostId="props.host_id"
+                    onSelect="(r) => this.onImportSelect(r)"
+                    onCancel="() => this.closeImportBrowser()"/>
+            </t>
+
+            <!-- Confirm dialog -->
+            <t t-if="state.confirmDialog">
+                <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
+                    <div class="ic-confirm-box" t-on-click.stop="">
+                        <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
+                        <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
+                        <div class="ic-confirm-actions">
+                            <button class="ic-confirm-btn-cancel"
+                                    t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
+                            <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
+                                    t-on-click="() => state.confirmDialog.onConfirm()">
+                                <t t-esc="state.confirmDialog.confirmLabel"/>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </t>
+
+        </div>
+    </t>
+
+</templates>

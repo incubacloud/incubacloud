@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+
+    <record id="action_go_to_cloud_app" model="ir.actions.act_url">
+        <field name="name">Cloud</field>
+        <field name="url">/cloud</field>
+        <field name="target">self</field>
+    </record>
+
+</odoo>
