@@ -1,9 +1,12 @@
 """
 Fernet-based symmetric encryption for sensitive fields (passwords, passphrases).
 
-Key resolution order:
-  1. Environment variable  INCUBACLOUD_SECRET_KEY  (base64url-encoded 32-byte key)
-  2. Odoo system parameter  incubacloud.secret_key  (auto-generated on first use)
+Key resolution:
+  1. Environment variable  INCUBACLOUD_SECRET_KEY  (Fernet-compatible base64url key)
+  2. Fixed development key (only when env var is absent)
+
+In production / staging, the env var MUST be set — otherwise encryption
+falls back to the well-known dev key which offers no real protection.
 
 The prefix ``enc:`` distinguishes already-encrypted values from plain-text
 values that may exist in older records before this feature was introduced.
@@ -16,6 +19,15 @@ import secrets
 _logger = logging.getLogger(__name__)
 
 _ENCRYPTED_PREFIX = "enc:"
+
+# Well-known key used ONLY in development when INCUBACLOUD_SECRET_KEY is unset.
+# Provides functional encryption so EncryptedChar works locally, but offers
+# zero security — anyone who reads this source can decrypt the values.
+_DEV_KEY = "ZGV2ZWxvcG1lbnQta2V5LWRvLW5vdC11c2U="  # base64(b"development-key-do-not-use")
+# Fernet needs a 32-byte url-safe base64 key.  Derive one deterministically:
+_DEV_FERNET_KEY = base64.urlsafe_b64encode(
+    _DEV_KEY.encode().ljust(32, b"\0")[:32]
+).decode()
 
 # Lazy-loaded Fernet instance
 _fernet = None
@@ -39,30 +51,20 @@ def _get_fernet(env=None):
 
     raw_key = os.environ.get("INCUBACLOUD_SECRET_KEY", "").strip()
 
-    if not raw_key and env is not None:
-        ICP = env["ir.config_parameter"].sudo()
-        raw_key = ICP.get_param("incubacloud.secret_key", "")
-        if not raw_key:
-            running_env = os.environ.get("RUNNING_ENV", "").lower()
-            if running_env in ("production", "staging"):
-                _logger.error(
-                    "INCUBACLOUD_SECRET_KEY environment variable is required "
-                    "in %s. Set it to a Fernet-compatible base64url key. "
-                    "Auto-generation is only allowed in development.",
-                    running_env,
-                )
-                return None
-            # Auto-generate and persist a new key (development only)
-            raw_key = Fernet.generate_key().decode()
-            ICP.set_param("incubacloud.secret_key", raw_key)
-            _logger.info("Generated new incubacloud.secret_key in ir.config_parameter")
-
     if not raw_key:
+        running_env = os.environ.get("RUNNING_ENV", "").lower()
+        if running_env in ("production", "staging"):
+            _logger.error(
+                "INCUBACLOUD_SECRET_KEY environment variable is required "
+                "in %s.  Set it to a Fernet-compatible base64url key.",
+                running_env,
+            )
+            return None
+        raw_key = _DEV_FERNET_KEY
         _logger.warning(
-            "No INCUBACLOUD_SECRET_KEY env var and no env context available. "
-            "Password encryption is disabled for this call."
+            "INCUBACLOUD_SECRET_KEY not set — using development key. "
+            "Do NOT use this in production."
         )
-        return None
 
     try:
         key_bytes = raw_key.encode() if isinstance(raw_key, str) else raw_key

@@ -32,15 +32,11 @@ class GitHubCredentialService(models.AbstractModel):
     def get_pat(self):
         """Return the configured Personal Access Token, or None.
 
-        Stored in ir.config_parameter independently of the GitHub App
-        record so it survives App resets.
+        Stored in ``cloud.settings`` (EncryptedChar) so it never
+        appears as plain text in the database.
         """
-        pat = (
-            self.env["ir.config_parameter"]
-            .sudo()
-            .get_param("incubacloud.github_pat", "")
-            .strip()
-        )
+        settings = self.env["cloud.settings"]._get()
+        pat = (settings.github_pat or "").strip()
         return pat or None
 
     def get_credentials(self):

@@ -1,4 +1,5 @@
 from . import cloud_security_mixin
+from . import cloud_settings
 from . import res_users_ext
 from . import cloud_audit_log
 from . import password_utils
