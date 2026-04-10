@@ -269,6 +269,9 @@ class CloudHost(models.Model):
         else:
             kwargs['password'] = self.password
             kwargs['client_keys'] = []
+        # Disable SSH agent so asyncssh never tries to read agent sockets
+        # or default key files from ~/.ssh inside the container.
+        kwargs['agent_path'] = None
         return kwargs
 
     @asynccontextmanager
