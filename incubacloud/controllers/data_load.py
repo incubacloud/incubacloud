@@ -85,14 +85,9 @@ def _parse_github_repo_path(url):
 
 
 def _has_pat(env):
-    """Check if a PAT is configured in ir.config_parameter."""
-    pat = (
-        env["ir.config_parameter"]
-        .sudo()
-        .get_param("incubacloud.github_pat", "")
-        .strip()
-    )
-    return bool(pat)
+    """Check if a PAT is configured in cloud.settings."""
+    settings = env["cloud.settings"]._get()
+    return bool((settings.github_pat or "").strip())
 
 
 def _job_response(env, job_id):
@@ -1331,10 +1326,10 @@ class CloudDataLoadController(Controller):
                 }
             App.create(write_vals)
 
-        # PAT stored independently in ir.config_parameter
+        # PAT stored in cloud.settings (EncryptedChar)
         if github_pat:
-            request.env['ir.config_parameter'].sudo().set_param(
-                'incubacloud.github_pat', github_pat,
+            request.env['cloud.settings']._get().write(
+                {'github_pat': github_pat},
             )
 
         return {'ok': True}
@@ -1346,9 +1341,7 @@ class CloudDataLoadController(Controller):
         pat = (pat or '').strip()
         if not pat:
             return {'ok': False, 'error': _('PAT is empty.')}
-        request.env['ir.config_parameter'].sudo().set_param(
-            'incubacloud.github_pat', pat,
-        )
+        request.env['cloud.settings']._get().write({'github_pat': pat})
         return {'ok': True}
 
     @http.route(['/cloud/test_github_connection'], type='jsonrpc', auth='user')

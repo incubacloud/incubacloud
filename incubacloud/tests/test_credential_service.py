@@ -12,35 +12,28 @@ class TestCredentialServicePAT(TransactionCase):
     def _svc(self):
         return self.env['cloud.github.credential.service']
 
+    def _settings(self):
+        return self.env['cloud.settings']._get()
+
     def test_get_pat_returns_none_when_not_set(self):
-        self.env['ir.config_parameter'].sudo().set_param(
-            'incubacloud.github_pat', '',
-        )
+        self._settings().write({'github_pat': ''})
         self.assertIsNone(self._svc().get_pat())
 
     def test_get_pat_returns_token_when_set(self):
-        self.env['ir.config_parameter'].sudo().set_param(
-            'incubacloud.github_pat', 'ghp_test123',
-        )
+        self._settings().write({'github_pat': 'ghp_test123'})
         self.assertEqual(self._svc().get_pat(), 'ghp_test123')
 
     def test_get_pat_strips_whitespace(self):
-        self.env['ir.config_parameter'].sudo().set_param(
-            'incubacloud.github_pat', '  ghp_abc  ',
-        )
+        self._settings().write({'github_pat': '  ghp_abc  '})
         self.assertEqual(self._svc().get_pat(), 'ghp_abc')
 
     def test_get_pat_empty_whitespace_returns_none(self):
-        self.env['ir.config_parameter'].sudo().set_param(
-            'incubacloud.github_pat', '   ',
-        )
+        self._settings().write({'github_pat': '   '})
         self.assertIsNone(self._svc().get_pat())
 
     def test_pat_survives_app_reset(self):
-        """PAT is stored in ir.config_parameter, not in cloud.github.app."""
-        self.env['ir.config_parameter'].sudo().set_param(
-            'incubacloud.github_pat', 'ghp_persistent',
-        )
+        """PAT is stored in cloud.settings, not in cloud.github.app."""
+        self._settings().write({'github_pat': 'ghp_persistent'})
         # Delete all github app records
         self.env['cloud.github.app'].sudo().search([]).unlink()
         # PAT still available
