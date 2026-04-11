@@ -596,7 +596,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 ),
             ),
             # 2. Fix docker-compose.yml symlink: copier points to devel.yaml;
-            #    use prod.yaml (production) or test.yaml (staging/runbot).
+            #    use prod.yaml (production) or test.yaml (staging).
             (
                 "Fix docker-compose symlink",
                 f"rm -f {d}/docker-compose.yml && "
@@ -610,9 +610,27 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 "Set compose project name",
                 f'echo "COMPOSE_PROJECT_NAME={name}" >> {d}/.env',
             ),
+            # 2b. Ensure .docker/incubacloud.env exists with a Fernet key.
+            #     If the file already exists (previous deploy), leave it.
+            (
+                "Ensure incubacloud.env",
+                f'[ -f {d}/.docker/incubacloud.env ] || '
+                f'python3 -c "'
+                f"from cryptography.fernet import Fernet; "
+                f"print(f'INCUBACLOUD_SECRET_KEY={{Fernet.generate_key().decode()}}')"
+                f'" > {d}/.docker/incubacloud.env',
+            ),
+            # 2c. Inject incubacloud.env into common.yaml so all compose
+            #     profiles (prod, test, devel) inherit the secret key.
+            (
+                "Inject incubacloud.env in common.yaml",
+                f"cd {d} && "
+                f"grep -q 'incubacloud.env' common.yaml || "
+                f"sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
+            ),
         ]
 
-        # 2b. Strip the smtp service from prod.yaml when no SMTP relay
+        # 2d. Strip the smtp service from prod.yaml when no SMTP relay
         #     is configured.  The copier template always generates the
         #     block, but without an image it causes a compose error.
         if not has_smtp and inst.environment == 'production':

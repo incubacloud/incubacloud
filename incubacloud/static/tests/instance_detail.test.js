@@ -66,7 +66,7 @@ function jobStateClass(state) {
 }
 
 function envLabel(env) {
-    return { runbot: "Runbot", staging: "Staging", production: "Production" }[env] || env;
+    return { staging: "Staging", production: "Production" }[env] || env;
 }
 
 function statusLabel(inst) {
@@ -384,10 +384,6 @@ describe("InstanceDetail — jobStateClass mapping", () => {
 });
 
 describe("InstanceDetail — envLabel mapping", () => {
-    test("runbot maps to Runbot", () => {
-        expect(envLabel("runbot")).toBe("Runbot");
-    });
-
     test("staging maps to Staging", () => {
         expect(envLabel("staging")).toBe("Staging");
     });

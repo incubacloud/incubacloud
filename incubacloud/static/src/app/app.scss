@@ -9,6 +9,16 @@
   font-family: $font-sans;
   font-size: 14px;
   line-height: 1.5;
+
+  // Global scrollbar styling for all scrollable elements
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: $border transparent;
+
+    &::-webkit-scrollbar { width: 5px; height: 5px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 3px; }
+  }
 }
 
 // ── Body (below header): sidebar + main ──────────────────────────
@@ -276,15 +286,18 @@
 }
 
 .ic-form-grid {
-    display: flex;
-    flex-direction: column;
-    gap: $space-3;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 24px;
+    max-width: 860px;
 }
 
 .ic-form-row {
     display: flex;
     flex-direction: column;
     gap: $space-1;
+
+    &.ic-form-row-full { grid-column: 1 / -1; }
 
     label {
         font-size: 11px;

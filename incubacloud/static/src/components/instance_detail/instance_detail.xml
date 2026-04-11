@@ -571,7 +571,7 @@
 
                                 <!-- Backup backend (production only) -->
                                 <t t-if="state.form.environment === 'production'">
-                                    <div class="ic-form-row ic-form-row-full">
+                                    <div class="ic-form-row">
                                         <label>Backup Backend
                                             <span class="ic-section-note"> — production only</span>
                                         </label>
