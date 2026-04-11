@@ -131,7 +131,25 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f"f={self._tmp('backup.env')};"
                 f" [ -f \"$f\" ] && mv \"$f\" {d}/.docker/backup.env || true",
             ),
-            # 4b. Write docker-compose.override.yml with resource limits.
+            # 4b. Ensure .docker/incubacloud.env exists (generate once,
+            #     never overwrite — survives rebuilds).
+            (
+                "Ensure incubacloud.env",
+                f'[ -f {d}/.docker/incubacloud.env ] || '
+                f'python3 -c "'
+                f"from cryptography.fernet import Fernet; "
+                f"print(f'INCUBACLOUD_SECRET_KEY={{Fernet.generate_key().decode()}}')"
+                f'" > {d}/.docker/incubacloud.env',
+            ),
+            # 4c. Re-inject incubacloud.env in common.yaml (copier update
+            #     regenerates the yaml, stripping our addition).
+            (
+                "Inject incubacloud.env in common.yaml",
+                f"cd {d} && "
+                f"grep -q 'incubacloud.env' common.yaml || "
+                f"sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
+            ),
+            # 4d. Write docker-compose.override.yml with resource limits.
             (
                 "Write resource limits",
                 f"f={self._tmp('override.yml')};"

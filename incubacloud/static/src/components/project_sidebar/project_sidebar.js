@@ -189,7 +189,7 @@ export class ProjectSidebar extends Component {
     }
 
     _getNextInstance(excludeId) {
-        const order = ["production", "staging", "runbot"];
+        const order = ["production", "staging"];
         for (const env of order) {
             for (const inst of this.grouped[env] || []) {
                 if (inst.id !== excludeId) return inst;

@@ -126,30 +126,9 @@
 // ── Body ───────────────────────────────────────────────────────────────────────
 // .ic-detail-body is now in app.scss (shared across detail views)
 
-// ── Form grid ──────────────────────────────────────────────────────────────────
-
-.ic-form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px 24px;
-    max-width: 860px;
-}
+// ── Form grid (overrides for host detail) ─────────────────────────────────────
 
 .ic-form-row {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-
-    &.ic-form-row-full { grid-column: 1 / -1; }
-
-    label {
-        font-size: 11px;
-        font-weight: 600;
-        color: $text-secondary;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
     input,
     select,
     textarea {

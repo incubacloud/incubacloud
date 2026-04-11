@@ -29,7 +29,7 @@ describe("ProjectSidebar — class structure", () => {
 describe("ProjectSidebar — envLabel helper", () => {
     // Extracted from: envLabel(env) { return {production: "Production", ...}[env] || env; }
     function envLabel(env) {
-        return { production: "Production", staging: "Staging", runbot: "Development" }[env] || env;
+        return { production: "Production", staging: "Staging" }[env] || env;
     }
 
     test("maps production", () => {
@@ -38,10 +38,6 @@ describe("ProjectSidebar — envLabel helper", () => {
 
     test("maps staging", () => {
         expect(envLabel("staging")).toBe("Staging");
-    });
-
-    test("maps runbot to Development", () => {
-        expect(envLabel("runbot")).toBe("Development");
     });
 
     test("returns raw value for unknown env", () => {
@@ -97,10 +93,10 @@ describe("ProjectSidebar — statusDot helper", () => {
 describe("ProjectSidebar — grouped getter logic", () => {
     // Extracted from: get grouped() { ... }
     function grouped(instances) {
-        const groups = { production: [], staging: [], runbot: [] };
+        const groups = { production: [], staging: [] };
         for (const inst of instances) {
-            const env = inst.environment || "runbot";
-            (groups[env] ||= []).push(inst);
+            const env = inst.environment || "staging";
+            if (groups[env]) groups[env].push(inst);
         }
         return groups;
     }
@@ -109,29 +105,26 @@ describe("ProjectSidebar — grouped getter logic", () => {
         const g = grouped([]);
         expect(g.production).toEqual([]);
         expect(g.staging).toEqual([]);
-        expect(g.runbot).toEqual([]);
     });
 
     test("groups instances by environment", () => {
         const instances = [
             { id: 1, name: "prod", environment: "production" },
             { id: 2, name: "stg", environment: "staging" },
-            { id: 3, name: "dev", environment: "runbot" },
         ];
         const g = grouped(instances);
         expect(g.production.length).toBe(1);
         expect(g.staging.length).toBe(1);
-        expect(g.runbot.length).toBe(1);
     });
 
-    test("null environment defaults to runbot", () => {
+    test("null environment defaults to staging", () => {
         const g = grouped([{ id: 1, name: "test", environment: null }]);
-        expect(g.runbot.length).toBe(1);
+        expect(g.staging.length).toBe(1);
     });
 
-    test("undefined environment defaults to runbot", () => {
+    test("undefined environment defaults to staging", () => {
         const g = grouped([{ id: 1, name: "test" }]);
-        expect(g.runbot.length).toBe(1);
+        expect(g.staging.length).toBe(1);
     });
 
     test("multiple instances in same environment", () => {
@@ -149,12 +142,12 @@ describe("ProjectSidebar — grouped getter logic", () => {
 describe("ProjectSidebar — _getNextInstance logic", () => {
     // Extracted from: _getNextInstance(excludeId) { ... }
     function getNextInstance(instances, excludeId) {
-        const groups = { production: [], staging: [], runbot: [] };
+        const groups = { production: [], staging: [] };
         for (const inst of instances) {
-            const env = inst.environment || "runbot";
-            (groups[env] ||= []).push(inst);
+            const env = inst.environment || "staging";
+            if (groups[env]) groups[env].push(inst);
         }
-        const order = ["production", "staging", "runbot"];
+        const order = ["production", "staging"];
         for (const env of order) {
             for (const inst of groups[env] || []) {
                 if (inst.id !== excludeId) return inst;
@@ -171,15 +164,6 @@ describe("ProjectSidebar — _getNextInstance logic", () => {
         const instances = [
             { id: 1, name: "stg", environment: "staging" },
             { id: 2, name: "prod", environment: "production" },
-        ];
-        const next = getNextInstance(instances, null);
-        expect(next.id).toBe(2);
-    });
-
-    test("prefers staging over runbot", () => {
-        const instances = [
-            { id: 1, name: "dev", environment: "runbot" },
-            { id: 2, name: "stg", environment: "staging" },
         ];
         const next = getNextInstance(instances, null);
         expect(next.id).toBe(2);
@@ -210,7 +194,6 @@ describe("ProjectSidebar — _getNextInstance logic", () => {
 
     test("with null excludeId returns first by priority", () => {
         const instances = [
-            { id: 3, name: "dev", environment: "runbot" },
             { id: 1, name: "prod", environment: "production" },
             { id: 2, name: "stg", environment: "staging" },
         ];

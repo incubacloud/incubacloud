@@ -202,7 +202,6 @@ class TerminalSession:
         env_colours = {
             'production': '\x1b[38;5;196m',  # red
             'staging':    '\x1b[38;5;214m',  # orange
-            'runbot':     '\x1b[38;5;82m',   # green
         }
         env_label = (self.environment or 'unknown').capitalize()
         env_col   = env_colours.get(self.environment, ACCENT)

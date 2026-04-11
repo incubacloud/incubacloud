@@ -31,12 +31,6 @@
                             <span class="ic-onboarding-card-label">Staging</span>
                             <span class="ic-onboarding-card-hint">Pre-production testing</span>
                         </div>
-                        <div class="ic-onboarding-card env-runbot"
-                             t-on-click="() => this.createInstance('runbot')">
-                            <i class="fa fa-code"/>
-                            <span class="ic-onboarding-card-label">Development</span>
-                            <span class="ic-onboarding-card-hint">Build and experiment</span>
-                        </div>
                     </div>
                 </div>
             </t>
@@ -97,7 +91,7 @@
                     <!-- General tab -->
                     <t t-if="state.tab === 'general'">
                         <div class="ic-form-grid">
-                            <div class="ic-form-row ic-form-row-full">
+                            <div class="ic-form-row">
                                 <label>Name</label>
                                 <input type="text"
                                        t-att-value="state.form.name"
@@ -163,7 +157,7 @@
                                     <option value="OPL-1.0"           t-att-selected="state.form.project_license === 'OPL-1.0'">Odoo Proprietary License v1.0</option>
                                 </select>
                             </div>
-                            <div class="ic-form-row ic-form-row-full">
+                            <div class="ic-form-row">
                                 <label>Default Backup Backend
                                     <span class="ic-section-note"> — for production instances</span>
                                 </label>

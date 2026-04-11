@@ -38,7 +38,7 @@
                     <!-- ── General ──────────────────────────────────────── -->
                     <t t-if="state.tab === 'general'">
                         <div class="ic-form-grid">
-                            <div class="ic-form-row ic-form-row-full">
+                            <div class="ic-form-row">
                                 <label>Name <span class="ic-required">*</span></label>
                                 <input type="text"
                                        placeholder="My S3 Backup"
