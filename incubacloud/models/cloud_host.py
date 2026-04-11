@@ -268,9 +268,12 @@ class CloudHost(models.Model):
             kwargs['client_keys'] = [pem]
         else:
             kwargs['password'] = self.password
-            kwargs['client_keys'] = []
-        # Disable SSH agent so asyncssh never tries to read agent sockets
-        # or default key files from ~/.ssh inside the container.
+            # None (not []) tells asyncssh to skip default key loading.
+            # With [], asyncssh falls through to load_default_keypairs()
+            # which reads ~/.ssh/id_* — breaks when those files are
+            # empty/invalid inside the container.
+            kwargs['client_keys'] = None
+        # Disable SSH agent socket probing inside the container.
         kwargs['agent_path'] = None
         return kwargs
 
