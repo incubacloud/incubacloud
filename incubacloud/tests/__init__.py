@@ -26,4 +26,5 @@ from . import (
     test_host_autoassign,
     test_pluggable_actions,
     test_transport,
+    test_delete_project,
 )
