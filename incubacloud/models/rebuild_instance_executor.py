@@ -124,6 +124,19 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f" && mv {d}/prod.yaml.tmp {d}/prod.yaml",
             ))
 
+        if not self._backup_enabled() and inst.environment == 'production':
+            cmds.append((
+                "Strip backup service (not configured)",
+                f"cd {d} && for f in prod.yaml common.yaml; do"
+                f" [ -f \"$f\" ] || continue;"
+                f" awk '/^  backup:/ {{skip=1; next}}"
+                f" skip && /^  [a-z]/ {{skip=0}}"
+                f" skip && /^[^ ]/ {{skip=0}}"
+                f" !skip' \"$f\" > \"$f.tmp\""
+                f" && mv \"$f.tmp\" \"$f\";"
+                f" done",
+            ))
+
         cmds += [
             # 4. Overwrite backup.env with ours (adds AWS_ENDPOINT_URL).
             (
@@ -222,6 +235,8 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     # Prepare for direct startup (no recovery)
                     f" && chown -R 70:70 /tmp/ic_boot_{inst.id}/"
                     f" && rm -f /tmp/ic_boot_{inst.id}/backup_label"
+                    # Clean up leftover container from a previous interrupted run
+                    f" && docker rm -f ic_boot_pg_{inst.id} 2>/dev/null; true"
                     # Start a temporary PG on the compose network
                     f" && docker run -d"
                     f" --name ic_boot_pg_{inst.id}"

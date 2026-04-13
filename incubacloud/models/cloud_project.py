@@ -160,7 +160,29 @@ class CloudProject(models.Model):
 
     def unlink(self):
         self._check_can_delete_project()
-        return super().unlink()
+        # Collect (host, remote_folder) pairs to clean up on remote hosts
+        # AFTER the DB-level delete succeeds.  The instance link is gone
+        # by then, so we snapshot hosts now (only those that ever hosted
+        # an instance for this project).
+        cleanup = []
+        for project in self:
+            folder = project.remote_folder
+            if not folder:
+                continue
+            hosts = project.with_context(
+                active_test=False,
+            ).instance_ids.mapped('host_id')
+            for host in hosts:
+                cleanup.append((host.id, folder))
+
+        result = super().unlink()
+
+        for host_id, folder in cleanup:
+            self.env['cloud.job'].sudo().enqueue(
+                host_id, False, 'delete_project',
+                payload={'remote_folder': folder},
+            )
+        return result
 
     def write(self, vals):
         # Snapshot tracked fields before write

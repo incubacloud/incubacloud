@@ -147,12 +147,32 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         """Return a /tmp path namespaced by instance name."""
         return f"{_TMP_PREFIX}-{self._inst().doodba_project_name}-{suffix}"
 
-    def _backup_env_content(self):
-        """Generate .docker/backup.env content, or None if no backup backend."""
+    def _backup_enabled(self):
+        """Whether the backup container should be provisioned for this deploy.
+
+        Hook: subclasses can override (e.g. tenant executor disables it for
+        Free plans regardless of backend availability).
+        """
         inst = self._inst()
         bb = inst.effective_backup_backend
-        if not bb or not bb.backup_dst:
+        return bool(bb and bb.backup_dst)
+
+    def _backup_retention(self):
+        """Effective retention string (e.g. '7D', '3M') for the backup job.
+
+        Hook: subclasses can override (e.g. tenant executor returns the
+        tenant's plan retention instead of the backend's).
+        """
+        inst = self._inst()
+        bb = inst.effective_backup_backend
+        return (bb.backup_retention or '3M').strip() if bb else '3M'
+
+    def _backup_env_content(self):
+        """Generate .docker/backup.env content, or None if no backup backend."""
+        if not self._backup_enabled():
             return None
+        inst = self._inst()
+        bb = inst.effective_backup_backend
         lines = []
         if bb.s3_access_key_id:
             lines.append(f"AWS_ACCESS_KEY_ID={bb.s3_access_key_id}")
@@ -162,9 +182,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             lines.append(f"AWS_ENDPOINT_URL={bb.s3_endpoint_url}")
         lines.append(f"PASSPHRASE={bb.passphrase or ''}")
         # Override retention if different from copier default (3M)
-        retention = (bb.backup_retention or '3M').strip()
+        retention = self._backup_retention()
         if retention != '3M':
-            dst = inst.instance_backup_dst or bb.backup_dst or ''
             lines.append(
                 f"JOB_800_WHAT=dup --force remove-older-than"
                 f" {retention} $DST"
@@ -199,9 +218,9 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             domains_test = entries
 
         bb = inst.effective_backup_backend
-        has_backup = bool(bb and bb.backup_dst)
+        has_backup = self._backup_enabled()
 
-        return {
+        answers = {
             "project_author": inst.project_id.project_author or "IncubaCloud",
             "project_license": inst.project_id.project_license or "BSL-1.0",
             "project_name": inst.doodba_project_name,
@@ -225,30 +244,33 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             # else strip first subdomain off relay host, e.g. mail.x.com → x.com)
             "smtp_canonical_default": _smtp_canonical_domain(inst),
             "smtp_canonical_domains": [],
-            # Backup (only meaningful for production instances)
-            "backup_dst": (inst.instance_backup_dst or "") if has_backup else "",
-            "backup_image_version": (
-                bb.backup_image_version or "latest"
-            ) if has_backup else "latest",
-            "backup_email_from": (bb.email_from or "") if has_backup else "",
-            "backup_email_to": (bb.email_to or "") if has_backup else "",
-            "backup_smtp_report_success": (
-                bb.smtp_report_success if has_backup else True
-            ),
-            "backup_deletion": (
-                bb.deletion_via_cron if has_backup else False
-            ),
-            "backup_tz": (bb.backup_tz or "UTC") if has_backup else "UTC",
-            "backup_aws_access_key_id": (
-                bb.s3_access_key_id or ""
-            ) if has_backup else "",
-            "backup_aws_secret_access_key": (
-                bb.s3_secret_access_key or ""
-            ) if has_backup else "",
-            "backup_passphrase": (
-                bb.passphrase or ""
-            ) if has_backup else "",
+            # Backup defaults (always empty/disabled; overridden below when
+            # a backup backend is configured and enabled).
+            "backup_dst": "",
+            "backup_image_version": "",
+            "backup_email_from": "",
+            "backup_email_to": "",
+            "backup_smtp_report_success": False,
+            "backup_deletion": False,
+            "backup_tz": "UTC",
+            "backup_aws_access_key_id": "",
+            "backup_aws_secret_access_key": "",
+            "backup_passphrase": "",
         }
+        if has_backup and bb:
+            answers.update({
+                "backup_dst": inst.instance_backup_dst or "",
+                "backup_image_version": bb.backup_image_version or "latest",
+                "backup_email_from": bb.email_from or "",
+                "backup_email_to": bb.email_to or "",
+                "backup_smtp_report_success": bb.smtp_report_success,
+                "backup_deletion": bb.deletion_via_cron,
+                "backup_tz": bb.backup_tz or "UTC",
+                "backup_aws_access_key_id": bb.s3_access_key_id or "",
+                "backup_aws_secret_access_key": bb.s3_secret_access_key or "",
+                "backup_passphrase": bb.passphrase or "",
+            })
+        return answers
 
     def _repos_yaml_content(self):
         """Build repos.yaml: odoo first, then the instance's git repos.
@@ -359,12 +381,16 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
     def _prod_services(self):
         """Return the services present in a production compose file.
 
-        smtp is only included when an SMTP relay host is configured;
-        otherwise the copier template generates an empty service block
-        that causes ``docker compose`` to fail.
+        Only include services that are actually rendered by copier:
+        - smtp only when an SMTP relay host is configured.
+        - backup only when a backup backend is enabled.
+        Otherwise the override would reference phantom services and
+        ``docker compose`` fails with "neither image nor build".
         """
         inst = self._inst()
-        svcs = ['odoo', 'db', 'backup']
+        svcs = ['odoo', 'db']
+        if self._backup_enabled():
+            svcs.append('backup')
         if inst.smtp_relay_host:
             svcs.append('smtp')
         return tuple(svcs)
@@ -644,6 +670,25 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 f" skip && /^[^ ]/ {{skip=0}}"
                 f" !skip' {d}/prod.yaml > {d}/prod.yaml.tmp"
                 f" && mv {d}/prod.yaml.tmp {d}/prod.yaml",
+            ))
+
+        # 2e. Strip the backup service when no backup backend is active.
+        #     Same pattern as smtp: copier leaves an imageless block that
+        #     breaks `docker compose`.
+        if not self._backup_enabled() and inst.environment == 'production':
+            # Strip the backup service from every compose file that may
+            # contain it (copier emits it in prod.yaml, some templates
+            # also place shared defs in common.yaml).
+            cmds.append((
+                "Strip backup service (not configured)",
+                f"cd {d} && for f in prod.yaml common.yaml; do"
+                f" [ -f \"$f\" ] || continue;"
+                f" awk '/^  backup:/ {{skip=1; next}}"
+                f" skip && /^  [a-z]/ {{skip=0}}"
+                f" skip && /^[^ ]/ {{skip=0}}"
+                f" !skip' \"$f\" > \"$f.tmp\""
+                f" && mv \"$f.tmp\" \"$f\";"
+                f" done",
             ))
 
         cmds += [

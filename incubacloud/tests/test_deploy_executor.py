@@ -211,3 +211,99 @@ class TestBuildAnswersDomains(TransactionCase):
         answers = self._make_executor(inst)._build_answers()
         self.assertEqual(answers['domains_prod'], [])
         self.assertEqual(answers['domains_test'], [])
+
+
+# ── Tier 2: Backup policy hooks (_backup_enabled, _backup_retention) ─────────
+
+class TestBackupHooksDefault(TransactionCase):
+    """Default behaviour on core deploy executor (no tenant context)."""
+
+    def setUp(self):
+        super().setUp()
+        # Clear the global backup backend so tests run in isolation.
+        self.env['ir.config_parameter'].sudo().set_param(
+            'incubacloud.backup_backend_id', '0',
+        )
+        self.project = self.env['cloud.project'].create({'name': 'BackupHooks'})
+        self.Backend = self.env['cloud.backup.backend']
+
+    def _make_executor(self, inst):
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            DeployInstanceExecutor,
+        )
+        executor = DeployInstanceExecutor.__new__(DeployInstanceExecutor)
+        executor.env = self.env
+        job = MagicMock()
+        job.instance_id = inst
+        executor.job = job
+        return executor
+
+    def _instance(self, backend=None):
+        return self.env['cloud.instance'].create({
+            'name': 'bk-test',
+            'project_id': self.project.id,
+            'environment': 'production',
+            'backup_backend_id': backend.id if backend else False,
+        })
+
+    def test_backup_enabled_true_when_backend_with_dst(self):
+        bb = self.Backend.create({
+            'name': 'Full', 'backend_type': 's3',
+            's3_bucket': 'my-bucket',
+        })
+        self.assertTrue(bb.backup_dst)  # sanity
+        inst = self._instance(backend=bb)
+        self.assertTrue(self._make_executor(inst)._backup_enabled())
+
+    def test_backup_enabled_false_when_no_backend(self):
+        inst = self._instance(backend=None)
+        self.assertFalse(self._make_executor(inst)._backup_enabled())
+
+    def test_backup_enabled_false_when_backend_without_dst(self):
+        bb = self.Backend.create({
+            'name': 'NoBucket', 'backend_type': 's3',
+        })
+        self.assertFalse(bb.backup_dst)  # no bucket → no dst
+        inst = self._instance(backend=bb)
+        self.assertFalse(self._make_executor(inst)._backup_enabled())
+
+    def test_backup_retention_from_backend(self):
+        bb = self.Backend.create({
+            'name': 'Ret', 'backend_type': 's3',
+            's3_bucket': 'b', 'backup_retention': '14D',
+        })
+        inst = self._instance(backend=bb)
+        self.assertEqual(
+            self._make_executor(inst)._backup_retention(), '14D',
+        )
+
+    def test_backup_retention_fallback_3m_when_no_backend(self):
+        inst = self._instance(backend=None)
+        self.assertEqual(
+            self._make_executor(inst)._backup_retention(), '3M',
+        )
+
+    def test_backup_env_content_none_when_disabled(self):
+        inst = self._instance(backend=None)
+        self.assertIsNone(self._make_executor(inst)._backup_env_content())
+
+    def test_backup_env_content_includes_retention_override(self):
+        bb = self.Backend.create({
+            'name': 'E', 'backend_type': 's3',
+            's3_bucket': 'b', 'backup_retention': '7D',
+            's3_access_key_id': 'AK', 's3_secret_access_key': 'SK',
+        })
+        inst = self._instance(backend=bb)
+        content = self._make_executor(inst)._backup_env_content()
+        self.assertIn('JOB_800_WHAT', content)
+        self.assertIn('7D', content)
+
+    def test_backup_env_content_skips_retention_when_default_3m(self):
+        bb = self.Backend.create({
+            'name': 'D', 'backend_type': 's3',
+            's3_bucket': 'b', 'backup_retention': '3M',
+        })
+        inst = self._instance(backend=bb)
+        content = self._make_executor(inst)._backup_env_content()
+        # Default 3M matches copier default → no override line
+        self.assertNotIn('JOB_800_WHAT', content)

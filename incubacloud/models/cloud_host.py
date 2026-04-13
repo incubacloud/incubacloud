@@ -342,16 +342,7 @@ class CloudHost(models.Model):
     def _after_provision(self):
         """Hook called after a host record is created.
 
-        Override in dependent modules to run post-creation logic, for example
-        to update a VPS order record when the host is provisioned automatically::
-
-            def _after_provision(self):
-                super()._after_provision()
-                order = self.env['cloud.vps.order'].search(
-                    [('host_id', '=', self.id)], limit=1)
-                if order:
-                    order.state = 'active'
-        """
+        Override in dependent modules to run post-creation logic."""
 
     # ── Deletion guard ─────────────────────────────────────────────────────
 
