@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import re
 from datetime import timedelta
@@ -188,11 +189,13 @@ class CloudJob(models.Model):
         Queue a job of given type for the given host/instance
         and return the job record ID.
         """
-        # Block if there is already an active job for this instance
+        # Block if there is already an active *user* job for this instance.
+        # Hidden system jobs (health checks, metrics, probes…) don't block.
         if instance_id:
             running = self.search([
                 ('instance_id', '=', instance_id),
                 ('state', 'in', self._active_states),
+                ('job_type_id.code', 'not in', self._get_hidden_job_types()),
             ], limit=1)
             if running:
                 raise UserError(_(
@@ -264,6 +267,12 @@ class CloudJob(models.Model):
         # regardless of max_retries.  We wrap everything so that any exception
         # from the executor (SSH failure, RuntimeError, etc.) results in a
         # clean permanent failure rather than a silent infinite-retry loop.
+        #
+        # IMPORTANT: after a long-running SSH job completes, the original
+        # HTTP cursor (used by queue_job's _try_perform_job) may have gone
+        # stale — causing flush_all/set_done to fail, which makes queue_job
+        # treat the job as "dead" and re-enqueue it.  To prevent duplicate
+        # runs, we verify the cursor is still usable before returning.
         executor = self._get_executor()
         ssh_executor = executor(
             job_record=self,
@@ -275,6 +284,15 @@ class CloudJob(models.Model):
             ssh_executor.run()
         except Exception as e:
             raise JobError(str(e)) from e
+        finally:
+            # After a long-running SSH job, the ORM environment used
+            # by queue_job's _try_perform_job may have stale cache
+            # entries (from on_success/on_failure writing via fresh
+            # cursors).  Clear the env so flush_all() + set_done()
+            # don't trip over phantom dirty records.
+            with contextlib.suppress(Exception):
+                self.env.cr.execute("SELECT 1")
+                self.env.clear()
 
     def _get_executor(self):
         executor_cls = executor_registry.get(self.job_type_id.code)

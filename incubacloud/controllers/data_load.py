@@ -120,12 +120,12 @@ class CloudDataLoadController(Controller):
     def cloud_get_config(self):
         """Return feature flags and config for the SPA.
 
-        Dependent modules should override this method and call super() to inject
-        additional feature flags without modifying the core::
+        Dependent modules override this method and call super() to inject
+        additional feature flags. Example::
 
             def cloud_get_config(self):
                 config = super().cloud_get_config()
-                config['features']['vps_provisioning'] = True
+                config['features']['my_feature'] = True
                 return config
         """
         perms = self._sec()._get_user_permissions()
@@ -858,6 +858,15 @@ class CloudDataLoadController(Controller):
         'backup_memory_limit', 'backup_cpus', 'smtp_memory_limit', 'smtp_cpus',
     }
 
+    def _pre_auto_assign_host_hook(self, vals, safe):
+        """Extension point for SaaS layer to provision an on-demand host.
+
+        Return ``None`` to let the default auto-assign logic run, or a
+        response dict (e.g. ``{'blocked': True, 'message': ...}``) to
+        abort early.
+        """
+        return None
+
     @http.route(['/cloud/create_instance'], type='jsonrpc', auth='user')
     def cloud_create_instance(self, vals):
         self._sec()._check_can_create_instance()
@@ -910,6 +919,12 @@ class CloudDataLoadController(Controller):
                         'creating an instance.'
                     ),
                 }
+        # Hook for SaaS modules to inject an on-demand host before auto-assign.
+        # Core knows nothing about VPS providers — that lives in the SaaS layer.
+        hook_result = self._pre_auto_assign_host_hook(vals, safe)
+        if hook_result is not None:
+            return hook_result
+
         # ── Auto-assign host when not explicitly provided ─────────────────
         if not safe.get('host_id'):
             autoassign = (
@@ -1401,15 +1416,9 @@ class CloudDataLoadController(Controller):
         instance = request.env['cloud.instance'].browse(instance_id)
         if not instance.exists():
             return {'ok': False, 'error': _('Instance not found')}
-        running_job = request.env['cloud.job'].search([
-            ('instance_id', '=', instance.id),
-            ('state', 'in', ('started', 'pending', 'enqueued')),
-        ], limit=1)
-        if running_job:
-            return {'ok': False, 'error': _('A job is already running: %s. Wait for it to complete or cancel it first.') % running_job.name}
         try:
             job_id = instance.deploy()
-        except ValueError as e:
+        except (UserError, ValueError) as e:
             return {'ok': False, 'error': str(e)}
         return _job_response(request.env, job_id)
 
@@ -1421,15 +1430,12 @@ class CloudDataLoadController(Controller):
             return {'ok': False, 'error': _('Instance not found')}
         if not instance.host_id:
             return {'ok': False, 'error': _('Instance has no host configured')}
-        running_job = request.env['cloud.job'].search([
-            ('instance_id', '=', instance.id),
-            ('state', 'in', ('started', 'pending', 'enqueued')),
-        ], limit=1)
-        if running_job:
-            return {'ok': False, 'error': _('A job is already running: %s. Wait for it to complete or cancel it first.') % running_job.name}
-        job_id = request.env['cloud.job'].enqueue(
-            instance.host_id.id, instance_id, 'rebuild_instance',
-        )
+        try:
+            job_id = request.env['cloud.job'].enqueue(
+                instance.host_id.id, instance_id, 'rebuild_instance',
+            )
+        except UserError as e:
+            return {'ok': False, 'error': str(e)}
         return _job_response(request.env, job_id)
 
     # ── Backup management ──────────────────────────────────────────────────

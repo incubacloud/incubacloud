@@ -37,6 +37,7 @@ from . import setup_traefik_executor
 from . import setup_whitelist_executor
 from . import full_setup_executor
 from . import delete_instance_executor
+from . import delete_project_executor
 from . import delete_host_executor
 from . import stop_instance_executor
 from . import start_instance_executor

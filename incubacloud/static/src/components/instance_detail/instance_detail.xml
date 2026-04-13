@@ -422,7 +422,7 @@
                                            t-att-disabled="(!isCreate and state.inst.deployed) || null"
                                            t-on-input="(ev) => this.onInput('name', ev)"/>
                                 </div>
-                                <div class="ic-form-row">
+                                <div class="ic-form-row ic-host-row">
                                     <label>Host
                                         <t t-if="!state.autoassignEnabled">
                                             <span class="ic-required">*</span>

@@ -299,6 +299,33 @@
 
     &.ic-form-row-full { grid-column: 1 / -1; }
 
+    .ic-radio-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        margin-top: 4px;
+    }
+
+    .ic-radio {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 400;
+        text-transform: none;
+        letter-spacing: normal;
+        color: $text-primary;
+        cursor: pointer;
+
+        input[type="radio"] {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            accent-color: $primary-blue;
+            cursor: pointer;
+        }
+    }
+
     label {
         font-size: 11px;
         font-weight: 600;

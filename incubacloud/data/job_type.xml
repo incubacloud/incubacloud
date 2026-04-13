@@ -81,6 +81,13 @@
             <field name="description">Rebuilds the Odoo Docker image without cache (docker compose build --pull --no-cache odoo).</field>
         </record>
 
+        <record id="delete_project" model="cloud.job.type">
+            <field name="name">Delete Project</field>
+            <field name="code">delete_project</field>
+            <field name="apply_to">host</field>
+            <field name="description">Removes the project directory from the host after verifying no containers remain under it.</field>
+        </record>
+
         <record id="delete_instance" model="cloud.job.type">
             <field name="name">Delete Instance</field>
             <field name="code">delete_instance</field>
