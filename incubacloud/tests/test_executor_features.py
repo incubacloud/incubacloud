@@ -278,3 +278,69 @@ class TestSmartRebuildCommands(unittest.TestCase):
         cmd = _find_cmd(cmds, "Rebuild Odoo image")
         self.assertIsNotNone(cmd)
         self.assertIn('--no-cache', cmd[1])
+
+
+# ---------------------------------------------------------------------------
+# incubacloud.env injection
+# ---------------------------------------------------------------------------
+
+class TestIncubaclouEnvInjection(unittest.TestCase):
+    """The env_file injection must target prod.yaml and test.yaml, not common.yaml.
+
+    common.yaml has no env_file block; the .docker/odoo.env reference lives
+    in prod.yaml and test.yaml.  A sed targeting common.yaml never matches
+    and silently leaves INCUBACLOUD_SECRET_KEY out of the compose stack.
+    """
+
+    def _deploy_inject_cmd(self, **kwargs):
+        cmds = _make_deploy_executor(**kwargs).get_commands()
+        return _find_cmd(cmds, "Inject incubacloud.env in prod.yaml and test.yaml")
+
+    def _rebuild_inject_cmd(self, **kwargs):
+        cmds = _make_rebuild_executor(**kwargs).get_commands()
+        return _find_cmd(cmds, "Inject incubacloud.env in prod.yaml and test.yaml")
+
+    def test_deploy_inject_step_present(self):
+        cmd = self._deploy_inject_cmd(environment='production')
+        self.assertIsNotNone(cmd, "Inject step must be present in deploy commands")
+
+    def test_rebuild_inject_step_present(self):
+        cmd = self._rebuild_inject_cmd()
+        self.assertIsNotNone(cmd, "Inject step must be present in rebuild commands")
+
+    def test_deploy_inject_targets_prod_and_test(self):
+        cmd = self._deploy_inject_cmd(environment='production')
+        self.assertIn('prod.yaml', cmd[1])
+        self.assertIn('test.yaml', cmd[1])
+
+    def test_rebuild_inject_targets_prod_and_test(self):
+        cmd = self._rebuild_inject_cmd()
+        self.assertIn('prod.yaml', cmd[1])
+        self.assertIn('test.yaml', cmd[1])
+
+    def test_deploy_inject_does_not_target_common(self):
+        """Regression: must NOT inject into common.yaml (has no env_file)."""
+        cmd = self._deploy_inject_cmd(environment='production')
+        # The sed/grep should not mention common.yaml as the target
+        self.assertNotIn(
+            "sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
+            cmd[1],
+        )
+
+    def test_rebuild_inject_does_not_target_common(self):
+        """Regression: must NOT inject into common.yaml (has no env_file)."""
+        cmd = self._rebuild_inject_cmd()
+        self.assertNotIn(
+            "sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
+            cmd[1],
+        )
+
+    def test_deploy_inject_is_idempotent(self):
+        """Command must use grep -q guard so it does not double-inject."""
+        cmd = self._deploy_inject_cmd(environment='production')
+        self.assertIn('grep -q', cmd[1])
+
+    def test_rebuild_inject_is_idempotent(self):
+        """Command must use grep -q guard so it does not double-inject."""
+        cmd = self._rebuild_inject_cmd()
+        self.assertIn('grep -q', cmd[1])
