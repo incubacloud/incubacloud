@@ -11,6 +11,9 @@ Steps:
 
 The password hash is generated locally with passlib bcrypt (compatible with
 htpasswd -nB) and dollar signs are doubled for docker-compose label escaping.
+bcrypt enforces a 72-byte limit; the password is truncated explicitly so
+behaviour is consistent across bcrypt versions (>= 4.0 raises instead of
+silently truncating).
 """
 
 import re
@@ -24,19 +27,20 @@ _TMP = "/tmp/.incubacloud-traefik"
 
 def _htpasswd_hash(password):
     """Return a docker-compose-safe bcrypt hash for traefik-admin:<password>."""
-    # Python generates $2b$; htpasswd/Traefik expect $2y$ (equivalent)
-    # Double $ signs for docker-compose label escaping
-    return "traefik-admin:" + (
-        _bcrypt.using(rounds=12).hash(password)
-        .replace("$2b$", "$2y$", 1)
-        .replace("$", "$$")
-    )
+    # bcrypt >= 4.0 raises on passwords > 72 bytes instead of truncating.
+    # Encode to UTF-8, truncate, then decode back for passlib.
+    pw = (password or "").encode("utf-8")[:72].decode("utf-8", "ignore")
+    hashed = _bcrypt.using(rounds=12).hash(pw)
+    # $2b$ → $2y$: equivalent variants; htpasswd/Traefik expect $2y$.
+    # Double $ for docker-compose label escaping.
+    return "traefik-admin:" + hashed.replace("$2b$", "$2y$", 1).replace("$", "$$")
 
 
 def _build_inverseproxy(content, wildcard_domain, panel_password):
     """Substitute domain and password hash in inverseproxy.yaml content."""
     traefik_domain = (
-        f"traefik.{wildcard_domain}" if wildcard_domain else "traefik.localhost"
+        f"traefik.{wildcard_domain}"
+        if wildcard_domain else "traefik.localhost"
     )
     # Replace the Host() rule
     content = re.sub(
@@ -94,8 +98,8 @@ class SetupTraefikExecutor(AbstractSSHExecutor):
             ),
             (
                 "Start Traefik",
-                "cd ~/traefik"
-                " && docker compose -p inverseproxy -f inverseproxy.yaml up -d",
+                "cd ~/traefik && docker compose"
+                " -p inverseproxy -f inverseproxy.yaml up -d",
             ),
         ]
 

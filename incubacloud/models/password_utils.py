@@ -101,13 +101,13 @@ def decrypt_value(value, env=None):
         return value  # plain-text legacy value
     f = _get_fernet(env)
     if f is None:
-        return value
+        return None
     try:
         token = value[len(_ENCRYPTED_PREFIX):].encode()
         return f.decrypt(token).decode()
     except Exception as e:
         _logger.error("Failed to decrypt value: %s", e)
-        return value
+        return None
 
 
 def is_encrypted(value):
