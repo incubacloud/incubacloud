@@ -646,13 +646,17 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 f"print(f'INCUBACLOUD_SECRET_KEY={{Fernet.generate_key().decode()}}')"
                 f'" > {d}/.docker/incubacloud.env',
             ),
-            # 2c. Inject incubacloud.env into common.yaml so all compose
-            #     profiles (prod, test, devel) inherit the secret key.
+            # 2c. Inject incubacloud.env into prod.yaml and test.yaml.
+            #     The env_file block lives in those files (not common.yaml).
             (
-                "Inject incubacloud.env in common.yaml",
+                "Inject incubacloud.env in prod.yaml and test.yaml",
                 f"cd {d} && "
-                f"grep -q 'incubacloud.env' common.yaml || "
-                f"sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
+                f"for f in prod.yaml test.yaml; do "
+                f"  [ -f \"$f\" ] || continue; "
+                f"  grep -q 'incubacloud.env' \"$f\" || "
+                f"  sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env'"
+                f" \"$f\"; "
+                f"done",
             ),
         ]
 

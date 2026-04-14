@@ -154,13 +154,18 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f"print(f'INCUBACLOUD_SECRET_KEY={{Fernet.generate_key().decode()}}')"
                 f'" > {d}/.docker/incubacloud.env',
             ),
-            # 4c. Re-inject incubacloud.env in common.yaml (copier update
-            #     regenerates the yaml, stripping our addition).
+            # 4c. Re-inject incubacloud.env in prod.yaml and test.yaml.
+            #     The env_file block lives in those files (not common.yaml).
+            #     Copier update regenerates them, stripping our addition.
             (
-                "Inject incubacloud.env in common.yaml",
+                "Inject incubacloud.env in prod.yaml and test.yaml",
                 f"cd {d} && "
-                f"grep -q 'incubacloud.env' common.yaml || "
-                f"sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
+                f"for f in prod.yaml test.yaml; do "
+                f"  [ -f \"$f\" ] || continue; "
+                f"  grep -q 'incubacloud.env' \"$f\" || "
+                f"  sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env'"
+                f" \"$f\"; "
+                f"done",
             ),
             # 4d. Write docker-compose.override.yml with resource limits.
             (
