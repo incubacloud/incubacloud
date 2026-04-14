@@ -184,6 +184,11 @@ class TestSelectBestHost(TransactionCase):
     def setUp(self):
         super().setUp()
         Host = self.env['cloud.host']
+        # Exclude any pre-existing hosts (dev DB data) from auto-assign so
+        # they don't interfere with the test's expectation of an empty result.
+        existing = Host.search([])
+        if existing:
+            existing.write({'exclude_from_autoassign': True})
         self.project = self.env['cloud.project'].create({'name': 'P1'})
         self.host_a = Host.create({
             'name': 'Big', 'ip_address': '10.0.0.1',
