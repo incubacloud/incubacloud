@@ -18,6 +18,11 @@
 
             </div>
 
+            <TruncationBanner truncated="state.truncated"
+                              total="state.total"
+                              limit="state.limit"
+                              label="'projects'"/>
+
             <!-- Projects Grid -->
             <div class="ic-dashboard-grid">
                 <!-- Action cards first (visible to PM+) -->

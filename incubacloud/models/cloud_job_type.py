@@ -45,3 +45,16 @@ class CloudJobType(models.Model):
         default=100,
         help="Lower values appear first in the custom actions bar.",
     )
+    priority_tier = fields.Selection(
+        [('high', 'High'), ('normal', 'Normal'), ('low', 'Low')],
+        string="Priority Tier",
+        default='normal',
+        required=True,
+        help=(
+            "Determines the queue_job channel and priority."
+            " Background/automated jobs (health checks, metrics, docker"
+            " prune) should be 'low' so they never block user-initiated"
+            " work. Jobs on a production instance are auto-promoted from"
+            " 'normal' to 'high' at enqueue time."
+        ),
+    )

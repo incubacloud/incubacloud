@@ -30,12 +30,16 @@ class CloudBackupBackend(models.Model):
         help='Leave empty for AWS S3. Set for MinIO, Wasabi, Backblaze, etc.',
     )
     s3_access_key_id = fields.Char(string='Access Key ID')
-    s3_secret_access_key = EncryptedChar(string='Secret Access Key')
+    s3_secret_access_key = EncryptedChar(
+        string='Secret Access Key',
+        groups='incubacloud.group_cloud_manager',
+    )
 
     # ── Encryption ─────────────────────────────────────────────────────────
 
     passphrase = EncryptedChar(
         string='Encryption Passphrase',
+        groups='incubacloud.group_cloud_manager',
         help='Auto-generated if left blank. Used as PASSPHRASE inside the backup container.',
     )
 

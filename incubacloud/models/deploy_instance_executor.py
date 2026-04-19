@@ -172,7 +172,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         if not self._backup_enabled():
             return None
         inst = self._inst()
-        bb = inst.effective_backup_backend
+        # sudo: executor is trusted; secret fields are restricted to managers.
+        bb = inst.effective_backup_backend.sudo()
         lines = []
         if bb.s3_access_key_id:
             lines.append(f"AWS_ACCESS_KEY_ID={bb.s3_access_key_id}")
@@ -192,7 +193,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
 
     def _build_answers(self):
         """Return a dict with all copier template answers."""
-        inst = self._inst()
+        # sudo: executor is trusted; secret fields have group restrictions.
+        inst = self._inst().sudo()
 
         # Build domain entries from domain_ids
         entries = []
@@ -218,6 +220,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             domains_test = entries
 
         bb = inst.effective_backup_backend
+        if bb:
+            bb = bb.sudo()
         has_backup = self._backup_enabled()
 
         answers = {

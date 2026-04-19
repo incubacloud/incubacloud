@@ -5,6 +5,8 @@ from . import cloud_audit_log
 from . import password_utils
 from . import encrypted_char
 from . import cloud_tag
+from . import cloud_host_tag
+from . import cloud_instance_tag
 from . import cloud_backup_backend
 from . import cloud_project
 from . import cloud_github_app

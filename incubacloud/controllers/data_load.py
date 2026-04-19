@@ -1,12 +1,14 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
 import ast
+import asyncio
 import base64
 import json
 import logging
 import os
 import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -14,7 +16,7 @@ import yaml
 from contextlib import suppress
 from datetime import timedelta, datetime
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote as _url_quote, urlparse, urlunparse
 
 import asyncssh
 import boto3
@@ -84,10 +86,84 @@ def _parse_github_repo_path(url):
     return m.group(1), m.group(2)
 
 
+def _gh_seg(s):
+    """URL-encode a GitHub API path/query segment.
+
+    ``safe=''`` forces even '/' to be encoded as '%2F'. The GitHub API
+    accepts percent-encoded slashes in branch refs (``feature/auth``
+    → ``feature%2Fauth``) and rejects unencoded ones. Encoding all
+    segments prevents path-traversal tricks like ``main/../../user``
+    and query-parameter injection via ``&per_page=999``.
+    """
+    return _url_quote((s or '').strip(), safe='')
+
+
 def _has_pat(env):
     """Check if a PAT is configured in cloud.settings."""
     settings = env["cloud.settings"]._get()
     return bool((settings.github_pat or "").strip())
+
+
+# Defensive cap applied to list endpoints that would otherwise fetch
+# every row of a table (search([])). Protects against OOM/DoS when the
+# system accumulates thousands of projects/hosts/instances. The frontend
+# is notified via ``truncated=True`` + ``total`` so a banner can ask the
+# user to narrow the result with a filter.
+_LIST_MAX = 200
+
+
+def _capped_search(Model, domain=None, order=None, limit=None):
+    """Return (records, total, truncated, limit) with a hard cap.
+
+    ``total`` is a separate search_count so the UI can show "showing
+    N of TOTAL" messaging. ``truncated`` is True when the cap actually
+    clipped the result. A WARNING is logged whenever that happens so
+    ops can detect when the cap needs to be raised or real pagination
+    added.
+    """
+    dom = domain or []
+    eff_limit = limit or _LIST_MAX
+    total = Model.sudo().search_count(dom)
+    records = Model.search(dom, order=order, limit=eff_limit)
+    truncated = total > eff_limit
+    if truncated:
+        _logger.warning(
+            "List result truncated: model=%s total=%d limit=%d",
+            Model._name, total, eff_limit,
+        )
+    return records, total, truncated, eff_limit
+
+
+# ── Remote path sanitation for /cloud/browse_host_dir ───────────────────────
+# Accepts: ~, ~/segment(/segment)*?/?, /segment(/segment)*?/?, relative
+# segment(/segment)*?/?. Each segment is [A-Za-z0-9._-]+. Rejects shell
+# metacharacters, spaces, path traversal '..'. The explicit '..' check runs
+# after the regex because the segment class allows '.' and '..' would match.
+_BROWSE_PATH_RE = re.compile(
+    r'^~$|^(~/|/)?[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$'
+)
+
+
+def _is_safe_remote_path(p):
+    if not isinstance(p, str) or not p:
+        return False
+    if not _BROWSE_PATH_RE.match(p):
+        return False
+    return all(seg != '..' for seg in p.split('/'))
+
+
+def _quote_remote_path(p):
+    """shlex-quote a remote path while preserving ~/ home expansion.
+
+    shlex.quote wraps everything in single quotes, inside which the shell
+    does not expand ~. Split the '~/' prefix out so the shell still
+    resolves $HOME.
+    """
+    if p == '~':
+        return '"$HOME"'
+    if p.startswith('~/'):
+        return '"$HOME"/' + shlex.quote(p[2:])
+    return shlex.quote(p)
 
 
 def _job_response(env, job_id):
@@ -146,12 +222,14 @@ class CloudDataLoadController(Controller):
 
     @http.route(['/cloud/get_projects'], type='jsonrpc', auth='user')
     def cloud_get_projects(self):
-        projects = request.env['cloud.project'].search([])
-        result = []
+        projects, total, truncated, limit = _capped_search(
+            request.env['cloud.project'], order='name',
+        )
+        items = []
         for p in projects:
             prod = p.instance_ids.filtered(lambda i: i.environment == 'production')
             first_prod_id = prod[:1].id if prod else False
-            result.append({
+            items.append({
                 'id': p.id,
                 'name': p.name,
                 'description': p.description,
@@ -165,23 +243,43 @@ class CloudDataLoadController(Controller):
                     for t in p.tag_ids
                 ],
             })
-        return result
+        return {
+            'items': items,
+            'total': total,
+            'truncated': truncated,
+            'limit': limit,
+        }
+
+    # Map tag scope → tag model. Each scope has its own model to keep
+    # tags of one entity from polluting another's tag cloud.
+    _TAG_MODEL_BY_SCOPE = {
+        'project':  'cloud.tag',
+        'host':     'cloud.host.tag',
+        'instance': 'cloud.instance.tag',
+    }
 
     @http.route(['/cloud/get_tags'], type='jsonrpc', auth='user')
-    def cloud_get_tags(self):
-        tags = request.env['cloud.tag'].search([])
-        defaults = request.env['cloud.project'].default_get(
-            ['pip_dependencies', 'odoo_version']
-        )
-        return {
+    def cloud_get_tags(self, scope='project'):
+        model = self._TAG_MODEL_BY_SCOPE.get(scope, 'cloud.tag')
+        # Defensive cap: tags are naturally bounded (tens in practice) but
+        # the cap prevents a runaway script from tanking the autocomplete.
+        tags = request.env[model].search([], limit=_LIST_MAX, order='name')
+        payload = {
             'tags': [
                 {'id': t.id, 'name': t.name, 'color': t.color} for t in tags
             ],
-            'project_defaults': {
+        }
+        # Legacy contract: project scope also returns the defaults used by
+        # new_project form. Other scopes don't need it.
+        if scope == 'project':
+            defaults = request.env['cloud.project'].default_get(
+                ['pip_dependencies', 'odoo_version']
+            )
+            payload['project_defaults'] = {
                 'pip_dependencies': defaults.get('pip_dependencies', ''),
                 'odoo_version': defaults.get('odoo_version', '19.0'),
-            },
-        }
+            }
+        return payload
 
     @http.route(['/cloud/get_users'], type='jsonrpc', auth='user')
     def cloud_get_users(self, search='', **kw):
@@ -194,26 +292,36 @@ class CloudDataLoadController(Controller):
         return [{'id': u.id, 'name': u.name, 'email': u.email or ''} for u in users]
 
     @http.route(['/cloud/create_tag'], type='jsonrpc', auth='user')
-    def cloud_create_tag(self, name):
+    def cloud_create_tag(self, name, scope='project'):
         name = name.strip()
         if not name:
             return {'ok': False, 'error': _('Tag name cannot be empty')}
-        existing = request.env['cloud.tag'].search([('name', '=ilike', name)], limit=1)
+        model = self._TAG_MODEL_BY_SCOPE.get(scope, 'cloud.tag')
+        Tag = request.env[model]
+        existing = Tag.search([('name', '=ilike', name)], limit=1)
         if existing:
-            return {'id': existing.id, 'name': existing.name, 'color': existing.color}
-        total = request.env['cloud.tag'].search_count([])
-        tag = request.env['cloud.tag'].create({'name': name, 'color': total % 10})
+            return {
+                'id': existing.id, 'name': existing.name,
+                'color': existing.color,
+            }
+        total = Tag.search_count([])
+        tag = Tag.create({'name': name, 'color': total % 10})
         return {'id': tag.id, 'name': tag.name, 'color': tag.color}
 
     @http.route(['/cloud/get_hosts'], type='jsonrpc', auth='user')
     def cloud_get_hosts(self):
-        hosts = request.env['cloud.host'].search([])
+        hosts, total, truncated, limit = _capped_search(
+            request.env['cloud.host'], order='name',
+        )
         autoassign = (
             request.env['ir.config_parameter'].sudo()
             .get_param('incubacloud.host_autoassign', '0') == '1'
         )
         return {
             'autoassign_enabled': autoassign,
+            'total': total,
+            'truncated': truncated,
+            'limit': limit,
             'hosts': [
                 {
                     'id': host.id,
@@ -221,13 +329,17 @@ class CloudDataLoadController(Controller):
                     'type': host.type,
                     'status': host.status,
                     'description': host.description,
-                    'tags': host.tags,
+                    'tags': [
+                        {'id': t.id, 'name': t.name, 'color': t.color}
+                        for t in host.tag_ids
+                    ],
                     'ip_address': host.ip_address,
                     'port': host.port,
                     'user': host.user,
                     'login_type': host.login_type,
                     'has_password': bool(host.password),
-                    'key_file': host.key_file,
+                    'has_key_file': bool(host.key_file),
+                    'has_known_hosts_key': bool(host.known_hosts_key),
                     'cpu_cores': host.cpu_cores,
                     'ram_total_gb': host.ram_total_gb,
                     'disk': round(host.disk_usage),
@@ -240,6 +352,7 @@ class CloudDataLoadController(Controller):
                     'allocated_ram_gb': round(host.allocated_ram_gb, 2),
                     'available_cpus': round(host.available_cpus, 2),
                     'available_ram_gb': round(host.available_ram_gb, 2),
+                    'usage_ratio': round(host.usage_ratio or 0.0, 4),
                     'alerts': [
                         {
                             'code': a.code,
@@ -258,10 +371,17 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/get_dashboard'], type='jsonrpc', auth='user')
     def cloud_get_dashboard(self):
         env = request.env
-        hosts = env['cloud.host'].search([])
-        instances = env['cloud.instance'].search([])
-        projects = env['cloud.project'].search([])
-        active_alerts = env['cloud.alert'].search([('state', '=', 'active')])
+        # Dashboard only needs counts for hosts/instances/projects. Using
+        # search_count avoids loading thousands of records into memory.
+        proj_total = env['cloud.project'].search_count([])
+        host_total = env['cloud.host'].search_count([])
+        inst_total = env['cloud.instance'].search_count([])
+        active_alerts = env['cloud.alert'].search(
+            [('state', '=', 'active')], limit=_LIST_MAX,
+        )
+        alerts_total = env['cloud.alert'].search_count(
+            [('state', '=', 'active')],
+        )
         CloudJob = env['cloud.job']
         recent_jobs = CloudJob.search(
             [('job_type_id.code', 'not in', CloudJob._hidden_job_types)],
@@ -269,11 +389,13 @@ class CloudDataLoadController(Controller):
         )
         return {
             'counts': {
-                'projects': len(projects),
-                'hosts': len(hosts),
-                'instances': len(instances),
-                'alerts': len(active_alerts),
+                'projects': proj_total,
+                'hosts': host_total,
+                'instances': inst_total,
+                'alerts': alerts_total,
             },
+            'truncated': alerts_total > _LIST_MAX,
+            'limit': _LIST_MAX,
             'alerts': [
                 {
                     'id': a.id,
@@ -337,8 +459,9 @@ class CloudDataLoadController(Controller):
             return {'ok': False, 'error': _('Instance or project not found')}
         try:
             apply_sync(inst, actions)
-        except Exception as exc:
-            return {'ok': False, 'error': str(exc)}
+        except Exception:
+            _logger.exception("apply_sync failed for instance %s", instance_id)
+            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
         return {'ok': True}
 
     @http.route(['/cloud/get_alert_history'], type='jsonrpc', auth='user')
@@ -499,8 +622,19 @@ class CloudDataLoadController(Controller):
             'user': host.user,
             'login_type': host.login_type,
             'has_password': bool(host.password),
+            'has_key_file': bool(host.key_file),
+            'has_known_hosts_key': bool(host.known_hosts_key),
             'description': host.description,
-            'tags': host.tags,
+            'tags': [
+                {'id': t.id, 'name': t.name, 'color': t.color}
+                for t in host.tag_ids
+            ],
+            'all_tags': [
+                {'id': t.id, 'name': t.name, 'color': t.color}
+                for t in request.env['cloud.host.tag'].search(
+                    [], limit=_LIST_MAX, order='name',
+                )
+            ],
             'cpu_cores': host.cpu_cores,
             'ram_total_gb': host.ram_total_gb,
             'disk': round(host.disk_usage),
@@ -534,7 +668,7 @@ class CloudDataLoadController(Controller):
 
     _HOST_ALLOWED = {
         'name', 'type', 'ip_address', 'port', 'user', 'login_type',
-        'password', 'key_file', 'description', 'tags',
+        'password', 'key_file', 'description', 'tag_ids',
         'wildcard_domain', 'traefik_panel_password',
         'traefik_config_yml', 'traefik_inverseproxy_yaml', 'traefik_yml',
         'exclude_from_autoassign',
@@ -559,6 +693,8 @@ class CloudDataLoadController(Controller):
         safe = {k: v for k, v in vals.items() if k in self._HOST_ALLOWED}
         if safe.get('port'):
             safe['port'] = int(safe['port'])
+        if 'tag_ids' in safe:
+            safe['tag_ids'] = [fields.Command.set(safe['tag_ids'] or [])]
         host = request.env['cloud.host'].create(safe)
         return {'id': host.id, 'name': host.name}
 
@@ -577,6 +713,59 @@ class CloudDataLoadController(Controller):
         job_id = request.env['cloud.job'].enqueue(host_id, False, 'delete_host')
         return {'job_id': job_id}
 
+    @http.route(['/cloud/trust_host_key'], type='jsonrpc', auth='user', methods=['POST'])
+    def cloud_trust_host_key(self, host_id):
+        """Connect once (without verification) to capture and store the server
+        host public key.  Subsequent connections will verify against it."""
+        self._sec()._check_can_manage_hosts()
+        # sudo: trusted endpoint (manager-only gate); secret fields now
+        # require group_cloud_developer which manager inherits, but using
+        # sudo explicitly documents intent and survives future changes.
+        host = request.env['cloud.host'].sudo().browse(host_id)
+        if not host.exists():
+            return {'ok': False, 'error': _('Host not found')}
+
+        # Build connect kwargs bypassing known_hosts — this is the ONLY place
+        # in the codebase that intentionally connects without verification.
+        connect_kw = dict(
+            host=host.ip_address,
+            port=host.port,
+            username=host.user,
+            known_hosts=None,
+            agent_path=None,
+        )
+        if host.login_type == 'ssh_key' and host.key_file:
+            connect_kw['client_keys'] = [host.key_file]
+        else:
+            connect_kw['password'] = host.password
+            connect_kw['client_keys'] = None
+
+        async def _capture():
+            async with asyncssh.connect(**connect_kw) as conn:
+                server_key = conn.get_server_host_key()
+                key_data = server_key.export_public_key(
+                    'openssh'
+                ).decode().strip()
+                ip = host.ip_address
+                port = host.port
+                prefix = f"[{ip}]:{port}" if port != 22 else ip
+                return f"{prefix} {key_data}"
+
+        loop = asyncio.new_event_loop()
+        try:
+            entry = loop.run_until_complete(_capture())
+        except asyncssh.Error:
+            _logger.exception("trust_host_key SSH error for host %s", host_id)
+            return {'ok': False, 'error': _('SSH connection failed. Check host credentials and network.')}
+        except Exception:
+            _logger.exception("trust_host_key failed for host %s", host_id)
+            return {'ok': False, 'error': _('Connection failed. Check host credentials and network.')}
+        finally:
+            loop.close()
+
+        host.write({'known_hosts_key': entry})
+        return {'ok': True}
+
     @http.route(['/cloud/save_host'], type='jsonrpc', auth='user')
     def cloud_save_host(self, host_id, vals):
         self._sec()._check_can_manage_hosts()
@@ -587,6 +776,10 @@ class CloudDataLoadController(Controller):
         # Only update key_file if a new one was uploaded
         if not safe_vals.get('key_file'):
             safe_vals.pop('key_file', None)
+        if 'tag_ids' in safe_vals:
+            safe_vals['tag_ids'] = [
+                fields.Command.set(safe_vals['tag_ids'] or [])
+            ]
         host.write(safe_vals)
 
         # Sync whitelist entries when provided.
@@ -626,7 +819,9 @@ class CloudDataLoadController(Controller):
         project = request.env['cloud.project'].browse(project_id)
         if not project.exists():
             return {'ok': False, 'error': _('Project not found')}
-        all_tags = request.env['cloud.tag'].search([])
+        all_tags = request.env['cloud.tag'].search(
+            [], limit=_LIST_MAX, order='name',
+        )
         return {
             'id': project.id,
             'name': project.name,
@@ -851,7 +1046,7 @@ class CloudDataLoadController(Controller):
         'odoo_version', 'odoo_commit_sha',
         'odoo_initial_lang', 'odoo_admin_password', 'odoo_proxy',
         'postgres_version', 'postgres_dbname', 'postgres_username', 'postgres_password',
-        'pip_dependencies', 'apt_dependencies',
+        'pip_dependencies', 'apt_dependencies', 'tag_ids',
         'smtp_relay_host', 'smtp_relay_port', 'smtp_relay_security',
         'smtp_relay_user', 'smtp_relay_password',
         'odoo_memory_limit', 'odoo_cpus', 'db_memory_limit', 'db_cpus',
@@ -893,6 +1088,8 @@ class CloudDataLoadController(Controller):
             v = safe['odoo_version']
             if isinstance(v, (int, float)):
                 safe['odoo_version'] = f"{float(v):.1f}"
+        if 'tag_ids' in safe:
+            safe['tag_ids'] = [fields.Command.set(safe['tag_ids'] or [])]
         # ── Inherit odoo_version and odoo_initial_lang from project ──────────
         project_id = safe.get('project_id')
         if project_id:
@@ -987,6 +1184,7 @@ class CloudDataLoadController(Controller):
         bb_id = int(ICP.get_param(
             'incubacloud.backup_backend_id', 0,
         ) or 0)
+        settings = request.env['cloud.settings'].sudo()._get()
         return {
             'autoassign_enabled': ICP.get_param(
                 'incubacloud.host_autoassign', '0',
@@ -995,12 +1193,13 @@ class CloudDataLoadController(Controller):
             'audit_log_retention_days': int(
                 ICP.get_param('incubacloud.audit_log_retention_days', '90') or 90
             ),
+            'job_log_retention_days': settings.job_log_retention_days or 0,
         }
 
     @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
     def cloud_save_general_settings(
         self, autoassign_enabled=False, default_backup_backend_id=None,
-        audit_log_retention_days=90,
+        audit_log_retention_days=90, job_log_retention_days=30,
     ):
         self._sec()._check_can_manage_hosts()
         ICP = request.env['ir.config_parameter'].sudo()
@@ -1017,6 +1216,9 @@ class CloudDataLoadController(Controller):
             'incubacloud.audit_log_retention_days',
             str(max(0, int(audit_log_retention_days or 0))),
         )
+        request.env['cloud.settings'].sudo()._get().write({
+            'job_log_retention_days': max(0, int(job_log_retention_days or 0)),
+        })
         return {'ok': True}
 
     @http.route(['/cloud/get_langs'], type='jsonrpc', auth='user')
@@ -1052,6 +1254,16 @@ class CloudDataLoadController(Controller):
             'deployed': inst.deployed,
             'running': inst.running,
             'auto_rebuild': inst.auto_rebuild,
+            'tags': [
+                {'id': t.id, 'name': t.name, 'color': t.color}
+                for t in inst.tag_ids
+            ],
+            'all_tags': [
+                {'id': t.id, 'name': t.name, 'color': t.color}
+                for t in request.env['cloud.instance.tag'].search(
+                    [], limit=_LIST_MAX, order='name',
+                )
+            ],
             'host_id': inst.host_id.id if inst.host_id else None,
             'host': inst.host_id.name if inst.host_id else '',
             'host_ip': inst.host_id.ip_address if inst.host_id else '',
@@ -1148,8 +1360,10 @@ class CloudDataLoadController(Controller):
         instances = {}
         for inst in project.instance_ids:
             instances[inst.id] = self._serialize_instance(inst)
-        hosts = request.env['cloud.host'].search([])
-        backends = request.env['cloud.backup.backend'].search([])
+        hosts = request.env['cloud.host'].search([], limit=_LIST_MAX, order='name')
+        backends = request.env['cloud.backup.backend'].search(
+            [], limit=_LIST_MAX, order='name',
+        )
         return {
             'project': {
                 'id': project.id,
@@ -1182,7 +1396,7 @@ class CloudDataLoadController(Controller):
         'smtp_relay_host', 'smtp_relay_port', 'smtp_relay_security',
         'smtp_relay_user', 'smtp_relay_password',
         'odoo_conf', 'pip_dependencies', 'apt_dependencies',
-        'backup_backend_id', 'auto_rebuild',
+        'backup_backend_id', 'auto_rebuild', 'tag_ids',
         'odoo_memory_limit', 'odoo_cpus',
         'db_memory_limit', 'db_cpus',
         'backup_memory_limit', 'backup_cpus',
@@ -1205,6 +1419,8 @@ class CloudDataLoadController(Controller):
             v = safe['odoo_version']
             if isinstance(v, (int, float)):
                 safe['odoo_version'] = f"{float(v):.1f}"
+        if 'tag_ids' in safe:
+            safe['tag_ids'] = [fields.Command.set(safe['tag_ids'] or [])]
         # Track whether host_id is changing (auto-domain may fire in write)
         host_changed = 'host_id' in safe and safe['host_id'] != (
             inst.host_id.id if inst.host_id else None
@@ -1291,7 +1507,7 @@ class CloudDataLoadController(Controller):
                 'configured': False,
                 'app_id': '',
                 'installation_id': '',
-                'webhook_secret': '',
+                'has_webhook_secret': False,
                 'has_private_key': False,
                 'has_pat': _has_pat(request.env),
             }
@@ -1300,7 +1516,7 @@ class CloudDataLoadController(Controller):
             'configured': True,
             'app_id': app.app_id or '',
             'installation_id': app.installation_id or '',
-            'webhook_secret': app.webhook_secret or '',
+            'has_webhook_secret': bool(app.webhook_secret),
             'has_private_key': bool(app.sudo().private_key),
             'has_pat': _has_pat(request.env),
             'slug': slug,
@@ -1324,8 +1540,9 @@ class CloudDataLoadController(Controller):
         write_vals = {
             'app_id': app_id,
             'installation_id': installation_id,
-            'webhook_secret': webhook_secret,
         }
+        if webhook_secret:
+            write_vals['webhook_secret'] = webhook_secret
         if private_key:
             write_vals['private_key'] = private_key
 
@@ -1382,8 +1599,11 @@ class CloudDataLoadController(Controller):
             creds = svc.get_credentials()
             client = GitHubAppClient(creds)
             installations = client.list_installations()
-        except Exception as exc:
+        except (UserError, ValueError) as exc:
             return {'ok': False, 'error': str(exc)}
+        except Exception:
+            _logger.exception("cloud_detect_github_installation failed")
+            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
 
         if not installations:
             return {'ok': False, 'error': _('No active installations found for this GitHub App. Install the app on your organization first.')}
@@ -1610,13 +1830,15 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/get_repo_branches'], type='jsonrpc', auth='user')
     def cloud_get_repo_branches(self, url):
         """Return branch names for a GitHub repo. Tries App first, then PAT."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
             branches, page = [], 1
             while True:
                 page_data = client.get(
-                    f'/repos/{owner}/{repo}/branches?per_page=100&page={page}'
+                    f'/repos/{_gh_seg(owner)}/{_gh_seg(repo)}'
+                    f'/branches?per_page=100&page={page}'
                 ) or []
                 branches.extend(b['name'] for b in page_data)
                 if len(page_data) < 100:
@@ -1639,7 +1861,8 @@ class CloudDataLoadController(Controller):
             if exc.status_code not in (404, 401, 403):
                 app_status = 'error'
         except (ValueError, UserError):
-            pass  # app_status stays not_configured
+            _logger.debug("[branches] App not configured", exc_info=True)
+            # app_status stays not_configured
         except Exception:
             _logger.exception("[branches] App unexpected error")
             app_status = 'error'
@@ -1699,11 +1922,13 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/get_branch_head'], type='jsonrpc', auth='user')
     def cloud_get_branch_head(self, url, branch):
         """Return the HEAD commit SHA of a branch (for freeze)."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
             data = client.get(
-                f'/repos/{owner}/{repo}/branches/{branch}'
+                f'/repos/{_gh_seg(owner)}/{_gh_seg(repo)}'
+                f'/branches/{_gh_seg(branch)}'
             )
             return data['commit']['sha']
 
@@ -1719,9 +1944,9 @@ class CloudDataLoadController(Controller):
             if exc.status_code not in (404, 401, 403):
                 return {'ok': False, 'error': str(exc)}
         except (ValueError, UserError):
-            pass
+            _logger.debug("[branch_head] App not configured", exc_info=True)
         except Exception:
-            pass
+            _logger.debug("[branch_head] App unexpected error", exc_info=True)
 
         # 2. Fall back to PAT
         try:
@@ -1744,6 +1969,7 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/freeze_repo'], type='jsonrpc', auth='user')
     def cloud_freeze_repo(self, repo_id, model):
         """Freeze a repo to its current branch HEAD. Writes commit_sha to DB."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
         if model not in ('cloud.project.repo', 'cloud.instance.repo'):
             return {'ok': False, 'error': _('Invalid model')}
         repo = request.env[model].browse(repo_id)
@@ -1758,6 +1984,7 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/unfreeze_repo'], type='jsonrpc', auth='user')
     def cloud_unfreeze_repo(self, repo_id, model):
         """Unfreeze a repo — clears commit_sha so rebuilds use branch tip."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
         if model not in ('cloud.project.repo', 'cloud.instance.repo'):
             return {'ok': False, 'error': _('Invalid model')}
         repo = request.env[model].browse(repo_id)
@@ -1769,6 +1996,7 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/freeze_all_repos'], type='jsonrpc', auth='user')
     def cloud_freeze_all_repos(self, repo_ids, model):
         """Freeze multiple repos at once."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
         if model not in ('cloud.project.repo', 'cloud.instance.repo'):
             return {'ok': False, 'error': _('Invalid model')}
         results = {}
@@ -1785,6 +2013,7 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/unfreeze_all_repos'], type='jsonrpc', auth='user')
     def cloud_unfreeze_all_repos(self, repo_ids, model):
         """Unfreeze multiple repos at once."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
         if model not in ('cloud.project.repo', 'cloud.instance.repo'):
             return {'ok': False, 'error': _('Invalid model')}
         repos = request.env[model].browse(repo_ids)
@@ -1794,11 +2023,13 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/get_repo_modules'], type='jsonrpc', auth='user')
     def cloud_get_repo_modules(self, url, branch):
         """Return Odoo addon module names found at the root of a branch."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
             tree = client.get(
-                f'/repos/{owner}/{repo}/git/trees/{branch}?recursive=1'
+                f'/repos/{_gh_seg(owner)}/{_gh_seg(repo)}'
+                f'/git/trees/{_gh_seg(branch)}?recursive=1'
             )
             return sorted({
                 item['path'].split('/')[0]
@@ -1820,7 +2051,7 @@ class CloudDataLoadController(Controller):
         except (ValueError, UserError) as exc:
             return {'ok': False, 'error': str(exc), 'modules': []}
         except Exception:
-            pass
+            _logger.debug("[repo_modules] PAT unexpected error", exc_info=True)
 
         # 2. Fall back to GitHub App token
         try:
@@ -1836,6 +2067,7 @@ class CloudDataLoadController(Controller):
     @http.route(['/cloud/get_repo_requirements'], type='jsonrpc', auth='user')
     def cloud_get_repo_requirements(self, url, branch):
         """Fetch requirements.txt from the root of a GitHub repo branch."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
 
         try:
             owner, repo_name = _parse_github_repo_path(url)
@@ -1844,8 +2076,8 @@ class CloudDataLoadController(Controller):
 
         def _fetch(client):
             data = client.get(
-                f'/repos/{owner}/{repo_name}'
-                f'/contents/requirements.txt?ref={branch}'
+                f'/repos/{_gh_seg(owner)}/{_gh_seg(repo_name)}'
+                f'/contents/requirements.txt?ref={_gh_seg(branch)}'
             )
             return base64.b64decode(
                 data.get('content', '').replace('\n', '').replace(' ', '')
@@ -1865,9 +2097,9 @@ class CloudDataLoadController(Controller):
             if exc.status_code != 401:
                 return {'ok': False, 'error': str(exc), 'content': '', 'found': False}
         except (ValueError, UserError):
-            pass
+            _logger.debug("[repo_requirements] PAT not configured", exc_info=True)
         except Exception:
-            pass
+            _logger.debug("[repo_requirements] PAT unexpected error", exc_info=True)
 
         # 2. Try GitHub App token
         try:
@@ -1878,15 +2110,16 @@ class CloudDataLoadController(Controller):
                 return {'ok': True, 'found': False, 'content': ''}
             return {'ok': False, 'error': str(exc), 'content': '', 'found': False}
         except (ValueError, UserError):
-            pass
+            _logger.debug("[repo_requirements] App not configured", exc_info=True)
         except Exception:
-            pass
+            _logger.debug("[repo_requirements] App unexpected error", exc_info=True)
 
         # 3. Unauthenticated fallback (public repos)
         try:
             api_url = (
-                f'https://api.github.com/repos/{owner}/{repo_name}'
-                f'/contents/requirements.txt?ref={branch}'
+                f'https://api.github.com/repos/{_gh_seg(owner)}'
+                f'/{_gh_seg(repo_name)}'
+                f'/contents/requirements.txt?ref={_gh_seg(branch)}'
             )
             req = urllib.request.Request(api_url, headers={
                 'User-Agent': 'incubacloud/1.0',
@@ -1901,7 +2134,7 @@ class CloudDataLoadController(Controller):
             if exc.code == 404:
                 return {'ok': True, 'found': False, 'content': ''}
         except Exception:
-            pass
+            _logger.debug("[repo_requirements] unauthenticated fallback error", exc_info=True)
 
         return {'ok': True, 'found': False, 'content': ''}
 
@@ -1915,8 +2148,13 @@ class CloudDataLoadController(Controller):
         download the absolute minimum, then reads ``.gitmodules`` and
         submodule SHAs from the git tree objects directly.
         """
+        self._sec()._check_cloud_group('group_cloud_consultant')
 
         _CLONE_TIMEOUT = 30  # seconds
+
+        branch = (branch or 'main').strip()
+        if not re.fullmatch(r'[a-zA-Z0-9._/\-]+', branch) or branch.startswith('-'):
+            return {'ok': False, 'error': _('Invalid branch name')}
 
         try:
             _owner, repo_name = _parse_github_repo_path(repo_url)
@@ -2198,6 +2436,10 @@ class CloudDataLoadController(Controller):
         """
 
         self._sec()._check_can_create_instance()
+
+        branch = (branch or 'main').strip()
+        if not re.fullmatch(r'[a-zA-Z0-9._/\-]+', branch) or branch.startswith('-'):
+            return {'ok': False, 'error': _('Invalid branch name')}
 
         _CLONE_TIMEOUT = 45
         _SSH_RE = re.compile(r'^git@[^:]+:(.+?)(?:\.git)?$')
@@ -2704,15 +2946,28 @@ class CloudDataLoadController(Controller):
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
 
+        # Reject any path that could break out of the intended 'cd <path>'
+        # call. Defense-in-depth: we also shlex-quote below, but rejecting
+        # bad input early makes the attack surface trivially auditable.
+        if not _is_safe_remote_path(path):
+            return {
+                'ok': False,
+                'error': _(
+                    "Invalid path. Use letters, digits, dots, hyphens and "
+                    "underscores in each segment. Shell metacharacters, "
+                    "spaces and '..' are not allowed."
+                ),
+            }
+
         # Resolve ~ and get listing
         try:
             stdout, _ = self._ssh_run(host, (
-                f'cd {path} 2>/dev/null && pwd && echo "---" && '
-                f'ls -1pA 2>/dev/null'
+                f'cd {_quote_remote_path(path)} 2>/dev/null'
+                f' && pwd && echo "---" && ls -1pA 2>/dev/null'
             ))
-        except Exception as exc:
+        except Exception:
             _logger.exception("SSH browse failed for host %s", host_id)
-            return {'ok': False, 'error': str(exc)}
+            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
 
         lines = stdout.strip().splitlines()
         if not lines or '---' not in lines:
@@ -2733,11 +2988,15 @@ class CloudDataLoadController(Controller):
 
         # Check which dirs are doodba instances
         # (must have BOTH .copier-answers.yml AND docker-compose.yml)
+        # current_path comes from `pwd` output (already resolved, no ~)
+        # and d comes from `ls -1pA` output. We still shlex-quote both as
+        # defense-in-depth against exotic filenames on the remote host.
         if dirs:
+            cp_q = shlex.quote(current_path)
             checks = ' '.join(
-                f'([ -f "{current_path}/{d}/.copier-answers.yml" ] '
-                f'&& [ -f "{current_path}/{d}/docker-compose.yml" ] '
-                f'&& echo "DOODBA:{d}") || true'
+                f'([ -f {cp_q}/{shlex.quote(d)}/.copier-answers.yml ] '
+                f'&& [ -f {cp_q}/{shlex.quote(d)}/docker-compose.yml ] '
+                f'&& echo DOODBA:{shlex.quote(d)}) || true'
                 for d in dirs[:50]
             )
             try:
@@ -2755,10 +3014,11 @@ class CloudDataLoadController(Controller):
         is_current_doodba = False
         copier_info = {}
         with suppress(Exception):
+            cp_q = shlex.quote(current_path)
             stdout_check, _ = self._ssh_run(host, (
-                f'[ -f "{current_path}/.copier-answers.yml" ] && '
-                f'[ -f "{current_path}/docker-compose.yml" ] && '
-                f'cat "{current_path}/.copier-answers.yml" || echo ""'
+                f'[ -f {cp_q}/.copier-answers.yml ] && '
+                f'[ -f {cp_q}/docker-compose.yml ] && '
+                f'cat {cp_q}/.copier-answers.yml || echo ""'
             ))
             if stdout_check.strip() and 'odoo_version' in stdout_check:
                 is_current_doodba = True
@@ -2849,11 +3109,11 @@ class CloudDataLoadController(Controller):
 
         try:
             results = self._ssh_run_multi(host, commands)
-        except Exception as exc:
+        except Exception:
             _logger.exception(
                 "SSH import failed for host %s path %s", host_id, path,
             )
-            return {'ok': False, 'error': str(exc)}
+            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
 
         # Unpack results
         (
@@ -3132,11 +3392,11 @@ class CloudDataLoadController(Controller):
 
         try:
             instance = request.env['cloud.instance'].create(inst_vals)
-        except Exception as exc:
+        except Exception:
             _logger.exception("Failed to create instance during import")
             return {
                 'ok': False,
-                'error': str(exc),
+                'error': _('An internal error occurred. Check server logs.'),
             }
 
         # Handle backup backend from backup.env + copier backup fields
@@ -3207,10 +3467,14 @@ class CloudDataLoadController(Controller):
 
     @http.route(['/cloud/fetch_container_logs'], type='jsonrpc', auth='user')
     def cloud_fetch_container_logs(self, instance_id, service, lines=200):
-        """SSH into the instance host and return recent Docker Compose logs."""
+        """SSH into the instance host and return recent Docker Compose logs.
 
-        if not request.env.user._is_internal():
-            return {'ok': False, 'error': _('Unauthorized')}
+        Gated by ``can_view_logs`` (developer+) to match the HTML log
+        viewer at /cloud/instance/<id>/logs. Internal users without
+        cloud permissions must not be able to bypass the UI gate by
+        calling this RPC directly.
+        """
+        self._sec()._check_can_view_logs()
 
         inst = request.env['cloud.instance'].sudo().browse(instance_id)
         if not inst.exists() or not inst.host_id:
@@ -3237,11 +3501,11 @@ class CloudDataLoadController(Controller):
         try:
             output = run_async(_run())
             return {'ok': True, 'lines': [l for l in output.splitlines() if l]}
-        except Exception as exc:
+        except Exception:
             _logger.exception(
                 "Error fetching container logs for instance %s", instance_id
             )
-            return {'ok': False, 'error': str(exc)}
+            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
 
     # ── Backup backend endpoints ──────────────────────────────────────────────
 
@@ -3258,28 +3522,39 @@ class CloudDataLoadController(Controller):
 
     @http.route(['/cloud/get_backup_backends'], type='jsonrpc', auth='user')
     def cloud_get_backup_backends(self):
-        backends = request.env['cloud.backup.backend'].search([])
-        # Count instances per backend via direct + project assignment
-        Instance = request.env['cloud.instance']
-        all_instances = Instance.search([])
+        backends, total, truncated, limit = _capped_search(
+            request.env['cloud.backup.backend'], order='name',
+        )
+        # Count instances per backend. We cap the instance scan too to
+        # protect the dashboard when the system has tens of thousands of
+        # instances — usage counts become approximate above the cap, but
+        # the alternative is blowing up the worker.
+        instances, _itotal, _itrunc, _ilim = _capped_search(
+            request.env['cloud.instance'],
+        )
         usage = {}
-        for inst in all_instances:
+        for inst in instances:
             bid = inst.effective_backup_backend.id
             if bid:
                 usage[bid] = usage.get(bid, 0) + 1
-        return [
-            {
-                'id': b.id,
-                'name': b.name,
-                'backend_type': b.backend_type,
-                's3_bucket': b.s3_bucket or '',
-                's3_path': b.s3_path or '',
-                's3_endpoint_url': b.s3_endpoint_url or '',
-                'backup_dst': b.backup_dst or '',
-                'instance_count': usage.get(b.id, 0),
-            }
-            for b in backends
-        ]
+        return {
+            'items': [
+                {
+                    'id': b.id,
+                    'name': b.name,
+                    'backend_type': b.backend_type,
+                    's3_bucket': b.s3_bucket or '',
+                    's3_path': b.s3_path or '',
+                    's3_endpoint_url': b.s3_endpoint_url or '',
+                    'backup_dst': b.backup_dst or '',
+                    'instance_count': usage.get(b.id, 0),
+                }
+                for b in backends
+            ],
+            'total': total,
+            'truncated': truncated,
+            'limit': limit,
+        }
 
     @http.route(['/cloud/get_backup_backend'], type='jsonrpc', auth='user')
     def cloud_get_backup_backend(self, backend_id):

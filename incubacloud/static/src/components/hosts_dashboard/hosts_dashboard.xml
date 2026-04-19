@@ -11,6 +11,11 @@
                 </div>
             </div>
 
+            <TruncationBanner truncated="state.truncated"
+                              total="state.total"
+                              limit="state.limit"
+                              label="'hosts'"/>
+
             <!-- Grid -->
             <div class="ic-dashboard-grid">
 
@@ -53,9 +58,27 @@
                             </t>
                         </div>
 
-                        <!-- Disk -->
+                        <!-- Tags -->
+                        <t t-if="host.tags and host.tags.length">
+                            <div class="ic-host-tag-list">
+                                <t t-foreach="host.tags" t-as="tag" t-key="tag.id">
+                                    <span class="ic-host-tag-badge" t-att-style="tagBadgeStyle(tag)">
+                                        <span class="ic-tag-dot" t-att-style="tagDotStyle(tag)"/>
+                                        <t t-esc="tag.name"/>
+                                    </span>
+                                </t>
+                            </div>
+                        </t>
+
+                        <!-- Usage (allocated CPU / RAM) + Disk -->
                         <div class="ic-host-metrics">
                             <t t-if="hasMetrics(host)">
+                                <t t-call="incubacloud.HostMetricBar">
+                                    <t t-set="label" t-value="'Usage'"/>
+                                    <t t-set="value" t-value="usagePct(host)"/>
+                                    <t t-set="cls" t-value="barClass(usagePct(host))"/>
+                                    <t t-set="extra" t-value="usageExtra(host)"/>
+                                </t>
                                 <t t-call="incubacloud.HostMetricBar">
                                     <t t-set="label" t-value="'Disk'"/>
                                     <t t-set="value" t-value="host.disk"/>

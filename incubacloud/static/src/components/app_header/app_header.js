@@ -86,7 +86,8 @@ export class AppHeader extends Component {
         this.state.showUserMenu = false;
         this.state.showProjectSwitcher = !this.state.showProjectSwitcher;
         if (this.state.showProjectSwitcher && !this.state.projects.length) {
-            this.state.projects = await rpc("/cloud/get_projects", {});
+            const data = await rpc("/cloud/get_projects", {});
+            this.state.projects = data.items || [];
         }
         this.state.projectSearch = "";
     }

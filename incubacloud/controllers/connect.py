@@ -146,11 +146,11 @@ class InstanceConnectController(http.Controller):
 
         try:
             return run_async(_run())
-        except Exception as exc:
+        except Exception:
             _logger.exception(
                 "Error getting instance users for %s", instance_id
             )
-            return {'ok': False, 'error': str(exc)}
+            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
 
     # ── Prepare session ────────────────────────────────────────────────────────
 
@@ -203,11 +203,11 @@ class InstanceConnectController(http.Controller):
 
         try:
             result = run_async(_run())
-        except Exception as exc:
+        except Exception:
             _logger.exception(
                 "Error injecting session for instance %s", instance_id
             )
-            return {'ok': False, 'error': str(exc)}
+            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
 
         if not result.get('ok'):
             return result

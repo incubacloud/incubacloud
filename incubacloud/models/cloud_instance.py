@@ -1,7 +1,9 @@
 import hashlib
 import logging
+import re
 
 from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
 from ..github.client import GitHubAppClient
 from .cloud_host import parse_memory_to_gb
@@ -11,6 +13,23 @@ from ._repo_requirements import _normalize_url
 
 _logger = logging.getLogger(__name__)
 _GLOBAL_BACKUP_PARAM = 'incubacloud.backup_backend_id'
+
+# Docker compose project names / COMPOSE_PROJECT_NAME, DNS labels and the
+# path segment used by executors must be lowercase alnum + [_-], 1-63 chars.
+# Blocks every shell metachar (;|&$`"' space \) and path traversal (/ ..).
+_INSTANCE_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
+
+# ~/..., /..., or relative path. Each segment is [A-Za-z0-9._-]+ and we
+# explicitly reject '..' segments. No shell metacharacters.
+_REMOTE_DIR_RE = re.compile(
+    r'^(~/|/)?[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$'
+)
+
+# PostgreSQL identifier (database / role name). Used in psql -U/-d
+# arguments that flow through SSH shell to docker compose exec, so we
+# must keep them free of any character bash or psql could misinterpret.
+# 1-63 chars, lowercase letter or underscore start, then alnum + '_'.
+_PG_IDENT_RE = re.compile(r'^[a-z_][a-z0-9_]{0,62}$')
 
 
 class CloudInstance(models.Model):
@@ -101,6 +120,13 @@ class CloudInstance(models.Model):
         required=True,
         default='staging',
     )
+    tag_ids = fields.Many2many(
+        comodel_name='cloud.instance.tag',
+        relation='cloud_instance_tag_rel',
+        column1='instance_id',
+        column2='tag_id',
+        string='Tags',
+    )
 
     # ── PR preview fields ────────────────────────────────────────────────────
     pr_number = fields.Integer(
@@ -148,8 +174,14 @@ class CloudInstance(models.Model):
         context={'active_test': False},
         help='Language installed via odoo -i base -l <code> on first deploy.',
     )
-    odoo_admin_password = EncryptedChar(string='Admin Password')
-    odoo_admin_user_password = EncryptedChar(string='Admin User Password')
+    odoo_admin_password = EncryptedChar(
+        string='Admin Password',
+        groups='incubacloud.group_cloud_developer',
+    )
+    odoo_admin_user_password = EncryptedChar(
+        string='Admin User Password',
+        groups='incubacloud.group_cloud_developer',
+    )
     odoo_proxy = fields.Selection(
         [('traefik', 'Traefik'), ('none', 'None')],
         string='Proxy', default='traefik',
@@ -161,7 +193,10 @@ class CloudInstance(models.Model):
     )
     postgres_dbname = fields.Char(string='DB Name', default='prod')
     postgres_username = fields.Char(string='DB User', default='odoo')
-    postgres_password = EncryptedChar(string='DB Password')
+    postgres_password = EncryptedChar(
+        string='DB Password',
+        groups='incubacloud.group_cloud_developer',
+    )
 
     domain_ids = fields.One2many(
         'cloud.instance.domain', 'instance_id', string='Domains',
@@ -218,7 +253,10 @@ class CloudInstance(models.Model):
         default='starttls',
     )
     smtp_relay_user = fields.Char(string='SMTP User')
-    smtp_relay_password = EncryptedChar(string='SMTP Password')
+    smtp_relay_password = EncryptedChar(
+        string='SMTP Password',
+        groups='incubacloud.group_cloud_developer',
+    )
 
     # ── Resource limits (docker-compose.override.yml) ─────────────────
     odoo_memory_limit = fields.Char(
@@ -721,6 +759,54 @@ class CloudInstance(models.Model):
         'odoo_admin_password', 'odoo_admin_user_password', 'postgres_password',
     )
 
+    # ── Validation: name + custom_remote_dir fluye a shell en executors ───
+    # Un valor con shell metachars (; | & $ ` " ' space \ etc.) permite
+    # command injection via SSH en el host remoto. El regex estricto es la
+    # defensa principal; los executors pueden seguir usando f-strings.
+
+    @api.constrains('name')
+    def _check_name_shell_safe(self):
+        for inst in self:
+            if not _INSTANCE_NAME_RE.match(inst.name or ''):
+                raise ValidationError(_(
+                    "Instance name '%(name)s' is invalid. It must start with "
+                    "a lowercase letter or digit and contain only lowercase "
+                    "letters, digits, hyphens and underscores (max 63 chars).",
+                    name=inst.name,
+                ))
+
+    @api.constrains('custom_remote_dir')
+    def _check_custom_remote_dir_shell_safe(self):
+        for inst in self:
+            v = inst.custom_remote_dir
+            if not v:
+                continue
+            if not _REMOTE_DIR_RE.match(v) or '..' in v.split('/'):
+                raise ValidationError(_(
+                    "Custom remote directory '%(path)s' is invalid. Use only "
+                    "letters, digits, dots, hyphens and underscores in each "
+                    "path segment. No '..', spaces or shell metacharacters.",
+                    path=v,
+                ))
+
+    @api.constrains('postgres_dbname', 'postgres_username')
+    def _check_pg_identifiers_shell_safe(self):
+        for inst in self:
+            for fname, label in (
+                ('postgres_dbname', 'PostgreSQL database name'),
+                ('postgres_username', 'PostgreSQL user'),
+            ):
+                v = inst[fname]
+                if v and not _PG_IDENT_RE.match(v):
+                    raise ValidationError(_(
+                        "%(label)s '%(value)s' is invalid. Use a valid "
+                        "PostgreSQL identifier (1-63 chars, start with a "
+                        "lowercase letter or underscore, then letters, "
+                        "digits and underscores).",
+                        label=label,
+                        value=v,
+                    ))
+
     def unlink(self):
         for inst in self:
             self._check_can_delete_instance(inst)
@@ -770,7 +856,14 @@ class CloudInstance(models.Model):
                     vals['domain_ids'] = [
                         (0, 0, {'hostname': hostname}),
                     ]
-        records = super().create(vals_list)
+        # sudo on create: encrypted password fields are restricted to
+        # group_cloud_developer but consultants (lower in the hierarchy)
+        # are allowed to create instances. We auto-generate those passwords
+        # above; writing them requires sudo. We drop back to the caller's
+        # env so the returned recordset respects their normal permissions.
+        records = super(
+            CloudInstance, self.sudo()
+        ).create(vals_list).with_env(self.env)
         for inst in records:
             self.env['cloud.audit.log'].sudo().create({
                 'action': 'Instance created',

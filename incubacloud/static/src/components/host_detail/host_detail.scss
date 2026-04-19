@@ -150,7 +150,17 @@
         }
     }
 
-    select  { cursor: pointer; }
+    select {
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394A3B8'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 28px;
+        cursor: pointer;
+
+        option { background: $surface; color: $text-primary; }
+    }
     textarea { resize: vertical; }
 }
 
@@ -159,6 +169,20 @@
     color: $text-secondary;
     font-style: italic;
     margin: 0;
+}
+
+.ic-form-note {
+    font-size: 11px;
+    color: $text-secondary;
+    font-style: italic;
+
+    &--set {
+        color: $state-ok;
+        font-style: normal;
+        font-weight: 500;
+
+        .fa { margin-right: 3px; }
+    }
 }
 
 // ── Traefik: domain + password row above editors ───────────────────────────────

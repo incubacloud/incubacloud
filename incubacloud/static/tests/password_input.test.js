@@ -10,39 +10,72 @@ describe("PasswordInput — class structure", () => {
         expect(PasswordInput.props.hasValue.type).toBe(Boolean);
     });
 
-    test("props defines model as String", () => {
-        expect(PasswordInput.props.model.type).toBe(String);
-    });
-
-    test("props defines fieldName as String", () => {
-        expect(PasswordInput.props.fieldName.type).toBe(String);
+    test("props does not expose model, recordId or fieldName", () => {
+        expect(PasswordInput.props.model).toBe(undefined);
+        expect(PasswordInput.props.recordId).toBe(undefined);
+        expect(PasswordInput.props.fieldName).toBe(undefined);
     });
 
     test("props defines onChange as Function", () => {
         expect(PasswordInput.props.onChange.type).toBe(Function);
     });
-
-    test("props defines recordId as optional", () => {
-        expect(PasswordInput.props.recordId.optional).toBe(true);
-    });
 });
 
 describe("PasswordInput — hint getter logic", () => {
     test("shows keep-current hint when hasValue is true", () => {
-        // Replicate the hint getter logic
         const hasValue = true;
-        const hint = hasValue
-            ? "Password set \u2014 leave blank to keep current"
+        const inputValue = "";
+        const hint = inputValue
+            ? "New value entered \u2014 will be saved"
+            : hasValue
+            ? "Value stored \u2014 type a new one to replace it"
             : "Leave blank to auto-generate a strong password";
-        expect(hint).toInclude("keep current");
+        expect(hint).toInclude("replace it");
     });
 
     test("shows auto-generate hint when hasValue is false", () => {
         const hasValue = false;
-        const hint = hasValue
-            ? "Password set \u2014 leave blank to keep current"
+        const inputValue = "";
+        const hint = inputValue
+            ? "New value entered \u2014 will be saved"
+            : hasValue
+            ? "Value stored \u2014 type a new one to replace it"
             : "Leave blank to auto-generate a strong password";
         expect(hint).toInclude("auto-generate");
+    });
+
+    test("shows new-value hint when user has typed something", () => {
+        const hasValue = true;
+        const inputValue = "newpassword";
+        const hint = inputValue
+            ? "New value entered \u2014 will be saved"
+            : hasValue
+            ? "Value stored \u2014 type a new one to replace it"
+            : "Leave blank to auto-generate a strong password";
+        expect(hint).toInclude("will be saved");
+    });
+});
+
+describe("PasswordInput — isSet getter logic", () => {
+    test("isSet is true when hasValue and no inputValue", () => {
+        const hasValue = true;
+        const inputValue = "";
+        const isSet = hasValue && !inputValue;
+        expect(isSet).toBe(true);
+    });
+
+    test("isSet is false when hasValue but user has typed a replacement", () => {
+        const hasValue = true;
+        const inputValue = "newvalue";
+        const isSet = hasValue && !inputValue;
+        expect(isSet).toBe(false);
+    });
+
+    test("isSet is false when no stored value", () => {
+        const hasValue = false;
+        const inputValue = "";
+        const isSet = hasValue && !inputValue;
+        expect(isSet).toBe(false);
     });
 });
 
@@ -56,29 +89,6 @@ describe("PasswordInput — toggleVisible logic", () => {
     });
 });
 
-describe("PasswordInput — reveal guard logic", () => {
-    test("reveal does nothing without recordId", () => {
-        const recordId = null;
-        const revealing = false;
-        const shouldReveal = recordId && !revealing;
-        expect(!!shouldReveal).toBe(false);
-    });
-
-    test("reveal does nothing while already revealing", () => {
-        const recordId = 42;
-        const revealing = true;
-        const shouldReveal = recordId && !revealing;
-        expect(!!shouldReveal).toBe(false);
-    });
-
-    test("reveal proceeds with recordId and not revealing", () => {
-        const recordId = 42;
-        const revealing = false;
-        const shouldReveal = recordId && !revealing;
-        expect(!!shouldReveal).toBe(true);
-    });
-});
-
 describe("PasswordInput — method existence", () => {
     test("onInput method exists", () => {
         expect(typeof PasswordInput.prototype.onInput).toBe("function");
@@ -88,11 +98,11 @@ describe("PasswordInput — method existence", () => {
         expect(typeof PasswordInput.prototype.toggleVisible).toBe("function");
     });
 
-    test("reveal method exists", () => {
-        expect(typeof PasswordInput.prototype.reveal).toBe("function");
-    });
-
     test("copyToClipboard method exists", () => {
         expect(typeof PasswordInput.prototype.copyToClipboard).toBe("function");
+    });
+
+    test("reveal method does not exist", () => {
+        expect(PasswordInput.prototype.reveal).toBe(undefined);
     });
 });

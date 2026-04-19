@@ -1,51 +1,55 @@
 import { Component, useState } from "@odoo/owl";
-import { rpc } from "@web/core/network/rpc";
+import { _t } from "@web/core/l10n/translation";
 
 /**
- * PasswordInput — secure password field with reveal and copy buttons.
+ * PasswordInput — secure password field with show/hide and copy buttons.
+ *
+ * Stored passwords are never fetched back from the server. When a value is
+ * already saved, the field shows a visual "set" indicator and a hint telling
+ * the user to type a new value only if they want to replace the current one.
  *
  * Props:
- *   hasValue   — bool: whether a password is already stored server-side
- *   model      — string: Odoo model name (e.g. 'cloud.instance')
- *   recordId   — int|null: record id (null when creating a new record)
- *   fieldName  — string: field name on the model
- *   required   — bool (default false)
- *   onChange   — (value: string) => void  — called with new value as user types
- *                (called with "" when user clears; backend keeps existing if "")
+ *   hasValue  — bool: whether a password is already stored server-side
+ *   required  — bool (default false)
+ *   onChange  — (value: string) => void — called with the new value as the
+ *               user types; called with "" when the field is cleared
+ *               (backend keeps the existing value when "" is received)
  */
 export class PasswordInput extends Component {
     static template = "incubacloud.PasswordInput";
     static props = {
         hasValue:  { type: Boolean },
-        model:     { type: String },
-        recordId:  { type: [Number, { value: null }], optional: true },
-        fieldName: { type: String },
         required:  { type: Boolean, optional: true },
         onChange:  { type: Function },
     };
 
     setup() {
         this.state = useState({
-            visible:   false,   // show/hide typed value
-            revealing: false,   // loading reveal from server
-            revealed:  false,   // server value is currently shown
-            copied:    false,   // copy confirmation flash
+            visible:    false,  // show/hide typed value
+            copied:     false,  // copy confirmation flash
             inputValue: "",     // current value in the input box
         });
     }
 
+    /** True when a value is stored server-side and the user has not typed a replacement. */
+    get isSet() {
+        return this.props.hasValue && !this.state.inputValue;
+    }
+
     get hint() {
-        if (this.props.hasValue) {
-            return "Password set — leave blank to keep current";
+        if (this.state.inputValue) {
+            return _t("New value entered — will be saved");
         }
-        return "Leave blank to auto-generate a strong password";
+        if (this.props.hasValue) {
+            return _t("Value stored — type a new one to replace it");
+        }
+        return _t("Leave blank to auto-generate a strong password");
     }
 
     // ── Typing ──────────────────────────────────────────────────────────────
 
     onInput(ev) {
         this.state.inputValue = ev.target.value;
-        this.state.revealed = false;
         this.props.onChange(ev.target.value);
     }
 
@@ -55,33 +59,7 @@ export class PasswordInput extends Component {
         this.state.visible = !this.state.visible;
     }
 
-    // ── Reveal current server-side password ─────────────────────────────────
-
-    async reveal() {
-        if (!this.props.recordId || this.state.revealing) return;
-        this.state.revealing = true;
-        try {
-            const res = await rpc("/cloud/get_secret", {
-                model: this.props.model,
-                record_id: this.props.recordId,
-                field: this.props.fieldName,
-            });
-            if (res && res.value) {
-                this.state.inputValue = res.value;
-                this.state.visible = true;
-                this.state.revealed = true;
-                // Notify parent so it can track the value if needed,
-                // but pass a sentinel so the backend knows not to save it
-                // (parent should send "" when revealed === true and user didn't type)
-            }
-        } catch {
-            // silent — leave field empty
-        } finally {
-            this.state.revealing = false;
-        }
-    }
-
-    // ── Copy to clipboard ───────────────────────────────────────────────────
+    // ── Copy to clipboard ────────────────────────────────────────────────────
 
     async copyToClipboard() {
         const value = this.state.inputValue;

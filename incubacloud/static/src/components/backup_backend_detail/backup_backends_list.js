@@ -1,10 +1,12 @@
 import { Component, useState, onWillStart, useEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { TruncationBanner } from "../truncation_banner/truncation_banner";
 
 export class BackupBackendsList extends Component {
     static props = {};
     static template = "incubacloud.BackupBackendsList";
+    static components = { TruncationBanner };
 
     setup() {
         this.env = useEnv();
@@ -13,6 +15,9 @@ export class BackupBackendsList extends Component {
             backends: [],
             visible_backends: [],
             error: null,
+            truncated: false,
+            total: 0,
+            limit: 200,
         });
         this._searchTimer = null;
         onWillStart(() => this.load());
@@ -21,8 +26,12 @@ export class BackupBackendsList extends Component {
     async load() {
         this.state.loading = true;
         try {
-            this.state.backends = await rpc("/cloud/get_backup_backends", {});
+            const data = await rpc("/cloud/get_backup_backends", {});
+            this.state.backends = data.items || [];
             this.state.visible_backends = this.state.backends;
+            this.state.truncated = !!data.truncated;
+            this.state.total = data.total || this.state.backends.length;
+            this.state.limit = data.limit || 200;
         } catch {
             this.state.error = _t("Failed to load backup backends.");
         } finally {

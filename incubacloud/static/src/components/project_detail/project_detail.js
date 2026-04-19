@@ -200,7 +200,7 @@ export class ProjectDetail extends Component {
                     rpc("/cloud/get_backup_backends", {}),
                 ]);
                 this.state.allTags = tagsRes.tags || [];
-                this.state.backupBackends = backends || [];
+                this.state.backupBackends = backends?.items || backends || [];
                 const defs = tagsRes.project_defaults || {};
                 this.state.pipDeps = defs.pip_dependencies || "";
                 this.state.form = {
@@ -220,7 +220,7 @@ export class ProjectDetail extends Component {
                 ]);
                 this.state.project = p;
                 this.env.setProjectName?.(p.name || "");
-                this.state.backupBackends = backends || [];
+                this.state.backupBackends = backends?.items || backends || [];
                 this.state.form = {
                     name: p.name || "",
                     description: p.description || "",

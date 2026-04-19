@@ -137,10 +137,65 @@ for every deployed instance. No frontend changes required.
   button icon (e.g. ``fa-magic``, ``fa-database``, ``fa-refresh``).
 - ``action_order`` (Integer, default ``100``) — lower values appear first
   in the custom actions group.
+- ``priority_tier`` (Selection: ``high``/``normal``/``low``, default
+  ``normal``) — controls the queue_job channel and priority for jobs of
+  this type. See **Queue Job Configuration** below.
 
 **Permissions:** custom action buttons are only shown to users with the
 ``can_deploy`` permission (Developer role or higher). Server-side permission
 checks still apply when the job is enqueued.
+
+Queue Job Configuration
+-----------------------
+
+IncubaCloud routes jobs through three priority tiers so that a flood of
+background jobs (health checks, metrics, docker prune) never blocks a
+user-initiated deploy or rebuild on a production instance.
+
+**Tiers**:
+
++---------+-----------------+--------------+------------------------------------+
+| Tier    | Channel         | Priority     | Used for                           |
++=========+=================+==============+====================================+
+| HIGH    | ``root.user``   | 5            | User jobs on production instance   |
++---------+-----------------+--------------+------------------------------------+
+| NORMAL  | ``root.user``   | 10           | User jobs on staging / host jobs   |
++---------+-----------------+--------------+------------------------------------+
+| LOW     | ``root.bg``     | 10           | Automated: health, metrics, prune  |
++---------+-----------------+--------------+------------------------------------+
+
+Jobs with ``priority_tier = 'normal'`` are **auto-promoted to HIGH** at
+enqueue time when their target ``cloud.instance`` has
+``environment = 'production'``. Host-only jobs stay at their declared tier.
+
+**Required Odoo configuration** (the Odoo instance where ``incubacloud`` is
+installed — add to your ``odoo.conf`` under ``/etc/odoo/`` or via
+``conf.d/``):
+
+.. code-block:: ini
+
+    [options]
+    workers = 3
+    server_wide_modules = web,queue_job
+
+    [queue_job]
+    channels = root:3,root.user:2,root.bg:1
+
+This gives you up to 3 concurrent SSH jobs, with **hard isolation** between
+user-initiated work (capacity 2) and background jobs (capacity 1). Within
+``root.user``, production jobs jump ahead of staging by priority.
+
+**Tuning the tier of a specific job type:** go to Settings → Technical →
+Cloud Job Types (admin only) and change the ``Priority Tier`` field.
+Background/automated jobs shipped out-of-the-box (``host_metrics``,
+``instance_health``, ``docker_prune``) are already set to ``low``.
+
+**Instances deployed by IncubaCloud** keep a minimal ``odoo.conf``
+default that does **not** assume queue_job is in use — an instance you
+deploy just to run a plain Odoo app has no need for cloud.job's channels.
+If your deployed instance **does** run queue_job, add the ``[queue_job]``
+block shown above to its ``Odoo Conf`` field from the instance form and
+redeploy/rebuild.
 
 License
 -------

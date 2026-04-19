@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 import uuid
 
 from odoo import fields, http, _
@@ -15,6 +16,9 @@ from ..models.terminal_session import (
 )
 
 _logger = logging.getLogger(__name__)
+
+# Valid docker-compose service name: alphanumeric start, then [a-zA-Z0-9_.-]
+_VALID_SERVICE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.\-]{0,62}$')
 
 _SID = '<string:session_id>'
 
@@ -32,6 +36,8 @@ class TerminalController(http.Controller):
         Returns ``{ok, session_id, instance_name, service}`` on success.
         """
         request.env['cloud.security.mixin']._check_can_use_terminal()
+        if not _VALID_SERVICE_RE.match(service):
+            return {'ok': False, 'error': _('Invalid service name')}
         env = request.env
         inst = env['cloud.instance'].browse(instance_id)
         if not inst.exists():
@@ -63,6 +69,7 @@ class TerminalController(http.Controller):
             service=service,
             instance_name=inst.name,
             environment=inst.environment or '',
+            user_id=env.user.id,
         )
         register_session(term)
 
@@ -99,6 +106,16 @@ class TerminalController(http.Controller):
             'json': json,
         })
 
+    # ── Ownership helper ───────────────────────────────────────────────────
+
+    @staticmethod
+    def _owned_session(session_id):
+        """Return the session if it belongs to the current user, else None."""
+        sess = get_session(session_id)
+        if sess and sess.user_id != request.env.user.id:
+            return None
+        return sess
+
     # ── Output polling ─────────────────────────────────────────────────────
 
     @http.route(
@@ -110,7 +127,7 @@ class TerminalController(http.Controller):
 
         Also evicts the session if it has exceeded the idle timeout.
         """
-        sess = get_session(session_id)
+        sess = self._owned_session(session_id)
         if not sess:
             return {
                 'ok': True, 'chunks': [], 'connected': False,
@@ -148,7 +165,7 @@ class TerminalController(http.Controller):
     )
     def terminal_input(self, session_id, data):
         """Send base64-encoded bytes to the remote PTY."""
-        sess = get_session(session_id)
+        sess = self._owned_session(session_id)
         if not sess or sess.closed:
             return {'ok': False}
         sess.write_input(base64.b64decode(data))
@@ -162,7 +179,7 @@ class TerminalController(http.Controller):
     )
     def terminal_resize(self, session_id, cols=80, rows=24):
         """Send a PTY resize event."""
-        sess = get_session(session_id)
+        sess = self._owned_session(session_id)
         if not sess or sess.closed:
             return {'ok': False}
         sess.resize(int(cols), int(rows))
@@ -176,6 +193,9 @@ class TerminalController(http.Controller):
     )
     def terminal_close(self, session_id):
         """Close the terminal session and update the audit record."""
+        sess = self._owned_session(session_id)
+        if not sess:
+            return {'ok': False, 'error': _('Session not found')}
         close_and_remove_session(session_id)
         env = request.env
         rec = env['cloud.instance.session'].search(

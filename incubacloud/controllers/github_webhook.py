@@ -43,10 +43,17 @@ class GitHubWebhookController(http.Controller):
         _, secret = service.resolve_webhook_project(payload_bytes, signature)
 
         if secret is None:
-            # No secret configured — still accept the event (open webhooks)
-            _logger.debug(
-                "GitHub webhook received without secret validation "
-                "(delivery=%s, event=%s)", delivery_id, event_type
+            # No secret configured — reject to prevent unauthenticated deployments
+            _logger.error(
+                "GitHub webhook rejected: no webhook secret configured "
+                "(delivery=%s, event=%s). "
+                "Configure a webhook secret in the GitHub App settings.",
+                delivery_id, event_type,
+            )
+            return request.make_response(
+                "Webhook secret not configured.\n",
+                status=401,
+                headers=[("Content-Type", "text/plain")],
             )
         elif not secret:
             # Secret is configured but signature did not validate

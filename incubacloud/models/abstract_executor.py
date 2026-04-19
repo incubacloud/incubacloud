@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import re
 from abc import ABC, abstractmethod
@@ -27,8 +28,6 @@ class AbstractExecutor(ABC):
         self.job = job_record
         self.env = job_record.env
         self._log_buffer = []
-        self._finished = False
-        self._task_exception = None
         self._loop = None
         self._host_record = host_record
         self.host = host_record.ip_address
@@ -41,36 +40,72 @@ class AbstractExecutor(ABC):
     # ===============================
 
     def run(self):
+        """Drive the SSH async workflow from a synchronous caller.
+
+        Creates a dedicated event loop per call, runs ``_async_entry``
+        as an owned task and polls the log buffer / bus / cancel flag
+        every ``sleep_interval`` seconds while the task is in flight.
+        Exits as soon as the task completes (no extra sleep tick).
+
+        The event loop is always torn down cleanly: any lingering
+        background tasks (asyncssh keepalives, SFTP readers) are
+        cancelled and awaited before ``loop.close()`` so the queue_job
+        worker log doesn't accumulate "Task was destroyed but it is
+        pending" warnings across runs.
+        """
         logger = logging.getLogger("AbstractExecutor")
         self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
-
-        logger.debug("[run] Creating _async_entry task")
-        self._loop.create_task(self._async_entry())
-
         try:
-            while not self._finished or self._log_buffer:
-                logger.debug(
-                    "[run] Loop: _finished=%s, log_buffer=%s",
-                    self._finished, len(self._log_buffer),
-                )
-                self._loop.run_until_complete(
-                    asyncio.sleep(self.sleep_interval),
-                )
+            asyncio.set_event_loop(self._loop)
+            # Owning the task lets us inspect its status / pull its
+            # exception / cancel it if the main loop bails out.
+            main_task = self._loop.create_task(self._async_entry())
+            try:
+                while not main_task.done():
+                    # Drive the loop in sleep_interval bursts. wait()
+                    # returns early if the task finishes before the
+                    # timeout fires, so we don't wait a full tick for
+                    # nothing at the end of a fast job.
+                    self._loop.run_until_complete(
+                        asyncio.wait(
+                            {main_task},
+                            timeout=self.sleep_interval,
+                        )
+                    )
+                    self._flush_logs()
+                    self._publish_bus()
+                    self._check_cancel()
+                # Drain anything written between the last tick and
+                # the final await inside _async_entry.
                 self._flush_logs()
                 self._publish_bus()
-                self._check_cancel()
-        except Exception as e:
-            logger.exception("[run] Exception in main loop: %s", e)
-            if (self._task_exception is not None
-                    and self._task_exception is not e):
-                raise self._task_exception from e
-            raise
+                exc = main_task.exception()
+                if exc is not None:
+                    raise exc
+            except BaseException:
+                # Cancel the running task if we abandon the loop
+                # (e.g. _check_cancel raised because the job was
+                # cancelled out-of-band). Wait for it to honour the
+                # CancelledError before closing the loop.
+                if not main_task.done():
+                    main_task.cancel()
+                    with contextlib.suppress(BaseException):
+                        self._loop.run_until_complete(main_task)
+                raise
         finally:
+            try:
+                pending = asyncio.all_tasks(self._loop)
+                for t in pending:
+                    t.cancel()
+                if pending:
+                    self._loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True),
+                    )
+            except Exception:
+                logger.debug("executor cleanup error", exc_info=True)
+            asyncio.set_event_loop(None)
             self._loop.close()
-
-        if self._task_exception is not None:
-            raise self._task_exception
+            self._loop = None
 
     # ===============================
     # ASYNC ENTRYPOINT
@@ -151,10 +186,7 @@ class AbstractExecutor(ABC):
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
             logger.exception("[_async_entry] Exception: %s", e)
-            self._task_exception = e
             raise
-        finally:
-            self._finished = True
 
     # ===============================
     # DB + BUS INFRASTRUCTURE

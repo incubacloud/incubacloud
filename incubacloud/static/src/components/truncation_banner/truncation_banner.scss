@@ -1,0 +1,18 @@
+.ic-truncation-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    color: #92400e;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin: 0 0 12px 0;
+    font-size: 0.9em;
+
+    .fa-exclamation-triangle {
+        color: #d97706;
+        font-size: 1.1em;
+        flex-shrink: 0;
+    }
+}

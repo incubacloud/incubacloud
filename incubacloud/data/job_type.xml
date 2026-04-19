@@ -15,7 +15,7 @@
             <field name="code">host_metrics</field>
             <field name="apply_to">host</field>
             <field name="description">Collects CPU cores, total RAM and disk health from the host.</field>
-
+            <field name="priority_tier">low</field>
         </record>
 
         <record id="deploy_instance" model="cloud.job.type">
@@ -128,6 +128,7 @@
             <field name="code">docker_prune</field>
             <field name="apply_to">host</field>
             <field name="description">Reclaims disk space by removing unused Docker containers, images, networks and build cache (docker system prune -af).</field>
+            <field name="priority_tier">low</field>
         </record>
 
         <record id="backup_list" model="cloud.job.type">
@@ -170,6 +171,7 @@
             <field name="code">instance_health</field>
             <field name="apply_to">instance</field>
             <field name="description">Checks container state, HTTP health, CPU/memory peaks and error log count for a deployed instance.</field>
+            <field name="priority_tier">low</field>
         </record>
 
     </data>
