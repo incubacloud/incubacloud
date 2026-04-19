@@ -50,6 +50,11 @@ class QueueJob(models.Model):
                 "UPDATE cloud_job SET state = %s WHERE id = %s",
                 (new_state, cjob.id),
             )
+            # The raw UPDATE bypasses the ORM, so the cached value of
+            # cloud.job.state from earlier reads in this transaction
+            # stays stale. Drop it so _broadcast_job_update, any
+            # compute field, and future refactors see the fresh value.
+            self.env['cloud.job'].invalidate_model(['state'])
             _logger.info(
                 "[queue_job_ext] uuid=%s state=%s -> cloud.job id=%s updated",
                 qjob.uuid, new_state, cjob.id,
@@ -66,6 +71,8 @@ class QueueJob(models.Model):
                     (cjob.instance_id.id, cjob.id),
                 )
                 if self.env.cr.rowcount:
+                    # Same reason as above: raw UPDATE, clear the cache.
+                    self.env['cloud.job'].invalidate_model(['state'])
                     _logger.info(
                         "[queue_job_ext] cancelled %d chained"
                         " jobs for instance %s",
