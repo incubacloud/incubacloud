@@ -28,4 +28,5 @@ from . import (
     test_transport,
     test_delete_project,
     test_health_endpoint,
+    test_queue_job_ext,
 )
