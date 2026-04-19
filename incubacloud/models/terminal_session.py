@@ -14,6 +14,7 @@ Global registry: ``_sessions`` dict keyed by session_id.
 
 import asyncio
 import logging
+import shlex
 import threading
 import time
 import uuid
@@ -104,6 +105,7 @@ class TerminalSession:
         service,
         instance_name='',
         environment='',
+        user_id=None,
     ):
         self.session_id = session_id
         self._ssh_connect_kwargs = ssh_connect_kwargs
@@ -113,6 +115,7 @@ class TerminalSession:
         self.service = service
         self.instance_name = instance_name
         self.environment = environment
+        self.user_id = user_id
 
         # Output buffer: list of (seq, bytes)
         self._output_buffer: list = []
@@ -284,9 +287,17 @@ class TerminalSession:
         connect_kw['keepalive_interval'] = 30
 
         async with asyncssh.connect(**connect_kw) as conn:
-            # Resolve the container ID for the requested service
+            # Resolve the container ID for the requested service.
+            # Quote inst_dir preserving the ~/ prefix (shlex.quote would
+            # prevent tilde expansion by wrapping the whole string in quotes).
+            svc = shlex.quote(self.service)
+            _d = self.inst_dir
+            safe_dir = (
+                '~/' + shlex.quote(_d[2:]) if _d.startswith('~/')
+                else shlex.quote(_d)
+            )
             result = await conn.run(
-                f"cd {self.inst_dir} && docker compose ps -q {self.service} 2>/dev/null | head -1",
+                f"cd {safe_dir} && docker compose ps -q {svc} 2>/dev/null | head -1",
                 check=False,
             )
             container_id = (result.stdout or '').strip()
@@ -298,9 +309,9 @@ class TerminalSession:
                 )
             else:
                 cmd = (
-                    f"cd {self.inst_dir}"
-                    f" && docker compose exec -T {self.service} bash 2>/dev/null"
-                    f" || cd {self.inst_dir} && docker compose exec -T {self.service} sh"
+                    f"cd {safe_dir}"
+                    f" && docker compose exec -T {svc} bash 2>/dev/null"
+                    f" || cd {safe_dir} && docker compose exec -T {svc} sh"
                 )
 
             async with conn.create_process(

@@ -1,6 +1,7 @@
-import base64
 import logging
 from contextlib import asynccontextmanager
+
+import asyncssh
 
 from odoo import fields, models, api, _
 from odoo.exceptions import UserError
@@ -74,11 +75,20 @@ class CloudHost(models.Model):
     password = EncryptedChar(
         string='Password',
         required=True,
+        groups='incubacloud.group_cloud_developer',
         help='Password for accessing the cloud host.',
     )
-    key_file = fields.Binary(
+    key_file = EncryptedChar(
         string='SSH Key',
+        groups='incubacloud.group_cloud_developer',
         help='SSH private key for accessing the cloud host.',
+    )
+    known_hosts_key = fields.Text(
+        string='Known Hosts Key',
+        help=(
+            'Server host public key in known_hosts format, captured via '
+            '"Trust SSH Key". All SSH connections verify against this key.'
+        ),
     )
     user = fields.Char(
         string='User',
@@ -99,9 +109,12 @@ class CloudHost(models.Model):
         string='Description',
         translate=True,
     )
-    tags = fields.Char(
+    tag_ids = fields.Many2many(
+        comodel_name='cloud.host.tag',
+        relation='cloud_host_tag_rel',
+        column1='host_id',
+        column2='tag_id',
         string='Tags',
-        help='Comma-separated tags for organizing hosts.',
     )
     instance_ids = fields.One2many(
         comodel_name='cloud.instance',
@@ -160,6 +173,14 @@ class CloudHost(models.Model):
         string='Available RAM (GB)', compute='_compute_resource_availability',
     )
 
+    usage_ratio = fields.Float(
+        string='Usage Ratio',
+        compute='_compute_usage_ratio',
+        help='Fraction in [0, 1] of allocated/total on the most '
+             'constrained dimension (CPU or RAM). Used by SaaS '
+             'autoprovisioning to decide when to add new hosts.',
+    )
+
     @api.depends(
         'cpu_cores', 'ram_total_gb',
         'instance_ids.odoo_cpus', 'instance_ids.db_cpus',
@@ -172,6 +193,8 @@ class CloudHost(models.Model):
             total_cpus = 0.0
             total_ram = 0.0
             for inst in host.instance_ids:
+                if not host._consumes_capacity(inst):
+                    continue
                 total_cpus += (
                     inst.odoo_cpus + inst.db_cpus
                     + inst.backup_cpus + inst.smtp_cpus
@@ -187,32 +210,83 @@ class CloudHost(models.Model):
             host.available_cpus = host.cpu_cores - total_cpus
             host.available_ram_gb = host.ram_total_gb - total_ram
 
+    def _consumes_capacity(self, inst):
+        """Whether ``inst`` counts against this host's CPU/RAM.
+
+        Hook for extensions. The base implementation counts every
+        instance attached to the host; SaaS overrides to skip warm
+        pool instances whose containers are intentionally stopped and
+        therefore do not reserve live capacity.
+        """
+        self.ensure_one()
+        return True
+
+    @api.depends('allocated_cpus', 'cpu_cores', 'allocated_ram_gb', 'ram_total_gb')
+    def _compute_usage_ratio(self):
+        for host in self:
+            cpu = (
+                host.allocated_cpus / host.cpu_cores
+                if host.cpu_cores else 0
+            )
+            ram = (
+                host.allocated_ram_gb / host.ram_total_gb
+                if host.ram_total_gb else 0
+            )
+            host.usage_ratio = max(cpu, ram)
+
     _MIN_DISK_FREE_GB = 10
 
     @api.model
     def select_best_host(self, required_cpus=3.75, required_ram_gb=3.75):
-        """Return the best eligible host for a new instance, or empty recordset."""
+        """Return the best eligible host for a new instance.
+
+        Prefers hosts that fit the requested ``required_cpus`` and
+        ``required_ram_gb`` (scored by remaining balanced headroom).
+        When no eligible host fits, falls back to the one with the
+        most headroom in the most constrained dimension — callers can
+        place instances while SaaS autoprovisioning reacts to the
+        saturation signal independently.
+        Only returns empty when there is no compatible host at all.
+        """
         eligible = self.search([
             ('status', '=', 'compatible'),
             ('traefik_deployed', '=', True),
             ('exclude_from_autoassign', '=', False),
             ('disk_free_gb', '>=', self._MIN_DISK_FREE_GB),
         ])
-        best, best_score = None, -1
+        if not eligible:
+            return self.browse()
+
+        best_fit, best_fit_score = None, -1.0
+        best_fallback, best_fallback_headroom = None, float('-inf')
         for host in eligible:
-            avail_cpu = host.available_cpus - required_cpus
-            avail_ram = host.available_ram_gb - required_ram_gb
-            if avail_cpu < 0 or avail_ram < 0:
-                continue
-            cpu_ratio = avail_cpu / host.cpu_cores if host.cpu_cores else 0
-            ram_ratio = (
-                avail_ram / host.ram_total_gb if host.ram_total_gb else 0
-            )
-            score = 2 * min(cpu_ratio, ram_ratio) + cpu_ratio + ram_ratio
-            if score > best_score:
-                best_score = score
-                best = host
-        return best or self.browse()
+            cpu_free = host.available_cpus
+            ram_free = host.available_ram_gb
+            cpu_r = cpu_free / host.cpu_cores if host.cpu_cores else 0
+            ram_r = ram_free / host.ram_total_gb if host.ram_total_gb else 0
+            headroom = min(cpu_r, ram_r)
+
+            if (
+                cpu_free - required_cpus >= 0
+                and ram_free - required_ram_gb >= 0
+            ):
+                avail_cpu = cpu_free - required_cpus
+                avail_ram = ram_free - required_ram_gb
+                acr = (
+                    avail_cpu / host.cpu_cores if host.cpu_cores else 0
+                )
+                arr = (
+                    avail_ram / host.ram_total_gb
+                    if host.ram_total_gb else 0
+                )
+                score = 2 * min(acr, arr) + acr + arr
+                if score > best_fit_score:
+                    best_fit, best_fit_score = host, score
+
+            if headroom > best_fallback_headroom:
+                best_fallback, best_fallback_headroom = host, headroom
+
+        return best_fit or best_fallback or self.browse()
 
     # ── Traefik configuration ───────────────────────────────────────────────
     wildcard_domain = fields.Char(
@@ -223,6 +297,7 @@ class CloudHost(models.Model):
     traefik_panel_password = EncryptedChar(
         string='Traefik Panel Password',
         required=True,
+        groups='incubacloud.group_cloud_developer',
         help='Password for the Traefik dashboard.',
     )
     traefik_config_yml = fields.Text(
@@ -255,17 +330,20 @@ class CloudHost(models.Model):
         prevent asyncssh from probing ``~/.ssh`` for default keys.
         """
         self.ensure_one()
+        if not self.known_hosts_key:
+            raise UserError(_(
+                "Host '%(name)s' has no trusted SSH key. "
+                "Open the host page and click 'Trust SSH Key' first.",
+                name=self.name,
+            ))
         kwargs = dict(
             host=self.ip_address,
             port=self.port,
             username=self.user,
-            known_hosts=None,
+            known_hosts=asyncssh.import_known_hosts(self.known_hosts_key),
         )
         if self.login_type == 'ssh_key' and self.key_file:
-            pem = base64.b64decode(self.key_file).decode(
-                'utf-8', errors='replace',
-            )
-            kwargs['client_keys'] = [pem]
+            kwargs['client_keys'] = [self.key_file]
         else:
             kwargs['password'] = self.password
             # None (not []) tells asyncssh to skip default key loading.
@@ -289,7 +367,6 @@ class CloudHost(models.Model):
         To support a new backend, add a ``backend_type`` field and branch
         here to return the appropriate transport class.
         """
-        import asyncssh
         from .transport import SSHTransport
         self.ensure_one()
         connect_kw = self.ssh_connect_kwargs()

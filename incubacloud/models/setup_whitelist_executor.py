@@ -56,7 +56,7 @@ def build_whitelist_compose(hostnames):
     for hostname in hostnames:
         svc = _hostname_to_service(hostname)
         content += (
-            f"  {svc}:\n"
+            f'  "{svc}":\n'
             f"    image: ghcr.io/tecnativa/docker-whitelist\n"
             f"    restart: unless-stopped\n"
             f"    networks:\n"
@@ -135,5 +135,5 @@ class SetupWhitelistExecutor(AbstractSSHExecutor):
         self._alert(
             "whitelist_setup_failed",
             "Whitelist setup failed. Check the job log for details.",
-            level="error",
+            level="critical",
         )

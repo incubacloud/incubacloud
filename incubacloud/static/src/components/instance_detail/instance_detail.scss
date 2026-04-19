@@ -118,6 +118,13 @@
     }
 }
 
+.ic-ab-warn {
+    border-color: rgba($state-warning, 0.5);
+    color: $state-warning;
+
+    &:hover { background: rgba($state-warning, 0.12); }
+}
+
 // ── Locked fields ──────────────────────────────────────────────────────────────
 
 .ic-locked-notice {
@@ -452,6 +459,12 @@
     .fa { margin-right: 4px; font-size: 0.625rem; }
 }
 
+.ic-ov-warn {
+    color: $state-warning;
+    font-size: 0.75rem;
+    .fa { margin-right: 4px; font-size: 0.625rem; }
+}
+
 
 .ic-ov-card {
     background: $surface-light;
@@ -489,6 +502,12 @@
     font-size: 0.75rem;
     flex-shrink: 0;
     margin-right: 12px;
+}
+
+.ic-ov-sub {
+    margin-left: 6px;
+    color: $text-secondary;
+    font-size: 0.72rem;
 }
 
 .ic-ov-status {

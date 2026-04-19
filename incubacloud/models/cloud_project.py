@@ -3,13 +3,20 @@ import re
 from odoo import api, fields, models, _
 from odoo.fields import Domain
 from odoo.tools import SQL, Query
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 
 def _slugify(name):
     """Convert a name to a safe remote folder identifier (lowercase, hyphens)."""
     slug = re.sub(r'[^a-z0-9]+', '-', (name or '').lower().strip())
     return slug.strip('-') or 'project'
+
+
+# remote_folder fluye a paths remotos (~/{folder}/{instance}) y a
+# COMPOSE_PROJECT_NAME. Mismo regex que cloud.instance.name — lowercase
+# alnum + [_-], 1-63 chars — para bloquear command injection si un user
+# sobrescribe el valor computed.
+_REMOTE_FOLDER_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
 
 
 class CloudProject(models.Model):
@@ -146,6 +153,18 @@ class CloudProject(models.Model):
         for project in self:
             if not project.remote_folder:
                 project.remote_folder = _slugify(project.name or '')
+
+    @api.constrains('remote_folder')
+    def _check_remote_folder_shell_safe(self):
+        for p in self:
+            if p.remote_folder and not _REMOTE_FOLDER_RE.match(p.remote_folder):
+                raise ValidationError(_(
+                    "Remote folder '%(folder)s' is invalid. It must start "
+                    "with a lowercase letter or digit and contain only "
+                    "lowercase letters, digits, hyphens and underscores "
+                    "(max 63 chars).",
+                    folder=p.remote_folder,
+                ))
 
     # Fields tracked in the audit log when changed
     _AUDIT_TRACKED_FIELDS = frozenset({

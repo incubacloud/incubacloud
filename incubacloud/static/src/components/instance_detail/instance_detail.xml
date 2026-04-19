@@ -454,11 +454,18 @@
                                     <label>Admin Password</label>
                                     <PasswordInput
                                         hasValue="state.has_odoo_admin_password"
-                                        model="'cloud.instance'"
-                                        recordId="props.instance_id || null"
-                                        fieldName="'odoo_admin_password'"
                                         required="true"
                                         onChange="(val) => this.onPasswordChange('odoo_admin_password', val)"/>
+                                </div>
+                                <div class="ic-form-row ic-form-row-full">
+                                    <label>Tags</label>
+                                    <TagSelector
+                                        selected="state.selectedTags"
+                                        available="state.allTags"
+                                        onAdd.bind="addTag"
+                                        onRemove.bind="removeTag"
+                                        onCreate.bind="createTag"
+                                    />
                                 </div>
                             </div>
                         </t>
@@ -496,9 +503,6 @@
                                     <label>DB Password</label>
                                     <PasswordInput
                                         hasValue="state.has_postgres_password"
-                                        model="'cloud.instance'"
-                                        recordId="props.instance_id || null"
-                                        fieldName="'postgres_password'"
                                         required="true"
                                         onChange="(val) => this.onPasswordChange('postgres_password', val)"/>
                                 </div>
@@ -563,9 +567,6 @@
                                     <label>SMTP Password</label>
                                     <PasswordInput
                                         hasValue="state.has_smtp_relay_password"
-                                        model="'cloud.instance'"
-                                        recordId="props.instance_id || null"
-                                        fieldName="'smtp_relay_password'"
                                         onChange="(val) => this.onPasswordChange('smtp_relay_password', val)"/>
                                 </div>
 

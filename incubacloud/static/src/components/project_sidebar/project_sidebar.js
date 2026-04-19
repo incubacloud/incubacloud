@@ -2,6 +2,7 @@ import { Component, useState, onWillStart, onMounted, onWillUnmount, useEnv } fr
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
+import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
 
 export class ProjectSidebar extends Component {
     static template = "incubacloud.ProjectSidebar";
@@ -18,6 +19,7 @@ export class ProjectSidebar extends Component {
             odooVersion: "",
             instances: [],
             loading: true,
+            search: "",
             cloneModal: null,  // { instanceId, name, loading, error }
         });
 
@@ -103,6 +105,32 @@ export class ProjectSidebar extends Component {
         }
         return groups;
     }
+
+    _matchesSearch(inst, q) {
+        if (!q) return true;
+        if ((inst.name || "").toLowerCase().includes(q)) return true;
+        return (inst.tags || []).some(
+            t => (t.name || "").toLowerCase().includes(q),
+        );
+    }
+
+    get filteredGrouped() {
+        const q = (this.state.search || "").trim().toLowerCase();
+        const out = { production: [], staging: [] };
+        for (const env of Object.keys(out)) {
+            out[env] = (this.grouped[env] || []).filter(
+                i => this._matchesSearch(i, q),
+            );
+        }
+        return out;
+    }
+
+    onSearchInput(ev) {
+        this.state.search = ev.target.value || "";
+    }
+
+    tagBadgeStyle(tag) { return tagStyle(tag); }
+    tagDotStyle(tag) { return tagDotStyle(tag); }
 
     get selectedId() {
         return this.props.selectedInstanceId || null;

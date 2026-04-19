@@ -47,6 +47,7 @@ class CloudGitHubApp(models.Model):
     )
     webhook_secret = EncryptedChar(
         string="Webhook Secret",
+        groups="incubacloud.group_cloud_manager",
         help=(
             "Secret used to validate incoming webhook HMAC-SHA256 signatures."
             " Must match the value configured in the GitHub App webhook settings."

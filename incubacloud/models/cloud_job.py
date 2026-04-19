@@ -14,6 +14,14 @@ from .registry import executor_registry
 _logger = logging.getLogger(__name__)
 
 
+# Namespace used for PostgreSQL transactional advisory locks on
+# ``cloud.job.enqueue``. The pair ``(namespace, instance_id)`` serialises
+# concurrent enqueue() calls targeting the same instance so two racing
+# requests cannot create parallel jobs. The lock is released on COMMIT
+# or ROLLBACK automatically — no cleanup possible if the process dies.
+_JOB_LOCK_NAMESPACE = 0x0C10D10B
+
+
 def _webhook_fields(payload):
     """Extract webhook trigger fields for job serialization."""
     p = payload or {}
@@ -119,6 +127,34 @@ class CloudJob(models.Model):
         """
         _REF_RE = re.compile(r'^__chain_job_(\d+)__$')
 
+        # Advisory lock on every instance touched by the chain. Two
+        # concurrent enqueue_chain()/enqueue() calls targeting the same
+        # instance serialise here; once we hold the lock we verify there
+        # is no active user job for that instance before creating new
+        # ones. Locks are released on COMMIT/ROLLBACK automatically.
+        seen_instance_ids = set()
+        hidden = self._get_hidden_job_types()
+        for step in steps:
+            inst_id = step.get('instance_id')
+            if inst_id and inst_id not in seen_instance_ids:
+                self.env.cr.execute(
+                    "SELECT pg_advisory_xact_lock(%s, %s)",
+                    (_JOB_LOCK_NAMESPACE, inst_id),
+                )
+                seen_instance_ids.add(inst_id)
+                running = self.search([
+                    ('instance_id', '=', inst_id),
+                    ('state', 'in', self._active_states),
+                    ('job_type_id.code', 'not in', hidden),
+                ], limit=1)
+                if running:
+                    raise UserError(_(
+                        "A job is already running for this instance: "
+                        "%(name)s. Wait for it to complete or cancel "
+                        "it first.",
+                        name=running.name,
+                    ))
+
         # 1. Create all cloud.job records (without payloads that need resolving)
         records = []
         for step in steps:
@@ -183,6 +219,38 @@ class CloudJob(models.Model):
 
         return [r.id for r in records]
 
+    # ── Queue routing (tier → queue_job channel + priority) ──────────────
+    #
+    # Tiers:
+    #   HIGH   → root.user / 5   (prod instance jobs)
+    #   NORMAL → root.user / 10  (staging instance + host-only jobs)
+    #   LOW    → root.bg   / 10  (background: health checks, metrics, prune)
+    #
+    # The tier is declared per cloud.job.type record (priority_tier field)
+    # and can be auto-promoted NORMAL → HIGH when the target instance is
+    # production. Requires the Odoo conf channels setting:
+    #
+    #   [queue_job]
+    #   channels = root:3,root.user:2,root.bg:1
+    #
+    # See README for details.
+
+    _TIER_TO_ROUTING = {
+        'high':   ('root.user', 5),
+        'normal': ('root.user', 10),
+        'low':    ('root.bg',   10),
+    }
+
+    def _resolve_channel_priority(self, job_type, instance_id):
+        """Return ``(channel, priority)`` for a job, promoting ``normal``
+        → ``high`` when the target instance is in production."""
+        tier = job_type.priority_tier or 'normal'
+        if tier == 'normal' and instance_id:
+            inst = self.env['cloud.instance'].browse(instance_id)
+            if inst.exists() and inst.environment == 'production':
+                tier = 'high'
+        return self._TIER_TO_ROUTING.get(tier, self._TIER_TO_ROUTING['normal'])
+
     @api.model
     def enqueue(self, host_id, instance_id, job_type_code, payload=None):
         """
@@ -192,6 +260,15 @@ class CloudJob(models.Model):
         # Block if there is already an active *user* job for this instance.
         # Hidden system jobs (health checks, metrics, probes…) don't block.
         if instance_id:
+            # Advisory lock: serialise concurrent enqueue() calls for
+            # the same instance. The second caller blocks until the
+            # first commits; when it wakes up the running-job check
+            # below sees the freshly-created job and raises. Released
+            # automatically on COMMIT or ROLLBACK of this tx.
+            self.env.cr.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (_JOB_LOCK_NAMESPACE, instance_id),
+            )
             running = self.search([
                 ('instance_id', '=', instance_id),
                 ('state', 'in', self._active_states),
@@ -254,7 +331,15 @@ class CloudJob(models.Model):
         })
         # max_retries=1: allow one automatic retry for transient DB errors,
         # then fail permanently. The execution guard prevents double SSH runs.
-        delayed = job_record.with_delay(max_retries=1).execute()
+        channel, priority = self._resolve_channel_priority(
+            job_type_id, instance_id,
+        )
+        delayed = job_record.with_delay(
+            max_retries=1,
+            channel=channel,
+            priority=priority,
+            description=job_type_id.name,
+        ).execute()
         job_record.write({"queue_job_uuid": delayed.uuid})
         return job_record.id
 
@@ -396,6 +481,7 @@ class CloudJob(models.Model):
                 "id": job.id,
                 "name": job.name,
                 "host": job.host_id.name,
+                "host_id": job.host_id.id if job.host_id else None,
                 "job_type": job.job_type_id.name,
                 "job_type_code": job.job_type_id.code,
                 "instance_id": job.instance_id.id if job.instance_id else None,
@@ -549,7 +635,16 @@ class CloudJob(models.Model):
             'payload': self.payload,
             'retry_of_id': self.id,
         })
-        delayed = new_job.with_delay(max_retries=1).execute()
+        channel, priority = self._resolve_channel_priority(
+            new_job.job_type_id,
+            new_job.instance_id.id if new_job.instance_id else False,
+        )
+        delayed = new_job.with_delay(
+            max_retries=1,
+            channel=channel,
+            priority=priority,
+            description=new_job.job_type_id.name,
+        ).execute()
         new_job.write({'queue_job_uuid': delayed.uuid})
         return new_job.id
 
@@ -573,14 +668,57 @@ class CloudJob(models.Model):
         """Called by the resolve endpoint after a pip conflict is resolved."""
         self.ensure_one()
         self.blocked_alert_id = False
-        delayed = self.with_delay(max_retries=1).execute()
+        channel, priority = self._resolve_channel_priority(
+            self.job_type_id,
+            self.instance_id.id if self.instance_id else False,
+        )
+        delayed = self.with_delay(
+            max_retries=1,
+            channel=channel,
+            priority=priority,
+            description=self.job_type_id.name,
+        ).execute()
         self.write({'queue_job_uuid': delayed.uuid})
 
     # ── Multi-user notifications ───────────────────────────────────────────
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Broadcast newly-created jobs so the UI updates immediately.
+
+        Runs on the caller's cursor (HTTP / cron / orm.call) — the
+        ``pg_notify`` emitted by ``_bus_send`` fires at that cursor's
+        commit. We deliberately do NOT hook ``write`` / ``_write``: the
+        ``state`` field is a stored related on ``queue_job_id.state`` and
+        its updates arrive via ``_write`` from whatever cursor queue_job
+        is using (sometimes a fresh cursor in failure paths, sometimes
+        the SSH executor's cursor), which is exactly the scenario the
+        memory note warns about. State transitions are already
+        broadcast explicitly from ``queue_job_ext.write`` (terminal) and
+        ``abstract_executor._publish_bus`` (while running).
+        """
+        records = super().create(vals_list)
+        for record in records:
+            self._broadcast_job_update(record.id)
+        return records
+
     @api.model
     def _broadcast_job_update(self, job_id):
-        """Send bus notification for a job state change to all active users."""
+        """Send bus notification for a job state change to all active users.
+
+        Hidden job types (host_metrics, instance_health, docker_prune,
+        …) are system/cron jobs the SPA never shows in the drawer.
+        Broadcasting them is pure noise — tens of thousands of bus
+        events per day × N internal users for zero UI benefit — so we
+        skip them here. The frontend already filters these types out
+        of the job list; skipping the bus hop saves a lot of work on
+        the server, network and client.
+        """
+        job = self.browse(job_id)
+        if not job.exists():
+            return
+        if job.job_type_id.code in self._get_hidden_job_types():
+            return
         users = self.env['res.users'].search([
             ('share', '=', False),
             ('active', '=', True),

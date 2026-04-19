@@ -154,14 +154,65 @@ class CloudController(Controller):
             }
             job_id = inst.restore_db(payload)
             return request.make_json_response({'job_id': job_id})
-        except Exception as e:
+        except Exception:
             with suppress(Exception):
                 Path(tmp_path).unlink()
-            _logger.exception("restore_instance_upload failed: %s", e)
+            _logger.exception("restore_instance_upload failed")
             return request.make_json_response(
-                {'error': str(e)}, status=500
+                {'error': 'An internal error occurred. Check server logs.'}, status=500
             )
 
     @http.route(['/cloud/ping'], type='jsonrpc', auth='user')
     def cloud_ping(self):
         return {'response': 'pong'}
+
+    @http.route(
+        '/cloud/health', type='http',
+        auth='public', methods=['GET'], csrf=False,
+    )
+    def cloud_health(self, **kw):
+        """Public liveness/readiness probe.
+
+        Docker healthcheck, Kubernetes probes and load balancers can
+        GET this without authentication to decide whether this worker
+        is fit to serve. Checks are deliberately cheap (SELECT 1 + one
+        env.ref) so the probe itself doesn't become a load source.
+        Returns HTTP 200 when every check passes, 503 otherwise, so
+        orchestrators can treat it as a standard health endpoint.
+        """
+        checks = {}
+        overall = 'ok'
+        status = 200
+
+        try:
+            request.env.cr.execute("SELECT 1")
+            checks['db'] = 'ok'
+        except Exception as exc:
+            _logger.warning("health: db check failed: %s", exc)
+            checks['db'] = 'down'
+            overall = 'down'
+            status = 503
+
+        try:
+            ref = request.env.ref(
+                'incubacloud.group_cloud_manager',
+                raise_if_not_found=False,
+            )
+            checks['registry'] = 'ok' if ref else 'down'
+            if not ref:
+                overall = 'down'
+                status = 503
+        except Exception as exc:
+            _logger.warning("health: registry check failed: %s", exc)
+            checks['registry'] = 'down'
+            overall = 'down'
+            status = 503
+
+        return request.make_response(
+            json.dumps({'status': overall, 'checks': checks}),
+            headers=[
+                ('Content-Type', 'application/json'),
+                ('Cache-Control', 'no-store'),
+            ],
+            status=status,
+        )

@@ -62,6 +62,16 @@
                             </t>
                         </t>
                         <div class="ic-action-sep"/>
+                        <button t-att-class="'ic-action-btn' + (state.has_known_hosts_key ? '' : ' ic-ab-warn')"
+                                t-att-title="state.has_known_hosts_key ? 'Re-trust SSH host key' : 'Trust SSH host key (required before any SSH operation)'"
+                                t-att-disabled="state.trusting_host_key || null"
+                                t-on-click="trustHostKey">
+                            <i t-if="state.trusting_host_key" class="fa fa-spinner fa-spin"/>
+                            <i t-else="" class="fa fa-shield"/>
+                            <t t-if="state.has_known_hosts_key"> Re-trust Key</t>
+                            <t t-else=""> Trust SSH Key</t>
+                        </button>
+                        <div class="ic-action-sep"/>
                         <button class="ic-action-btn ic-ab-danger" title="Delete host"
                                 t-on-click="deleteHost">
                             <i class="fa fa-trash"/> Delete
@@ -129,6 +139,17 @@
                                         <span t-att-class="state.host.traefik_deployed ? 'ic-ov-ok' : ''">
                                             <t t-if="state.host.traefik_deployed">Deployed</t>
                                             <t t-else="">Not deployed</t>
+                                        </span>
+                                    </div>
+                                    <div class="ic-ov-row">
+                                        <span class="ic-ov-label">SSH Key</span>
+                                        <span t-att-class="state.has_known_hosts_key ? 'ic-ov-ok' : 'ic-ov-warn'">
+                                            <t t-if="state.has_known_hosts_key">
+                                                <i class="fa fa-shield"/> Trusted
+                                            </t>
+                                            <t t-else="">
+                                                <i class="fa fa-exclamation-triangle"/> Not trusted
+                                            </t>
                                         </span>
                                     </div>
                                     <t t-if="state.host.last_probed">
@@ -255,11 +276,15 @@
                                            t-att-value="state.form.port"
                                            t-on-input="(ev) => this.onInput('port', ev)"/>
                                 </div>
-                                <div class="ic-form-row">
+                                <div class="ic-form-row ic-form-row-full">
                                     <label>Tags</label>
-                                    <input type="text" placeholder="tag1, tag2, …"
-                                           t-att-value="state.form.tags"
-                                           t-on-input="(ev) => this.onInput('tags', ev)"/>
+                                    <TagSelector
+                                        selected="state.selectedTags"
+                                        available="state.allTags"
+                                        onAdd.bind="addTag"
+                                        onRemove.bind="removeTag"
+                                        onCreate.bind="createTag"
+                                    />
                                 </div>
                                 <div class="ic-form-row ic-form-row-full">
                                     <label>Description</label>
@@ -305,9 +330,6 @@
                                         <label>Password</label>
                                         <PasswordInput
                                             hasValue="state.has_password"
-                                            model="'cloud.host'"
-                                            recordId="props.host_id || null"
-                                            fieldName="'password'"
                                             required="true"
                                             onChange="(val) => this.onPasswordChange('password', val)"/>
                                     </div>
@@ -317,8 +339,10 @@
                                         <label>SSH Private Key <span class="ic-required">*</span></label>
                                         <input type="file" accept=".pem,.key,.txt"
                                                t-on-change="onKeyFileChange"/>
-                                        <t t-if="!isNew and !state.form.key_file">
-                                            <span class="ic-form-note">Leave empty to keep the current key.</span>
+                                        <t t-if="!isNew and state.has_key_file and !state.form.key_file">
+                                            <span class="ic-form-note ic-form-note--set">
+                                                <i class="fa fa-check-circle"/> Key stored — upload a new file only to replace it.
+                                            </span>
                                         </t>
                                     </div>
                                 </t>
@@ -338,9 +362,6 @@
                                     <label>Panel Password</label>
                                     <PasswordInput
                                         hasValue="state.has_traefik_panel_password"
-                                        model="'cloud.host'"
-                                        recordId="props.host_id || null"
-                                        fieldName="'traefik_panel_password'"
                                         onChange="(val) => this.onPasswordChange('traefik_panel_password', val)"/>
                                 </div>
                             </div>

@@ -400,8 +400,10 @@ def fetch_requirements_txt(env, url, branch):
         except GitHubAPIError as exc:
             if exc.status_code == 404:
                 return None
-        except (ValueError, UserError, Exception):
-            pass
+        except (ValueError, UserError):
+            _logger.debug("fetch_requirements_txt PAT not configured", exc_info=True)
+        except Exception:
+            _logger.debug("fetch_requirements_txt PAT unexpected error", exc_info=True)
 
         # 2. GitHub App
         try:
@@ -409,8 +411,10 @@ def fetch_requirements_txt(env, url, branch):
         except GitHubAPIError as exc:
             if exc.status_code == 404:
                 return None
-        except (ValueError, UserError, Exception):
-            pass
+        except (ValueError, UserError):
+            _logger.debug("fetch_requirements_txt App not configured", exc_info=True)
+        except Exception:
+            _logger.debug("fetch_requirements_txt App unexpected error", exc_info=True)
 
         # 3. Unauthenticated fallback (public repos)
         try:
@@ -431,7 +435,7 @@ def fetch_requirements_txt(env, url, branch):
             if exc.code == 404:
                 return None
         except Exception:
-            pass
+            _logger.debug("fetch_requirements_txt unauthenticated fallback error", exc_info=True)
 
         return None
 

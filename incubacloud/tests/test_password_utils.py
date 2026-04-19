@@ -76,11 +76,29 @@ class TestEncryptDecrypt(unittest.TestCase):
             second = pw_mod.encrypt_value(first)
         self.assertEqual(first, second)
 
-    def test_encrypt_no_key_returns_plain(self):
-        """When no key is available the value is returned unchanged."""
+    def test_encrypt_no_key_raises(self):
+        """When no key is available encrypt_value must raise (fail-loud)."""
         with patch.dict(os.environ, {}, clear=True):
-            result = pw_mod.encrypt_value("mypassword")
-        self.assertEqual(result, "mypassword")
+            with self.assertRaises(pw_mod.IncubacloudCryptoError):
+                pw_mod.encrypt_value("mypassword")
+
+    def test_decrypt_no_key_raises_for_encrypted(self):
+        """decrypt_value raises when key is missing and value was encrypted."""
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(pw_mod.IncubacloudCryptoError):
+                pw_mod.decrypt_value("enc:somebase64==")
+
+    def test_decrypt_no_key_passes_through_legacy_plain(self):
+        """Plain-text legacy values pass through even without a key."""
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(pw_mod.decrypt_value("plain"), "plain")
+
+    def test_decrypt_bad_token_raises_valueerror(self):
+        """Corrupt ciphertext must raise ValueError, not return None."""
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": self._fresh_key()}):
+            pw_mod._fernet = None
+            with self.assertRaises(ValueError):
+                pw_mod.decrypt_value("enc:not-a-real-token")
 
     # ── decrypt_value ────────────────────────────────────────────────────────
 

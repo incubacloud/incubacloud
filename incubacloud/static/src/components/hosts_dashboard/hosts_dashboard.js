@@ -3,19 +3,29 @@ import { useService } from "@web/core/utils/hooks";
 import { useDebounced } from "@web/core/utils/timing";
 import { rpc } from '@web/core/network/rpc';
 import { _t } from "@web/core/l10n/translation";
+import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
 import { parseUTC } from "../../utils/dates";
+import { TruncationBanner } from "../truncation_banner/truncation_banner";
 
 export class HostsDashboard extends Component {
+    static components = { TruncationBanner };
+
     setup() {
         this.env = useEnv();
         this.state = useState({
             hosts: [],
             visible_hosts: [],
+            truncated: false,
+            total: 0,
+            limit: 200,
         });
         this.search = useDebounced((query) => {
-            this.state.visible_hosts = this.state.hosts.filter(host =>
-                host.name.toLowerCase().includes(query.toLowerCase())
-            );
+            const q = query.toLowerCase();
+            this.state.visible_hosts = this.state.hosts.filter(host => {
+                if (host.name.toLowerCase().includes(q)) return true;
+                const tags = host.tags || [];
+                return tags.some(t => (t.name || "").toLowerCase().includes(q));
+            });
         }, 300);
         this.orm = useService("orm");
         this.loadHosts();
@@ -58,6 +68,9 @@ export class HostsDashboard extends Component {
         const prevFilter = this.state.visible_hosts.map(h => h.id);
         const resp = await rpc('/cloud/get_hosts', {});
         this.state.hosts = resp.hosts || resp || [];
+        this.state.truncated = !!resp.truncated;
+        this.state.total = resp.total || this.state.hosts.length;
+        this.state.limit = resp.limit || 200;
         if (prevFilter.length && prevFilter.length < this.state.hosts.length) {
             this.state.visible_hosts = this.state.hosts.filter(h => prevFilter.includes(h.id));
         } else {
@@ -70,6 +83,9 @@ export class HostsDashboard extends Component {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    tagBadgeStyle(tag) { return tagStyle(tag); }
+    tagDotStyle(tag) { return tagDotStyle(tag); }
 
     barClass(value) {
         if (!value) return 'bar-empty';
@@ -94,6 +110,20 @@ export class HostsDashboard extends Component {
         if (!pct || pct <= 0 || pct >= 100) return `${free} GB free`;
         const total = Math.round(free * 100 / (100 - pct));
         return `${free} GB free / ${total} GB`;
+    }
+
+    usagePct(host) {
+        const r = Number(host.usage_ratio || 0);
+        return Math.min(100, Math.round(r * 100));
+    }
+
+    usageExtra(host) {
+        const cpu = Number(host.allocated_cpus || 0);
+        const cores = Number(host.cpu_cores || 0);
+        const ram = Number(host.allocated_ram_gb || 0);
+        const ramTot = Number(host.ram_total_gb || 0);
+        if (!cores && !ramTot) return '';
+        return `${cpu}/${cores} vCPU · ${ram.toFixed(1)}/${ramTot.toFixed(1)} GB`;
     }
 
     statusLabel(status) {

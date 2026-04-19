@@ -1,5 +1,6 @@
 import { Component, useState, onWillUnmount } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
+import { _t } from "@web/core/l10n/translation";
 import { parseUTC } from "../../utils/dates";
 
 const ACTIVE_STATES = ["pending", "enqueued", "wait_dependencies", "started", "blocked"];
@@ -87,7 +88,9 @@ export class JobDrawer extends Component {
     async cancelJob(job) {
         const ok = await this._confirm({
             title: _t("Cancel job"),
-            message: `Cancel "${job.name}"? This cannot be undone.`,
+            message: _t('Cancel "%s"? This cannot be undone.').replace(
+                "%s", job.name,
+            ),
             confirmLabel: _t("Cancel job"),
             isDanger: true,
         });
@@ -96,7 +99,7 @@ export class JobDrawer extends Component {
         }
     }
 
-    _confirm({ title, message, confirmLabel = "Confirm", isDanger = false }) {
+    _confirm({ title, message, confirmLabel = _t("Confirm"), isDanger = false }) {
         return new Promise((resolve) => {
             this.state.confirmDialog = {
                 title, message, confirmLabel, isDanger,

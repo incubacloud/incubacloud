@@ -3,17 +3,21 @@ import { Component, useState } from "@odoo/owl";
 import { ProjectCard } from "../project_card/project_card";
 import { useDebounced } from "@web/core/utils/timing";
 import { ImportOdooshModal } from "../import_odoojs_modal/import_odoojs_modal";
+import { TruncationBanner } from "../truncation_banner/truncation_banner";
 import { useService } from "@web/core/utils/hooks";
 import { rpc } from '@web/core/network/rpc';
 
 export class ProjectDashboard extends Component {
     static template = "incubacloud.ProjectDashboard";
-    static components = { ProjectCard };
+    static components = { ProjectCard, TruncationBanner };
 
     setup() {
         this.state = useState({
             projects: [],
             visible_projects: [],
+            truncated: false,
+            total: 0,
+            limit: 200,
         });
 
         this.search = useDebounced((query) => {
@@ -39,8 +43,14 @@ export class ProjectDashboard extends Component {
     }
 
     async loadProjects() {
-        this.state.projects = await rpc('/cloud/get_projects', {});
+        const data = await rpc('/cloud/get_projects', {});
+        // Backend caps the result at 200 to protect against DoS/OOM.
+        // Use .items and expose truncation meta so the banner can render.
+        this.state.projects = data.items || [];
         this.state.visible_projects = this.state.projects;
+        this.state.truncated = !!data.truncated;
+        this.state.total = data.total || this.state.projects.length;
+        this.state.limit = data.limit || 200;
     }
 
     onSearchInput(event) {

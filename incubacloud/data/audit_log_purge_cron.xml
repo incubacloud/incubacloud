@@ -13,4 +13,18 @@ model._purge_old(days)
         <field name="interval_type">days</field>
         <field name="active">True</field>
     </record>
+
+    <record id="cron_purge_job_log_chunks" model="ir.cron">
+        <field name="name">Purge Old Job Log Chunks</field>
+        <field name="model_id" ref="model_cloud_job_log_chunk"/>
+        <field name="state">code</field>
+        <field name="code">
+settings = env['cloud.settings'].sudo()._get()
+days = settings.job_log_retention_days or 0
+model._purge_old(days)
+        </field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
 </odoo>

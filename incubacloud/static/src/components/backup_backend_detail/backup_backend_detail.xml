@@ -97,18 +97,12 @@
                                 <label>Secret Access Key</label>
                                 <PasswordInput
                                     hasValue="state.has_s3_secret_access_key"
-                                    model="'cloud.backup.backend'"
-                                    recordId="props.backend_id || null"
-                                    fieldName="'s3_secret_access_key'"
                                     onChange="(val) => this.onPasswordChange('s3_secret_access_key', val)"/>
                             </div>
                             <div class="ic-form-row ic-form-row-full">
                                 <label>Passphrase</label>
                                 <PasswordInput
                                     hasValue="state.has_passphrase"
-                                    model="'cloud.backup.backend'"
-                                    recordId="props.backend_id || null"
-                                    fieldName="'passphrase'"
                                     onChange="(val) => this.onPasswordChange('passphrase', val)"/>
                             </div>
                             <t t-if="backupDst">

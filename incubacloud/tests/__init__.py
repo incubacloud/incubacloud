@@ -27,4 +27,5 @@ from . import (
     test_pluggable_actions,
     test_transport,
     test_delete_project,
+    test_health_endpoint,
 )

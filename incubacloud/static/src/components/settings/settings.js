@@ -13,6 +13,7 @@ export class Settings extends Component {
             saving: false,
             testing: false,
             hasPrivateKey: false,
+            hasWebhookSecret: false,
             hasPat: false,
             configured: false,
             isHttps: window.location.protocol === "https:",
@@ -25,6 +26,7 @@ export class Settings extends Component {
                 autoassign_enabled: false,
                 default_backup_backend_id: null,
                 audit_log_retention_days: 90,
+                job_log_retention_days: 30,
                 // GitHub
                 app_id: "",
                 installation_id: "",
@@ -96,17 +98,19 @@ export class Settings extends Component {
             this.state.configured = data.configured || false;
             this.state.form.app_id = data.app_id || "";
             this.state.form.installation_id = data.installation_id || "";
-            this.state.form.webhook_secret = data.webhook_secret || "";
+            this.state.form.webhook_secret = "";
             this.state.form.private_key = "";
             this.state.form.github_pat = "";
             this.state.hasPrivateKey = data.has_private_key || false;
+            this.state.hasWebhookSecret = data.has_webhook_secret || false;
             this.state.hasPat = data.has_pat || false;
             this.state.slug = data.slug || "";
             this.state.installUrl = data.install_url || "";
             this.state.form.autoassign_enabled = general.autoassign_enabled || false;
             this.state.form.default_backup_backend_id = general.default_backup_backend_id || null;
             this.state.form.audit_log_retention_days = general.audit_log_retention_days ?? 90;
-            this.state.backupBackends = backends || [];
+            this.state.form.job_log_retention_days = general.job_log_retention_days ?? 30;
+            this.state.backupBackends = backends?.items || backends || [];
             this._savedForm = JSON.stringify(this.state.form);
         } catch {
             this.env.toast?.error(_t("Failed to load configuration."));
@@ -156,6 +160,7 @@ export class Settings extends Component {
                 autoassign_enabled: this.state.form.autoassign_enabled,
                 default_backup_backend_id: this.state.form.default_backup_backend_id,
                 audit_log_retention_days: this.state.form.audit_log_retention_days,
+                job_log_retention_days: this.state.form.job_log_retention_days,
             });
         } catch {
             errors.push(_t("General settings"));

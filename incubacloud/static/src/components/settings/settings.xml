@@ -105,6 +105,28 @@
                         </div>
                     </div>
 
+                    <div class="ic-settings-section">
+                        <div class="ic-settings-section-header">
+                            <div>
+                                <h2 class="ic-settings-section-title">Job Log Retention</h2>
+                                <p class="ic-settings-section-desc">
+                                    Automatically purge job log chunks (cloud.job.log.chunk) for
+                                    terminated jobs older than the specified number of days. Active
+                                    jobs are never purged. Set to 0 to keep all chunks indefinitely.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>Retention period (days)</label>
+                                <input type="number" min="0" class="filter-input"
+                                       style="width:120px;"
+                                       t-att-value="state.form.job_log_retention_days"
+                                       t-on-change="(ev) => { state.form.job_log_retention_days = parseInt(ev.target.value) || 0; }"/>
+                            </div>
+                        </div>
+                    </div>
+
                 </t>
 
 
@@ -303,7 +325,12 @@
 
                                     <div class="ic-form-row">
                                         <label>Webhook Secret</label>
-                                        <input type="text"
+                                        <t t-if="state.hasWebhookSecret">
+                                            <p class="ic-settings-hint">
+                                                Secret stored. Leave blank to keep, or enter a new secret to replace.
+                                            </p>
+                                        </t>
+                                        <input type="password"
                                                placeholder="auto-filled via Create App"
                                                t-att-value="state.form.webhook_secret"
                                                t-on-input="(ev) => this.onInput('webhook_secret', ev)"/>

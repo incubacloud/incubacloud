@@ -13,6 +13,11 @@
                 </div>
             </div>
 
+            <TruncationBanner truncated="state.truncated"
+                              total="state.total"
+                              limit="state.limit"
+                              label="'backup backends'"/>
+
             <!-- Grid -->
             <div class="ic-dashboard-grid">
 

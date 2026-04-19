@@ -255,10 +255,15 @@ class TestSelectBestHost(TransactionCase):
         best = self.env['cloud.host'].select_best_host(3.75, 3.75)
         self.assertFalse(best)
 
-    def test_insufficient_resources_skipped(self):
-        """Request more than any host can provide."""
+    def test_insufficient_resources_falls_back_to_most_headroom(self):
+        """When no host fits, select_best_host falls back to the most-headroom
+        compatible host so SaaS autoprovisioning can react while the instance
+        still gets placed."""
         best = self.env['cloud.host'].select_best_host(100.0, 100.0)
-        self.assertFalse(best)
+        # Returns the fallback host, not False (fallback behaviour is
+        # documented in select_best_host docstring).
+        self.assertTrue(best)
+        self.assertIn(best, self.host_a | self.host_b)
 
     def test_bottleneck_aware_scoring(self):
         """Host with balanced resources wins over unbalanced one."""
@@ -308,10 +313,12 @@ class TestCreateInstanceAutoAssign(TransactionCase):
         enabled = self.ICP.get_param(_AUTOASSIGN_PARAM, '0') == '1'
         self.assertFalse(enabled)
 
-    def test_autoassign_no_available_host(self):
+    def test_autoassign_oversized_request_uses_fallback(self):
+        """Oversized requests don't return False; select_best_host falls
+        back to the host with most headroom (documented behaviour)."""
         self.ICP.set_param(_AUTOASSIGN_PARAM, '1')
         best = self.Host.select_best_host(100.0, 100.0)
-        self.assertFalse(best)
+        self.assertEqual(best, self.host)
 
 
 # ── Fase 6: get_hosts response format ────────────────────────────────────────

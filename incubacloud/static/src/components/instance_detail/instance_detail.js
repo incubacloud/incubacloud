@@ -5,6 +5,7 @@ import { _t } from "@web/core/l10n/translation";
 import { RepoEditor } from "../repo_editor/repo_editor";
 import { parseUTC } from "../../utils/dates";
 import { PasswordInput } from "../password_input/password_input";
+import { TagSelector, tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
 
 const ODOO_VERSIONS = [
     "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
@@ -130,7 +131,7 @@ export class InstanceDetail extends Component {
         embedded:    { type: Boolean, optional: true },
     };
     static template = "incubacloud.InstanceDetail";
-    static components = { RepoEditor, PasswordInput };
+    static components = { RepoEditor, PasswordInput, TagSelector };
 
     get isCreate() {
         return !this.props.instance_id;
@@ -159,6 +160,8 @@ export class InstanceDetail extends Component {
             _initialLangId: null,
             inst:     null,
             form:     {},
+            selectedTags: [],
+            allTags:  [],
             langSearch: "",
             langOpen:   false,
             repoSearch: "",
@@ -213,10 +216,11 @@ export class InstanceDetail extends Component {
             try {
                 const [job] = await this.orm.call("cloud.job", "load_jobs", [payload.id]);
                 if (this._destroyed) return;
-                if (job && job.instance_id === this.props.instance_id
-                    && ["done", "failed"].includes(job.state)) {
+                if (job && job.instance_id === this.props.instance_id) {
                     this._silentRefresh();
-                    this.env.refreshSidebar?.();
+                    if (["done", "failed"].includes(job.state)) {
+                        this.env.refreshSidebar?.();
+                    }
                 }
             } catch (_e) { console.debug("Bus handler skipped (component destroyed):", _e); }
         };
@@ -381,6 +385,8 @@ export class InstanceDetail extends Component {
             auto_rebuild:        inst.auto_rebuild || false,
             repos: (inst.repos || []).map(r => ({ ...r })),
         };
+        this.state.selectedTags = [...(inst.tags || [])];
+        this.state.allTags = [...(inst.all_tags || [])];
         this.state.backupsData = null;
         this.state.backupsError = null;
         this._savedForm = JSON.stringify(this.state.form);
@@ -396,7 +402,7 @@ export class InstanceDetail extends Component {
                     rpc("/cloud/get_project", { project_id: this.props.project_id }),
                     rpc("/cloud/get_backup_backends", {}),
                 ]);
-                this.state.backupBackends = backends || [];
+                this.state.backupBackends = backends?.items || backends || [];
                 const allHosts = hostsResp.hosts || hostsResp || [];
                 this.state.autoassignEnabled = !!hostsResp.autoassign_enabled;
                 this.state.hosts = allHosts.filter(h => h.status === "compatible" && h.traefik_deployed);
@@ -410,6 +416,10 @@ export class InstanceDetail extends Component {
                 }));
                 this.state.pipDeps = project?.pip_dependencies || "";
                 this.state.aptDeps = project?.apt_dependencies || "";
+                try {
+                    const tagsRes = await rpc("/cloud/get_tags", { scope: "instance" });
+                    this.state.allTags = tagsRes.tags || [];
+                } catch (_e) { /* noop */ }
                 this.state.form = {
                     name:                "",
                     environment:         this.props.environment || "staging",
@@ -653,6 +663,30 @@ export class InstanceDetail extends Component {
         return this.state.autoassignEnabled ? nameOk : nameOk && !!f.host_id;
     }
 
+    // ── Tags ─────────────────────────────────────────────────────────────
+
+    addTag(tag) {
+        if (!this.state.selectedTags.find(t => t.id === tag.id)) {
+            this.state.selectedTags.push(tag);
+        }
+    }
+
+    removeTag(tagId) {
+        const idx = this.state.selectedTags.findIndex(t => t.id === tagId);
+        if (idx !== -1) this.state.selectedTags.splice(idx, 1);
+    }
+
+    async createTag(name) {
+        const tag = await rpc("/cloud/create_tag", { name, scope: "instance" });
+        if (!this.state.allTags.find(t => t.id === tag.id)) {
+            this.state.allTags.push(tag);
+        }
+        return tag;
+    }
+
+    tagBadgeStyle(tag) { return tagStyle(tag); }
+    tagDotStyle(tag) { return tagDotStyle(tag); }
+
     async save() {
         if (this.state.saving) return;
         if (!this.isValid) return;
@@ -667,6 +701,7 @@ export class InstanceDetail extends Component {
                 smtp_cpus: parseFloat(this.state.form.smtp_cpus) || 0,
                 pip_dependencies: this.state.pipDeps,
                 apt_dependencies: this.state.aptDeps,
+                tag_ids: this.state.selectedTags.map(t => t.id),
             };
             if (this.isCreate) {
                 vals.project_id      = this.props.project_id;

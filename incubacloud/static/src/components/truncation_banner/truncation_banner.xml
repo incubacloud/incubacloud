@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud.TruncationBanner">
+    <t t-if="props.truncated">
+        <div class="ic-truncation-banner" role="status">
+            <i class="fa fa-exclamation-triangle"/>
+            <span>
+                Showing the first <t t-esc="props.limit"/>
+                of <t t-esc="props.total"/>
+                <t t-esc="props.label or 'records'"/>.
+                Use the search or filters to narrow down — full
+                pagination is coming in a future release.
+            </span>
+        </div>
+    </t>
+</t>
+
+</templates>

@@ -4,6 +4,7 @@ import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { PasswordInput } from "../password_input/password_input";
 import { RemoteFileBrowser } from "../remote_file_browser/remote_file_browser";
+import { TagSelector } from "../tag_selector/tag_selector";
 import { parseUTC } from "../../utils/dates";
 
 const TRAEFIK_FILES = [
@@ -30,7 +31,6 @@ const EMPTY_FORM = () => ({
     password:                 "",
     key_file:                 null,
     description:              "",
-    tags:                     "",
     wildcard_domain:          "",
     traefik_panel_password:   "",
     traefik_config_yml:       "",
@@ -44,7 +44,7 @@ const EMPTY_FORM = () => ({
 export class HostDetail extends Component {
     static props = { host_id: { type: Number, optional: true } };
     static template = "incubacloud.HostDetail";
-    static components = { PasswordInput, RemoteFileBrowser };
+    static components = { PasswordInput, RemoteFileBrowser, TagSelector };
 
     setup() {
         this.env = useEnv();
@@ -63,7 +63,13 @@ export class HostDetail extends Component {
             host: this.isNew ? { name: _t("New Host"), status: "unknown", instance_count: 0 } : null,
             form: this.isNew ? EMPTY_FORM() : {},
             has_password:              false,
+            has_key_file:              false,
+            has_known_hosts_key:       false,
             has_traefik_panel_password: false,
+            trusting_host_key:         false,
+            // Tags
+            selectedTags: [],
+            allTags: [],
             // Jobs
             jobs: [],
             jobsTotal: 0,
@@ -84,12 +90,30 @@ export class HostDetail extends Component {
             onWillStart(() => this.loadHost());
         }
 
+        this._busService = useService("bus_service");
+        this._onJobUpdate = async (payload) => {
+            if (this._destroyed) return;
+            try {
+                const [job] = await this.orm.call("cloud.job", "load_jobs", [payload.id]);
+                if (this._destroyed) return;
+                if (job && job.host_id === this.props.host_id) {
+                    this._silentRefresh();
+                }
+            } catch (_e) { console.debug("Bus handler skipped (component destroyed):", _e); }
+        };
+
         onMounted(() => {
             if (!this.isNew) {
                 this._pollTimer = setInterval(() => this._silentRefresh(), 8000);
+                this._busService.subscribe("cloud_jobs", this._onJobUpdate);
+                this._busService.start();
             }
         });
-        onWillUnmount(() => clearInterval(this._pollTimer));
+        onWillUnmount(() => {
+            this._destroyed = true;
+            clearInterval(this._pollTimer);
+            this._busService.unsubscribe("cloud_jobs", this._onJobUpdate);
+        });
     }
 
     // ── Data loading ─────────────────────────────────────────────────────
@@ -103,6 +127,10 @@ export class HostDetail extends Component {
                 traefik_yml: defaults.traefik_yml || "",
             });
         } catch (_e) { console.debug("Host defaults fetch skipped:", _e); }
+        try {
+            const tagsRes = await rpc("/cloud/get_tags", { scope: "host" });
+            this.state.allTags = tagsRes.tags || [];
+        } catch (_e) { console.debug("Host tag catalog fetch skipped:", _e); }
     }
 
     async loadHost() {
@@ -111,6 +139,8 @@ export class HostDetail extends Component {
             const host = await rpc("/cloud/get_host", { host_id: this.props.host_id });
             this.state.host = host;
             this.state.has_password               = host.has_password || false;
+            this.state.has_key_file               = host.has_key_file || false;
+            this.state.has_known_hosts_key        = host.has_known_hosts_key || false;
             this.state.has_traefik_panel_password  = host.has_traefik_panel_password || false;
             this.state.form = {
                 name:                     host.name || "",
@@ -122,7 +152,6 @@ export class HostDetail extends Component {
                 password:                 "",
                 key_file:                 null,
                 description:              host.description || "",
-                tags:                     host.tags || "",
                 wildcard_domain:          host.wildcard_domain || "",
                 traefik_panel_password:   "",
                 traefik_config_yml:       host.traefik_config_yml || "",
@@ -132,6 +161,8 @@ export class HostDetail extends Component {
                 whitelist:                host.whitelist || [],
                 newWhitelistEntry:        "",
             };
+            this.state.selectedTags = [...(host.tags || [])];
+            this.state.allTags = [...(host.all_tags || [])];
             this._loadJobs();
         } catch (e) {
             this.state.error = _t("Failed to load host.");
@@ -254,7 +285,7 @@ export class HostDetail extends Component {
             return;
         }
         const reader = new FileReader();
-        reader.onload = (e) => { this.state.form.key_file = e.target.result; };
+        reader.onload = (e) => { this.state.form.key_file = btoa(e.target.result); };
         reader.readAsText(file);
     }
 
@@ -302,6 +333,25 @@ export class HostDetail extends Component {
         }
     }
 
+    async trustHostKey() {
+        if (this.state.trusting_host_key) return;
+        this.state.trusting_host_key = true;
+        try {
+            const res = await rpc("/cloud/trust_host_key", { host_id: this.props.host_id });
+            if (res?.ok) {
+                this.state.has_known_hosts_key = true;
+                this.state.host = { ...this.state.host, has_known_hosts_key: true };
+                this.env.toast?.success(_t("SSH host key trusted successfully."));
+            } else {
+                this.env.toast?.error(res?.error || _t("Failed to trust SSH host key."));
+            }
+        } catch {
+            this.env.toast?.error(_t("Failed to trust SSH host key."));
+        } finally {
+            this.state.trusting_host_key = false;
+        }
+    }
+
     _validate() {
         const f = this.state.form;
         const missing = [];
@@ -324,6 +374,27 @@ export class HostDetail extends Component {
         return missing;
     }
 
+    // ── Tags ─────────────────────────────────────────────────────────────
+
+    addTag(tag) {
+        if (!this.state.selectedTags.find(t => t.id === tag.id)) {
+            this.state.selectedTags.push(tag);
+        }
+    }
+
+    removeTag(tagId) {
+        const idx = this.state.selectedTags.findIndex(t => t.id === tagId);
+        if (idx !== -1) this.state.selectedTags.splice(idx, 1);
+    }
+
+    async createTag(name) {
+        const tag = await rpc("/cloud/create_tag", { name, scope: "host" });
+        if (!this.state.allTags.find(t => t.id === tag.id)) {
+            this.state.allTags.push(tag);
+        }
+        return tag;
+    }
+
     async save() {
         if (this.state.saving) return;
         const missing = this._validate();
@@ -337,6 +408,7 @@ export class HostDetail extends Component {
             delete vals.newWhitelistEntry;
             vals.whitelist = Array.from(this.state.form.whitelist || []);
             if (vals.port) vals.port = parseInt(vals.port, 10);
+            vals.tag_ids = this.state.selectedTags.map(t => t.id);
 
             if (this.isNew) {
                 const result = await rpc("/cloud/create_host", { vals });
