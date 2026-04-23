@@ -77,13 +77,16 @@ jobs:
 
       - name: Install extra dependencies
         # CN-012/CN-020/CN-026: Exact pins match requirements.txt — reproducible CI.
-        # ``asyncssh`` pulls in ``cryptography>=39``; pip resolves the latest
-        # (46.x). Cryptography 45+ removed the ``X509_V_FLAG_NOTIFY_POLICY``
-        # FFI symbol, which the OCA image's bundled pyOpenSSL (24.x) still
-        # references at import time → ``ir_mail_server`` fails to import.
-        # Upgrading ``pyopenssl`` to 25.3+ drops that reference and restores
-        # compatibility with cryptography 46.
-        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3.0'
+        # ``asyncssh`` pulls in ``cryptography>=39``. Newer cryptography
+        # (42+) moved ``backends.openssl.x509._Certificate`` and dropped
+        # ``X509_V_FLAG_NOTIFY_POLICY``; both are still referenced by the
+        # OCA image's bundled ``urllib3==1.26.5`` and ``pyOpenSSL==24.x``,
+        # so ``ir_mail_server`` fails to import during ``odoo-init``.
+        # Capping at ``cryptography<42`` keeps the image's stack intact
+        # while satisfying asyncssh's floor. The runtime doodba image
+        # uses the security-pinned 46.x — see requirements.txt; pip-audit
+        # still gates it there.
+        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'cryptography>=39,<42'
 
       - name: Fetch OCA dependencies
         run: |
