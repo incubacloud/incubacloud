@@ -98,86 +98,84 @@
     </t>
 
     <!-- Addon conflict modal -->
-    <t t-if="state.addonConflictModal">
-        <div class="ic-confirm-overlay" t-on-click="closeAddonConflictModal">
-            <div class="ic-confirm-box ah-resolve-box" t-on-click.stop="">
-                <h3 class="ic-confirm-title">Resolve Addon Conflicts</h3>
-                <p class="ah-resolve-sub">
-                    Choose which repo should keep each addon.
-                    The other repo(s) will have it added to their <strong>Excludes</strong> automatically.
-                </p>
-                <div class="ah-conflicts-list">
-                    <t t-foreach="state.addonConflictModal.alert.conflict_data" t-as="c" t-key="c.addon">
-                        <div class="ah-conflict-row">
-                            <span class="ah-conflict-pkg" t-esc="c.addon"/>
-                            <div class="ah-conflict-options">
-                                <t t-foreach="c.repos || []" t-as="repo" t-key="repo">
-                                    <label class="ah-conflict-opt">
-                                        <input type="radio"
-                                               t-att-name="'addon_' + c.addon"
-                                               t-att-checked="state.addonConflictModal.choices[c.addon] === repo"
-                                               t-on-change="() => this.setAddonChoice(c.addon, repo)"/>
-                                        <code t-esc="repo"/>
-                                    </label>
-                                </t>
-                            </div>
-                        </div>
-                    </t>
+    <IcModal t-if="state.addonConflictModal"
+             title="'Resolve Addon Conflicts'"
+             boxClass="'ic-confirm-box ah-resolve-box'"
+             onClose="closeAddonConflictModal">
+        <h3 class="ic-confirm-title">Resolve Addon Conflicts</h3>
+        <p class="ah-resolve-sub">
+            Choose which repo should keep each addon.
+            The other repo(s) will have it added to their <strong>Excludes</strong> automatically.
+        </p>
+        <div class="ah-conflicts-list">
+            <t t-foreach="state.addonConflictModal.alert.conflict_data" t-as="c" t-key="c.addon">
+                <div class="ah-conflict-row">
+                    <span class="ah-conflict-pkg" t-esc="c.addon"/>
+                    <div class="ah-conflict-options">
+                        <t t-foreach="c.repos || []" t-as="repo" t-key="repo">
+                            <label class="ah-conflict-opt">
+                                <input type="radio"
+                                       t-att-name="'addon_' + c.addon"
+                                       t-att-checked="state.addonConflictModal.choices[c.addon] === repo"
+                                       t-on-change="() => this.setAddonChoice(c.addon, repo)"/>
+                                <code t-esc="repo"/>
+                            </label>
+                        </t>
+                    </div>
                 </div>
-                <div class="ic-confirm-actions ah-resolve-actions">
-                    <button class="ic-confirm-btn-cancel" t-on-click="closeAddonConflictModal">Cancel</button>
-                    <button class="ic-confirm-btn-ok" t-on-click="confirmResolveAddon">Apply &amp; Resolve</button>
-                </div>
-            </div>
+            </t>
         </div>
-    </t>
+        <div class="ic-confirm-actions ah-resolve-actions">
+            <button class="ic-confirm-btn-cancel" t-on-click="closeAddonConflictModal">Cancel</button>
+            <button class="ic-confirm-btn-ok" t-on-click="confirmResolveAddon">Apply &amp; Resolve</button>
+        </div>
+    </IcModal>
 
     <!-- Resolve pip conflict modal -->
-    <t t-if="state.resolveModal">
-        <div class="ic-confirm-overlay" t-on-click="closeResolveModal">
-            <div class="ic-confirm-box ah-resolve-box" t-on-click.stop="">
-                <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
-                <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
-                <div class="ah-conflicts-list">
-                    <t t-foreach="state.resolveModal.alert.conflict_data" t-as="c" t-key="c.name">
-                        <div class="ah-conflict-row">
-                            <span class="ah-conflict-pkg" t-esc="c.name"/>
-                            <div class="ah-conflict-options">
-                                <label class="ah-conflict-opt">
-                                    <input type="radio"
-                                           t-att-name="'conflict_' + c.name"
-                                           t-att-checked="state.resolveModal.choices[c.name] === c.existing"
-                                           t-on-change="() => this.setChoice(c.name, c.existing)"/>
-                                    <code t-esc="c.existing"/>
-                                    <span class="ah-conflict-hint"
-                                          t-esc="'(' + (c.existing_source || 'existing') + ')'"/>
-                                </label>
-                                <label class="ah-conflict-opt">
-                                    <input type="radio"
-                                           t-att-name="'conflict_' + c.name"
-                                           t-att-checked="state.resolveModal.choices[c.name] === c.incoming"
-                                           t-on-change="() => this.setChoice(c.name, c.incoming)"/>
-                                    <code t-esc="c.incoming"/>
-                                    <span class="ah-conflict-hint"
-                                          t-esc="'(' + (c.incoming_source || 'incoming') + ')'"/>
-                                </label>
-                            </div>
-                        </div>
-                    </t>
+    <IcModal t-if="state.resolveModal"
+             title="'Resolve Pip Conflicts'"
+             boxClass="'ic-confirm-box ah-resolve-box'"
+             onClose="closeResolveModal">
+        <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
+        <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
+        <div class="ah-conflicts-list">
+            <t t-foreach="state.resolveModal.alert.conflict_data" t-as="c" t-key="c.name">
+                <div class="ah-conflict-row">
+                    <span class="ah-conflict-pkg" t-esc="c.name"/>
+                    <div class="ah-conflict-options">
+                        <label class="ah-conflict-opt">
+                            <input type="radio"
+                                   t-att-name="'conflict_' + c.name"
+                                   t-att-checked="state.resolveModal.choices[c.name] === c.existing"
+                                   t-on-change="() => this.setChoice(c.name, c.existing)"/>
+                            <code t-esc="c.existing"/>
+                            <span class="ah-conflict-hint"
+                                  t-esc="'(' + (c.existing_source || 'existing') + ')'"/>
+                        </label>
+                        <label class="ah-conflict-opt">
+                            <input type="radio"
+                                   t-att-name="'conflict_' + c.name"
+                                   t-att-checked="state.resolveModal.choices[c.name] === c.incoming"
+                                   t-on-change="() => this.setChoice(c.name, c.incoming)"/>
+                            <code t-esc="c.incoming"/>
+                            <span class="ah-conflict-hint"
+                                  t-esc="'(' + (c.incoming_source || 'incoming') + ')'"/>
+                        </label>
+                    </div>
                 </div>
-                <div class="ic-confirm-actions ah-resolve-actions">
-                    <button class="ic-confirm-btn-cancel" t-on-click="closeResolveModal">Cancel</button>
-                    <t t-if="state.resolveModal.alert.instance_id">
-                        <button class="ic-btn-secondary" t-on-click="resolveManually"
-                                title="Dismiss alert and go to the instance editor to fix pip dependencies manually">
-                            Edit Manually
-                        </button>
-                    </t>
-                    <button class="ic-confirm-btn-ok" t-on-click="confirmResolve">Apply &amp; Resolve</button>
-                </div>
-            </div>
+            </t>
         </div>
-    </t>
+        <div class="ic-confirm-actions ah-resolve-actions">
+            <button class="ic-confirm-btn-cancel" t-on-click="closeResolveModal">Cancel</button>
+            <t t-if="state.resolveModal.alert.instance_id">
+                <button class="ic-btn-secondary" t-on-click="resolveManually"
+                        title="Dismiss alert and go to the instance editor to fix pip dependencies manually">
+                    Edit Manually
+                </button>
+            </t>
+            <button class="ic-confirm-btn-ok" t-on-click="confirmResolve">Apply &amp; Resolve</button>
+        </div>
+    </IcModal>
 
 </div>
 </t>

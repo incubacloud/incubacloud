@@ -431,6 +431,18 @@ class CloudJob(models.Model):
     # Override _get_hidden_job_types() in submodules to extend this list.
     _hidden_job_types = ["host_metrics", "docker_prune", "instance_health"]
 
+    # Job types whose failure should raise a critical alert — these
+    # are user-initiated, long-running operations whose failure the
+    # operator almost always wants to investigate immediately. Anything
+    # not listed here escalates to a ``warning`` alert instead. Extend
+    # by overriding ``_get_severe_job_types()`` in child modules.
+    _severe_job_types = frozenset({
+        "deploy_instance",
+        "rebuild_instance",
+        "tenant_deploy_instance",
+        "tenant_restore_backup",
+    })
+
     def _get_hidden_job_types(self):
         """Return job type codes that should not appear in the UI job drawer.
 
@@ -440,6 +452,93 @@ class CloudJob(models.Model):
                 return super()._get_hidden_job_types() + ['my_background_job']
         """
         return self._hidden_job_types.copy()
+
+    @api.model
+    def _get_severe_job_types(self):
+        """Return job type codes whose failure should raise a critical
+        alert. Override in child modules and call super() to extend.
+        """
+        return set(self._severe_job_types)
+
+    @api.model
+    def _create_job_failed_alert(self, cjob, exc_message=None):
+        """Persist a ``cloud.alert`` when a job transitions to failed.
+
+        Unlike the bus notification (which vanishes with the toast)
+        the alert shows up in the Alerts panel so an operator who
+        returns to the SPA later still sees the failure.
+
+        Filters:
+          * Hidden job types (``host_metrics``, ``instance_health``,
+            ``docker_prune`` …) are skipped — they self-heal on the
+            next tick and would flood the panel with noise.
+          * Jobs without any host/instance/project target are skipped;
+            the alert model requires at least one (constraint
+            ``_check_target``).
+        """
+        if cjob.job_type_id.code in self._get_hidden_job_types():
+            return None
+        # ``cloud.job.host_id`` is required by the schema, so every
+        # row has at least one target. Defensive check kept for child
+        # modules that might add more exotic job rows.
+        if not (cjob.host_id or cjob.instance_id):
+            _logger.warning(
+                "job_failed alert skipped: cjob id=%s has no host/"
+                "instance target",
+                cjob.id,
+            )
+            return None
+
+        level = (
+            'critical'
+            if cjob.job_type_id.code in self._get_severe_job_types()
+            else 'warning'
+        )
+        target_name = (
+            cjob.instance_id.name
+            or cjob.host_id.name
+            or ''
+        )
+        # Include a snippet of the exception for at-a-glance triage.
+        # Cap at 100 chars so the panel doesn't wrap into a wall of
+        # text; the job log has the full traceback.
+        msg = f"{cjob.name or 'Job'} on {target_name} failed"
+        if exc_message:
+            excerpt = exc_message.strip().split('\n', 1)[0][:100]
+            if excerpt:
+                msg = f"{msg}: {excerpt}"
+
+        vals = {
+            'code': 'job_failed',
+            'level': level,
+            'message': msg,
+            'job_id': cjob.id,
+        }
+        if cjob.instance_id:
+            vals['instance_id'] = cjob.instance_id.id
+            if cjob.instance_id.project_id:
+                vals['project_id'] = cjob.instance_id.project_id.id
+        if cjob.host_id:
+            vals['host_id'] = cjob.host_id.id
+
+        return self.env['cloud.alert'].sudo().create(vals)
+
+    @api.model
+    def _dismiss_job_failed_alerts(self, cjob):
+        """Mark active ``job_failed`` alerts for this cjob as dismissed.
+
+        Called when the same cloud.job later transitions to ``done``
+        (operator reintented and it worked). Keeps the Alerts panel
+        tidy — nobody wants to see resolved failures stacked.
+        """
+        stale = self.env['cloud.alert'].sudo().search([
+            ('code', '=', 'job_failed'),
+            ('job_id', '=', cjob.id),
+            ('state', '=', 'active'),
+        ])
+        if stale:
+            stale.write({'state': 'dismissed'})
+        return stale
 
     def _get_active_jobs(self):
         domain = [

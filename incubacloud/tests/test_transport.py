@@ -12,6 +12,9 @@ Covers:
 """
 import asyncio
 import unittest
+
+from odoo.tests.common import BaseCase
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch, call
 

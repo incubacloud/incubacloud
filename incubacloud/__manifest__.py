@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'Incubacloud',
-    'version': '1.0.1',
+    'version': '1.0.3',
     'summary': 'Deploy, manage and monitor doodba-based Odoo instances via SSH',
     'sequence': 10,
     'description': """
@@ -21,6 +21,12 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         'queue_job',
     ],
     'data': [
+        # Security loads first so groups and the cron bot user exist
+        # before any cron record (which references ``user_id``) is
+        # created by the data XMLs below.
+        'security/cloud_security.xml',
+        'security/ir.model.access.csv',
+        'security/cloud_rules.xml',
         # Data
         'data/job_type.xml',
         'data/host_metrics_cron.xml',
@@ -29,6 +35,10 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         'data/backup_cleanup_cron.xml',
         'data/backup_list_cron.xml',
         'data/audit_log_purge_cron.xml',
+        'data/rotate_secrets_cron.xml',
+        'data/github_event_purge_cron.xml',
+        'data/rate_limit_gc_cron.xml',
+        'data/terminal_route_gc_cron.xml',
         'data/traefik_templates.xml',
         # Views
         'views/dashboard_action.xml',
@@ -38,13 +48,10 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         'views/cloud_terminal_page.xml',
         'views/cloud_instance_logs.xml',
         'views/cloud_github_event.xml',
-        # Security
-        'security/cloud_security.xml',
-        'security/ir.model.access.csv',
-        'security/cloud_rules.xml',
     ],
     'installable': True,
     'application': True,
+    'post_init_hook': '_post_init_hook',
     'assets': {
         # Assets
         'incubacloud.base_app': [

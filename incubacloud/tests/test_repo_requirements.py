@@ -4,6 +4,9 @@ Tier 1 — Unit tests for _repo_requirements helpers.
 These tests cover the pure merge and parse logic without hitting the ORM.
 """
 import unittest
+
+from odoo.tests.common import BaseCase
+
 from odoo.addons.incubacloud.models._repo_requirements import (
     _parse_req_line,
     merge_pip_requirements,

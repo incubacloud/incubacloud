@@ -8,6 +8,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from odoo import http, _
+from odoo.addons.bus.websocket import WebsocketConnectionHandler
 from odoo.fields import Domain
 from odoo.http import request
 from odoo.tools import format_amount, file_open
@@ -52,6 +53,13 @@ class CloudController(Controller):
         job = request.env['cloud.job'].browse(job_id)
         if not job.exists():
             return request.not_found()
+        # Odoo rejects WebSocket handshakes whose ``version`` query
+        # parameter doesn't match the server's current
+        # ``WebsocketConnectionHandler._VERSION`` — it closes with
+        # CLEAN / OUTDATED_VERSION, which our inline client reads as a
+        # successful close and retries forever. Render the server's
+        # current version into the template so the terminal page tracks
+        # Odoo upgrades without a code change.
         context = {
             'job_id': job_id,
             'job_name': job.name or '',
@@ -60,6 +68,7 @@ class CloudController(Controller):
             'job_project': job.instance_id.project_id.name or '',
             'csrf_token': request.csrf_token(None),
             'session_info': request.env['ir.http'].session_info(),
+            'ws_version': WebsocketConnectionHandler._VERSION,
         }
         response = request.render('incubacloud.log_terminal', context)
         response.headers['Cache-Control'] = 'no-store'

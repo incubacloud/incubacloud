@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud.CoreRatesTab">
+    <t t-if="state.loading">
+        <div class="ic-detail-loading">Loading…</div>
+    </t>
+    <t t-else="">
+
+        <div class="ic-settings-section">
+            <div class="ic-settings-section-header">
+                <div>
+                    <h2 class="ic-settings-section-title">Rate limits for core endpoints</h2>
+                    <p class="ic-settings-section-desc">
+                        Protect the GitHub webhook and the terminal opener
+                        against CPU DoS and resource exhaustion. All values
+                        are requests per minute, tumbling window. Changes
+                        apply immediately — no redeploy needed. Set any
+                        field to a non-positive number and the model will
+                        fall back to the documented default.
+                    </p>
+                </div>
+            </div>
+
+            <div class="ic-form-grid">
+                <div class="ic-form-row">
+                    <label>GitHub webhook (per client IP)</label>
+                    <input type="number" min="1" class="filter-input"
+                           style="width:120px;"
+                           t-att-value="state.form.rate_limit_webhook_per_min"
+                           t-on-change="(ev) => this.onIntInput('rate_limit_webhook_per_min', ev)"/>
+                </div>
+                <div class="ic-form-row">
+                    <label>Terminal open (per instance)</label>
+                    <input type="number" min="1" class="filter-input"
+                           style="width:120px;"
+                           t-att-value="state.form.rate_limit_terminal_per_min"
+                           t-on-change="(ev) => this.onIntInput('rate_limit_terminal_per_min', ev)"/>
+                </div>
+                <div class="ic-form-row">
+                    <label>Terminal open (per user)</label>
+                    <input type="number" min="1" class="filter-input"
+                           style="width:120px;"
+                           t-att-value="state.form.rate_limit_terminal_user_per_min"
+                           t-on-change="(ev) => this.onIntInput('rate_limit_terminal_user_per_min', ev)"/>
+                </div>
+            </div>
+        </div>
+
+    </t>
+</t>
+
+</templates>

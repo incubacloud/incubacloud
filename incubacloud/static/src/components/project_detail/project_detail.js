@@ -3,6 +3,11 @@ import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { TagSelector } from "../tag_selector/tag_selector";
 import { RepoEditor } from "../repo_editor/repo_editor";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { IcModal } from "../ic_modal/ic_modal";
+import { useNavGuard } from "../../utils/use_nav_guard";
+import { useFormValidation } from "../../utils/use_form_validation";
+import { required } from "../../utils/validators";
 
 const ODOO_VERSIONS = [
     '7.0', '8.0', '9.0', '10.0', '11.0', '12.0', '13.0',
@@ -131,7 +136,7 @@ export class ProjectDetail extends Component {
         embedded:   { type: Boolean, optional: true },
     };
     static template = "incubacloud.ProjectDetail";
-    static components = { TagSelector, RepoEditor };
+    static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal };
 
     get isCreate() { return !this.props.project_id; }
     get odooVersions() { return ODOO_VERSIONS; }
@@ -175,20 +180,16 @@ export class ProjectDetail extends Component {
 
         this._savedForm = null;
 
-        this._onBeforeUnload = (e) => {
-            if (this.hasUnsavedChanges) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        };
+        this.validator = useFormValidation(() => ({
+            name: [required(_t("Project name is required"))],
+            odoo_version: [required(_t("Odoo version is required"))],
+        }));
 
         onWillStart(() => this.loadProject());
-        onMounted(() => {
-            window.addEventListener('beforeunload', this._onBeforeUnload);
-        });
-        onWillUnmount(() => {
-            window.removeEventListener('beforeunload', this._onBeforeUnload);
-        });
+        useNavGuard(
+            () => this.hasUnsavedChanges,
+            (opts) => this._confirm(opts),
+        );
     }
 
     async loadProject() {
@@ -451,15 +452,15 @@ export class ProjectDetail extends Component {
 
     }
 
-    get isValid() {
-        return !!(this.state.form.name && this.state.form.name.trim());
-    }
-
     // ── Save ─────────────────────────────────────────────────────────────────
 
     async save() {
         if (this.state.saving) return;
-        if (!this.isValid) return;
+        const { isValid, firstError } = this.validator.validate(this.state.form);
+        if (!isValid) {
+            this.env.toast?.error(firstError);
+            return;
+        }
         this.state.saving = true;
         try {
             const vals = {

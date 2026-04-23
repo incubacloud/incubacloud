@@ -350,7 +350,7 @@ def fetch_repo_addons(env, url, branch):
                 'User-Agent': 'incubacloud/1.0',
                 'Accept': 'application/vnd.github+json',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
             return sorted({
                 item['path'].rsplit('/', 2)[-2]
@@ -426,7 +426,7 @@ def fetch_requirements_txt(env, url, branch):
                 'User-Agent': 'incubacloud/1.0',
                 'Accept': 'application/vnd.github+json',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
                 content = data.get('content', '')
                 raw = content.replace('\n', '').replace(' ', '')
@@ -782,7 +782,7 @@ async def detect_addon_conflicts(env, repos):
             'Accept': 'application/vnd.github+json',
         })
         with suppress(Exception):
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
             return sorted({
                 item['path'].rsplit('/', 2)[-2]

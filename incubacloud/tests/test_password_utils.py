@@ -1,15 +1,23 @@
 """
 Tier 1 — Pure-Python unit tests for password_utils.
 No database required; run inside the Odoo test runner.
+
+Classes inherit from ``odoo.tests.common.BaseCase`` rather than
+``unittest.TestCase`` directly: BaseCase's ``__init_subclass__``
+populates ``test_tags = {'standard', 'at_install'}`` and
+``test_module``, which Odoo's tag selector requires. A plain
+``unittest.TestCase`` is silently skipped under
+``--test-tags /incubacloud``.
 """
 import os
-import unittest
 from unittest.mock import patch
+
+from odoo.tests.common import BaseCase
 
 import odoo.addons.incubacloud.models.password_utils as pw_mod
 
 
-class TestGeneratePassword(unittest.TestCase):
+class TestGeneratePassword(BaseCase):
 
     def test_returns_string(self):
         self.assertIsInstance(pw_mod.generate_password(), str)
@@ -28,7 +36,7 @@ class TestGeneratePassword(unittest.TestCase):
         self.assertEqual(len(passwords), 10)
 
 
-class TestIsEncrypted(unittest.TestCase):
+class TestIsEncrypted(BaseCase):
 
     def test_enc_prefix_true(self):
         self.assertTrue(pw_mod.is_encrypted("enc:sometoken=="))
@@ -46,7 +54,7 @@ class TestIsEncrypted(unittest.TestCase):
         self.assertFalse(pw_mod.is_encrypted("enctoken"))
 
 
-class TestEncryptDecrypt(unittest.TestCase):
+class TestEncryptDecrypt(BaseCase):
 
     def setUp(self):
         # Reset the lazy-loaded Fernet instance before every test
@@ -139,3 +147,84 @@ class TestEncryptDecrypt(unittest.TestCase):
             encrypted = pw_mod.encrypt_value(value)
             decrypted = pw_mod.decrypt_value(encrypted)
         self.assertEqual(decrypted, value)
+
+
+class TestMultiFernetRotation(BaseCase):
+    """Covers the comma-separated INCUBACLOUD_SECRET_KEY rotation path.
+
+    Invariants under test:
+      * Old ciphertext still decrypts when old key is trailing in the list.
+      * New encryptions bind to the primary (first) key only — old key alone
+        cannot decrypt them.
+      * ``rotate_value`` produces a token decryptable by the new key alone,
+        so operators can drop the old key after the rotation cron finishes.
+    """
+
+    def setUp(self):
+        pw_mod._fernet = None
+
+    def _fresh_key(self):
+        from cryptography.fernet import Fernet
+        return Fernet.generate_key().decode()
+
+    def test_multifernet_decrypts_old_key_ciphertext(self):
+        old_key = self._fresh_key()
+        new_key = self._fresh_key()
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": old_key}):
+            pw_mod._fernet = None
+            encrypted = pw_mod.encrypt_value("legacy")
+        with patch.dict(
+            os.environ, {"INCUBACLOUD_SECRET_KEY": f"{new_key},{old_key}"},
+        ):
+            pw_mod._fernet = None
+            self.assertEqual(pw_mod.decrypt_value(encrypted), "legacy")
+
+    def test_multifernet_encrypts_with_primary_key(self):
+        new_key = self._fresh_key()
+        old_key = self._fresh_key()
+        with patch.dict(
+            os.environ, {"INCUBACLOUD_SECRET_KEY": f"{new_key},{old_key}"},
+        ):
+            pw_mod._fernet = None
+            encrypted = pw_mod.encrypt_value("fresh")
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": new_key}):
+            pw_mod._fernet = None
+            self.assertEqual(pw_mod.decrypt_value(encrypted), "fresh")
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": old_key}):
+            pw_mod._fernet = None
+            with self.assertRaises(ValueError):
+                pw_mod.decrypt_value(encrypted)
+
+    def test_rotate_value_changes_ciphertext(self):
+        old_key = self._fresh_key()
+        new_key = self._fresh_key()
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": old_key}):
+            pw_mod._fernet = None
+            encrypted_old = pw_mod.encrypt_value("rotate-me")
+        with patch.dict(
+            os.environ, {"INCUBACLOUD_SECRET_KEY": f"{new_key},{old_key}"},
+        ):
+            pw_mod._fernet = None
+            encrypted_new = pw_mod.rotate_value(encrypted_old)
+        self.assertNotEqual(encrypted_old, encrypted_new)
+        self.assertTrue(encrypted_new.startswith("enc:"))
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": new_key}):
+            pw_mod._fernet = None
+            self.assertEqual(pw_mod.decrypt_value(encrypted_new), "rotate-me")
+
+    def test_rotate_value_empty_and_legacy_passthrough(self):
+        with patch.dict(os.environ, {"INCUBACLOUD_SECRET_KEY": self._fresh_key()}):
+            pw_mod._fernet = None
+            self.assertEqual(pw_mod.rotate_value(""), "")
+            self.assertIsNone(pw_mod.rotate_value(None))
+            self.assertEqual(pw_mod.rotate_value("plain-legacy"), "plain-legacy")
+
+    def test_rotate_value_no_key_raises(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(pw_mod.IncubacloudCryptoError):
+                pw_mod.rotate_value("enc:doesnotmatter==")
+
+    def test_parse_keys_strips_and_filters_blanks(self):
+        self.assertEqual(pw_mod._parse_keys("a,b,c"), [b"a", b"b", b"c"])
+        self.assertEqual(pw_mod._parse_keys(" a , , b "), [b"a", b"b"])
+        self.assertEqual(pw_mod._parse_keys(""), [])

@@ -168,7 +168,7 @@ class GitHubSetupController(http.Controller):
                 },
                 data=b"",
             )
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             body = exc.read().decode(errors="replace")

@@ -1,15 +1,18 @@
 """
-In-process SSH terminal sessions for the web terminal feature.
+``TerminalSession`` — SSH + PTY session lifecycle, reusable from
+inside ``incubacloud.terminal_subprocess``.
 
-Each session:
-  - Runs in a dedicated daemon thread with its own asyncio event loop.
-  - Opens an SSH connection to the host, then runs a PTY shell inside the
-    target Docker container (``docker exec -it <container> bash``).
-  - Buffers output as raw bytes chunks (monotonic sequence numbers).
-  - Accepts input bytes through a thread-safe list.
-  - Auto-closes after SESSION_TIMEOUT seconds of inactivity.
+Previously this module also kept an in-memory ``_sessions`` dict to
+let HTTP controllers look up active sessions. That registry
+broke under multi-worker Odoo: only the worker that opened the
+session could find it in its own memory. The fix (P1.25) moves
+session ownership into a per-session subprocess and uses
+``cloud.terminal.route`` as the shared lookup store, so this
+module now only defines the class itself.
 
-Global registry: ``_sessions`` dict keyed by session_id.
+The class is deliberately free of ``odoo.*`` imports so the
+subprocess can import it without paying the cost of the Odoo
+registry bootstrap on every new terminal (~10 s per open).
 """
 
 import asyncio
@@ -24,67 +27,9 @@ import asyncssh
 
 _logger = logging.getLogger(__name__)
 
-# Global session registry keyed by session_id → TerminalSession
-_sessions: dict = {}
-_sessions_lock = threading.Lock()
-
-# Seconds of inactivity before a session is force-closed
+# Seconds of inactivity (no user keystrokes) before a session is
+# force-closed by the subprocess watchdog.
 SESSION_TIMEOUT = 120
-# How often the cleanup daemon scans for expired sessions
-_CLEANUP_INTERVAL = 30
-
-
-def get_session(session_id):
-    with _sessions_lock:
-        return _sessions.get(session_id)
-
-
-def close_and_remove_session(session_id):
-    with _sessions_lock:
-        sess = _sessions.pop(session_id, None)
-    if sess:
-        sess.close()
-
-
-def register_session(sess):
-    with _sessions_lock:
-        _sessions[sess.session_id] = sess
-    _ensure_cleanup_daemon()
-
-
-# ── Background cleanup daemon ───────────────────────────────────────────────
-
-_cleanup_started = False
-_cleanup_lock = threading.Lock()
-
-
-def _ensure_cleanup_daemon():
-    global _cleanup_started
-    with _cleanup_lock:
-        if _cleanup_started:
-            return
-        _cleanup_started = True
-    t = threading.Thread(target=_cleanup_loop, daemon=True, name='terminal-cleanup')
-    t.start()
-
-
-def _cleanup_loop():
-    while True:
-        time.sleep(_CLEANUP_INTERVAL)
-        try:
-            _evict_expired()
-        except Exception:
-            _logger.exception("terminal cleanup error")
-
-
-def _evict_expired():
-    with _sessions_lock:
-        expired = [(sid, s) for sid, s in _sessions.items() if s.is_expired()]
-        for sid, _ in expired:
-            _sessions.pop(sid)
-    for sid, sess in expired:
-        _logger.info("terminal session %s timed out", sid[:8])
-        sess.close(reason='timeout')
 
 
 class TerminalSession:
@@ -106,6 +51,7 @@ class TerminalSession:
         instance_name='',
         environment='',
         user_id=None,
+        welcome_banner='',
     ):
         self.session_id = session_id
         self._ssh_connect_kwargs = ssh_connect_kwargs
@@ -116,6 +62,10 @@ class TerminalSession:
         self.instance_name = instance_name
         self.environment = environment
         self.user_id = user_id
+        # Pre-rendered, ANSI-coloured, already-translated welcome text.
+        # The controller builds it (it has ``_()`` available); this
+        # subprocess-side class stays free of ``odoo.*`` imports.
+        self.welcome_banner = welcome_banner or ''
 
         # Output buffer: list of (seq, bytes)
         self._output_buffer: list = []
@@ -188,77 +138,6 @@ class TerminalSession:
         with self._input_lock:
             self._input_queue.append(None)  # wake the writer coroutine
 
-    # ── Welcome banner ─────────────────────────────────────────────────────
-
-    def _build_welcome_banner(self) -> str:
-        """Return an ANSI-coloured welcome message as a string."""
-        R  = '\x1b[0m'       # reset
-        B  = '\x1b[1m'       # bold
-        DIM = '\x1b[2m'      # dim
-        # Colours
-        BRAND  = '\x1b[38;5;33m'   # IncubaCloud blue
-        ACCENT = '\x1b[38;5;45m'   # cyan
-        WARN   = '\x1b[38;5;214m'  # orange (production warning)
-        GRN    = '\x1b[38;5;82m'   # green (command names)
-        GREY   = '\x1b[38;5;245m'  # grey (descriptions)
-
-        env_colours = {
-            'production': '\x1b[38;5;196m',  # red
-            'staging':    '\x1b[38;5;214m',  # orange
-        }
-        env_label = (self.environment or 'unknown').capitalize()
-        env_col   = env_colours.get(self.environment, ACCENT)
-
-        header = (
-            f"\r\n"
-            f"  {BRAND}{B}☁  IncubaCloud Terminal{R}\r\n"
-            f"  {DIM}{'─' * 38}{R}\r\n"
-            f"  {GREY}Instance:{R}  {B}{self.instance_name or '—'}{R}\r\n"
-            f"  {GREY}Env:{R}       {env_col}{B}{env_label}{R}\r\n"
-            f"  {GREY}Service:{R}   {ACCENT}{self.service or 'odoo'}{R}\r\n"
-            f"  {DIM}{'─' * 38}{R}\r\n"
-        )
-
-        if self.environment == 'production':
-            header += (
-                f"  {WARN}{B}⚠  You are on PRODUCTION. Be careful.{R}\r\n"
-                f"  {DIM}{'─' * 38}{R}\r\n"
-            )
-
-        # Service-aware command hints
-        if self.service == 'db':
-            list_dbs = (
-                "SELECT datname FROM pg_database"
-                " WHERE datistemplate=false ORDER BY datname;"
-            )
-            cmds = [
-                ('psql -U odoo -d prod',                  'PostgreSQL console'),
-                (f'psql -U odoo -d prod -c "{list_dbs}"', 'List all databases'),
-                ('psql -U odoo -d <dbname>',              'Connect to a specific database'),
-            ]
-        elif self.service == 'odoo':
-            cmds = [
-                ('odoo shell --no-http',                           'Interactive Python/Odoo console'),
-                ('odoo -u <module> --stop-after-init --no-http',   'Update a module'),
-                ('psql',                                           'PostgreSQL console'),
-                ('ls /opt/odoo/auto/addons/',                      'List available addons'),
-                ('cat /opt/odoo/auto/odoo.conf',                   'View generated Odoo config'),
-                ('env | grep ODOO',                                'Show ODOO_* env vars'),
-                ('pip list | grep odoo',                           'List installed Odoo packages'),
-            ]
-        else:
-            cmds = []
-
-        if cmds:
-            lines = [f"\r\n  {B}{ACCENT}Useful commands:{R}\r\n"]
-            for cmd, desc in cmds:
-                lines.append(f"  {GRN}{cmd}{R}\r\n    {DIM}{desc}{R}\r\n")
-            lines.append('\r\n')
-        else:
-            lines = ['\r\n']
-
-        return header + ''.join(lines)
-
     # ── Private ────────────────────────────────────────────────────────────
 
     def _append_output(self, data: bytes):
@@ -323,7 +202,8 @@ class TerminalSession:
             ) as process:
                 self._process = process
                 self._connected = True
-                self._append_output(self._build_welcome_banner().encode())
+                if self.welcome_banner:
+                    self._append_output(self.welcome_banner.encode())
 
                 async def _read_output():
                     # Use read() not `async for` — the iterator waits for \n

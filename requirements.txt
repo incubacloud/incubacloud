@@ -4,7 +4,8 @@ asyncssh==2.22.0
 boto3==1.42.89
 # CN-018: >=44.0.1 required — fixes CVE-2023-49083, CVE-2024-6119, CVE-2024-12797.
 cryptography==46.0.7
-passlib[bcrypt]==1.7.4
 # CN-023: Explicit bcrypt pin — >=4.0.1 required for correct >72-byte error handling.
+# Called directly (not via passlib) because passlib 1.7.4 can't talk to bcrypt >= 5.
+# passlib itself still comes in transitively through Odoo core.
 bcrypt==5.0.0
 PyYAML==6.0.3

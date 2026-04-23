@@ -47,7 +47,7 @@ class GitHubPATClient:
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 — hardcoded https://api.github.com
                 return json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             raise GitHubAPIError(exc.code, exc.read().decode()) from exc
@@ -98,7 +98,7 @@ class GitHubAppClient:
             data=b"",
         )
         try:
-            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             raise GitHubAPIError(exc.code, exc.read().decode()) from exc
@@ -134,7 +134,7 @@ class GitHubAppClient:
             data=body,
         )
         try:
-            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 — hardcoded https://api.github.com
                 raw = resp.read()
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as exc:
@@ -199,7 +199,7 @@ class GitHubAppClient:
                 "X-GitHub-Api-Version": _GITHUB_API_VERSION,
             },
         )
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 — hardcoded https://api.github.com
             return json.loads(resp.read())
 
     def list_installations(self) -> list:

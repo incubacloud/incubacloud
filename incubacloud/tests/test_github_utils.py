@@ -10,10 +10,13 @@ import json
 import time
 import unittest
 
+from odoo.tests.common import BaseCase
+
+
 
 # ── validate_hmac_sha256 ──────────────────────────────────────────────────────
 
-class TestValidateHmacSha256(unittest.TestCase):
+class TestValidateHmacSha256(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.github.webhook_utils import validate_hmac_sha256
@@ -73,7 +76,7 @@ class TestValidateHmacSha256(unittest.TestCase):
 
 # ── generate_github_app_jwt ───────────────────────────────────────────────────
 
-class TestGenerateGitHubAppJwt(unittest.TestCase):
+class TestGenerateGitHubAppJwt(BaseCase):
 
     @classmethod
     def setUpClass(cls):

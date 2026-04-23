@@ -1,7 +1,8 @@
-import { Component, useState, onWillStart } from "@odoo/owl";
+import { Component, useState, onWillStart, useRef } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { rpc } from "@web/core/network/rpc";
 import { TagSelector } from "../tag_selector/tag_selector";
+import { useDialogA11y } from "../../utils/use_dialog_a11y";
 
 export class CreateProjectModal extends Component {
 
@@ -24,6 +25,8 @@ export class CreateProjectModal extends Component {
             error: null,
         });
         this.data = useState(this.env.dialogData);
+        this.boxRef = useRef("box");
+        useDialogA11y(this.boxRef, () => this.close());
 
         onWillStart(() => this.loadTags());
     }

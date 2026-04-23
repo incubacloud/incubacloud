@@ -7,13 +7,16 @@ tokens, passwords, and secrets from exported archives.
 import re
 import unittest
 
+from odoo.tests.common import BaseCase
+
+
 
 def _strip_tokens_from_repos_yaml(content):
     """Simulate the sed command: s|://x-access-token:[^@]*@|://|g"""
     return re.sub(r'://x-access-token:[^@]*@', '://', content)
 
 
-class TestStripTokensFromReposYaml(unittest.TestCase):
+class TestStripTokensFromReposYaml(BaseCase):
     """Test the regex that strips tokens from repos.yaml URLs."""
 
     def test_strip_pat_token(self):
@@ -57,7 +60,7 @@ class TestStripTokensFromReposYaml(unittest.TestCase):
         self.assertEqual(result, line)
 
 
-class TestSensitiveFileExclusions(unittest.TestCase):
+class TestSensitiveFileExclusions(BaseCase):
     """Verify the list of files that should be excluded or sanitized."""
 
     SENSITIVE_PATHS = {

@@ -6,12 +6,13 @@ backup_list_executor, plus cloud.instance.backup model sync.
 """
 import unittest
 
-from odoo.tests.common import TransactionCase
+
+from odoo.tests.common import TransactionCase, BaseCase
 
 
 # ── Tier 1: Pure parser tests ────────────────────────────────────────────────
 
-class TestParseDuplicityDate(unittest.TestCase):
+class TestParseDuplicityDate(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.backup_list_executor import (
@@ -34,7 +35,7 @@ class TestParseDuplicityDate(unittest.TestCase):
         self.assertEqual(result, 'not a date')
 
 
-class TestParseCollectionStatus(unittest.TestCase):
+class TestParseCollectionStatus(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.backup_list_executor import (

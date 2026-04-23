@@ -1,9 +1,12 @@
 /** @odoo-module **/
 
-import { Component, useState, onWillUnmount } from "@odoo/owl";
+import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
+import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { parseUTC } from "../../utils/dates";
+import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
+import { useDebouncedBus } from "../../utils/use_debounced_bus";
 
 export class Overview extends Component {
     setup() {
@@ -15,8 +18,31 @@ export class Overview extends Component {
         });
         this.loadData();
 
-        this._timer = setInterval(() => this.loadData(), 30000);
-        onWillUnmount(() => clearInterval(this._timer));
+        // Both channels invalidate the overview:
+        // ``cloud_overview`` → alerts state / counts changed.
+        // ``cloud_jobs``     → recent_jobs list changed (state transition).
+        // The single debouncer collapses the common "job completes +
+        // creates alert" case into one loadData() instead of two
+        // overlapping RPCs.
+        this._busService = useService("bus_service");
+        const triggerReload = useDebouncedBus(() => {
+            if (!this._destroyed) this.loadData();
+        });
+        this._onInvalidate = () => triggerReload();
+
+        onMounted(() => {
+            this._busService.subscribe("cloud_overview", this._onInvalidate);
+            this._busService.subscribe("cloud_jobs", this._onInvalidate);
+            this._busService.start();
+        });
+        onWillUnmount(() => {
+            this._destroyed = true;
+            this._busService.unsubscribe("cloud_overview", this._onInvalidate);
+            this._busService.unsubscribe("cloud_jobs", this._onInvalidate);
+        });
+        useVisibilityRefresh(() => {
+            if (!this._destroyed) this.loadData();
+        });
     }
 
     async loadData() {

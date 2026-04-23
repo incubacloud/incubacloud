@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import timedelta
 
-from odoo import fields, models
+from odoo import api, fields, models
 
 from ._repo_requirements import _normalize_url
 
@@ -53,6 +53,135 @@ class CloudGitHubEvent(models.Model):
         readonly=True,
         help="Error message if processing failed.",
     )
+
+    def init(self):
+        """Enforce anti-replay via a partial unique index on delivery_id.
+
+        GitHub guarantees the X-GitHub-Delivery UUID is unique per delivery,
+        so a duplicate means the same request was received twice — either a
+        GitHub retry after a transient 5xx or, more concerning, a captured
+        request being replayed by an attacker who cannot forge the HMAC but
+        can resend a valid one. Either way we want the second insert to fail
+        at the DB layer so the controller can swallow it without re-firing
+        the push / pull_request handlers.
+
+        Partial ``WHERE delivery_id != ''`` is the escape hatch for any
+        legacy rows persisted before this constraint was added (tests and
+        ad-hoc rows in older DBs). The webhook controller now rejects
+        empty delivery headers with 400, so no new empty rows can land.
+
+        The DELETE step is a one-shot dedupe keeping the oldest row
+        (smallest id). It's idempotent: on subsequent upgrades there are
+        no duplicates left, so the DELETE is a no-op.
+        """
+        cr = self.env.cr
+        cr.execute(
+            """
+            DELETE FROM cloud_github_event a
+            USING cloud_github_event b
+            WHERE a.delivery_id = b.delivery_id
+              AND a.delivery_id IS NOT NULL
+              AND a.delivery_id != ''
+              AND a.id > b.id
+            """
+        )
+        cr.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                cloud_github_event_delivery_id_uidx
+            ON cloud_github_event (delivery_id)
+            WHERE delivery_id IS NOT NULL AND delivery_id != ''
+            """
+        )
+
+    @api.model
+    def _purge_old(self):
+        """Two-stage retention run from the daily cron.
+
+        Stage 1 (``github_event_truncate_days``): replace the raw
+        payload of processed events older than N days with a compact
+        JSON stub that keeps only the fields used by downstream audit
+        — event type, ref, head sha, action, pusher login, and the
+        original payload size. This keeps the audit trail but releases
+        ~99% of the row size for big monorepo pushes.
+
+        Stage 2 (``github_event_retention_days``): delete processed
+        events older than N days outright. Unprocessed rows
+        (``processed=False`` or ``error`` set) are never auto-deleted
+        so an operator can still investigate failures after a month.
+
+        ``0`` disables the stage — explicit opt-out rather than a
+        silent "disabled by default".
+        """
+        settings = self.env['cloud.settings'].sudo()._get()
+        trunc_days = settings.github_event_truncate_days or 0
+        del_days = settings.github_event_retention_days or 0
+        now = fields.Datetime.now()
+
+        if trunc_days > 0:
+            cutoff = now - timedelta(days=trunc_days)
+            candidates = self.sudo().search([
+                ('processed', '=', True),
+                ('create_date', '<', cutoff),
+                ('payload', '!=', False),
+                ('payload', '!=', ''),
+                # Skip already-truncated rows: their payload is the
+                # compact stub and re-stubbing would be a no-op at best
+                # and miscount a 'truncated' every run at worst.
+                ('payload', 'not ilike', '"_truncated":true'),
+            ])
+            truncated = 0
+            for ev in candidates:
+                stub = ev._payload_stub()
+                if stub is not None and stub != ev.payload:
+                    ev.payload = stub
+                    truncated += 1
+            if truncated:
+                _logger.info(
+                    "cloud.github.event: truncated %d payload(s) "
+                    "older than %d days", truncated, trunc_days,
+                )
+
+        if del_days > 0:
+            cutoff = now - timedelta(days=del_days)
+            old = self.sudo().search([
+                ('processed', '=', True),
+                ('create_date', '<', cutoff),
+            ])
+            count = len(old)
+            if count:
+                old.unlink()
+                _logger.info(
+                    "cloud.github.event: purged %d row(s) "
+                    "older than %d days", count, del_days,
+                )
+
+    def _payload_stub(self):
+        """Return a compact JSON replacement preserving audit info.
+
+        The stub keeps: event_type, ref, head sha, action, pusher
+        login, and the original payload byte size. A truncated flag
+        marks the row so future re-processing attempts know the full
+        payload is no longer available.
+        """
+        self.ensure_one()
+        try:
+            data = json.loads(self.payload or '{}')
+        except (ValueError, TypeError):
+            data = {}
+        stub = {
+            '_truncated': True,
+            '_original_size': len(self.payload or ''),
+            'event_type': self.event_type or '',
+            'action': self.action or '',
+            'ref': data.get('ref', ''),
+            'after': data.get('after', '')[:40],
+            'pusher': (data.get('pusher') or {}).get('name', ''),
+            'repository': (
+                (data.get('repository') or {}).get('full_name', '')
+            ),
+        }
+        return json.dumps(stub, separators=(',', ':'))
 
     def _process_push_event(self):
         """Process a push webhook — trigger auto-rebuild for matching instances."""

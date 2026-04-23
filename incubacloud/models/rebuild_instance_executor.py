@@ -216,6 +216,15 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 ),
                 {"stop_on_failure": True},
             ),
+        ]
+        # 11 + 12: safe boot test and actual module update both rely
+        # on ``click-odoo-update``. When ``auto_update`` is disabled
+        # the operator manages module state manually, so skipping both
+        # avoids surprising DB migrations — at the cost of losing the
+        # boot validation. ``inst.auto_update`` defaults to True for
+        # all pre-existing instances, preserving current behavior.
+        if inst.auto_update:
+            cmds += [
             # 11. Safe boot test: clone the production DB, boot Odoo
             #     with the new image against the clone, and clean up.
             #     If the boot fails, stop_on_failure prevents up -d
@@ -279,6 +288,8 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f" --database {inst.postgres_dbname or 'prod'}",
                 {"stop_on_failure": True},
             ),
+            ]
+        cmds += [
             # 12b. Ensure incubacloud_connect is installed (restored DBs
             #      may not have it; click-odoo-update only updates, not installs).
             (

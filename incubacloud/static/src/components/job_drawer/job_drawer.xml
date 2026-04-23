@@ -104,21 +104,13 @@
         </div>
 
         <!-- Confirm dialog -->
-        <t t-if="state.confirmDialog">
-            <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
-                <div class="ic-confirm-box" t-on-click.stop="">
-                    <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
-                    <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
-                    <div class="ic-confirm-actions">
-                        <button class="ic-confirm-btn-cancel" t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
-                        <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
-                                t-on-click="() => state.confirmDialog.onConfirm()">
-                            <t t-esc="state.confirmDialog.confirmLabel"/>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </t>
+        <IcConfirmDialog t-if="state.confirmDialog"
+                         title="state.confirmDialog.title"
+                         message="state.confirmDialog.message"
+                         confirmLabel="state.confirmDialog.confirmLabel"
+                         isDanger="state.confirmDialog.isDanger"
+                         onConfirm="state.confirmDialog.onConfirm"
+                         onCancel="state.confirmDialog.onCancel"/>
 
     </aside>
 </t>

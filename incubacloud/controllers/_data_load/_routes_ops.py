@@ -21,6 +21,7 @@ from ._helpers import (
     _job_response,
     _quote_remote_path,
 )
+from .._safe_error import safe_error_response
 
 _logger = logging.getLogger(__name__)
 
@@ -38,8 +39,8 @@ class OpsMixin:
             return {'ok': False, 'error': _('Instance not found')}
         try:
             job_id = instance.deploy()
-        except (UserError, ValueError) as e:
-            return {'ok': False, 'error': str(e)}
+        except Exception as exc:
+            return safe_error_response(exc, _("Failed to deploy instance"))
         return _job_response(request.env, job_id)
 
     @http.route(['/cloud/rebuild_instance'], type='jsonrpc', auth='user')
@@ -54,8 +55,8 @@ class OpsMixin:
             job_id = request.env['cloud.job'].enqueue(
                 instance.host_id.id, instance_id, 'rebuild_instance',
             )
-        except UserError as e:
-            return {'ok': False, 'error': str(e)}
+        except Exception as exc:
+            return safe_error_response(exc, _("Failed to rebuild instance"))
         return _job_response(request.env, job_id)
 
     # ── Backup management ──────────────────────────────────────────────────
@@ -166,6 +167,36 @@ class OpsMixin:
         job_id = instance.download_backup({
             'time': time,
             'download_type': download_type,
+        })
+        return {'ok': True, 'job_id': job_id}
+
+    @http.route(
+        ['/cloud/download_backup_neutralized'],
+        type='jsonrpc', auth='user',
+    )
+    def cloud_download_backup_neutralized(
+        self, instance_id, time='live', with_filestore=False,
+    ):
+        """Download a neutralized backup.
+
+        Prod: ``time`` is a duplicity timestamp (or 'latest') — the S3
+        backup is restored into a throwaway DB that is neutralized and
+        re-dumped.
+
+        Non-prod: ``time='live'`` — the current DB is dumped on the fly,
+        neutralized into a throwaway DB and re-dumped.
+        """
+        self._sec()._check_can_manage_backups()
+        instance = request.env['cloud.instance'].browse(instance_id)
+        if not instance.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        if not instance.host_id:
+            return {'ok': False, 'error': _('Instance has no host configured')}
+        if not instance.deployed:
+            return {'ok': False, 'error': _('Instance is not deployed')}
+        job_id = instance.download_backup_neutralized({
+            'time': time,
+            'with_filestore': bool(with_filestore),
         })
         return {'ok': True, 'job_id': job_id}
 

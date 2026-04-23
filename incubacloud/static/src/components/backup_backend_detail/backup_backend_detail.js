@@ -2,6 +2,10 @@ import { Component, useState, onWillStart, useEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { PasswordInput } from "../password_input/password_input";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { useNavGuard } from "../../utils/use_nav_guard";
+import { useFormValidation } from "../../utils/use_form_validation";
+import { required, email, retention } from "../../utils/validators";
 
 const EMPTY_FORM = () => ({
     name:                  "",
@@ -24,7 +28,7 @@ const EMPTY_FORM = () => ({
 export class BackupBackendDetail extends Component {
     static props = { backend_id: { type: Number, optional: true } };
     static template = "incubacloud.BackupBackendDetail";
-    static components = { PasswordInput };
+    static components = { PasswordInput, IcConfirmDialog };
 
     setup() {
         this.env = useEnv();
@@ -44,9 +48,38 @@ export class BackupBackendDetail extends Component {
             confirmDialog: null,
         });
 
+        this._savedForm = null;
+
+        this.validator = useFormValidation(() => ({
+            name: [required(_t("Backend name is required"))],
+            s3_bucket: [required(_t("Bucket is required"))],
+            email_from: [email(_t("Sender email is invalid"))],
+            email_to: [email(_t("Recipient email is invalid"))],
+            backup_retention: [retention(_t("Use N + D/M/Y (e.g. 30D, 3M, 1Y)"))],
+        }));
+
         if (!this.isNew) {
             onWillStart(() => this.loadBackend());
+        } else {
+            // For the "new" flow the form starts with defaults — treat
+            // those as the baseline so the nav guard only fires if the
+            // user actually typed something.
+            this._snapshotForm();
         }
+
+        useNavGuard(
+            () => this.hasUnsavedChanges,
+            (opts) => this._confirm(opts),
+        );
+    }
+
+    get hasUnsavedChanges() {
+        if (!this._savedForm) return false;
+        return JSON.stringify(this.state.form) !== this._savedForm;
+    }
+
+    _snapshotForm() {
+        this._savedForm = JSON.stringify(this.state.form);
     }
 
     async loadBackend() {
@@ -79,6 +112,7 @@ export class BackupBackendDetail extends Component {
                 deletion_via_cron:    b.deletion_via_cron || false,
                 backup_tz:            b.backup_tz || "UTC",
             };
+            this._snapshotForm();
         } catch (e) {
             this.state.error = _t("Failed to load backup backend.");
         } finally {
@@ -105,19 +139,11 @@ export class BackupBackendDetail extends Component {
         this.state.tab = tab;
     }
 
-    _validate() {
-        const f = this.state.form;
-        const missing = [];
-        if (!f.name?.trim()) missing.push(_t("Name"));
-        if (!f.s3_bucket?.trim()) missing.push(_t("Bucket"));
-        return missing;
-    }
-
     async save() {
         if (this.state.saving) return;
-        const missing = this._validate();
-        if (missing.length) {
-            this.env.toast?.error(_t("Required fields missing: %s").replace('%s', missing.join(", ")));
+        const { isValid, firstError } = this.validator.validate(this.state.form);
+        if (!isValid) {
+            this.env.toast?.error(firstError);
             return;
         }
         this.state.saving = true;
@@ -125,6 +151,7 @@ export class BackupBackendDetail extends Component {
             const vals = { ...this.state.form };
             if (this.isNew) {
                 const result = await rpc("/cloud/create_backup_backend", { vals });
+                this._snapshotForm();
                 this.env.navigate("backup_backend_detail", { backend_id: result.id });
             } else {
                 await rpc("/cloud/save_backup_backend", {
@@ -132,6 +159,7 @@ export class BackupBackendDetail extends Component {
                     vals,
                 });
                 this.state.backend.name = vals.name;
+                this._snapshotForm();
                 this.env.toast?.success(_t("Changes saved"));
             }
         } catch (e) {

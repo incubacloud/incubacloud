@@ -3,9 +3,11 @@
 import { Component, useState, useEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { parseUTC } from "../../utils/dates";
+import { IcModal } from "../ic_modal/ic_modal";
 
 export class AlertHistory extends Component {
     static template = "incubacloud.AlertHistory";
+    static components = { IcModal };
     static props = {
         embedded: { type: Boolean, optional: true },
     };

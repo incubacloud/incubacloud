@@ -32,20 +32,6 @@
             <field name="description">Full host setup: checks OS/disk, installs all tools, deploys Traefik.</field>
         </record>
 
-        <record id="setup_host" model="cloud.job.type">
-            <field name="name">Setup Host</field>
-            <field name="code">setup_host</field>
-            <field name="apply_to">host</field>
-            <field name="description">Installs deployment tools (pipx, copier, invoke, pre-commit) on the host.</field>
-        </record>
-
-        <record id="setup_traefik" model="cloud.job.type">
-            <field name="name">Setup Traefik</field>
-            <field name="code">setup_traefik</field>
-            <field name="apply_to">host</field>
-            <field name="description">Deploys the Traefik reverse proxy on the host.</field>
-        </record>
-
         <record id="start_instance" model="cloud.job.type">
             <field name="name">Start Instance</field>
             <field name="code">start_instance</field>
@@ -150,6 +136,13 @@
             <field name="code">backup_download</field>
             <field name="apply_to">instance</field>
             <field name="description">Downloads a specific backup from duplicity as a ZIP file.</field>
+        </record>
+
+        <record id="backup_download_neutralized" model="cloud.job.type">
+            <field name="name">Download Neutralized Backup</field>
+            <field name="code">backup_download_neutralized</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Downloads a neutralized copy of a backup (crons off, mail servers archived, credentials scrubbed, database.is_neutralized=true). Safe for testing/troubleshooting.</field>
         </record>
 
         <record id="backup_restore" model="cloud.job.type">

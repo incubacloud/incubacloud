@@ -207,6 +207,82 @@
                 }).then(function (r) { return r.json(); }).then(function (r) { return r.result; });
             }
 
+            /* ── ANSI SGR → styled spans ──
+             * Docker compose logs stream ANSI escape sequences
+             * (``\x1b[…m``) when the service uses a TTY. Without a
+             * parser the ESC byte renders as a ▯ box in the middle
+             * of every line. Same logic as in log_terminal_page.xml
+             * — kept inline to avoid an asset bundle for a standalone
+             * HTML page. */
+            var ANSI_BASIC = {
+                30:'#000', 31:'#e06060', 32:'#60c060', 33:'#e0c060', 34:'#6088e0', 35:'#c060c0', 36:'#4ec9b0', 37:'#d4d4d4',
+                90:'#666', 91:'#f48771', 92:'#8ae066', 93:'#ffd060', 94:'#88aaff', 95:'#ff88ff', 96:'#88ffff', 97:'#fff'
+            };
+            function ansi256(n) {
+                if (n &lt; 16) return ANSI_BASIC[n &lt; 8 ? 30 + n : 82 + n];
+                if (n &lt; 232) {
+                    n -= 16;
+                    var scale = [0, 95, 135, 175, 215, 255];
+                    return 'rgb(' + scale[Math.floor(n/36)] + ',' + scale[Math.floor((n%36)/6)] + ',' + scale[n%6] + ')';
+                }
+                var v = 8 + (n - 232) * 10;
+                return 'rgb(' + v + ',' + v + ',' + v + ')';
+            }
+            function applyAnsiCodes(state, raw) {
+                var codes = (raw === '' ? [0] : raw.split(';').map(function (x) { return parseInt(x, 10); }));
+                for (var i = 0; i &lt; codes.length; i++) {
+                    var c = codes[i];
+                    if (!isFinite(c) || c === 0)      { state.fg = null; state.bg = null; state.bold = false; state.dim = false; state.italic = false; state.underline = false; }
+                    else if (c === 1)                 { state.bold = true; }
+                    else if (c === 2)                 { state.dim = true; }
+                    else if (c === 3)                 { state.italic = true; }
+                    else if (c === 4)                 { state.underline = true; }
+                    else if (c === 22)                { state.bold = false; state.dim = false; }
+                    else if (c === 23)                { state.italic = false; }
+                    else if (c === 24)                { state.underline = false; }
+                    else if (c === 39)                { state.fg = null; }
+                    else if (c === 49)                { state.bg = null; }
+                    else if (c >= 30 &amp;&amp; c &lt;= 37)     { state.fg = ANSI_BASIC[c]; }
+                    else if (c >= 40 &amp;&amp; c &lt;= 47)     { state.bg = ANSI_BASIC[c - 10]; }
+                    else if (c >= 90 &amp;&amp; c &lt;= 97)     { state.fg = ANSI_BASIC[c]; }
+                    else if (c >= 100 &amp;&amp; c &lt;= 107)   { state.bg = ANSI_BASIC[c - 10]; }
+                    else if (c === 38 &amp;&amp; codes[i+1] === 5) { state.fg = ansi256(codes[i+2] || 0); i += 2; }
+                    else if (c === 48 &amp;&amp; codes[i+1] === 5) { state.bg = ansi256(codes[i+2] || 0); i += 2; }
+                    else if (c === 38 &amp;&amp; codes[i+1] === 2) { state.fg = 'rgb(' + (codes[i+2]||0) + ',' + (codes[i+3]||0) + ',' + (codes[i+4]||0) + ')'; i += 4; }
+                    else if (c === 48 &amp;&amp; codes[i+1] === 2) { state.bg = 'rgb(' + (codes[i+2]||0) + ',' + (codes[i+3]||0) + ',' + (codes[i+4]||0) + ')'; i += 4; }
+                }
+            }
+            function emitRun(parent, text, state) {
+                if (!text) return;
+                if (!state.fg &amp;&amp; !state.bg &amp;&amp; !state.bold &amp;&amp; !state.dim &amp;&amp; !state.italic &amp;&amp; !state.underline) {
+                    parent.appendChild(document.createTextNode(text));
+                    return;
+                }
+                var span = document.createElement('span');
+                var css = '';
+                if (state.fg) css += 'color:' + state.fg + ';';
+                if (state.bg) css += 'background:' + state.bg + ';';
+                if (state.bold) css += 'font-weight:bold;';
+                if (state.dim) css += 'opacity:0.65;';
+                if (state.italic) css += 'font-style:italic;';
+                if (state.underline) css += 'text-decoration:underline;';
+                span.style.cssText = css;
+                span.textContent = text;
+                parent.appendChild(span);
+            }
+            function appendAnsiText(parent, text) {
+                var re = /\x1b\[([0-9;]*)m/g;
+                var state = { fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+                var last = 0;
+                var m;
+                while ((m = re.exec(text)) !== null) {
+                    if (m.index > last) emitRun(parent, text.slice(last, m.index), state);
+                    applyAnsiCodes(state, m[1]);
+                    last = re.lastIndex;
+                }
+                if (last &lt; text.length) emitRun(parent, text.slice(last), state);
+            }
+
             /* ── Render ── */
             function render() {
                 var filtered = query
@@ -226,7 +302,7 @@
                     filtered.forEach(function (line) {
                         var div = document.createElement('div');
                         div.className = 'log-line' + (query ? ' hl' : '');
-                        div.textContent = line;
+                        appendAnsiText(div, line);
                         frag.appendChild(div);
                     });
                     terminal.appendChild(frag);

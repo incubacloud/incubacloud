@@ -6,14 +6,15 @@ Tier 1 & 2 — Tests for deploy_instance_executor helpers:
   - _repos_yaml_content (Tier 2)
 """
 import unittest
+
 from unittest.mock import patch, MagicMock
 
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, BaseCase
 
 
 # ── Tier 1: _github_authed_url ───────────────────────────────────────────────
 
-class TestGithubAuthedUrl(unittest.TestCase):
+class TestGithubAuthedUrl(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
@@ -58,7 +59,7 @@ class TestGithubAuthedUrl(unittest.TestCase):
 
 # ── Tier 1: _get_token_for_repo (mocked HTTP) ───────────────────────────────
 
-class TestGetTokenForRepo(unittest.TestCase):
+class TestGetTokenForRepo(BaseCase):
     """Test token resolution per-repo with mocked GitHub API."""
 
     def _make_executor(self):

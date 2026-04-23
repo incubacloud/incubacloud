@@ -2,11 +2,15 @@ import { Component, useState, onWillUnmount } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { parseUTC } from "../../utils/dates";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { useDebouncedBus } from "../../utils/use_debounced_bus";
+import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 
 const ACTIVE_STATES = ["pending", "enqueued", "wait_dependencies", "started", "blocked"];
 
 export class JobDrawer extends Component {
     static template = "incubacloud.JobDrawer";
+    static components = { IcConfirmDialog };
 
     setup() {
         this.state = useState({
@@ -16,13 +20,24 @@ export class JobDrawer extends Component {
 
         this.orm = useService("orm");
         this.busService = useService("bus_service");
-        this._boundOnJobUpdate = this.onJobUpdate.bind(this);
+        // Debounce ``fetchJob``: chunk-flush storms during a running
+        // build otherwise fire dozens of ``load_jobs(id)`` RPCs per
+        // second. ``last-write-wins`` means if two different jobs
+        // transition within 300 ms we only fetch the latest one; the
+        // visibility refresh + the next event's window absorb the
+        // miss, and ``loadInitialJobs`` re-hydrates the full list on
+        // tab focus as a safety net.
+        const triggerFetch = useDebouncedBus((jobId) => {
+            if (jobId != null) this.fetchJob(jobId);
+        });
+        this._boundOnJobUpdate = (payload) => triggerFetch(payload.id);
         this.busService.subscribe("cloud_jobs", this._boundOnJobUpdate);
         this.busService.start();
         this.loadInitialJobs();
         onWillUnmount(() => {
             this.busService.unsubscribe("cloud_jobs", this._boundOnJobUpdate);
         });
+        useVisibilityRefresh(() => this.loadInitialJobs());
     }
 
     // ───────────── Getters ─────────────
@@ -67,12 +82,6 @@ export class JobDrawer extends Component {
         } else {
             this.state.jobs.unshift(job);
         }
-    }
-
-    // ───────────── Bus handling ─────────────
-
-    onJobUpdate(payload) {
-        this.fetchJob(payload.id);
     }
 
     // ───────────── UI actions ─────────────

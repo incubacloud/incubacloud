@@ -69,7 +69,7 @@ jobs:
 
       - name: Install extra dependencies
         # CN-012/CN-020/CN-026: Exact pins match requirements.txt — reproducible CI.
-        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'cryptography==46.0.7' 'passlib[bcrypt]==1.7.4' 'bcrypt==5.0.0'
+        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'cryptography==46.0.7' 'bcrypt==5.0.0'
 
       - name: Fetch OCA dependencies
         run: |
@@ -84,3 +84,67 @@ jobs:
 
       - name: Run tests
         run: oca_run_tests
+
+  bandit:
+    name: Security (bandit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # CN-009: Pinned to commit SHA to prevent mutable-tag supply-chain attacks.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install bandit
+        run: pip install 'bandit==1.8.6'
+
+      # ``-ll -iii`` = medium+ severity, high confidence. Drops the
+      # long tail of low-severity guesses (``assert`` in tests,
+      # ``random`` used for non-crypto, etc.) that bandit flags by
+      # default and that have no security impact in this codebase.
+      - name: Run bandit
+        run: bandit -r incubacloud/ incubacloud_connect/ -ll -iii
+
+  pip-audit:
+    name: Deps audit (pip-audit)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install 'pip-audit==2.9.0'
+
+      # ``--strict`` makes pip-audit fail on ANY finding; the CI
+      # becomes the gate. ``requirements-ci.txt`` mirrors pip.txt
+      # (minus the openupgradelib git URL, which pip-audit cannot
+      # resolve against PyPI).
+      - name: Run pip-audit
+        run: pip-audit --strict -r requirements-ci.txt
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          # gitleaks scans history, not just the working tree, so we
+          # need the full commit graph. The shallow default (depth=1)
+          # would hide any secret committed in the past and only
+          # detect re-introductions.
+          fetch-depth: 0
+
+      # CN-009: Pinned to commit SHA; v2.3.9 at time of writing.
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

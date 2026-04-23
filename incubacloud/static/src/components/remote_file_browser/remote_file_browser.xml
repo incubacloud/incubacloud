@@ -2,10 +2,15 @@
 
     <t t-name="incubacloud.RemoteFileBrowser">
         <div class="ic-modal-overlay" t-on-click.self="props.onCancel">
-            <div class="ic-modal ic-modal--filebrowser" t-on-click.stop="">
+            <div class="ic-modal ic-modal--filebrowser"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="ic-remote-browser-title"
+                 t-ref="box"
+                 t-on-click.stop="">
 
                 <header class="ic-modal__header">
-                    <h3>Import Instance from Host</h3>
+                    <h3 id="ic-remote-browser-title">Import Instance from Host</h3>
                     <button t-if="state.step !== 'importing'"
                             class="ic-modal__close" t-on-click="props.onCancel">✕</button>
                 </header>

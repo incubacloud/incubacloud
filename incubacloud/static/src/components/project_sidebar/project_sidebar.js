@@ -3,9 +3,12 @@ import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
+import { IcModal } from "../ic_modal/ic_modal";
+import { useDebouncedBus } from "../../utils/use_debounced_bus";
 
 export class ProjectSidebar extends Component {
     static template = "incubacloud.ProjectSidebar";
+    static components = { IcModal };
     static props = {
         projectId:          { type: Number },
         currentRoute:       { type: String },
@@ -26,14 +29,15 @@ export class ProjectSidebar extends Component {
         this.orm = useService("orm");
         this._busService = useService("bus_service");
 
-        this._onJobUpdate = async (payload) => {
-            if (this._destroyed) return;
-            try {
-                // Refresh on every job state change so instance status dots
-                // (deployed, running, provisioning) update in real time.
-                await this._silentRefresh();
-            } catch (_e) { console.debug("Bus handler skipped (component destroyed):", _e); }
-        };
+        // Every job state change can flip an instance status dot
+        // (deployed/running/provisioning) in the sidebar, so we
+        // refresh on any cloud_jobs event. The debouncer collapses
+        // chunk-flush storms during a running build to ~3 refreshes/s
+        // instead of dozens.
+        const triggerRefresh = useDebouncedBus(() => {
+            if (!this._destroyed) this._silentRefresh();
+        });
+        this._onJobUpdate = (payload) => triggerRefresh(payload.id);
         this._busService.subscribe("cloud_jobs", this._onJobUpdate);
 
         // Register sidebar callbacks so instance_detail can call them

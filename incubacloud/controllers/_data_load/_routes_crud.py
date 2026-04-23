@@ -26,11 +26,13 @@ from ...models._repo_requirements import (
     fetch_requirements_txt,
     merge_pip_requirements,
 )
+from .._safe_error import safe_error_response
 from ._helpers import (
     _LIST_MAX,
     _SECRET_FIELDS,
     _TAG_MODEL_BY_SCOPE,
     _capped_search,
+    _has_encrypted,
     _has_pat,
 )
 
@@ -189,9 +191,10 @@ class CrudMixin:
                     'port': host.port,
                     'user': host.user,
                     'login_type': host.login_type,
-                    'has_password': bool(host.password),
-                    'has_key_file': bool(host.key_file),
-                    'has_known_hosts_key': bool(host.known_hosts_key),
+                    'has_password': _has_encrypted(host, 'password'),
+                    'has_key_file': _has_encrypted(host, 'key_file'),
+                    'has_known_hosts_key':
+                        _has_encrypted(host, 'known_hosts_key'),
                     'cpu_cores': host.cpu_cores,
                     'ram_total_gb': host.ram_total_gb,
                     'disk': round(host.disk_usage),
@@ -299,8 +302,10 @@ class CrudMixin:
             return {'ok': False, 'error': _('Instance or project not found')}
         try:
             diff = compare_instance_project(inst)
-        except ValueError as exc:
-            return {'ok': False, 'error': str(exc)}
+        except Exception as exc:
+            return safe_error_response(
+                exc, _("Failed to compare instance with project"),
+            )
         return {'ok': True, 'diff': diff}
 
     @http.route(['/cloud/apply_sync'], type='jsonrpc', auth='user')
@@ -472,9 +477,9 @@ class CrudMixin:
             'port': host.port,
             'user': host.user,
             'login_type': host.login_type,
-            'has_password': bool(host.password),
-            'has_key_file': bool(host.key_file),
-            'has_known_hosts_key': bool(host.known_hosts_key),
+            'has_password': _has_encrypted(host, 'password'),
+            'has_key_file': _has_encrypted(host, 'key_file'),
+            'has_known_hosts_key': _has_encrypted(host, 'known_hosts_key'),
             'description': host.description,
             'tags': [
                 {'id': t.id, 'name': t.name, 'color': t.color}
@@ -494,7 +499,8 @@ class CrudMixin:
             'instance_count': len(host.instance_ids),
             'traefik_deployed': host.traefik_deployed,
             'wildcard_domain': host.wildcard_domain or '',
-            'has_traefik_panel_password': bool(host.traefik_panel_password),
+            'has_traefik_panel_password':
+                _has_encrypted(host, 'traefik_panel_password'),
             'traefik_config_yml': host.traefik_config_yml or '',
             'traefik_inverseproxy_yaml': host.traefik_inverseproxy_yaml or '',
             'traefik_yml': host.traefik_yml or '',
@@ -1071,6 +1077,43 @@ class CrudMixin:
         })
         return {'ok': True}
 
+    # ── Core rate-limit settings ──────────────────────────────────────────
+
+    @http.route(['/cloud/get_core_rate_limits'], type='jsonrpc', auth='user')
+    def cloud_get_core_rate_limits(self):
+        """Return the configured caps for the core-owned rate limits.
+
+        Mirrored on the Rates tab in Settings. Values are per-minute.
+        """
+        self._sec()._check_can_manage_hosts()
+        s = request.env['cloud.settings'].sudo()._get()
+        return {
+            'rate_limit_webhook_per_min': s.rate_limit_webhook_per_min or 0,
+            'rate_limit_terminal_per_min': s.rate_limit_terminal_per_min or 0,
+            'rate_limit_terminal_user_per_min': (
+                s.rate_limit_terminal_user_per_min or 0
+            ),
+        }
+
+    @http.route(['/cloud/save_core_rate_limits'], type='jsonrpc', auth='user')
+    def cloud_save_core_rate_limits(self, vals):
+        """Persist the core rate-limit caps. Any non-positive value is
+        stored as 0 and the model treats 0 as "use documented default"
+        so a misconfiguration can't accidentally lock everyone out.
+        """
+        self._sec()._check_can_manage_hosts()
+        allowed = {
+            'rate_limit_webhook_per_min',
+            'rate_limit_terminal_per_min',
+            'rate_limit_terminal_user_per_min',
+        }
+        safe = {
+            k: max(0, int(v or 0))
+            for k, v in (vals or {}).items() if k in allowed
+        }
+        request.env['cloud.settings'].sudo()._get().write(safe)
+        return {'ok': True}
+
     @http.route(['/cloud/get_langs'], type='jsonrpc', auth='user')
     def cloud_get_langs(self):
         langs = request.env['res.lang'].with_context(active_test=False).search(
@@ -1104,6 +1147,7 @@ class CrudMixin:
             'deployed': inst.deployed,
             'running': inst.running,
             'auto_rebuild': inst.auto_rebuild,
+            'auto_update': inst.auto_update,
             'tags': [
                 {'id': t.id, 'name': t.name, 'color': t.color}
                 for t in inst.tag_ids
@@ -1124,18 +1168,21 @@ class CrudMixin:
             'last_deploy_date': last_deploy.create_date if last_deploy else None,
             'last_deploy_state': last_deploy.state if last_deploy else None,
             'odoo_initial_lang': inst.odoo_initial_lang.id if inst.odoo_initial_lang else None,
-            'has_odoo_admin_password': bool(inst.odoo_admin_password),
+            'has_odoo_admin_password':
+                _has_encrypted(inst, 'odoo_admin_password'),
             'odoo_proxy': inst.odoo_proxy or 'traefik',
             'postgres_version': inst.postgres_version or '17',
             'postgres_dbname': inst.postgres_dbname or '',
             'postgres_username': inst.postgres_username or '',
-            'has_postgres_password': bool(inst.postgres_password),
+            'has_postgres_password':
+                _has_encrypted(inst, 'postgres_password'),
             'domain': inst.domain or '',
             'smtp_relay_host': inst.smtp_relay_host or '',
             'smtp_relay_port': inst.smtp_relay_port or 587,
             'smtp_relay_security': inst.smtp_relay_security or 'starttls',
             'smtp_relay_user': inst.smtp_relay_user or '',
-            'has_smtp_relay_password': bool(inst.smtp_relay_password),
+            'has_smtp_relay_password':
+                _has_encrypted(inst, 'smtp_relay_password'),
             'odoo_conf': inst.odoo_conf or '',
             'odoo_memory_limit': inst.odoo_memory_limit or '',
             'odoo_cpus': inst.odoo_cpus or 0,
@@ -1246,7 +1293,7 @@ class CrudMixin:
         'smtp_relay_host', 'smtp_relay_port', 'smtp_relay_security',
         'smtp_relay_user', 'smtp_relay_password',
         'odoo_conf', 'pip_dependencies', 'apt_dependencies',
-        'backup_backend_id', 'auto_rebuild', 'tag_ids',
+        'backup_backend_id', 'auto_rebuild', 'auto_update', 'tag_ids',
         'odoo_memory_limit', 'odoo_cpus',
         'db_memory_limit', 'db_cpus',
         'backup_memory_limit', 'backup_cpus',

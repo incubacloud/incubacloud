@@ -12,10 +12,23 @@ from odoo.tests.common import HttpCase
 
 @tagged('-at_install', 'post_install')
 class TestCloudHealth(HttpCase):
+    """The probe targets a public endpoint that still needs a DB context
+    (``auth='public'`` routes are registered per-DB in Odoo 19, not
+    server-wide). We pass ``X-Odoo-Database`` explicitly to mimic what a
+    real probe configures via the Host/DB-selector layer in front of
+    Odoo (nginx/Traefik rule, or a cookie). Without the header the
+    dispatcher returns 404 with ``"No database is selected"``.
+    """
+
+    def _probe(self):
+        return self.url_open(
+            '/cloud/health',
+            headers={'X-Odoo-Database': self.env.cr.dbname},
+        )
 
     def test_health_ok_returns_200_and_json(self):
         """Happy path: DB responds + cloud module is loaded."""
-        response = self.url_open('/cloud/health')
+        response = self._probe()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.headers.get('Content-Type'),
@@ -36,5 +49,5 @@ class TestCloudHealth(HttpCase):
         whole point of a liveness probe."""
         # Drop any session state the test harness may have set up.
         self.opener.cookies.clear()
-        response = self.url_open('/cloud/health')
+        response = self._probe()
         self.assertEqual(response.status_code, 200)

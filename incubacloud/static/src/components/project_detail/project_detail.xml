@@ -91,11 +91,15 @@
                     <!-- General tab -->
                     <t t-if="state.tab === 'general'">
                         <div class="ic-form-grid">
-                            <div class="ic-form-row">
-                                <label>Name</label>
+                            <div t-att-class="'ic-form-row' + (validator.fieldError('name') ? ' has-error' : '')">
+                                <label>Name <span class="ic-required">*</span></label>
                                 <input type="text"
                                        t-att-value="state.form.name"
-                                       t-on-input="(ev) => this.onInput('name', ev)"/>
+                                       t-on-input="(ev) => this.onInput('name', ev)"
+                                       t-on-blur="() => validator.touch('name')"/>
+                                <t t-if="validator.fieldError('name')">
+                                    <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                                </t>
                             </div>
                             <div class="ic-form-row">
                                 <label>Author</label>
@@ -104,8 +108,8 @@
                                        t-att-value="state.form.project_author"
                                        t-on-input="(ev) => this.onInput('project_author', ev)"/>
                             </div>
-                            <div class="ic-form-row">
-                                <label>Odoo Version</label>
+                            <div t-att-class="'ic-form-row' + (validator.fieldError('odoo_version') ? ' has-error' : '')">
+                                <label>Odoo Version <span class="ic-required">*</span></label>
                                 <select t-on-change="(ev) => this.onInput('odoo_version', ev)">
                                     <t t-foreach="odooVersions" t-as="v" t-key="v">
                                         <option t-att-value="v"
@@ -114,6 +118,9 @@
                                         </option>
                                     </t>
                                 </select>
+                                <t t-if="validator.fieldError('odoo_version')">
+                                    <span class="ic-field-error" t-esc="validator.fieldError('odoo_version')"/>
+                                </t>
                             </div>
                             <div class="ic-form-row">
                                 <label>Initial Language</label>
@@ -359,62 +366,53 @@
             </t>
 
             <!-- Confirm dialog -->
-            <t t-if="state.confirmDialog">
-                <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
-                    <div class="ic-confirm-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
-                        <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
-                            <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
-                                    t-on-click="() => state.confirmDialog.onConfirm()">
-                                <t t-esc="state.confirmDialog.confirmLabel"/>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </t>
+            <IcConfirmDialog t-if="state.confirmDialog"
+                             title="state.confirmDialog.title"
+                             message="state.confirmDialog.message"
+                             confirmLabel="state.confirmDialog.confirmLabel"
+                             isDanger="state.confirmDialog.isDanger"
+                             onConfirm="state.confirmDialog.onConfirm"
+                             onCancel="state.confirmDialog.onCancel"/>
 
             <!-- Pip conflict resolve modal -->
-            <t t-if="state.pipConflictModal">
-                <div class="ic-confirm-overlay" t-on-click="closePipConflictModal">
-                    <div class="ic-confirm-box ah-resolve-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
-                        <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
-                        <div class="ah-conflicts-list">
-                            <t t-foreach="state.pipConflictModal.conflicts" t-as="c" t-key="c.name">
-                                <div class="ah-conflict-row">
-                                    <span class="ah-conflict-pkg" t-esc="c.name"/>
-                                    <div class="ah-conflict-options">
-                                        <label class="ah-conflict-opt">
-                                            <input type="radio"
-                                                   t-att-name="'conflict_' + c.name"
-                                                   t-att-checked="state.pipConflictModal.choices[c.name] === c.existing"
-                                                   t-on-change="() => this.setPipChoice(c.name, c.existing)"/>
-                                            <code t-esc="c.existing"/>
-                                            <span class="ah-conflict-hint"
-                                                  t-esc="'(' + (c.existingSource || 'existing') + ')'"/>
-                                        </label>
-                                        <label class="ah-conflict-opt">
-                                            <input type="radio"
-                                                   t-att-name="'conflict_' + c.name"
-                                                   t-att-checked="state.pipConflictModal.choices[c.name] === c.incoming"
-                                                   t-on-change="() => this.setPipChoice(c.name, c.incoming)"/>
-                                            <code t-esc="c.incoming"/>
-                                            <span class="ah-conflict-hint"
-                                                  t-esc="'(' + (c.incomingSource || 'incoming') + ')'"/>
-                                        </label>
-                                    </div>
-                                </div>
-                            </t>
+            <IcModal t-if="state.pipConflictModal"
+                     title="'Resolve Pip Conflicts'"
+                     boxClass="'ic-confirm-box ah-resolve-box'"
+                     onClose="closePipConflictModal">
+                <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
+                <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
+                <div class="ah-conflicts-list">
+                    <t t-foreach="state.pipConflictModal.conflicts" t-as="c" t-key="c.name">
+                        <div class="ah-conflict-row">
+                            <span class="ah-conflict-pkg" t-esc="c.name"/>
+                            <div class="ah-conflict-options">
+                                <label class="ah-conflict-opt">
+                                    <input type="radio"
+                                           t-att-name="'conflict_' + c.name"
+                                           t-att-checked="state.pipConflictModal.choices[c.name] === c.existing"
+                                           t-on-change="() => this.setPipChoice(c.name, c.existing)"/>
+                                    <code t-esc="c.existing"/>
+                                    <span class="ah-conflict-hint"
+                                          t-esc="'(' + (c.existingSource || 'existing') + ')'"/>
+                                </label>
+                                <label class="ah-conflict-opt">
+                                    <input type="radio"
+                                           t-att-name="'conflict_' + c.name"
+                                           t-att-checked="state.pipConflictModal.choices[c.name] === c.incoming"
+                                           t-on-change="() => this.setPipChoice(c.name, c.incoming)"/>
+                                    <code t-esc="c.incoming"/>
+                                    <span class="ah-conflict-hint"
+                                          t-esc="'(' + (c.incomingSource || 'incoming') + ')'"/>
+                                </label>
+                            </div>
                         </div>
-                        <div class="ic-confirm-actions ah-resolve-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="closePipConflictModal">Edit Manually</button>
-                            <button class="ic-confirm-btn-ok" t-on-click="confirmPipResolve">Apply &amp; Resolve</button>
-                        </div>
-                    </div>
+                    </t>
                 </div>
-            </t>
+                <div class="ic-confirm-actions ah-resolve-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closePipConflictModal">Edit Manually</button>
+                    <button class="ic-confirm-btn-ok" t-on-click="confirmPipResolve">Apply &amp; Resolve</button>
+                </div>
+            </IcModal>
 
         </div>
     </t>

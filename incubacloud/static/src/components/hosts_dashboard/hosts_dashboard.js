@@ -6,6 +6,8 @@ import { _t } from "@web/core/l10n/translation";
 import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
 import { parseUTC } from "../../utils/dates";
 import { TruncationBanner } from "../truncation_banner/truncation_banner";
+import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
+import { useDebouncedBus } from "../../utils/use_debounced_bus";
 
 export class HostsDashboard extends Component {
     static components = { TruncationBanner };
@@ -31,24 +33,26 @@ export class HostsDashboard extends Component {
         this.loadHosts();
 
         this._busService = useService("bus_service");
-        this._onJobUpdate = async (payload) => {
-            if (this._destroyed) return;
-            try {
-                const [job] = await this.orm.call("cloud.job", "load_jobs", [payload.id]);
-                if (this._destroyed) return;
-                if (job && ["done", "failed", "cancelled"].includes(job.state)) {
-                    this.loadHosts();
-                }
-            } catch (_e) { console.debug("Bus handler skipped (component destroyed):", _e); }
-        };
+        // Debounced reload. We used to fetch the job details first to
+        // check ``state in (done, failed, cancelled)`` — but hosts
+        // show metrics and last-job info that can change on any
+        // transition, not just terminal ones. Refreshing on every
+        // event (coalesced to 300 ms) is correct and cheaper.
+        const triggerRefresh = useDebouncedBus(() => {
+            if (!this._destroyed) this.loadHosts();
+        });
+        this._onJobUpdate = (payload) => triggerRefresh(payload.id);
         this._busService.subscribe("cloud_jobs", this._onJobUpdate);
         this._busService.start();
 
-        this._refreshTimer = setInterval(() => this.loadHosts(), 30000);
         onWillUnmount(() => {
             this._destroyed = true;
-            clearInterval(this._refreshTimer);
             this._busService.unsubscribe("cloud_jobs", this._onJobUpdate);
+        });
+        // Bus covers the happy path; ``visibilitychange`` refresh catches
+        // events dropped while the tab was backgrounded.
+        useVisibilityRefresh(() => {
+            if (!this._destroyed) this.loadHosts();
         });
     }
 

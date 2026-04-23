@@ -1,7 +1,8 @@
-import { Component, useState } from "@odoo/owl";
+import { Component, useState, useRef } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { SearchSelect } from "../search_select/search_select";
+import { useDialogA11y } from "../../utils/use_dialog_a11y";
 
 /** Convert git@github.com:owner/repo.git → https://github.com/owner/repo.git */
 function toHttpsUrl(url) {
@@ -36,6 +37,8 @@ export class ImportProjectModal extends Component {
             result: null,
         });
         this.data = useState(this.env.dialogData);
+        this.boxRef = useRef("box");
+        useDialogA11y(this.boxRef, () => this.close());
     }
 
     async close() {
