@@ -77,12 +77,13 @@ jobs:
 
       - name: Install extra dependencies
         # CN-012/CN-020/CN-026: Exact pins match requirements.txt — reproducible CI.
-        # ``cryptography`` is intentionally NOT pinned here: the OCA CI image
-        # ships a pyOpenSSL built against its own cryptography version, and
-        # upgrading to 46.0.7 in-place breaks the OpenSSL import (missing
-        # ``X509_V_FLAG_NOTIFY_POLICY``). The security pin lives in
-        # requirements.txt for the runtime image; pip-audit still gates it.
-        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0'
+        # ``asyncssh`` pulls in ``cryptography>=39``; pip resolves the latest
+        # (46.x). Cryptography 45+ removed the ``X509_V_FLAG_NOTIFY_POLICY``
+        # FFI symbol, which the OCA image's bundled pyOpenSSL (24.x) still
+        # references at import time → ``ir_mail_server`` fails to import.
+        # Upgrading ``pyopenssl`` to 25.3+ drops that reference and restores
+        # compatibility with cryptography 46.
+        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3.0'
 
       - name: Fetch OCA dependencies
         run: |
