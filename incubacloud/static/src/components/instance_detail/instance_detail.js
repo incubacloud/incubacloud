@@ -4,8 +4,16 @@ import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { RepoEditor } from "../repo_editor/repo_editor";
 import { parseUTC } from "../../utils/dates";
+import { useSafePoll } from "../../utils/use_safe_poll";
+import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
+import { useDebouncedBus } from "../../utils/use_debounced_bus";
+import { useNavGuard } from "../../utils/use_nav_guard";
+import { useFormValidation } from "../../utils/use_form_validation";
+import { required, instanceName, portRange, when } from "../../utils/validators";
 import { PasswordInput } from "../password_input/password_input";
 import { TagSelector, tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { IcModal } from "../ic_modal/ic_modal";
 
 const ODOO_VERSIONS = [
     "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
@@ -131,7 +139,7 @@ export class InstanceDetail extends Component {
         embedded:    { type: Boolean, optional: true },
     };
     static template = "incubacloud.InstanceDetail";
-    static components = { RepoEditor, PasswordInput, TagSelector };
+    static components = { RepoEditor, PasswordInput, TagSelector, IcConfirmDialog, IcModal };
 
     get isCreate() {
         return !this.props.instance_id;
@@ -202,19 +210,34 @@ export class InstanceDetail extends Component {
 
         this._pollTimer = null;
         this._savedForm = null;
+
+        this.validator = useFormValidation(() => ({
+            name: [
+                required(_t("Instance name is required")),
+                instanceName(),
+            ],
+            host_id: [
+                when(
+                    () => !this.state.autoassignEnabled,
+                    required(_t("Host is required when auto-assign is disabled")),
+                ),
+            ],
+            smtp_relay_port: [portRange()],
+        }));
         this._busService = useService("bus_service");
+        // Shared guard for every recursive setTimeout(poll, …) in this
+        // component. Registers onWillUnmount so zombie ticks can't
+        // write into a destroyed component's state.
+        this._safePoll = useSafePoll();
 
-        this._onBeforeUnload = (e) => {
-            if (this.hasUnsavedChanges) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        };
-
-        this._onJobUpdate = async (payload) => {
-            if (this._destroyed) return;
+        // Debounced refresh. We also need to know when a job reaches a
+        // terminal state to refresh the sidebar, so we keep a single
+        // ``load_jobs(id)`` per window (once, on the last id) instead
+        // of the per-event double fetch.
+        const triggerRefresh = useDebouncedBus(async (jobId) => {
+            if (this._destroyed || jobId == null) return;
             try {
-                const [job] = await this.orm.call("cloud.job", "load_jobs", [payload.id]);
+                const [job] = await this.orm.call("cloud.job", "load_jobs", [jobId]);
                 if (this._destroyed) return;
                 if (job && job.instance_id === this.props.instance_id) {
                     this._silentRefresh();
@@ -222,22 +245,30 @@ export class InstanceDetail extends Component {
                         this.env.refreshSidebar?.();
                     }
                 }
-            } catch (_e) { console.debug("Bus handler skipped (component destroyed):", _e); }
-        };
+            } catch (_e) { /* component torn down mid-flight */ }
+        });
+        this._onJobUpdate = (payload) => triggerRefresh(payload.id);
 
         onWillStart(() => this.load());
         onMounted(() => {
-            window.addEventListener('beforeunload', this._onBeforeUnload);
             if (!this.isCreate) {
-                this._pollTimer = setInterval(() => this._silentRefresh(), 8000);
                 this._busService.subscribe("cloud_jobs", this._onJobUpdate);
             }
         });
         onWillUnmount(() => {
-            window.removeEventListener('beforeunload', this._onBeforeUnload);
             this._destroyed = true;
-            clearInterval(this._pollTimer);
             this._busService.unsubscribe("cloud_jobs", this._onJobUpdate);
+        });
+        // Nav guard owns the ``beforeunload`` listener now — the old
+        // direct listener was superseded to avoid duplicate handlers.
+        useNavGuard(
+            () => this.hasUnsavedChanges,
+            (opts) => this._confirm(opts),
+        );
+        // Bus covers the happy path; ``visibilitychange`` refresh catches
+        // events dropped while the tab was backgrounded.
+        useVisibilityRefresh(() => {
+            if (!this.isCreate && !this._destroyed) this._silentRefresh();
         });
     }
 
@@ -383,6 +414,7 @@ export class InstanceDetail extends Component {
             smtp_cpus:           inst.smtp_cpus || 0.25,
             backup_backend_id:   inst.backup_backend_id || null,
             auto_rebuild:        inst.auto_rebuild || false,
+            auto_update:         inst.auto_update !== false,
             repos: (inst.repos || []).map(r => ({ ...r })),
         };
         this.state.selectedTags = [...(inst.tags || [])];
@@ -448,6 +480,7 @@ export class InstanceDetail extends Component {
                     smtp_cpus:           0.25,
                     backup_backend_id:   project?.backup_backend_id || null,
                     auto_rebuild:        false,
+                    auto_update:         true,
                     repos,
                 };
                 this._savedForm = JSON.stringify(this.state.form);
@@ -657,12 +690,6 @@ export class InstanceDetail extends Component {
 
     }
 
-    get isValid() {
-        const f = this.state.form;
-        const nameOk = !!f.name.trim();
-        return this.state.autoassignEnabled ? nameOk : nameOk && !!f.host_id;
-    }
-
     // ── Tags ─────────────────────────────────────────────────────────────
 
     addTag(tag) {
@@ -689,7 +716,11 @@ export class InstanceDetail extends Component {
 
     async save() {
         if (this.state.saving) return;
-        if (!this.isValid) return;
+        const { isValid, firstError } = this.validator.validate(this.state.form);
+        if (!isValid) {
+            this.env.toast?.error(firstError);
+            return;
+        }
         this.state.saving = true;
         try {
             const vals = {
@@ -712,6 +743,10 @@ export class InstanceDetail extends Component {
                     this.env.toast?.error(result.message || _t("Cannot create instance: project has unresolved conflicts."));
                     return;
                 }
+                // Clear the dirty baseline before navigating so the nav
+                // guard doesn't fire on the programmatic transition from
+                // the create route to the new instance's detail route.
+                this._savedForm = JSON.stringify(this.state.form);
                 await this.env.refreshSidebar?.();
                 this.env.navigate("instance_detail", {
                     project_id: this.props.project_id,
@@ -1284,8 +1319,14 @@ export class InstanceDetail extends Component {
         const jobId = this.state.backupsJobId;
         if (!jobId) return;
         const poll = async () => {
+            // Component may have unmounted while awaiting the previous
+            // RPC. Double-checking inside the tick complements the
+            // clearTimeout inside useSafePoll: the clear kills the
+            // queued callback, this kills any RPC already in flight.
+            if (!this._safePoll.alive) return;
             try {
                 const res = await rpc("/cloud/get_backup_result", { job_id: jobId });
+                if (!this._safePoll.alive) return;
                 if (!res.ok) {
                     this.state.backupsError = res.error || _t("Backup scan failed.");
                     this.state.backupsLoading = false;
@@ -1301,15 +1342,16 @@ export class InstanceDetail extends Component {
                     }
                     return;
                 }
-                setTimeout(poll, 2000);
+                this._safePoll.schedule(poll, 2000);
             } catch (e) {
+                if (!this._safePoll.alive) return;
                 this.state.backupsError = _t("Lost connection while scanning.");
                 this.state.backupsLoading = false;
                 this.state.actionLoading = false;
                 this._pendingDownloadLatest = false;
             }
         };
-        setTimeout(poll, 1500);
+        this._safePoll.schedule(poll, 1500);
     }
 
     async createBackup() {
@@ -1349,16 +1391,19 @@ export class InstanceDetail extends Component {
     _openLatestDownload() {
         const backups = this.state.backupsData?.backups || [];
         if (backups.length) {
-            this.openDownloadModal(backups[0].time);
+            this.openDownloadModal(backups[0].time, backups[0].attachment_id || null);
         } else {
             this.state.backupsError = _t("No backups available. Create one first.");
         }
     }
 
-    // Download modal for production (choose dump vs all)
-    openDownloadModal(backupTime) {
+    // Download modal: Type of dump (Neutralized/Exact) × Filestore (without/with).
+    // Defaults mirror odoo.sh: Neutralized + Without filestore.
+    openDownloadModal(backupTime, attachmentId = null) {
         this.state.downloadModal = {
             time: backupTime,
+            attachmentId: attachmentId,
+            mode: 'neutral',
             type: 'dump',
             loading: false,
         };
@@ -1366,16 +1411,46 @@ export class InstanceDetail extends Component {
 
     closeDownloadModal() { this.state.downloadModal = null; }
 
+    get isLiveNeutralDump() {
+        const d = this.state.downloadModal;
+        if (!d) return false;
+        const isProd = this.state.inst?.environment === 'production';
+        return d.mode === 'neutral' && !isProd;
+    }
+
     async doDownloadBackup() {
         const d = this.state.downloadModal;
         if (!d || d.loading) return;
+
+        // Exact + attachment shortcut: pre-built non-prod ZIPs are served
+        // directly without going through a job. The attachment already
+        // contains dump + filestore; the Filestore radio is ignored in
+        // this case.
+        if (d.mode === 'exact' && d.attachmentId) {
+            window.location.href = `/web/content/${d.attachmentId}?download=true`;
+            this.state.downloadModal = null;
+            return;
+        }
+
         d.loading = true;
         try {
-            const res = await rpc("/cloud/download_backup", {
-                instance_id: this.props.instance_id,
-                time: d.time,
-                download_type: d.type,
-            });
+            let res;
+            if (d.mode === 'neutral') {
+                // Non-prod has no historical DB snapshots on the host;
+                // always dump the live DB before neutralizing.
+                const isProd = this.state.inst?.environment === 'production';
+                res = await rpc("/cloud/download_backup_neutralized", {
+                    instance_id: this.props.instance_id,
+                    time: isProd ? d.time : 'live',
+                    with_filestore: d.type === 'all',
+                });
+            } else {
+                res = await rpc("/cloud/download_backup", {
+                    instance_id: this.props.instance_id,
+                    time: d.time,
+                    download_type: d.type,
+                });
+            }
             if (!res.ok) {
                 this.state.backupsError = res.error;
                 d.loading = false;
@@ -1465,20 +1540,22 @@ export class InstanceDetail extends Component {
 
     _waitForDeleteJob(jobId) {
         const poll = async () => {
+            if (!this._safePoll.alive) return;
             try {
                 const [job] = await this.orm.call(
                     "cloud.job", "load_jobs", [jobId],
                 );
+                if (!this._safePoll.alive) return;
                 if (job && ['done', 'failed'].includes(job.state)) {
                     this._navigateAfterDelete();
                     return;
                 }
-                setTimeout(poll, 3000);
+                this._safePoll.schedule(poll, 3000);
             } catch (_) {
-                setTimeout(poll, 3000);
+                this._safePoll.schedule(poll, 3000);
             }
         };
-        setTimeout(poll, 2000);
+        this._safePoll.schedule(poll, 2000);
     }
 
     async _loadAuditLog() {

@@ -100,39 +100,37 @@
             </t>
 
             <!-- Clone to staging modal -->
-            <t t-if="state.cloneModal">
-                <div class="ic-confirm-overlay" t-on-click="() => { state.cloneModal = null; }">
-                    <div class="ic-confirm-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title">Clone to Staging</h3>
-                        <p class="ic-confirm-message">
-                            Create a staging copy with the production database.
-                        </p>
-                        <div class="ic-clone-input">
-                            <label>Staging name</label>
-                            <input type="text"
-                                   t-att-value="state.cloneModal.name"
-                                   t-on-input="(ev) => { state.cloneModal.name = ev.target.value; }"/>
-                        </div>
-                        <t t-if="state.cloneModal.error">
-                            <div class="ic-restore-error" t-esc="state.cloneModal.error"/>
-                        </t>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel"
-                                    t-on-click="() => { state.cloneModal = null; }">Cancel</button>
-                            <button class="ic-confirm-btn-ok"
-                                    t-att-disabled="!state.cloneModal.name.trim() or state.cloneModal.loading"
-                                    t-on-click="doClone">
-                                <t t-if="state.cloneModal.loading">
-                                    <i class="fa fa-spinner fa-spin"/> Cloning…
-                                </t>
-                                <t t-else="">
-                                    <i class="fa fa-arrow-down"/> Clone
-                                </t>
-                            </button>
-                        </div>
-                    </div>
+            <IcModal t-if="state.cloneModal"
+                     title="'Clone to Staging'"
+                     onClose="() => { state.cloneModal = null; }">
+                <h3 class="ic-confirm-title">Clone to Staging</h3>
+                <p class="ic-confirm-message">
+                    Create a staging copy with the production database.
+                </p>
+                <div class="ic-clone-input">
+                    <label>Staging name</label>
+                    <input type="text"
+                           t-att-value="state.cloneModal.name"
+                           t-on-input="(ev) => { state.cloneModal.name = ev.target.value; }"/>
                 </div>
-            </t>
+                <t t-if="state.cloneModal.error">
+                    <div class="ic-restore-error" t-esc="state.cloneModal.error"/>
+                </t>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel"
+                            t-on-click="() => { state.cloneModal = null; }">Cancel</button>
+                    <button class="ic-confirm-btn-ok"
+                            t-att-disabled="!state.cloneModal.name.trim() or state.cloneModal.loading"
+                            t-on-click="doClone">
+                        <t t-if="state.cloneModal.loading">
+                            <i class="fa fa-spinner fa-spin"/> Cloning…
+                        </t>
+                        <t t-else="">
+                            <i class="fa fa-arrow-down"/> Clone
+                        </t>
+                    </button>
+                </div>
+            </IcModal>
         </div>
     </t>
 

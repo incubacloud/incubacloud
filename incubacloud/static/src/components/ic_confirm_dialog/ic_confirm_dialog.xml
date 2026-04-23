@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.IcConfirmDialog">
+        <div class="ic-confirm-overlay"
+             t-on-click="props.onCancel">
+            <div class="ic-confirm-box"
+                 role="dialog"
+                 aria-modal="true"
+                 t-att-aria-labelledby="titleId"
+                 t-on-click.stop="">
+                <h3 class="ic-confirm-title"
+                    t-att-id="titleId"
+                    t-esc="props.title"/>
+                <p class="ic-confirm-message" t-esc="props.message"/>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel"
+                            type="button"
+                            t-ref="cancelBtn"
+                            t-on-click="props.onCancel">Cancel</button>
+                    <button t-att-class="confirmButtonClass"
+                            type="button"
+                            t-ref="confirmBtn"
+                            t-on-click="props.onConfirm">
+                        <t t-esc="props.confirmLabel or 'Confirm'"/>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </t>
+
+</templates>

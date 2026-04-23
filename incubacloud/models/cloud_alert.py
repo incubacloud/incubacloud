@@ -57,7 +57,24 @@ class CloudAlert(models.Model):
     def create(self, vals_list):
         records = super().create(vals_list)
         records._check_target()
+        records._broadcast_overview()
         return records
+
+    def write(self, vals):
+        res = super().write(vals)
+        # Only broadcast on state transitions — field-level edits
+        # (message tweaks, metadata) do not change the overview badge.
+        if 'state' in vals:
+            self._broadcast_overview()
+        return res
+
+    def unlink(self):
+        # Capture the env before the rows go away so the broadcast
+        # can still hit all active internal users.
+        env = self.env
+        res = super().unlink()
+        self.browse()._broadcast_overview_from(env)
+        return res
 
     @api.constrains('host_id', 'instance_id', 'project_id')
     def _check_target(self):
@@ -66,3 +83,23 @@ class CloudAlert(models.Model):
                 raise ValidationError(
                     "An alert must be linked to a host, an instance, or a project."
                 )
+
+    def _broadcast_overview(self):
+        """Notify every active internal user that the alert overview may
+        have changed — they will refetch ``/cloud/get_alert_count`` and
+        ``/cloud/get_dashboard`` through the normal ACL path.
+
+        The payload is intentionally empty: the bus does not respect
+        ``ir.rule`` filters, so we never ship actual alert data through
+        it. The client treats the event as an invalidation tick only.
+        """
+        self._broadcast_overview_from(self.env)
+
+    @api.model
+    def _broadcast_overview_from(self, env):
+        users = env['res.users'].search([
+            ('share', '=', False),
+            ('active', '=', True),
+        ])
+        for user in users:
+            user._bus_send('cloud_overview', {})

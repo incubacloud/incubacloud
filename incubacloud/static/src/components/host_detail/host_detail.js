@@ -5,7 +5,13 @@ import { _t } from "@web/core/l10n/translation";
 import { PasswordInput } from "../password_input/password_input";
 import { RemoteFileBrowser } from "../remote_file_browser/remote_file_browser";
 import { TagSelector } from "../tag_selector/tag_selector";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { parseUTC } from "../../utils/dates";
+import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
+import { useDebouncedBus } from "../../utils/use_debounced_bus";
+import { useNavGuard } from "../../utils/use_nav_guard";
+import { useFormValidation } from "../../utils/use_form_validation";
+import { required, hostname, portRange, when } from "../../utils/validators";
 
 const TRAEFIK_FILES = [
     { key: "traefik_config_yml",        label: "config.yml" },
@@ -44,7 +50,7 @@ const EMPTY_FORM = () => ({
 export class HostDetail extends Component {
     static props = { host_id: { type: Number, optional: true } };
     static template = "incubacloud.HostDetail";
-    static components = { PasswordInput, RemoteFileBrowser, TagSelector };
+    static components = { PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog };
 
     setup() {
         this.env = useEnv();
@@ -84,6 +90,41 @@ export class HostDetail extends Component {
             auditPurging: false,
         });
 
+        // Dirty tracking: snapshot the form after every load/save so
+        // ``hasUnsavedChanges`` reflects real divergence, not the
+        // initial load flicker. Selected tags are tracked separately
+        // in the snapshot because they live outside ``state.form``.
+        this._savedForm = null;
+
+        this.validator = useFormValidation(() => ({
+            name: [required(_t("Host name is required"))],
+            ip_address: [
+                required(_t("IP address or hostname is required")),
+                hostname(),
+            ],
+            port: [required(_t("Port is required")), portRange()],
+            user: [required(_t("SSH user is required"))],
+            login_type: [required(_t("Login method is required"))],
+            wildcard_domain: [required(_t("Wildcard domain is required"))],
+            traefik_config_yml: [required(_t("config.yml is required"))],
+            traefik_inverseproxy_yaml: [required(_t("inverseproxy.yaml is required"))],
+            traefik_yml: [required(_t("traefik.yml is required"))],
+            password: [
+                when(
+                    (form) => this.isNew
+                        && form.login_type === "password"
+                        && !this.state.has_password,
+                    required(_t("Password is required for password login")),
+                ),
+            ],
+            key_file: [
+                when(
+                    (form) => this.isNew && form.login_type === "ssh_key",
+                    required(_t("SSH private key is required")),
+                ),
+            ],
+        }));
+
         if (this.isNew) {
             onWillStart(() => this._loadDefaults());
         } else {
@@ -91,29 +132,59 @@ export class HostDetail extends Component {
         }
 
         this._busService = useService("bus_service");
-        this._onJobUpdate = async (payload) => {
-            if (this._destroyed) return;
-            try {
-                const [job] = await this.orm.call("cloud.job", "load_jobs", [payload.id]);
-                if (this._destroyed) return;
-                if (job && job.host_id === this.props.host_id) {
-                    this._silentRefresh();
-                }
-            } catch (_e) { console.debug("Bus handler skipped (component destroyed):", _e); }
-        };
+        // Debounced direct refresh: the old flow did a per-event
+        // ``load_jobs(id)`` just to check host_id before refreshing.
+        // ``_silentRefresh`` reloads the whole host recordset, so the
+        // filter was cosmetic — refreshing on any cloud_jobs event
+        // (debounced) costs one RPC instead of two per event.
+        const triggerRefresh = useDebouncedBus(() => {
+            if (!this._destroyed) this._silentRefresh();
+        });
+        this._onJobUpdate = (payload) => triggerRefresh(payload.id);
 
         onMounted(() => {
             if (!this.isNew) {
-                this._pollTimer = setInterval(() => this._silentRefresh(), 8000);
                 this._busService.subscribe("cloud_jobs", this._onJobUpdate);
                 this._busService.start();
             }
         });
         onWillUnmount(() => {
             this._destroyed = true;
-            clearInterval(this._pollTimer);
             this._busService.unsubscribe("cloud_jobs", this._onJobUpdate);
         });
+        // Bus covers the happy path; ``visibilitychange`` refresh catches
+        // the rare case where the longpoll dropped an event while the tab
+        // was backgrounded.
+        useVisibilityRefresh(() => {
+            if (!this.isNew && !this._destroyed) this._silentRefresh();
+        });
+
+        useNavGuard(
+            () => this.hasUnsavedChanges,
+            (opts) => this._confirm(opts),
+        );
+    }
+
+    get hasUnsavedChanges() {
+        if (!this._savedForm) return false;
+        return this._currentFormKey() !== this._savedForm;
+    }
+
+    _currentFormKey() {
+        // Exclude transient UI state from the dirty baseline:
+        //  - newWhitelistEntry: the uncommitted text in the whitelist
+        //    input box. Typing there without hitting Add must not mark
+        //    the form as dirty — the persisted value is ``whitelist``,
+        //    not the half-typed hostname.
+        const { newWhitelistEntry, ...persisted } = this.state.form;
+        return JSON.stringify({
+            form: persisted,
+            tags: (this.state.selectedTags || []).map(t => t.id).sort(),
+        });
+    }
+
+    _snapshotForm() {
+        this._savedForm = this._currentFormKey();
     }
 
     // ── Data loading ─────────────────────────────────────────────────────
@@ -131,6 +202,7 @@ export class HostDetail extends Component {
             const tagsRes = await rpc("/cloud/get_tags", { scope: "host" });
             this.state.allTags = tagsRes.tags || [];
         } catch (_e) { console.debug("Host tag catalog fetch skipped:", _e); }
+        this._snapshotForm();
     }
 
     async loadHost() {
@@ -163,6 +235,7 @@ export class HostDetail extends Component {
             };
             this.state.selectedTags = [...(host.tags || [])];
             this.state.allTags = [...(host.all_tags || [])];
+            this._snapshotForm();
             this._loadJobs();
         } catch (e) {
             this.state.error = _t("Failed to load host.");
@@ -352,28 +425,6 @@ export class HostDetail extends Component {
         }
     }
 
-    _validate() {
-        const f = this.state.form;
-        const missing = [];
-        if (!f.name?.trim()) missing.push(_t("Name"));
-        if (!f.ip_address?.trim()) missing.push(_t("IP Address"));
-        if (!f.port) missing.push(_t("Port"));
-        if (!f.user?.trim()) missing.push(_t("User"));
-        if (!f.login_type) missing.push(_t("Login Type"));
-        if (f.login_type === 'password' && this.isNew && !f.password && !this.state.has_password) {
-            missing.push(_t("Password"));
-        }
-        if (f.login_type === 'ssh_key' && this.isNew && !f.key_file) {
-            missing.push(_t("SSH Private Key"));
-        }
-        if (!f.wildcard_domain?.trim()) missing.push(_t("Wildcard Domain"));
-        // traefik_panel_password is auto-generated when empty — no validation needed
-        if (!f.traefik_config_yml?.trim()) missing.push("config.yml");
-        if (!f.traefik_inverseproxy_yaml?.trim()) missing.push("inverseproxy.yaml");
-        if (!f.traefik_yml?.trim()) missing.push("traefik.yml");
-        return missing;
-    }
-
     // ── Tags ─────────────────────────────────────────────────────────────
 
     addTag(tag) {
@@ -397,9 +448,9 @@ export class HostDetail extends Component {
 
     async save() {
         if (this.state.saving) return;
-        const missing = this._validate();
-        if (missing.length) {
-            this.env.toast?.error(_t("Required fields missing: %s").replace('%s', missing.join(", ")));
+        const { isValid, firstError } = this.validator.validate(this.state.form);
+        if (!isValid) {
+            this.env.toast?.error(firstError);
             return;
         }
         this.state.saving = true;
@@ -412,10 +463,14 @@ export class HostDetail extends Component {
 
             if (this.isNew) {
                 const result = await rpc("/cloud/create_host", { vals });
+                // Clear the dirty baseline before navigating so the
+                // guard doesn't fire on the programmatic transition.
+                this._snapshotForm();
                 this.env.navigate("host_detail", { host_id: result.id });
             } else {
                 await rpc("/cloud/save_host", { host_id: this.props.host_id, vals });
                 this.state.host.name = vals.name;
+                this._snapshotForm();
                 this.env.toast?.success(_t("Changes saved"));
             }
         } catch (e) {

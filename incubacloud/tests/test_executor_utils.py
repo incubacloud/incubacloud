@@ -7,10 +7,13 @@ Tier 1 — Pure-Python unit tests for standalone utility functions:
 """
 import unittest
 
+from odoo.tests.common import BaseCase
+
+
 
 # ── _redact_tokens ────────────────────────────────────────────────────────────
 
-class TestRedactTokens(unittest.TestCase):
+class TestRedactTokens(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.abstract_executor import _redact_tokens
@@ -52,7 +55,7 @@ class TestRedactTokens(unittest.TestCase):
 
 # ── _slugify ──────────────────────────────────────────────────────────────────
 
-class TestSlugify(unittest.TestCase):
+class TestSlugify(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.cloud_project import _slugify
@@ -94,7 +97,7 @@ class TestSlugify(unittest.TestCase):
 
 # ── ExecutorRegistry ──────────────────────────────────────────────────────────
 
-class TestExecutorRegistry(unittest.TestCase):
+class TestExecutorRegistry(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.registry import ExecutorRegistry
@@ -139,7 +142,7 @@ class TestExecutorRegistry(unittest.TestCase):
 
 # ── _normalize_domain ─────────────────────────────────────────────────────────
 
-class TestNormalizeDomain(unittest.TestCase):
+class TestNormalizeDomain(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.controllers.data_load import _normalize_domain
@@ -181,7 +184,7 @@ class TestNormalizeDomain(unittest.TestCase):
 
 # ── _parse_github_repo_path ───────────────────────────────────────────────────
 
-class TestParseGitHubRepoPath(unittest.TestCase):
+class TestParseGitHubRepoPath(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.controllers.data_load import _parse_github_repo_path
@@ -227,7 +230,7 @@ class TestParseGitHubRepoPath(unittest.TestCase):
 
 # ── _smtp_canonical_domain ────────────────────────────────────────────────────
 
-class TestSmtpCanonicalDomain(unittest.TestCase):
+class TestSmtpCanonicalDomain(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
@@ -286,7 +289,7 @@ class TestSmtpCanonicalDomain(unittest.TestCase):
 
 # ── _base_url logic ───────────────────────────────────────────────────────────
 
-class TestBaseUrlLogic(unittest.TestCase):
+class TestBaseUrlLogic(BaseCase):
     """Test the _base_url() logic in isolation (mirrors DeployInstanceExecutor)."""
 
     @staticmethod

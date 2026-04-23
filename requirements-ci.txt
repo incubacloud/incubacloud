@@ -1,0 +1,22 @@
+# pip-audit input: every PyPI-resolvable runtime and test dependency
+# shipped with the incubacloud image, pinned to its live version.
+#
+# Mirrors ``odoo/custom/dependencies/pip.txt`` (runtime) plus the
+# test-time pins the CI's test job already installs. The openupgradelib
+# git URL lives in pip.txt only — pip-audit can't resolve git sources.
+#
+# When you bump a version here, bump pip.txt in lockstep (or rebuild
+# the image first and copy the new version back into both files).
+
+# Runtime
+unicodecsv==0.14.1
+unidecode==1.4.0
+asyncssh==2.22.0
+boto3==1.42.91
+hcloud==2.17.1
+bcrypt==5.0.0
+
+# Test-only pins (matched by the CI ``test`` job)
+freezegun==1.5.5
+PyYAML==6.0.3
+cryptography==46.0.7

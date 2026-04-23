@@ -130,7 +130,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 "Accept": "application/vnd.github+json",
             })
             try:
-                with urllib.request.urlopen(req, timeout=5):
+                with urllib.request.urlopen(req, timeout=5):  # nosec B310 — hardcoded https://api.github.com
                     cache[owner] = token
                     return token
             except Exception:

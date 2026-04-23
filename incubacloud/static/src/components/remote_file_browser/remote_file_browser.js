@@ -1,6 +1,7 @@
-import { Component, useState, onWillStart } from "@odoo/owl";
+import { Component, useState, onWillStart, useRef } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { useDialogA11y } from "../../utils/use_dialog_a11y";
 
 export class RemoteFileBrowser extends Component {
     static template = "incubacloud.RemoteFileBrowser";
@@ -25,6 +26,8 @@ export class RemoteFileBrowser extends Component {
             result: null,
             messages: [],
         });
+        this.boxRef = useRef("box");
+        useDialogA11y(this.boxRef, () => this.props.onCancel());
         onWillStart(() => this.navigate("~"));
     }
 

@@ -1276,6 +1276,22 @@
     margin: 12px 0;
 }
 
+.ic-download-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0 8px;
+}
+
+.ic-download-group-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: $text-secondary;
+    margin-bottom: 2px;
+}
+
 .ic-download-opt {
     display: flex;
     align-items: flex-start;

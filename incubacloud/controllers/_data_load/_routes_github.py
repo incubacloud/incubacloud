@@ -26,7 +26,10 @@ from odoo.exceptions import UserError
 from odoo.http import request
 
 from ...github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
-from ._helpers import _gh_seg, _has_pat, _parse_github_repo_path
+from ._helpers import (
+    _gh_seg, _has_encrypted, _has_pat, _parse_github_repo_path,
+)
+from .._safe_error import safe_error_response
 
 _logger = logging.getLogger(__name__)
 
@@ -53,7 +56,7 @@ class GitHubMixin:
             'configured': True,
             'app_id': app.app_id or '',
             'installation_id': app.installation_id or '',
-            'has_webhook_secret': bool(app.webhook_secret),
+            'has_webhook_secret': _has_encrypted(app, 'webhook_secret'),
             'has_private_key': bool(app.sudo().private_key),
             'has_pat': _has_pat(request.env),
             'slug': slug,
@@ -136,11 +139,10 @@ class GitHubMixin:
             creds = svc.get_credentials()
             client = GitHubAppClient(creds)
             installations = client.list_installations()
-        except (UserError, ValueError) as exc:
-            return {'ok': False, 'error': str(exc)}
-        except Exception:
-            _logger.exception("cloud_detect_github_installation failed")
-            return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
+        except Exception as exc:
+            return safe_error_response(
+                exc, _("Failed to detect GitHub installation"),
+            )
 
         if not installations:
             return {'ok': False, 'error': _('No active installations found for this GitHub App. Install the app on your organization first.')}
@@ -281,7 +283,9 @@ class GitHubMixin:
             return {'ok': True, 'sha': sha}
         except GitHubAPIError as exc:
             if exc.status_code not in (404, 401, 403):
-                return {'ok': False, 'error': str(exc)}
+                return safe_error_response(
+                    exc, _("Failed to fetch branch head"),
+                )
         except (ValueError, UserError):
             _logger.debug("[branch_head] App not configured", exc_info=True)
         except Exception:
@@ -296,7 +300,9 @@ class GitHubMixin:
                     'sha': _fetch(GitHubPATClient(pat)),
                 }
         except (GitHubAPIError, ValueError, UserError) as exc:
-            return {'ok': False, 'error': str(exc)}
+            return safe_error_response(
+                exc, _("Failed to fetch branch head"),
+            )
         except Exception:
             _logger.exception(
                 "Error fetching branch HEAD for %s@%s",
@@ -386,22 +392,32 @@ class GitHubMixin:
                 return {'ok': True, 'modules': _fetch(GitHubPATClient(pat))}
         except GitHubAPIError as exc:
             if exc.status_code not in (404, 401):
-                return {'ok': False, 'error': str(exc), 'modules': []}
+                return safe_error_response(
+                    exc, _("Failed to fetch repo modules"),
+                    extra={'modules': []},
+                )
         except (ValueError, UserError) as exc:
-            return {'ok': False, 'error': str(exc), 'modules': []}
+            return safe_error_response(
+                exc, _("Failed to fetch repo modules"),
+                extra={'modules': []},
+            )
         except Exception:
             _logger.debug("[repo_modules] PAT unexpected error", exc_info=True)
 
         # 2. Fall back to GitHub App token
         try:
             return {'ok': True, 'modules': _fetch(GitHubAppClient(svc.get_credentials()))}
-        except (ValueError, UserError) as exc:
-            return {'ok': False, 'error': str(exc), 'modules': []}
-        except GitHubAPIError as exc:
-            return {'ok': False, 'error': str(exc), 'modules': []}
-        except Exception:
+        except (ValueError, UserError, GitHubAPIError) as exc:
+            return safe_error_response(
+                exc, _("Failed to fetch repo modules"),
+                extra={'modules': []},
+            )
+        except Exception as exc:
             _logger.exception("Error fetching modules for %s@%s", url, branch)
-            return {'ok': False, 'error': _('Unexpected error'), 'modules': []}
+            return safe_error_response(
+                exc, _("Failed to fetch repo modules"),
+                extra={'modules': []},
+            )
 
     @http.route(['/cloud/get_repo_requirements'], type='jsonrpc', auth='user')
     def cloud_get_repo_requirements(self, url, branch):
@@ -411,7 +427,10 @@ class GitHubMixin:
         try:
             owner, repo_name = _parse_github_repo_path(url)
         except ValueError as exc:
-            return {'ok': False, 'error': str(exc), 'content': '', 'found': False}
+            return safe_error_response(
+                exc, _("Invalid repository URL"),
+                extra={'content': '', 'found': False},
+            )
 
         def _fetch(client):
             data = client.get(
@@ -434,7 +453,10 @@ class GitHubMixin:
             if exc.status_code == 404:
                 return {'ok': True, 'found': False, 'content': ''}
             if exc.status_code != 401:
-                return {'ok': False, 'error': str(exc), 'content': '', 'found': False}
+                return safe_error_response(
+                    exc, _("Failed to fetch requirements.txt"),
+                    extra={'content': '', 'found': False},
+                )
         except (ValueError, UserError):
             _logger.debug("[repo_requirements] PAT not configured", exc_info=True)
         except Exception:
@@ -447,7 +469,10 @@ class GitHubMixin:
         except GitHubAPIError as exc:
             if exc.status_code == 404:
                 return {'ok': True, 'found': False, 'content': ''}
-            return {'ok': False, 'error': str(exc), 'content': '', 'found': False}
+            return safe_error_response(
+                exc, _("Failed to fetch requirements.txt"),
+                extra={'content': '', 'found': False},
+            )
         except (ValueError, UserError):
             _logger.debug("[repo_requirements] App not configured", exc_info=True)
         except Exception:
@@ -464,7 +489,7 @@ class GitHubMixin:
                 'User-Agent': 'incubacloud/1.0',
                 'Accept': 'application/vnd.github+json',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
                 raw = data.get('content', '').replace('\n', '').replace(' ', '')
                 content = base64.b64decode(raw).decode('utf-8')
@@ -497,7 +522,7 @@ class GitHubMixin:
         try:
             _owner, repo_name = _parse_github_repo_path(repo_url)
         except ValueError as exc:
-            return {'ok': False, 'error': str(exc)}
+            return safe_error_response(exc, _("Invalid repository URL"))
 
         # Detect Odoo version early — used as branch fallback for submodules
         _ver_match = re.fullmatch(r'(\d+\.\d)', branch)
@@ -873,7 +898,7 @@ class GitHubMixin:
         try:
             _owner, repo_name = _parse_github_repo_path(url)
         except ValueError as exc:
-            return {'ok': False, 'error': str(exc)}
+            return safe_error_response(exc, _("Invalid repository URL"))
 
         _SUPPORTED_VERSIONS = {
             '7.0', '8.0', '9.0', '10.0', '11.0', '12.0',

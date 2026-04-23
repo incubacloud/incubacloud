@@ -5,13 +5,14 @@ Covers: parse_memory_to_gb, computed resource fields, select_best_host,
 """
 import unittest
 
-from odoo.tests.common import TransactionCase
+
+from odoo.tests.common import TransactionCase, BaseCase
 
 
 # ── Fase 1: parse_memory_to_gb ──────────────────────────────────────────────
 
 
-class TestParseMemoryToGb(unittest.TestCase):
+class TestParseMemoryToGb(BaseCase):
     """parse_memory_to_gb converts Docker memory strings to float GB."""
 
     def _parse(self, val):
@@ -129,7 +130,7 @@ class TestHostResourceComputation(TransactionCase):
 # ── Fase 3: _compute_instance_resources ──────────────────────────────────────
 
 
-class TestComputeInstanceResources(unittest.TestCase):
+class TestComputeInstanceResources(BaseCase):
     """_compute_instance_resources extracts total CPU/RAM from creation vals."""
 
     def _compute(self, vals):
@@ -453,7 +454,7 @@ class TestCustomBackupDst(TransactionCase):
 # ── Import parsers (pure Python) ─────────────────────────────────────────────
 
 
-class TestParseReposYaml(unittest.TestCase):
+class TestParseReposYaml(BaseCase):
     """parse repos.yaml git-aggregator format."""
 
     def _parse(self, content, odoo_version='19.0'):
@@ -555,7 +556,7 @@ addon:
         self.assertEqual(repos[0]['branch'], 'main')
 
 
-class TestParseAddonsYaml(unittest.TestCase):
+class TestParseAddonsYaml(BaseCase):
     """parse addons.yaml for addon inclusion/exclusion."""
 
     def _parse(self, content):

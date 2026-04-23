@@ -212,18 +212,27 @@ class AbstractExecutor(ABC):
                 })
 
     def _publish_bus(self):
+        """Notify every watcher that new chunks are available.
+
+        The executor's ``env.user`` is the queue_job worker identity
+        (often OdooBot or SUPERUSER), *not* the user watching the
+        terminal page. Sending to ``env.user`` only reaches that
+        worker's channel, so real operators fall back to the 10 s
+        polling loop and the live stream looks stuck.
+
+        We delegate to ``cloud.job._broadcast_job_update`` — the same
+        helper used by create() and queue_job_ext state transitions —
+        so every active internal user receives the notification on
+        their own presence channel. Hidden job types (host_metrics,
+        docker_prune, instance_health) stay filtered out inside that
+        helper.
+        """
         logger = logging.getLogger("AbstractExecutor")
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            user = env.user
-            partner = user.partner_id
+            env['cloud.job']._broadcast_job_update(self.job.id)
             logger.debug(
-                "[_publish_bus] job_id=%s user=%s (id=%s) partner=%s (id=%s)",
-                self.job.id, user.login, user.id, partner.name, partner.id,
-            )
-            user._bus_send('cloud_jobs', {'id': self.job.id})
-            logger.debug(
-                "[_publish_bus] _bus_send done for job_id=%s", self.job.id,
+                "[_publish_bus] broadcast done for job_id=%s", self.job.id,
             )
 
     def _check_cancel(self):

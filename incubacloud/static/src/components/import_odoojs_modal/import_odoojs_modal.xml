@@ -3,13 +3,18 @@
 
     <t t-name="incubacloud.ImportProjectModal">
         <div class="ic-modal-overlay" t-on-click="onOverlayClick">
-            <div class="ic-modal ic-modal--import" t-on-click.stop="">
+            <div class="ic-modal ic-modal--import"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="ic-import-project-title"
+                 t-ref="box"
+                 t-on-click.stop="">
 
                 <!-- Header -->
                 <header class="ic-modal__header">
                     <div class="ic-import-header">
                         <span class="ic-import-badge">GitHub</span>
-                        <h3>Import project from GitHub</h3>
+                        <h3 id="ic-import-project-title">Import project from GitHub</h3>
                     </div>
                     <button t-if="state.step !== 'progress'"
                             class="ic-modal__close" t-on-click="close">✕</button>

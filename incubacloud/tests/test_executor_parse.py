@@ -5,6 +5,9 @@ Tests use object.__new__() to bypass __init__ so no Odoo ORM is needed.
 All ORM/SSH interaction is excluded from parse_results() by design.
 """
 import unittest
+
+from odoo.tests.common import BaseCase
+
 from unittest.mock import MagicMock
 
 
@@ -18,7 +21,7 @@ def _make_executor(executor_class):
 
 # ── DockerPruneExecutor.parse_results ─────────────────────────────────────────
 
-class TestDockerPruneParseResults(unittest.TestCase):
+class TestDockerPruneParseResults(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.docker_prune_executor import DockerPruneExecutor
@@ -52,7 +55,7 @@ class TestDockerPruneParseResults(unittest.TestCase):
 
 # ── InstanceHealthExecutor.parse_results ──────────────────────────────────────
 
-class TestInstanceHealthParseResults(unittest.TestCase):
+class TestInstanceHealthParseResults(BaseCase):
 
     def setUp(self):
         from odoo.addons.incubacloud.models.instance_health_executor import InstanceHealthExecutor

@@ -71,11 +71,6 @@
                             <t t-if="state.has_known_hosts_key"> Re-trust Key</t>
                             <t t-else=""> Trust SSH Key</t>
                         </button>
-                        <div class="ic-action-sep"/>
-                        <button class="ic-action-btn ic-ab-danger" title="Delete host"
-                                t-on-click="deleteHost">
-                            <i class="fa fa-trash"/> Delete
-                        </button>
                     </div>
                 </t>
 
@@ -258,23 +253,35 @@
                         <!-- ── General tab ──────────────────────────────────────── -->
                         <t t-if="state.tab === 'general'">
                             <div class="ic-form-grid">
-                                <div class="ic-form-row">
+                                <div t-att-class="'ic-form-row' + (validator.fieldError('name') ? ' has-error' : '')">
                                     <label>Name <span class="ic-required">*</span></label>
                                     <input type="text"
                                            t-att-value="state.form.name"
-                                           t-on-input="(ev) => this.onInput('name', ev)"/>
+                                           t-on-input="(ev) => this.onInput('name', ev)"
+                                           t-on-blur="() => validator.touch('name')"/>
+                                    <t t-if="validator.fieldError('name')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                                    </t>
                                 </div>
-                                <div class="ic-form-row">
+                                <div t-att-class="'ic-form-row' + (validator.fieldError('ip_address') ? ' has-error' : '')">
                                     <label>IP Address <span class="ic-required">*</span></label>
                                     <input type="text" placeholder="192.168.1.1"
                                            t-att-value="state.form.ip_address"
-                                           t-on-input="(ev) => this.onInput('ip_address', ev)"/>
+                                           t-on-input="(ev) => this.onInput('ip_address', ev)"
+                                           t-on-blur="() => validator.touch('ip_address')"/>
+                                    <t t-if="validator.fieldError('ip_address')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('ip_address')"/>
+                                    </t>
                                 </div>
-                                <div class="ic-form-row">
+                                <div t-att-class="'ic-form-row' + (validator.fieldError('port') ? ' has-error' : '')">
                                     <label>Port <span class="ic-required">*</span></label>
                                     <input type="number"
                                            t-att-value="state.form.port"
-                                           t-on-input="(ev) => this.onInput('port', ev)"/>
+                                           t-on-input="(ev) => this.onInput('port', ev)"
+                                           t-on-blur="() => validator.touch('port')"/>
+                                    <t t-if="validator.fieldError('port')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('port')"/>
+                                    </t>
                                 </div>
                                 <div class="ic-form-row ic-form-row-full">
                                     <label>Tags</label>
@@ -310,11 +317,15 @@
                         <!-- ── Connection tab ───────────────────────────────────── -->
                         <t t-if="state.tab === 'connection'">
                             <div class="ic-form-grid">
-                                <div class="ic-form-row">
+                                <div t-att-class="'ic-form-row' + (validator.fieldError('user') ? ' has-error' : '')">
                                     <label>User <span class="ic-required">*</span></label>
                                     <input type="text" placeholder="ubuntu"
                                            t-att-value="state.form.user"
-                                           t-on-input="(ev) => this.onInput('user', ev)"/>
+                                           t-on-input="(ev) => this.onInput('user', ev)"
+                                           t-on-blur="() => validator.touch('user')"/>
+                                    <t t-if="validator.fieldError('user')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('user')"/>
+                                    </t>
                                 </div>
                                 <div class="ic-form-row">
                                     <label>Login Type <span class="ic-required">*</span></label>
@@ -352,11 +363,15 @@
                         <!-- ── Traefik tab ──────────────────────────────────────── -->
                         <t t-if="state.tab === 'traefik'">
                             <div class="ic-form-grid ic-traefik-meta">
-                                <div class="ic-form-row">
+                                <div t-att-class="'ic-form-row' + (validator.fieldError('wildcard_domain') ? ' has-error' : '')">
                                     <label>Wildcard Domain <span class="ic-required">*</span></label>
                                     <input type="text" placeholder="example.com"
                                            t-att-value="state.form.wildcard_domain"
-                                           t-on-input="(ev) => this.onInput('wildcard_domain', ev)"/>
+                                           t-on-input="(ev) => this.onInput('wildcard_domain', ev)"
+                                           t-on-blur="() => validator.touch('wildcard_domain')"/>
+                                    <t t-if="validator.fieldError('wildcard_domain')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('wildcard_domain')"/>
+                                    </t>
                                 </div>
                                 <div class="ic-form-row">
                                     <label>Panel Password</label>
@@ -506,6 +521,11 @@
 
                     <!-- Footer: save / feedback (config tabs only, not activity) -->
                     <div t-if="state.tab !== 'activity'" class="ic-detail-footer">
+                        <t t-if="!isNew and env.permissions?.can_manage_hosts">
+                            <button class="ic-btn-delete" t-on-click="deleteHost">
+                                <i class="fa fa-trash-o"/> Delete
+                            </button>
+                        </t>
                         <button class="ic-btn-save"
                                 t-att-disabled="state.saving"
                                 t-on-click="save">
@@ -541,22 +561,13 @@
             </t>
 
             <!-- Confirm dialog -->
-            <t t-if="state.confirmDialog">
-                <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
-                    <div class="ic-confirm-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
-                        <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel"
-                                    t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
-                            <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
-                                    t-on-click="() => state.confirmDialog.onConfirm()">
-                                <t t-esc="state.confirmDialog.confirmLabel"/>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </t>
+            <IcConfirmDialog t-if="state.confirmDialog"
+                             title="state.confirmDialog.title"
+                             message="state.confirmDialog.message"
+                             confirmLabel="state.confirmDialog.confirmLabel"
+                             isDanger="state.confirmDialog.isDanger"
+                             onConfirm="state.confirmDialog.onConfirm"
+                             onCancel="state.confirmDialog.onCancel"/>
 
         </div>
     </t>

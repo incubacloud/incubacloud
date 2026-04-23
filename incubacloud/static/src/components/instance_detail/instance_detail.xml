@@ -414,15 +414,21 @@
                                         </div>
                                     </div>
                                 </t>
-                                <div class="ic-form-row">
+                                <div class="ic-form-row"
+                                     t-att-class="validator.fieldError('name') ? 'has-error' : ''">
                                     <label>Name <span class="ic-required">*</span></label>
                                     <input type="text"
                                            placeholder="myproject-staging"
                                            t-att-value="state.form.name"
                                            t-att-disabled="(!isCreate and state.inst.deployed) || null"
-                                           t-on-input="(ev) => this.onInput('name', ev)"/>
+                                           t-on-input="(ev) => this.onInput('name', ev)"
+                                           t-on-blur="() => validator.touch('name')"/>
+                                    <t t-if="validator.fieldError('name')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                                    </t>
                                 </div>
-                                <div class="ic-form-row ic-host-row">
+                                <div class="ic-form-row ic-host-row"
+                                     t-att-class="validator.fieldError('host_id') ? 'has-error' : ''">
                                     <label>Host
                                         <t t-if="!state.autoassignEnabled">
                                             <span class="ic-required">*</span>
@@ -433,7 +439,8 @@
                                     </t>
                                     <t t-else="">
                                         <select t-att-disabled="(!isCreate and state.inst.deployed) || null"
-                                                t-on-change="onHostSelect">
+                                                t-on-change="onHostSelect"
+                                                t-on-blur="() => validator.touch('host_id')">
                                             <t t-if="state.autoassignEnabled">
                                                 <option value="">Auto (recommended)</option>
                                             </t>
@@ -448,6 +455,9 @@
                                                 </option>
                                             </t>
                                         </select>
+                                    </t>
+                                    <t t-if="validator.fieldError('host_id')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('host_id')"/>
                                     </t>
                                 </div>
                                 <div class="ic-form-row">
@@ -543,11 +553,16 @@
                                            t-att-value="state.form.smtp_relay_host"
                                            t-on-input="(ev) => this.onInput('smtp_relay_host', ev)"/>
                                 </div>
-                                <div class="ic-form-row">
+                                <div class="ic-form-row"
+                                     t-att-class="validator.fieldError('smtp_relay_port') ? 'has-error' : ''">
                                     <label>SMTP Port</label>
                                     <input type="number"
                                            t-att-value="state.form.smtp_relay_port"
-                                           t-on-input="(ev) => this.onInput('smtp_relay_port', ev)"/>
+                                           t-on-input="(ev) => this.onInput('smtp_relay_port', ev)"
+                                           t-on-blur="() => validator.touch('smtp_relay_port')"/>
+                                    <t t-if="validator.fieldError('smtp_relay_port')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('smtp_relay_port')"/>
+                                    </t>
                                 </div>
                                 <div class="ic-form-row">
                                     <label>SMTP Encryption</label>
@@ -596,6 +611,17 @@
                                             <input type="checkbox"
                                                    t-att-checked="state.form.auto_rebuild"
                                                    t-on-change="(ev) => { state.form.auto_rebuild = ev.target.checked; state.saved = false; }"/>
+                                            <span class="ic-toggle-slider"/>
+                                        </label>
+                                    </div>
+                                    <div class="ic-form-row">
+                                        <label>Auto-update modules on rebuild
+                                            <span class="ic-form-hint"> — runs click-odoo-update during rebuild. Disable to skip module migrations and the safe boot test.</span>
+                                        </label>
+                                        <label class="ic-toggle">
+                                            <input type="checkbox"
+                                                   t-att-checked="state.form.auto_update"
+                                                   t-on-change="(ev) => { state.form.auto_update = ev.target.checked; state.saved = false; }"/>
                                             <span class="ic-toggle-slider"/>
                                         </label>
                                     </div>
@@ -805,21 +831,13 @@
                                                         <td t-esc="formatBackupDate(bk.time)"/>
                                                         <td t-esc="bk.size ? formatSize(bk.size) : '—'"/>
                                                         <td class="ic-bk-actions">
-                                                            <!-- Direct download for backups with attachment -->
-                                                            <t t-if="bk.attachment_id">
-                                                                <a class="ic-bk-action-btn" title="Download"
-                                                                   t-att-href="'/web/content/' + bk.attachment_id + '?download=true'"
-                                                                   download="" t-on-click.stop="">
-                                                                    <i class="fa fa-download"/>
-                                                                </a>
-                                                            </t>
-                                                            <!-- Download via duplicity restore (production) -->
-                                                            <t t-if="!bk.attachment_id">
-                                                                <button class="ic-bk-action-btn" title="Download"
-                                                                        t-on-click="() => this.openDownloadModal(bk.time)">
-                                                                    <i class="fa fa-download"/>
-                                                                </button>
-                                                            </t>
+                                                            <!-- Download opens the modal (Exact/Neutralized × Filestore). -->
+                                                            <!-- For attachment-based backups (non-prod), 'Exact + Without filestore' -->
+                                                            <!-- shortcut redirects to /web/content directly, skipping the job. -->
+                                                            <button class="ic-bk-action-btn" title="Download"
+                                                                    t-on-click="() => this.openDownloadModal(bk.time, bk.attachment_id)">
+                                                                <i class="fa fa-download"/>
+                                                            </button>
                                                             <!-- Restore (production only) -->
                                                             <t t-if="!bk.attachment_id">
                                                                 <button class="ic-bk-action-btn ic-bk-restore-btn" title="Restore"
@@ -958,16 +976,11 @@
                     <!-- Footer (hidden for stakeholders) -->
                     <t t-if="env.permissions?.can_edit_instance or isCreate">
                         <div class="ic-detail-footer">
-                            <t t-if="!isValid">
-                                <div class="ic-footer-hint">
-                                    <span class="ic-required">*</span> Name and Host are required.
-                                </div>
-                            </t>
                             <t t-if="hasUnsavedChanges">
                                 <span class="ic-unsaved-hint">Unsaved changes</span>
                             </t>
                             <button class="ic-btn-save"
-                                    t-att-disabled="!isValid || state.saving"
+                                    t-att-disabled="state.saving"
                                     t-on-click="save">
                                 <t t-if="state.saving">
                                     <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
@@ -995,50 +1008,50 @@
             </t>
 
             <!-- Pip conflict resolve modal -->
-            <t t-if="state.pipConflictModal">
-                <div class="ic-confirm-overlay" t-on-click="closePipConflictModal">
-                    <div class="ic-confirm-box ah-resolve-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
-                        <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
-                        <div class="ah-conflicts-list">
-                            <t t-foreach="state.pipConflictModal.conflicts" t-as="c" t-key="c.name">
-                                <div class="ah-conflict-row">
-                                    <span class="ah-conflict-pkg" t-esc="c.name"/>
-                                    <div class="ah-conflict-options">
-                                        <label class="ah-conflict-opt">
-                                            <input type="radio"
-                                                   t-att-name="'conflict_' + c.name"
-                                                   t-att-checked="state.pipConflictModal.choices[c.name] === c.existing"
-                                                   t-on-change="() => this.setPipChoice(c.name, c.existing)"/>
-                                            <code t-esc="c.existing"/>
-                                            <span class="ah-conflict-hint"
-                                                  t-esc="'(' + (c.existingSource || 'existing') + ')'"/>
-                                        </label>
-                                        <label class="ah-conflict-opt">
-                                            <input type="radio"
-                                                   t-att-name="'conflict_' + c.name"
-                                                   t-att-checked="state.pipConflictModal.choices[c.name] === c.incoming"
-                                                   t-on-change="() => this.setPipChoice(c.name, c.incoming)"/>
-                                            <code t-esc="c.incoming"/>
-                                            <span class="ah-conflict-hint"
-                                                  t-esc="'(' + (c.incomingSource || 'incoming') + ')'"/>
-                                        </label>
-                                    </div>
-                                </div>
-                            </t>
+            <IcModal t-if="state.pipConflictModal"
+                     title="'Resolve Pip Conflicts'"
+                     boxClass="'ic-confirm-box ah-resolve-box'"
+                     onClose="closePipConflictModal">
+                <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
+                <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
+                <div class="ah-conflicts-list">
+                    <t t-foreach="state.pipConflictModal.conflicts" t-as="c" t-key="c.name">
+                        <div class="ah-conflict-row">
+                            <span class="ah-conflict-pkg" t-esc="c.name"/>
+                            <div class="ah-conflict-options">
+                                <label class="ah-conflict-opt">
+                                    <input type="radio"
+                                           t-att-name="'conflict_' + c.name"
+                                           t-att-checked="state.pipConflictModal.choices[c.name] === c.existing"
+                                           t-on-change="() => this.setPipChoice(c.name, c.existing)"/>
+                                    <code t-esc="c.existing"/>
+                                    <span class="ah-conflict-hint"
+                                          t-esc="'(' + (c.existingSource || 'existing') + ')'"/>
+                                </label>
+                                <label class="ah-conflict-opt">
+                                    <input type="radio"
+                                           t-att-name="'conflict_' + c.name"
+                                           t-att-checked="state.pipConflictModal.choices[c.name] === c.incoming"
+                                           t-on-change="() => this.setPipChoice(c.name, c.incoming)"/>
+                                    <code t-esc="c.incoming"/>
+                                    <span class="ah-conflict-hint"
+                                          t-esc="'(' + (c.incomingSource || 'incoming') + ')'"/>
+                                </label>
+                            </div>
                         </div>
-                        <div class="ic-confirm-actions ah-resolve-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="closePipConflictModal">Edit Manually</button>
-                            <button class="ic-confirm-btn-ok" t-on-click="confirmPipResolve">Apply &amp; Resolve</button>
-                        </div>
-                    </div>
+                    </t>
                 </div>
-            </t>
+                <div class="ic-confirm-actions ah-resolve-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closePipConflictModal">Edit Manually</button>
+                    <button class="ic-confirm-btn-ok" t-on-click="confirmPipResolve">Apply &amp; Resolve</button>
+                </div>
+            </IcModal>
 
             <!-- Restore database dialog -->
-            <t t-if="state.restoreDialog">
-                <div class="ic-confirm-overlay" t-on-click="closeRestore">
-                    <div class="ic-restore-box" t-on-click.stop="">
+            <IcModal t-if="state.restoreDialog"
+                     title="'Restore Database'"
+                     boxClass="'ic-restore-box'"
+                     onClose="closeRestore">
                         <div class="ic-restore-header">
                             <h3 class="ic-confirm-title">Restore Database</h3>
                             <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
@@ -1106,188 +1119,201 @@
                                 <t t-else=""><i class="fa fa-database"/> Import</t>
                             </button>
                         </div>
-                    </div>
-                </div>
-            </t>
+            </IcModal>
 
             <!-- Connect as user dialog -->
-            <t t-if="state.connectDialog">
-                <div class="ic-confirm-overlay" t-on-click="closeConnectModal">
-                    <div class="ic-connect-box" t-on-click.stop="">
-                        <div class="ic-connect-header">
-                            <h3 class="ic-confirm-title">Connect as user</h3>
-                            <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
-                        </div>
-                        <t t-if="state.connectDialog.loading">
-                            <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Loading users…</div>
-                        </t>
-                        <t t-elif="state.connectDialog.error">
-                            <div class="ic-restore-error" t-esc="state.connectDialog.error"/>
-                        </t>
-                        <t t-elif="!state.connectDialog.users.length">
-                            <div class="ic-connect-empty">No internal users found.</div>
-                        </t>
-                        <t t-else="">
-                            <ul class="ic-connect-user-list">
-                                <t t-foreach="state.connectDialog.users" t-as="u" t-key="u.id">
-                                    <li class="ic-connect-user-item"
-                                        t-att-class="state.connectDialog.connecting ? 'ic-connect-user-item--disabled' : ''"
-                                        t-on-click="() => this.connectAs(u.id)">
-                                        <i class="fa fa-user ic-connect-user-icon"/>
-                                        <span class="ic-connect-user-name" t-esc="u.name"/>
-                                        <span class="ic-connect-user-login" t-esc="u.login"/>
-                                    </li>
-                                </t>
-                            </ul>
-                            <t t-if="state.connectDialog.connecting">
-                                <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Opening session…</div>
-                            </t>
-                        </t>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="closeConnectModal">Cancel</button>
-                        </div>
-                    </div>
+            <IcModal t-if="state.connectDialog"
+                     title="'Connect as user'"
+                     boxClass="'ic-connect-box'"
+                     onClose="closeConnectModal">
+                <div class="ic-connect-header">
+                    <h3 class="ic-confirm-title">Connect as user</h3>
+                    <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
                 </div>
-            </t>
+                <t t-if="state.connectDialog.loading">
+                    <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Loading users…</div>
+                </t>
+                <t t-elif="state.connectDialog.error">
+                    <div class="ic-restore-error" t-esc="state.connectDialog.error"/>
+                </t>
+                <t t-elif="!state.connectDialog.users.length">
+                    <div class="ic-connect-empty">No internal users found.</div>
+                </t>
+                <t t-else="">
+                    <ul class="ic-connect-user-list">
+                        <t t-foreach="state.connectDialog.users" t-as="u" t-key="u.id">
+                            <li class="ic-connect-user-item"
+                                t-att-class="state.connectDialog.connecting ? 'ic-connect-user-item--disabled' : ''"
+                                t-on-click="() => this.connectAs(u.id)">
+                                <i class="fa fa-user ic-connect-user-icon"/>
+                                <span class="ic-connect-user-name" t-esc="u.name"/>
+                                <span class="ic-connect-user-login" t-esc="u.login"/>
+                            </li>
+                        </t>
+                    </ul>
+                    <t t-if="state.connectDialog.connecting">
+                        <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Opening session…</div>
+                    </t>
+                </t>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closeConnectModal">Cancel</button>
+                </div>
+            </IcModal>
 
             <!-- Shell service picker dialog -->
-            <t t-if="state.shellDialog">
-                <div class="ic-confirm-overlay" t-on-click="closeShellDialog">
-                    <div class="ic-connect-box" t-on-click.stop="">
-                        <div class="ic-connect-header">
-                            <h3 class="ic-confirm-title">Open Shell</h3>
-                            <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
-                        </div>
-                        <t t-if="state.shellDialog.opening">
-                            <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Opening terminal…</div>
+            <IcModal t-if="state.shellDialog"
+                     title="'Open Shell'"
+                     boxClass="'ic-connect-box'"
+                     onClose="closeShellDialog">
+                <div class="ic-connect-header">
+                    <h3 class="ic-confirm-title">Open Shell</h3>
+                    <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
+                </div>
+                <t t-if="state.shellDialog.opening">
+                    <div class="ic-connect-loading"><i class="fa fa-spinner fa-spin"/> Opening terminal…</div>
+                </t>
+                <t t-elif="state.shellDialog.error">
+                    <div class="ic-restore-error" t-esc="state.shellDialog.error"/>
+                </t>
+                <t t-else="">
+                    <ul class="ic-connect-user-list">
+                        <t t-foreach="state.shellDialog.services" t-as="svc" t-key="svc">
+                            <li class="ic-connect-user-item" t-on-click="() => this.openShell(svc)">
+                                <i class="fa fa-cube ic-connect-user-icon"/>
+                                <span class="ic-connect-user-name" t-esc="svc"/>
+                            </li>
                         </t>
-                        <t t-elif="state.shellDialog.error">
-                            <div class="ic-restore-error" t-esc="state.shellDialog.error"/>
+                    </ul>
+                </t>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closeShellDialog">Cancel</button>
+                </div>
+            </IcModal>
+
+            <!-- Download backup modal -->
+            <IcModal t-if="state.downloadModal"
+                     title="'Download a database dump'"
+                     onClose="closeDownloadModal">
+                <h3 class="ic-confirm-title">Download a database dump</h3>
+                <p class="ic-confirm-message">
+                    <t t-if="isLiveNeutralDump">
+                        Dumping the current database on the fly.
+                    </t>
+                    <t t-else="">
+                        Backup from <strong t-esc="formatBackupDate(state.downloadModal.time)"/>
+                    </t>
+                </p>
+                <div class="ic-download-group">
+                    <div class="ic-download-group-label">Type of dump</div>
+                    <label class="ic-download-opt">
+                        <input type="radio" name="dl_mode" value="neutral"
+                               t-att-checked="state.downloadModal.mode === 'neutral'"
+                               t-on-change="() => { state.downloadModal.mode = 'neutral'; }"/>
+                        <div>
+                            <strong>Neutralized database dump</strong>
+                            <span class="ic-download-hint">Safe for testing: crons off, mail servers archived, credentials scrubbed, red ribbon added.</span>
+                        </div>
+                    </label>
+                    <label class="ic-download-opt">
+                        <input type="radio" name="dl_mode" value="exact"
+                               t-att-checked="state.downloadModal.mode === 'exact'"
+                               t-on-change="() => { state.downloadModal.mode = 'exact'; }"/>
+                        <div>
+                            <strong>Exact database dump</strong>
+                            <span class="ic-download-hint">Real data. Handle with care — contains secrets and will send real emails if restored.</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="ic-download-group">
+                    <div class="ic-download-group-label">Filestore</div>
+                    <label class="ic-download-opt">
+                        <input type="radio" name="dl_type" value="dump"
+                               t-att-checked="state.downloadModal.type === 'dump'"
+                               t-on-change="() => { state.downloadModal.type = 'dump'; }"/>
+                        <div>
+                            <strong>Without filestore</strong>
+                            <span class="ic-download-hint">Faster, smaller file. Enough for testing/troubleshooting.</span>
+                        </div>
+                    </label>
+                    <label class="ic-download-opt">
+                        <input type="radio" name="dl_type" value="all"
+                               t-att-checked="state.downloadModal.type === 'all'"
+                               t-on-change="() => { state.downloadModal.type = 'all'; }"/>
+                        <div>
+                            <strong>With filestore</strong>
+                            <span class="ic-download-hint">Includes attachments. Larger file.</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closeDownloadModal">Cancel</button>
+                    <button class="ic-confirm-btn-ok"
+                            t-att-disabled="state.downloadModal.loading"
+                            t-on-click="doDownloadBackup">
+                        <t t-if="state.downloadModal.loading">
+                            <i class="fa fa-spinner fa-spin"/> Preparing…
                         </t>
                         <t t-else="">
-                            <ul class="ic-connect-user-list">
-                                <t t-foreach="state.shellDialog.services" t-as="svc" t-key="svc">
-                                    <li class="ic-connect-user-item" t-on-click="() => this.openShell(svc)">
-                                        <i class="fa fa-cube ic-connect-user-icon"/>
-                                        <span class="ic-connect-user-name" t-esc="svc"/>
-                                    </li>
-                                </t>
-                            </ul>
+                            <i class="fa fa-download"/> Download
                         </t>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="closeShellDialog">Cancel</button>
-                        </div>
-                    </div>
+                    </button>
                 </div>
-            </t>
-
-            <!-- Download backup modal (production) -->
-            <t t-if="state.downloadModal">
-                <div class="ic-confirm-overlay" t-on-click="closeDownloadModal">
-                    <div class="ic-confirm-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title">Download Backup</h3>
-                        <p class="ic-confirm-message">
-                            Backup from <strong t-esc="formatBackupDate(state.downloadModal.time)"/>
-                        </p>
-                        <div class="ic-download-options">
-                            <label class="ic-download-opt">
-                                <input type="radio" name="dl_type" value="dump"
-                                       t-att-checked="state.downloadModal.type === 'dump'"
-                                       t-on-change="() => { state.downloadModal.type = 'dump'; }"/>
-                                <div>
-                                    <strong>SQL dump only</strong>
-                                    <span class="ic-download-hint">Faster, smaller file</span>
-                                </div>
-                            </label>
-                            <label class="ic-download-opt">
-                                <input type="radio" name="dl_type" value="all"
-                                       t-att-checked="state.downloadModal.type === 'all'"
-                                       t-on-change="() => { state.downloadModal.type = 'all'; }"/>
-                                <div>
-                                    <strong>Full (DB + Filestore)</strong>
-                                    <span class="ic-download-hint">Complete backup, larger file</span>
-                                </div>
-                            </label>
-                        </div>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="closeDownloadModal">Cancel</button>
-                            <button class="ic-confirm-btn-ok"
-                                    t-att-disabled="state.downloadModal.loading"
-                                    t-on-click="doDownloadBackup">
-                                <t t-if="state.downloadModal.loading">
-                                    <i class="fa fa-spinner fa-spin"/> Preparing…
-                                </t>
-                                <t t-else="">
-                                    <i class="fa fa-download"/> Download
-                                </t>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </t>
+            </IcModal>
 
             <!-- Restore backup modal (production, dangerous) -->
-            <t t-if="state.restoreBackupModal">
-                <div class="ic-confirm-overlay" t-on-click="closeRestoreBackupModal">
-                    <div class="ic-confirm-box ic-restore-backup-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title ic-danger-title">
-                            <i class="fa fa-exclamation-triangle"/> Restore Backup
-                        </h3>
-                        <p class="ic-restore-warning">
-                            This will <strong>permanently destroy</strong> the current database
-                            and replace it with the backup from
-                            <strong t-esc="formatBackupDate(state.restoreBackupModal.time)"/>.
-                        </p>
-                        <p class="ic-restore-warning">
-                            This action <strong>cannot be undone</strong>.
-                        </p>
-                        <div class="ic-restore-confirm-input">
-                            <label>Type the instance name to confirm:
-                                <strong t-esc="state.inst.name"/>
-                            </label>
-                            <input type="text"
-                                   placeholder="Instance name"
-                                   t-att-value="state.restoreBackupModal.confirmName"
-                                   t-on-input="(ev) => { state.restoreBackupModal.confirmName = ev.target.value; }"/>
-                        </div>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="closeRestoreBackupModal">Cancel</button>
-                            <button class="ic-confirm-btn-ok danger"
-                                    t-att-disabled="!restoreNameMatches or state.restoreBackupModal.loading"
-                                    t-on-click="doRestoreBackup">
-                                <t t-if="state.restoreBackupModal.loading">
-                                    <i class="fa fa-spinner fa-spin"/> Restoring…
-                                </t>
-                                <t t-else="">
-                                    <i class="fa fa-undo"/> Restore
-                                </t>
-                            </button>
-                        </div>
-                    </div>
+            <IcModal t-if="state.restoreBackupModal"
+                     title="'Restore Backup'"
+                     boxClass="'ic-confirm-box ic-restore-backup-box'"
+                     onClose="closeRestoreBackupModal">
+                <h3 class="ic-confirm-title ic-danger-title">
+                    <i class="fa fa-exclamation-triangle"/> Restore Backup
+                </h3>
+                <p class="ic-restore-warning">
+                    This will <strong>permanently destroy</strong> the current database
+                    and replace it with the backup from
+                    <strong t-esc="formatBackupDate(state.restoreBackupModal.time)"/>.
+                </p>
+                <p class="ic-restore-warning">
+                    This action <strong>cannot be undone</strong>.
+                </p>
+                <div class="ic-restore-confirm-input">
+                    <label>Type the instance name to confirm:
+                        <strong t-esc="state.inst.name"/>
+                    </label>
+                    <input type="text"
+                           placeholder="Instance name"
+                           t-att-value="state.restoreBackupModal.confirmName"
+                           t-on-input="(ev) => { state.restoreBackupModal.confirmName = ev.target.value; }"/>
                 </div>
-            </t>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closeRestoreBackupModal">Cancel</button>
+                    <button class="ic-confirm-btn-ok danger"
+                            t-att-disabled="!restoreNameMatches or state.restoreBackupModal.loading"
+                            t-on-click="doRestoreBackup">
+                        <t t-if="state.restoreBackupModal.loading">
+                            <i class="fa fa-spinner fa-spin"/> Restoring…
+                        </t>
+                        <t t-else="">
+                            <i class="fa fa-undo"/> Restore
+                        </t>
+                    </button>
+                </div>
+            </IcModal>
 
             <!-- Confirm dialog -->
-            <t t-if="state.confirmDialog">
-                <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
-                    <div class="ic-confirm-box" t-on-click.stop="">
-                        <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
-                        <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel" t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
-                            <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
-                                    t-on-click="() => state.confirmDialog.onConfirm()">
-                                <t t-esc="state.confirmDialog.confirmLabel"/>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </t>
+            <IcConfirmDialog t-if="state.confirmDialog"
+                             title="state.confirmDialog.title"
+                             message="state.confirmDialog.message"
+                             confirmLabel="state.confirmDialog.confirmLabel"
+                             isDanger="state.confirmDialog.isDanger"
+                             onConfirm="state.confirmDialog.onConfirm"
+                             onCancel="state.confirmDialog.onCancel"/>
 
             <!-- Sync with project modal -->
-            <t t-if="state.syncModal">
-                <div class="ic-confirm-overlay" t-on-click="closeSyncModal">
-                    <div class="ic-sync-box" t-on-click.stop="">
+            <IcModal t-if="state.syncModal"
+                     title="'Sync with project'"
+                     boxClass="'ic-sync-box'"
+                     onClose="closeSyncModal">
                         <h3 class="ic-confirm-title">Sync with project</h3>
                         <p class="ic-sync-sub">
                             Compare this instance's dependencies and repos with the project template.
@@ -1504,30 +1530,27 @@
                                 </button>
                             </t>
                         </div>
-                    </div>
-                </div>
-            </t>
+            </IcModal>
 
             <!-- Blocked deploy dialog -->
-            <t t-if="state.conflictBlocked">
-                <div class="ic-confirm-overlay" t-on-click="() => { state.conflictBlocked = null; }">
-                    <div class="ic-conflict-box" t-on-click.stop="">
-                        <div class="ic-conflict-header">
-                            <span class="ic-conflict-icon">!</span>
-                            <h3>Deploy blocked</h3>
-                        </div>
-                        <p class="ic-conflict-description" t-esc="state.conflictBlocked.message"/>
-                        <div class="ic-confirm-actions">
-                            <button class="ic-confirm-btn-cancel"
-                                    t-on-click="() => { state.conflictBlocked = null; }">Close</button>
-                            <button class="ic-confirm-btn-ok"
-                                    t-on-click="() => { state.conflictBlocked = null; env.toggleSlideOver('alerts'); }">
-                                Go to Alerts
-                            </button>
-                        </div>
-                    </div>
+            <IcModal t-if="state.conflictBlocked"
+                     title="'Deploy blocked'"
+                     boxClass="'ic-conflict-box'"
+                     onClose="() => { state.conflictBlocked = null; }">
+                <div class="ic-conflict-header">
+                    <span class="ic-conflict-icon">!</span>
+                    <h3>Deploy blocked</h3>
                 </div>
-            </t>
+                <p class="ic-conflict-description" t-esc="state.conflictBlocked.message"/>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel"
+                            t-on-click="() => { state.conflictBlocked = null; }">Close</button>
+                    <button class="ic-confirm-btn-ok"
+                            t-on-click="() => { state.conflictBlocked = null; env.toggleSlideOver('alerts'); }">
+                        Go to Alerts
+                    </button>
+                </div>
+            </IcModal>
 
         </div>
     </t>

@@ -1,0 +1,14 @@
+// Visually hidden but still in the a11y tree — used by <IcModal> to
+// expose the title to screen readers when the visible heading lives
+// inside the consumer's body markup.
+.ic-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}

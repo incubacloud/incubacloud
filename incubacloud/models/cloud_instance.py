@@ -57,6 +57,16 @@ class CloudInstance(models.Model):
         string='Last Auto-Rebuild',
         readonly=True,
     )
+    auto_update = fields.Boolean(
+        string='Auto-Update Modules on Rebuild',
+        default=True,
+        help='Run click-odoo-update during rebuild to apply module '
+             'schema/data changes. Disable for instances that manage '
+             'module state manually or cannot accept automatic updates '
+             '(e.g. frozen production with a change-management policy). '
+             'Disabling also skips the safe boot test that relies on '
+             'click-odoo-update.',
+    )
 
     # ── Smart rebuild fingerprint ─────────────────────────────────────────
     rebuild_fingerprint = fields.Char(
@@ -534,6 +544,27 @@ class CloudInstance(models.Model):
             self.host_id.id,
             self.id,
             'backup_download',
+            payload=payload,
+        )
+
+    def download_backup_neutralized(self, payload):
+        """Enqueue a backup_download_neutralized job for this instance.
+
+        Unlike ``download_backup`` (prod-only, driven by duplicity), this
+        works for both prod (``time`` = duplicity timestamp) and non-prod
+        (``time`` = 'live', dumps the current DB on the fly).
+        """
+        self.ensure_one()
+        if not self.host_id:
+            raise ValueError("Instance has no host assigned.")
+        if not self.deployed:
+            raise ValueError("Instance is not deployed.")
+        if self.environment == 'production':
+            self._check_backup_backend()
+        return self.env['cloud.job'].enqueue(
+            self.host_id.id,
+            self.id,
+            'backup_download_neutralized',
             payload=payload,
         )
 

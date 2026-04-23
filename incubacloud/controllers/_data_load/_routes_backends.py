@@ -10,7 +10,8 @@ from botocore.exceptions import ClientError, ParamValidationError
 from odoo import _, http
 from odoo.http import request
 
-from ._helpers import _capped_search
+from ._helpers import _capped_search, _has_encrypted
+from .._safe_error import safe_error_response
 
 _logger = logging.getLogger(__name__)
 
@@ -80,8 +81,9 @@ class BackendsMixin:
             's3_path': b.s3_path or '',
             's3_endpoint_url': b.s3_endpoint_url or '',
             's3_access_key_id': b.s3_access_key_id or '',
-            'has_s3_secret_access_key': bool(b.s3_secret_access_key),
-            'has_passphrase': bool(b.passphrase),
+            'has_s3_secret_access_key':
+                _has_encrypted(b, 's3_secret_access_key'),
+            'has_passphrase': _has_encrypted(b, 'passphrase'),
             'backup_image_version': b.backup_image_version or 'latest',
             'email_from': b.email_from or '',
             'email_to': b.email_to or '',
@@ -175,5 +177,5 @@ class BackendsMixin:
             if code == '404':
                 return {'ok': False, 'error': _('Bucket "%s" not found (404).') % b.s3_bucket}
             return {'ok': False, 'error': _('S3 error %(code)s: %(msg)s') % {'code': code, 'msg': msg}}
-        except Exception as e:
-            return {'ok': False, 'error': str(e)}
+        except Exception as exc:
+            return safe_error_response(exc, _("Backend connection test failed"))

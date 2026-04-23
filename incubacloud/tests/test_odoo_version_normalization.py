@@ -3,8 +3,11 @@ Tests for odoo_version normalization in controllers.
 """
 import unittest
 
+from odoo.tests.common import BaseCase
 
-class TestOdooVersionNormalization(unittest.TestCase):
+
+
+class TestOdooVersionNormalization(BaseCase):
     """Test that numeric odoo_version values are normalized to strings."""
 
     def _normalize(self, v):

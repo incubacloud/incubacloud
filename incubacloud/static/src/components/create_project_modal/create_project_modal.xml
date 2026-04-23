@@ -3,11 +3,16 @@
 
    <t t-name="incubacloud.CreateProjectModal">
         <div class="ic-modal-overlay" t-on-click="onOverlayClick">
-            <div class="ic-modal ic-modal--m" t-on-click.stop="">
+            <div class="ic-modal ic-modal--m"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="ic-create-project-title"
+                 t-ref="box"
+                 t-on-click.stop="">
 
             <!-- Header -->
             <header class="ic-modal__header">
-                <h3>Create project</h3>
+                <h3 id="ic-create-project-title">Create project</h3>
                 <button class="ic-modal__close" t-on-click="close">
                 ✕
                 </button>

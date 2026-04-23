@@ -14,6 +14,38 @@ from urllib.parse import quote as _url_quote
 _logger = logging.getLogger(__name__)
 
 
+def _has_encrypted(record, field_name):
+    """Return True iff *record.field_name* has a stored (encrypted) value.
+
+    Used ONLY for ``has_xxx`` existence booleans — never use this to
+    substitute an actual read of the decrypted value. If the caller
+    needs to consume the secret (SSH connection, API call, etc.) let
+    the decryption exception propagate: using a value we cannot read
+    is worse than failing loud.
+
+    Reading an EncryptedChar field triggers decryption, which raises
+    when the current INCUBACLOUD_SECRET_KEY cannot open the ciphertext
+    (key rotation gap, corrupted value, cross-database restore). A
+    single broken secret must NOT prevent the SPA from loading a
+    host / instance / backend detail. Since ``convert_to_record`` only
+    reaches the decrypt path when the DB column is non-empty, a
+    decrypt exception implies ciphertext IS stored — semantically the
+    field IS set. We return ``True`` so the UI reflects reality
+    ("there is a password here, just broken") and the operator can
+    rotate / re-enter it rather than being tricked into creating a
+    duplicate.
+    """
+    try:
+        return bool(record[field_name])
+    except Exception as e:  # noqa: BLE001 — any decrypt / ORM failure
+        _logger.warning(
+            "[encrypted] failed to decrypt %s on %s(id=%s): %s "
+            "(reporting as stored-but-unreadable)",
+            field_name, record._name, record.id, e,
+        )
+        return True
+
+
 # Allowed (model, field) pairs for the /cloud/get_secret endpoint.
 _SECRET_FIELDS = {
     'cloud.host': {

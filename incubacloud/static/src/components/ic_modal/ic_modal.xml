@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.IcModal">
+        <div class="ic-confirm-overlay"
+             t-on-click="onOverlayClick">
+            <div t-att-class="resolvedBoxClass"
+                 role="dialog"
+                 aria-modal="true"
+                 t-att-aria-labelledby="props.title ? titleId : undefined"
+                 t-ref="box"
+                 t-on-click.stop="">
+                <t t-if="props.title">
+                    <span class="ic-sr-only" t-att-id="titleId" t-esc="props.title"/>
+                </t>
+                <t t-slot="default"/>
+            </div>
+        </div>
+    </t>
+
+</templates>

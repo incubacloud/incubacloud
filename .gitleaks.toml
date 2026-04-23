@@ -1,0 +1,33 @@
+# gitleaks config — tuned to match this repo's layout.
+#
+# Extends the upstream default ruleset and adds narrow allowlists for
+# intentional matches:
+#   - Test fixtures that embed sample RSA keys.
+#   - Translation files that carry strings containing "BEGIN PRIVATE KEY".
+#   - One historical commit where a short-lived dev fallback key lived
+#     before the mandatory-env-var rollout.
+#
+# When adding a new allowlist entry, prefer ``paths`` + ``regexes``
+# (narrow, stable) over ``commits`` (rewrites break the allowlist).
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures: tests/test_cloud_github_app.py carries a sample RSA private key to exercise the credential service. The key is test-only and committed deliberately."
+paths = [
+    '''incubacloud/tests/test_cloud_github_app\.py''',
+]
+
+[[allowlists]]
+description = "Translation catalogs quote the module's own docstrings and UI copy, which include the string 'BEGIN PRIVATE KEY' as part of an instruction. No actual key material."
+paths = [
+    '''incubacloud/i18n/.*\.po''',
+    '''incubacloud/i18n/.*\.pot''',
+]
+
+[[allowlists]]
+description = "Historical: commit 4ba501eb introduced a dev fallback key in password_utils.py that was removed in a later commit. Modern builds require INCUBACLOUD_SECRET_KEY at startup."
+commits = [
+    "4ba501eb2979745559c511142f1a307594a4f9f6",
+]

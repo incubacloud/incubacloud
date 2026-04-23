@@ -123,47 +123,45 @@
         </header>
 
         <!-- Notification preferences modal -->
-        <t t-if="state.showNotifModal">
-            <div class="ic-confirm-overlay" t-on-click="closeNotifModal">
-                <div class="ic-confirm-box" t-on-click.stop="">
-                    <h3 class="ic-confirm-title">
-                        <i class="fa fa-bell-o"/> Notification Preferences
-                    </h3>
-                    <p class="ic-confirm-message">
-                        Choose when to receive email notifications for cloud jobs.
-                        In-app notifications are always shown.
-                    </p>
-                    <div class="ic-form-grid" style="margin: 12px 0;">
-                        <div class="ic-form-row">
-                            <label>Email notifications</label>
-                            <select t-on-change="(ev) => { state.notifLevel = ev.target.value; }">
-                                <option value="all"
-                                        t-att-selected="state.notifLevel === 'all'">
-                                    All events (success + failure)
-                                </option>
-                                <option value="failures"
-                                        t-att-selected="state.notifLevel === 'failures'">
-                                    Failures only
-                                </option>
-                                <option value="none"
-                                        t-att-selected="state.notifLevel === 'none'">
-                                    None
-                                </option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="ic-confirm-actions">
-                        <button class="ic-confirm-btn-cancel" t-on-click="closeNotifModal">Cancel</button>
-                        <button class="ic-confirm-btn-ok"
-                                t-att-disabled="state.notifSaving"
-                                t-on-click="saveNotifPrefs">
-                            <t t-if="state.notifSaving">Saving…</t>
-                            <t t-else="">Save</t>
-                        </button>
-                    </div>
+        <IcModal t-if="state.showNotifModal"
+                 title="'Notification Preferences'"
+                 onClose="closeNotifModal">
+            <h3 class="ic-confirm-title">
+                <i class="fa fa-bell-o"/> Notification Preferences
+            </h3>
+            <p class="ic-confirm-message">
+                Choose when to receive email notifications for cloud jobs.
+                In-app notifications are always shown.
+            </p>
+            <div class="ic-form-grid" style="margin: 12px 0;">
+                <div class="ic-form-row">
+                    <label>Email notifications</label>
+                    <select t-on-change="(ev) => { state.notifLevel = ev.target.value; }">
+                        <option value="all"
+                                t-att-selected="state.notifLevel === 'all'">
+                            All events (success + failure)
+                        </option>
+                        <option value="failures"
+                                t-att-selected="state.notifLevel === 'failures'">
+                            Failures only
+                        </option>
+                        <option value="none"
+                                t-att-selected="state.notifLevel === 'none'">
+                            None
+                        </option>
+                    </select>
                 </div>
             </div>
-        </t>
+            <div class="ic-confirm-actions">
+                <button class="ic-confirm-btn-cancel" t-on-click="closeNotifModal">Cancel</button>
+                <button class="ic-confirm-btn-ok"
+                        t-att-disabled="state.notifSaving"
+                        t-on-click="saveNotifPrefs">
+                    <t t-if="state.notifSaving">Saving…</t>
+                    <t t-else="">Save</t>
+                </button>
+            </div>
+        </IcModal>
     </t>
 
 </templates>

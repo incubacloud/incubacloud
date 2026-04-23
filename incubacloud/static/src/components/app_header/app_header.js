@@ -2,9 +2,11 @@ import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { session } from "@web/session";
 import { _t } from "@web/core/l10n/translation";
+import { IcModal } from "../ic_modal/ic_modal";
 
 export class AppHeader extends Component {
     static template = "incubacloud.AppHeader";
+    static components = { IcModal };
     static props = {
         alertCount:   { type: Number },
         currentRoute: { type: String },

@@ -3,6 +3,9 @@ Tests for executor features: stop_on_failure, _prod_services,
 SMTP stripping, safe boot test, and click-odoo-update integration.
 """
 import unittest
+
+from odoo.tests.common import BaseCase
+
 from types import SimpleNamespace
 
 
@@ -40,23 +43,28 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
 
 
 def _make_rebuild_executor(smtp_relay_host='', environment='production',
-                           odoo_version='19.0', **extra):
+                           odoo_version='19.0', auto_update=True, **extra):
     """Build a minimal RebuildInstanceExecutor without an Odoo environment."""
     from odoo.addons.incubacloud.models.rebuild_instance_executor import (
         RebuildInstanceExecutor,
     )
 
     inst = SimpleNamespace(
+        id=42,
         name='test-inst',
         doodba_project_name='test_proj',
         postgres_username='odoo',
         postgres_dbname='prod',
+        postgres_version='17',
         environment=environment,
         smtp_relay_host=smtp_relay_host,
         odoo_version=odoo_version,
         domain='test.example.com',
         project_id=SimpleNamespace(remote_folder='projects'),
         odoo_initial_lang=None,
+        auto_update=auto_update,
+        rebuild_fingerprint='fp1',
+        last_rebuild_fingerprint='fp0',
         **extra,
     )
 
@@ -65,6 +73,9 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
     ex._inst_dir = lambda i: f"~/projects/{i.name}"
     ex._tmp = lambda suffix: f"/tmp/.incubacloud-test_proj-{suffix}"
     ex._base_url = lambda: "https://test.example.com"
+    ex._sys = lambda *_a, **_k: None
+    ex._backup_enabled = bool
+    ex._backup_retention = lambda: '3M'
     return ex
 
 
@@ -344,3 +355,64 @@ class TestIncubaclouEnvInjection(unittest.TestCase):
         """Command must use grep -q guard so it does not double-inject."""
         cmd = self._rebuild_inject_cmd()
         self.assertIn('grep -q', cmd[1])
+
+
+# ---------------------------------------------------------------------------
+# Class 8: TestAutoUpdateFlag
+# ---------------------------------------------------------------------------
+
+class TestAutoUpdateFlag(BaseCase):
+    """Rebuild skips boot test + update when ``auto_update`` is off.
+
+    Default is ``True`` (preserves current behavior for all pre-existing
+    instances). When an operator flips it off — e.g. a production with a
+    change-management policy — both ``click-odoo-update`` steps go away
+    but the image rebuild, the ``incubacloud_connect`` reinstall and the
+    final ``up -d`` still run, so the operator can ship new image bits
+    without forcing module migrations.
+    """
+
+    def test_auto_update_true_keeps_both_click_odoo_steps(self):
+        cmds = _make_rebuild_executor(auto_update=True).get_commands()
+        self.assertIsNotNone(
+            _find_cmd(cmds, "Test new image (safe boot check)"),
+            "boot test must be present when auto_update=True",
+        )
+        self.assertIsNotNone(
+            _find_cmd(cmds, "Update changed modules"),
+            "click-odoo-update must be present when auto_update=True",
+        )
+
+    def test_auto_update_false_skips_boot_test_and_update(self):
+        cmds = _make_rebuild_executor(auto_update=False).get_commands()
+        self.assertIsNone(
+            _find_cmd(cmds, "Test new image (safe boot check)"),
+            "boot test must be skipped when auto_update=False",
+        )
+        self.assertIsNone(
+            _find_cmd(cmds, "Update changed modules"),
+            "click-odoo-update must be skipped when auto_update=False",
+        )
+
+    def test_auto_update_false_keeps_tail_steps(self):
+        """Skipping updates must not strip the incubacloud_connect install
+        and the final restart — those guarantee the new image actually
+        runs even without module migrations."""
+        cmds = _make_rebuild_executor(auto_update=False).get_commands()
+        self.assertIsNotNone(
+            _find_cmd(cmds, "Ensure incubacloud_connect"),
+            "incubacloud_connect reinstall must still run",
+        )
+        self.assertIsNotNone(
+            _find_cmd(cmds, "Restart instance"),
+            "docker compose up -d must still run",
+        )
+
+    def test_auto_update_false_keeps_image_rebuild(self):
+        """The image itself must still be rebuilt; auto_update only
+        gates the DB-side update, not the Docker-side one."""
+        cmds = _make_rebuild_executor(auto_update=False).get_commands()
+        self.assertIsNotNone(
+            _find_cmd(cmds, "Rebuild Odoo image"),
+            "image rebuild must still run when auto_update=False",
+        )

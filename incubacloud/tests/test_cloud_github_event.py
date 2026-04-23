@@ -533,3 +533,124 @@ class TestProcessPREventGuards(_GitHubEventBase):
             self.env['cloud.instance'].browse(pr_id).exists(),
             "Un-deployed PR instance should be unlinked on PR close",
         )
+
+
+class TestDeliveryIdAntiReplay(TransactionCase):
+    """Regression guard for the partial unique index on delivery_id.
+
+    GitHub's X-GitHub-Delivery UUID is unique per delivery by contract.
+    A duplicate insert means either a retry after a transient failure
+    or a captured request being replayed. The DB constraint lets the
+    controller detect and swallow the duplicate without re-firing the
+    push / pull_request handlers.
+    """
+
+    def test_duplicate_delivery_id_raises_integrity_error(self):
+        from psycopg2 import errors as pg_errors
+
+        Event = self.env['cloud.github.event'].sudo()
+        Event.create({
+            'event_type': 'push', 'action': '',
+            'delivery_id': 'dup-uuid-1', 'payload': '{}',
+        })
+        # Second insert with the same delivery_id must raise at the DB
+        # layer. Using a savepoint so the outer test transaction stays
+        # usable for the assertion afterwards.
+        with self.assertRaises(pg_errors.UniqueViolation):
+            with self.env.cr.savepoint():
+                Event.create({
+                    'event_type': 'push', 'action': '',
+                    'delivery_id': 'dup-uuid-1', 'payload': '{}',
+                })
+
+    def test_empty_delivery_id_allows_multiple_rows(self):
+        """Partial index WHERE delivery_id != '' — legacy/test rows with
+        empty delivery_id must coexist so the install-time index
+        creation doesn't fail on historic data."""
+        Event = self.env['cloud.github.event'].sudo()
+        Event.create({
+            'event_type': 'ping', 'action': '',
+            'delivery_id': '', 'payload': '{}',
+        })
+        # Should not raise — partial index exempts empty delivery_id.
+        Event.create({
+            'event_type': 'ping', 'action': '',
+            'delivery_id': '', 'payload': '{}',
+        })
+
+
+class TestPurgeCloudGitHubEvent(TransactionCase):
+    """Retention cron behaviour for ``cloud.github.event``.
+
+    Two independent stages are covered: payload truncation for mid-age
+    rows, outright deletion for very old rows, and preservation of
+    fresh rows and unprocessed rows regardless of age.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.settings = self.env['cloud.settings'].sudo()._get()
+        self.settings.write({
+            'github_event_truncate_days': 7,
+            'github_event_retention_days': 30,
+        })
+        self.Event = self.env['cloud.github.event'].sudo()
+
+    def _make(self, days_old, processed=True, payload=None, delivery=None):
+        payload = payload or json.dumps({
+            'ref': 'refs/heads/main',
+            'after': 'a' * 40,
+            'pusher': {'name': 'alice'},
+            'repository': {'full_name': 'owner/repo'},
+            'extra': 'x' * 1000,
+        })
+        ev = self.Event.create({
+            'event_type': 'push',
+            'action': '',
+            'delivery_id': delivery or f'purge-{days_old}-{fields.Datetime.now()}',
+            'payload': payload,
+            'processed': processed,
+        })
+        backdate = fields.Datetime.now() - timedelta(days=days_old)
+        self.env.cr.execute(
+            "UPDATE cloud_github_event SET create_date = %s WHERE id = %s",
+            (backdate, ev.id),
+        )
+        ev.invalidate_recordset(['create_date'])
+        return ev
+
+    def test_old_processed_event_is_deleted(self):
+        ev = self._make(days_old=45, processed=True)
+        self.Event._purge_old()
+        self.assertFalse(ev.exists(), "row >retention_days must be unlinked")
+
+    def test_unprocessed_event_is_kept(self):
+        ev = self._make(days_old=120, processed=False)
+        self.Event._purge_old()
+        self.assertTrue(
+            ev.exists(),
+            "unprocessed rows must survive purge regardless of age",
+        )
+
+    def test_mid_age_payload_is_truncated(self):
+        ev = self._make(days_old=10, processed=True)
+        original_len = len(ev.payload)
+        self.Event._purge_old()
+        self.assertTrue(ev.exists(), "row below retention must stay")
+        data = json.loads(ev.payload)
+        self.assertTrue(
+            data.get('_truncated'),
+            "payload should be replaced by a stub marked _truncated",
+        )
+        self.assertEqual(data.get('_original_size'), original_len)
+        self.assertEqual(data.get('ref'), 'refs/heads/main')
+        self.assertLess(len(ev.payload), original_len)
+
+    def test_fresh_event_is_untouched(self):
+        ev = self._make(days_old=1, processed=True)
+        snapshot = ev.payload
+        self.Event._purge_old()
+        self.assertEqual(
+            ev.payload, snapshot,
+            "events younger than truncate_days must keep full payload",
+        )

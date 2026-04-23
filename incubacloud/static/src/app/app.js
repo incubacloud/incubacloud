@@ -1,5 +1,7 @@
 import { Component, useState, onMounted, onWillUnmount, onWillStart, useSubEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
+import { useService } from "@web/core/utils/hooks";
+import { useDebouncedBus } from "../utils/use_debounced_bus";
 import { ProjectDashboard } from "../components/project_dashboard/project_dashboard";
 import { ProjectDetail } from "../components/project_detail/project_detail";
 
@@ -145,7 +147,12 @@ export class Chrome extends Component {
                 this.state.alertCount = data.count;
             } catch (_e) { console.debug("Alert count fetch skipped:", _e); }
         };
-        this._alertTimer = null;
+        this._busService = useService("bus_service");
+        // Debounce overview invalidations: a burst of alert mutations
+        // (e.g. dismiss-all-selected) would otherwise trigger as many
+        // ``get_alert_count`` RPCs as there are rows affected.
+        const triggerAlertRefresh = useDebouncedBus(() => this._pollAlertCount());
+        this._onOverviewUpdate = () => triggerAlertRefresh();
 
         onWillStart(async () => {
             try {
@@ -161,22 +168,49 @@ export class Chrome extends Component {
             } catch (_e) { console.warn("Failed to load initial config:", _e); }
         });
 
-        this._onPopState = () => {
-            const { route, params } = _parseRoute(window.location.pathname);
-            this.state.route = route;
-            this.state.params = params;
+        // Slot for the current "form dirty" guard. Registered by
+        // detail components via useNavGuard(). Only one slot — the SPA
+        // shows a single page per route, so there is never a valid
+        // reason for two guards at once. If two components register
+        // we keep the latest (mirrors the user's focus).
+        this._navGuard = null;
+
+        // Remember the pre-popstate URL so we can rewind the browser
+        // history when the user cancels a back/forward transition.
+        this._lastAcceptedRoute = _parseRoute(window.location.pathname);
+
+        this._onPopState = async () => {
+            const parsed = _parseRoute(window.location.pathname);
+            // popstate has already mutated history before we get the
+            // event — if the guard rejects, we push the previous URL
+            // back so the address bar matches reality.
+            if (this._navGuard) {
+                const ok = await this._navGuard();
+                if (!ok) {
+                    const prev = this._lastAcceptedRoute;
+                    history.pushState(
+                        null, "",
+                        _buildUrl(prev.route, prev.params),
+                    );
+                    return;
+                }
+            }
+            this.state.route = parsed.route;
+            this.state.params = parsed.params;
+            this._lastAcceptedRoute = parsed;
         };
 
         onMounted(() => {
             this.props.disableLoader();
             window.addEventListener("popstate", this._onPopState);
             this._pollAlertCount();
-            this._alertTimer = setInterval(this._pollAlertCount, 30000);
+            this._busService.subscribe("cloud_overview", this._onOverviewUpdate);
+            this._busService.start();
         });
 
         onWillUnmount(() => {
             window.removeEventListener("popstate", this._onPopState);
-            clearInterval(this._alertTimer);
+            this._busService.unsubscribe("cloud_overview", this._onOverviewUpdate);
         });
 
         const appState = this.state;
@@ -245,15 +279,23 @@ export class Chrome extends Component {
             closeSlideOver: () => {
                 appState.slideOver = null;
             },
-            navigate: (route, params = {}) => {
+            navigate: async (route, params = {}) => {
                 if (route === "logout") {
+                    // ``beforeunload`` (still registered by useNavGuard)
+                    // fires for full-page reloads, so logout inherits
+                    // the same warning for free — no special casing.
                     window.location.href = "/";
                     return;
+                }
+                if (this._navGuard) {
+                    const ok = await this._navGuard();
+                    if (!ok) return;
                 }
                 const url = _buildUrl(route, params);
                 history.pushState(null, "", url);
                 appState.route = route;
                 appState.params = params;
+                this._lastAcceptedRoute = { route, params };
                 // Clear project name when navigating away from project context
                 const projectRoutes = [
                     "project_detail", "project_settings", "create_instance",
@@ -263,6 +305,8 @@ export class Chrome extends Component {
                     appState.projectName = "";
                 }
             },
+            setNavGuard: (fn) => { this._navGuard = fn; },
+            clearNavGuard: () => { this._navGuard = null; },
             get features() { return appState.features; },
         });
     }

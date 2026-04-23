@@ -1,9 +1,14 @@
 import { Component, useState, useSubEnv, onWillStart, onMounted, onWillUnmount } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { CoreRatesTab } from "../core_rates_tab/core_rates_tab";
+import { useNavGuard } from "../../utils/use_nav_guard";
+import { useFormValidation } from "../../utils/use_form_validation";
 
 export class Settings extends Component {
     static template = "incubacloud.Settings";
+    static components = { IcConfirmDialog, CoreRatesTab };
     static props = {};
 
     setup() {
@@ -49,21 +54,31 @@ export class Settings extends Component {
         this._saveHandlers = _saveHandlers;
         this._savedForm = null;
 
-        this._onBeforeUnload = (e) => {
-            if (this.hasUnsavedChanges) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
+        // Retention fields are numeric and can reach the controller
+        // as strings from <input type=number>; reject negative/NaN
+        // client-side so the server isn't the one rendering the error.
+        const nonNegativeInt = (msg) => (v) => {
+            if (v == null || String(v).trim() === "") return null;
+            const n = Number(v);
+            return (Number.isInteger(n) && n >= 0) ? null : msg;
         };
+        this.validator = useFormValidation(() => ({
+            audit_log_retention_days: [
+                nonNegativeInt(_t("Must be a positive integer")),
+            ],
+            job_log_retention_days: [
+                nonNegativeInt(_t("Must be a positive integer")),
+            ],
+        }));
 
         onWillStart(() => this.loadConfig());
         onMounted(() => {
             this._checkUrlParams();
-            window.addEventListener('beforeunload', this._onBeforeUnload);
         });
-        onWillUnmount(() => {
-            window.removeEventListener('beforeunload', this._onBeforeUnload);
-        });
+        useNavGuard(
+            () => this.hasUnsavedChanges,
+            (opts) => this._confirm(opts),
+        );
     }
 
     get hasUnsavedChanges() {
@@ -151,6 +166,11 @@ export class Settings extends Component {
 
     async save() {
         if (this.state.saving) return;
+        const { isValid, firstError } = this.validator.validate(this.state.form);
+        if (!isValid) {
+            this.env.toast?.error(firstError);
+            return;
+        }
         this.state.saving = true;
         const errors = [];
 

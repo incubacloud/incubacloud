@@ -205,13 +205,20 @@
 
     <script type="text/javascript">
         var odoo = <t t-out="json.dumps({'csrf_token': csrf_token, '__session_info__': session_info})"/>;
+        var WS_VERSION = <t t-out="json.dumps(ws_version)"/>;
 
         (function () {
             var JOB_ID   = <t t-esc="job_id"/>;
             var afterId  = 0;
             var lineCount = 0;
             var polling  = true;
-            var POLL_MS  = 600;
+            /* Polling is now a fallback: the websocket below delivers
+             * events in real time and calls ``poll()`` immediately,
+             * so the timer exists only for resiliency when the bus
+             * drops (network blip, sleep/wake, Odoo worker restart).
+             * 10 s keeps recovery time bounded without the old 600 ms
+             * firehose of RPCs. */
+            var POLL_MS  = 10000;
 
             var terminal    = document.getElementById('terminal');
             var cursor      = document.getElementById('cursor');
@@ -262,6 +269,87 @@
                   .then(function (r) { return r.result; });
             }
 
+            /* ── ANSI SGR → styled spans ──
+             *
+             * git-aggregator, pip, docker compose and friends pepper
+             * their stdout with ANSI colour escapes (``\x1b[…m``). The
+             * terminal appended them verbatim before, rendering the ESC
+             * byte as a ▯ box in the middle of every line. This mini
+             * parser consumes those sequences and emits span nodes with
+             * inline ``color``/``background``/``font-weight``/``opacity``
+             * instead. Covers the common SGR set: reset, bold, dim, 8
+             * basic fg/bg, 8 bright, 256-colour palette (38;5;N / 48;5;N)
+             * and truecolour (38;2;R;G;B).
+             */
+            var ANSI_BASIC = {
+                30:'#000', 31:'#e06060', 32:'#60c060', 33:'#e0c060', 34:'#6088e0', 35:'#c060c0', 36:'#4ec9b0', 37:'#d4d4d4',
+                90:'#666', 91:'#f48771', 92:'#8ae066', 93:'#ffd060', 94:'#88aaff', 95:'#ff88ff', 96:'#88ffff', 97:'#fff'
+            };
+            function ansi256(n) {
+                if (n &lt; 16) return ANSI_BASIC[n &lt; 8 ? 30 + n : 82 + n];
+                if (n &lt; 232) {
+                    n -= 16;
+                    var scale = [0, 95, 135, 175, 215, 255];
+                    return 'rgb(' + scale[Math.floor(n/36)] + ',' + scale[Math.floor((n%36)/6)] + ',' + scale[n%6] + ')';
+                }
+                var v = 8 + (n - 232) * 10;
+                return 'rgb(' + v + ',' + v + ',' + v + ')';
+            }
+            function applyAnsiCodes(state, raw) {
+                var codes = (raw === '' ? [0] : raw.split(';').map(function (x) { return parseInt(x, 10); }));
+                for (var i = 0; i &lt; codes.length; i++) {
+                    var c = codes[i];
+                    if (!isFinite(c) || c === 0)      { state.fg = null; state.bg = null; state.bold = false; state.dim = false; state.italic = false; state.underline = false; }
+                    else if (c === 1)                 { state.bold = true; }
+                    else if (c === 2)                 { state.dim = true; }
+                    else if (c === 3)                 { state.italic = true; }
+                    else if (c === 4)                 { state.underline = true; }
+                    else if (c === 22)                { state.bold = false; state.dim = false; }
+                    else if (c === 23)                { state.italic = false; }
+                    else if (c === 24)                { state.underline = false; }
+                    else if (c === 39)                { state.fg = null; }
+                    else if (c === 49)                { state.bg = null; }
+                    else if (c >= 30 &amp;&amp; c &lt;= 37)     { state.fg = ANSI_BASIC[c]; }
+                    else if (c >= 40 &amp;&amp; c &lt;= 47)     { state.bg = ANSI_BASIC[c - 10]; }
+                    else if (c >= 90 &amp;&amp; c &lt;= 97)     { state.fg = ANSI_BASIC[c]; }
+                    else if (c >= 100 &amp;&amp; c &lt;= 107)   { state.bg = ANSI_BASIC[c - 10]; }
+                    else if (c === 38 &amp;&amp; codes[i+1] === 5) { state.fg = ansi256(codes[i+2] || 0); i += 2; }
+                    else if (c === 48 &amp;&amp; codes[i+1] === 5) { state.bg = ansi256(codes[i+2] || 0); i += 2; }
+                    else if (c === 38 &amp;&amp; codes[i+1] === 2) { state.fg = 'rgb(' + (codes[i+2]||0) + ',' + (codes[i+3]||0) + ',' + (codes[i+4]||0) + ')'; i += 4; }
+                    else if (c === 48 &amp;&amp; codes[i+1] === 2) { state.bg = 'rgb(' + (codes[i+2]||0) + ',' + (codes[i+3]||0) + ',' + (codes[i+4]||0) + ')'; i += 4; }
+                }
+            }
+            function emitRun(parent, text, state) {
+                if (!text) return;
+                if (!state.fg &amp;&amp; !state.bg &amp;&amp; !state.bold &amp;&amp; !state.dim &amp;&amp; !state.italic &amp;&amp; !state.underline) {
+                    parent.appendChild(document.createTextNode(text));
+                    return;
+                }
+                var span = document.createElement('span');
+                var css = '';
+                if (state.fg) css += 'color:' + state.fg + ';';
+                if (state.bg) css += 'background:' + state.bg + ';';
+                if (state.bold) css += 'font-weight:bold;';
+                if (state.dim) css += 'opacity:0.65;';
+                if (state.italic) css += 'font-style:italic;';
+                if (state.underline) css += 'text-decoration:underline;';
+                span.style.cssText = css;
+                span.textContent = text;
+                parent.appendChild(span);
+            }
+            function appendAnsiText(parent, text) {
+                var re = /\x1b\[([0-9;]*)m/g;
+                var state = { fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
+                var last = 0;
+                var m;
+                while ((m = re.exec(text)) !== null) {
+                    if (m.index > last) emitRun(parent, text.slice(last, m.index), state);
+                    applyAnsiCodes(state, m[1]);
+                    last = re.lastIndex;
+                }
+                if (last &lt; text.length) emitRun(parent, text.slice(last), state);
+            }
+
             /* ── Render chunks ── */
             var PREFIX = { stdout: 'out', stderr: 'err', system: 'sys' };
 
@@ -276,10 +364,8 @@
                     var srcLabel = '[' + (PREFIX[chunk.source] || chunk.source) + ']';
                     prefix.textContent = (chunk.ts ? chunk.ts + '  ' : '') + srcLabel;
 
-                    var text = document.createTextNode(chunk.content + '\n');
-
                     line.appendChild(prefix);
-                    line.appendChild(text);
+                    appendAnsiText(line, chunk.content + '\n');
                     terminal.insertBefore(line, cursor);
 
                     afterId = Math.max(afterId, chunk.id);
@@ -337,7 +423,16 @@
                 badge.className = 'job-state-badge state-' + (state || 'pending');
             }
 
-            /* ── Poll loop ── */
+            /* ── Poll loop (fallback for the websocket below) ── */
+            var pollTimer = null;
+            function scheduleNext(delay) {
+                if (!polling) return;
+                if (pollTimer !== null) clearTimeout(pollTimer);
+                pollTimer = setTimeout(function () {
+                    pollTimer = null;
+                    poll();
+                }, delay);
+            }
             function poll() {
                 rpc('load_chunks', [JOB_ID, afterId])
                     .then(function (result) {
@@ -356,14 +451,71 @@
                     .catch(function (err) {
                         statusText.textContent = 'Connection error — retrying…';
                     })
-                    .finally(function () {
-                        if (polling) {
-                            setTimeout(poll, POLL_MS);
+                    .finally(function () { scheduleNext(POLL_MS); });
+            }
+
+            /* ── Websocket: push-based invalidation ──
+             *
+             * Raw WebSocket speaks Odoo's bus protocol directly:
+             *   client subscribes → server pushes JSON arrays of
+             *   ``{id, message: {type, payload}}`` on each cloud_jobs
+             *   event. Payload is intentionally thin (``{id: job_id}``)
+             *   so we don't leak data through the unpermissioned bus —
+             *   the HTTP ``load_chunks`` RPC enforces ACLs.
+             *
+             * The bundled ``bus_service`` is not loaded on this
+             * standalone template (would pull in the whole backend
+             * bundle), so we talk the protocol inline.
+             *
+             * Behavior:
+             *   - On every matching push, poll now (and reset the
+             *     10 s fallback timer via scheduleNext).
+             *   - On disconnect, reconnect with 1→30 s exponential
+             *     backoff until the job reaches a done state.
+             */
+            var ws = null;
+            var wsRetry = 1000;
+            function openWs() {
+                if (!polling) return;
+                var scheme = (location.protocol === 'https:') ? 'wss' : 'ws';
+                var wsUrl = scheme + '://' + location.host + '/websocket?version=' + encodeURIComponent(WS_VERSION);
+                try { ws = new WebSocket(wsUrl); }
+                catch (_e) { setTimeout(openWs, wsRetry); wsRetry = Math.min(wsRetry * 2, 30000); return; }
+                ws.onopen = function () {
+                    wsRetry = 1000;
+                    ws.send(JSON.stringify({
+                        event_name: 'subscribe',
+                        data: { channels: ['cloud_jobs'], last: 0 },
+                    }));
+                };
+                ws.onmessage = function (ev) {
+                    var notifs;
+                    try { notifs = JSON.parse(ev.data); } catch (_e) { return; }
+                    if (!Array.isArray(notifs)) return;
+                    var matched = false;
+                    for (var i = 0; i &lt; notifs.length; i++) {
+                        var m = notifs[i] &amp;&amp; notifs[i].message;
+                        if (m &amp;&amp; m.type === 'cloud_jobs' &amp;&amp; m.payload &amp;&amp; m.payload.id === JOB_ID) {
+                            matched = true; break;
                         }
-                    });
+                    }
+                    if (matched) {
+                        if (pollTimer !== null) { clearTimeout(pollTimer); pollTimer = null; }
+                        poll();
+                    }
+                };
+                ws.onclose = function () {
+                    ws = null;
+                    if (polling) {
+                        setTimeout(openWs, wsRetry);
+                        wsRetry = Math.min(wsRetry * 2, 30000);
+                    }
+                };
+                ws.onerror = function () { try { ws.close(); } catch (_e) {} };
             }
 
             poll();
+            openWs();
         })();
     </script>
 

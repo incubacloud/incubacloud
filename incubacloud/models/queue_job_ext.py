@@ -90,4 +90,16 @@ class QueueJob(models.Model):
                 cjob.id, new_state,
             )
 
+            # Persist a cloud.alert on failure / dismiss any leftover
+            # alert when the same job succeeds on retry. These live in
+            # the Alerts panel so operators see failures after the
+            # real-time toast has disappeared.
+            CJob = self.env['cloud.job']
+            if new_state == 'failed':
+                CJob._create_job_failed_alert(
+                    cjob, exc_message=qjob.exc_message,
+                )
+            elif new_state == 'done':
+                CJob._dismiss_job_failed_alerts(cjob)
+
         return result

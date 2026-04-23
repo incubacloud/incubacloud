@@ -15,6 +15,8 @@
                         t-on-click="() => this.setTab('general')">General</button>
                 <button t-att-class="state.tab === 'github' ? 'ic-tab active' : 'ic-tab'"
                         t-on-click="() => this.setTab('github')">GitHub</button>
+                <button t-att-class="state.tab === 'rates' ? 'ic-tab active' : 'ic-tab'"
+                        t-on-click="() => this.setTab('rates')">Rates</button>
             </div>
 
             <t t-if="state.loading">
@@ -378,6 +380,11 @@
                     </div>
                 </t>
 
+                <!-- ── Rates tab (core endpoints) ──────────────────────────── -->
+                <t t-if="state.tab === 'rates'">
+                    <CoreRatesTab/>
+                </t>
+
                 </div><!-- /ic-detail-body -->
 
                 <!-- ── Unified footer (persists across all tabs) ────────── -->
@@ -400,21 +407,13 @@
         </div>
 
         <!-- Confirmation dialog -->
-        <t t-if="state.confirmDialog">
-            <div class="ic-confirm-overlay" t-on-click="() => state.confirmDialog.onCancel()">
-                <div class="ic-confirm-box" t-on-click.stop="">
-                    <h3 class="ic-confirm-title" t-esc="state.confirmDialog.title"/>
-                    <p class="ic-confirm-message" t-esc="state.confirmDialog.message"/>
-                    <div class="ic-confirm-actions">
-                        <button class="ic-confirm-btn-cancel" t-on-click="() => state.confirmDialog.onCancel()">Cancel</button>
-                        <button t-att-class="'ic-confirm-btn-ok' + (state.confirmDialog.isDanger ? ' danger' : '')"
-                                t-on-click="() => state.confirmDialog.onConfirm()">
-                            <t t-esc="state.confirmDialog.confirmLabel"/>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </t>
+        <IcConfirmDialog t-if="state.confirmDialog"
+                         title="state.confirmDialog.title"
+                         message="state.confirmDialog.message"
+                         confirmLabel="state.confirmDialog.confirmLabel"
+                         isDanger="state.confirmDialog.isDanger"
+                         onConfirm="state.confirmDialog.onConfirm"
+                         onCancel="state.confirmDialog.onCancel"/>
 
     </t>
 

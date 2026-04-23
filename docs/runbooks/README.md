@@ -1,0 +1,35 @@
+# IncubaCloud Operational Runbooks
+
+Concrete steps for recurring operational scenarios. Each runbook is
+self-contained: symptoms → diagnosis → resolution → rollback, with
+exact commands an on-call operator can paste.
+
+All commands assume you run them from the doodba checkout root
+(`/home/<user>/.../incubacloud-doodba/`) unless stated otherwise.
+
+## Index
+
+| # | Runbook | Severity | When to use |
+|---|---------|----------|-------------|
+| [RB-01](RB-01-rotate-secret-key.md) | Rotate `INCUBACLOUD_SECRET_KEY` (MultiFernet) | planned | Scheduled rotation, suspected leak |
+| [RB-02](RB-02-restore-master-db.md) | Restore master DB from off-site backup | critical | Control-plane DB lost or corrupted |
+| [RB-03](RB-03-orphan-terminal-subprocesses.md) | Clean up orphan terminal subprocesses | warning | High memory, stray `python -m incubacloud.terminal_subprocess` |
+| [RB-04](RB-04-tune-rate-limits.md) | Tune rate limits | warning | Legitimate 429s, false-positive throttling |
+| [RB-05](RB-05-triage-failed-job.md) | Triage a failed `queue.job` / `cloud.alert` | critical | `job_failed` alert in the Alerts panel |
+| [RB-06](RB-06-multi-worker-checklist.md) | Multi-worker deployment checklist | planned | Before enabling `workers>1` |
+| [RB-07](RB-07-webhook-replay-investigation.md) | Investigate a webhook replay | info | `GitHub webhook replay ignored` log line |
+| [RB-08](RB-08-rotate-cron-bot.md) | Rotate the cron bot user | critical | Bot credentials compromised |
+| [RB-09](RB-09-docker-prune-failed.md) | `docker_prune` failed for a host | warning | Disk alert on host, failing prune cron |
+| [RB-10](RB-10-github-app-rate-limited.md) | GitHub App / PAT rate-limited or revoked | critical | Webhooks silent, `403`/`401` in logs |
+
+## Conventions
+
+- Commands prefixed with `$` run on the operator workstation.
+- Commands prefixed with `odoo$` run inside the Odoo container
+  (`docker compose exec odoo bash`, then the command).
+- Commands prefixed with `db$` run inside a `psql` session on the
+  master database.
+- SQL assumes the database is named `prod`; adjust if you run a
+  different layout.
+- Every runbook has a **Rollback** section — read it before
+  starting, not when things are on fire.

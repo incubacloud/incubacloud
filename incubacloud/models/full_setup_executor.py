@@ -16,17 +16,162 @@ Status transitions:
 
 "degraded" is reserved exclusively for the host_metrics executor
 (disk/CPU/RAM resource monitoring).
+
+This executor is the single entry point for host setup. The older
+per-phase executors (``setup_host``, ``setup_traefik``) have been
+retired — their logic (SSH commands + Traefik templating) now lives
+inline below so there's only one codepath for the SaaS extension to
+wrap.
 """
 
+import re
+
+import bcrypt as _bcrypt
+
 from .abstract_executor import AbstractSSHExecutor
-from .setup_host_executor import SETUP_COMMANDS, _VERIFY_LABELS
-from .setup_traefik_executor import _build_inverseproxy, _TMP
 from .setup_whitelist_executor import (
     build_whitelist_compose,
     _WL_TMP, _WL_DIR, _WL_FILE, _WL_PROJECT,
 )
 
 MIN_DISK_GB = 10
+_TMP = "/tmp/.incubacloud-traefik"
+_BIN = 'PATH="$HOME/.local/bin:$PATH"'
+
+
+# ── SSH command catalog (Phase 2) ─────────────────────────────────────
+# Each tuple: (label shown in logs, shell command). Every step is
+# idempotent so re-running the job only installs what's missing.
+SETUP_COMMANDS = [
+    # ── System update ──────────────────────────────────────────────────
+    (
+        "Update package index",
+        "sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq",
+    ),
+    # ── Git ────────────────────────────────────────────────────────────
+    (
+        "Install git",
+        "command -v git >/dev/null 2>&1 "
+        "|| sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git",
+    ),
+    # ── Docker CE ──────────────────────────────────────────────────────
+    (
+        "Install Docker",
+        "command -v docker >/dev/null 2>&1 "
+        "|| (curl -fsSL https://get.docker.com | sudo sh)",
+    ),
+    (
+        "Add user to docker group",
+        "groups | grep -q docker "
+        "|| (sudo usermod -aG docker \"$USER\" && echo 'Added to docker group')",
+    ),
+    # ── Docker Compose V2 ──────────────────────────────────────────────
+    (
+        "Install Docker Compose plugin",
+        "docker compose version >/dev/null 2>&1 "
+        "|| sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-compose-plugin",
+    ),
+    # ── Python toolchain ───────────────────────────────────────────────
+    (
+        "Install python3-pip and python3-venv",
+        "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
+        "python3-pip python3-venv",
+    ),
+    (
+        "Install pipx",
+        "command -v pipx >/dev/null 2>&1 "
+        "|| python3 -m pip install --break-system-packages --user pipx 2>/dev/null "
+        "|| python3 -m pip install --user pipx",
+    ),
+    (
+        "Add ~/.local/bin to PATH",
+        "grep -q '.local/bin' ~/.bashrc "
+        "|| echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.bashrc",
+    ),
+    # ── Deployment tools ───────────────────────────────────────────────
+    (
+        "Install copier",
+        f"{_BIN} pipx install copier 2>/dev/null || {_BIN} pipx upgrade copier",
+    ),
+    (
+        "Install invoke",
+        f"{_BIN} pipx install invoke 2>/dev/null || {_BIN} pipx upgrade invoke",
+    ),
+    (
+        "Install pre-commit",
+        f"{_BIN} pipx install pre-commit 2>/dev/null || {_BIN} pipx upgrade pre-commit",
+    ),
+    # ── Zip ────────────────────────────────────────────────────────────
+    (
+        "Install zip",
+        "command -v zip >/dev/null 2>&1 || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zip",
+    ),
+    # ── Verification ───────────────────────────────────────────────────
+    ("Verify git",        "git --version 2>&1 || echo FAILED"),
+    ("Verify docker",     "docker --version 2>&1 || echo FAILED"),
+    ("Verify compose",    "docker compose version 2>&1 || echo FAILED"),
+    ("Verify copier",     f'{_BIN} copier --version 2>&1 || echo FAILED'),
+    ("Verify invoke",     f'{_BIN} invoke --version 2>&1 || echo FAILED'),
+    ("Verify pre-commit", f'{_BIN} pre-commit --version 2>&1 || echo FAILED'),
+    ("Verify zip",        "zip --version 2>&1 || echo FAILED"),
+]
+
+_VERIFY_LABELS = (
+    "Verify git",
+    "Verify docker",
+    "Verify compose",
+    "Verify copier",
+    "Verify invoke",
+    "Verify pre-commit",
+    "Verify zip",
+)
+
+
+# ── Traefik template helpers (Phase 3) ────────────────────────────────
+# The panel password hash is compatible with ``htpasswd -nB`` (Traefik's
+# basicauth consumes that format). We call ``bcrypt`` directly instead
+# of going through passlib — passlib 1.7.4 doesn't know how to talk to
+# bcrypt >= 5.0 (its backend-probe reads ``bcrypt.__about__`` which is
+# gone) and falls back to a path that still raises on 72-byte inputs.
+# Dollar signs are doubled for docker-compose label escaping.
+
+def _htpasswd_hash(password):
+    """Compose-safe bcrypt hash for ``traefik-admin:<password>``."""
+    # bcrypt has a hard 72-byte input limit — truncate deterministically
+    # on bytes (never on characters, which miscounts multi-byte utf-8).
+    pw_bytes = (password or "").encode("utf-8")[:72]
+    salt = _bcrypt.gensalt(rounds=12)
+    # $2b$ → $2y$: equivalent variants; htpasswd/Traefik expect $2y$.
+    # Double $ for docker-compose label escaping.
+    return "traefik-admin:" + (
+        _bcrypt.hashpw(pw_bytes, salt)
+        .decode("ascii")
+        .replace("$2b$", "$2y$", 1)
+        .replace("$", "$$")
+    )
+
+
+def _build_inverseproxy(content, wildcard_domain, panel_password):
+    """Substitute domain and password hash in inverseproxy.yaml content."""
+    traefik_domain = (
+        f"traefik.{wildcard_domain}"
+        if wildcard_domain else "traefik.localhost"
+    )
+    # Replace the Host() rule
+    content = re.sub(
+        r'Host\(`[^`]+`\)',
+        f"Host(`{traefik_domain}`)",
+        content,
+    )
+    # Replace the basicauth.users label value
+    if panel_password:
+        label_value = _htpasswd_hash(panel_password)
+        content = re.sub(
+            r'traefik\.http\.middlewares\.auth\.basicauth\.users=[^\n"]+',
+            f"traefik.http.middlewares.auth.basicauth.users={label_value}",
+            content,
+        )
+    return content
 
 
 class FullSetupExecutor(AbstractSSHExecutor):
