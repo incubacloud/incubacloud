@@ -31,7 +31,15 @@ jobs:
         run: pip install refurb
 
       - name: Run refurb
-        run: refurb incubacloud/ incubacloud_connect/
+        # Exclude ``migrations/`` — refurb uses mypy internally and two
+        # ``post-migrate.py`` files in sibling version dirs trigger a
+        # "Duplicate module named" error. Migration scripts are tiny
+        # and tested by the boot-install path, so skipping them from
+        # the style linter is safe.
+        run: |
+          find incubacloud incubacloud_connect \
+            -name '*.py' -not -path '*/migrations/*' -print0 \
+            | xargs -0 --no-run-if-empty refurb
 
   test:
     name: Tests
@@ -69,7 +77,12 @@ jobs:
 
       - name: Install extra dependencies
         # CN-012/CN-020/CN-026: Exact pins match requirements.txt — reproducible CI.
-        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'cryptography==46.0.7' 'bcrypt==5.0.0'
+        # ``cryptography`` is intentionally NOT pinned here: the OCA CI image
+        # ships a pyOpenSSL built against its own cryptography version, and
+        # upgrading to 46.0.7 in-place breaks the OpenSSL import (missing
+        # ``X509_V_FLAG_NOTIFY_POLICY``). The security pin lives in
+        # requirements.txt for the runtime image; pip-audit still gates it.
+        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0'
 
       - name: Fetch OCA dependencies
         run: |
@@ -144,7 +157,20 @@ jobs:
           # detect re-introductions.
           fetch-depth: 0
 
-      # CN-009: Pinned to commit SHA; v2.3.9 at time of writing.
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # CN-009: Using the upstream CLI release instead of the v2 Action,
+      # which requires a paid license key for organization-owned repos
+      # (https://github.com/gitleaks/gitleaks-action#-announcement).
+      # The CLI itself stays MIT-licensed. Pinned to a known-good tag.
+      - name: Install gitleaks
+        run: |
+          curl -fsSL \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            -o /tmp/gitleaks.tgz
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+
+      - name: Run gitleaks
+        # ``detect`` scans the working tree + the whole history available
+        # under .git; ``--redact`` keeps the logs safe even if a finding
+        # lands in the annotations UI.
+        run: gitleaks detect --source . --redact --verbose
