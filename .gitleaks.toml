@@ -32,6 +32,9 @@ paths = [
     # Settings form textarea ``placeholder=""`` attribute showing the
     # expected PEM shape.
     '''incubacloud/static/src/components/settings/settings\.xml''',
+    # CI workflow pins a CI-only Fernet key so the password_utils
+    # module can boot in the test container. Not a production secret.
+    '''\.github/workflows/ci\.yml''',
 ]
 commits = [
     # password_utils.py historically contained a base64 dev fallback
