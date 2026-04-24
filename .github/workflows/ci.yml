@@ -70,6 +70,10 @@ jobs:
       PGPASSWORD: odoo
       PGDATABASE: test_odoo
       ADDONS_DIR: .
+      # Any Fernet key works for tests — the module refuses to boot
+      # without one, and rotation is exercised by unit tests that set
+      # their own keys explicitly.
+      INCUBACLOUD_SECRET_KEY: ezzIy8RZ5rO9PBHSLpy4PdRW7nUCewcz7JTEDlzTWUI=
 
     steps:
       # CN-009: Pinned to commit SHA to prevent mutable-tag supply-chain attacks.
