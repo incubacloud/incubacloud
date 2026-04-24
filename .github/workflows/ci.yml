@@ -77,16 +77,23 @@ jobs:
 
       - name: Install extra dependencies
         # CN-012/CN-020/CN-026: Exact pins match requirements.txt — reproducible CI.
-        # ``asyncssh`` pulls in ``cryptography>=39``. Newer cryptography
-        # (42+) moved ``backends.openssl.x509._Certificate`` and dropped
-        # ``X509_V_FLAG_NOTIFY_POLICY``; both are still referenced by the
-        # OCA image's bundled ``urllib3==1.26.5`` and ``pyOpenSSL==24.x``,
-        # so ``ir_mail_server`` fails to import during ``odoo-init``.
-        # Capping at ``cryptography<42`` keeps the image's stack intact
-        # while satisfying asyncssh's floor. The runtime doodba image
-        # uses the security-pinned 46.x — see requirements.txt; pip-audit
-        # still gates it there.
-        run: pip install 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'cryptography>=39,<42'
+        #
+        # The OCA CI image ships a stack frozen around cryptography 3.x
+        # and pyOpenSSL 24.x with urllib3 1.26.5. ``asyncssh==2.22``
+        # requires cryptography>=39, which pip resolves to 46.x (bundling
+        # OpenSSL 3.0). Three downstream breaks result:
+        #   1. pyOpenSSL 24 calls ``_lib.OpenSSL_add_all_algorithms`` →
+        #      not in OpenSSL 3.0 → fixed by ``pyopenssl>=25.3``.
+        #   2. pyOpenSSL 24 references ``_lib.X509_V_FLAG_NOTIFY_POLICY``
+        #      → removed → same upgrade fixes it.
+        #   3. urllib3 1.26's ``contrib.pyopenssl`` imports
+        #      ``cryptography.hazmat.backends.openssl.x509._Certificate``
+        #      → moved → upgrading urllib3 to 2.x uses the new
+        #      ``cryptography import x509`` path.
+        #
+        # Bumping all three in-place lines CI up with what the runtime
+        # doodba image pins (requirements.txt, audited by pip-audit).
+        run: pip install --upgrade 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3'
 
       - name: Fetch OCA dependencies
         run: |
