@@ -1,3 +1,4 @@
+import base64
 import logging
 from contextlib import asynccontextmanager
 
@@ -321,6 +322,66 @@ class CloudHost(models.Model):
 
     # ── SSH connection helpers ──────────────────────────────────────────────
 
+    def _get_ssh_private_key_bytes(self):
+        """Return ``key_file`` as raw PEM/OpenSSH bytes for asyncssh.
+
+        ``key_file`` is stored base64-encoded — the SPA uploads it via
+        ``btoa()`` ([host_detail.js]) and the auto-provisioner stamps
+        new VPS keys the same way. ``asyncssh.connect``'s ``client_keys``
+        accepts bytes containing raw key data, but a *string* gets
+        treated as a filename and triggers ``open_file()``. So we always
+        return bytes here and centralise the decode.
+        """
+        self.ensure_one()
+        if not self.key_file:
+            return b''
+        return base64.b64decode(self.key_file)
+
+    def _capture_known_host_key(self):
+        """Connect once bypassing host-key verification (TOFU) and store
+        the server public key in ``known_hosts_key``.
+
+        Used both by the manual 'Trust SSH Key' UI action and by autoprov
+        right after a freshly contracted VPS boots — the latter has no
+        human in the loop, so the capture has to happen automatically.
+
+        Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
+        """
+        import asyncio
+        self.ensure_one()
+        connect_kw = dict(
+            host=self.ip_address,
+            port=self.port,
+            username=self.user,
+            known_hosts=None,
+            agent_path=None,
+        )
+        if self.login_type == 'ssh_key' and self.key_file:
+            connect_kw['client_keys'] = [self._get_ssh_private_key_bytes()]
+        else:
+            connect_kw['password'] = self.password
+            connect_kw['client_keys'] = None
+
+        async def _capture():
+            async with asyncssh.connect(**connect_kw) as conn:
+                server_key = conn.get_server_host_key()
+                key_data = server_key.export_public_key(
+                    'openssh',
+                ).decode().strip()
+                prefix = (
+                    f"[{self.ip_address}]:{self.port}"
+                    if self.port != 22 else self.ip_address
+                )
+                return f"{prefix} {key_data}"
+
+        loop = asyncio.new_event_loop()
+        try:
+            entry = loop.run_until_complete(_capture())
+        finally:
+            loop.close()
+        self.sudo().write({'known_hosts_key': entry})
+        return entry
+
     def ssh_connect_kwargs(self):
         """Return kwargs dict for ``asyncssh.connect()``.
 
@@ -343,7 +404,7 @@ class CloudHost(models.Model):
             known_hosts=asyncssh.import_known_hosts(self.known_hosts_key),
         )
         if self.login_type == 'ssh_key' and self.key_file:
-            kwargs['client_keys'] = [self.key_file]
+            kwargs['client_keys'] = [self._get_ssh_private_key_bytes()]
         else:
             kwargs['password'] = self.password
             # None (not []) tells asyncssh to skip default key loading.
