@@ -300,7 +300,13 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f" --stop-after-init --no-http",
             ),
             # 13. Restart all services with the new image.
-            ("Restart instance", f"cd {d} && docker compose up -d"),
+            #     --remove-orphans drops containers no longer in the compose
+            #     file (e.g. backup when a tenant downgrades to a Free plan,
+            #     or smtp when the relay is removed) so they don't linger.
+            (
+                "Restart instance",
+                f"cd {d} && docker compose up -d --remove-orphans",
+            ),
             # 13. Set web.base.url and report.url in ir.config_parameter.
             #     Wrapped in a DO block: succeeds silently if the table does
             #     not exist yet (e.g. DB not yet initialised).
