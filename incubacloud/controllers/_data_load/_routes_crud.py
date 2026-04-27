@@ -5,7 +5,6 @@ Mixed into ``CloudDataLoadController`` in ``data_load.py``. Each method
 relies on ``self._sec()`` (defined on the controller) for permission
 checks.
 """
-import asyncio
 import logging
 
 import asyncssh
@@ -581,46 +580,14 @@ class CrudMixin:
         host = request.env['cloud.host'].sudo().browse(host_id)
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
-
-        # Build connect kwargs bypassing known_hosts — this is the ONLY place
-        # in the codebase that intentionally connects without verification.
-        connect_kw = dict(
-            host=host.ip_address,
-            port=host.port,
-            username=host.user,
-            known_hosts=None,
-            agent_path=None,
-        )
-        if host.login_type == 'ssh_key' and host.key_file:
-            connect_kw['client_keys'] = [host.key_file]
-        else:
-            connect_kw['password'] = host.password
-            connect_kw['client_keys'] = None
-
-        async def _capture():
-            async with asyncssh.connect(**connect_kw) as conn:
-                server_key = conn.get_server_host_key()
-                key_data = server_key.export_public_key(
-                    'openssh'
-                ).decode().strip()
-                ip = host.ip_address
-                port = host.port
-                prefix = f"[{ip}]:{port}" if port != 22 else ip
-                return f"{prefix} {key_data}"
-
-        loop = asyncio.new_event_loop()
         try:
-            entry = loop.run_until_complete(_capture())
+            host._capture_known_host_key()
         except asyncssh.Error:
             _logger.exception("trust_host_key SSH error for host %s", host_id)
             return {'ok': False, 'error': _('SSH connection failed. Check host credentials and network.')}
         except Exception:
             _logger.exception("trust_host_key failed for host %s", host_id)
             return {'ok': False, 'error': _('Connection failed. Check host credentials and network.')}
-        finally:
-            loop.close()
-
-        host.write({'known_hosts_key': entry})
         return {'ok': True}
 
     @http.route(['/cloud/save_host'], type='jsonrpc', auth='user')
