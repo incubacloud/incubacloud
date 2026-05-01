@@ -5,7 +5,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import AbstractSSHExecutor, validate_dup_time
 
 
 class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
@@ -56,6 +56,11 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         payload = self.job.payload or {}
         if not payload.get('time'):
             raise ValueError("Missing 'time' in job payload.")
+        # The value flows into ``--time "<value>"`` and into
+        # ``sh -c 'dup restore --time "<value>" ...'``. The regex
+        # below rejects whitespace, quotes, dollars, backticks and
+        # semicolons — the only things that could break either shell.
+        validate_dup_time(payload['time'])
 
     def get_commands(self):
         inst = self._inst()
@@ -71,7 +76,12 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         is_prod = inst.environment == 'production'
 
         # Step 1: produce a source dump on the host, landing at
-        # {host_tmp}/src.zip (non-prod live) or {host_tmp}/src.sql (prod).
+        # {host_tmp}/src.zip (non-prod live, or prod packaged from S3).
+        # click-odoo-restoredb → odoo.service.db.restore_db only accepts a
+        # ZIP (with `dump.sql` inside) or a pg_dump custom-format file. A
+        # plain .sql triggers the pg_restore branch and dies with
+        # "Couldn't restore database", so prod's duplicity output is
+        # repackaged as a ZIP before handing it to the odoo container.
         if is_prod:
             time_flag = (
                 '' if raw_time == 'latest'
@@ -88,14 +98,16 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                     f" \"$DST\" {ctr_tmp}/src.sql'"
                     f" && rm -rf {host_tmp} && mkdir -p {host_tmp}"
                     f" && docker compose cp"
-                    f" backup:{ctr_tmp}/src.sql {host_tmp}/src.sql"
+                    f" backup:{ctr_tmp}/src.sql {host_tmp}/dump.sql"
                     f" && docker compose exec -T backup rm -rf {ctr_tmp}"
+                    f" && (cd {host_tmp} && zip -q -r src.zip dump.sql"
+                    f" && rm -f dump.sql)"
                     f" && docker compose cp"
-                    f" {host_tmp}/src.sql odoo:/tmp/bkneu-src-{self.job.id}.sql"
+                    f" {host_tmp}/src.zip odoo:/tmp/bkneu-src-{self.job.id}.zip"
                 ),
                 {"stop_on_failure": True},
             )
-            source_inside_odoo = f"/tmp/bkneu-src-{self.job.id}.sql"
+            source_inside_odoo = f"/tmp/bkneu-src-{self.job.id}.zip"
         else:
             # Non-prod: dump the live DB inside the odoo container.
             step_prepare_src = (

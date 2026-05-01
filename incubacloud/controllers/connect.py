@@ -6,6 +6,7 @@ import shlex
 import asyncssh
 
 from odoo import http, _
+from odoo.exceptions import AccessError
 from odoo.http import request
 
 from .async_utils import run_async
@@ -110,11 +111,17 @@ class InstanceConnectController(http.Controller):
 
     @http.route(['/cloud/get_instance_users'], type='jsonrpc', auth='user')
     def get_instance_users(self, instance_id):
-        if not request.env.user._is_internal():
-            return {'ok': False, 'error': _('Unauthorized')}
+        request.env['cloud.security.mixin']._check_can_connect_as_user()
 
-        inst = request.env['cloud.instance'].sudo().browse(instance_id)
-        if not inst.exists() or not inst.host_id:
+        inst = request.env['cloud.instance'].browse(instance_id)
+        if not inst.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        try:
+            inst.check_access('read')
+        except AccessError:
+            return {'ok': False, 'error': _('Instance not found')}
+        inst = inst.sudo()
+        if not inst.host_id:
             return {'ok': False, 'error': _('Instance not found or has no host')}
         if not inst.deployed or not inst.running:
             return {'ok': False, 'error': _('Instance is not running')}
@@ -145,12 +152,19 @@ class InstanceConnectController(http.Controller):
                 return json.loads(output)
 
         try:
-            return run_async(_run())
+            result = run_async(_run())
         except Exception:
             _logger.exception(
                 "Error getting instance users for %s", instance_id
             )
             return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
+
+        if result.get('ok'):
+            request.env['cloud.audit.log'].sudo().create({
+                'action': 'List instance users',
+                'instance_id': inst.id,
+            })
+        return result
 
     # ── Prepare session ────────────────────────────────────────────────────────
 
@@ -164,14 +178,20 @@ class InstanceConnectController(http.Controller):
         sets the session cookie from the instance's own domain, avoiding
         cross-domain cookie restrictions entirely.
         """
-        if not request.env.user._is_internal():
-            return {'ok': False, 'error': _('Unauthorized')}
+        request.env['cloud.security.mixin']._check_can_connect_as_user()
 
         if not isinstance(user_id, int) or user_id <= 0:
             return {'ok': False, 'error': _('Invalid user_id')}
 
-        inst = request.env['cloud.instance'].sudo().browse(instance_id)
-        if not inst.exists() or not inst.host_id:
+        inst = request.env['cloud.instance'].browse(instance_id)
+        if not inst.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        try:
+            inst.check_access('read')
+        except AccessError:
+            return {'ok': False, 'error': _('Instance not found')}
+        inst = inst.sudo()
+        if not inst.host_id:
             return {'ok': False, 'error': _('Instance not found')}
         if not inst.deployed or not inst.running:
             return {'ok': False, 'error': _('Instance is not running')}

@@ -9,10 +9,66 @@ from ._repo_requirements import has_pip_conflicts
 
 _TOKEN_RE = re.compile(r'https://[^@\s]*@(github\.com)', re.IGNORECASE)
 
+# Per-line and per-job log caps. These bound the worst-case disk usage
+# from a runaway job that writes unbounded output (e.g. an image bug
+# that produces an infinite stream).
+#   * MAX_LOG_LINE_LEN bounds a single line — anything past is truncated
+#     with a marker so the operator sees it happened.
+#   * MAX_CHUNKS_PER_JOB bounds the total chunks per cloud.job. When
+#     reached, a single "cap reached" system marker is emitted and the
+#     rest is silently dropped (the job continues running).
+MAX_LOG_LINE_LEN = 8192
+MAX_CHUNKS_PER_JOB = 20_000
+
 
 def _redact_tokens(text):
     """Remove embedded credentials from GitHub HTTPS URLs in log lines."""
     return _TOKEN_RE.sub(r'https://\1', text)
+
+
+def sql_escape_literal(s):
+    """Escape a Python string for embedding in a PostgreSQL single-quoted
+    SQL literal (``'...'``).
+
+    Use when composing SQL via ``psql -c "..."`` over SSH where we cannot
+    parameterise through psycopg2. Doubles every single quote per the
+    PostgreSQL standard. Callers MUST still validate inputs upstream
+    (e.g. with regex) — this is a defense-in-depth layer, not a
+    sanitiser for arbitrary user input.
+    """
+    return (s or "").replace("'", "''")
+
+
+# duplicity --time accepts:
+#   * presets:                latest, live, now
+#   * relative offsets:       12h_ago, 1Y_ago, 30m_ago…
+#   * absolute (ISO 8601):    2026-03-19, 2026-03-19T02:00:00, …Z
+# Anything else is rejected. The regex is the sole defense against shell
+# injection via ``payload['time']`` because the value flows into
+# ``--time "<value>"`` (and into ``sh -c '... "<value>" ...'`` in the
+# restore executor). With this constraint the value can never contain
+# whitespace, quotes, dollars, semicolons or backticks.
+DUP_TIME_RE = re.compile(
+    r'^('
+    r'latest|live|now'
+    r'|\d+[smhDWMY]_ago'
+    r'|\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z?)?'
+    r')$'
+)
+
+
+def validate_dup_time(raw):
+    """Raise ValueError if ``raw`` is not a duplicity-safe ``--time`` value.
+
+    Returns the value unchanged on success so callers can chain.
+    """
+    if not isinstance(raw, str) or not DUP_TIME_RE.match(raw):
+        raise ValueError(
+            f"Invalid 'time' value: {raw!r}. Expected 'latest', 'live', "
+            f"'now', a relative offset like '12h_ago', or an ISO 8601 "
+            f"timestamp like '2026-03-19T02:00:00'."
+        )
+    return raw
 
 
 class AbstractExecutor(ABC):
@@ -34,6 +90,15 @@ class AbstractExecutor(ABC):
         self.port = host_record.port
         self.username = host_record.user
         self.sleep_interval = sleep_interval
+        # Per-job log cap counters. ``_chunks_persisted`` is bumped
+        # every time a chunk is written to ``cloud.job.log.chunk``;
+        # when it reaches MAX_CHUNKS_PER_JOB we emit a single marker
+        # and drop the rest. Counters live for the lifetime of this
+        # executor instance — a retry creates a fresh executor so its
+        # counter restarts; that is acceptable and keeps the logic
+        # cheap (no per-flush COUNT(*) round-trip).
+        self._chunks_persisted = 0
+        self._cap_marker_emitted = False
 
     # ===============================
     # PUBLIC ENTRYPOINT
@@ -201,15 +266,34 @@ class AbstractExecutor(ABC):
             return
         entries = list(self._log_buffer)
         self._log_buffer.clear()
+        # If we already emitted the cap marker, drop everything past
+        # this point silently. The job keeps running but stops bloating
+        # the logs table.
+        if self._cap_marker_emitted:
+            return
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
             Log = env['cloud.job.log.chunk'].sudo()
             for line, source in entries:
+                if self._chunks_persisted >= MAX_CHUNKS_PER_JOB:
+                    Log.create({
+                        'job_id': self.job.id,
+                        'content': (
+                            f"⚠ Log cap reached "
+                            f"({MAX_CHUNKS_PER_JOB} chunks). "
+                            f"Further output is discarded; "
+                            f"the job continues running."
+                        ),
+                        'source': 'system',
+                    })
+                    self._cap_marker_emitted = True
+                    break
                 Log.create({
                     'job_id': self.job.id,
                     'content': _redact_tokens(line),
                     'source': source,
                 })
+                self._chunks_persisted += 1
 
     def _publish_bus(self):
         """Notify every watcher that new chunks are available.
@@ -245,11 +329,22 @@ class AbstractExecutor(ABC):
     # STREAM HANDLERS (OVERRIDABLE)
     # ===============================
 
+    @staticmethod
+    def _truncate_line(line):
+        """Cap a single log line to MAX_LOG_LINE_LEN bytes.
+
+        Anything past the cap is replaced with a visible marker so the
+        operator knows the line was truncated.
+        """
+        if len(line) <= MAX_LOG_LINE_LEN:
+            return line
+        return line[:MAX_LOG_LINE_LEN] + ' …(truncated)'
+
     async def on_stdout(self, line):
-        self._log_buffer.append((line, "stdout"))
+        self._log_buffer.append((self._truncate_line(line), "stdout"))
 
     async def on_stderr(self, line):
-        self._log_buffer.append((line, "stderr"))
+        self._log_buffer.append((self._truncate_line(line), "stderr"))
 
     # ===============================
     # PRE-RUN CHECKS

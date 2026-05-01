@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from odoo import api, fields, models
 
-from ._repo_requirements import _normalize_url
+from ._repo_requirements import _normalize_url, is_safe_git_ref
 
 _logger = logging.getLogger(__name__)
 
@@ -199,6 +199,18 @@ class CloudGitHubEvent(models.Model):
             # Not a branch push (e.g. tag)
             self.write({'processed': True})
             return
+        # Defense in depth: refuse to enqueue auto-rebuilds for refs
+        # whose name would not pass the @api.constrains on
+        # cloud.instance.repo.branch. The constraint already blocks
+        # writes downstream, but rejecting here avoids ValidationError
+        # noise in logs and makes the rejection visible in the
+        # processed=True branch.
+        if not is_safe_git_ref(branch):
+            _logger.warning(
+                "GitHub push: rejected unsafe branch name %r", branch,
+            )
+            self.write({'processed': True})
+            return
 
         repo_data = payload.get('repository', {})
         clone_url = repo_data.get('clone_url', '')
@@ -286,6 +298,17 @@ class CloudGitHubEvent(models.Model):
         repo_norm = _normalize_url(clone_url)
 
         if not pr_number or not head_ref or not repo_norm:
+            self.write({'processed': True})
+            return
+        # Same defense-in-depth rejection as in _process_push_event:
+        # the head_ref will flow into cloud.instance.repo.branch via
+        # repo.write(), so a hostile ref name (e.g. ``main --upload-pack=evil``)
+        # would later be rejected by the constraint. Bail out cleanly here.
+        if not is_safe_git_ref(head_ref):
+            _logger.warning(
+                "GitHub PR: rejected unsafe head_ref %r (PR #%s)",
+                head_ref, pr_number,
+            )
             self.write({'processed': True})
             return
 

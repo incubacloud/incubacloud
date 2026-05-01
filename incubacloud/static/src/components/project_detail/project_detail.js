@@ -100,8 +100,11 @@ function mergeRequirements(existingText, incomingText, repoUrl, repoBranch) {
         } else {
             const existingSpec = pkgMap[key].spec;
             const newBlock = `<<<<<<< existing\n${existingSpec}\n=======\n${raw}\n>>>>>>> ${sourceLabel}`;
+            // Function form to avoid ``$`` substitution patterns —
+            // see instance_detail.js for the same pattern.
             newText = newText.replace(
-                new RegExp('^' + _escapeRegex(existingSpec) + '$', 'm'), newBlock
+                new RegExp('^' + _escapeRegex(existingSpec) + '$', 'm'),
+                () => newBlock,
             );
             pkgMap[key] = { type: 'conflict', spec: existingSpec, name, existingSrc: 'existing', block: newBlock };
             conflicts.push({ name, existing: existingSpec, existingSource: 'existing', incoming: raw, incomingSource: sourceLabel });
@@ -148,6 +151,15 @@ export class ProjectDetail extends Component {
 
     get hasUnsavedChanges() {
         return this._savedForm && JSON.stringify(this.state.form) !== this._savedForm;
+    }
+
+    get isValid() {
+        // The submit button uses ``t-att-disabled="!isValid || ..."`` —
+        // we need a getter that re-evaluates on every render WITHOUT
+        // touching the validator's reactive state (otherwise opening
+        // a fresh form would immediately paint every required field
+        // red before the user has typed anything).
+        return this.validator.isValid(this.state.form);
     }
 
     setup() {
@@ -480,6 +492,11 @@ export class ProjectDetail extends Component {
             };
             if (this.isCreate) {
                 const result = await rpc("/cloud/create_project", { vals });
+                // Clear the dirty baseline before navigating so the
+                // nav guard doesn't fire on this programmatic
+                // transition (matches the pattern HostDetail.save()
+                // already uses for the new-host create path).
+                this._savedForm = JSON.stringify(this.state.form);
                 this.env.navigate("project_detail", { project_id: result.id });
             } else {
                 await rpc("/cloud/save_project", {

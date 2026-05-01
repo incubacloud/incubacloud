@@ -1,8 +1,14 @@
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
 from ._pip_apt_map import resolve_apt_dependencies
-from ._repo_requirements import fetch_requirements_txt, merge_pip_requirements
+from ._repo_requirements import (
+    fetch_requirements_txt,
+    is_safe_git_ref,
+    is_safe_git_sha,
+    is_safe_repo_url,
+    merge_pip_requirements,
+)
 
 
 class CloudProjectRepo(models.Model):
@@ -49,6 +55,31 @@ class CloudProjectRepo(models.Model):
         ),
     )
 
+    @api.constrains('url', 'branch', 'commit_sha')
+    def _check_git_inputs_safe(self):
+        for repo in self:
+            url = (repo.url or '').strip()
+            if url and not is_safe_repo_url(url):
+                raise ValidationError(_(
+                    "Repository URL '%s' is not a recognised GitHub "
+                    "URL. Use the canonical form "
+                    "'https://github.com/<owner>/<repo>'.",
+                ) % url)
+            branch = (repo.branch or '').strip()
+            if branch and not is_safe_git_ref(branch):
+                raise ValidationError(_(
+                    "Branch '%s' contains characters that are not "
+                    "allowed (use letters, digits, dots, slashes, "
+                    "underscores or hyphens; cannot start with '-' "
+                    "or contain '..').",
+                ) % branch)
+            sha = (repo.commit_sha or '').strip()
+            if sha and not is_safe_git_sha(sha):
+                raise ValidationError(_(
+                    "Pinned commit '%s' is not a valid git SHA "
+                    "(7-64 lowercase hex characters).",
+                ) % sha)
+
     @api.constrains('addons', 'excludes')
     def _check_addons_excludes_overlap(self):
         for repo in self:
@@ -64,10 +95,9 @@ class CloudProjectRepo(models.Model):
             }
             overlap = inc & exc
             if overlap:
-                raise ValidationError(
-                    f"Repo {repo.url}: module(s) in both Addons and"
-                    f" Exclude Addons: {', '.join(sorted(overlap))}"
-                )
+                raise ValidationError(_(
+                    "Repo %(url)s: module(s) in both Addons and Exclude Addons: %(modules)s",
+                ) % {'url': repo.url, 'modules': ', '.join(sorted(overlap))})
 
     # ── Requirements sync ──────────────────────────────────────────────────
 

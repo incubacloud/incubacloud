@@ -1,5 +1,4 @@
 from odoo import api, fields, models
-from odoo.exceptions import ValidationError
 
 
 class CloudAlert(models.Model):
@@ -56,7 +55,6 @@ class CloudAlert(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         records = super().create(vals_list)
-        records._check_target()
         records._broadcast_overview()
         return records
 
@@ -76,13 +74,12 @@ class CloudAlert(models.Model):
         self.browse()._broadcast_overview_from(env)
         return res
 
-    @api.constrains('host_id', 'instance_id', 'project_id')
-    def _check_target(self):
-        for rec in self:
-            if not rec.host_id and not rec.instance_id and not rec.project_id:
-                raise ValidationError(
-                    "An alert must be linked to a host, an instance, or a project."
-                )
+    # NOTE: alerts may be global (no host / instance / project) — used
+    # for system-wide security or platform events (OIDC code reuse,
+    # GitHub App credentials nearing expiry, JWKS rotation overdue,
+    # etc.). Visibility of those rows is restricted at the record-rule
+    # layer: ``rule_alert_member`` excludes targetless rows from
+    # stakeholders/consultants, so only project-managers+ see them.
 
     def _broadcast_overview(self):
         """Notify every active internal user that the alert overview may

@@ -436,11 +436,11 @@ class CloudJob(models.Model):
     # operator almost always wants to investigate immediately. Anything
     # not listed here escalates to a ``warning`` alert instead. Extend
     # by overriding ``_get_severe_job_types()`` in child modules.
+    # Generic, self-hosted-only job types that warrant a critical alert
+    # on failure.
     _severe_job_types = frozenset({
         "deploy_instance",
         "rebuild_instance",
-        "tenant_deploy_instance",
-        "tenant_restore_backup",
     })
 
     def _get_hidden_job_types(self):
@@ -607,7 +607,14 @@ class CloudJob(models.Model):
 
     @api.model
     def load_chunks(self, job_id, after_id=0):
-        """Return all log chunks (system, stdout, stderr) for the terminal view."""
+        """Return log chunks for the terminal view.
+
+        Source-based and project-based scoping is enforced by record
+        rules on ``cloud.job.log.chunk`` (``rule_job_log_chunk_member``
+        filters stakeholders/consultants to ``source='system'`` and
+        project membership). The search below honours those rules
+        automatically.
+        """
         chunks = self.env['cloud.job.log.chunk'].search([
             ('job_id', '=', job_id),
             ('id', '>', after_id),

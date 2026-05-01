@@ -86,6 +86,22 @@ class TestNeutralizedProd(BaseCase):
         # AND must not abort the chain itself.
         self.assertEqual(len(step), 2)
 
+    def test_prod_packages_dup_output_as_zip(self):
+        # odoo.service.db.restore_db only accepts ZIP (with dump.sql) or
+        # pg_dump custom-format. A plain .sql falls into the pg_restore
+        # branch and dies with "Couldn't restore database", so the
+        # duplicity output must be repackaged as a zip before reaching
+        # click-odoo-restoredb.
+        step = _find(self.cmds, "Restore source dump from S3")
+        self.assertIn("zip", step[1])
+        self.assertIn("dump.sql", step[1])
+        self.assertIn("/tmp/bkneu-src-99.zip", step[1])
+
+    def test_prod_source_file_is_zip(self):
+        step = _find(self.cmds, "Restore and neutralize in temp DB")
+        self.assertIn("/tmp/bkneu-src-99.zip", step[1])
+        self.assertNotIn("/tmp/bkneu-src-99.sql", step[1])
+
 
 class TestNeutralizedProdWithoutFilestore(BaseCase):
 

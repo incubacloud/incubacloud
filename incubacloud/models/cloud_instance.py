@@ -245,8 +245,18 @@ class CloudInstance(models.Model):
 
     @api.depends('domain_ids.hostname', 'domain_ids.sequence')
     def _compute_domain(self):
+        # Sort explicitly by (sequence, id) instead of relying on
+        # cloud.instance.domain._order. The value of ``inst.domain``
+        # flows into _base_url() and from there into psql -c "..." in
+        # deploy/rebuild executors (see H-MOD-2 fix). Sorting here
+        # makes the resolution independent of any future change to
+        # the related model's _order, so a refactor cannot silently
+        # alter which hostname becomes the primary domain.
         for inst in self:
-            first = inst.domain_ids[:1]
+            domains = inst.domain_ids.sorted(
+                key=lambda d: (d.sequence, d.id),
+            )
+            first = domains[:1]
             inst.domain = first.hostname if first else ''
 
     odoo_admin_email = fields.Char(string='Admin Email')
@@ -701,10 +711,30 @@ class CloudInstance(models.Model):
             _logger.exception("PR comment delete failed for %s", self.name)
 
     def restore_db(self, payload):
-        """Enqueue a restore_instance job with the given payload."""
+        """Enqueue a restore_instance job with the given payload.
+
+        ``payload['mode']`` selects the source of the backup zip:
+
+        * ``browser``  — operator uploaded a zip via /cloud/instance/<id>/restore;
+                         the controller stored it under tempfile.mkstemp() and
+                         passes the resulting path as ``local_path``.
+        * ``from_job`` — the zip is an ir.attachment of a previous cloud.job
+                         (typically a backup_download); the executor pulls it
+                         from the DB.
+        * ``rsync``    — the zip is already on the remote host at the path
+                         the executor expects (operator uploaded it manually).
+
+        The method is exposed via JSON-RPC, so we gate it explicitly:
+        only Developer+ can trigger a restore. The downstream executor
+        also validates the ``local_path`` prefix as a defense-in-depth
+        layer (see RestoreInstanceExecutor.before_execute).
+        """
         self.ensure_one()
+        self.env['cloud.security.mixin']._check_can_manage_backups()
         if not self.host_id:
             raise ValueError("Instance has no host assigned.")
+        if (payload or {}).get('mode') not in ('browser', 'from_job', 'rsync'):
+            raise ValueError("Invalid restore mode.")
         return self.env['cloud.job'].enqueue(
             self.host_id.id,
             self.id,

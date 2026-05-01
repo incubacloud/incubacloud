@@ -338,7 +338,7 @@
                     </t>
                     <t t-if="!isValid">
                         <div class="ic-footer-hint">
-                            <span class="ic-required">*</span> Name is required.
+                            <span class="ic-required">*</span> Name and Odoo version are required.
                         </div>
                     </t>
                     <button class="ic-btn-save"
@@ -378,7 +378,7 @@
             <IcModal t-if="state.pipConflictModal"
                      title="'Resolve Pip Conflicts'"
                      boxClass="'ic-confirm-box ah-resolve-box'"
-                     onClose="closePipConflictModal">
+                     onClose="() => this.closePipConflictModal()">
                 <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
                 <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
                 <div class="ah-conflicts-list">

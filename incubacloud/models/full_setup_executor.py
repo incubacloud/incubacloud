@@ -20,7 +20,7 @@ Status transitions:
 This executor is the single entry point for host setup. The older
 per-phase executors (``setup_host``, ``setup_traefik``) have been
 retired — their logic (SSH commands + Traefik templating) now lives
-inline below so there's only one codepath for the SaaS extension to
+inline below so there's only one codepath for inheriting modules to
 wrap.
 """
 
@@ -74,7 +74,8 @@ SETUP_COMMANDS = [
     # ── Python toolchain ───────────────────────────────────────────────
     (
         "Install python3-pip and python3-venv",
-        "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
+        "dpkg -s python3-pip python3-venv >/dev/null 2>&1 "
+        "|| sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
         "python3-pip python3-venv",
     ),
     (

@@ -13,7 +13,6 @@ services:
     depends_on:
       - dockersocket
     restart: unless-stopped
-    privileged: true
     tty: true
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
@@ -30,7 +29,13 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=shared"
       - "traefik.http.routers.api.rule=Host(`traefik.mycustomdomain.com`)"
-      - "traefik.http.middlewares.auth.basicauth.users=traefik-admin:$$2y$$05$$lWtaMlJ6n..SR4eARZZAQujreBcZF6SY1fXG7aebELcjWGZfm6qqe"
+      # Deny-by-default placeholder. `full_setup_executor._build_inverseproxy`
+      # rewrites this line at provision time using bcrypt cost=12 against
+      # the host's `traefik_panel_password`. If the substitution is ever
+      # skipped (empty `panel_password`), this malformed bcrypt string
+      # matches no password → 401 guaranteed instead of leaving a
+      # crackable real hash committed in the repo.
+      - "traefik.http.middlewares.auth.basicauth.users=traefik-admin:$$2y$$12$$panel-disabled-set-traefik-panel-password-on-host"
       - "traefik.http.routers.api.tls.certResolver=letsencrypt"
       - "traefik.http.routers.api.entrypoints=https"
       - "traefik.http.routers.api.service=api@internal"
@@ -38,17 +43,21 @@ services:
 
   dockersocket:
     image: tecnativa/docker-socket-proxy
-    privileged: true
     networks:
       private:
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # :ro — the proxy only exposes read-only endpoints
+      # (CONTAINERS/NETWORKS/SERVICES) for Traefik discovery, never
+      # writes back to the daemon.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       CONTAINERS: 1
       NETWORKS: 1
       SERVICES: 1
-      SWARM: 1
-      TASKS: 1
+      # Standalone Docker (provider: docker, not swarm) — keep Swarm
+      # endpoints disabled to shrink the daemon API surface.
+      SWARM: 0
+      TASKS: 0
     restart: unless-stopped
 
 networks:

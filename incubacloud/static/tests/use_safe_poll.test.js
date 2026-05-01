@@ -9,93 +9,82 @@
  *   3. `.alive` flips to false on unmount so user code can short-
  *      circuit mid-tick (between an awaited RPC and the next state
  *      write).
+ *
+ * Why no Component / mountWithCleanup:
+ *   ``mountWithCleanup`` spins up the bus/discuss/mail mock stack and
+ *   fails with ``Cannot find a definition for model "discuss.channel"``
+ *   for a test that doesn't need any of it. ``useSafePoll`` accepts
+ *   an injectable ``unmountHook`` so we capture the cleanup callback
+ *   directly and trigger it manually — purely synchronous, no OWL
+ *   mounting, no mocks beyond a one-line capture function.
  */
-import { Component, xml } from "@odoo/owl";
 import { describe, expect, test } from "@odoo/hoot";
-import { animationFrame, advanceTime } from "@odoo/hoot-mock";
-import { mountWithCleanup } from "@web/../tests/web_test_helpers";
 
 import { useSafePoll } from "@incubacloud/utils/use_safe_poll";
 
 
-class Harness extends Component {
-    static template = xml`<div t-att-data-alive="safePoll.alive"/>`;
-    static props = {
-        onTick: { type: Function, optional: true },
-        delay: { type: Number, optional: true },
-        autoStart: { type: Boolean, optional: true },
-        stash: { type: Function, optional: true },
-    };
-    setup() {
-        this.safePoll = useSafePoll();
-        if (this.props.stash) this.props.stash(this.safePoll);
-        if (this.props.autoStart !== false) {
-            this.safePoll.schedule(
-                () => this.props.onTick?.(),
-                this.props.delay ?? 100,
-            );
-        }
+/**
+ * Build a useSafePoll instance with a captured unmount callback.
+ * Returns ``{ poll, unmount }`` so each test can call ``unmount()``
+ * to simulate the component being destroyed.
+ */
+function makePoll() {
+    let captured = null;
+    const poll = useSafePoll({
+        unmountHook: (fn) => { captured = fn; },
+    });
+    if (!captured) {
+        throw new Error("useSafePoll did not register an unmount hook");
     }
+    return { poll, unmount: captured };
 }
 
 
 describe("useSafePoll", () => {
 
     test("schedule fires after the delay while mounted", async () => {
+        const { poll } = makePoll();
         let fired = 0;
-        await mountWithCleanup(Harness, {
-            props: { delay: 50, onTick: () => { fired += 1; } },
-        });
-        await advanceTime(50);
-        await animationFrame();
+        poll.schedule(() => { fired += 1; }, 10);
+        // Real setTimeout is fine for this — keep delay tiny so the
+        // test still runs in a few ms.
+        await new Promise(r => setTimeout(r, 30));
         expect(fired).toBe(1);
     });
 
     test("pending schedule is cancelled on unmount", async () => {
+        const { poll, unmount } = makePoll();
         let fired = 0;
-        let stashed;
-        const comp = await mountWithCleanup(Harness, {
-            props: {
-                delay: 200,
-                onTick: () => { fired += 1; },
-                stash: (sp) => { stashed = sp; },
-            },
-        });
+        poll.schedule(() => { fired += 1; }, 50);
         // Unmount BEFORE the timer fires — the would-be tick must
         // stay silent.
-        comp.__owl__.destroy();
-        await advanceTime(500);
-        await animationFrame();
+        unmount();
+        await new Promise(r => setTimeout(r, 80));
         expect(fired).toBe(0);
-        expect(stashed.alive).toBe(false);
+        expect(poll.alive).toBe(false);
     });
 
-    test("alive goes false on unmount so awaited ticks short-circuit", async () => {
-        let stashed;
-        const comp = await mountWithCleanup(Harness, {
-            props: {
-                autoStart: false,
-                stash: (sp) => { stashed = sp; },
-            },
-        });
-        expect(stashed.alive).toBe(true);
-        comp.__owl__.destroy();
-        expect(stashed.alive).toBe(false);
+    test("alive goes false on unmount so awaited ticks short-circuit", () => {
+        const { poll, unmount } = makePoll();
+        expect(poll.alive).toBe(true);
+        unmount();
+        expect(poll.alive).toBe(false);
     });
 
     test("schedule after unmount is a no-op", async () => {
-        let stashed;
+        const { poll, unmount } = makePoll();
         let fired = 0;
-        const comp = await mountWithCleanup(Harness, {
-            props: {
-                autoStart: false,
-                stash: (sp) => { stashed = sp; },
-            },
-        });
-        comp.__owl__.destroy();
-        stashed.schedule(() => { fired += 1; }, 10);
-        await advanceTime(50);
-        await animationFrame();
+        unmount();
+        const handle = poll.schedule(() => { fired += 1; }, 10);
+        // schedule returns null when alive is false — that's the
+        // signal callers can use to detect a dropped schedule.
+        expect(handle).toBe(null);
+        await new Promise(r => setTimeout(r, 30));
         expect(fired).toBe(0);
+    });
+
+    test("alive starts true on a fresh poll", () => {
+        const { poll } = makePoll();
+        expect(poll.alive).toBe(true);
     });
 });

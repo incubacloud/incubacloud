@@ -28,10 +28,20 @@
  *       };
  *       this.safePoll.schedule(tick, 1500);
  *   }
+ *
+ * Testing:
+ *   Pass ``unmountHook`` to capture the cleanup callback and call it
+ *   manually to simulate unmount, avoiding the cost of mounting a
+ *   real component just to exercise the closure logic.
+ *
+ *       let cleanup;
+ *       const sp = useSafePoll({ unmountHook: (fn) => { cleanup = fn; } });
+ *       cleanup();   // simulate component destroy
+ *       expect(sp.alive).toBe(false);
  */
-import { onWillUnmount } from "@odoo/owl";
+import { onWillUnmount as _defaultUnmount } from "@odoo/owl";
 
-export function useSafePoll() {
+export function useSafePoll({ unmountHook } = {}) {
     // Closure state — `alive` flips to false on unmount so anything
     // that gets past the clearTimeout race (e.g. a fn already queued
     // in the microtask loop) can short-circuit via safePoll.alive.
@@ -48,7 +58,11 @@ export function useSafePoll() {
         return pending;
     }
 
-    onWillUnmount(() => {
+    // Register cleanup. ``unmountHook`` is injectable so tests can
+    // capture the callback and trigger it manually without spinning
+    // up the Hoot mount/discuss/bus stack.
+    const registerUnmount = unmountHook || _defaultUnmount;
+    registerUnmount(() => {
         state.alive = false;
         if (pending !== null) {
             clearTimeout(pending);

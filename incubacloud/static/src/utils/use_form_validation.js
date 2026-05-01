@@ -26,6 +26,11 @@
  *     every rule against the passed form, stores the errors map in
  *     reactive state, and marks every rule-bearing field as
  *     "touched" so the template renders red borders immediately.
+ *   - ``isValid(form)`` → ``boolean``. Same checks as ``validate`` but
+ *     **without** mutating ``errors``/``touched``. Designed to be
+ *     called from a getter and bound to ``t-att-disabled`` so the
+ *     submit button reflects validity in real time without flagging
+ *     fields red before the user has interacted with them.
  *   - ``fieldError(name)`` → ``string | null``. Only non-null once a
  *     field has been touched (explicit ``touch(name)`` or via a
  *     failed ``validate()``). Safe to call from the template for
@@ -73,6 +78,15 @@ export function useFormValidation(rulesFactory) {
         };
     }
 
+    function isValid(form) {
+        // Pure check, no state mutation. Designed for use in a render
+        // path (getter bound to ``t-att-disabled``) so the submit
+        // button enables/disables in real time without prematurely
+        // marking fields as touched.
+        const { errors } = _run(form);
+        return Object.keys(errors).length === 0;
+    }
+
     function touch(name) {
         state.touched[name] = true;
     }
@@ -87,5 +101,5 @@ export function useFormValidation(rulesFactory) {
         state.touched = {};
     }
 
-    return { validate, touch, fieldError, clearErrors };
+    return { validate, isValid, touch, fieldError, clearErrors };
 }

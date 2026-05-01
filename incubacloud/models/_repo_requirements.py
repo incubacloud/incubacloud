@@ -30,6 +30,8 @@ from contextlib import suppress
 
 from odoo.exceptions import UserError
 
+from ..github.http_utils import safe_urlopen
+
 from ..github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
 
 _logger = logging.getLogger(__name__)
@@ -79,9 +81,68 @@ CONFLICT_RE = re.compile(
 
 # ── GitHub URL parser ──────────────────────────────────────────────────────
 
+# Anchored at both ends to prevent attacker-prefixed URLs (e.g.
+# ``https://attacker.tld/foo/github.com/u/r``) from matching. Mirrors
+# the regex in ``controllers/_data_load/_helpers.py``.
+_GH_URL_RE = re.compile(
+    r'^(?:(?:https?://)?(?:www\.)?github\.com/|git@github\.com:)'
+    r'([^/]+)/([^/]+)$'
+)
+
+
+# ── Git ref / SHA validation ───────────────────────────────────────────────
+#
+# These regex are the sole defense against shell injection through values
+# that flow into ``git fetch``, ``gitaggregate``, or ``repos.yaml`` during
+# deploy/rebuild. Branches and commit SHAs come from two untrusted
+# sources:
+#
+#   1. GitHub webhooks (push.ref, pull_request.head.ref) — an attacker
+#      with permission to push to the repo can choose ref names like
+#      ``main --upload-pack=evil`` or ``main; rm -rf /``.
+#
+#   2. Direct frontend writes / ORM RPC by users with write access to
+#      ``cloud.instance.repo`` / ``cloud.project.repo``.
+#
+# A leading ``-`` is rejected so a value cannot be misinterpreted as a
+# command-line flag by any tool that consumes it. ``..`` is rejected to
+# avoid path-traversal-like surprises in tooling.
+_GIT_REF_RE = re.compile(r'^(?!-)[A-Za-z0-9_/.\-]{1,200}$')
+_GIT_SHA_RE = re.compile(r'^[a-f0-9]{7,64}$')
+
+
+def is_safe_git_ref(value):
+    """Return True if ``value`` is a syntactically safe git ref name."""
+    if not isinstance(value, str):
+        return False
+    if '..' in value:
+        return False
+    return bool(_GIT_REF_RE.match(value))
+
+
+def is_safe_git_sha(value):
+    """Return True if ``value`` is a syntactically safe git commit SHA."""
+    return isinstance(value, str) and bool(_GIT_SHA_RE.match(value))
+
+
+def is_safe_repo_url(value):
+    """Return True if ``value`` is a known-safe repo URL.
+
+    Only GitHub URLs that match ``_GH_URL_RE`` are accepted. The
+    project does not currently support GitLab/BitBucket; the pip and
+    apt requirement fetchers also assume GitHub. Tightening here also
+    closes the H-MOD-6 vector where ``github.com`` would match inside
+    ``github.com.attacker.tld`` (the regex is anchored at both ends).
+    """
+    if not isinstance(value, str):
+        return False
+    cleaned = value.strip().rstrip('/').removesuffix('.git')
+    return bool(_GH_URL_RE.fullmatch(cleaned))
+
+
 def _parse_github_repo_path(url):
     url = (url or '').strip().rstrip('/').removesuffix('.git')
-    m = re.search(r'github\.com[:/]([^/]+)/([^/]+)$', url)
+    m = _GH_URL_RE.fullmatch(url)
     if not m:
         raise ValueError(f"Cannot parse GitHub URL: {url!r}")
     return m.group(1), m.group(2)
@@ -350,7 +411,7 @@ def fetch_repo_addons(env, url, branch):
                 'User-Agent': 'incubacloud/1.0',
                 'Accept': 'application/vnd.github+json',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
+            with safe_urlopen(req, timeout=4) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
             return sorted({
                 item['path'].rsplit('/', 2)[-2]
@@ -426,7 +487,7 @@ def fetch_requirements_txt(env, url, branch):
                 'User-Agent': 'incubacloud/1.0',
                 'Accept': 'application/vnd.github+json',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
+            with safe_urlopen(req, timeout=4) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
                 content = data.get('content', '')
                 raw = content.replace('\n', '').replace(' ', '')
@@ -782,7 +843,7 @@ async def detect_addon_conflicts(env, repos):
             'Accept': 'application/vnd.github+json',
         })
         with suppress(Exception):
-            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
+            with safe_urlopen(req, timeout=4) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
             return sorted({
                 item['path'].rsplit('/', 2)[-2]

@@ -13,7 +13,7 @@ class TestCredentialServicePAT(TransactionCase):
         return self.env['cloud.github.credential.service']
 
     def _settings(self):
-        return self.env['cloud.settings']._get()
+        return self.env['cloud.settings']._get_system()
 
     def test_get_pat_returns_none_when_not_set(self):
         self._settings().write({'github_pat': ''})

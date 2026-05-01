@@ -1,5 +1,20 @@
-from odoo import api, fields, models
+import re
+
+from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
+
+# RFC 1123-style hostname: each label is 1-63 chars, starts/ends with
+# alphanumeric, may contain hyphens. Labels separated by dots. Whole
+# string lowercase. This regex is the primary defense against SQL/shell
+# injection through the hostname value (it flows into psql -c "..." via
+# _base_url() in deploy/rebuild executors). With this constraint the
+# hostname can never contain quotes, dollars, backticks, semicolons or
+# whitespace — values that would break either the SQL or the wrapping
+# shell command.
+_HOSTNAME_RE = re.compile(
+    r'^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?'
+    r'(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$'
+)
 
 
 class CloudInstanceDomain(models.Model):
@@ -17,6 +32,21 @@ class CloudInstanceDomain(models.Model):
     cert_resolver = fields.Char(default='letsencrypt')
     sequence = fields.Integer(default=10)
 
+    @api.constrains('hostname', 'redirect_to')
+    def _check_hostname_format(self):
+        for rec in self:
+            for field, value in (
+                ('hostname', rec.hostname),
+                ('redirect_to', rec.redirect_to),
+            ):
+                v = (value or '').strip().lower()
+                if v and not _HOSTNAME_RE.match(v):
+                    raise ValidationError(_(
+                        "Invalid %(field)s '%(value)s'. Use lowercase letters, "
+                        "digits, dots and hyphens only; each label must "
+                        "start and end with an alphanumeric character.",
+                    ) % {'field': field, 'value': value})
+
     @api.constrains('hostname')
     def _check_hostname_unique(self):
         hostnames = [r.hostname for r in self if r.hostname]
@@ -31,7 +61,6 @@ class CloudInstanceDomain(models.Model):
                 other = next(
                     (r for r in recs if r not in self), recs[0],
                 )
-                raise ValidationError(
-                    f"Domain '{hostname}' is already used by"
-                    f" instance '{other.instance_id.name}'."
-                )
+                raise ValidationError(_(
+                    "Domain '%(hostname)s' is already used by instance '%(instance)s'.",
+                ) % {'hostname': hostname, 'instance': other.instance_id.name})

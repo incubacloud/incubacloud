@@ -25,16 +25,19 @@ _logger = logging.getLogger(__name__)
 
 
 def _client_ip():
-    """Best-effort client IP. Honours ``X-Forwarded-For`` when set by
-    the reverse proxy so the rate-limit bucket is per actual caller
-    rather than per proxy (which would collapse every GitHub delivery
-    into a single shared bucket).
+    """Best-effort client IP.
+
+    Relies on Odoo's ``--proxy-mode`` to translate ``X-Forwarded-For``
+    into ``remote_addr`` correctly. Reading XFF manually and taking the
+    leftmost entry would let any client spoof their IP via the header,
+    defeating the per-IP rate limit on /cloud/github/webhook.
+
+    Note: when this stack runs with ``PROXY_MODE=false`` (Doodba
+    common.yaml), ``remote_addr`` is the Traefik container IP and the
+    bucket collapses to one global cap. That is over-restrictive but
+    not spoofable — the operationally safe degradation.
     """
     try:
-        hdrs = request.httprequest.headers
-        xff = (hdrs.get("X-Forwarded-For") or "").strip()
-        if xff:
-            return xff.split(",")[0].strip()
         return request.httprequest.remote_addr or "unknown"
     except Exception:
         return "unknown"

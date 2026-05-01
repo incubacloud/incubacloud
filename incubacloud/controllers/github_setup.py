@@ -14,11 +14,14 @@ import json
 import logging
 import re
 import secrets
+import time
 import urllib.error
 import urllib.request
 
 from odoo import http
 from odoo.http import request
+
+from ..github.http_utils import safe_urlopen
 
 _logger = logging.getLogger(__name__)
 
@@ -27,6 +30,7 @@ _GITHUB_MANIFEST_CONVERT = (
     "https://api.github.com/app-manifests/{code}/conversions"
 )
 _SESSION_STATE_KEY = "_github_app_setup_state"
+_STATE_TTL_SECONDS = 600  # 10 minutes
 
 
 class GitHubSetupController(http.Controller):
@@ -60,7 +64,10 @@ class GitHubSetupController(http.Controller):
             )
 
         state = secrets.token_urlsafe(16)
-        request.session[_SESSION_STATE_KEY] = state
+        request.session[_SESSION_STATE_KEY] = {
+            'state': state,
+            'created_at': time.time(),
+        }
 
         # GitHub requires HTTPS for redirect_url — the manifest flow will 500
         # on their side if the base URL is HTTP (e.g. local development).
@@ -144,7 +151,22 @@ class GitHubSetupController(http.Controller):
         credentials (no auth required), stores them in ``cloud.github.app``.
         """
         request.env['cloud.security.mixin']._check_can_manage_settings()
-        expected = request.session.pop(_SESSION_STATE_KEY, None)
+        session_data = request.session.pop(_SESSION_STATE_KEY, None)
+        if not isinstance(session_data, dict):
+            _logger.warning("GitHub App setup callback: no state in session")
+            return request.redirect(
+                "/cloud/settings?setup_error=invalid_state"
+            )
+        expected = session_data.get('state')
+        created_at = session_data.get('created_at') or 0
+        if time.time() - created_at > _STATE_TTL_SECONDS:
+            _logger.warning(
+                "GitHub App setup callback: state expired (age=%ss)",
+                int(time.time() - created_at),
+            )
+            return request.redirect(
+                "/cloud/settings?setup_error=state_expired"
+            )
         if not code or not state or state != expected:
             _logger.warning(
                 "GitHub App setup callback: invalid state "
@@ -154,6 +176,20 @@ class GitHubSetupController(http.Controller):
             )
             return request.redirect(
                 "/cloud/settings?setup_error=invalid_state"
+            )
+
+        # Refuse to overwrite an existing app via the manifest callback —
+        # the operator must explicitly /cloud/reset_github_app first. This
+        # closes the only path where the callback would silently rotate
+        # production credentials.
+        App = request.env["cloud.github.app"].sudo()
+        if App.search([], limit=1):
+            _logger.warning(
+                "GitHub App setup callback: refusing to overwrite "
+                "existing app; reset required first"
+            )
+            return request.redirect(
+                "/cloud/settings?setup_error=app_exists"
             )
 
         # Exchange code for credentials (public GitHub API — no auth needed)
@@ -168,7 +204,7 @@ class GitHubSetupController(http.Controller):
                 },
                 data=b"",
             )
-            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 — hardcoded https://api.github.com
+            with safe_urlopen(req, timeout=15) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read())
         except urllib.error.HTTPError as exc:
             body = exc.read().decode(errors="replace")
@@ -201,25 +237,25 @@ class GitHubSetupController(http.Controller):
                 "/cloud/settings?setup_error=missing_credentials"
             )
 
-        App = request.env["cloud.github.app"].sudo()
-        app = App.search([], limit=1)
-        write_vals = {
+        slug = data.get("slug", "")
+        # installation_id is not known yet; will be auto-set when the user
+        # installs the app and the installation webhook fires.
+        App.create({
             "app_id": app_id,
             "private_key": private_key,
             "webhook_secret": webhook_secret,
-            "slug": data.get("slug", ""),
-        }
-        if app:
-            app.write(write_vals)
-        else:
-            # installation_id is not known yet; will be auto-set when
-            # the user installs the app and the installation webhook fires.
-            write_vals["installation_id"] = ""
-            App.create(write_vals)
+            "slug": slug,
+            "installation_id": "",
+        })
+
+        request.env['cloud.audit.log'].sudo().create({
+            'action': 'GitHub App created via manifest',
+            'details': f'app_id={app_id}, slug={slug or "?"}',
+        })
 
         _logger.info(
             "GitHub App created via manifest flow: app_id=%s slug=%s",
             app_id,
-            data.get("slug", "?"),
+            slug or "?",
         )
         return request.redirect("/cloud/settings?setup_ok=1")

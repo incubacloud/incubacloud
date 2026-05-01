@@ -12,17 +12,16 @@ Settings → Rates without redeploying:
   * ``rate_limit_terminal_per_min``       (default 30)
   * ``rate_limit_terminal_user_per_min``  (default 10)
 
-This is a deliberate copy of ``saas.rate.limit`` (lives in
-``incubacloud_saas_manager``) rather than a shared base. The SaaS
-model has its own caps, its own buckets (``ip:*``, ``tenant:*:*``),
-and its own GC cadence. Keeping them siblings avoids the cross-module
-dependency and lets each evolve independently.
+Inheriting modules can ship their own rate-limit model (with their
+own caps, buckets and GC cadence) as a sibling rather than reusing
+this one — keeping the modules decoupled and letting each evolve
+independently.
 
 The counter is deliberately simple: single row per bucket updated via
 ORM write. Under concurrent contention two writers may both read the
 same count and both increment — the actual throughput may exceed the
 configured cap by a small factor. For our use case (preventing brute
-force and cost DoS) that is acceptable; hardening to a strict atomic
+force and cost DoS) that is acceptable; tightening to a strict atomic
 cap would require ``SELECT ... FOR UPDATE`` or Redis.
 """
 from datetime import timedelta
@@ -90,23 +89,42 @@ class CloudRateLimit(models.Model):
                     "hit() requires cap_key or max_per_window",
                 )
             max_per_window = self._get_cap(cap_key)
-        now = fields.Datetime.now()
-        rec = self.sudo().search([('bucket', '=', bucket)], limit=1)
-        if not rec:
-            self.sudo().create({
-                'bucket': bucket,
-                'window_start': now,
-                'count': 1,
-            })
-            return True
-        age = (now - rec.window_start).total_seconds()
-        if age >= window_seconds:
-            rec.sudo().write({'window_start': now, 'count': 1})
-            return True
-        if rec.count >= max_per_window:
-            return False
-        rec.sudo().write({'count': rec.count + 1})
-        return True
+        # Atomic upsert: insert the row if missing, otherwise update
+        # in place. The CASE expression resets the window when expired
+        # (now - window_start >= window_seconds) or increments the
+        # counter. RETURNING count gives the post-update value so we
+        # can compare against the cap and decide allow/deny without a
+        # second query. This collapses what used to be a TOCTOU race
+        # (two readers both observing count=N and both writing N+1)
+        # into a single statement that Postgres serialises via the
+        # row-level lock taken by ON CONFLICT.
+        self.env.cr.execute(
+            """
+            INSERT INTO cloud_rate_limit (
+                bucket, window_start, count,
+                create_uid, create_date, write_uid, write_date
+            )
+            VALUES (%s, NOW(), 1, 1, NOW(), 1, NOW())
+            ON CONFLICT (bucket) DO UPDATE SET
+                window_start = CASE
+                    WHEN NOW() - cloud_rate_limit.window_start
+                         >= INTERVAL '1 second' * %s
+                    THEN NOW()
+                    ELSE cloud_rate_limit.window_start
+                END,
+                count = CASE
+                    WHEN NOW() - cloud_rate_limit.window_start
+                         >= INTERVAL '1 second' * %s
+                    THEN 1
+                    ELSE cloud_rate_limit.count + 1
+                END,
+                write_date = NOW()
+            RETURNING count
+            """,
+            (bucket, window_seconds, window_seconds),
+        )
+        new_count = self.env.cr.fetchone()[0]
+        return new_count <= max_per_window
 
     @api.model
     def _gc(self, older_than_hours=24):

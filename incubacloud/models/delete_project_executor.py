@@ -22,7 +22,16 @@ class DeleteProjectExecutor(AbstractSSHExecutor):
             raise ValueError(
                 f"delete_project: invalid remote_folder: {folder!r}"
             )
-        if '/' in folder or folder.startswith('.'):
+        if (
+            '/' in folder
+            or folder.startswith('.')
+            or folder.startswith('-')
+        ):
+            # Leading '-' would be interpreted as a flag by any tool
+            # that consumed the value alone (rm, find, etc.). Reject
+            # at the executor boundary even though cloud.project's
+            # regex already blocks it on write — defense in depth for
+            # any future caller that builds the payload differently.
             raise ValueError(
                 f"delete_project: unsafe remote_folder: {folder!r}"
             )

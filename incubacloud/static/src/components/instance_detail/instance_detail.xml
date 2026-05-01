@@ -1011,7 +1011,7 @@
             <IcModal t-if="state.pipConflictModal"
                      title="'Resolve Pip Conflicts'"
                      boxClass="'ic-confirm-box ah-resolve-box'"
-                     onClose="closePipConflictModal">
+                     onClose="() => this.closePipConflictModal()">
                 <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
                 <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
                 <div class="ah-conflicts-list">
@@ -1051,7 +1051,7 @@
             <IcModal t-if="state.restoreDialog"
                      title="'Restore Database'"
                      boxClass="'ic-restore-box'"
-                     onClose="closeRestore">
+                     onClose="() => this.closeRestore()">
                         <div class="ic-restore-header">
                             <h3 class="ic-confirm-title">Restore Database</h3>
                             <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
@@ -1125,7 +1125,7 @@
             <IcModal t-if="state.connectDialog"
                      title="'Connect as user'"
                      boxClass="'ic-connect-box'"
-                     onClose="closeConnectModal">
+                     onClose="() => this.closeConnectModal()">
                 <div class="ic-connect-header">
                     <h3 class="ic-confirm-title">Connect as user</h3>
                     <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
@@ -1164,7 +1164,7 @@
             <IcModal t-if="state.shellDialog"
                      title="'Open Shell'"
                      boxClass="'ic-connect-box'"
-                     onClose="closeShellDialog">
+                     onClose="() => this.closeShellDialog()">
                 <div class="ic-connect-header">
                     <h3 class="ic-confirm-title">Open Shell</h3>
                     <span class="ic-restore-instance-name" t-esc="state.inst.name"/>
@@ -1193,11 +1193,14 @@
             <!-- Download backup modal -->
             <IcModal t-if="state.downloadModal"
                      title="'Download a database dump'"
-                     onClose="closeDownloadModal">
+                     onClose="() => this.closeDownloadModal()">
                 <h3 class="ic-confirm-title">Download a database dump</h3>
                 <p class="ic-confirm-message">
                     <t t-if="isLiveNeutralDump">
                         Dumping the current database on the fly.
+                    </t>
+                    <t t-elif="state.downloadModal.time === 'latest'">
+                        Latest available backup.
                     </t>
                     <t t-else="">
                         Backup from <strong t-esc="formatBackupDate(state.downloadModal.time)"/>
@@ -1264,7 +1267,7 @@
             <IcModal t-if="state.restoreBackupModal"
                      title="'Restore Backup'"
                      boxClass="'ic-confirm-box ic-restore-backup-box'"
-                     onClose="closeRestoreBackupModal">
+                     onClose="() => this.closeRestoreBackupModal()">
                 <h3 class="ic-confirm-title ic-danger-title">
                     <i class="fa fa-exclamation-triangle"/> Restore Backup
                 </h3>
@@ -1313,7 +1316,7 @@
             <IcModal t-if="state.syncModal"
                      title="'Sync with project'"
                      boxClass="'ic-sync-box'"
-                     onClose="closeSyncModal">
+                     onClose="() => this.closeSyncModal()">
                         <h3 class="ic-confirm-title">Sync with project</h3>
                         <p class="ic-sync-sub">
                             Compare this instance's dependencies and repos with the project template.

@@ -421,6 +421,16 @@ class OpsMixin:
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
 
+        if not _is_safe_remote_path(path):
+            return {
+                'ok': False,
+                'error': _(
+                    "Invalid path. Use letters, digits, dots, hyphens and "
+                    "underscores in each segment. Shell metacharacters, "
+                    "spaces and '..' are not allowed."
+                ),
+            }
+
         # Check not already imported
         existing = request.env['cloud.instance'].search([
             ('host_id', '=', host_id),
@@ -432,29 +442,35 @@ class OpsMixin:
                 'error': _('This instance is already imported.'),
             }
 
+        # All shell interpolations of `path` go through _quote_remote_path,
+        # which shlex-quotes the value (and preserves ~/ home expansion).
+        # Combined with the _is_safe_remote_path check above this is a
+        # double defense against command injection.
+        qp = _quote_remote_path(path)
+
         # Read all config files in one SSH connection
         files_to_read = [
-            f'{path}/.copier-answers.yml',
-            f'{path}/odoo/custom/src/repos.yaml',
-            f'{path}/odoo/custom/src/addons.yaml',
-            f'{path}/odoo/custom/dependencies/pip.txt',
-            f'{path}/odoo/custom/dependencies/apt.txt',
-            f'{path}/.docker/odoo.env',
-            f'{path}/.docker/db-access.env',
-            f'{path}/.docker/smtp.env',
-            f'{path}/.docker/backup.env',
-            f'{path}/docker-compose.override.yml',
+            f'{qp}/.copier-answers.yml',
+            f'{qp}/odoo/custom/src/repos.yaml',
+            f'{qp}/odoo/custom/src/addons.yaml',
+            f'{qp}/odoo/custom/dependencies/pip.txt',
+            f'{qp}/odoo/custom/dependencies/apt.txt',
+            f'{qp}/.docker/odoo.env',
+            f'{qp}/.docker/db-access.env',
+            f'{qp}/.docker/smtp.env',
+            f'{qp}/.docker/backup.env',
+            f'{qp}/docker-compose.override.yml',
         ]
         # Read all files + check symlink + docker compose ps
         commands = [
-            f'cat "{f}" 2>/dev/null || echo ""' for f in files_to_read
+            f'cat {f} 2>/dev/null || echo ""' for f in files_to_read
         ] + [
             # conf.d: concatenate all .conf files
-            f'cat {path}/odoo/custom/conf.d/*.conf 2>/dev/null || echo ""',
+            f'cat {qp}/odoo/custom/conf.d/*.conf 2>/dev/null || echo ""',
             # docker-compose.yml symlink target
-            f'readlink -f "{path}/docker-compose.yml" 2>/dev/null || echo ""',
+            f'readlink -f {qp}/docker-compose.yml 2>/dev/null || echo ""',
             # Container status
-            f'cd "{path}" && docker compose ps --format '
+            f'cd {qp} && docker compose ps --format '
             f"'{{{{.Service}}}}\\t{{{{.State}}}}' 2>/dev/null || echo ''",
         ]
 
@@ -826,7 +842,11 @@ class OpsMixin:
         """
         self._sec()._check_can_view_logs()
 
-        inst = request.env['cloud.instance'].sudo().browse(instance_id)
+        # No `.sudo()`: developers already see every instance via
+        # `rule_instance_all` (Project Manager+ domain `[(1,'=',1)]`,
+        # implied by `group_cloud_developer`). Reading through the
+        # caller's env keeps record-rule audit visible for this RPC.
+        inst = request.env['cloud.instance'].browse(instance_id)
         if not inst.exists() or not inst.host_id:
             return {'ok': False, 'error': _('Instance not found')}
 

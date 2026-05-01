@@ -297,8 +297,7 @@ class TerminalController(http.Controller):
         """Close the terminal session and update the audit record."""
         env = request.env
         # Proxy the close — the subprocess exits after responding
-        # and the PID becomes reapable; the cleanup cron (or the
-        # next ``_resolve`` call) will remove the route row.
+        # and the PID becomes reapable.
         result = self._proxy(session_id, 'POST', '/close')
         rec = env['cloud.instance.session'].search(
             [('session_id', '=', session_id),
@@ -307,6 +306,13 @@ class TerminalController(http.Controller):
         )
         if rec and rec.state == 'open':
             rec.write({'state': 'closed', 'closed_at': fields.Datetime.now()})
+        # Aggressive cleanup: drop the routing row (and its bearer
+        # token) right now instead of waiting for the cleanup cron
+        # or the next _resolve() call. Reduces the window during
+        # which the encrypted auth_token sits in the DB.
+        env['cloud.terminal.route'].sudo().search(
+            [('session_id', '=', session_id)]
+        ).unlink()
         return result
 
 

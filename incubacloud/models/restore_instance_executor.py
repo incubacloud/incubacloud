@@ -26,16 +26,39 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
 
         if mode == 'browser':
             local_path = payload.get('local_path')
-            if not local_path or not Path(local_path).exists():
+            if not local_path:
+                raise ValueError(
+                    "Backup file not found on Odoo server. "
+                    "Please re-upload and try again."
+                )
+            # Defense-in-depth: ``local_path`` must point to a file the
+            # /cloud/instance/<id>/restore controller created via
+            # ``tempfile.mkstemp(prefix='cloud_restore_<inst_id>_',
+            # suffix='.zip')``. Anything else (e.g. ``/etc/odoo/odoo.conf``
+            # passed directly via JSON-RPC) is rejected — the executor
+            # would otherwise both upload and unlink the target file.
+            # ``resolve()`` canonicalises symlinks and ``..`` traversal.
+            expected_prefix = (
+                f"{tempfile.gettempdir()}/"
+                f"cloud_restore_{self._inst().id}_"
+            )
+            resolved = str(Path(local_path).resolve())
+            if not resolved.startswith(expected_prefix):
+                raise ValueError(
+                    "local_path must be a temp file created by the "
+                    "upload controller (expected prefix %r, got %r)."
+                    % (expected_prefix, resolved)
+                )
+            if not Path(resolved).exists():
                 raise ValueError(
                     "Backup file not found on Odoo server. "
                     "Please re-upload and try again."
                 )
             self._sys("Uploading backup to remote host via SFTP...")
-            await transport.upload_file(local_path, self._remote_path())
+            await transport.upload_file(resolved, self._remote_path())
             self._sys("✓ Backup transferred to remote host.")
             with suppress(Exception):
-                Path(local_path).unlink()
+                Path(resolved).unlink()
 
         elif mode == 'from_job':
             source_job_id = payload.get('source_job_id')
@@ -81,7 +104,10 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
                 f'test -f {remote}'
                 f' || (echo "Backup file not found at {remote}" >&2'
                 f' && exit 1)'
-                f' && chmod 644 {remote}',
+                # 600 instead of 644 — the zip carries the tenant DB
+                # dump and filestore; only the SSH user that uploaded
+                # it (and root) needs to read it during restore.
+                f' && chmod 600 {remote}',
                 {"stop_on_failure": True},
             ),
             (
