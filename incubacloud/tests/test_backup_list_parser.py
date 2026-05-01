@@ -240,7 +240,7 @@ class TestNonProdCreateBackupChain(TransactionCase):
 
     def test_create_backup_enqueues_two_jobs(self):
         inst = self._staging_inst()
-        first_id = inst.create_backup()
+        polled_id = inst.create_backup()
         jobs = self.env['cloud.job'].search(
             [('instance_id', '=', inst.id)],
             order='id asc',
@@ -248,7 +248,10 @@ class TestNonProdCreateBackupChain(TransactionCase):
         codes = [j.job_type_id.code for j in jobs]
         self.assertIn('backup_create', codes)
         self.assertIn('backup_list', codes)
-        self.assertEqual(jobs[0].id, first_id)
+        # create_backup returns the trailing backup_list id so the UI
+        # only sees state='done' once duplicity records are synced.
+        self.assertEqual(jobs[-1].id, polled_id)
+        self.assertEqual(jobs[-1].job_type_id.code, 'backup_list')
 
     def test_list_backups_non_prod_enqueues_one_job(self):
         inst = self._staging_inst()
