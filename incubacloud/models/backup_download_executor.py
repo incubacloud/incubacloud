@@ -5,7 +5,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import AbstractSSHExecutor, validate_dup_time
 
 
 class BackupDownloadExecutor(AbstractSSHExecutor):
@@ -37,7 +37,11 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         payload = self.job.payload or {}
         if not payload.get('time'):
             raise ValueError("Missing 'time' in job payload.")
-        # 'latest' means no --time flag → duplicity uses the most recent
+        # 'latest' means no --time flag → duplicity uses the most recent.
+        # Validate the format up-front: the value flows verbatim into a
+        # shell command (``--time "<value>"``) so it must be free of
+        # quotes, whitespace and shell metacharacters.
+        validate_dup_time(payload['time'])
 
     def get_commands(self):
         inst = self._inst()

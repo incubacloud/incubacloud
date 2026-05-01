@@ -45,7 +45,7 @@
     <rect x="260" y="190" width="280" height="160" rx="8" fill="#1E293B" stroke="#334155" stroke-width="1"/>
     <text x="280" y="220" font-family="system-ui, sans-serif" font-size="11" font-weight="bold" fill="#94A3B8" letter-spacing="1">INFRASTRUCTURE</text>
     <rect x="280" y="240" width="60" height="10" rx="2" fill="#64748B" opacity="0.6"/>
-    <text x="520" y="249" font-family="system-ui, sans-serif" font-size="13" fill="#F8FAFC" text-anchor="end">hetzner1</text>
+    <text x="520" y="249" font-family="system-ui, sans-serif" font-size="13" fill="#F8FAFC" text-anchor="end">host-01</text>
     <line x1="280" y1="260" x2="520" y2="260" stroke="#334155" stroke-width="1" stroke-dasharray="2 2"/>
     <rect x="280" y="275" width="40" height="10" rx="2" fill="#64748B" opacity="0.6"/>
     <text x="520" y="284" font-family="system-ui, sans-serif" font-size="13" font-weight="bold" fill="#3B82F6" text-anchor="end">19.0</text>

@@ -9,7 +9,7 @@ const SAMPLE_PROJECT = {
     description: "A test project",
     environments: ["production", "staging"],
     instance_count: 3,
-    tags: [{ id: 10, name: "saas", color: 0 }],
+    tags: [{ id: 10, name: "acme", color: 0 }],
     first_production_instance_id: 42,
 };
 

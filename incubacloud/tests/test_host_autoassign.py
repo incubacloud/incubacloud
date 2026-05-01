@@ -258,8 +258,8 @@ class TestSelectBestHost(TransactionCase):
 
     def test_insufficient_resources_falls_back_to_most_headroom(self):
         """When no host fits, select_best_host falls back to the most-headroom
-        compatible host so SaaS autoprovisioning can react while the instance
-        still gets placed."""
+        compatible host so any inheriting auto-provisioning layer can react
+        while the instance still gets placed."""
         best = self.env['cloud.host'].select_best_host(100.0, 100.0)
         # Returns the fallback host, not False (fallback behaviour is
         # documented in select_best_host docstring).

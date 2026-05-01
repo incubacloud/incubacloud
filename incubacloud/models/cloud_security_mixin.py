@@ -6,7 +6,7 @@ controllers call the same methods, so the rules are enforced identically
 regardless of access channel (SPA, XML-RPC, JSON-RPC, shell).
 """
 
-from odoo import models
+from odoo import _, models
 from odoo.exceptions import AccessError
 
 _GROUP_HIERARCHY = (
@@ -39,9 +39,9 @@ class CloudSecurityMixin(models.AbstractModel):
         for grp in _GROUP_HIERARCHY[idx:]:
             if self.env.user.has_group(f'incubacloud.{grp}'):
                 return True
-        raise AccessError(
-            f"This action requires the '{min_group}' role or higher."
-        )
+        raise AccessError(_(
+            "This action requires the '%s' role or higher.",
+        ) % min_group)
 
     def _has_cloud_group(self, min_group):
         """Return ``True`` if the user meets the minimum group — no raise."""
@@ -93,6 +93,12 @@ class CloudSecurityMixin(models.AbstractModel):
 
     def _check_can_clone_to_staging(self):
         self._check_cloud_group('group_cloud_developer')
+
+    def _check_can_connect_as_user(self):
+        # Stakeholder+: any user with a cloud role. Per-instance scoping is
+        # enforced separately by record rules on cloud.instance — controllers
+        # must browse without sudo so the rule applies.
+        self._check_cloud_group('group_cloud_user')
 
     # ── Role introspection (for /cloud/get_config) ──────────────────────
 

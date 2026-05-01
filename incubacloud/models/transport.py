@@ -10,8 +10,15 @@ Adding a new backend (e.g. Kubernetes, GCP) requires only:
   3. Zero changes to existing executors.
 """
 import asyncio
+import contextlib
 from abc import ABC, abstractmethod
 from typing import NamedTuple
+
+# Default per-command SSH timeout. Long enough for big deploys and
+# heavy backup restores; short enough that a runaway command (infinite
+# loop, hung process) eventually surfaces as a clear timeout instead
+# of pinning the worker forever. Executors may override per command.
+DEFAULT_SSH_COMMAND_TIMEOUT = 3600  # 1 hour
 
 
 class CommandResult(NamedTuple):
@@ -23,19 +30,31 @@ class BaseTransport(ABC):
     """Protocol for executing commands and transferring files on a remote target."""
 
     @abstractmethod
-    async def execute(self, command: str, on_stdout, on_stderr) -> CommandResult:
+    async def execute(
+        self, command: str, on_stdout, on_stderr,
+        timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
+    ) -> CommandResult:
         """Run *command*, streaming each output line to callbacks.
 
         ``on_stdout`` and ``on_stderr`` are async callables ``(line: str) -> None``.
         Used by the main executor loop so logs appear in real time.
+
+        Aborts with ``asyncio.TimeoutError`` if the command is still
+        running after *timeout* seconds.
         """
 
     @abstractmethod
-    async def run(self, command: str) -> CommandResult:
+    async def run(
+        self, command: str,
+        timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
+    ) -> CommandResult:
         """Run *command* and capture its output without streaming.
 
         Intended for short setup / cleanup commands where real-time logging is
         not needed.  Callers check ``result.exit_status`` themselves.
+
+        Aborts with ``asyncio.TimeoutError`` if the command is still
+        running after *timeout* seconds.
         """
 
     @abstractmethod
@@ -69,7 +88,10 @@ class SSHTransport(BaseTransport):
     def __init__(self, conn):
         self._conn = conn
 
-    async def execute(self, command: str, on_stdout, on_stderr) -> CommandResult:
+    async def execute(
+        self, command: str, on_stdout, on_stderr,
+        timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
+    ) -> CommandResult:
         stdout_lines = []
         process = await self._conn.create_process(command)
 
@@ -86,15 +108,35 @@ class SSHTransport(BaseTransport):
                 if line:
                     await on_stderr(line)
 
-        await asyncio.gather(_read_stdout(), _read_stderr())
-        await process.wait()
+        async def _drive():
+            await asyncio.gather(_read_stdout(), _read_stderr())
+            await process.wait()
+
+        try:
+            await asyncio.wait_for(_drive(), timeout=timeout)
+        except asyncio.TimeoutError:
+            # Kill the remote process so SSH closes cleanly and we
+            # don't leak server-side state. Re-raise so the executor
+            # treats it as a failure.
+            with contextlib.suppress(Exception):
+                process.terminate()
+            await on_stderr(
+                f'⚠ Command exceeded {int(timeout)}s timeout — killed.'
+            )
+            raise
         return CommandResult(
             stdout='\n'.join(stdout_lines),
             exit_status=process.exit_status,
         )
 
-    async def run(self, command: str) -> CommandResult:
-        result = await self._conn.run(command, check=False)
+    async def run(
+        self, command: str,
+        timeout: float = DEFAULT_SSH_COMMAND_TIMEOUT,
+    ) -> CommandResult:
+        result = await asyncio.wait_for(
+            self._conn.run(command, check=False),
+            timeout=timeout,
+        )
         return CommandResult(
             stdout=(result.stdout or '').strip(),
             exit_status=result.exit_status,

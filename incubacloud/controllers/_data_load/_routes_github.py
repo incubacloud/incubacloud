@@ -26,12 +26,19 @@ from odoo.exceptions import UserError
 from odoo.http import request
 
 from ...github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
+from ...github.http_utils import safe_urlopen
 from ._helpers import (
     _gh_seg, _has_encrypted, _has_pat, _parse_github_repo_path,
 )
 from .._safe_error import safe_error_response
 
 _logger = logging.getLogger(__name__)
+
+# Allowlist of git hosts we will clone from. Validated by
+# ``_build_clone_url`` and ``_resolve_url`` so an attacker-controlled
+# ``repo_url`` (or ``.gitmodules`` URL) cannot redirect git clone to
+# an arbitrary host (SSRF / supply-chain).
+_ALLOWED_GIT_HOSTS = ('github.com', 'www.github.com')
 
 
 class GitHubMixin:
@@ -71,6 +78,7 @@ class GitHubMixin:
         installation_id = (vals.get('installation_id') or '').strip()
         private_key = (vals.get('private_key') or '').strip()
         webhook_secret = (vals.get('webhook_secret') or '').strip()
+        force = bool(vals.get('force'))
 
         if not app_id:
             return {'ok': False, 'error': _('App ID is required.')}
@@ -87,7 +95,27 @@ class GitHubMixin:
             write_vals['private_key'] = private_key
 
         app = App.search([], limit=1)
+        sensitive_changed = []
         if app:
+            destructive_fields = []
+            if private_key:
+                destructive_fields.append('private_key')
+            if webhook_secret:
+                destructive_fields.append('webhook_secret')
+            if destructive_fields and not force:
+                return {
+                    'ok': False,
+                    'error': _(
+                        "Overwriting %s on an existing GitHub App requires "
+                        "explicit confirmation. Resend with force=true."
+                    ) % ', '.join(destructive_fields),
+                    'requires_force': destructive_fields,
+                }
+            sensitive_changed.extend(destructive_fields)
+            if app_id != (app.app_id or ''):
+                sensitive_changed.append('app_id')
+            if installation_id != (app.installation_id or ''):
+                sensitive_changed.append('installation_id')
             app.write(write_vals)
         else:
             if not private_key:
@@ -97,12 +125,20 @@ class GitHubMixin:
                                'for the initial setup.'),
                 }
             App.create(write_vals)
+            sensitive_changed.append('initial_setup')
 
         # PAT stored in cloud.settings (EncryptedChar)
         if github_pat:
             request.env['cloud.settings']._get().write(
                 {'github_pat': github_pat},
             )
+            sensitive_changed.append('github_pat')
+
+        if sensitive_changed:
+            request.env['cloud.audit.log'].sudo().create({
+                'action': 'GitHub App credentials updated',
+                'details': ', '.join(sensitive_changed),
+            })
 
         return {'ok': True}
 
@@ -344,15 +380,19 @@ class GitHubMixin:
         self._sec()._check_cloud_group('group_cloud_consultant')
         if model not in ('cloud.project.repo', 'cloud.instance.repo'):
             return {'ok': False, 'error': _('Invalid model')}
+        # search([('id', 'in', repo_ids)]) applies record rules and
+        # silently filters out rows the caller has no access to,
+        # avoiding a leak of project-internal SHAs to a non-member
+        # who passed foreign repo_ids.
+        repos = request.env[model].search([('id', 'in', repo_ids)])
         results = {}
-        for rid in repo_ids:
-            repo = request.env[model].browse(rid)
-            if not repo.exists() or not repo.url or not repo.branch or repo.commit_sha:
+        for repo in repos:
+            if not repo.url or not repo.branch or repo.commit_sha:
                 continue
             res = self.cloud_get_branch_head(repo.url, repo.branch)
             if res.get('ok'):
                 repo.write({'commit_sha': res['sha']})
-                results[rid] = res['sha']
+                results[repo.id] = res['sha']
         return {'ok': True, 'results': results}
 
     @http.route(['/cloud/unfreeze_all_repos'], type='jsonrpc', auth='user')
@@ -361,7 +401,9 @@ class GitHubMixin:
         self._sec()._check_cloud_group('group_cloud_consultant')
         if model not in ('cloud.project.repo', 'cloud.instance.repo'):
             return {'ok': False, 'error': _('Invalid model')}
-        repos = request.env[model].browse(repo_ids)
+        # Same record-rule scoping as ``cloud_freeze_all_repos`` —
+        # only unfreeze repos the caller can see.
+        repos = request.env[model].search([('id', 'in', repo_ids)])
         repos.filtered('commit_sha').write({'commit_sha': False})
         return {'ok': True}
 
@@ -489,7 +531,7 @@ class GitHubMixin:
                 'User-Agent': 'incubacloud/1.0',
                 'Accept': 'application/vnd.github+json',
             })
-            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
+            with safe_urlopen(req, timeout=10) as resp:  # nosec B310 — hardcoded https://api.github.com
                 data = json.loads(resp.read().decode())
                 raw = data.get('content', '').replace('\n', '').replace(' ', '')
                 content = base64.b64decode(raw).decode('utf-8')
@@ -539,15 +581,38 @@ class GitHubMixin:
         # ── Helpers ────────────────────────────────────────────────────────────
 
         def _resolve_url(sub_url):
-            """Resolve a potentially relative submodule URL to absolute HTTPS."""
+            """Resolve a potentially relative submodule URL to absolute HTTPS.
+
+            Rejects submodules pointing to non-github hosts: a
+            ``.gitmodules`` file is attacker-controlled data; without
+            this check a crafted submodule URL would let git clone
+            fetch from an arbitrary host (SSRF / supply-chain).
+            """
             sub_url = sub_url.strip()
             if sub_url.startswith(('https://', 'http://', 'git@', 'ssh://')):
-                return sub_url
-            parsed = urlparse(repo_url.rstrip('/'))
-            if parsed.path.endswith('.git'):
-                parsed = parsed._replace(path=parsed.path[:-4])
-            new_path = posixpath.normpath(posixpath.join(parsed.path, sub_url))
-            return urlunparse(parsed._replace(path=new_path, query='', fragment=''))
+                absolute = sub_url
+            else:
+                parsed = urlparse(repo_url.rstrip('/'))
+                if parsed.path.endswith('.git'):
+                    parsed = parsed._replace(path=parsed.path[:-4])
+                new_path = posixpath.normpath(
+                    posixpath.join(parsed.path, sub_url)
+                )
+                absolute = urlunparse(parsed._replace(
+                    path=new_path, query='', fragment='',
+                ))
+            # Validate the host in the resolved URL. SCP-style
+            # ``git@host:path`` has no scheme, so urlparse misclassifies
+            # it; extract the host segment manually.
+            if absolute.startswith('git@') and ':' in absolute:
+                host_part = absolute.split('@', 1)[1].split(':', 1)[0]
+            else:
+                host_part = (urlparse(absolute).hostname or '')
+            if host_part.lower() not in _ALLOWED_GIT_HOSTS:
+                raise ValueError(
+                    f"Refusing submodule from non-github host: {host_part!r}"
+                )
+            return absolute
 
         def _parse_gitmodules(content):
             submodules = []
@@ -586,12 +651,21 @@ class GitHubMixin:
             return result
 
         def _build_clone_url(token=None):
-            """Build HTTPS clone URL, optionally with auth token."""
+            """Build HTTPS clone URL, optionally with auth token.
+
+            Refuses non-github hosts: ``urlparse(url).hostname`` is the
+            value the attacker would control if ``repo_url`` were
+            crafted to start with a different scheme/host.
+            """
             url = repo_url.strip()
             if not url.startswith(('https://', 'http://')):
                 url = f'https://{url}'
             parsed = urlparse(url)
-            host = parsed.hostname or 'github.com'
+            host = (parsed.hostname or '').lower()
+            if host not in _ALLOWED_GIT_HOSTS:
+                raise ValueError(
+                    f"Refusing to clone from non-github host: {host!r}"
+                )
             path = parsed.path.rstrip('/')
             if not path.endswith('.git'):
                 path += '.git'
@@ -952,7 +1026,11 @@ class GitHubMixin:
                     if m else f'https://{u}'
                 )
             parsed = urlparse(u)
-            host = parsed.hostname or 'github.com'
+            host = (parsed.hostname or '').lower()
+            if host not in _ALLOWED_GIT_HOSTS:
+                raise ValueError(
+                    f"Refusing to clone from non-github host: {host!r}"
+                )
             path = parsed.path.rstrip('/')
             if not path.endswith('.git'):
                 path += '.git'

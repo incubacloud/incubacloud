@@ -123,7 +123,34 @@ class CloudSettings(models.Model):
 
     @api.model
     def _get(self):
-        """Return the singleton record, creating it if needed."""
+        """Return the settings singleton — requires manager ACL.
+
+        The model's ``ir.model.access`` is restricted to
+        ``group_cloud_manager``. Use this accessor from controllers that
+        are gated to manager (or higher) so the ACL acts as a
+        defense-in-depth check on top of the role gate. For trusted
+        non-manager flows (cron jobs, queue_job workers, providers,
+        webhooks, public endpoints, or any inheriting module that
+        legitimately needs settings access without a manager gate) use
+        :meth:`_get_system` instead.
+        """
+        rec = self.search([], limit=1)
+        if not rec:
+            rec = self.create({})
+        return rec
+
+    @api.model
+    def _get_system(self):
+        """Return the settings singleton, bypassing ACL via sudo.
+
+        Reserved for system contexts where the caller is *not* a manager
+        but legitimately needs to read settings: cron jobs, queue
+        workers, provider integrations, public webhooks, controllers
+        exposed to portal users that read non-secret feature flags,
+        and any inheriting module operating in a system context. Never
+        use from an admin-write path — those must go through
+        :meth:`_get` after a manager gate.
+        """
         rec = self.sudo().search([], limit=1)
         if not rec:
             rec = self.sudo().create({})

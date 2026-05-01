@@ -1,4 +1,4 @@
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import AbstractSSHExecutor, validate_dup_time
 
 
 class BackupRestoreExecutor(AbstractSSHExecutor):
@@ -35,6 +35,11 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         payload = self.job.payload or {}
         if not payload.get('time'):
             raise ValueError("Missing 'time' in job payload.")
+        # The value flows into
+        # ``sh -c 'dup restore --time "<value>" --force ...'``;
+        # validating the format up-front is the only defense against
+        # shell injection through this field.
+        validate_dup_time(payload['time'])
 
     def get_commands(self):
         inst = self._inst()

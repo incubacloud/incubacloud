@@ -138,14 +138,24 @@ class CrudMixin:
     def cloud_get_users(self, search='', **kw):
         """Search internal users for member picker."""
         self._sec()._check_cloud_group('group_cloud_project_manager')
+        # No sudo: PM+ already has read on res.users via implied groups,
+        # and Odoo's standard res.users record rules scope what they
+        # can see. The previous sudo() returned every internal user
+        # in the database — useful for targeted phishing if the picker
+        # search field accepts ``@``.
         domain = [('share', '=', False)]
         if search:
             domain.append(('name', 'ilike', search))
-        users = request.env['res.users'].sudo().search(domain, limit=20)
+        users = request.env['res.users'].search(domain, limit=20)
         return [{'id': u.id, 'name': u.name, 'email': u.email or ''} for u in users]
 
     @http.route(['/cloud/create_tag'], type='jsonrpc', auth='user')
     def cloud_create_tag(self, name, scope='project'):
+        # Consultant+ only: tags label projects / hosts / instances and
+        # are visible across the SPA. Without a gate any internal user
+        # could spam-create tags (table-bloat DoS) and pollute the
+        # autocomplete dropdowns of every project / host / instance.
+        self._sec()._check_cloud_group('group_cloud_consultant')
         name = name.strip()
         if not name:
             return {'ok': False, 'error': _('Tag name cannot be empty')}
@@ -288,17 +298,33 @@ class CrudMixin:
 
     @http.route(['/cloud/dismiss_alert'], type='jsonrpc', auth='user')
     def cloud_dismiss_alert(self, alert_id):
-        request.env['cloud.alert'].browse(alert_id).write(
-            {'state': 'dismissed'}
-        )
-        return True
+        # Consultant+ only: dismissing alerts is an operational
+        # decision (especially for ``pip_conflict`` / ``addon_conflict``
+        # which gate deploys), so stakeholders cannot silently mute
+        # them. Per-project scoping is still enforced by the record
+        # rule on cloud.alert via the ``write`` access check below.
+        self._sec()._check_cloud_group('group_cloud_consultant')
+        alert = request.env['cloud.alert'].browse(alert_id)
+        if not alert.exists():
+            return {'ok': False, 'error': _('Alert not found')}
+        alert.check_access('write')
+        alert.write({'state': 'dismissed'})
+        return {'ok': True}
 
     @http.route(['/cloud/compare_sync'], type='jsonrpc', auth='user')
     def cloud_compare_sync(self, instance_id):
         """Compare instance deps/repos with its project template."""
-        inst = request.env['cloud.instance'].browse(int(instance_id))
+        # Consultant+ only: same gate as ``cloud_apply_sync`` so the
+        # diff stays out of stakeholder hands.
+        self._sec()._check_cloud_group('group_cloud_consultant')
+        try:
+            instance_id = int(instance_id)
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': _('Invalid instance id')}
+        inst = request.env['cloud.instance'].browse(instance_id)
         if not inst.exists() or not inst.project_id:
             return {'ok': False, 'error': _('Instance or project not found')}
+        inst.check_access('read')
         try:
             diff = compare_instance_project(inst)
         except Exception as exc:
@@ -310,9 +336,18 @@ class CrudMixin:
     @http.route(['/cloud/apply_sync'], type='jsonrpc', auth='user')
     def cloud_apply_sync(self, instance_id, actions):
         """Apply user-selected sync actions between instance and project."""
-        inst = request.env['cloud.instance'].browse(int(instance_id))
+        # Consultant+ only: ``apply_sync`` mutates the instance's
+        # ``pip_dependencies`` and ``repo_ids`` (same blast radius as
+        # ``cloud_save_instance``), so the gate must match.
+        self._sec()._check_cloud_group('group_cloud_consultant')
+        try:
+            instance_id = int(instance_id)
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': _('Invalid instance id')}
+        inst = request.env['cloud.instance'].browse(instance_id)
         if not inst.exists() or not inst.project_id:
             return {'ok': False, 'error': _('Instance or project not found')}
+        inst.check_access('write')
         try:
             apply_sync(inst, actions)
         except Exception:
@@ -371,13 +406,24 @@ class CrudMixin:
         resolutions: {package_name_lowercase: chosen_spec_string}
         Returns {'ok': bool, 'error'?: str}
         """
-        alert = request.env['cloud.alert'].browse(int(alert_id))
+        # Consultant+ only: resolving a conflict mutates
+        # ``pip_dependencies`` of the parent (same blast radius as
+        # ``cloud_save_instance``) and unblocks the linked deploy job.
+        # Per-record scoping is enforced by ``check_access('write')``
+        # on the alert below.
+        self._sec()._check_cloud_group('group_cloud_consultant')
+        try:
+            alert_id = int(alert_id)
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': _('Invalid alert id')}
+        alert = request.env['cloud.alert'].browse(alert_id)
         if (not alert.exists()
                 or alert.code != 'pip_conflict'
                 or alert.state != 'active'):
             return {
                 'ok': False, 'error': _('Alert not found or already resolved'),
             }
+        alert.check_access('write')
         parent = alert.instance_id or alert.project_id
         if not parent:
             return {'ok': False, 'error': _('No parent record found')}
@@ -415,11 +461,20 @@ class CrudMixin:
             The addon is added to the excludes of all other repos involved.
         Returns {'ok': bool, 'error'?: str}
         """
-        alert = request.env['cloud.alert'].browse(int(alert_id))
+        # Consultant+ only: same blast radius as editing ``repo.excludes``
+        # directly. Per-record scoping enforced via the alert's
+        # write access below.
+        self._sec()._check_cloud_group('group_cloud_consultant')
+        try:
+            alert_id = int(alert_id)
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': _('Invalid alert id')}
+        alert = request.env['cloud.alert'].browse(alert_id)
         if (not alert.exists()
                 or alert.code != 'addon_conflict'
                 or alert.state != 'active'):
             return {'ok': False, 'error': _('Alert not found or already resolved')}
+        alert.check_access('write')
         inst = alert.instance_id
         if not inst:
             return {'ok': False, 'error': _('No instance linked to this alert')}
@@ -877,7 +932,8 @@ class CrudMixin:
     }
 
     def _pre_auto_assign_host_hook(self, vals, safe):
-        """Extension point for SaaS layer to provision an on-demand host.
+        """Extension point for inheriting modules to inject host
+        provisioning logic before auto-assign runs.
 
         Return ``None`` to let the default auto-assign logic run, or a
         response dict (e.g. ``{'blocked': True, 'message': ...}``) to
@@ -939,8 +995,9 @@ class CrudMixin:
                         'creating an instance.'
                     ),
                 }
-        # Hook for SaaS modules to inject an on-demand host before auto-assign.
-        # Core knows nothing about VPS providers — that lives in the SaaS layer.
+        # Hook for inheriting modules to inject a host before auto-assign
+        # runs. Core knows nothing about external VPS providers — that
+        # logic belongs to the modules that extend this controller.
         hook_result = self._pre_auto_assign_host_hook(vals, safe)
         if hook_result is not None:
             return hook_result
@@ -1025,6 +1082,21 @@ class CrudMixin:
         audit_log_retention_days=90, job_log_retention_days=30,
     ):
         self._sec()._check_can_manage_hosts()
+        # Coerce numeric inputs through try/except so a non-numeric
+        # value reaches the user as a friendly error instead of
+        # surfacing a ValueError stack trace through Odoo's default
+        # JSON-RPC handler.
+        def _safe_int(value, default=0):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        backend_id = _safe_int(default_backup_backend_id, 0)
+        if backend_id and not request.env['cloud.backup.backend'].sudo().browse(
+            backend_id,
+        ).exists():
+            return {'ok': False, 'error': _('Unknown backup backend.')}
         ICP = request.env['ir.config_parameter'].sudo()
         ICP.set_param(
             'incubacloud.host_autoassign',
@@ -1032,15 +1104,16 @@ class CrudMixin:
         )
         ICP.set_param(
             'incubacloud.backup_backend_id',
-            str(int(default_backup_backend_id))
-            if default_backup_backend_id else '0',
+            str(backend_id) if backend_id else '0',
         )
         ICP.set_param(
             'incubacloud.audit_log_retention_days',
-            str(max(0, int(audit_log_retention_days or 0))),
+            str(max(0, _safe_int(audit_log_retention_days, 90))),
         )
         request.env['cloud.settings'].sudo()._get().write({
-            'job_log_retention_days': max(0, int(job_log_retention_days or 0)),
+            'job_log_retention_days': max(
+                0, _safe_int(job_log_retention_days, 30),
+            ),
         })
         return {'ok': True}
 

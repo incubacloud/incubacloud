@@ -56,8 +56,8 @@ export const hostname = (msg = "Invalid hostname or IP address") =>
 
 /**
  * Lowercase slug: letters, digits, and hyphens only. Used for
- * URL-safe identifiers (instance names, tenant slugs, project
- * codes).
+ * URL-safe identifiers (instance names, project codes, and similar
+ * slug-shaped identifiers in inheriting modules).
  */
 export const slug = (
     msg = "Only lowercase letters, digits, and hyphens allowed",

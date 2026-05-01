@@ -14,7 +14,7 @@ Extension point (PaaS mode):
 
 import logging
 
-from odoo import models
+from odoo import _, models
 from odoo.exceptions import UserError
 
 from ..github.client import GitHubAppClient
@@ -35,7 +35,7 @@ class GitHubCredentialService(models.AbstractModel):
         Stored in ``cloud.settings`` (EncryptedChar) so it never
         appears as plain text in the database.
         """
-        settings = self.env["cloud.settings"]._get()
+        settings = self.env["cloud.settings"]._get_system()
         pat = (settings.github_pat or "").strip()
         return pat or None
 
@@ -48,8 +48,7 @@ class GitHubCredentialService(models.AbstractModel):
         app = self.env["cloud.github.app"].sudo().search([], limit=1)
         if not app:
             raise UserError(
-                "GitHub App is not configured. "
-                "Go to Settings → GitHub to set it up."
+                _("GitHub App is not configured. Go to Settings → GitHub to set it up.")
             )
         return app._get_credentials()
 

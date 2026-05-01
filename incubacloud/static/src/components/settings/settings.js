@@ -189,13 +189,32 @@ export class Settings extends Component {
         // GitHub App (only if configured / has app_id)
         if (this.state.form.app_id) {
             try {
-                const result = await rpc("/cloud/save_github_app", { vals: {
+                const buildVals = (force) => ({
                     app_id: this.state.form.app_id,
                     installation_id: this.state.form.installation_id,
                     webhook_secret: this.state.form.webhook_secret,
                     private_key: this.state.form.private_key,
-                }});
-                if (result.ok) {
+                    ...(force ? { force: true } : {}),
+                });
+                let result = await rpc("/cloud/save_github_app", { vals: buildVals(false) });
+                if (!result.ok && result.requires_force) {
+                    const confirmed = await this._confirm({
+                        title: _t("Overwrite GitHub App credentials?"),
+                        message: _t(
+                            "You are about to overwrite the existing %s. " +
+                            "This invalidates the previous credentials and " +
+                            "cannot be undone. Continue?"
+                        ).replace('%s', result.requires_force.join(', ')),
+                        confirmLabel: _t("Overwrite"),
+                        isDanger: true,
+                    });
+                    if (!confirmed) {
+                        result = { ok: true, cancelled: true };
+                    } else {
+                        result = await rpc("/cloud/save_github_app", { vals: buildVals(true) });
+                    }
+                }
+                if (result.ok && !result.cancelled) {
                     this.state.hasPrivateKey = true;
                     this.state.configured = true;
                     this.state.form.private_key = "";
@@ -219,7 +238,7 @@ export class Settings extends Component {
             }
         }
 
-        // Registered save handlers (SaaS, future modules)
+        // Registered save handlers from inheriting modules
         for (const [key, handler] of this._saveHandlers) {
             try {
                 const result = await handler();

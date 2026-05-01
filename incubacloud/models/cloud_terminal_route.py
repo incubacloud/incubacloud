@@ -15,6 +15,8 @@ import os
 
 from odoo import api, fields, models
 
+from .encrypted_char import EncryptedChar
+
 _logger = logging.getLogger(__name__)
 
 
@@ -26,8 +28,13 @@ class CloudTerminalRoute(models.Model):
     session_id = fields.Char(required=True, index=True)
     pid = fields.Integer(required=True)
     port = fields.Integer(required=True)
-    auth_token = fields.Char(
+    auth_token = EncryptedChar(
         required=True,
+        # Restrict ORM read to base.group_system (Odoo system admins).
+        # Even cloud managers cannot pull the bearer token via Studio /
+        # raw RPC / record rule bypass; the controller reads it via
+        # sudo() at proxy time, which still works under groups=.
+        groups='base.group_system',
         help="Shared secret the controller sends as Bearer token on "
              "every proxied request. Different per session so one "
              "compromised session can't reach others.",

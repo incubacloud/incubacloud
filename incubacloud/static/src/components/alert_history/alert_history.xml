@@ -101,7 +101,7 @@
     <IcModal t-if="state.addonConflictModal"
              title="'Resolve Addon Conflicts'"
              boxClass="'ic-confirm-box ah-resolve-box'"
-             onClose="closeAddonConflictModal">
+             onClose="() => this.closeAddonConflictModal()">
         <h3 class="ic-confirm-title">Resolve Addon Conflicts</h3>
         <p class="ah-resolve-sub">
             Choose which repo should keep each addon.
@@ -135,7 +135,7 @@
     <IcModal t-if="state.resolveModal"
              title="'Resolve Pip Conflicts'"
              boxClass="'ic-confirm-box ah-resolve-box'"
-             onClose="closeResolveModal">
+             onClose="() => this.closeResolveModal()">
         <h3 class="ic-confirm-title">Resolve Pip Conflicts</h3>
         <p class="ah-resolve-sub">Choose which version spec to keep for each package:</p>
         <div class="ah-conflicts-list">

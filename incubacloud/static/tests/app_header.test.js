@@ -55,7 +55,7 @@ describe("AppHeader — filteredProjects logic", () => {
 
     const sampleProjects = [
         { id: 1, name: "IncubaCloud" },
-        { id: 2, name: "My SaaS Project" },
+        { id: 2, name: "Acme Project" },
         { id: 3, name: "Cloud Demo" },
     ];
 
@@ -75,7 +75,7 @@ describe("AppHeader — filteredProjects logic", () => {
     });
 
     test("partial match works", () => {
-        const result = filteredProjects(sampleProjects, "saa");
+        const result = filteredProjects(sampleProjects, "acm");
         expect(result.length).toBe(1);
         expect(result[0].id).toBe(2);
     });

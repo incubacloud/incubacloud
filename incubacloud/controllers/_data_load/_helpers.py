@@ -1,10 +1,11 @@
 """Module-level helpers shared by every data_load mixin.
 
 Kept here (not on the controller class) because a few are imported
-from other modules — e.g. ``deploy_instance_executor`` uses
-``_parse_github_repo_path``, ``saas_manager`` uses ``_job_response``.
-The top-level ``data_load.py`` re-exports the public ones so those
-imports keep working after the split.
+from sibling modules — ``deploy_instance_executor`` uses
+``_parse_github_repo_path``, and inheriting controllers can reuse
+``_job_response`` to wrap their own deploy responses. The top-level
+``data_load.py`` re-exports the public ones so those imports keep
+working after the split.
 """
 import logging
 import re
@@ -99,14 +100,25 @@ def _normalize_domain(domain):
     return d.strip('/')
 
 
+# Anchored at both ends so an attacker cannot smuggle a different host
+# as a URL prefix (e.g. ``https://attacker.tld/foo/github.com/u/r``,
+# which would otherwise match ``re.search`` and let downstream callers
+# clone from ``attacker.tld``).
+_GH_URL_RE = re.compile(
+    r"^(?:(?:https?://)?(?:www\.)?github\.com/|git@github\.com:)"
+    r"([^/]+)/([^/]+)$"
+)
+
+
 def _parse_github_repo_path(url):
     """Extract (owner, repo) from a GitHub URL.
 
-    Supports https://github.com/owner/repo[.git] and
-    git@github.com:owner/repo[.git].
+    Accepts only github.com hosts. Supports
+    ``https://github.com/owner/repo[.git]`` (with or without
+    ``www.``) and ``git@github.com:owner/repo[.git]``.
     """
     url = (url or "").strip().rstrip("/").removesuffix(".git")
-    m = re.search(r"github\.com[:/]([^/]+)/([^/]+)$", url)
+    m = _GH_URL_RE.fullmatch(url)
     if not m:
         raise ValueError(f"Cannot parse GitHub URL: {url!r}")
     return m.group(1), m.group(2)
@@ -126,7 +138,7 @@ def _gh_seg(s):
 
 def _has_pat(env):
     """Check if a PAT is configured in cloud.settings."""
-    settings = env["cloud.settings"]._get()
+    settings = env["cloud.settings"]._get_system()
     return bool((settings.github_pat or "").strip())
 
 

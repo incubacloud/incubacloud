@@ -9,6 +9,19 @@ http:
       headers:
         forceSTSHeader: "true"
         sslRedirect: "true"
+        # HSTS: 1 year, all subdomains, eligible for the browser preload list.
+        stsSeconds: 31536000
+        stsIncludeSubdomains: "true"
+        stsPreload: "true"
+        # X-Frame-Options: DENY — block embedding in iframes (clickjacking).
+        frameDeny: "true"
+        # X-Content-Type-Options: nosniff — block MIME sniffing.
+        contentTypeNosniff: "true"
+        # X-XSS-Protection: 1; mode=block — legacy header, still respected
+        # by older browsers.
+        browserXssFilter: "true"
+        # Don't leak full URLs to cross-origin destinations.
+        referrerPolicy: "strict-origin-when-cross-origin"
     nocrawlers:
       headers:
         customResponseHeaders:

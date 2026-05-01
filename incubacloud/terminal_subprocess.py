@@ -40,6 +40,7 @@ Invocation:
 import argparse
 import base64
 import contextlib
+import hmac
 import json
 import logging
 import os
@@ -128,9 +129,12 @@ class _Handler(BaseHTTPRequestHandler):
     # ── Helpers ─────────────────────────────────────────────────────
 
     def _auth_ok(self) -> bool:
+        # Constant-time compare: the server listens on 127.0.0.1, so a
+        # local attacker (sandbox escape, co-tenant) could otherwise
+        # derive _AUTH_TOKEN byte-by-byte from RTT timing of `==`.
         header = self.headers.get("Authorization", "")
         expected = f"Bearer {_AUTH_TOKEN}"
-        return header == expected
+        return hmac.compare_digest(header.encode(), expected.encode())
 
     def _write_json(self, status: int, body: dict) -> None:
         payload = json.dumps(body).encode("utf-8")

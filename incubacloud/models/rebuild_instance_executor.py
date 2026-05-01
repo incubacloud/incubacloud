@@ -18,6 +18,7 @@ Flow:
 """
 from datetime import datetime, timezone
 
+from .abstract_executor import sql_escape_literal
 from .deploy_instance_executor import DeployInstanceExecutor
 
 
@@ -301,8 +302,9 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             ),
             # 13. Restart all services with the new image.
             #     --remove-orphans drops containers no longer in the compose
-            #     file (e.g. backup when a tenant downgrades to a Free plan,
-            #     or smtp when the relay is removed) so they don't linger.
+            #     file (e.g. backup or smtp when the operator removes the
+            #     corresponding service from the instance config) so they
+            #     don't linger.
             (
                 "Restart instance",
                 f"cd {d} && docker compose up -d --remove-orphans",
@@ -310,6 +312,9 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             # 13. Set web.base.url and report.url in ir.config_parameter.
             #     Wrapped in a DO block: succeeds silently if the table does
             #     not exist yet (e.g. DB not yet initialised).
+            #     ``base_url`` is sql-escaped as a defense-in-depth layer
+            #     on top of the @api.constrains regex on
+            #     cloud.instance.domain.hostname.
             (
                 "Set system parameters",
                 f"cd {d} && docker compose exec -T db"
@@ -320,7 +325,7 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f" WHERE table_schema='public'"
                 f" AND table_name='ir_config_parameter') THEN"
                 f" INSERT INTO ir_config_parameter (key,value) VALUES"
-                f" ('web.base.url','{self._base_url()}'),"
+                f" ('web.base.url','{sql_escape_literal(self._base_url())}'),"
                 f" ('report.url','http://localhost:8069')"
                 f" ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value;"
                 f" END IF; END \\$\\$;\"",

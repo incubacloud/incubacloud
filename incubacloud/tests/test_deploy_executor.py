@@ -217,7 +217,7 @@ class TestBuildAnswersDomains(TransactionCase):
 # ── Tier 2: Backup policy hooks (_backup_enabled, _backup_retention) ─────────
 
 class TestBackupHooksDefault(TransactionCase):
-    """Default behaviour on core deploy executor (no tenant context)."""
+    """Default behaviour on the core deploy executor with no overrides."""
 
     def setUp(self):
         super().setUp()

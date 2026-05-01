@@ -71,7 +71,7 @@ class TestCloudRateLimitCap(TransactionCase):
     def setUp(self):
         super().setUp()
         self.rl = self.env['cloud.rate.limit']
-        self.settings = self.env['cloud.settings']._get()
+        self.settings = self.env['cloud.settings']._get_system()
 
     def test_cap_returns_configured_value(self):
         self.settings.rate_limit_webhook_per_min = 77
@@ -121,7 +121,7 @@ class TestWebhookRateLimit(TransactionCase):
     def setUp(self):
         super().setUp()
         # Bring the cap down to 2 so the test doesn't need 300 hits.
-        self.env['cloud.settings']._get().rate_limit_webhook_per_min = 2
+        self.env['cloud.settings']._get_system().rate_limit_webhook_per_min = 2
 
     def test_webhook_returns_429_when_bucket_exceeded(self):
         from odoo.addons.incubacloud.controllers import github_webhook as gw

@@ -1,4 +1,6 @@
+import asyncio
 import base64
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -11,6 +13,7 @@ from odoo.tools import file_open
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
+from .transport import SSHTransport
 
 _logger = logging.getLogger(__name__)
 
@@ -178,8 +181,8 @@ class CloudHost(models.Model):
         string='Usage Ratio',
         compute='_compute_usage_ratio',
         help='Fraction in [0, 1] of allocated/total on the most '
-             'constrained dimension (CPU or RAM). Used by SaaS '
-             'autoprovisioning to decide when to add new hosts.',
+             'constrained dimension (CPU or RAM). Inheriting modules '
+             'can read this metric to drive auto-provisioning decisions.',
     )
 
     @api.depends(
@@ -214,10 +217,10 @@ class CloudHost(models.Model):
     def _consumes_capacity(self, inst):
         """Whether ``inst`` counts against this host's CPU/RAM.
 
-        Hook for extensions. The base implementation counts every
-        instance attached to the host; SaaS overrides to skip warm
-        pool instances whose containers are intentionally stopped and
-        therefore do not reserve live capacity.
+        Hook for inheriting modules. The base implementation counts
+        every instance attached to the host; subclasses can override
+        to exclude instances whose containers are intentionally
+        stopped and therefore do not reserve live capacity.
         """
         self.ensure_one()
         return True
@@ -245,8 +248,8 @@ class CloudHost(models.Model):
         ``required_ram_gb`` (scored by remaining balanced headroom).
         When no eligible host fits, falls back to the one with the
         most headroom in the most constrained dimension — callers can
-        place instances while SaaS autoprovisioning reacts to the
-        saturation signal independently.
+        place instances while any inheriting auto-provisioning layer
+        reacts to the saturation signal independently.
         Only returns empty when there is no compatible host at all.
         """
         eligible = self.search([
@@ -347,7 +350,6 @@ class CloudHost(models.Model):
 
         Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
         """
-        import asyncio
         self.ensure_one()
         connect_kw = dict(
             host=self.ip_address,
@@ -379,6 +381,21 @@ class CloudHost(models.Model):
             entry = loop.run_until_complete(_capture())
         finally:
             loop.close()
+        # Log a SHA256 fingerprint of the captured host key so an
+        # operator can verify it post-hoc against the provider's
+        # console / out-of-band channel. Pure TOFU otherwise blindly
+        # trusts whatever responds on first connect.
+        try:
+            key_b64 = entry.split(' ', 2)[-2]
+            digest = hashlib.sha256(base64.b64decode(key_b64)).digest()
+            fp = base64.b64encode(digest).rstrip(b'=').decode('ascii')
+            _logger.info(
+                "[host %s] captured SSH host key SHA256:%s "
+                "(verify out-of-band against provider console)",
+                self.name, fp,
+            )
+        except Exception:
+            _logger.info("[host %s] captured SSH host key", self.name)
         self.sudo().write({'known_hosts_key': entry})
         return entry
 
@@ -428,7 +445,6 @@ class CloudHost(models.Model):
         To support a new backend, add a ``backend_type`` field and branch
         here to return the appropriate transport class.
         """
-        from .transport import SSHTransport
         self.ensure_one()
         connect_kw = self.ssh_connect_kwargs()
         connect_kw.update(keepalive_interval=30, keepalive_count_max=10)
@@ -510,12 +526,45 @@ class CloudHost(models.Model):
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        # Endpoint change → forbid while jobs are running, then drop
+        # the captured SSH host key so the next connection forces a
+        # fresh TOFU. The previously captured key was bound to the
+        # old (ip_address, port) pair and no longer corresponds to
+        # the new endpoint.
+        endpoint_changing = 'ip_address' in vals or 'port' in vals
+        endpoint_invalidated = []
+        if endpoint_changing:
+            for rec in self:
+                new_ip = vals.get('ip_address', rec.ip_address)
+                new_port = vals.get('port', rec.port)
+                if new_ip == rec.ip_address and new_port == rec.port:
+                    continue
+                active = self.env['cloud.job'].search_count([
+                    ('host_id', '=', rec.id),
+                    ('state', 'in', self.env['cloud.job']._active_states),
+                ])
+                if active:
+                    raise UserError(_(
+                        "Cannot change endpoint of host '%(name)s' while "
+                        "%(count)d job(s) are running or pending against it. "
+                        "Wait for them to finish (or cancel them) and try again.",
+                    ) % {'name': rec.name, 'count': active})
+                endpoint_invalidated.append(rec.id)
+            if endpoint_invalidated:
+                # Don't override an explicit caller-supplied key (manager
+                # may be importing a fresh known-good key on purpose).
+                vals.setdefault('known_hosts_key', False)
         # Snapshot tracked fields before write
         changed = self._AUDIT_TRACKED_FIELDS & set(vals)
         old_snap = {}
         if changed:
             old_snap = {f: {r.id: r[f] for r in self} for f in changed}
         result = super().write(vals)
+        for host_id in endpoint_invalidated:
+            self.env['cloud.audit.log'].sudo().create({
+                'action': 'SSH host key invalidated due to endpoint change',
+                'host_id': host_id,
+            })
         if changed:
             for rec in self:
                 parts = []

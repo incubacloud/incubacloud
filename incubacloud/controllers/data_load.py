@@ -8,11 +8,12 @@ module just re-exports the public symbols and composes the final
 ``CloudDataLoadController`` out of the mixins.
 
 Public re-exports (kept for backwards-compatibility with external
-importers — ``saas_manager``, ``warm_pool``, ``tenant`` controllers and
-``deploy_instance_executor`` all import from this module):
+importers — ``deploy_instance_executor`` and any inheriting modules
+that subclass this controller):
 
     * ``CloudDataLoadController`` — the mounted controller class
-    * ``_job_response`` — used by saas_manager to wrap deploy responses
+    * ``_job_response`` — wraps deploy responses (reusable by
+      controllers that inherit and add their own deploy variants)
     * ``_parse_github_repo_path`` — used by deploy_instance_executor
     * ``_capped_search`` / ``_LIST_MAX`` — shared pagination helper
     * ``_gh_seg``, ``_has_pat``, ``_normalize_domain``,

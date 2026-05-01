@@ -3,6 +3,7 @@
 import logging
 import json
 import os
+import re
 import tempfile
 from contextlib import suppress
 from pathlib import Path
@@ -76,7 +77,14 @@ class CloudController(Controller):
 
     @http.route(['/cloud/log/<int:job_id>/download'], auth='user', type='http')
     def cloud_log_download(self, job_id, **k):
-        """Download job logs as a plain-text .log file."""
+        """Download job logs as a plain-text .log file.
+
+        Source-based and project-based scoping is enforced by record
+        rules on ``cloud.job.log.chunk``. Stakeholders/consultants
+        get only ``source='system'`` chunks of jobs in their projects;
+        developers+ get the full stdout/stderr where credentials may
+        appear.
+        """
         if not request.env.user._is_internal():
             return request.not_found()
         job = request.env['cloud.job'].browse(job_id)
@@ -137,6 +145,19 @@ class CloudController(Controller):
             return request.make_json_response(
                 {'error': 'Forbidden'}, status=403
             )
+        # Per-user concurrency limit: each upload pins up to 2 GiB of
+        # /tmp on the Odoo server until the executor consumes the file.
+        # 2/min/user lets a typical operator retry a failed upload
+        # without trouble, while preventing a developer from pinning
+        # the server's tmpfs by spamming concurrent uploads.
+        if not request.env['cloud.rate.limit'].sudo().hit(
+            f'restore_upload_user:{request.env.user.id}',
+            max_per_window=2,
+        ):
+            return request.make_json_response(
+                {'error': 'Rate limit exceeded. Wait 60s and retry.'},
+                status=429,
+            )
         inst = request.env['cloud.instance'].browse(instance_id)
         if not inst.exists() or not inst.host_id:
             return request.make_json_response(
@@ -156,10 +177,16 @@ class CloudController(Controller):
         try:
             with os.fdopen(tmp_fd, 'wb') as tmp_fh:
                 backup_file.save(tmp_fh)
+            # Sanitise filename: it travels in the job payload as
+            # metadata and may surface in logs / UI / future shell
+            # interpolation. Restrict to a conservative whitelist
+            # before it leaves this controller.
+            raw_name = backup_file.filename or 'restore.zip'
+            safe_name = re.sub(r'[^A-Za-z0-9._-]', '_', raw_name)[:255]
             payload = {
                 'mode': 'browser',
                 'local_path': tmp_path,
-                'filename': backup_file.filename or 'restore.zip',
+                'filename': safe_name or 'restore.zip',
             }
             job_id = inst.restore_db(payload)
             return request.make_json_response({'job_id': job_id})
@@ -180,48 +207,48 @@ class CloudController(Controller):
         auth='public', methods=['GET'], csrf=False,
     )
     def cloud_health(self, **kw):
-        """Public liveness/readiness probe.
+        """Public liveness probe.
 
         Docker healthcheck, Kubernetes probes and load balancers can
         GET this without authentication to decide whether this worker
-        is fit to serve. Checks are deliberately cheap (SELECT 1 + one
-        env.ref) so the probe itself doesn't become a load source.
-        Returns HTTP 200 when every check passes, 503 otherwise, so
-        orchestrators can treat it as a standard health endpoint.
+        is fit to serve. Returns HTTP 200 when the DB is reachable,
+        503 otherwise. Body is intentionally minimal: any extra detail
+        (module presence, version, etc.) would help an unauthenticated
+        attacker fingerprint this stack.
         """
-        checks = {}
-        overall = 'ok'
-        status = 200
+        # Per-IP rate limit. 60/min comfortably covers Docker (1/30s),
+        # Kubernetes (every 10s) and Traefik (5s) healthchecks while
+        # bounding the cost of a public-endpoint flood.
+        ip = (request.httprequest.remote_addr or 'unknown')
+        if not request.env['cloud.rate.limit'].sudo().hit(
+            f'health_ip:{ip}', max_per_window=60,
+        ):
+            return request.make_response(
+                json.dumps({'status': 'rate_limited'}),
+                headers=[
+                    ('Content-Type', 'application/json'),
+                    ('Cache-Control', 'no-store'),
+                ],
+                status=429,
+            )
 
         try:
             request.env.cr.execute("SELECT 1")
-            checks['db'] = 'ok'
+            return request.make_response(
+                json.dumps({'status': 'ok'}),
+                headers=[
+                    ('Content-Type', 'application/json'),
+                    ('Cache-Control', 'no-store'),
+                ],
+                status=200,
+            )
         except Exception as exc:
             _logger.warning("health: db check failed: %s", exc)
-            checks['db'] = 'down'
-            overall = 'down'
-            status = 503
-
-        try:
-            ref = request.env.ref(
-                'incubacloud.group_cloud_manager',
-                raise_if_not_found=False,
+            return request.make_response(
+                json.dumps({'status': 'down'}),
+                headers=[
+                    ('Content-Type', 'application/json'),
+                    ('Cache-Control', 'no-store'),
+                ],
+                status=503,
             )
-            checks['registry'] = 'ok' if ref else 'down'
-            if not ref:
-                overall = 'down'
-                status = 503
-        except Exception as exc:
-            _logger.warning("health: registry check failed: %s", exc)
-            checks['registry'] = 'down'
-            overall = 'down'
-            status = 503
-
-        return request.make_response(
-            json.dumps({'status': overall, 'checks': checks}),
-            headers=[
-                ('Content-Type', 'application/json'),
-                ('Cache-Control', 'no-store'),
-            ],
-            status=status,
-        )

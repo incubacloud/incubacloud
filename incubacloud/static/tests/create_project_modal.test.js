@@ -66,19 +66,19 @@ describe("CreateProjectModal — addTag logic", () => {
 
     test("adds a new tag", () => {
         const tags = [];
-        addTag(tags, { id: 1, name: "saas" });
+        addTag(tags, { id: 1, name: "acme" });
         expect(tags.length).toBe(1);
-        expect(tags[0].name).toBe("saas");
+        expect(tags[0].name).toBe("acme");
     });
 
     test("does not add a duplicate tag", () => {
-        const tags = [{ id: 1, name: "saas" }];
-        addTag(tags, { id: 1, name: "saas" });
+        const tags = [{ id: 1, name: "acme" }];
+        addTag(tags, { id: 1, name: "acme" });
         expect(tags.length).toBe(1);
     });
 
     test("adds different tags", () => {
-        const tags = [{ id: 1, name: "saas" }];
+        const tags = [{ id: 1, name: "acme" }];
         addTag(tags, { id: 2, name: "production" });
         expect(tags.length).toBe(2);
     });
@@ -95,7 +95,7 @@ describe("CreateProjectModal — removeTag logic", () => {
 
     test("removes existing tag by id", () => {
         const tags = [
-            { id: 1, name: "saas" },
+            { id: 1, name: "acme" },
             { id: 2, name: "production" },
         ];
         removeTag(tags, 1);
@@ -104,13 +104,13 @@ describe("CreateProjectModal — removeTag logic", () => {
     });
 
     test("does nothing when tag id not found", () => {
-        const tags = [{ id: 1, name: "saas" }];
+        const tags = [{ id: 1, name: "acme" }];
         removeTag(tags, 99);
         expect(tags.length).toBe(1);
     });
 
     test("removes from single-item array", () => {
-        const tags = [{ id: 1, name: "saas" }];
+        const tags = [{ id: 1, name: "acme" }];
         removeTag(tags, 1);
         expect(tags.length).toBe(0);
     });

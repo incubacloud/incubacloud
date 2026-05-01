@@ -52,6 +52,31 @@
             <field name="perm_read" eval="True"/>
             <field name="perm_write" eval="True"/>
             <field name="perm_create" eval="True"/>
+            <!--
+                perm_unlink moved to ``rule_instance_unlink_nonprod_member``
+                so Stakeholder/Consultant cannot unlink production
+                instances at the rule layer (defense in depth on top of
+                ``cloud_security_mixin._check_can_delete_instance``,
+                which gates production deletion to Manager-only at the
+                ORM layer).
+            -->
+            <field name="perm_unlink" eval="False"/>
+        </record>
+
+        <record id="rule_instance_unlink_nonprod_member" model="ir.rule">
+            <field name="name">Instance: unlink non-prod only (members)</field>
+            <field name="model_id" ref="model_cloud_instance"/>
+            <field name="domain_force">[
+                ('project_id.member_ids', 'in', [user.id]),
+                ('environment', '!=', 'production')
+            ]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_user')),
+                (4, ref('group_cloud_consultant')),
+            ]"/>
+            <field name="perm_read" eval="False"/>
+            <field name="perm_write" eval="False"/>
+            <field name="perm_create" eval="False"/>
             <field name="perm_unlink" eval="True"/>
         </record>
 
@@ -69,8 +94,17 @@
         <record id="rule_job_member" model="ir.rule">
             <field name="name">Job: project members only</field>
             <field name="model_id" ref="model_cloud_job"/>
-            <field name="domain_force">['|',
-                ('instance_id', '=', False),
+            <!--
+                Stakeholders/consultants see only jobs of their
+                projects. Jobs without instance_id (host-level
+                operations: host_probe, host_metrics, setup_whitelist,
+                delete_host, docker_prune…) are infra operations
+                gated to manager+ at the controller layer and are
+                not visible to non-members.
+
+                Project-managers+ go through ``rule_job_all``.
+            -->
+            <field name="domain_force">[
                 ('instance_id.project_id.member_ids', 'in', [user.id])
             ]</field>
             <field name="groups" eval="[
@@ -93,10 +127,19 @@
         <record id="rule_alert_member" model="ir.rule">
             <field name="name">Alert: project members only</field>
             <field name="model_id" ref="model_cloud_alert"/>
-            <field name="domain_force">['|', '|',
+            <!--
+                Stakeholders/consultants see alerts only when scoped
+                to a project (or instance) they are member of.
+
+                Global alerts (project_id and instance_id both False)
+                are settings-level signals (e.g. "GitHub credentials
+                expiring", "host fingerprint changed") that target
+                manager-level operators and are not visible here —
+                project-managers+ pick them up through ``rule_alert_all``.
+            -->
+            <field name="domain_force">['|',
                 ('project_id.member_ids', 'in', [user.id]),
-                ('instance_id.project_id.member_ids', 'in', [user.id]),
-                '&amp;', ('project_id', '=', False), ('instance_id', '=', False)
+                ('instance_id.project_id.member_ids', 'in', [user.id])
             ]</field>
             <field name="groups" eval="[
                 (4, ref('group_cloud_user')),
@@ -212,6 +255,145 @@
         <record id="rule_instance_session_all" model="ir.rule">
             <field name="name">Instance Session: all (PM+)</field>
             <field name="model_id" ref="model_cloud_instance_session"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_project_manager')),
+            ]"/>
+        </record>
+
+        <!-- ── cloud.job.log.chunk ────────────────────────────────── -->
+
+        <record id="rule_job_log_chunk_member" model="ir.rule">
+            <field name="name">Job log chunk: project members, system source only</field>
+            <field name="model_id" ref="model_cloud_job_log_chunk"/>
+            <!--
+                Stakeholders/consultants see chunks only when:
+                  1. The job belongs to a project they are member of
+                     (via job.instance_id.project_id.member_ids), AND
+                  2. The chunk is source='system' (curated executor
+                     messages — safe by construction).
+                Raw stdout/stderr can leak credentials (postgres
+                passwords, GitHub tokens, SMTP secrets) so they are
+                hidden at the ORM layer for non-developers.
+
+                Jobs without instance_id (host-level operations like
+                host_probe, setup_whitelist, delete_host) are NOT
+                visible to stakeholders/consultants — those are
+                infra operations gated to manager+ at the controller
+                layer.
+
+                Developers+ go through ``rule_job_log_chunk_all``
+                (via group_cloud_project_manager implied), which has
+                no source filter.
+            -->
+            <field name="domain_force">[
+                ('source', '=', 'system'),
+                ('job_id.instance_id.project_id.member_ids', 'in', [user.id])
+            ]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_user')),
+                (4, ref('group_cloud_consultant')),
+            ]"/>
+        </record>
+
+        <record id="rule_job_log_chunk_all" model="ir.rule">
+            <field name="name">Job log chunk: all (PM+)</field>
+            <field name="model_id" ref="model_cloud_job_log_chunk"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_project_manager')),
+            ]"/>
+        </record>
+
+        <!-- ── cloud.github.event ─────────────────────────────────── -->
+
+        <record id="rule_github_event_managers_only" model="ir.rule">
+            <field name="name">GitHub event: project managers and above</field>
+            <field name="model_id" ref="model_cloud_github_event"/>
+            <!--
+                Webhook payloads contain pusher identities, commit
+                messages and other contributor metadata. Limit read
+                access to project_manager+ — stakeholders/consultants
+                of one project would otherwise see commits / emails of
+                every other project's webhooks via the inherited ACL.
+            -->
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_project_manager')),
+            ]"/>
+        </record>
+
+        <!-- ── cloud.connect.token ────────────────────────────────── -->
+
+        <record id="rule_connect_token_member" model="ir.rule">
+            <field name="name">Connect token: project members only</field>
+            <field name="model_id" ref="model_cloud_connect_token"/>
+            <!--
+                Stakeholders/consultants can only create or read connect
+                tokens that target an instance of one of their projects.
+                Without this rule a stakeholder of project A could
+                create a token for an instance of project B and use it
+                to log into that tenant.
+            -->
+            <field name="domain_force">[
+                ('instance_id.project_id.member_ids', 'in', [user.id])
+            ]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_user')),
+                (4, ref('group_cloud_consultant')),
+            ]"/>
+        </record>
+
+        <record id="rule_connect_token_all" model="ir.rule">
+            <field name="name">Connect token: all (PM+)</field>
+            <field name="model_id" ref="model_cloud_connect_token"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_project_manager')),
+            ]"/>
+        </record>
+
+        <!-- ── cloud.terminal.route ───────────────────────────────── -->
+
+        <record id="rule_terminal_route_owner" model="ir.rule">
+            <field name="name">Terminal route: owner only</field>
+            <field name="model_id" ref="model_cloud_terminal_route"/>
+            <!--
+                Each manager sees only their own terminal sessions.
+                The controller's _resolve() / _gc() call sudo() so
+                the rule never blocks legitimate proxy traffic; the
+                rule only stops one manager from reading another's
+                row (and its bearer token) via raw RPC / Studio.
+            -->
+            <field name="domain_force">[('user_id', '=', user.id)]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_manager')),
+            ]"/>
+        </record>
+
+        <!-- ── cloud.job.log.message ──────────────────────────────── -->
+
+        <record id="rule_job_log_message_member" model="ir.rule">
+            <field name="name">Job log message: project members only</field>
+            <field name="model_id" ref="model_cloud_job_log_message"/>
+            <!--
+                Same scoping as ``rule_job_log_chunk_member`` /
+                ``rule_job_member``: only messages of jobs in
+                projects the user belongs to. Host-level jobs are
+                hidden from non-members.
+            -->
+            <field name="domain_force">[
+                ('job_id.instance_id.project_id.member_ids', 'in', [user.id])
+            ]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_user')),
+                (4, ref('group_cloud_consultant')),
+            ]"/>
+        </record>
+
+        <record id="rule_job_log_message_all" model="ir.rule">
+            <field name="name">Job log message: all (PM+)</field>
+            <field name="model_id" ref="model_cloud_job_log_message"/>
             <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[
                 (4, ref('group_cloud_project_manager')),

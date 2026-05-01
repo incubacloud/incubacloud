@@ -125,7 +125,7 @@
         <!-- Notification preferences modal -->
         <IcModal t-if="state.showNotifModal"
                  title="'Notification Preferences'"
-                 onClose="closeNotifModal">
+                 onClose="() => this.closeNotifModal()">
             <h3 class="ic-confirm-title">
                 <i class="fa fa-bell-o"/> Notification Preferences
             </h3>

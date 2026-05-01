@@ -1,5 +1,7 @@
 import logging
 
+from psycopg2 import sql as psql
+
 from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
@@ -78,20 +80,37 @@ class ResUsers(models.Model):
                 """,
             )
             partner_cols = {row[0] for row in self.env.cr.fetchall()}
-            sql_cols = ['name', 'active', 'is_company', 'type',
-                        'create_date', 'write_date',
-                        'create_uid', 'write_uid']
-            sql_vals = ["'IncubaCloud Cron Bot'", 'true', 'false',
-                        "'contact'",
-                        'now()', 'now()', '1', '1']
+
+            # Build the column / value lists as Python objects, then
+            # use psycopg2.sql.Identifier to safely interpolate the
+            # column names and %s placeholders for the values. This
+            # is the canonical way to build dynamic-column INSERTs
+            # in psycopg2 — it cleanly separates SQL identifiers
+            # (quoted with double-quotes) from values (parameterised),
+            # so future additions to ``known_defaults`` can never
+            # introduce SQL injection even if the value comes from
+            # a less-trusted source.
+            now = fields.Datetime.now()
+            cols = ['name', 'active', 'is_company', 'type',
+                    'create_date', 'write_date',
+                    'create_uid', 'write_uid']
+            vals = ['IncubaCloud Cron Bot', True, False, 'contact',
+                    now, now, 1, 1]
             for col, default in known_defaults.items():
                 if col in partner_cols:
-                    sql_cols.append(col)
-                    sql_vals.append(f"'{default}'")
-            self.env.cr.execute(
-                f"INSERT INTO res_partner ({', '.join(sql_cols)}) "
-                f"VALUES ({', '.join(sql_vals)}) RETURNING id"
+                    cols.append(col)
+                    vals.append(default)
+
+            query = psql.SQL(
+                "INSERT INTO res_partner ({cols}) "
+                "VALUES ({placeholders}) RETURNING id"
+            ).format(
+                cols=psql.SQL(', ').join(map(psql.Identifier, cols)),
+                placeholders=psql.SQL(', ').join(
+                    [psql.Placeholder()] * len(vals)
+                ),
             )
+            self.env.cr.execute(query, vals)
             partner_id = self.env.cr.fetchone()[0]
             self.env['res.partner'].invalidate_model()
             user = self.sudo().create({
@@ -132,11 +151,11 @@ class ResUsers(models.Model):
         """Point every ``ir.cron`` owned by *module_name* at the
         cron bot.
 
-        Called from the post-init hook of each module that ships
-        crons (incubacloud core + each SaaS module). We detect the
-        crons by their ``ir.model.data`` rows so only rows this
-        module actually owns are touched; any cron the operator
-        created manually from the UI is left alone.
+        Called from the post-init hook of every module that ships
+        crons (this module and any module that inherits from it). We
+        detect the crons by their ``ir.model.data`` rows so only rows
+        the calling module actually owns are touched; any cron the
+        operator created manually from the UI is left alone.
 
         We only overwrite ``user_id`` when it still points at uid=1
         (the OdooBot default). If an operator has re-routed a cron

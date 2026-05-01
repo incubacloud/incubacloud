@@ -101,8 +101,13 @@ function mergeRequirements(existingText, incomingText, repoUrl, repoBranch) {
         } else {
             const existingSpec = pkgMap[key].spec;
             const newBlock = `<<<<<<< existing\n${existingSpec}\n=======\n${raw}\n>>>>>>> ${sourceLabel}`;
+            // Function form of replace: bypasses the ``$&`` / ``$1`` /
+            // ``$$`` substitution rules that would otherwise corrupt
+            // the merged text when ``newBlock`` contains a repo URL or
+            // branch name with literal ``$`` characters.
             newText = newText.replace(
-                new RegExp('^' + _escapeRegex(existingSpec) + '$', 'm'), newBlock
+                new RegExp('^' + _escapeRegex(existingSpec) + '$', 'm'),
+                () => newBlock,
             );
             pkgMap[key] = { type: 'conflict', spec: existingSpec, name, existingSrc: 'existing', block: newBlock };
             conflicts.push({ name, existing: existingSpec, existingSource: 'existing', incoming: raw, incomingSource: sourceLabel });
@@ -892,11 +897,12 @@ export class InstanceDetail extends Component {
      *                          returns {ok, job_id, blocked?, error?} or
      *                          a plain job_id (from orm.call).
      * @param {Object} [opts]
-     * @param {boolean} [opts.openLog=false] - open /cloud/log/<id> on success
-     * @param {string}  [opts.errorLabel]    - fallback toast message
+     * @param {boolean} [opts.openLog=false]      - open /cloud/log/<id> on success
+     * @param {boolean} [opts.goToOverview=false] - jump to the Overview tab on success
+     * @param {string}  [opts.errorLabel]         - fallback toast message
      * @returns {Object|null} the response data, or null on error
      */
-    async _enqueueJob(fn, { openLog = false, errorLabel, loadingKey = "actionLoading" } = {}) {
+    async _enqueueJob(fn, { openLog = false, goToOverview = false, errorLabel, loadingKey = "actionLoading" } = {}) {
         if (this.state[loadingKey]) return null;
         this.state[loadingKey] = true;
         try {
@@ -914,8 +920,13 @@ export class InstanceDetail extends Component {
                     message: data.message,
                     conflicts: data.conflicts || [],
                 };
-            } else if (openLog && jobId) {
-                window.open(`/cloud/log/${jobId}`, "_blank");
+            } else {
+                if (openLog && jobId) {
+                    window.open(`/cloud/log/${jobId}`, "_blank");
+                }
+                if (goToOverview) {
+                    this.setTab('overview');
+                }
             }
             // Immediate refresh so the new job shows in Recent Activity
             this._silentRefresh();
@@ -1028,6 +1039,15 @@ export class InstanceDetail extends Component {
                     let msg = `Server error (${resp.status})`;
                     try { const r = await resp.json(); if (r.error) msg = r.error; } catch {}
                     throw new Error(msg);
+                }
+                // A 200 with a non-JSON body (typical signal of a
+                // session timeout that returned the login page) would
+                // otherwise blow up inside resp.json() with a parser
+                // error that surfaced as a confusing toast. Detect it
+                // here and prompt the user to log in again.
+                const ctype = (resp.headers.get('Content-Type') || '').toLowerCase();
+                if (!ctype.includes('application/json')) {
+                    throw new Error(_t("Session expired. Please reload and try again."));
                 }
                 const result = await resp.json();
                 if (result.error) throw new Error(result.error);
@@ -1307,7 +1327,11 @@ export class InstanceDetail extends Component {
                 instance_id: this.props.instance_id,
                 refresh: true,
             }),
-            { loadingKey: "backupsLoading", errorLabel: _t("Failed to refresh backups") },
+            {
+                loadingKey: "backupsLoading",
+                goToOverview: true,
+                errorLabel: _t("Failed to refresh backups"),
+            },
         );
         if (data) {
             this.state.backupsJobId = data.job_id;
@@ -1336,10 +1360,6 @@ export class InstanceDetail extends Component {
                     this.state.backupsData = res.result;
                     this.state.backupsLoading = false;
                     this.state.actionLoading = false;
-                    if (this._pendingDownloadLatest) {
-                        this._pendingDownloadLatest = false;
-                        this._openLatestDownload();
-                    }
                     return;
                 }
                 this._safePoll.schedule(poll, 2000);
@@ -1348,7 +1368,6 @@ export class InstanceDetail extends Component {
                 this.state.backupsError = _t("Lost connection while scanning.");
                 this.state.backupsLoading = false;
                 this.state.actionLoading = false;
-                this._pendingDownloadLatest = false;
             }
         };
         this._safePoll.schedule(poll, 1500);
@@ -1365,7 +1384,11 @@ export class InstanceDetail extends Component {
         this.state.backupsError = null;
         const data = await this._enqueueJob(
             () => rpc("/cloud/create_backup", { instance_id: this.props.instance_id }),
-            { loadingKey: "backupsLoading", errorLabel: _t("Failed to create backup") },
+            {
+                loadingKey: "backupsLoading",
+                goToOverview: true,
+                errorLabel: _t("Failed to create backup"),
+            },
         );
         if (data) {
             this.state.backupsJobId = data.job_id;
@@ -1373,28 +1396,13 @@ export class InstanceDetail extends Component {
         }
     }
 
-    async downloadLatestBackup() {
-        const data = await this._enqueueJob(
-            () => rpc("/cloud/list_backups", {
-                instance_id: this.props.instance_id,
-                refresh: true,
-            }),
-            { errorLabel: _t("Failed to refresh backups") },
-        );
-        if (data) {
-            this.state.backupsJobId = data.job_id;
-            this._pendingDownloadLatest = true;
-            this._pollBackupResult();
-        }
-    }
-
-    _openLatestDownload() {
-        const backups = this.state.backupsData?.backups || [];
-        if (backups.length) {
-            this.openDownloadModal(backups[0].time, backups[0].attachment_id || null);
-        } else {
-            this.state.backupsError = _t("No backups available. Create one first.");
-        }
+    downloadLatestBackup() {
+        // Open the download modal immediately with a 'latest' marker. The
+        // selected job (download_backup / download_backup_neutralized)
+        // accepts time='latest' and resolves the most recent backup
+        // server-side, so the user does not wait for a list_backups scan
+        // before picking dump type and filestore.
+        this.openDownloadModal('latest', null);
     }
 
     // Download modal: Type of dump (Neutralized/Exact) × Filestore (without/with).
@@ -1457,6 +1465,11 @@ export class InstanceDetail extends Component {
                 return;
             }
             this.state.downloadModal = null;
+            // The download is an enqueued job whose final ZIP lands as
+            // an ir.attachment on cloud.job — surface it on Overview so
+            // the user sees the job and grabs the file from there.
+            this._silentRefresh();
+            this.setTab('overview');
         } catch (e) {
             this.state.backupsError = (e.data?.message || e.message) || _t("Download failed.");
             d.loading = false;
@@ -1486,7 +1499,11 @@ export class InstanceDetail extends Component {
         const time = m.time;
         const data = await this._enqueueJob(
             () => rpc("/cloud/restore_backup", { instance_id: this.props.instance_id, time }),
-            { openLog: true, errorLabel: _t("Restore failed") },
+            {
+                openLog: true,
+                goToOverview: true,
+                errorLabel: _t("Restore failed"),
+            },
         );
         if (data) {
             this.state.restoreBackupModal = null;
