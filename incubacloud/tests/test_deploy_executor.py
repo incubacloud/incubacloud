@@ -70,7 +70,16 @@ class TestGetTokenForRepo(BaseCase):
         executor = DeployInstanceExecutor.__new__(DeployInstanceExecutor)
         return executor
 
-    @patch('urllib.request.urlopen')
+    # Production code reaches GitHub via ``safe_urlopen`` (a no-redirect
+    # opener defined in ``incubacloud.github.http_utils``), not directly
+    # via ``urllib.request.urlopen``. Patching the latter is a no-op
+    # here, so we patch the helper at its import site in the executor.
+    _PATCH_PATH = (
+        'odoo.addons.incubacloud.models.deploy_instance_executor'
+        '.safe_urlopen'
+    )
+
+    @patch(_PATCH_PATH)
     def test_app_token_preferred_when_both_work(self, mock_urlopen):
         mock_urlopen.return_value.__enter__ = lambda s: s
         mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
@@ -82,7 +91,7 @@ class TestGetTokenForRepo(BaseCase):
         )
         self.assertEqual(result, 'app_tok')
 
-    @patch('urllib.request.urlopen')
+    @patch(_PATCH_PATH)
     def test_pat_fallback_when_app_fails(self, mock_urlopen):
         import urllib.error
         # First call (app_tok) raises 404, second (pat_tok) succeeds
@@ -110,7 +119,7 @@ class TestGetTokenForRepo(BaseCase):
     def test_only_pat_when_no_app_token(self):
         executor = self._make_executor()
         cache = {}
-        with patch('urllib.request.urlopen') as mock_urlopen:
+        with patch(self._PATCH_PATH) as mock_urlopen:
             mock_urlopen.return_value.__enter__ = lambda s: s
             mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
             result = executor._get_token_for_repo(
@@ -197,15 +206,16 @@ class TestBuildAnswersDomains(TransactionCase):
         entry = answers['domains_prod'][0]
         self.assertEqual(entry['redirect_to'], 'www.example.com')
 
-    def test_hostname_strips_protocol(self):
-        inst = self._create_instance(domains=[
-            (0, 0, {'hostname': 'https://app.example.com/'}),
-        ])
-        answers = self._make_executor(inst)._build_answers()
-        self.assertEqual(
-            answers['domains_prod'][0]['hosts'],
-            ['app.example.com'],
-        )
+    def test_hostname_with_protocol_is_rejected_by_model(self):
+        """The hostname format check on cloud.instance.domain rejects URL
+        scheme/path before the executor ever sees the value, so the
+        ``_build_answers`` strip helper only has to defend against
+        whitespace. Pin that contract here."""
+        from odoo.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self._create_instance(domains=[
+                (0, 0, {'hostname': 'https://app.example.com/'}),
+            ])
 
     def test_empty_domains_produces_empty_lists(self):
         inst = self._create_instance(domains=[])

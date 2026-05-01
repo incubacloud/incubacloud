@@ -27,7 +27,12 @@ class TestCloudHealth(HttpCase):
         )
 
     def test_health_ok_returns_200_and_json(self):
-        """Happy path: DB responds + cloud module is loaded."""
+        """Happy path: DB responds + cloud module is loaded.
+
+        The body is intentionally minimal (just ``{"status": "ok"}``) to
+        avoid fingerprinting the stack to unauthenticated probes — the
+        controller comment in ``cloud_health`` documents that contract.
+        """
         response = self._probe()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -41,8 +46,6 @@ class TestCloudHealth(HttpCase):
         )
         payload = json.loads(response.text)
         self.assertEqual(payload['status'], 'ok')
-        self.assertEqual(payload['checks'].get('db'), 'ok')
-        self.assertEqual(payload['checks'].get('registry'), 'ok')
 
     def test_health_is_public_no_auth_required(self):
         """The endpoint must work without a session cookie — that's the
