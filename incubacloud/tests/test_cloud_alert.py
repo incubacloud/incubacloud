@@ -2,12 +2,12 @@
 Tier 2 — ORM integration tests for cloud.alert.
 
 Tests cover:
-  - _check_target constraint (host_id or instance_id required)
+  - host/instance/project target combinations (all optional — global
+    alerts with no target are intentional, gated by record rules)
   - instance_id relation on cloud.instance.alert_ids
   - cascade delete behaviour
 """
 from odoo.tests.common import TransactionCase
-from odoo.exceptions import ValidationError
 
 
 class TestCloudAlertConstraint(TransactionCase):
@@ -42,9 +42,14 @@ class TestCloudAlertConstraint(TransactionCase):
         alert = self._alert(host_id=self.host.id, instance_id=self.inst.id)
         self.assertTrue(alert.id)
 
-    def test_neither_raises_validation_error(self):
-        with self.assertRaises(ValidationError):
-            self._alert()
+    def test_neither_target_is_allowed(self):
+        """Targetless alerts are valid — they signal global/platform
+        events (OIDC code reuse, JWKS overdue rotation, etc.). Visibility
+        is restricted at the record-rule layer to project-managers+."""
+        alert = self._alert()
+        self.assertTrue(alert.id)
+        self.assertFalse(alert.host_id)
+        self.assertFalse(alert.instance_id)
 
     def test_default_state_is_active(self):
         alert = self._alert(host_id=self.host.id)
@@ -124,10 +129,14 @@ class TestCloudAlertProjectAndConflictData(TransactionCase):
         alert = self._alert(project_id=self.project.id)
         self.assertTrue(alert.id)
 
-    def test_constraint_still_fails_with_no_target(self):
-        from odoo.exceptions import ValidationError
-        with self.assertRaises(ValidationError):
-            self._alert()  # no host_id, instance_id, or project_id
+    def test_targetless_alert_with_conflict_data_is_allowed(self):
+        """Targetless alerts (e.g. system-wide pip conflicts spotted by
+        a cron) may still carry conflict_data; record rules restrict
+        who sees them, the model itself imposes no target requirement."""
+        data = [{'name': 'lib', 'existing': 'lib>=1', 'incoming': 'lib<1'}]
+        alert = self._alert(conflict_data=data)
+        self.assertTrue(alert.id)
+        self.assertEqual(alert.conflict_data, data)
 
     def test_conflict_data_roundtrip(self):
         data = [{'name': 'lib1', 'existing': 'lib1>=3.0', 'incoming': 'lib1<3.0'}]

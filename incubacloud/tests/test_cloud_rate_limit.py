@@ -42,13 +42,18 @@ class TestCloudRateLimitHit(TransactionCase):
         bucket = 'test:reset'
         for _ in range(3):
             self.rl.hit(bucket, max_per_window=3)
-        # Backdate the window so age >= window_seconds.
+        # Backdate the window so age >= window_seconds. Flush before the
+        # next ``hit()`` call: the counter UPSERT runs as raw SQL and
+        # does not auto-flush pending ORM writes on the same row, so
+        # without an explicit flush the SQL would still see the original
+        # ``window_start`` and increment past the cap instead of resetting.
         rec = self.env['cloud.rate.limit'].search([
             ('bucket', '=', bucket),
         ])
         rec.write({
             'window_start': fields.Datetime.now() - timedelta(seconds=90),
         })
+        rec.flush_recordset()
         # Next hit starts a fresh window and is allowed.
         self.assertTrue(self.rl.hit(bucket, max_per_window=3))
         rec.invalidate_recordset()

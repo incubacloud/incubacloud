@@ -112,7 +112,7 @@ class TestInstanceRepoInheritance(TransactionCase):
             'project_id': self.project.id,
             'url': 'https://github.com/OCA/web.git',
             'branch': '18.0',
-            'commit_sha': 'abc123',
+            'commit_sha': 'abc1234',
         })
 
     def test_instance_inherits_project_repos(self):
@@ -125,4 +125,4 @@ class TestInstanceRepoInheritance(TransactionCase):
         repo = inst.repo_ids
         self.assertEqual(repo.url, 'https://github.com/OCA/web.git')
         self.assertEqual(repo.branch, '18.0')
-        self.assertEqual(repo.commit_sha, 'abc123')
+        self.assertEqual(repo.commit_sha, 'abc1234')

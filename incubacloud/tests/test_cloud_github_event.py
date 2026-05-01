@@ -213,7 +213,7 @@ class TestProcessPushEventGuards(_GitHubEventBase):
         self.assertTrue(ev.processed)
 
     def test_frozen_repo_no_enqueue(self):
-        self.repo.write({'commit_sha': 'frozen123abc'})
+        self.repo.write({'commit_sha': 'f00ba12c0ff33d'})
         calls, mock = self._enqueue_calls()
         with mock:
             ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
