@@ -529,7 +529,12 @@ class CloudInstance(models.Model):
         )
 
     def create_backup(self):
-        """Enqueue backup_create → backup_list chain."""
+        """Enqueue backup_create → backup_list chain.
+
+        Returns the trailing backup_list job id so callers polling for
+        completion only see ``done`` once the records have been synced
+        from duplicity.
+        """
         self.ensure_one()
         if not self.host_id:
             raise ValueError("Instance has no host assigned.")
@@ -542,7 +547,7 @@ class CloudInstance(models.Model):
             {**step, 'job_type_code': 'backup_create'},
             {**step, 'job_type_code': 'backup_list'},
         ])
-        return ids[0]
+        return ids[-1]
 
     def download_backup(self, payload):
         """Enqueue a backup_download job for this instance."""
