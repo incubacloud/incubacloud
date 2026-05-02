@@ -1,0 +1,118 @@
+site_name: IncubaCloud Documentation
+site_description: User documentation for the IncubaCloud platform — a PaaS for Odoo
+site_url: https://docs.incubacloud.io/
+site_author: IncubaCloud
+copyright: Copyright &copy; IncubaCloud
+
+repo_url: https://github.com/incubacloud/core
+repo_name: incubacloud/core
+edit_uri: edit/19.0/docs/user/docs/
+
+theme:
+  name: material
+  custom_dir: overrides
+  language: en
+  font:
+    text: Onest
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to system preference
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.code.annotate
+    - content.code.copy
+    - content.tooltips
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/incubacloud
+    - icon: fontawesome/solid/globe
+      link: https://www.incubacloud.io
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Get started:
+    - getting-started/index.md
+    - Create your account: getting-started/signup.md
+    - Create your first project: getting-started/first-project.md
+    - Deploy your first instance: getting-started/first-deploy.md
+  - Projects: projects/index.md
+  - Instances: instances/index.md
+  - Hosts:
+    - hosts/index.md
+    - Connect your own VPS: hosts/connect.md
+    - Hire a Hetzner VPS: hosts/hire.md
+  - Backups:
+    - backups/index.md
+    - Restore a backup: backups/restore.md
+  - Billing: billing/index.md
+  - Migrations:
+    - migrations/index.md
+    - From Odoo.sh: migrations/from-odoosh.md
+  - Reference: reference/index.md
