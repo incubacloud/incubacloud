@@ -4,8 +4,8 @@ site_url: https://docs.incubacloud.io/
 site_author: IncubaCloud
 copyright: Copyright &copy; IncubaCloud
 
-repo_url: https://github.com/incubacloud/core
-repo_name: incubacloud/core
+repo_url: https://github.com/incubacloud/incubacloud
+repo_name: incubacloud/incubacloud
 edit_uri: edit/19.0/docs/user/docs/
 
 theme:
