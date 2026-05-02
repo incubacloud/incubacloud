@@ -50,12 +50,12 @@ the rest — every screen, every option, every troubleshooting note — lives he
 ## Source code
 
 Everything you read here is open and auditable.
-The platform's core module is at [github.com/incubacloud/core](https://github.com/incubacloud/core).
-This site itself is built from [`docs/user/`](https://github.com/incubacloud/core/tree/19.0/docs/user)
+The platform's core module is at [github.com/incubacloud/incubacloud](https://github.com/incubacloud/incubacloud).
+This site itself is built from [`docs/user/`](https://github.com/incubacloud/incubacloud/tree/19.0/docs/user)
 in the same repo.
 
 ## Need help?
 
 The fastest way to reach us is through [the contact form](https://www.incubacloud.io/contactus).
 For bug reports and feature requests, open an issue on
-[GitHub](https://github.com/incubacloud/core/issues).
+[GitHub](https://github.com/incubacloud/incubacloud/issues).
