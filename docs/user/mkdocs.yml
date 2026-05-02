@@ -10,7 +10,6 @@ edit_uri: edit/19.0/docs/user/docs/
 
 theme:
   name: material
-  custom_dir: overrides
   language: en
   font:
     text: Onest
