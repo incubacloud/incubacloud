@@ -23,7 +23,7 @@ Thanks for your interest in contributing. Please read this document before openi
 ### Clone and run
 
 ```bash
-git clone https://github.com/incubacloud/core /path/to/addons/core
+git clone https://github.com/incubacloud/incubacloud /path/to/addons/incubacloud
 ```
 
 Place the cloned folder inside an Odoo `addons_path`. For a Doodba-based setup:

@@ -2,7 +2,7 @@
 
 [![License: ELv2](https://img.shields.io/badge/License-Elastic%20v2-blue.svg)](LICENSE)
 [![Odoo](https://img.shields.io/badge/Odoo-19.0-purple.svg)](https://www.odoo.com)
-[![CI](https://github.com/incubacloud/core/actions/workflows/ci.yml/badge.svg)](https://github.com/incubacloud/core/actions/workflows/ci.yml)
+[![CI](https://github.com/incubacloud/incubacloud/actions/workflows/ci.yml/badge.svg)](https://github.com/incubacloud/incubacloud/actions/workflows/ci.yml)
 
 **IncubaCloud** is an Odoo-native platform for deploying, managing and monitoring remote Odoo instances — host management, instance lifecycle, GitHub integration, backups, terminals and audit trails, all from inside your ERP.
 

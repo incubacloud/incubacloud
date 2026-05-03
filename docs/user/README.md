@@ -65,7 +65,7 @@ but do not publish.
 
 This site is for **users**. Other docs in the same repo target other audiences:
 
-- `core/docs/architecture.md` — internal architecture (developers).
-- `core/docs/runbooks/` — operations playbooks (on-call).
-- `core/docs/api-endpoints.md` — internal API surface (developers).
-- `core/incubacloud/README.md` — module installation (developers).
+- `docs/architecture.md` — internal architecture (developers).
+- `docs/runbooks/` — operations playbooks (on-call).
+- `docs/api-endpoints.md` — internal API surface (developers).
+- `incubacloud/README.md` — module installation (developers).
