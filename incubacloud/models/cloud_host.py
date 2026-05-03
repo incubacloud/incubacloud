@@ -533,7 +533,14 @@ class CloudHost(models.Model):
         # the new endpoint.
         endpoint_changing = 'ip_address' in vals or 'port' in vals
         endpoint_invalidated = []
-        if endpoint_changing:
+        # Executors that legitimately rotate the endpoint from inside
+        # their own running job (e.g. host hardening rotates the SSH
+        # port as part of its workflow) opt out of the guard with this
+        # context flag. Without it the executor would self-block: its
+        # own job is in ``started`` state, plus any chained job sits in
+        # ``wait_dependencies``, so the active-jobs count is always ≥1.
+        skip_guard = self.env.context.get('skip_endpoint_change_guard')
+        if endpoint_changing and not skip_guard:
             for rec in self:
                 new_ip = vals.get('ip_address', rec.ip_address)
                 new_port = vals.get('port', rec.port)
