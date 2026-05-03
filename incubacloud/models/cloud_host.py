@@ -539,14 +539,19 @@ class CloudHost(models.Model):
                 new_port = vals.get('port', rec.port)
                 if new_ip == rec.ip_address and new_port == rec.port:
                     continue
-                # Initial endpoint assignment (host without a prior IP)
-                # is not a security-relevant "change": no SSH host key
-                # was captured yet, no running job targets a previous
-                # endpoint, nothing to invalidate. Skip the guard so
-                # provisioning executors (provision_vps, manual setup)
-                # can persist the assigned IP from inside their own
-                # running job without self-blocking.
-                if not rec.ip_address:
+                # Initial endpoint assignment (host without a real
+                # prior IP) is not a security-relevant "change": no SSH
+                # host key was captured yet, no running job targets a
+                # previous endpoint, nothing to invalidate. Skip the
+                # guard so provisioning executors (provision_vps,
+                # manual setup) can persist the assigned IP from inside
+                # their own running job without self-blocking.
+                #
+                # ``0.0.0.0`` is the placeholder used by on-demand host
+                # creation (cloud.host.ip_address is required=True, so
+                # _create_on_demand stores a sentinel until the
+                # provisioning job writes the real IP).
+                if not rec.ip_address or rec.ip_address == '0.0.0.0':
                     continue
                 active = self.env['cloud.job'].search_count([
                     ('host_id', '=', rec.id),
