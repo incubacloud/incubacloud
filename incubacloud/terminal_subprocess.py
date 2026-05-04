@@ -303,15 +303,21 @@ def main() -> int:
         stream=sys.stderr,
     )
 
-    # Re-import ``known_hosts`` from the raw text — the parent strips
-    # the asyncssh ``SSHKnownHosts`` object before serialising the
-    # config to JSON (that object is not JSON-serialisable).
+    # Re-import ``known_hosts`` from the raw text and ``client_keys``
+    # from base64 — the parent strips both before serialising the
+    # config to JSON (asyncssh objects and raw key bytes are not
+    # JSON-serialisable).
     ssh_connect_kwargs = dict(config["ssh_connect_kwargs"])
     known_hosts_text = config.get("known_hosts_text") or ""
     if known_hosts_text:
         ssh_connect_kwargs["known_hosts"] = asyncssh.import_known_hosts(
             known_hosts_text,
         )
+    client_keys_b64 = config.get("client_keys_b64") or []
+    if client_keys_b64:
+        ssh_connect_kwargs["client_keys"] = [
+            base64.b64decode(k) for k in client_keys_b64
+        ]
 
     _SESSION = TerminalSession(
         session_id=args.session_id,

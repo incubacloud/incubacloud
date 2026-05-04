@@ -27,6 +27,7 @@ Trade-off:
     multi-worker correctness without sticky cookies or a central
     daemon.
 """
+import base64
 import contextlib
 import json
 import logging
@@ -135,16 +136,23 @@ class TerminalController(http.Controller):
         # try/except that the SPA shows as a toast).
         #
         # ``ssh_connect_kwargs()`` returns a dict that includes an
-        # asyncssh ``SSHKnownHosts`` object — not JSON-serialisable.
-        # Replace it with the raw ``known_hosts`` text; the subprocess
-        # re-imports it before calling ``asyncssh.connect``.
+        # asyncssh ``SSHKnownHosts`` object and (for key-auth hosts) a
+        # list of raw key bytes — neither is JSON-serialisable. Strip
+        # both and pass JSON-safe side channels; the subprocess
+        # re-injects them before calling ``asyncssh.connect``.
         ssh_kwargs = dict(host.ssh_connect_kwargs())
         ssh_kwargs.pop('known_hosts', None)
+        client_keys_b64 = [
+            base64.b64encode(k).decode('ascii')
+            for k in (ssh_kwargs.pop('client_keys', None) or [])
+            if isinstance(k, (bytes, bytearray))
+        ]
         port, pid = _spawn_terminal_subprocess(
             session_id=sid,
             auth_token=auth_token,
             config={
                 'ssh_connect_kwargs': ssh_kwargs,
+                'client_keys_b64': client_keys_b64,
                 'known_hosts_text': host.known_hosts_key or '',
                 'inst_dir': inst.get_remote_dir(),
                 'service': service,
