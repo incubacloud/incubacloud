@@ -252,14 +252,23 @@ class CloudJob(models.Model):
         return self._TIER_TO_ROUTING.get(tier, self._TIER_TO_ROUTING['normal'])
 
     @api.model
-    def enqueue(self, host_id, instance_id, job_type_code, payload=None):
+    def enqueue(self, host_id, instance_id, job_type_code, payload=None,
+                bypass_running_check=False):
         """
         Queue a job of given type for the given host/instance
         and return the job record ID.
+
+        ``bypass_running_check`` skips the active-job guard. The guard
+        exists to stop users triggering competing operations on the
+        same instance (deploy + rebuild). It must be bypassed when an
+        executor's ``on_success`` chains a follow-up internally — at
+        that moment the parent job is still ``started`` and would
+        otherwise block its own descendant. Internal use only;
+        anything user-driven goes through the guard unchanged.
         """
         # Block if there is already an active *user* job for this instance.
         # Hidden system jobs (health checks, metrics, probes…) don't block.
-        if instance_id:
+        if instance_id and not bypass_running_check:
             # Advisory lock: serialise concurrent enqueue() calls for
             # the same instance. The second caller blocks until the
             # first commits; when it wakes up the running-job check
