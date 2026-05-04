@@ -235,10 +235,14 @@ export class InstanceDetail extends Component {
         // write into a destroyed component's state.
         this._safePoll = useSafePoll();
 
-        // Debounced refresh. We also need to know when a job reaches a
-        // terminal state to refresh the sidebar, so we keep a single
-        // ``load_jobs(id)`` per window (once, on the last id) instead
-        // of the per-event double fetch.
+        // Debounced refresh of THIS instance's deeper detail
+        // (jobs list, repos, etc. via /cloud/get_instance). The
+        // project-level refresh — including sibling instances' status
+        // dots — is owned by ``env.projectStore``, which subscribes
+        // to the same bus once for the whole app. We do not call
+        // ``refreshSidebar`` here: the store reacts to the same event
+        // independently and the explicit hop would only duplicate the
+        // /cloud/get_project_full RPC.
         const triggerRefresh = useDebouncedBus(async (jobId) => {
             if (this._destroyed || jobId == null) return;
             try {
@@ -246,9 +250,6 @@ export class InstanceDetail extends Component {
                 if (this._destroyed) return;
                 if (job && job.instance_id === this.props.instance_id) {
                     this._silentRefresh();
-                    if (["done", "failed"].includes(job.state)) {
-                        this.env.refreshSidebar?.();
-                    }
                 }
             } catch (_e) { /* component torn down mid-flight */ }
         });
@@ -285,8 +286,10 @@ export class InstanceDetail extends Component {
             this.state.inst = inst;
             this.state.jobs = inst.jobs || [];
             this.state.jobsTotal = inst.jobsTotal || 0;
-            // Update cache
-            this.env.updateCacheInstance?.(this.props.instance_id, inst);
+            // Patch the project store so the sidebar reflects this
+            // instance's fresh status without waiting for its own bus
+            // refresh tick.
+            this.env.projectStore?.updateInstance(this.props.instance_id, inst);
         } catch (_e) { console.debug("Silent refresh failed:", _e); }
     }
 
@@ -490,19 +493,25 @@ export class InstanceDetail extends Component {
                 };
                 this._savedForm = JSON.stringify(this.state.form);
             } else {
-                // Try cache first — instant switch
-                const cache = this.env.getProjectCache?.();
-                if (cache?.projectId === this.props.project_id) {
-                    const cached = cache.data.instances[this.props.instance_id];
+                // Try the project store first — instant switch when
+                // navigating between instances of the same project.
+                const storeState = this.env.projectStore?.state;
+                if (
+                    storeState?.projectId === this.props.project_id
+                    && storeState.data
+                ) {
+                    const cached = storeState.data.instances[this.props.instance_id];
                     if (cached) {
                         this._applyInstanceData(
-                            cached, cache.data.hosts, cache.data.backup_backends,
+                            cached,
+                            storeState.data.hosts,
+                            storeState.data.backup_backends,
                         );
                         this.state.loading = false;
                         return;
                     }
                 }
-                // Cache miss — load from server
+                // Store miss — fall back to server.
                 const inst = await rpc("/cloud/get_instance", {
                     instance_id: this.props.instance_id,
                 });
@@ -752,7 +761,9 @@ export class InstanceDetail extends Component {
                 // guard doesn't fire on the programmatic transition from
                 // the create route to the new instance's detail route.
                 this._savedForm = JSON.stringify(this.state.form);
-                await this.env.refreshSidebar?.();
+                // Force-reload the store so the new instance shows up
+                // in the sidebar at the destination route.
+                await this.env.projectStore?.load(this.props.project_id);
                 this.env.navigate("instance_detail", {
                     project_id: this.props.project_id,
                     instance_id: result.id,
@@ -1624,10 +1635,12 @@ export class InstanceDetail extends Component {
     }
 
     async _navigateAfterDelete() {
-        // Refresh sidebar to remove the deleted instance
-        await this.env.refreshSidebar?.();
-        // Navigate to next instance or project detail (onboarding)
-        const next = this.env.getNextInstance?.(this.props.instance_id);
+        // Reload so the deleted row is gone from the store before the
+        // destination route reads it. The store's bus subscription
+        // would catch it eventually, but the user clicks "delete" and
+        // navigates immediately — we can't race the debouncer.
+        await this.env.projectStore?.load(this.props.project_id);
+        const next = this.env.projectStore?.getNextInstance(this.props.instance_id);
         if (next) {
             this.env.navigate("instance_detail", {
                 project_id: this.props.project_id,

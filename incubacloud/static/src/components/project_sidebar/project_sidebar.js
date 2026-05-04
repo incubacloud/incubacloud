@@ -1,10 +1,9 @@
-import { Component, useState, onWillStart, onMounted, onWillUnmount, useEnv } from "@odoo/owl";
+import { Component, useState, onWillStart, onWillUpdateProps, useEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
 import { IcModal } from "../ic_modal/ic_modal";
-import { useDebouncedBus } from "../../utils/use_debounced_bus";
 
 export class ProjectSidebar extends Component {
     static template = "incubacloud.ProjectSidebar";
@@ -17,67 +16,40 @@ export class ProjectSidebar extends Component {
 
     setup() {
         this.env = useEnv();
-        this.state = useState({
-            projectName: "",
-            odooVersion: "",
-            instances: [],
-            loading: true,
+        // Reactive subscription to the shared project store. The store
+        // owns the cloud_jobs bus subscription, debouncing, in-flight
+        // guard and cache — see ``store/project_store.js``. The
+        // sidebar reads; it never fetches.
+        this.store = this.env.projectStore;
+        this.storeState = useState(this.store.state);
+        this.ui = useState({
             search: "",
             cloneModal: null,  // { instanceId, name, loading, error }
         });
 
         this.orm = useService("orm");
-        this._busService = useService("bus_service");
 
-        // Every job state change can flip an instance status dot
-        // (deployed/running/provisioning) in the sidebar, so we
-        // refresh on any cloud_jobs event. The debouncer collapses
-        // chunk-flush storms during a running build to ~3 refreshes/s
-        // instead of dozens.
-        const triggerRefresh = useDebouncedBus(() => {
-            if (!this._destroyed) this._silentRefresh();
+        onWillStart(async () => {
+            await this.store.load(this.props.projectId);
+            this._afterLoad();
         });
-        this._onJobUpdate = (payload) => triggerRefresh(payload.id);
-        this._busService.subscribe("cloud_jobs", this._onJobUpdate);
-
-        // Register sidebar callbacks so instance_detail can call them
-        onMounted(() => {
-            this.env.registerSidebar?.(
-                () => this._silentRefresh(),
-                (excludeId) => this._getNextInstance(excludeId),
-            );
+        onWillUpdateProps(async (next) => {
+            if (next.projectId !== this.props.projectId) {
+                await this.store.load(next.projectId);
+                this._afterLoad();
+            }
         });
-
-        onWillUnmount(() => {
-            this._destroyed = true;
-            this._busService.unsubscribe("cloud_jobs", this._onJobUpdate);
-            this.env.unregisterSidebar?.();
-        });
-
-        onWillStart(() => this.load());
     }
 
-    async load() {
-        this.state.loading = true;
-        try {
-            const data = await rpc("/cloud/get_project_full", {
-                project_id: this.props.projectId,
-            });
-            // Cache the full project data for instant instance switching
-            this.env.setProjectCache?.(this.props.projectId, data);
-            // Extract sidebar-level data
-            const instances = Object.values(data.instances || {});
-            this.state.projectName = data.project?.name || "";
-            this.state.odooVersion = data.project?.odoo_version || "";
-            this.state.instances = instances;
-            this.env.setProjectName?.(data.project?.name || "");
-        } catch (_e) { console.warn("Failed to load project:", _e); }
-        this.state.loading = false;
-
-        // Auto-redirect: if landing on project_detail and there are instances,
-        // navigate to the first instance (prod > staging > dev)
-        if (this.props.currentRoute === "project_detail" && this.state.instances.length) {
-            const first = this._getNextInstance(null);
+    _afterLoad() {
+        this.env.setProjectName?.(this.storeState.data?.project?.name || "");
+        // Auto-redirect: if landing on project_detail with instances,
+        // navigate to the first one (production > staging).
+        if (
+            this.props.currentRoute === "project_detail"
+            && this.instances.length
+        ) {
+            const first = this.store.getNextInstance(null);
             if (first) {
                 this.env.navigate("instance_detail", {
                     project_id: this.props.projectId,
@@ -87,23 +59,25 @@ export class ProjectSidebar extends Component {
         }
     }
 
-    async _silentRefresh() {
-        try {
-            const data = await rpc("/cloud/get_project_full", {
-                project_id: this.props.projectId,
-            });
-            this.env.setProjectCache?.(this.props.projectId, data);
-            this.state.instances = Object.values(data.instances || {});
-        } catch (_e) { console.debug("Silent refresh failed:", _e); }
+    get loading() {
+        return this.storeState.loading && !this.storeState.data;
     }
 
-    async loadInstances() {
-        await this._silentRefresh();
+    get projectName() {
+        return this.storeState.data?.project?.name || "";
+    }
+
+    get odooVersion() {
+        return this.storeState.data?.project?.odoo_version || "";
+    }
+
+    get instances() {
+        return Object.values(this.storeState.data?.instances || {});
     }
 
     get grouped() {
         const groups = { production: [], staging: [] };
-        for (const inst of this.state.instances) {
+        for (const inst of this.instances) {
             const env = inst.environment || "staging";
             if (groups[env]) groups[env].push(inst);
         }
@@ -119,7 +93,7 @@ export class ProjectSidebar extends Component {
     }
 
     get filteredGrouped() {
-        const q = (this.state.search || "").trim().toLowerCase();
+        const q = (this.ui.search || "").trim().toLowerCase();
         const out = { production: [], staging: [] };
         for (const env of Object.keys(out)) {
             out[env] = (this.grouped[env] || []).filter(
@@ -130,7 +104,7 @@ export class ProjectSidebar extends Component {
     }
 
     onSearchInput(ev) {
-        this.state.search = ev.target.value || "";
+        this.ui.search = ev.target.value || "";
     }
 
     tagBadgeStyle(tag) { return tagStyle(tag); }
@@ -145,7 +119,7 @@ export class ProjectSidebar extends Component {
         if (r === "instance_detail" || r === "create_instance") return "";
         if (r === "project_settings") return "project_settings";
         // Don't highlight Settings when onboarding is shown (no instances)
-        if (r === "project_detail" && !this.state.instances.length) return "";
+        if (r === "project_detail" && !this.instances.length) return "";
         return r;
     }
 
@@ -184,7 +158,7 @@ export class ProjectSidebar extends Component {
     }
 
     cloneToStaging(inst) {
-        this.state.cloneModal = {
+        this.ui.cloneModal = {
             instanceId: inst.id,
             name: inst.name + '-staging',
             loading: false,
@@ -193,7 +167,7 @@ export class ProjectSidebar extends Component {
     }
 
     async doClone() {
-        const m = this.state.cloneModal;
+        const m = this.ui.cloneModal;
         if (!m || m.loading || !m.name.trim()) return;
         m.loading = true;
         m.error = null;
@@ -207,9 +181,10 @@ export class ProjectSidebar extends Component {
                 m.loading = false;
                 return;
             }
-            this.state.cloneModal = null;
-            await this.loadInstances();
-            // Navigate to the new staging instance
+            this.ui.cloneModal = null;
+            // Force-refresh the store so the new staging instance is
+            // visible to the destination route before navigating.
+            await this.store.load(this.props.projectId);
             this.env.navigate("instance_detail", {
                 project_id: this.props.projectId,
                 instance_id: res.staging_id,
@@ -218,15 +193,5 @@ export class ProjectSidebar extends Component {
             m.error = e.data?.message || e.message || _t("Clone failed.");
             m.loading = false;
         }
-    }
-
-    _getNextInstance(excludeId) {
-        const order = ["production", "staging"];
-        for (const env of order) {
-            for (const inst of this.grouped[env] || []) {
-                if (inst.id !== excludeId) return inst;
-            }
-        }
-        return null;
     }
 }
