@@ -352,6 +352,64 @@ class TestCloudJobDataRacePrevention(TransactionCase):
                 f"Delete check state '{s}' must be in _active_states")
 
 
+class TestEnqueueBypassRunningCheck(TransactionCase):
+    """``bypass_running_check=True`` lets executors enqueue follow-up
+    jobs from inside their own ``on_success`` — when the parent
+    cloud.job is still ``started`` and would otherwise block its own
+    descendant. The flag must not weaken the user-facing guard, only
+    skip it for the explicit internal call."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'bypass-host',
+            'ip_address': '10.0.0.1',
+            'user': 'root',
+            'wildcard_domain': 'bypass.test.local',
+            'login_type': 'password',
+            'password': 'x',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'P'})
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'test-bypass',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+        })
+        self.parent_jt = _ensure_job_type(self.env, 'test_parent_jt')
+        self.follow_jt = _ensure_job_type(self.env, 'test_follow_jt')
+        # Mimic an executor mid-on_success: parent job already started.
+        # ``state`` is a stored-related from queue.job; the related
+        # compute overwrites the create value, so we set the column
+        # directly the same way ``TestChainFailurePropagation`` does.
+        self.parent = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'job_type_id': self.parent_jt.id,
+            'instance_id': self.instance.id,
+            'name': 'Parent',
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'started' WHERE id = %s",
+            (self.parent.id,),
+        )
+        self.env['cloud.job'].invalidate_model(['state'])
+
+    def test_default_blocks_when_parent_running(self):
+        with self.assertRaises(UserError):
+            self.env['cloud.job'].enqueue(
+                self.host.id, self.instance.id, 'test_follow_jt',
+            )
+
+    def test_bypass_allows_enqueue_during_parent_run(self):
+        new_id = self.env['cloud.job'].enqueue(
+            self.host.id, self.instance.id, 'test_follow_jt',
+            bypass_running_check=True,
+        )
+        new_job = self.env['cloud.job'].browse(new_id)
+        self.assertTrue(new_job.exists())
+        self.assertEqual(new_job.job_type_id, self.follow_jt)
+
+
 class TestChainFailurePropagation(TransactionCase):
     """When a job fails, chained jobs in wait_dependencies are failed too."""
 
