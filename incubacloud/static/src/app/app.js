@@ -2,6 +2,7 @@ import { Component, useState, onMounted, onWillUnmount, onWillStart, useSubEnv }
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { useDebouncedBus } from "../utils/use_debounced_bus";
+import { createProjectStore } from "../store/project_store";
 import { ProjectDashboard } from "../components/project_dashboard/project_dashboard";
 import { ProjectDetail } from "../components/project_detail/project_detail";
 
@@ -219,35 +220,18 @@ export class Chrome extends Component {
         // Toast notification service
         const { toastApi, toasts, dismissToast } = createToastService();
 
-        // Project data cache — loaded once, used for instant instance switching
-        let _projectCache = null;  // { projectId, data: { project, instances, hosts, backup_backends } }
-        // Sidebar callback registry — sidebar registers itself, instance_detail calls it
-        let _sidebarRefresh = null;
-        let _sidebarGetNext = null;
+        // Single source of truth for project data on the SPA side.
+        // Owns the cloud_jobs bus subscription that drives the
+        // ``/cloud/get_project_full`` cache; replaces the eight
+        // ad-hoc env helpers (project cache + sidebar callback
+        // registry) the codebase used to wire by hand. See
+        // ``store/project_store.js`` for the contract.
+        const projectStore = createProjectStore({ busService: this._busService });
         useSubEnv({
             toast: toastApi,
             toasts,
             dismissToast,
-            getProjectCache: () => _projectCache,
-            setProjectCache: (projectId, data) => {
-                _projectCache = { projectId, data };
-            },
-            updateCacheInstance: (instanceId, instData) => {
-                if (_projectCache) {
-                    _projectCache.data.instances[instanceId] = instData;
-                }
-            },
-            invalidateProjectCache: () => { _projectCache = null; },
-            registerSidebar: (refresh, getNext) => {
-                _sidebarRefresh = refresh;
-                _sidebarGetNext = getNext;
-            },
-            unregisterSidebar: () => {
-                _sidebarRefresh = null;
-                _sidebarGetNext = null;
-            },
-            refreshSidebar: async () => _sidebarRefresh?.(),
-            getNextInstance: (excludeId) => _sidebarGetNext?.(excludeId),
+            projectStore,
             setAlertReturnUrl: (url) => { _alertReturnUrl = url; },
             getAlertReturnUrl: () => _alertReturnUrl,
             get alertCount() { return appState.alertCount; },
@@ -296,13 +280,16 @@ export class Chrome extends Component {
                 appState.route = route;
                 appState.params = params;
                 this._lastAcceptedRoute = { route, params };
-                // Clear project name when navigating away from project context
+                // Drop project state when navigating away so the store
+                // doesn't keep refreshing in the background after we
+                // leave the project context.
                 const projectRoutes = [
                     "project_detail", "project_settings", "create_instance",
                     "instance_detail", "project_hub",
                 ];
                 if (!projectRoutes.includes(route)) {
                     appState.projectName = "";
+                    projectStore.invalidate();
                 }
             },
             setNavGuard: (fn) => { this._navGuard = fn; },

@@ -83,6 +83,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             'incubacloud/static/src/scss/variables.scss',
             'incubacloud/static/src/utils/**/*',
             'incubacloud/static/src/toast/**/*',
+            'incubacloud/static/src/store/**/*',
             'incubacloud/static/src/components/**/*',
             'incubacloud/static/src/app/*',
             ('remove', 'incubacloud/static/src/app/main.js'),
@@ -96,6 +97,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         'web.assets_unit_tests': [
             'incubacloud/static/src/utils/**/*.js',
             'incubacloud/static/src/toast/**/*.js',
+            'incubacloud/static/src/store/**/*.js',
             'incubacloud/static/src/components/**/*.js',
             'incubacloud/static/src/app/app.js',
             'incubacloud/static/tests/**/*.test.js',

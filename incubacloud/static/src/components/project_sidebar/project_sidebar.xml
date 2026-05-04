@@ -9,7 +9,7 @@
                 <i class="fa fa-arrow-left"/> Projects
             </button>
 
-            <t t-if="state.loading">
+            <t t-if="loading">
                 <div class="ic-psidebar-loading" style="padding: 12px;">
                     <div class="ic-skeleton-text ic-skeleton-sm"/>
                     <div class="ic-skeleton-text ic-skeleton-lg" style="margin-top: 8px;"/>
@@ -26,7 +26,7 @@
                     <input type="text"
                            placeholder="Search instances or tags…"
                            aria-label="Search instances"
-                           t-att-value="state.search"
+                           t-att-value="ui.search"
                            t-on-input="onSearchInput"/>
                 </div>
 
@@ -100,9 +100,9 @@
             </t>
 
             <!-- Clone to staging modal -->
-            <IcModal t-if="state.cloneModal"
+            <IcModal t-if="ui.cloneModal"
                      title="'Clone to Staging'"
-                     onClose="() => { state.cloneModal = null; }">
+                     onClose="() => { ui.cloneModal = null; }">
                 <h3 class="ic-confirm-title">Clone to Staging</h3>
                 <p class="ic-confirm-message">
                     Create a staging copy with the production database.
@@ -110,19 +110,19 @@
                 <div class="ic-clone-input">
                     <label>Staging name</label>
                     <input type="text"
-                           t-att-value="state.cloneModal.name"
-                           t-on-input="(ev) => { state.cloneModal.name = ev.target.value; }"/>
+                           t-att-value="ui.cloneModal.name"
+                           t-on-input="(ev) => { ui.cloneModal.name = ev.target.value; }"/>
                 </div>
-                <t t-if="state.cloneModal.error">
-                    <div class="ic-restore-error" t-esc="state.cloneModal.error"/>
+                <t t-if="ui.cloneModal.error">
+                    <div class="ic-restore-error" t-esc="ui.cloneModal.error"/>
                 </t>
                 <div class="ic-confirm-actions">
                     <button class="ic-confirm-btn-cancel"
-                            t-on-click="() => { state.cloneModal = null; }">Cancel</button>
+                            t-on-click="() => { ui.cloneModal = null; }">Cancel</button>
                     <button class="ic-confirm-btn-ok"
-                            t-att-disabled="!state.cloneModal.name.trim() or state.cloneModal.loading"
+                            t-att-disabled="!ui.cloneModal.name.trim() or ui.cloneModal.loading"
                             t-on-click="doClone">
-                        <t t-if="state.cloneModal.loading">
+                        <t t-if="ui.cloneModal.loading">
                             <i class="fa fa-spinner fa-spin"/> Cloning…
                         </t>
                         <t t-else="">
