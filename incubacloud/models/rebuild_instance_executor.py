@@ -241,27 +241,35 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     f" -U {inst.postgres_username or 'odoo'}"
                     f" -D /tmp/ic_boot_backup"
                     f" --checkpoint=fast --no-sync -X fetch"
-                    # Copy to host and clean up inside container
+                    # Drop ``backup_label`` *inside* the db container,
+                    # before the host ever sees the files. Postgres
+                    # treats its presence as "starting from a backup,
+                    # replay WAL"; we already fetched WAL in-band so we
+                    # want a direct startup. Doing this inside the
+                    # container avoids a host-side rm later — once the
+                    # bind mount is chowned to UID 70 the host user
+                    # cannot remove anything in there anymore.
+                    f" && docker compose exec -T db"
+                    f" rm -f /tmp/ic_boot_backup/backup_label"
+                    # Copy to host and clean up inside container.
                     f" && docker compose cp"
                     f" db:/tmp/ic_boot_backup"
                     f" /tmp/ic_boot_{inst.id}"
                     f" && docker compose exec -T db"
                     f" rm -rf /tmp/ic_boot_backup"
-                    # Prepare for direct startup (no recovery). The host
-                    # user lacks CAP_CHOWN, so do the ownership flip
-                    # inside an ephemeral root container against the
-                    # bind mount — same effect, no capability needed
-                    # on the host.
+                    # Flip ownership to alpine's postgres UID via an
+                    # ephemeral root container. The host user lacks
+                    # CAP_CHOWN, so a host-side ``chown 70:70`` would
+                    # fail per file with "Operation not permitted".
                     f" && docker run --rm"
                     f" -v /tmp/ic_boot_{inst.id}:/data"
                     f" alpine chown -R 70:70 /data"
-                    f" && rm -f /tmp/ic_boot_{inst.id}/backup_label"
                     # Best-effort cleanup of any leftover container from
                     # a previously interrupted run. Wrap in parens so a
                     # failure here doesn't escape — the bare ``; true``
                     # we used before split the entire ``&&`` chain in
                     # two and let ``docker run`` proceed even when the
-                    # earlier chown/rm steps had failed.
+                    # earlier chown step had failed.
                     f" && (docker rm -f ic_boot_pg_{inst.id} 2>/dev/null || true)"
                     # Start a temporary PG on the compose network
                     f" && docker run -d"
@@ -282,9 +290,15 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     f" odoo click-odoo-update"
                     f" --database {inst.postgres_dbname or 'prod'}"
                     # Always clean up, then propagate the test exit code.
+                    # ``rm -rf /tmp/ic_boot_NNN`` runs through another
+                    # ephemeral container because the host user lacks
+                    # the ownership we just flipped to UID 70 — same
+                    # CAP_CHOWN gap that bit the chown above bites the
+                    # final unlink in reverse.
                     f" ; IC_TEST_EXIT=$?"
                     f" ; docker rm -f ic_boot_pg_{inst.id} 2>/dev/null"
-                    f" ; rm -rf /tmp/ic_boot_{inst.id}"
+                    f" ; docker run --rm -v /tmp:/host_tmp alpine"
+                    f" rm -rf /host_tmp/ic_boot_{inst.id}"
                     f" ; exit $IC_TEST_EXIT"
                 ),
                 {"stop_on_failure": True},

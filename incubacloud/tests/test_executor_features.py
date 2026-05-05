@@ -198,6 +198,48 @@ class TestRebuildCommandsBootTest(BaseCase):
             "Host-side chown is forbidden; use the containerised form.",
         )
 
+    def test_backup_label_removed_inside_db_container(self):
+        """Once the bind mount is chowned to UID 70 the host user can
+        no longer write inside ``/tmp/ic_boot_NNN/`` — including
+        ``rm -f backup_label``. The removal has to happen inside the
+        db container (where exec runs as root) before ``docker
+        compose cp`` extracts the basebackup to the host."""
+        # The in-container removal is present.
+        self.assertRegex(
+            self.body,
+            r"docker compose exec -T db\s+rm -f /tmp/ic_boot_backup/backup_label",
+            "backup_label must be removed inside the db container, "
+            "before docker compose cp brings the files to the host.",
+        )
+        # The host-side variant must NOT reappear.
+        self.assertNotRegex(
+            self.body,
+            r"&&\s*rm -f /tmp/ic_boot_\d+/backup_label",
+            "Host-side rm of backup_label fails after the chown — "
+            "use the in-container form.",
+        )
+
+    def test_final_cleanup_uses_container(self):
+        """Same problem in reverse: the host user can't ``rm -rf`` a
+        directory it just chowned to UID 70 via the ephemeral
+        container. Final cleanup of ``/tmp/ic_boot_NNN`` must run
+        through another root container."""
+        self.assertRegex(
+            self.body,
+            r"docker run --rm -v /tmp:/host_tmp alpine\s+rm -rf /host_tmp/ic_boot_\d+",
+            "Final cleanup of the bind mount must go through an "
+            "ephemeral container — the host user lacks the ownership "
+            "to remove files chowned to UID 70.",
+        )
+        # Bare host-side ``rm -rf /tmp/ic_boot_NNN`` is the previous
+        # broken form; it must be gone.
+        self.assertNotRegex(
+            self.body,
+            r";\s*rm -rf /tmp/ic_boot_\d+",
+            "Host-side rm -rf of the bind mount fails after chown — "
+            "use the containerised form.",
+        )
+
     def test_leftover_container_cleanup_does_not_break_chain(self):
         """The ``;`` at command level binds looser than ``&&``: writing
         ``a && b 2>/dev/null; true && c`` makes ``c`` execute even when
@@ -221,13 +263,15 @@ class TestRebuildCommandsBootTest(BaseCase):
         )
 
     def test_temporary_resources_cleaned_up_on_any_exit(self):
-        """``rm -rf /tmp/ic_boot_*`` and ``docker rm -f ic_boot_pg_*``
-        must run via ``;`` after the test, before the explicit
-        ``exit $IC_TEST_EXIT`` — otherwise a failed boot leaves
-        gigabytes of basebackup data on disk and a stale postgres
-        container hogging the compose network."""
+        """The cleanup steps must run via ``;`` after the test, before
+        the explicit ``exit $IC_TEST_EXIT`` — otherwise a failed boot
+        leaves gigabytes of basebackup data on disk and a stale
+        postgres container hogging the compose network."""
         self.assertIn("IC_TEST_EXIT=$?", self.body)
-        self.assertIn("rm -rf /tmp/ic_boot_", self.body)
+        # The actual rm goes through an alpine container (see
+        # ``test_final_cleanup_uses_container``); we only assert the
+        # exit-code propagation pattern here.
+        self.assertIn("rm -rf /host_tmp/ic_boot_", self.body)
         self.assertIn("exit $IC_TEST_EXIT", self.body)
 
     def test_update_command_uses_click_odoo_update(self):
