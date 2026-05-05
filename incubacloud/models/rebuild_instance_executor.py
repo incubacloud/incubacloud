@@ -308,18 +308,6 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     f" postgres:"
                     f"{inst.postgres_version or '17'}-alpine"
                     f" -D /var/lib/postgresql/data"
-                    # Stream the temp postgres logs to a file on the
-                    # host the moment the container starts. The
-                    # cleanup at the end of this step removes the
-                    # container, which also drops its log buffer —
-                    # without this stream the only pgsql panics we
-                    # could see were from real-time tailing in a
-                    # parallel shell, racing the cleanup. Background
-                    # the tail; the file lives on the host and
-                    # survives the docker rm. ``--follow`` exits when
-                    # the container goes away, so no orphan tail.
-                    f" && (docker logs -f ic_boot_pg_{inst.id}"
-                    f" > /tmp/ic_boot_pg_{inst.id}.log 2>&1 &)"
                     f" && sleep 5"
                     # Boot test: click-odoo-update against the
                     # temporary PG to verify the new image works.
@@ -335,21 +323,7 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     # basebackup dir is wiped here too in case any
                     # earlier step short-circuited the &&-chain
                     # before the mid-chain in-container rm ran.
-                    #
-                    # Before the rm we surface the temp postgres
-                    # logs in two channels: the last 80 lines go to
-                    # this job's output (so failures are diagnosable
-                    # straight from the cloud.job UI), and the full
-                    # capture stays on the host at
-                    # /tmp/ic_boot_pg_NNN.log (kept around for a deep
-                    # dive). Operators read the file with
-                    # ``cat /tmp/ic_boot_pg_<inst_id>.log`` on the
-                    # tenant host; the next rebuild overwrites it.
                     f" ; IC_TEST_EXIT=$?"
-                    f" ; echo '── ic_boot_pg_{inst.id} logs (tail) ──'"
-                    f" ; tail -n 80 /tmp/ic_boot_pg_{inst.id}.log"
-                    f" 2>/dev/null || echo '(no log file captured)'"
-                    f" ; echo '── full log: /tmp/ic_boot_pg_{inst.id}.log on host ──'"
                     f" ; docker rm -f ic_boot_pg_{inst.id} 2>/dev/null"
                     f" ; docker compose exec -T db"
                     f" rm -rf /tmp/ic_boot_backup_{inst.id} 2>/dev/null"
