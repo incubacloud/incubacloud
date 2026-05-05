@@ -140,41 +140,95 @@ class TestProdServices(unittest.TestCase):
 # Class 3: TestRebuildCommandsBootTest
 # ---------------------------------------------------------------------------
 
-class TestRebuildCommandsBootTest(unittest.TestCase):
-    """Test rebuild get_commands() includes boot test + click-odoo-update."""
+class TestRebuildCommandsBootTest(BaseCase):
+    """The safe-boot step runs as a single shell pipeline; getting the
+    pipeline subtly wrong (capability we lack on the host, ``;`` that
+    splits the ``&&`` chain in two) silently rolls past failures and
+    starts an ephemeral postgres against bad data.
+
+    The class subclasses ``BaseCase`` because Odoo's test-tag selector
+    silently skips ``unittest.TestCase`` under ``--test-tags``: the
+    older incarnation of this class was running on no CI tier despite
+    appearing healthy."""
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         ex = _make_rebuild_executor()
         cls.cmds = ex.get_commands()
+        cmd = _find_cmd(cls.cmds, "Test new image (safe boot check)")
+        cls.cmd = cmd
+        cls.body = cmd[1] if cmd else ""
 
     def test_boot_test_command_present(self):
-        cmd = _find_cmd(self.cmds, "Test new image (safe boot check)")
-        self.assertIsNotNone(cmd, "Boot test command not found")
+        self.assertIsNotNone(self.cmd, "Boot test command not found")
 
     def test_boot_test_uses_click_odoo_update(self):
-        cmd = _find_cmd(self.cmds, "Test new image (safe boot check)")
-        self.assertIn("click-odoo-update", cmd[1])
+        self.assertIn("click-odoo-update", self.body)
 
-    def test_boot_test_uses_test_db(self):
-        cmd = _find_cmd(self.cmds, "Test new image (safe boot check)")
-        self.assertIn("__ic_boot_test", cmd[1])
+    def test_boot_test_uses_pg_basebackup(self):
+        """Live boot against a basebackup, not a logical clone — the
+        whole point is to exercise the same physical layout the real
+        instance will run on."""
+        self.assertIn("pg_basebackup", self.body)
 
     def test_boot_test_has_stop_on_failure(self):
-        cmd = _find_cmd(self.cmds, "Test new image (safe boot check)")
-        self.assertEqual(len(cmd), 3)
-        self.assertTrue(cmd[2].get("stop_on_failure"))
+        self.assertEqual(len(self.cmd), 3)
+        self.assertTrue(self.cmd[2].get("stop_on_failure"))
 
-    def test_boot_test_cleanup_always_runs(self):
-        """dropdb runs after ';' (not '&&') so it executes on failure too."""
-        cmd = _find_cmd(self.cmds, "Test new image (safe boot check)")
-        body = cmd[1]
-        # Find dropdb and verify it's preceded by ';' not '&&'
-        dropdb_idx = body.index("dropdb")
-        preceding = body[:dropdb_idx]
-        # The last connector before dropdb should be ';'
-        self.assertIn("; docker compose exec -T db", preceding)
+    def test_chown_runs_inside_container_not_on_host(self):
+        """The host user lacks CAP_CHOWN, so chowning the basebackup
+        on the host fails per-file with 'Operation not permitted',
+        leaves files foreign-owned, and postgres refuses to start.
+        Doing the chown inside an ephemeral root container avoids
+        the missing capability without granting the host user new
+        privileges."""
+        # Containerised chown must be present.
+        self.assertRegex(
+            self.body,
+            r"docker run --rm[^\n]*alpine chown -R 70:70",
+            "Boot test must run chown inside a container — running it "
+            "on the host fails when the SSH user lacks CAP_CHOWN.",
+        )
+        # The bare ``chown -R 70:70 /tmp/...`` form (host-side) must
+        # NOT appear — that's the regression we just fixed.
+        self.assertNotRegex(
+            self.body,
+            r"&&\s*chown -R 70:70 /tmp/",
+            "Host-side chown is forbidden; use the containerised form.",
+        )
+
+    def test_leftover_container_cleanup_does_not_break_chain(self):
+        """The ``;`` at command level binds looser than ``&&``: writing
+        ``a && b 2>/dev/null; true && c`` makes ``c`` execute even when
+        ``a`` failed, because ``;`` splits the line into two groups
+        and the second one always runs. The cleanup of any stale
+        ``ic_boot_pg`` container must be wrapped in parens with
+        ``|| true`` so the failure stays scoped."""
+        # The buggy form must not reappear.
+        self.assertNotIn(
+            "2>/dev/null; true",
+            self.body,
+            "'; true' splits the && chain — wrap optional cleanup in "
+            "parens with '|| true' instead.",
+        )
+        # The safe form is present.
+        self.assertRegex(
+            self.body,
+            r"\(docker rm -f ic_boot_pg_\d+ 2>/dev/null \|\| true\)",
+            "Stale-container cleanup must be parenthesised so its "
+            "failure does not leak into the surrounding && chain.",
+        )
+
+    def test_temporary_resources_cleaned_up_on_any_exit(self):
+        """``rm -rf /tmp/ic_boot_*`` and ``docker rm -f ic_boot_pg_*``
+        must run via ``;`` after the test, before the explicit
+        ``exit $IC_TEST_EXIT`` — otherwise a failed boot leaves
+        gigabytes of basebackup data on disk and a stale postgres
+        container hogging the compose network."""
+        self.assertIn("IC_TEST_EXIT=$?", self.body)
+        self.assertIn("rm -rf /tmp/ic_boot_", self.body)
+        self.assertIn("exit $IC_TEST_EXIT", self.body)
 
     def test_update_command_uses_click_odoo_update(self):
         cmd = _find_cmd(self.cmds, "Update changed modules")
