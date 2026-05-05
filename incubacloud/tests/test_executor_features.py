@@ -311,6 +311,33 @@ class TestRebuildCommandsBootTest(BaseCase):
             "failure does not leak into the surrounding && chain.",
         )
 
+    def test_temp_postgres_logs_streamed_to_host_file(self):
+        """The temp postgres lives only as long as the boot test
+        runs and is removed immediately after. Its log buffer dies
+        with the container — leaving operators staring at "Waiting
+        until postgres is listening..." with no way to learn why.
+
+        Stream ``docker logs -f`` to a file on the host the moment
+        the container starts; the file outlives ``docker rm -f``
+        and the next rebuild overwrites it. The cleanup also tails
+        the file into the cloud.job output so the first 80 lines
+        of the failure mode land in the UI directly."""
+        # docker logs -f is launched in the background after the
+        # postgres container starts, not as part of the && chain
+        # itself (would block the chain otherwise).
+        self.assertRegex(
+            self.body,
+            r"docker logs -f ic_boot_pg_\d+\s*"
+            r"> /tmp/ic_boot_pg_\d+\.log",
+            "Temp postgres logs must be streamed to a host file so a "
+            "post-mortem inspection survives the cleanup.",
+        )
+        # Cleanup also surfaces a tail in the job output.
+        self.assertIn("tail -n 80 /tmp/ic_boot_pg_", self.body)
+        # The pointer to the full file is also emitted so operators
+        # know where to look on the host.
+        self.assertIn("full log: /tmp/ic_boot_pg_", self.body)
+
     def test_temporary_resources_cleaned_up_on_any_exit(self):
         """The cleanup steps must run via ``;`` after the test, before
         the explicit ``exit $IC_TEST_EXIT`` — otherwise a failed boot
