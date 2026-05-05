@@ -247,11 +247,22 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     f" /tmp/ic_boot_{inst.id}"
                     f" && docker compose exec -T db"
                     f" rm -rf /tmp/ic_boot_backup"
-                    # Prepare for direct startup (no recovery)
-                    f" && chown -R 70:70 /tmp/ic_boot_{inst.id}/"
+                    # Prepare for direct startup (no recovery). The host
+                    # user lacks CAP_CHOWN, so do the ownership flip
+                    # inside an ephemeral root container against the
+                    # bind mount — same effect, no capability needed
+                    # on the host.
+                    f" && docker run --rm"
+                    f" -v /tmp/ic_boot_{inst.id}:/data"
+                    f" alpine chown -R 70:70 /data"
                     f" && rm -f /tmp/ic_boot_{inst.id}/backup_label"
-                    # Clean up leftover container from a previous interrupted run
-                    f" && docker rm -f ic_boot_pg_{inst.id} 2>/dev/null; true"
+                    # Best-effort cleanup of any leftover container from
+                    # a previously interrupted run. Wrap in parens so a
+                    # failure here doesn't escape — the bare ``; true``
+                    # we used before split the entire ``&&`` chain in
+                    # two and let ``docker run`` proceed even when the
+                    # earlier chown/rm steps had failed.
+                    f" && (docker rm -f ic_boot_pg_{inst.id} 2>/dev/null || true)"
                     # Start a temporary PG on the compose network
                     f" && docker run -d"
                     f" --name ic_boot_pg_{inst.id}"
