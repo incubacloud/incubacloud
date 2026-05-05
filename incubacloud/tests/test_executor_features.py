@@ -207,7 +207,7 @@ class TestRebuildCommandsBootTest(BaseCase):
         # The in-container removal is present.
         self.assertRegex(
             self.body,
-            r"docker compose exec -T db\s+rm -f /tmp/ic_boot_backup/backup_label",
+            r"docker compose exec -T db\s+rm -f /tmp/ic_boot_backup_\d+/backup_label",
             "backup_label must be removed inside the db container, "
             "before docker compose cp brings the files to the host.",
         )
@@ -217,6 +217,55 @@ class TestRebuildCommandsBootTest(BaseCase):
             r"&&\s*rm -f /tmp/ic_boot_\d+/backup_label",
             "Host-side rm of backup_label fails after the chown — "
             "use the in-container form.",
+        )
+
+    def test_in_container_path_is_namespaced_by_instance(self):
+        """The in-container basebackup path must carry the instance
+        id, just like the host bind mount does. Without the suffix,
+        two retries against the same db container collide on a fixed
+        ``/tmp/ic_boot_backup`` path and pg_basebackup refuses the
+        non-empty target on every retry. Different tenants are
+        isolated by separate compose projects, but symmetric naming
+        keeps the contract readable and rules out a class of future
+        regressions."""
+        # The instance id we pass through the helper is 42.
+        self.assertIn("/tmp/ic_boot_backup_42", self.body)
+        # The bare un-namespaced form must not survive.
+        self.assertNotRegex(
+            self.body,
+            r"/tmp/ic_boot_backup\b",
+            "Drop the unsuffixed /tmp/ic_boot_backup — every reference "
+            "must carry the instance id.",
+        )
+
+    def test_pre_cleanup_handles_both_sides(self):
+        """``pg_basebackup`` refuses a non-empty target, and the host
+        bind mount may carry a UID-70 dir from a previous interrupted
+        run. The pre-cleanup must scrub BOTH sides before basebackup
+        runs — otherwise a single failed retry leaves the next attempt
+        permanently broken."""
+        first_basebackup = self.body.index("pg_basebackup")
+        # In-container scrub (via docker compose exec).
+        ic_clean = self.body.index(
+            "docker compose exec -T db rm -rf /tmp/ic_boot_backup",
+        )
+        self.assertLess(
+            ic_clean, first_basebackup,
+            "In-container basebackup target must be wiped before "
+            "pg_basebackup so a retry after an interrupted run "
+            "actually starts from a clean slate.",
+        )
+        # Host scrub (via alpine container — host user lacks
+        # CAP_CHOWN if a previous chown left UID-70 files behind).
+        host_clean = self.body.index(
+            "docker run --rm -v /tmp:/host_tmp alpine"
+            " rm -rf /host_tmp/ic_boot_",
+        )
+        self.assertLess(
+            host_clean, first_basebackup,
+            "Host bind mount must be wiped before pg_basebackup — "
+            "leftovers from a previous chown step are owned by UID 70 "
+            "and break ``docker compose cp`` on the next attempt.",
         )
 
     def test_final_cleanup_uses_container(self):

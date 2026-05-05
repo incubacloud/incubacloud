@@ -233,13 +233,39 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             (
                 "Test new image (safe boot check)",
                 (
+                    # Per-instance suffix on every path we touch on
+                    # both sides of the boundary so the safe-boot step
+                    # is fully scoped: the in-container basebackup dir,
+                    # the host bind mount and the temporary postgres
+                    # container all share the same instance id. Two
+                    # rebuilds for different tenants on the same host
+                    # never overlap (already true via separate compose
+                    # projects, but the symmetry makes the contract
+                    # readable); two retries against the same instance
+                    # share the path *by design* — pre-cleanup steps
+                    # below take care of leftovers from interrupted
+                    # earlier runs.
                     f"cd {d}"
+                    # Defensive pre-cleanup. ``pg_basebackup`` refuses
+                    # to write into a non-empty target, and the host
+                    # bind mount may carry a UID-70 directory left by
+                    # a chown step from an interrupted previous run.
+                    # Both rms are idempotent — they are no-ops when
+                    # the paths are absent — and both go through the
+                    # right privilege boundary: the in-container path
+                    # via ``docker compose exec`` (root in the db
+                    # container), the host path via an ephemeral
+                    # ``alpine`` container (root over the bind mount).
+                    f" && docker compose exec -T db"
+                    f" rm -rf /tmp/ic_boot_backup_{inst.id}"
+                    f" && docker run --rm -v /tmp:/host_tmp alpine"
+                    f" rm -rf /host_tmp/ic_boot_{inst.id}"
                     # pg_basebackup: physical copy of the PG cluster
                     # without exclusive lock — zero downtime.
                     f" && docker compose exec -T db"
                     f" pg_basebackup"
                     f" -U {inst.postgres_username or 'odoo'}"
-                    f" -D /tmp/ic_boot_backup"
+                    f" -D /tmp/ic_boot_backup_{inst.id}"
                     f" --checkpoint=fast --no-sync -X fetch"
                     # Drop ``backup_label`` *inside* the db container,
                     # before the host ever sees the files. Postgres
@@ -250,13 +276,13 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     # bind mount is chowned to UID 70 the host user
                     # cannot remove anything in there anymore.
                     f" && docker compose exec -T db"
-                    f" rm -f /tmp/ic_boot_backup/backup_label"
+                    f" rm -f /tmp/ic_boot_backup_{inst.id}/backup_label"
                     # Copy to host and clean up inside container.
                     f" && docker compose cp"
-                    f" db:/tmp/ic_boot_backup"
+                    f" db:/tmp/ic_boot_backup_{inst.id}"
                     f" /tmp/ic_boot_{inst.id}"
                     f" && docker compose exec -T db"
-                    f" rm -rf /tmp/ic_boot_backup"
+                    f" rm -rf /tmp/ic_boot_backup_{inst.id}"
                     # Flip ownership to alpine's postgres UID via an
                     # ephemeral root container. The host user lacks
                     # CAP_CHOWN, so a host-side ``chown 70:70`` would
@@ -289,14 +315,18 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     f" -e PGHOST=ic_boot_pg_{inst.id}"
                     f" odoo click-odoo-update"
                     f" --database {inst.postgres_dbname or 'prod'}"
-                    # Always clean up, then propagate the test exit code.
-                    # ``rm -rf /tmp/ic_boot_NNN`` runs through another
-                    # ephemeral container because the host user lacks
-                    # the ownership we just flipped to UID 70 — same
-                    # CAP_CHOWN gap that bit the chown above bites the
-                    # final unlink in reverse.
+                    # Always clean up, then propagate the test exit
+                    # code. The host bind mount is owned by UID 70
+                    # after the chown above, so the final unlink runs
+                    # through another ephemeral container — same
+                    # CAP_CHOWN gap in reverse. The in-container
+                    # basebackup dir is wiped here too in case any
+                    # earlier step short-circuited the &&-chain
+                    # before the mid-chain in-container rm ran.
                     f" ; IC_TEST_EXIT=$?"
                     f" ; docker rm -f ic_boot_pg_{inst.id} 2>/dev/null"
+                    f" ; docker compose exec -T db"
+                    f" rm -rf /tmp/ic_boot_backup_{inst.id} 2>/dev/null"
                     f" ; docker run --rm -v /tmp:/host_tmp alpine"
                     f" rm -rf /host_tmp/ic_boot_{inst.id}"
                     f" ; exit $IC_TEST_EXIT"
