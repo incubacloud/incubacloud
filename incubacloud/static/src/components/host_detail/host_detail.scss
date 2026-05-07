@@ -229,8 +229,10 @@
     border-radius: 0 $radius-md $radius-md $radius-md;
     background: $code-bg;
     overflow: hidden;
-    // Fill remaining vertical space in the body
-    height: calc(100vh - 340px);
+    // Fill remaining vertical space in the body. `unquote` defers the
+    // calc() to runtime CSS — Odoo's SCSS compiler refuses to mix px
+    // and vh inside calc and would otherwise abort the bundle.
+    height: unquote("calc(100vh - 340px)");
     min-height: 240px;
 }
 
