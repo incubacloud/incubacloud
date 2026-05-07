@@ -3393,6 +3393,12 @@ msgstr "La instancia no tiene host"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Instance has no host assigned."
+msgstr "La instancia no tiene host asignado."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Instance has no host configured"
 msgstr "La instancia no tiene host configurado"
@@ -3405,10 +3411,22 @@ msgstr "La instancia no está desplegada"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Instance is not deployed."
+msgstr "La instancia no está desplegada."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/connect.py:0
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Instance is not running"
 msgstr "La instancia no está en ejecución"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Instance must be deployed first."
+msgstr "La instancia debe estar desplegada primero."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3548,6 +3566,12 @@ msgstr ""
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Invalid repository URL"
 msgstr "URL de repositorio no válida"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Invalid restore mode."
+msgstr "Modo de restauración no válido."
 
 #. module: incubacloud
 #. odoo-python
@@ -4656,6 +4680,12 @@ msgstr "Solo se permite un registro de ajustes de IncubaCloud."
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Only production instances"
 msgstr "Solo instancias de producción"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Only production instances can be cloned."
+msgstr "Solo se pueden clonar instancias de producción."
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_session__state__open
