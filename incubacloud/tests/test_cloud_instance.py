@@ -1,6 +1,7 @@
 """
 Tier 2 — ORM integration tests for cloud.instance.
 """
+from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
 
@@ -316,7 +317,7 @@ class TestCheckBackupBackend(TransactionCase):
 
     def test_deploy_production_no_backend_raises(self):
         inst = self._create_instance()
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(UserError) as ctx:
             inst.deploy()
         self.assertIn('Settings', str(ctx.exception))
 
@@ -328,10 +329,10 @@ class TestCheckBackupBackend(TransactionCase):
         inst = self._create_instance()
         # deploy() will try to enqueue a job — it may fail for other
         # reasons (no queue_job channel, etc.) but should NOT raise
-        # ValueError about backup backend.
+        # the backup-backend UserError.
         try:
             inst.deploy()
-        except ValueError as e:
+        except UserError as e:
             if 'backup' in str(e).lower():
                 self.fail(f"Should not raise backup error: {e}")
 
@@ -340,25 +341,25 @@ class TestCheckBackupBackend(TransactionCase):
         # Staging does not require backup backend
         try:
             inst.deploy()
-        except ValueError as e:
+        except UserError as e:
             if 'backup' in str(e).lower():
                 self.fail(f"Should not raise backup error: {e}")
 
     def test_list_backups_no_backend_raises(self):
         inst = self._create_instance()
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(UserError) as ctx:
             inst.list_backups()
         self.assertIn('Settings', str(ctx.exception))
 
     def test_create_backup_no_backend_raises(self):
         inst = self._create_instance(deployed=True)
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(UserError) as ctx:
             inst.create_backup()
         self.assertIn('Settings', str(ctx.exception))
 
     def test_error_message_mentions_all_levels(self):
         inst = self._create_instance()
-        with self.assertRaises(ValueError) as ctx:
+        with self.assertRaises(UserError) as ctx:
             inst.deploy()
         msg = str(ctx.exception)
         self.assertIn('instance', msg)

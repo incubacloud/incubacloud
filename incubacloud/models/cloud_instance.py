@@ -3,7 +3,7 @@ import logging
 import re
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
 from .cloud_host import parse_memory_to_gb
@@ -497,7 +497,7 @@ class CloudInstance(models.Model):
     def _check_backup_backend(self):
         """Raise if this production instance has no effective backup backend."""
         if self.environment == 'production' and not self.effective_backup_backend:
-            raise ValueError(_(
+            raise UserError(_(
                 "No backup backend configured for this instance. "
                 "Set one at instance level, project level, or globally "
                 "in Settings → General → Default Backup Backend."
@@ -507,7 +507,7 @@ class CloudInstance(models.Model):
         """Enqueue a deploy_instance job for this instance."""
         self.ensure_one()
         if not self.host_id:
-            raise ValueError("Instance has no host assigned.")
+            raise UserError(_("Instance has no host assigned."))
         self._check_backup_backend()
         return self.env['cloud.job'].enqueue(
             self.host_id.id,
@@ -519,7 +519,7 @@ class CloudInstance(models.Model):
         """Enqueue a backup_list job for this instance."""
         self.ensure_one()
         if not self.host_id:
-            raise ValueError("Instance has no host assigned.")
+            raise UserError(_("Instance has no host assigned."))
         if self.environment == 'production':
             self._check_backup_backend()
         return self.env['cloud.job'].enqueue(
@@ -537,9 +537,9 @@ class CloudInstance(models.Model):
         """
         self.ensure_one()
         if not self.host_id:
-            raise ValueError("Instance has no host assigned.")
+            raise UserError(_("Instance has no host assigned."))
         if not self.deployed:
-            raise ValueError("Instance is not deployed.")
+            raise UserError(_("Instance is not deployed."))
         if self.environment == 'production':
             self._check_backup_backend()
         step = {'host_id': self.host_id.id, 'instance_id': self.id}
@@ -553,7 +553,7 @@ class CloudInstance(models.Model):
         """Enqueue a backup_download job for this instance."""
         self.ensure_one()
         if not self.host_id:
-            raise ValueError("Instance has no host assigned.")
+            raise UserError(_("Instance has no host assigned."))
         self._check_backup_backend()
         return self.env['cloud.job'].enqueue(
             self.host_id.id,
@@ -571,9 +571,9 @@ class CloudInstance(models.Model):
         """
         self.ensure_one()
         if not self.host_id:
-            raise ValueError("Instance has no host assigned.")
+            raise UserError(_("Instance has no host assigned."))
         if not self.deployed:
-            raise ValueError("Instance is not deployed.")
+            raise UserError(_("Instance is not deployed."))
         if self.environment == 'production':
             self._check_backup_backend()
         return self.env['cloud.job'].enqueue(
@@ -587,7 +587,7 @@ class CloudInstance(models.Model):
         """Enqueue a backup_restore job for this instance."""
         self.ensure_one()
         if not self.host_id:
-            raise ValueError("Instance has no host assigned.")
+            raise UserError(_("Instance has no host assigned."))
         self._check_backup_backend()
         return self.env['cloud.job'].enqueue(
             self.host_id.id,
@@ -607,9 +607,9 @@ class CloudInstance(models.Model):
         """
         self.ensure_one()
         if self.environment != 'production':
-            raise ValueError("Only production instances can be cloned.")
+            raise UserError(_("Only production instances can be cloned."))
         if not self.deployed:
-            raise ValueError("Instance must be deployed first.")
+            raise UserError(_("Instance must be deployed first."))
 
         vals = {
             'name': staging_name,
@@ -737,9 +737,9 @@ class CloudInstance(models.Model):
         self.ensure_one()
         self.env['cloud.security.mixin']._check_can_manage_backups()
         if not self.host_id:
-            raise ValueError("Instance has no host assigned.")
+            raise UserError(_("Instance has no host assigned."))
         if (payload or {}).get('mode') not in ('browser', 'from_job', 'rsync'):
-            raise ValueError("Invalid restore mode.")
+            raise UserError(_("Invalid restore mode."))
         return self.env['cloud.job'].enqueue(
             self.host_id.id,
             self.id,
