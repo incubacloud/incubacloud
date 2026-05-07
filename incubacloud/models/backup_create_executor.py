@@ -2,8 +2,10 @@ import base64
 import os
 import tempfile
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+
+from odoo import fields
 
 from .abstract_executor import AbstractSSHExecutor
 
@@ -114,7 +116,7 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                 env['cloud.instance.backup'].create({
                     'instance_id': inst.id,
                     'backup_type': 'Full',
-                    'backup_time': datetime.now(tz=timezone.utc),
+                    'backup_time': fields.Datetime.now(),
                     'attachment_id': att.id,
                 })
 
