@@ -251,6 +251,7 @@ class AbstractExecutor(ABC):
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
             logger.exception("[_async_entry] Exception: %s", e)
+            self._sys(f"✗ {type(e).__name__}: {e}")
             raise
 
     # ===============================
