@@ -52,21 +52,24 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                 ),
             ]
 
-        # Non-production: click-odoo-backupdb inside the running container,
-        # then `docker compose cp` the ZIP to the host for SFTP download.
+        # Non-production: click-odoo-backupdb in a transient ``run --rm``
+        # container with /tmp bind-mounted, so the ZIP lands directly on
+        # the host at ``remote_tmp`` and a separate ``docker compose cp``
+        # step is unnecessary. ``run --rm`` (as opposed to ``exec``) also
+        # works when the odoo service is stopped — e.g. after a failed
+        # restore left the instance in error state but the operator still
+        # wants to grab a backup of the current DB before iterating.
         dbname = inst.postgres_dbname or 'prod'
         remote_tmp = self._remote_tmp()
+        remote_filename = os.path.basename(remote_tmp)
         return [
             (
                 "Create backup",
-                f"cd {d} && docker compose exec -T odoo"
-                f" click-odoo-backupdb {dbname} {remote_tmp}",
-            ),
-            (
-                "Copy to host",
-                f"cd {d} && docker compose cp"
-                f" odoo:{remote_tmp} {remote_tmp}"
-                f" && docker compose exec -T odoo rm -f {remote_tmp}",
+                f"cd {d} && docker compose run --rm"
+                f" -v /tmp:/host-tmp"
+                f" odoo click-odoo-backupdb"
+                f" {dbname} /host-tmp/{remote_filename}",
+                {"stop_on_failure": True},
             ),
         ]
 

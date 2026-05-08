@@ -411,6 +411,126 @@ class TestBackupCreateAfterCommands(unittest.TestCase):
         transport.run.assert_not_called()
 
 
+class TestBackupCreateGetCommands(BaseCase):
+    """Non-prod backup uses ``docker compose run --rm`` with /tmp bind-
+    mounted so the ZIP lands directly on the host. ``run`` (vs ``exec``)
+    means the backup keeps working when the odoo service is stopped —
+    e.g. after a failed restore — and the bind mount removes the need
+    for a separate ``Copy to host`` step. Production keeps using the
+    backup container's daily jobrunner because that path goes to S3.
+    """
+
+    def _make_executor(self, environment='staging'):
+        from odoo.addons.incubacloud.models.backup_create_executor import (
+            BackupCreateExecutor,
+        )
+        inst = SimpleNamespace(
+            name='myinst',
+            environment=environment,
+            postgres_dbname='prod',
+        )
+        ex = object.__new__(BackupCreateExecutor)
+        ex._inst = lambda: inst
+        ex._inst_dir = lambda i: f"/home/{i.name}"
+        return ex
+
+    def test_non_prod_uses_run_rm_with_tmp_bind_mount(self):
+        cmds = self._make_executor(environment='staging').get_commands()
+        self.assertEqual(len(cmds), 1)
+        label, cmd, opts = cmds[0]
+        self.assertEqual(label, 'Create backup')
+        self.assertIn('docker compose run --rm', cmd)
+        self.assertIn('-v /tmp:/host-tmp', cmd)
+        self.assertIn('click-odoo-backupdb prod', cmd)
+        self.assertIn('/host-tmp/.incubacloud-backup-myinst.zip', cmd)
+        # Old approach left behind: exec requires a running container,
+        # cp was redundant once the bind mount writes to host directly.
+        self.assertNotIn('docker compose exec', cmd)
+        self.assertNotIn('docker compose cp', cmd)
+        # Stop the chain on failure so we don't try to download a ZIP
+        # that was never created (the historical bug that surfaced
+        # ``Could not find the file …`` on top of the real error).
+        self.assertEqual(opts, {'stop_on_failure': True})
+
+    def test_production_uses_backup_container_jobrunner(self):
+        cmds = self._make_executor(environment='production').get_commands()
+        self.assertEqual(len(cmds), 1)
+        label, cmd = cmds[0][0], cmds[0][1]
+        self.assertEqual(label, 'Create backup')
+        self.assertIn('docker compose exec -T backup', cmd)
+        self.assertIn('/etc/periodic/daily/jobrunner', cmd)
+
+
+# ---------------------------------------------------------------------------
+# 6b. RestoreInstanceExecutor.get_commands — Verify backup file step
+# ---------------------------------------------------------------------------
+
+
+class TestRestoreInstanceVerifyBackupFile(BaseCase):
+    """The ``Verify backup file`` step must hand the uploaded zip over to
+    the odoo container's UID — the SSH user (root) and the container's
+    odoo user have different UIDs, so a plain ``chmod 600`` would leave
+    the bind-mounted zip unreadable from inside the container
+    (``click-odoo-restoredb`` prints "Path '/mnt/restore.zip' is not
+    readable.").  We discover the UID dynamically with ``docker compose
+    run --rm --entrypoint="" odoo id -u`` so the fix survives doodba
+    image upgrades that ever change it.
+    """
+
+    def _make_executor(self):
+        from odoo.addons.incubacloud.models.restore_instance_executor import (
+            RestoreInstanceExecutor,
+        )
+        inst = SimpleNamespace(
+            id=42,
+            name='myinst',
+            postgres_dbname='prod',
+        )
+        ex = object.__new__(RestoreInstanceExecutor)
+        ex._inst = lambda: inst
+        ex._inst_dir = lambda i: f"/home/{i.name}"
+        return ex
+
+    def test_verify_step_chowns_to_dynamic_odoo_uid(self):
+        cmds = self._make_executor().get_commands()
+        label, cmd, opts = cmds[0]
+        self.assertEqual(label, 'Verify backup file')
+        # Existence check first — fail fast with a clear message.
+        self.assertIn('test -f /tmp/incubacloud-restore-42.zip', cmd)
+        self.assertIn('Backup file not found at', cmd)
+        # UID discovery: ``run --rm`` (not ``exec``) so it works even
+        # when the odoo service is stopped; ``--entrypoint=""`` skips
+        # doodba's addon-linking init so ``id -u`` returns immediately;
+        # ``tr -d`` strips trailing CR/LF that would break ``chown``.
+        self.assertIn(
+            'docker compose run --rm --entrypoint=""'
+            ' odoo id -u',
+            cmd,
+        )
+        self.assertIn('tr -d "\\r\\n"', cmd)
+        self.assertIn('Could not discover odoo container UID', cmd)
+        # chown to the discovered UID, then 600 so only the container
+        # user (and root) can read the tenant DB dump + filestore.
+        self.assertIn(
+            'chown "$ODOO_UID":"$ODOO_UID"'
+            ' /tmp/incubacloud-restore-42.zip',
+            cmd,
+        )
+        self.assertIn('chmod 600 /tmp/incubacloud-restore-42.zip', cmd)
+        # Stop the chain on failure: skipping the rest avoids destroying
+        # the live DB with ``click-odoo-restoredb --copy --force`` when
+        # we already know the upload is missing or unreadable.
+        self.assertEqual(opts, {'stop_on_failure': True})
+
+    def test_chown_runs_before_chmod(self):
+        # ``chmod 600`` before ``chown`` would re-tighten permissions
+        # only to have ``chown`` re-apply them — harmless today, but
+        # the invariant we want is "the container user owns the file
+        # before anything else touches it", so assert the order.
+        _, cmd, _ = self._make_executor().get_commands()[0]
+        self.assertLess(cmd.index('chown'), cmd.index('chmod 600'))
+
+
 # ---------------------------------------------------------------------------
 # 7. BackupDownloadExecutor.after_commands
 # ---------------------------------------------------------------------------

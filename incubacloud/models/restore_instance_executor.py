@@ -101,12 +101,25 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
         return [
             (
                 "Verify backup file",
+                # 600 + chown to the odoo container's UID — the SSH user
+                # (root) and the container's odoo user are not the same
+                # UID, so a plain ``chmod 600`` would leave the bind-
+                # mounted zip unreadable from inside the container
+                # (click-odoo-restoredb prints "Path '/mnt/restore.zip'
+                # is not readable."). We discover the UID dynamically so
+                # the fix survives doodba image upgrades that ever change
+                # it. ``--entrypoint=''`` skips doodba's addon-linking
+                # init so ``id -u`` returns immediately.
                 f'test -f {remote}'
                 f' || (echo "Backup file not found at {remote}" >&2'
                 f' && exit 1)'
-                # 600 instead of 644 — the zip carries the tenant DB
-                # dump and filestore; only the SSH user that uploaded
-                # it (and root) needs to read it during restore.
+                f' && cd {d}'
+                f' && ODOO_UID="$(docker compose run --rm --entrypoint=""'
+                f' odoo id -u 2>/dev/null | tr -d "\\r\\n")"'
+                f' && [ -n "$ODOO_UID" ]'
+                f' || (echo "Could not discover odoo container UID" >&2'
+                f' && exit 1)'
+                f' && chown "$ODOO_UID":"$ODOO_UID" {remote}'
                 f' && chmod 600 {remote}',
                 {"stop_on_failure": True},
             ),
