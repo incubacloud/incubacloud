@@ -58,6 +58,14 @@ class CloudJob(models.Model):
         related='queue_job_id.state',
         store=True,
     )
+    date_done = fields.Datetime(
+        related='queue_job_id.date_done',
+        store=True,
+        # Stored so ``load_history`` does not need ``queue.job`` ACL —
+        # non-Job-Queue-Manager users were tripping ``Access Error`` on
+        # ``View all activity`` because reading ``queue_job_id.date_done``
+        # required group ``queue_job.group_queue_job_manager``.
+    )
     message_ids = fields.One2many(
         "cloud.job.log.message", "job_id",
         string="Progress Messages"
@@ -687,14 +695,15 @@ class CloudJob(models.Model):
         result = []
         for job in self:
             start = job.create_date
-            # Use queue.job's date_done for accurate end time since
-            # cloud.job.state is a related field that doesn't update
-            # cloud.job.write_date. Note: queue.job has no write_date in Odoo 19.
-            qj = job.queue_job_id
+            # ``date_done`` is a related-stored mirror of
+            # ``queue_job_id.date_done`` so this read does not require
+            # ``queue.job`` ACL.  Fall back to ``write_date`` for
+            # terminal jobs that were finalised without queue_job
+            # writing date_done (cancel paths, legacy rows), and to
+            # ``now`` for jobs still running.
+            terminal = job.state in self._terminal_states
             end = (
-                qj.date_done
-                if qj and job.state in self._terminal_states
-                else (job.write_date if job.state in self._terminal_states else now)
+                job.date_done or job.write_date if terminal else now
             )
             duration_s = int((end - start).total_seconds()) if start and end else 0
             result.append({
