@@ -550,10 +550,20 @@ class CloudInstance(models.Model):
         return ids[-1]
 
     def download_backup(self, payload):
-        """Enqueue a backup_download job for this instance."""
+        """Enqueue a backup_download job for this instance.
+
+        Prod: pulls the requested timestamp from S3 via duplicity.
+        Non-prod: takes a live dump on demand (only ``time='latest'``
+        is meaningful — no snapshot history exists).
+        """
         self.ensure_one()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
+        if self.environment != 'production' and not self.deployed:
+            # Non-prod takes a live dump from inside the running odoo
+            # container; without a deployed stack there is no
+            # docker-compose project to ``run --rm`` against.
+            raise UserError(_("Instance is not deployed."))
         self._check_backup_backend()
         return self.env['cloud.job'].enqueue(
             self.host_id.id,

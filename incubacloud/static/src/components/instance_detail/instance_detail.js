@@ -1437,6 +1437,17 @@ export class InstanceDetail extends Component {
         return d.mode === 'neutral' && !isProd;
     }
 
+    get isLiveExactDump() {
+        // Non-prod + Exact + no pre-built attachment → backend takes a
+        // live dump on demand via click-odoo-backupdb (no historical
+        // snapshot store exists on staging/dev).  Used to swap the
+        // "Latest available backup" copy for something accurate.
+        const d = this.state.downloadModal;
+        if (!d) return false;
+        const isProd = this.state.inst?.environment === 'production';
+        return d.mode === 'exact' && !isProd && !d.attachmentId;
+    }
+
     async doDownloadBackup() {
         const d = this.state.downloadModal;
         if (!d || d.loading) return;

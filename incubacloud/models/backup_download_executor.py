@@ -9,13 +9,19 @@ from .abstract_executor import AbstractSSHExecutor, validate_dup_time
 
 
 class BackupDownloadExecutor(AbstractSSHExecutor):
-    """Download a specific backup from duplicity as a ZIP file.
+    """Download an exact-state backup as a ZIP file.
 
-    Only used for production instances. Non-production backups are
-    already stored as ir.attachments and can be downloaded directly.
+    Production: restore the requested timestamp from duplicity/S3 in
+    the ``backup`` container, then ``cp`` it out and zip it.
+
+    Non-production: there is no historical snapshot store, so the only
+    supported time is ``'latest'`` and the executor takes a live dump of
+    the current DB via ``click-odoo-backupdb`` running in the ``odoo``
+    container (with ``/tmp`` bind-mounted so the ZIP lands directly on
+    the host — same pattern as ``BackupCreateExecutor``).
 
     Payload:
-        time: duplicity timestamp (e.g. '2026-03-19T02:00:00')
+        time: duplicity timestamp (prod) or 'latest' (both)
         download_type: 'dump' (SQL only) or 'all' (DB + filestore)
     """
 
@@ -42,22 +48,55 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         # shell command (``--time "<value>"``) so it must be free of
         # quotes, whitespace and shell metacharacters.
         validate_dup_time(payload['time'])
+        # Non-prod has no historical snapshots — only ``latest`` (= a
+        # fresh live dump on demand) is meaningful there.  Reject early
+        # so the SPA can surface a clear error instead of bombing on
+        # SSH with "service backup is not running".
+        if inst.environment != 'production' and payload['time'] != 'latest':
+            raise ValueError(
+                "Non-production instances do not retain historical"
+                " backups; only time='latest' (a live dump of the"
+                " current state) is supported."
+            )
 
     def get_commands(self):
         inst = self._inst()
         d = self._inst_dir(inst)
         payload = self.job.payload or {}
         raw_time = payload['time']
+        mode = payload.get('download_type', 'dump')
+        dbname = inst.postgres_dbname or 'prod'
+        archive = self._tmp_archive()
+
+        # Non-prod: live dump via click-odoo-backupdb directly into the
+        # host's /tmp (one step, no separate ``cp`` needed).  Same
+        # binary handles both filestore modes via --filestore /
+        # --no-filestore so we keep a single non-prod codepath.  The
+        # binary writes a ZIP that already matches the layout expected
+        # by ``_download_zip``.
+        if inst.environment != 'production':
+            filestore_flag = (
+                '--filestore' if mode == 'all' else '--no-filestore'
+            )
+            return [
+                (
+                    "Create live backup",
+                    f"cd {d} && docker compose run --rm"
+                    f" -v /tmp:/host-tmp"
+                    f" odoo click-odoo-backupdb"
+                    f" {filestore_flag} {dbname}"
+                    f" /host-tmp/{os.path.basename(archive)}",
+                    {"stop_on_failure": True},
+                ),
+            ]
+
         time_flag = (
             '' if raw_time == 'latest'
             else f" --time \"{raw_time}\""
         )
-        mode = payload.get('download_type', 'dump')
-        dbname = inst.postgres_dbname or 'prod'
         tmp_dir = self._tmp_dir()
-        archive = self._tmp_archive()
 
-        # Restore inside the backup container, then copy out.
+        # Production: restore inside the backup container, then copy out.
         ctr_tmp = '/tmp/bkdl'
         if mode == 'dump':
             return [
