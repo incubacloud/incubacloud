@@ -1196,7 +1196,7 @@
                      onClose="() => this.closeDownloadModal()">
                 <h3 class="ic-confirm-title">Download a database dump</h3>
                 <p class="ic-confirm-message">
-                    <t t-if="isLiveNeutralDump">
+                    <t t-if="isLiveNeutralDump or isLiveExactDump">
                         Dumping the current database on the fly.
                     </t>
                     <t t-elif="state.downloadModal.time === 'latest'">

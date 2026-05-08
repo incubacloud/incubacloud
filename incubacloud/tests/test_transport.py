@@ -561,3 +561,156 @@ class TestBackupDownloadAfterCommands(unittest.TestCase):
         _run(ex.after_commands(transport, {}))
 
         ex._download_zip.assert_called_once_with(transport)
+
+
+# ---------------------------------------------------------------------------
+# 7b. BackupDownloadExecutor.get_commands × environment
+# ---------------------------------------------------------------------------
+
+
+class TestBackupDownloadGetCommands(BaseCase):
+    """``BackupDownloadExecutor`` ships an "exact" backup as a ZIP.
+
+    Production reaches into duplicity/S3 via the ``backup`` container
+    (the historical chain).  Non-production has no snapshot store, so
+    we take a live dump on demand via ``click-odoo-backupdb`` running
+    in the ``odoo`` container — same binary, same pattern as
+    ``BackupCreateExecutor``, just with a different ``--filestore /
+    --no-filestore`` flag depending on the requested mode.
+
+    Before the staging branch existed, this executor unconditionally
+    ran ``docker compose exec backup …`` and bombed on staging with
+    ``service "backup" is not running``.
+    """
+
+    def _make_executor(self, environment, mode='dump', time='latest'):
+        from odoo.addons.incubacloud.models.backup_download_executor import (
+            BackupDownloadExecutor,
+        )
+        inst = SimpleNamespace(
+            name='dl-inst',
+            environment=environment,
+            postgres_dbname='prod',
+        )
+        ex = object.__new__(BackupDownloadExecutor)
+        ex._inst = lambda: inst
+        ex._inst_dir = lambda i: f"/home/{i.name}"
+        ex.job = MagicMock()
+        ex.job.id = 77
+        ex.job.payload = {'time': time, 'download_type': mode}
+        return ex
+
+    # ── non-production: click-odoo-backupdb live dump ─────────────────
+
+    def test_non_prod_dump_uses_click_odoo_backupdb_no_filestore(self):
+        cmds = self._make_executor('staging', mode='dump').get_commands()
+        self.assertEqual(len(cmds), 1)
+        label, cmd, opts = cmds[0]
+        self.assertEqual(label, 'Create live backup')
+        self.assertIn('docker compose run --rm', cmd)
+        self.assertIn('-v /tmp:/host-tmp', cmd)
+        self.assertIn('odoo click-odoo-backupdb', cmd)
+        self.assertIn('--no-filestore prod', cmd)
+        self.assertIn('/host-tmp/.incubacloud-bkdl-dl-inst.zip', cmd)
+        # Old prod-only path must NOT leak into staging.
+        self.assertNotIn('docker compose exec -T backup', cmd)
+        self.assertNotIn('dup restore', cmd)
+        # Stop the chain on failure so after_commands does not try to
+        # download a zip that was never created — same defensive
+        # pattern as BackupCreateExecutor.
+        self.assertEqual(opts, {'stop_on_failure': True})
+
+    def test_non_prod_all_uses_click_odoo_backupdb_with_filestore(self):
+        cmds = self._make_executor('staging', mode='all').get_commands()
+        self.assertEqual(len(cmds), 1)
+        label, cmd, _ = cmds[0]
+        self.assertEqual(label, 'Create live backup')
+        self.assertIn('--filestore prod', cmd)
+        self.assertNotIn('--no-filestore', cmd)
+
+    # ── production: duplicity restore from S3 ─────────────────────────
+
+    def test_prod_dump_uses_duply_in_backup_container(self):
+        cmds = self._make_executor('production', mode='dump').get_commands()
+        self.assertEqual(len(cmds), 2)
+        labels = [c[0] for c in cmds]
+        self.assertEqual(
+            labels,
+            ['Restore SQL from backup', 'Extract and package'],
+        )
+        restore_cmd = cmds[0][1]
+        self.assertIn('docker compose exec -T backup', restore_cmd)
+        self.assertIn('dup restore --force', restore_cmd)
+        self.assertIn('--path-to-restore prod.sql', restore_cmd)
+
+    def test_prod_all_uses_duply_full_restore(self):
+        cmds = self._make_executor('production', mode='all').get_commands()
+        self.assertEqual(len(cmds), 2)
+        labels = [c[0] for c in cmds]
+        self.assertEqual(
+            labels,
+            ['Restore full from backup', 'Extract and package'],
+        )
+        restore_cmd = cmds[0][1]
+        self.assertIn('docker compose exec -T backup', restore_cmd)
+        self.assertIn('dup restore --force', restore_cmd)
+        # Full restore: no --path-to-restore filter, dumps the whole
+        # backup tree to ctr_tmp for the cp + zip step that follows.
+        self.assertNotIn('--path-to-restore', restore_cmd)
+
+    def test_prod_explicit_time_renders_time_flag(self):
+        ex = self._make_executor(
+            'production', mode='dump', time='2026-03-19T02:00:00',
+        )
+        restore_cmd = ex.get_commands()[0][1]
+        self.assertIn('--time "2026-03-19T02:00:00"', restore_cmd)
+
+    def test_prod_latest_time_omits_time_flag(self):
+        ex = self._make_executor('production', mode='dump', time='latest')
+        restore_cmd = ex.get_commands()[0][1]
+        self.assertNotIn('--time', restore_cmd)
+
+
+# ---------------------------------------------------------------------------
+# 7c. BackupDownloadExecutor.before_execute guards
+# ---------------------------------------------------------------------------
+
+
+class TestBackupDownloadBeforeExecute(BaseCase):
+    """Non-prod has no historical snapshot store, so ``time`` must be
+    ``'latest'`` (= live dump).  We reject historical timestamps in
+    ``before_execute`` so the SPA surfaces a clear ``UserError`` toast
+    instead of letting the SSH job bomb downstream.
+    """
+
+    def _make_executor(self, environment, time):
+        from odoo.addons.incubacloud.models.backup_download_executor import (
+            BackupDownloadExecutor,
+        )
+        inst = SimpleNamespace(
+            id=1,
+            name='dl-inst',
+            environment=environment,
+            postgres_dbname='prod',
+        )
+        ex = object.__new__(BackupDownloadExecutor)
+        ex._inst = lambda: inst
+        ex.job = MagicMock()
+        ex.job.payload = {'time': time, 'download_type': 'dump'}
+        return ex
+
+    def test_non_prod_rejects_historical_timestamp(self):
+        ex = self._make_executor('staging', '2026-03-19T02:00:00')
+        with self.assertRaises(ValueError) as ctx:
+            _run(ex.before_execute(MagicMock()))
+        self.assertIn('historical', str(ctx.exception).lower())
+
+    def test_non_prod_accepts_latest(self):
+        ex = self._make_executor('staging', 'latest')
+        # Should not raise.
+        _run(ex.before_execute(MagicMock()))
+
+    def test_prod_accepts_historical_timestamp(self):
+        ex = self._make_executor('production', '2026-03-19T02:00:00')
+        # Should not raise — duplicity will resolve the snapshot.
+        _run(ex.before_execute(MagicMock()))
