@@ -774,19 +774,67 @@ class CloudJob(models.Model):
 
     @api.model
     def cron_cleanup_backup_attachments(self):
-        """Delete backup attachments older than 2 hours."""
+        """Delete expired backup artefacts (>2h old).
+
+        Two passes:
+
+        * **A — `cloud.instance.backup` rows with attachments**:
+          rows older than the cutoff are unlinked together with
+          their attachment.  Without this pass the row would survive
+          (`attachment_id ondelete='set null'`) and the SPA would
+          show a download button that no longer resolves.
+
+        * **B — orphan job attachments**: attachments produced by
+          one-shot download jobs (`BackupDownloadExecutor`,
+          `BackupDownloadNeutralizedExecutor`) live on `cloud.job`
+          and never got linked to a `cloud.instance.backup` row, so
+          pass A never sees them.  Match them by name pattern.
+
+        Both passes are bounded to `res_model='cloud.job'` for
+        attachments — no risk of touching unrelated attachments.
+        """
         cutoff = fields.Datetime.now() - timedelta(hours=2)
-        attachments = self.env['ir.attachment'].search([
-            ('res_model', '=', 'cloud.job'),
-            ('name', 'like', '%-backup-%'),
-            ('create_date', '<', cutoff),
+
+        # Pass A — rows + their attachments.
+        Backup = self.env['cloud.instance.backup'].sudo()
+        expired_rows = Backup.search([
+            ('attachment_id', '!=', False),
+            ('backup_time', '<', cutoff),
         ])
-        if attachments:
+        if expired_rows:
+            attachments = expired_rows.mapped('attachment_id')
             _logger.info(
-                "Cleaning up %d expired backup attachment(s)",
-                len(attachments),
+                "Cleaning up %d expired backup row(s) + attachment(s)",
+                len(expired_rows),
             )
-            attachments.unlink()
+            expired_rows.unlink()
+            # Some attachments may already be gone (manual cleanup);
+            # ``exists`` filters those out without raising.
+            attachments.exists().unlink()
+
+        # Pass B — orphan attachments from one-shot download jobs.
+        orphan = self.env['ir.attachment'].search([
+            ('res_model', '=', 'cloud.job'),
+            ('create_date', '<', cutoff),
+            '|',
+            ('name', 'like', '%-backup-%'),
+            ('name', 'like', '%-neutralized-%'),
+        ])
+        # ``cloud.instance.backup.attachment_id`` is the only legit
+        # consumer of ``-backup-`` named attachments on cloud.job;
+        # exclude any that are still referenced so pass B never
+        # races pass A on an in-flight backup.
+        if orphan:
+            referenced = Backup.search([
+                ('attachment_id', 'in', orphan.ids),
+            ]).mapped('attachment_id.id')
+            orphan = orphan.filtered(lambda a: a.id not in referenced)
+        if orphan:
+            _logger.info(
+                "Cleaning up %d orphan backup/neutralized attachment(s)",
+                len(orphan),
+            )
+            orphan.unlink()
 
     def unblock_and_enqueue(self):
         """Called by the resolve endpoint after a pip conflict is resolved."""

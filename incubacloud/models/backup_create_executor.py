@@ -59,6 +59,14 @@ class BackupCreateExecutor(AbstractSSHExecutor):
         # works when the odoo service is stopped — e.g. after a failed
         # restore left the instance in error state but the operator still
         # wants to grab a backup of the current DB before iterating.
+        # ``with_filestore`` is forced through ``bool()`` because the
+        # value reaches a shell command via the ``--filestore`` /
+        # ``--no-filestore`` flag — never let an arbitrary string flow
+        # into the binary invocation.
+        with_filestore = bool(
+            (self.job.payload or {}).get('with_filestore', True)
+        )
+        filestore_flag = '--filestore' if with_filestore else '--no-filestore'
         dbname = inst.postgres_dbname or 'prod'
         remote_tmp = self._remote_tmp()
         remote_filename = os.path.basename(remote_tmp)
@@ -68,7 +76,7 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                 f"cd {d} && docker compose run --rm"
                 f" -v /tmp:/host-tmp"
                 f" odoo click-odoo-backupdb"
-                f" {dbname} /host-tmp/{remote_filename}",
+                f" {filestore_flag} {dbname} /host-tmp/{remote_filename}",
                 {"stop_on_failure": True},
             ),
         ]
@@ -106,6 +114,10 @@ class BackupCreateExecutor(AbstractSSHExecutor):
 
             self._sys("✓ Downloaded. Storing as attachment…")
             data = Path(local_tmp).read_bytes()
+            size = len(data)
+            with_filestore = bool(
+                (self.job.payload or {}).get('with_filestore', True)
+            )
 
             with self.job.env.registry.cursor() as cr:
                 env = self.job.env(cr=cr)
@@ -121,6 +133,8 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                     'backup_type': 'Full',
                     'backup_time': fields.Datetime.now(),
                     'attachment_id': att.id,
+                    'with_filestore': with_filestore,
+                    'size': size,
                 })
 
             self._sys(

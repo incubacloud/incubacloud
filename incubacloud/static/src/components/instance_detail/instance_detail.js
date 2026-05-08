@@ -204,6 +204,7 @@ export class InstanceDetail extends Component {
             backupsError:     null,
             backupsJobId:     null,
             downloadModal:    null,  // { time, type, loading }
+            createBackupModal: null,  // { withFilestore, loading }
             restoreBackupModal: null,  // { time, confirmName, loading }
             // audit log
             auditLog:         [],
@@ -1384,36 +1385,59 @@ export class InstanceDetail extends Component {
         this._safePoll.schedule(poll, 1500);
     }
 
-    async createBackup() {
-        const msg = _t("Create a backup? This may take several minutes.");
-        const ok = await this._confirm({
-            title: _t("Create Backup"),
-            message: msg,
-            confirmLabel: _t("Create Backup"),
-        });
-        if (!ok) return;
+    // ── Create Backup modal ────────────────────────────────────────
+    // Replaces the legacy ``_confirm()``-based flow.  The modal IS
+    // the confirmation: opens with a single click, has a Cancel
+    // button, and lets the user pick ``with_filestore`` on non-prod
+    // before submitting.  Production hides the filestore choice
+    // (duplicity controls shape).
+    openCreateBackupModal() {
+        this.state.createBackupModal = {
+            withFilestore: true,
+            loading: false,
+        };
+    }
+
+    closeCreateBackupModal() { this.state.createBackupModal = null; }
+
+    async doCreateBackup() {
+        const m = this.state.createBackupModal;
+        if (!m || m.loading) return;
+        m.loading = true;
         this.state.backupsError = null;
-        const data = await this._enqueueJob(
-            () => rpc("/cloud/create_backup", { instance_id: this.props.instance_id }),
-            {
-                loadingKey: "backupsLoading",
-                goToOverview: true,
-                errorLabel: _t("Failed to create backup"),
-            },
-        );
-        if (data) {
-            this.state.backupsJobId = data.job_id;
-            this._pollBackupResult();
+        try {
+            const data = await this._enqueueJob(
+                () => rpc("/cloud/create_backup", {
+                    instance_id: this.props.instance_id,
+                    with_filestore: !!m.withFilestore,
+                }),
+                {
+                    loadingKey: "backupsLoading",
+                    goToOverview: true,
+                    errorLabel: _t("Failed to create backup"),
+                },
+            );
+            if (data) {
+                this.state.backupsJobId = data.job_id;
+                this._pollBackupResult();
+            }
+        } finally {
+            this.state.createBackupModal = null;
         }
     }
 
-    downloadLatestBackup() {
-        // Open the download modal immediately with a 'latest' marker. The
-        // selected job (download_backup / download_backup_neutralized)
-        // accepts time='latest' and resolves the most recent backup
-        // server-side, so the user does not wait for a list_backups scan
-        // before picking dump type and filestore.
-        this.openDownloadModal('latest', null);
+    // Per-row Download.  Non-prod rows ship a ready-to-download
+    // attachment, so we bypass the Neutralized/Exact modal entirely
+    // and redirect to ``/web/content/<id>``.  Prod rows have no
+    // attachment (the snapshot lives in S3) and still need the
+    // modal so the user can pick Neutralized vs Exact + filestore.
+    downloadRow(bk) {
+        if (bk.attachment_id) {
+            window.location.href =
+                `/web/content/${bk.attachment_id}?download=true`;
+            return;
+        }
+        this.openDownloadModal(bk.time, null);
     }
 
     // Download modal: Type of dump (Neutralized/Exact) × Filestore (without/with).

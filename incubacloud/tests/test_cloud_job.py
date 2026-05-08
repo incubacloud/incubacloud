@@ -8,6 +8,9 @@ Tests focus on the parts that don't require actual SSH execution:
   - _get_executor raises for unknown job types
   - _format / _format_history dict structure
 """
+import base64
+from datetime import timedelta
+
 from odoo.tests.common import TransactionCase, new_test_user
 from odoo.exceptions import UserError
 
@@ -570,4 +573,332 @@ class TestLoadHistoryAccessControl(TransactionCase):
         )
         ids = [j['id'] for j in result['jobs']]
         self.assertIn(self.job.id, ids)
+
+
+class TestCronCleanupBackupAttachments(TransactionCase):
+    """The cron has two jobs:
+
+    Pass A — purge ``cloud.instance.backup`` rows older than 2h together
+    with their attachment, so the SPA never shows a row whose Download
+    button can no longer resolve.
+
+    Pass B — purge orphan attachments produced by one-shot download
+    jobs (``BackupDownloadExecutor``, ``BackupDownloadNeutralizedExecutor``)
+    that live on ``cloud.job`` and never got linked to a row.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from odoo import fields
+        self.fields = fields
+        self.host = self.env['cloud.host'].create({
+            'name': 'cron-host',
+            'ip_address': '10.0.0.1',
+            'user': 'ubuntu',
+            'wildcard_domain': 'test.example.com',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'cron-proj'})
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'cron-inst',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+        })
+        self.job_type = _ensure_job_type(
+            self.env, 'test_cron_cleanup', apply_to='instance',
+        )
+        self.cloud_job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'instance_id': self.instance.id,
+            'job_type_id': self.job_type.id,
+            'name': 'Backup job',
+        })
+        self.now = self.fields.Datetime.now()
+        self.expired = self.now - timedelta(hours=3)
+        self.fresh = self.now - timedelta(minutes=30)
+
+    # ── helpers ───────────────────────────────────────────────────
+
+    def _attachment(self, name='cron-inst-backup-20260101.zip'):
+        return self.env['ir.attachment'].create({
+            'name': name,
+            'type': 'binary',
+            'datas': base64.b64encode(b'dummy').decode('ascii'),
+            'res_model': 'cloud.job',
+            'res_id': self.cloud_job.id,
+        })
+
+    def _row(self, attachment, backup_time):
+        return self.env['cloud.instance.backup'].create({
+            'instance_id': self.instance.id,
+            'backup_type': 'Full',
+            'backup_time': backup_time,
+            'attachment_id': attachment.id if attachment else False,
+        })
+
+    # ── Pass A ────────────────────────────────────────────────────
+
+    def test_passA_purges_expired_row_and_attachment_together(self):
+        att = self._attachment()
+        row = self._row(att, self.expired)
+        self.env['cloud.job'].cron_cleanup_backup_attachments()
+        self.assertFalse(row.exists(), "expired row must be unlinked")
+        self.assertFalse(att.exists(), "expired attachment must be unlinked")
+
+    def test_passA_keeps_fresh_rows(self):
+        att = self._attachment()
+        row = self._row(att, self.fresh)
+        self.env['cloud.job'].cron_cleanup_backup_attachments()
+        self.assertTrue(row.exists(), "fresh row must survive")
+        self.assertTrue(att.exists(), "fresh attachment must survive")
+
+    def test_passA_handles_already_missing_attachment(self):
+        # Manual cleanup may have removed the attachment first; the
+        # row still has a stored attachment_id at the SQL level until
+        # the trigger fires. Simulate by creating + unlinking the
+        # attachment, leaving the FK column dangling, then running
+        # the cron — it must not raise.
+        att = self._attachment()
+        row = self._row(att, self.expired)
+        att.unlink()
+        # The ondelete='set null' on attachment_id clears the FK on
+        # the row, so search filter `attachment_id != False` filters
+        # this row OUT — that is the correct behaviour: pass A only
+        # owns rows whose attachment is still alive.  The row should
+        # therefore survive pass A; pass B does nothing on cloud.job
+        # since the attachment is already gone.  The cron must not
+        # raise either way.
+        self.env['cloud.job'].cron_cleanup_backup_attachments()
+        self.assertTrue(row.exists())
+
+    # ── Pass B ────────────────────────────────────────────────────
+
+    def test_passB_purges_orphan_backup_attachment(self):
+        # ``BackupDownloadExecutor`` writes attachments named
+        # ``<inst>-backup-<ts>-<suffix>.zip`` directly on cloud.job
+        # without creating a cloud.instance.backup row.
+        orphan = self._attachment('cron-inst-backup-20260101-dump.zip')
+        # Force expiry: ``create_date`` is auto-managed, so write SQL.
+        self.env.cr.execute(
+            "UPDATE ir_attachment SET create_date=%s WHERE id=%s",
+            (self.expired, orphan.id),
+        )
+        orphan.invalidate_recordset(['create_date'])
+        self.env['cloud.job'].cron_cleanup_backup_attachments()
+        self.assertFalse(orphan.exists())
+
+    def test_passB_purges_orphan_neutralized_attachment(self):
+        orphan = self._attachment('cron-inst-neutralized-20260101-dump.zip')
+        self.env.cr.execute(
+            "UPDATE ir_attachment SET create_date=%s WHERE id=%s",
+            (self.expired, orphan.id),
+        )
+        orphan.invalidate_recordset(['create_date'])
+        self.env['cloud.job'].cron_cleanup_backup_attachments()
+        self.assertFalse(orphan.exists())
+
+    def test_passB_does_not_purge_attachment_referenced_by_a_row(self):
+        # Pass A handles row+attachment together; pass B must not
+        # race it on a still-referenced attachment.
+        att = self._attachment()
+        # Force the attachment expired at SQL level even though the
+        # row's backup_time is fresh — pass A would skip, pass B
+        # could otherwise grab it via the LIKE.
+        self.env.cr.execute(
+            "UPDATE ir_attachment SET create_date=%s WHERE id=%s",
+            (self.expired, att.id),
+        )
+        att.invalidate_recordset(['create_date'])
+        row = self._row(att, self.fresh)
+        self.env['cloud.job'].cron_cleanup_backup_attachments()
+        self.assertTrue(att.exists(),
+                        "attachment still referenced by a row must survive")
+        self.assertTrue(row.exists())
+
+
+class TestCreateBackupPayloadPropagation(TransactionCase):
+    """``cloud.instance.create_backup(with_filestore=...)`` must forward
+    the kwarg to the ``backup_create`` step (where the executor reads
+    it) and NOT to the trailing ``backup_list`` step (irrelevant there).
+    Coercion to ``bool()`` happens at the service-layer boundary.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'pp-host',
+            'ip_address': '10.0.0.1',
+            'user': 'ubuntu',
+            'wildcard_domain': 'test.example.com',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'pp-proj'})
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'pp-inst',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+            'deployed': True,
+        })
+        # Make sure both job types exist so enqueue_chain doesn't fail.
+        _ensure_job_type(self.env, 'backup_create', apply_to='instance')
+        _ensure_job_type(self.env, 'backup_list', apply_to='instance')
+
+    def _chain_jobs(self, last_id):
+        # ``enqueue_chain`` returns the trailing backup_list job id;
+        # walk backwards via instance to find the create job created
+        # in the same call.
+        list_job = self.env['cloud.job'].browse(last_id)
+        create_job = self.env['cloud.job'].search([
+            ('instance_id', '=', self.instance.id),
+            ('id', '!=', list_job.id),
+            ('job_type_id.code', '=', 'backup_create'),
+        ], order='id desc', limit=1)
+        return create_job, list_job
+
+    def test_with_filestore_true_lands_on_backup_create_step(self):
+        last_id = self.instance.create_backup(with_filestore=True)
+        create_job, list_job = self._chain_jobs(last_id)
+        self.assertEqual(
+            (create_job.payload or {}).get('with_filestore'),
+            True,
+        )
+        # backup_list step does not need the flag.
+        self.assertFalse(list_job.payload)
+
+    def test_with_filestore_false_lands_on_backup_create_step(self):
+        last_id = self.instance.create_backup(with_filestore=False)
+        create_job, _ = self._chain_jobs(last_id)
+        self.assertEqual(
+            (create_job.payload or {}).get('with_filestore'),
+            False,
+        )
+
+    def test_truthy_string_collapses_to_true(self):
+        # Defensive: any truthy JSON-RPC value must collapse to a
+        # plain bool before reaching the chain payload.
+        last_id = self.instance.create_backup(
+            with_filestore='--malicious; rm -rf /',
+        )
+        create_job, _ = self._chain_jobs(last_id)
+        self.assertIs(
+            (create_job.payload or {}).get('with_filestore'),
+            True,
+        )
+
+
+class TestBackupContentsLabel(TransactionCase):
+    """``_backup_contents_label`` is a pure helper used by the
+    backups serializer.  Pin the three label cases so the SPA list
+    stays consistent.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'lbl-host',
+            'ip_address': '10.0.0.1',
+            'user': 'ubuntu',
+            'wildcard_domain': 'test.example.com',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'lbl-proj'})
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'lbl-inst',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+        })
+        self.cloud_job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'instance_id': self.instance.id,
+            'job_type_id': _ensure_job_type(
+                self.env, 'lbl_create', apply_to='instance',
+            ).id,
+            'name': 'Backup',
+        })
+
+    def _row(self, attachment_id, with_filestore):
+        from odoo import fields
+        return self.env['cloud.instance.backup'].create({
+            'instance_id': self.instance.id,
+            'backup_type': 'Full',
+            'backup_time': fields.Datetime.now(),
+            'attachment_id': attachment_id,
+            'with_filestore': with_filestore,
+        })
+
+    def _att(self):
+        return self.env['ir.attachment'].create({
+            'name': 'lbl-inst-backup-x.zip',
+            'type': 'binary',
+            'datas': base64.b64encode(b'x' * 100).decode('ascii'),
+            'res_model': 'cloud.job',
+            'res_id': self.cloud_job.id,
+        })
+
+    def _label(self, row):
+        from odoo.addons.incubacloud.controllers._data_load._routes_ops import (
+            OpsMixin,
+        )
+        return OpsMixin._backup_contents_label(row)
+
+    def test_non_prod_with_filestore_label(self):
+        row = self._row(self._att().id, True)
+        self.assertEqual(self._label(row), 'DB + filestore')
+
+    def test_non_prod_without_filestore_label(self):
+        row = self._row(self._att().id, False)
+        self.assertEqual(self._label(row), 'DB only')
+
+    def test_prod_no_attachment_label(self):
+        row = self._row(False, True)
+        self.assertEqual(self._label(row), 'S3 chain')
+
+
+class TestDuplicityFilenameParser(TransactionCase):
+    """The S3 size pass groups bytes per backup-set timestamp using
+    duplicity's filename convention — pin it so changes there are
+    detected at test time, not in production.
+    """
+
+    def test_full_data_file_yields_iso(self):
+        from odoo.addons.incubacloud.models.backup_list_executor import (
+            _duplicity_filename_to_iso,
+        )
+        self.assertEqual(
+            _duplicity_filename_to_iso(
+                'duplicity-full.20260319T020000Z.vol1.difftar.gpg',
+            ),
+            '20260319T020000Z',
+        )
+
+    def test_full_signature_file_yields_iso(self):
+        from odoo.addons.incubacloud.models.backup_list_executor import (
+            _duplicity_filename_to_iso,
+        )
+        self.assertEqual(
+            _duplicity_filename_to_iso(
+                'duplicity-full-signatures.20260319T020000Z.sigtar.gpg',
+            ),
+            '20260319T020000Z',
+        )
+
+    def test_inc_file_yields_to_timestamp(self):
+        from odoo.addons.incubacloud.models.backup_list_executor import (
+            _duplicity_filename_to_iso,
+        )
+        self.assertEqual(
+            _duplicity_filename_to_iso(
+                'duplicity-inc.20260319T020000Z.to.'
+                '20260320T020000Z.vol1.difftar.gpg',
+            ),
+            '20260320T020000Z',
+        )
+
+    def test_unrelated_filename_yields_none(self):
+        from odoo.addons.incubacloud.models.backup_list_executor import (
+            _duplicity_filename_to_iso,
+        )
+        self.assertIsNone(
+            _duplicity_filename_to_iso('some-random.txt'),
+        )
 
