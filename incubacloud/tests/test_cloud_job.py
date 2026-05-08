@@ -8,7 +8,7 @@ Tests focus on the parts that don't require actual SSH execution:
   - _get_executor raises for unknown job types
   - _format / _format_history dict structure
 """
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, new_test_user
 from odoo.exceptions import UserError
 
 
@@ -472,4 +472,102 @@ class TestChainFailurePropagation(TransactionCase):
             (self.instance.id, job1.id),
         )
         self.assertEqual(self._db_state(job2), 'done')
+
+
+class TestLoadHistoryAccessControl(TransactionCase):
+    """Non-Job-Queue-Manager cloud users must be able to open the SPA's
+    "View all activity" panel.  It calls ``cloud.job.load_history`` and
+    used to trip ``Access Error: 'Queue Job' (queue.job)`` because
+    ``_format_history`` reached into ``queue_job_id.date_done`` for the
+    end-time of terminal jobs — that read needs
+    ``queue_job.group_queue_job_manager``, which regular cloud users
+    (Stakeholder/Consultant/Developer) do not have.  Storing
+    ``date_done`` as a related field side-steps the ACL.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Optional modules may add NOT NULL columns to res_partner
+        # without SQL defaults.  ``new_test_user`` creates a partner
+        # without those fields → constraint violation.  Patch any
+        # such column with a safe SQL default so the test does not
+        # need to know which modules are installed.  Same workaround
+        # used in TestCloudSecurityMixin.
+        cls.env.cr.execute("""
+            SELECT column_name, data_type
+              FROM information_schema.columns
+             WHERE table_name = 'res_partner'
+               AND is_nullable = 'NO'
+               AND column_default IS NULL
+               AND column_name NOT IN ('id', 'name', 'company_type',
+                                       'type', 'lang', 'active',
+                                       'create_uid', 'write_uid',
+                                       'create_date', 'write_date')
+        """)
+        for col, dtype in cls.env.cr.fetchall():
+            default = "''" if 'char' in dtype or 'text' in dtype else "'no'"
+            cls.env.cr.execute(
+                f'ALTER TABLE res_partner '
+                f'ALTER COLUMN "{col}" SET DEFAULT {default}'
+            )
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'ACL Host',
+            'ip_address': '10.0.0.1',
+            'user': 'ubuntu',
+            'wildcard_domain': 'test.example.com',
+        })
+        self.job_type = _ensure_job_type(
+            self.env, 'test_acl_job', apply_to='host',
+        )
+        self.job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'job_type_id': self.job_type.id,
+            'name': 'ACL Job',
+        })
+        # Project Manager (not Stakeholder/Consultant) so the user
+        # passes ``rule_job_all`` and sees host-level jobs without
+        # needing project membership.  PMs in this project do *not*
+        # get ``queue_job.group_queue_job_manager`` (only the bot
+        # user does — see res_users_ext._incubacloud_assign_bot_user).
+        self.user = new_test_user(
+            self.env,
+            login='cloud_pm@test',
+            groups='base.group_user,incubacloud.group_cloud_project_manager',
+        )
+
+    def test_user_lacks_queue_job_manager_group(self):
+        # Sanity: confirm we're testing the right scenario.
+        manager_group = self.env.ref('queue_job.group_queue_job_manager')
+        self.assertNotIn(self.user, manager_group.user_ids)
+
+    def test_load_history_does_not_raise_for_cloud_user(self):
+        result = (
+            self.env['cloud.job']
+            .with_user(self.user)
+            .load_history()
+        )
+        self.assertIn('jobs', result)
+
+    def test_format_history_reads_terminal_end_without_queue_job_acl(self):
+        # Force the terminal branch of _format_history without going
+        # through queue_job (the recompute would itself need ACL).
+        # ``state`` is a stored related; updating it directly via SQL
+        # mirrors what queue_job_ext does at runtime.
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state='done' WHERE id=%s",
+            (self.job.id,),
+        )
+        self.env['cloud.job'].invalidate_model(['state'])
+
+        result = (
+            self.env['cloud.job']
+            .with_user(self.user)
+            .load_history()
+        )
+        ids = [j['id'] for j in result['jobs']]
+        self.assertIn(self.job.id, ids)
 
