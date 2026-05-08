@@ -128,13 +128,8 @@
                                     <div class="ic-action-bar-sep"/>
                                     <button class="ic-action-btn ic-ab-secondary" title="Create Backup"
                                             aria-label="Create backup"
-                                            t-on-click="() => this.createBackup()">
+                                            t-on-click="() => this.openCreateBackupModal()">
                                         <i class="fa fa-plus-circle"/>
-                                    </button>
-                                    <button class="ic-action-btn ic-ab-secondary" title="Download Latest Backup"
-                                            aria-label="Download latest backup"
-                                            t-on-click="() => this.downloadLatestBackup()">
-                                        <i class="fa fa-cloud-download"/>
                                     </button>
                                 </t>
                                 <!-- Community / extension actions -->
@@ -760,16 +755,23 @@
                         <t t-if="state.tab === 'backups'">
                             <div class="ic-backups-panel">
                                 <div class="ic-backups-toolbar">
-                                    <button class="ic-btn-refresh-backups"
-                                            t-att-disabled="state.backupsLoading"
-                                            t-on-click="refreshBackups">
-                                        <i t-att-class="'fa ' + (state.backupsLoading ? 'fa-spinner fa-spin' : 'fa-refresh')"/>
-                                        <t t-if="state.backupsLoading"> Scanning…</t>
-                                        <t t-else=""> Refresh</t>
-                                    </button>
+                                    <!-- Refresh runs a duplicity collection-status scan against
+                                         S3, which only makes sense in production. Non-prod
+                                         backups are stored locally as ir.attachments and the
+                                         list is already up-to-date the moment Create Backup
+                                         finishes — a Refresh button there would be a no-op. -->
+                                    <t t-if="state.inst.environment === 'production'">
+                                        <button class="ic-btn-refresh-backups"
+                                                t-att-disabled="state.backupsLoading"
+                                                t-on-click="refreshBackups">
+                                            <i t-att-class="'fa ' + (state.backupsLoading ? 'fa-spinner fa-spin' : 'fa-refresh')"/>
+                                            <t t-if="state.backupsLoading"> Scanning…</t>
+                                            <t t-else=""> Refresh</t>
+                                        </button>
+                                    </t>
                                     <button class="ic-btn-create-backup"
                                             t-att-disabled="state.backupsLoading"
-                                            t-on-click="createBackup">
+                                            t-on-click="() => this.openCreateBackupModal()">
                                         <i class="fa fa-plus"/> Create Backup
                                     </button>
                                 </div>
@@ -815,6 +817,7 @@
                                             <thead>
                                                 <tr>
                                                     <th>Type</th>
+                                                    <th>Contents</th>
                                                     <th>Date</th>
                                                     <th>Size</th>
                                                     <th class="ic-bk-actions-col">Actions</th>
@@ -828,14 +831,17 @@
                                                                 <t t-esc="bk.type"/>
                                                             </span>
                                                         </td>
+                                                        <td t-esc="bk.contents || '—'"/>
                                                         <td t-esc="formatBackupDate(bk.time)"/>
                                                         <td t-esc="bk.size ? formatSize(bk.size) : '—'"/>
                                                         <td class="ic-bk-actions">
-                                                            <!-- Download opens the modal (Exact/Neutralized × Filestore). -->
-                                                            <!-- For attachment-based backups (non-prod), 'Exact + Without filestore' -->
-                                                            <!-- shortcut redirects to /web/content directly, skipping the job. -->
+                                                            <!-- Non-prod rows ship a ready ZIP attachment, so
+                                                                 downloadRow streams /web/content directly without
+                                                                 opening the Neutralized/Exact modal. Prod rows
+                                                                 (no attachment, snapshot in S3) keep the modal so
+                                                                 the user picks Neutralized vs Exact + filestore. -->
                                                             <button class="ic-bk-action-btn" title="Download"
-                                                                    t-on-click="() => this.openDownloadModal(bk.time, bk.attachment_id)">
+                                                                    t-on-click="() => this.downloadRow(bk)">
                                                                 <i class="fa fa-download"/>
                                                             </button>
                                                             <!-- Restore (production only) -->
@@ -1187,6 +1193,66 @@
                 </t>
                 <div class="ic-confirm-actions">
                     <button class="ic-confirm-btn-cancel" t-on-click="closeShellDialog">Cancel</button>
+                </div>
+            </IcModal>
+
+            <!-- Create backup modal — replaces the legacy Yes/No
+                 _confirm() dialog. The modal IS the confirmation: it
+                 has a Cancel button and lets the user pick options
+                 before submission. Filestore choice only on non-prod;
+                 production runs duply against S3 which always backs
+                 up DB + filestore as part of the chain. -->
+            <IcModal t-if="state.createBackupModal"
+                     title="'Create Backup'"
+                     onClose="() => this.closeCreateBackupModal()">
+                <h3 class="ic-confirm-title">Create Backup</h3>
+                <t t-if="state.inst.environment === 'production'">
+                    <p class="ic-confirm-message">
+                        Triggers a duplicity backup to S3. The chain is incremental:
+                        full once a week, incrementals in between.
+                        A backup_list job runs right after to refresh the table below.
+                    </p>
+                </t>
+                <t t-else="">
+                    <p class="ic-confirm-message">
+                        Runs <code>click-odoo-backupdb</code> in the odoo container.
+                        The ZIP is attached to this list and <strong>expires in 2 hours</strong>.
+                    </p>
+                    <div class="ic-download-group">
+                        <div class="ic-download-group-label">Contents</div>
+                        <label class="ic-download-opt">
+                            <input type="radio" name="cb_filestore" value="all"
+                                   t-att-checked="state.createBackupModal.withFilestore"
+                                   t-on-change="() => { state.createBackupModal.withFilestore = true; }"/>
+                            <div>
+                                <strong>DB + filestore</strong>
+                                <span class="ic-download-hint">Includes attachments. Larger file. Restorable as-is.</span>
+                            </div>
+                        </label>
+                        <label class="ic-download-opt">
+                            <input type="radio" name="cb_filestore" value="dump"
+                                   t-att-checked="!state.createBackupModal.withFilestore"
+                                   t-on-change="() => { state.createBackupModal.withFilestore = false; }"/>
+                            <div>
+                                <strong>DB only</strong>
+                                <span class="ic-download-hint">Faster, smaller. Enough for testing/debugging schema.</span>
+                            </div>
+                        </label>
+                    </div>
+                </t>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel"
+                            t-on-click="closeCreateBackupModal">Cancel</button>
+                    <button class="ic-confirm-btn-ok"
+                            t-att-disabled="state.createBackupModal.loading"
+                            t-on-click="doCreateBackup">
+                        <t t-if="state.createBackupModal.loading">
+                            <i class="fa fa-spinner fa-spin"/> Starting…
+                        </t>
+                        <t t-else="">
+                            <i class="fa fa-plus"/> Create Backup
+                        </t>
+                    </button>
                 </div>
             </IcModal>
 

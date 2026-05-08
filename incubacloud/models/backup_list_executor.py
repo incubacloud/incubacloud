@@ -6,6 +6,30 @@ from .abstract_executor import AbstractSSHExecutor
 
 _logger = logging.getLogger(__name__)
 
+# Cap the S3 listing per instance.  Backup chains for typical tenants
+# come in well below this; the cap is a defence against pointing the
+# backend at an oversized unrelated bucket and accidentally enumerating
+# millions of objects.
+_S3_LISTING_CAP = 10000
+
+# Match duplicity object names so we can attribute bytes to a specific
+# backup set.  Both forms (data + signature files) carry the timestamp
+# of the set they belong to as a UTC compact string ``YYYYMMDDThhmmssZ``.
+_FULL_FILE_RE = re.compile(
+    r'^duplicity-full(?:-signatures)?\.(\d{8}T\d{6}Z)\..+$'
+)
+_INC_FILE_RE = re.compile(
+    r'^duplicity(?:-new-signatures|-inc)\.'
+    r'\d{8}T\d{6}Z\.to\.(\d{8}T\d{6}Z)\..+$'
+)
+
+
+def _duplicity_filename_to_iso(key):
+    """Return the backup-set ISO timestamp for a duplicity object key,
+    or ``None`` for unrelated keys."""
+    m = _FULL_FILE_RE.match(key) or _INC_FILE_RE.match(key)
+    return m.group(1) if m else None
+
 # Regex patterns for parsing duplicity collection-status output
 _CHAIN_START_RE = re.compile(
     r'Chain start time:\s+(.+)',
@@ -189,6 +213,8 @@ class BackupListExecutor(AbstractSSHExecutor):
             f" with {total_sets} backup set(s)."
         )
         self._sync_backup_records(parsed)
+        # Best-effort S3 size pass — never fails the job.
+        self._populate_sizes_from_s3()
 
     def _sync_backup_records(self, parsed):
         """Sync parsed duplicity data to cloud.instance.backup records."""
@@ -229,6 +255,102 @@ class BackupListExecutor(AbstractSSHExecutor):
         )
         if stale:
             stale.unlink()
+
+    def _populate_sizes_from_s3(self):
+        """List S3 objects under the backend and write per-set bytes
+        onto each ``cloud.instance.backup`` row.
+
+        Best-effort: a misconfigured backend, network hiccup or missing
+        boto3 must NEVER fail the ``backup_list`` job. The duplicity
+        chain summary is the source of truth for which sets exist; the
+        size is decorative metadata that defaults to 0 if unavailable.
+        """
+        inst = self._inst()
+        # ``s3_secret_access_key``/``passphrase`` are EncryptedChar fields
+        # restricted to ``group_cloud_manager``. The executor runs as
+        # the queue worker (already privileged for SSH), so ``sudo()``
+        # is needed to read them. The decrypted secret is passed into
+        # boto3.client() and never logged.
+        backend = inst.effective_backup_backend.sudo()
+        if not backend or backend.backend_type != 's3':
+            return
+        if not (backend.s3_bucket and backend.s3_access_key_id
+                and backend.s3_secret_access_key):
+            return
+
+        try:
+            import boto3
+            from botocore.exceptions import (
+                BotoCoreError, ClientError, NoCredentialsError,
+            )
+        except ImportError:
+            _logger.warning(
+                "boto3 not available; skipping S3 size pass for %s",
+                inst.name,
+            )
+            return
+
+        project_folder = (
+            (inst.project_id.remote_folder if inst.project_id else '')
+            or 'default'
+        )
+        prefix = (
+            f"{(backend.s3_path or '').strip('/')}/"
+            f"{project_folder}/{inst.name}/"
+        ).lstrip('/')
+
+        client_kwargs = {
+            'aws_access_key_id': backend.s3_access_key_id,
+            'aws_secret_access_key': backend.s3_secret_access_key,
+        }
+        if backend.s3_endpoint_url:
+            client_kwargs['endpoint_url'] = backend.s3_endpoint_url
+
+        sizes_by_iso = {}
+        try:
+            s3 = boto3.client('s3', **client_kwargs)
+            paginator = s3.get_paginator('list_objects_v2')
+            total = 0
+            capped = False
+            for page in paginator.paginate(
+                Bucket=backend.s3_bucket, Prefix=prefix,
+            ):
+                for obj in page.get('Contents', []):
+                    total += 1
+                    if total > _S3_LISTING_CAP:
+                        capped = True
+                        break
+                    key = obj['Key'].rsplit('/', 1)[-1]
+                    iso = _duplicity_filename_to_iso(key)
+                    if iso:
+                        sizes_by_iso[iso] = (
+                            sizes_by_iso.get(iso, 0) + obj['Size']
+                        )
+                if capped:
+                    _logger.warning(
+                        "S3 listing for %s exceeded %d objects; "
+                        "size pass capped",
+                        inst.name, _S3_LISTING_CAP,
+                    )
+                    break
+        except (BotoCoreError, ClientError, NoCredentialsError) as exc:
+            _logger.warning(
+                "S3 listing failed for %s: %s", inst.name, type(exc).__name__,
+            )
+            return
+
+        if not sizes_by_iso:
+            return
+
+        rows = self.env['cloud.instance.backup'].sudo().search(
+            [('instance_id', '=', inst.id)],
+        )
+        for row in rows:
+            if not row.backup_time:
+                continue
+            iso = row.backup_time.strftime('%Y%m%dT%H%M%SZ')
+            if iso in sizes_by_iso:
+                row.size = sizes_by_iso[iso]
 
     async def on_failure(self, results, errors):
         for err in errors:

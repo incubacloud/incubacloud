@@ -420,7 +420,7 @@ class TestBackupCreateGetCommands(BaseCase):
     backup container's daily jobrunner because that path goes to S3.
     """
 
-    def _make_executor(self, environment='staging'):
+    def _make_executor(self, environment='staging', payload=None):
         from odoo.addons.incubacloud.models.backup_create_executor import (
             BackupCreateExecutor,
         )
@@ -432,7 +432,12 @@ class TestBackupCreateGetCommands(BaseCase):
         ex = object.__new__(BackupCreateExecutor)
         ex._inst = lambda: inst
         ex._inst_dir = lambda i: f"/home/{i.name}"
+        ex.job = MagicMock()
+        ex.job.payload = payload
         return ex
+
+    def _make_executor_with_payload(self, environment, payload):
+        return self._make_executor(environment=environment, payload=payload)
 
     def test_non_prod_uses_run_rm_with_tmp_bind_mount(self):
         cmds = self._make_executor(environment='staging').get_commands()
@@ -441,7 +446,8 @@ class TestBackupCreateGetCommands(BaseCase):
         self.assertEqual(label, 'Create backup')
         self.assertIn('docker compose run --rm', cmd)
         self.assertIn('-v /tmp:/host-tmp', cmd)
-        self.assertIn('click-odoo-backupdb prod', cmd)
+        self.assertIn('click-odoo-backupdb', cmd)
+        self.assertIn('prod', cmd)
         self.assertIn('/host-tmp/.incubacloud-backup-myinst.zip', cmd)
         # Old approach left behind: exec requires a running container,
         # cp was redundant once the bind mount writes to host directly.
@@ -452,6 +458,47 @@ class TestBackupCreateGetCommands(BaseCase):
         # ``Could not find the file …`` on top of the real error).
         self.assertEqual(opts, {'stop_on_failure': True})
 
+    def test_non_prod_default_payload_includes_filestore(self):
+        # Backwards compatibility: no payload at all → default to a
+        # full backup (DB + filestore). Mirrors click-odoo-backupdb's
+        # own default and matches every legacy row in the DB.
+        ex = self._make_executor(environment='staging')
+        ex.job = MagicMock()
+        ex.job.payload = None
+        cmd = ex.get_commands()[0][1]
+        self.assertIn('--filestore', cmd)
+        self.assertNotIn('--no-filestore', cmd)
+
+    def test_non_prod_with_filestore_true_uses_filestore_flag(self):
+        ex = self._make_executor_with_payload(
+            'staging', {'with_filestore': True},
+        )
+        cmd = ex.get_commands()[0][1]
+        self.assertIn('--filestore', cmd)
+        self.assertNotIn('--no-filestore', cmd)
+
+    def test_non_prod_with_filestore_false_uses_no_filestore_flag(self):
+        ex = self._make_executor_with_payload(
+            'staging', {'with_filestore': False},
+        )
+        cmd = ex.get_commands()[0][1]
+        self.assertIn('--no-filestore', cmd)
+        # Sanity: the dbname still follows the flag.
+        self.assertIn('--no-filestore prod', cmd)
+
+    def test_non_prod_truthy_string_payload_collapses_to_filestore(self):
+        # Defensive: any truthy JSON-RPC value collapses to True via
+        # ``bool()`` at the executor boundary so the user can never
+        # smuggle an arbitrary string into the click-odoo-backupdb
+        # invocation.
+        ex = self._make_executor_with_payload(
+            'staging', {'with_filestore': '--malicious; rm -rf /'},
+        )
+        cmd = ex.get_commands()[0][1]
+        self.assertIn('--filestore', cmd)
+        self.assertNotIn('rm -rf', cmd)
+        self.assertNotIn('--malicious', cmd)
+
     def test_production_uses_backup_container_jobrunner(self):
         cmds = self._make_executor(environment='production').get_commands()
         self.assertEqual(len(cmds), 1)
@@ -459,6 +506,16 @@ class TestBackupCreateGetCommands(BaseCase):
         self.assertEqual(label, 'Create backup')
         self.assertIn('docker compose exec -T backup', cmd)
         self.assertIn('/etc/periodic/daily/jobrunner', cmd)
+
+    def test_production_payload_does_not_inject_filestore_flag(self):
+        # Production runs duply (jobrunner) which controls shape.
+        # The kwarg must not leak into the prod command line.
+        ex = self._make_executor_with_payload(
+            'production', {'with_filestore': False},
+        )
+        cmd = ex.get_commands()[0][1]
+        self.assertNotIn('--no-filestore', cmd)
+        self.assertNotIn('--filestore', cmd)
 
 
 # ---------------------------------------------------------------------------

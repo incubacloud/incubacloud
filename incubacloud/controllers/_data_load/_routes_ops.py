@@ -77,9 +77,37 @@ class OpsMixin:
                     b.chain_start.isoformat() if b.chain_start else None
                 ),
                 'attachment_id': b.attachment_id.id if b.attachment_id else None,
-                'size': b.attachment_id.file_size if b.attachment_id else None,
+                # ``size`` is now stored on the row uniformly:
+                # non-prod populates it from the attachment at create
+                # time, prod populates it from a boto3 listing in the
+                # ``backup_list`` job. Falls back to attachment.file_size
+                # for legacy rows whose attachment has not been pruned.
+                'size': (
+                    b.size or (
+                        b.attachment_id.file_size
+                        if b.attachment_id else 0
+                    )
+                ),
+                'with_filestore': b.with_filestore,
+                'contents': self._backup_contents_label(b),
             } for b in backups],
         }
+
+    @staticmethod
+    def _backup_contents_label(backup):
+        """Human label of what's inside the ZIP/chain.
+
+        Non-prod attachment + ``with_filestore`` → ``"DB + filestore"``
+        Non-prod attachment + no filestore       → ``"DB only"``
+        Prod (no attachment)                     → ``"S3 chain"``
+        """
+        if backup.attachment_id:
+            return (
+                _("DB + filestore")
+                if backup.with_filestore
+                else _("DB only")
+            )
+        return _("S3 chain")
 
     @http.route(['/cloud/list_backups'], type='jsonrpc', auth='user')
     def cloud_list_backups(self, instance_id, refresh=False):
@@ -127,8 +155,16 @@ class OpsMixin:
         }
 
     @http.route(['/cloud/create_backup'], type='jsonrpc', auth='user')
-    def cloud_create_backup(self, instance_id):
-        """Enqueue a backup_create job."""
+    def cloud_create_backup(self, instance_id, with_filestore=True):
+        """Enqueue a backup_create job.
+
+        ``with_filestore`` (bool) is meaningful for non-production
+        instances: it flips ``click-odoo-backupdb --filestore`` /
+        ``--no-filestore``. Production ignores it (duplicity controls
+        shape). Coerced to bool at the boundary so any truthy JSON-RPC
+        input (including strings) collapses safely before reaching
+        the executor.
+        """
         self._sec()._check_can_manage_backups()
         instance = request.env['cloud.instance'].browse(instance_id)
         if not instance.exists():
@@ -137,7 +173,7 @@ class OpsMixin:
             return {'ok': False, 'error': _('Instance has no host configured')}
         if not instance.deployed:
             return {'ok': False, 'error': _('Instance is not deployed')}
-        job_id = instance.create_backup()
+        job_id = instance.create_backup(with_filestore=bool(with_filestore))
         return {'ok': True, 'job_id': job_id}
 
     @http.route(['/cloud/clone_to_staging'], type='jsonrpc', auth='user')

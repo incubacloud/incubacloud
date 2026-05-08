@@ -528,12 +528,17 @@ class CloudInstance(models.Model):
             'backup_list',
         )
 
-    def create_backup(self):
+    def create_backup(self, with_filestore=True):
         """Enqueue backup_create → backup_list chain.
 
         Returns the trailing backup_list job id so callers polling for
         completion only see ``done`` once the records have been synced
         from duplicity.
+
+        ``with_filestore`` is forwarded as the ``backup_create``
+        payload and used by the non-prod executor branch to flip
+        ``click-odoo-backupdb --filestore`` / ``--no-filestore``.
+        Production ignores it (duplicity controls shape).
         """
         self.ensure_one()
         if not self.host_id:
@@ -543,8 +548,16 @@ class CloudInstance(models.Model):
         if self.environment == 'production':
             self._check_backup_backend()
         step = {'host_id': self.host_id.id, 'instance_id': self.id}
+        # Bool coercion at the service-layer boundary so any truthy
+        # input (a stray string from JSON-RPC, etc.) collapses to True
+        # before reaching the shell command in the executor.
+        create_step = {
+            **step,
+            'job_type_code': 'backup_create',
+            'payload': {'with_filestore': bool(with_filestore)},
+        }
         ids = self.env['cloud.job'].enqueue_chain([
-            {**step, 'job_type_code': 'backup_create'},
+            create_step,
             {**step, 'job_type_code': 'backup_list'},
         ])
         return ids[-1]

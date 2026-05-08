@@ -22,3 +22,20 @@ class CloudInstanceBackup(models.Model):
         ondelete='set null', index=True,
         help='For non-production backups: the ZIP attachment (2h TTL).',
     )
+    with_filestore = fields.Boolean(
+        default=True,
+        help=(
+            'Non-production: whether the ZIP includes the filestore. '
+            'Production rows ignore this — duplicity always backs up '
+            'database + filestore as a chain.'
+        ),
+    )
+    size = fields.Integer(
+        string='Size (bytes)',
+        help=(
+            'Non-production: the attached ZIP size, captured at create '
+            'time. Production: total bytes of the duplicity files for '
+            'this backup set, populated by the backup_list job via '
+            'boto3 listing of the S3 backend.'
+        ),
+    )
