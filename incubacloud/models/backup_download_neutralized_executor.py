@@ -177,11 +177,14 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         # Step 4: drop the throwaway DB + cleanup source files.
         # Runs unconditionally via parse_results (non-stop_on_failure)
         # so cleanup still happens on the happy path.
+        # `--user root` is required because `docker compose cp` lands the
+        # source ZIP into the container owned by root, and the default
+        # `odoo` user cannot remove it.
         step_cleanup = (
             "Drop temp DB and cleanup",
             (
                 f"cd {d}"
-                f" && docker compose exec -T odoo"
+                f" && docker compose exec --user root -T odoo"
                 f" sh -c 'dropdb --if-exists {neutral_db}"
                 f" && rm -rf /var/lib/odoo/filestore/{neutral_db}"
                 f" && rm -f {source_inside_odoo}'"
@@ -264,7 +267,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         with suppress(Exception):
             async with self._host_record.get_transport() as transport:
                 await transport.run(
-                    f"cd {d} && docker compose exec -T odoo"
+                    f"cd {d} && docker compose exec --user root -T odoo"
                     f" sh -c 'dropdb --if-exists {neutral_db}"
                     f" && rm -rf /var/lib/odoo/filestore/{neutral_db}"
                     f" && rm -f /tmp/bkneu-src-{self.job.id}.*"
