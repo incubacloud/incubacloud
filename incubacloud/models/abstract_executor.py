@@ -9,6 +9,37 @@ from ._repo_requirements import has_pip_conflicts
 
 _TOKEN_RE = re.compile(r'https://[^@\s]*@(github\.com)', re.IGNORECASE)
 
+# Whitelist of patterns that mark a log line as an error. Lines matching
+# any of these get ``source='stderr'`` (rendered red as ``[err]``);
+# everything else is treated as benign output and stored as
+# ``source='stdout'`` regardless of which SSH channel it came from.
+#
+# This exists because many tools we drive over SSH (docker compose,
+# duplicity, click-odoo-*, Odoo's own logging) write progress and
+# WARNING/INFO/DEBUG to stderr, which used to flood the log viewer with
+# red ``[err]`` lines that weren't actually errors. We pair this
+# whitelist with a `[sys]` breadcrumb emitted on any non-zero exit code,
+# so true failures stay visible even if their output doesn't match a
+# pattern here.
+_ERR_PATTERNS = (
+    re.compile(r'\b(ERROR|FATAL|CRITICAL)\b'),
+    re.compile(r'^Traceback \(most recent call last\)'),
+    re.compile(r'^\s+File ".+", line \d+'),
+    re.compile(r'^[a-z][a-z]+: cannot '),
+    re.compile(
+        r'^[a-z][a-z]+: .*: '
+        r'(Operation not permitted|Permission denied'
+        r'|No such file or directory)$'
+    ),
+    re.compile(r'^Error response from daemon:'),
+    re.compile(r'^E: '),
+)
+
+
+def _looks_like_error(line):
+    """Return True if the line matches any pattern in ``_ERR_PATTERNS``."""
+    return any(p.search(line) for p in _ERR_PATTERNS)
+
 # Per-line and per-job log caps. These bound the worst-case disk usage
 # from a runaway job that writes unbounded output (e.g. an image bug
 # that produces an infinite stream).
@@ -199,12 +230,18 @@ class AbstractExecutor(ABC):
                         'stdout': result.stdout,
                         'exit_status': result.exit_status,
                     }
-                    if opts.get('stop_on_failure') and result.exit_status != 0:
+                    if result.exit_status != 0:
+                        if opts.get('stop_on_failure'):
+                            self._sys(
+                                f"✗ '{label}' failed"
+                                f" (exit {result.exit_status})"
+                                f" — aborting remaining steps."
+                            )
+                            break
                         self._sys(
-                            f"✗ '{label}' failed (exit {result.exit_status})"
-                            f" — aborting remaining steps."
+                            f"✗ '{label}' exited with status"
+                            f" {result.exit_status}."
                         )
-                        break
 
                 errors = self.parse_results(results)
                 if not errors:
@@ -342,10 +379,14 @@ class AbstractExecutor(ABC):
         return line[:MAX_LOG_LINE_LEN] + ' …(truncated)'
 
     async def on_stdout(self, line):
-        self._log_buffer.append((self._truncate_line(line), "stdout"))
+        truncated = self._truncate_line(line)
+        source = "stderr" if _looks_like_error(truncated) else "stdout"
+        self._log_buffer.append((truncated, source))
 
     async def on_stderr(self, line):
-        self._log_buffer.append((self._truncate_line(line), "stderr"))
+        truncated = self._truncate_line(line)
+        source = "stderr" if _looks_like_error(truncated) else "stdout"
+        self._log_buffer.append((truncated, source))
 
     # ===============================
     # PRE-RUN CHECKS

@@ -26,6 +26,7 @@ from . import (
     test_cloud_security,
     test_odoo_version_normalization,
     test_executor_features,
+    test_log_classification,
     test_rebuild_fingerprint,
     test_cloud_host,
     test_host_autoassign,
