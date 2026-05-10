@@ -71,6 +71,13 @@ class TestNeutralizedProd(BaseCase):
         self.assertIn("rm -rf /var/lib/odoo/filestore/__ic_neutral_99",
                       step[1])
 
+    def test_cleanup_runs_as_root(self):
+        # `docker compose cp` lands the source ZIP into the odoo
+        # container owned by root, so the cleanup `rm` must run with
+        # `--user root` or it fails with "Operation not permitted".
+        step = _find(self.cmds, "Drop temp DB and cleanup")
+        self.assertIn("docker compose exec --user root -T odoo", step[1])
+
     def test_critical_steps_have_stop_on_failure(self):
         for label in (
             "Restore source dump from S3",
