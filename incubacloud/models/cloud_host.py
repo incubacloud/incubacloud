@@ -508,9 +508,17 @@ class CloudHost(models.Model):
                     "Delete all instances first."
                 ) % (host.name, len(host.instance_ids)))
 
+    def _release_external_resources(self):
+        """Lifecycle hook fired before a host is archived or unlinked.
+
+        Override in derived modules to release any external resources
+        attached to the host (cloud VMs, DNS records, remote API
+        registrations, etc.). No-op by default."""
+
     def unlink(self):
         self._check_can_manage_hosts()
         self._check_no_instances()
+        self._release_external_resources()
         for host in self:
             self.env['cloud.audit.log'].sudo().create({
                 'action': 'Host deleted',
@@ -522,6 +530,7 @@ class CloudHost(models.Model):
         self._check_can_manage_hosts()
         if vals.get('active') is False:
             self._check_no_instances()
+            self.filtered('active')._release_external_resources()
         # Drop empty password values so existing stored passwords are preserved
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:

@@ -618,8 +618,12 @@ class CrudMixin:
         if host.instance_ids:
             return {'ok': False, 'error': _('Host still has instances. Delete all instances first.')}
         if not host.traefik_deployed:
-            # Nothing was deployed remotely — archive directly without SSH
-            host.write({'active': False})
+            # Nothing was deployed remotely — no SSH cleanup needed and
+            # no historical jobs to preserve. Remove the record outright
+            # so the lifecycle hook can release any external resources
+            # attached to it (downstream modules) while the row goes
+            # away cleanly.
+            host.unlink()
             return {'ok': True}
         job_id = request.env['cloud.job'].enqueue(host_id, False, 'delete_host')
         return {'job_id': job_id}
