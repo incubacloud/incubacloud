@@ -54,6 +54,15 @@ SETUP_COMMANDS = [
         "command -v git >/dev/null 2>&1 "
         "|| sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git",
     ),
+    # Seed init.defaultBranch=master once per host so concurrent deploys
+    # don't race for the ~/.gitconfig lock. Idempotent: only writes when
+    # the setting is absent. Setup is serialized (single full_setup job
+    # per host), so no contention here.
+    (
+        "Set git default branch",
+        "git config --global --get init.defaultBranch >/dev/null 2>&1"
+        " || git config --global init.defaultBranch master",
+    ),
     # ── Docker CE ──────────────────────────────────────────────────────
     (
         "Install Docker",

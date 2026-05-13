@@ -563,3 +563,121 @@ class TestAutoUpdateFlag(BaseCase):
             _find_cmd(cmds, "Rebuild Odoo image"),
             "image rebuild must still run when auto_update=False",
         )
+
+
+# ---------------------------------------------------------------------------
+# Idempotent ~/.gitconfig guard
+# ---------------------------------------------------------------------------
+
+class TestGitConfigIdempotentGuard(BaseCase):
+    """Pin the read-first guard on ``init.defaultBranch``.
+
+    An unconditional ``git config --global init.defaultBranch master``
+    takes the ``~/.gitconfig`` lock on every deploy/rebuild/warm-claim.
+    When two jobs hit the same host in the same tick (warm pool cron
+    enqueues N builds against one host, the dedicated ``root.warm``
+    channel runs them in parallel), the second one fails with
+    ``error: could not lock config file ~/.gitconfig: File exists``
+    and the whole deploy unravels.
+
+    The fix has two layers and this test class guards both:
+
+    1. ``full_setup`` seeds the setting once per host, in a serialized
+       step that cannot race with itself.
+    2. The deploy / rebuild / warm-claim ``path_prefix`` reads first
+       (``--get``) and only writes when the value is absent, so a host
+       already seeded never touches the lock again.
+    """
+
+    # ``--get`` is a read, not a write — it does not take the ~/.gitconfig
+    # lock, so concurrent siblings on the same host never collide.
+    _READ_FIRST_TOKEN = (
+        'git config --global --get init.defaultBranch >/dev/null 2>&1'
+    )
+
+    def _path_prefix_step(self, executor_factory, label):
+        """Return the (label, cmd) tuple for the copier step from a
+        freshly built executor's get_commands() output.
+
+        ``_make_deploy_executor`` builds a SimpleNamespace that doesn't
+        carry ``effective_backup_backend`` (a model field), so any path
+        through ``_backup_enabled()`` blows up with AttributeError.
+        Stub it to ``False`` — backup-stripping behaviour is unrelated
+        to the gitconfig guard under test here.
+        """
+        ex = executor_factory()
+        ex._backup_enabled = bool
+        cmds = ex.get_commands()
+        cmd = _find_cmd(cmds, label)
+        self.assertIsNotNone(cmd, f"Step '{label}' missing from get_commands()")
+        return cmd
+
+    def test_deploy_path_prefix_reads_before_writing(self):
+        """Deploy 'Deploy with copier' must guard the gitconfig write."""
+        cmd = self._path_prefix_step(_make_deploy_executor, "Deploy with copier")
+        self.assertIn(self._READ_FIRST_TOKEN, cmd[1])
+
+    def test_deploy_path_prefix_has_no_unconditional_write(self):
+        """Regression: the unconditional write would race on warm builds.
+
+        The expected shell is::
+
+            ... && (git config --get ... || git config ... master)
+
+        so ``&& git config --global init.defaultBranch master`` (the
+        old form, write outside an ``||`` branch) must NOT appear.
+        """
+        cmd = self._path_prefix_step(_make_deploy_executor, "Deploy with copier")
+        self.assertNotIn(
+            '&& git config --global init.defaultBranch master',
+            cmd[1],
+        )
+
+    def test_rebuild_path_prefix_reads_before_writing(self):
+        """Rebuild 'Update with copier' must guard the gitconfig write."""
+        cmd = self._path_prefix_step(_make_rebuild_executor, "Update with copier")
+        self.assertIn(self._READ_FIRST_TOKEN, cmd[1])
+
+    def test_rebuild_path_prefix_has_no_unconditional_write(self):
+        cmd = self._path_prefix_step(_make_rebuild_executor, "Update with copier")
+        self.assertNotIn(
+            '&& git config --global init.defaultBranch master',
+            cmd[1],
+        )
+
+    def test_full_setup_has_seed_step(self):
+        """full_setup must seed init.defaultBranch once per host."""
+        from odoo.addons.incubacloud.models.full_setup_executor import (
+            SETUP_COMMANDS,
+        )
+        cmd = _find_cmd(SETUP_COMMANDS, "Set git default branch")
+        self.assertIsNotNone(
+            cmd, "SETUP_COMMANDS must include the gitconfig seed step"
+        )
+
+    def test_full_setup_seed_step_is_idempotent(self):
+        """The seed step must read before writing — re-running Setup Host
+        on an already-configured host must not rewrite (and not take the
+        lock unnecessarily).
+        """
+        from odoo.addons.incubacloud.models.full_setup_executor import (
+            SETUP_COMMANDS,
+        )
+        cmd = _find_cmd(SETUP_COMMANDS, "Set git default branch")
+        self.assertIn(self._READ_FIRST_TOKEN, cmd[1])
+
+    def test_full_setup_seed_runs_after_install_git(self):
+        """Seed must come after 'Install git' — otherwise the very first
+        Setup Host run would call ``git config`` before the binary exists.
+        """
+        from odoo.addons.incubacloud.models.full_setup_executor import (
+            SETUP_COMMANDS,
+        )
+        labels = [c[0] for c in SETUP_COMMANDS]
+        self.assertIn("Install git", labels)
+        self.assertIn("Set git default branch", labels)
+        self.assertLess(
+            labels.index("Install git"),
+            labels.index("Set git default branch"),
+            "Seed step must come after 'Install git'",
+        )

@@ -599,9 +599,16 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         # SSH sessions don't load .bashrc, so ~/.local/bin (pipx tools) is
         # absent from PATH.  Export it so copier AND every subprocess it
         # spawns (invoke, pre-commit, …) can find the tools they need.
+        #
+        # Read-first guard on init.defaultBranch: full_setup seeds this
+        # once per host, but legacy hosts (set up before that change) may
+        # still need it.  Writing unconditionally takes the ~/.gitconfig
+        # lock and races with sibling deploys on the same host (warm pool
+        # cron enqueues N builds against one host in one tick).
         path_prefix = (
             'export PATH="$HOME/.local/bin:$PATH"'
-            ' && git config --global init.defaultBranch master'
+            ' && (git config --global --get init.defaultBranch >/dev/null 2>&1'
+            ' || git config --global init.defaultBranch master)'
         )
         copier_bin = "$HOME/.local/bin/copier"
 
