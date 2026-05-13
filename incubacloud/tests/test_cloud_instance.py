@@ -414,3 +414,110 @@ class TestDefaultBackupBackendSetting(TransactionCase):
             'environment': 'production',
         })
         self.assertEqual(inst.effective_backup_backend, bb)
+
+
+# ---------------------------------------------------------------------------
+# cron_refresh_backup_list — compose-service gating
+# ---------------------------------------------------------------------------
+
+class TestCronRefreshBackupList(TransactionCase):
+    """``cron_refresh_backup_list`` must skip instances whose compose
+    stack has no ``backup`` service (e.g. free-tier tenants that inherit
+    the global backup backend but never ship a backup container)."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'bk-host',
+            'ip_address': '10.0.0.10',
+            'user': 'ubuntu',
+            'wildcard_domain': 'test.example.com',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'BK Project'})
+        bb = self.env['cloud.backup.backend'].create({
+            'name': 'cron-bb',
+            'backend_type': 's3',
+            's3_bucket': 'cron-bucket',
+        })
+        self.env['ir.config_parameter'].sudo().set_param(
+            'incubacloud.backup_backend_id', str(bb.id),
+        )
+
+    def _create_instance(self, name, compose_services, **kw):
+        base = {
+            'name': name,
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'production',
+            'deployed': True,
+            'compose_services': compose_services,
+        }
+        return self.env['cloud.instance'].create(base | kw)
+
+    def _patch_list_backups(self):
+        """Patch ``cloud.instance.list_backups`` and return the call log."""
+        calls = []
+        Model = self.env['cloud.instance']
+        original = type(Model).list_backups
+
+        def _mock(self_model):
+            for rec in self_model:
+                calls.append(rec.id)
+            return 0
+
+        type(Model).list_backups = _mock
+        return calls, original, type(Model)
+
+    def _restore_list_backups(self, original, model_class):
+        model_class.list_backups = original
+
+    def test_instance_with_backup_service_gets_enqueued(self):
+        inst = self._create_instance('paid-prod', 'odoo,db,backup,smtp')
+        calls, original, mc = self._patch_list_backups()
+        try:
+            self.env['cloud.instance'].cron_refresh_backup_list()
+        finally:
+            self._restore_list_backups(original, mc)
+        self.assertIn(inst.id, calls)
+
+    def test_instance_without_backup_service_skipped(self):
+        """Free-tier instance: backup backend inherited but no container."""
+        inst = self._create_instance('free-prod', 'odoo,db,smtp')
+        calls, original, mc = self._patch_list_backups()
+        try:
+            self.env['cloud.instance'].cron_refresh_backup_list()
+        finally:
+            self._restore_list_backups(original, mc)
+        self.assertNotIn(inst.id, calls)
+
+    def test_instance_with_empty_compose_services_skipped(self):
+        inst = self._create_instance('blank-prod', '')
+        calls, original, mc = self._patch_list_backups()
+        try:
+            self.env['cloud.instance'].cron_refresh_backup_list()
+        finally:
+            self._restore_list_backups(original, mc)
+        self.assertNotIn(inst.id, calls)
+
+    def test_compose_services_with_whitespace_recognized(self):
+        """Ensure trimming handles a YAML-formatted list with spaces."""
+        inst = self._create_instance(
+            'spaced-prod', 'odoo, db, backup , smtp',
+        )
+        calls, original, mc = self._patch_list_backups()
+        try:
+            self.env['cloud.instance'].cron_refresh_backup_list()
+        finally:
+            self._restore_list_backups(original, mc)
+        self.assertIn(inst.id, calls)
+
+    def test_staging_instance_skipped(self):
+        inst = self._create_instance(
+            'stg', 'odoo,db,backup', environment='staging',
+        )
+        calls, original, mc = self._patch_list_backups()
+        try:
+            self.env['cloud.instance'].cron_refresh_backup_list()
+        finally:
+            self._restore_list_backups(original, mc)
+        self.assertNotIn(inst.id, calls)
