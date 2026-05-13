@@ -51,7 +51,13 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
         tmp_pip = self._tmp("pip.txt")
         tmp_apt = self._tmp("apt.txt")
 
-        git_cfg = 'git config --global init.defaultBranch master'
+        # Read-first guard: full_setup seeds init.defaultBranch once per
+        # host; the fallback write here covers legacy hosts only and
+        # avoids racing siblings for the ~/.gitconfig lock.
+        git_cfg = (
+            '(git config --global --get init.defaultBranch >/dev/null 2>&1'
+            ' || git config --global init.defaultBranch master)'
+        )
         path_prefix = (
             'export PATH="$HOME/.local/bin:$PATH"'
             f' && {git_cfg}'
