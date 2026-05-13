@@ -772,13 +772,26 @@ class CloudInstance(models.Model):
 
     @api.model
     def cron_refresh_backup_list(self):
-        """Queue a backup_list job for every production instance."""
+        """Queue a backup_list job for every production instance.
+
+        Skips instances whose compose stack has no ``backup`` service
+        (e.g. free-tier tenants): the executor shells into the backup
+        container via ``docker compose exec -T backup`` and would fail
+        with exit status 1 on every run otherwise.
+        """
         instances = self.search([
             ('deployed', '=', True),
             ('environment', '=', 'production'),
         ])
         for inst in instances:
             if not inst.host_id or not inst.instance_backup_dst:
+                continue
+            services = {
+                s.strip()
+                for s in (inst.compose_services or '').split(',')
+                if s.strip()
+            }
+            if 'backup' not in services:
                 continue
             try:
                 inst.list_backups()
