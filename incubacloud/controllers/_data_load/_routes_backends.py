@@ -30,7 +30,15 @@ class BackendsMixin:
         'email_from', 'email_to', 'smtp_report_success',
         'backup_retention',
         'deletion_via_cron', 'backup_tz',
+        # Usage / quota / alert (universal, see Phase A.1 of managed backup plan)
+        'quota_gb', 'alert_threshold_pct', 'alert_email',
     }
+    # NOTE: ``managed_reservation_id`` and ``archived_until`` are NOT in the
+    # allowlist. They are written exclusively by server-side flows
+    # (provisioning + delete intercept) and must never be settable from the
+    # SPA — a tenant who could clear ``archived_until`` would skip
+    # retention; one who could set ``managed_reservation_id`` could orphan
+    # a real bucket. Keep them out of the mass-assignment surface.
 
     @http.route(['/cloud/get_backup_backends'], type='jsonrpc', auth='user')
     def cloud_get_backup_backends(self):
@@ -60,6 +68,17 @@ class BackendsMixin:
                     's3_endpoint_url': b.s3_endpoint_url or '',
                     'backup_dst': b.backup_dst or '',
                     'instance_count': usage.get(b.id, 0),
+                    'quota_gb': b.quota_gb or 0.0,
+                    'last_measured_gb': b.last_measured_gb or 0.0,
+                    'last_measured_at': (
+                        b.last_measured_at.isoformat()
+                        if b.last_measured_at else ''
+                    ),
+                    'managed_reservation_id': b.managed_reservation_id or '',
+                    'archived_until': (
+                        b.archived_until.isoformat()
+                        if b.archived_until else ''
+                    ),
                 }
                 for b in backends
             ],
@@ -92,6 +111,23 @@ class BackendsMixin:
             'deletion_via_cron': b.deletion_via_cron,
             'backup_tz': b.backup_tz or 'UTC',
             'backup_dst': b.backup_dst or '',
+            'quota_gb': b.quota_gb or 0.0,
+            'alert_threshold_pct': b.alert_threshold_pct,
+            'alert_email': b.alert_email or '',
+            'last_measured_gb': b.last_measured_gb or 0.0,
+            'last_measured_at': (
+                b.last_measured_at.isoformat()
+                if b.last_measured_at else ''
+            ),
+            'last_alert_sent_at': (
+                b.last_alert_sent_at.isoformat()
+                if b.last_alert_sent_at else ''
+            ),
+            'managed_reservation_id': b.managed_reservation_id or '',
+            'archived_until': (
+                b.archived_until.isoformat()
+                if b.archived_until else ''
+            ),
         }
 
     @http.route(['/cloud/create_backup_backend'], type='jsonrpc', auth='user')
@@ -137,6 +173,52 @@ class BackendsMixin:
                     len(instances), names,
                 ),
             }
+        # Managed-backup intercept (D.6 trigger A): convert delete into
+        # "enter retention" via the manager. The local record stays so
+        # the tenant can still run backup_download during the retention
+        # window; the cleanup cron unlinks it once the manager confirms
+        # the bucket is purged. Fail-closed: if the manager call fails
+        # we DO NOT unlink — better a visible error than an orphan.
+        if b.managed_reservation_id:
+            try:
+                from odoo.addons.incubacloud_tenant.controllers import (
+                    backup_storage as _bs,
+                )
+            except ImportError:
+                return {
+                    'ok': False,
+                    'error': _(
+                        'This managed backend cannot be deleted from '
+                        'this database (incubacloud_tenant not '
+                        'installed).',
+                    ),
+                }
+            try:
+                result = _bs.TenantBackupStorageController().cancel(
+                    reservation_id=b.managed_reservation_id,
+                )
+            except Exception as exc:
+                _logger.warning(
+                    'managed-backend delete intercept failed for '
+                    'backend=%s reservation=%s err=%s',
+                    b.id, b.managed_reservation_id, exc,
+                )
+                return {
+                    'ok': False,
+                    'error': _(
+                        'Could not contact the IncubaCloud platform to '
+                        'cancel this managed backup. Please retry or '
+                        'contact support.',
+                    ),
+                }
+            if not result.get('ok'):
+                return result
+            return {
+                'ok': True,
+                'archived': True,
+                'retention_until': result.get('retention_until'),
+                'days_remaining': result.get('days_remaining'),
+            }
         b.unlink()
         return {'ok': True}
 
@@ -179,3 +261,35 @@ class BackendsMixin:
             return {'ok': False, 'error': _('S3 error %(code)s: %(msg)s') % {'code': code, 'msg': msg}}
         except Exception as exc:
             return safe_error_response(exc, _("Backend connection test failed"))
+
+    @http.route(['/cloud/measure_backup_usage'], type='jsonrpc', auth='user')
+    def cloud_measure_backup_usage(self, backend_id):
+        """Run an on-demand usage measurement for *backend_id*.
+
+        Manager-gated. Synchronous because the SPA gauge expects fresh
+        numbers immediately after the user clicks "Refresh now". The
+        daily cron handles the unattended path.
+        """
+        self._sec()._check_can_manage_settings()
+        b = request.env['cloud.backup.backend'].browse(backend_id)
+        if not b.exists():
+            return {'ok': False, 'error': _('Backend not found.')}
+        if not b.s3_bucket or not b.s3_access_key_id:
+            return {
+                'ok': False,
+                'error': _('Backend is missing bucket or credentials.'),
+            }
+        try:
+            b.sudo()._measure_usage()
+        except (ClientError, ParamValidationError) as exc:
+            return {'ok': False, 'error': str(exc)}
+        except Exception as exc:
+            return safe_error_response(exc, _("Usage measurement failed"))
+        return {
+            'ok': True,
+            'last_measured_gb': b.last_measured_gb or 0.0,
+            'last_measured_at': (
+                b.last_measured_at.isoformat()
+                if b.last_measured_at else ''
+            ),
+        }

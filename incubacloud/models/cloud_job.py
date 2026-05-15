@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from odoo import models, fields, api, _
 from odoo.addons.queue_job.delay import chain as delay_chain
-from odoo.addons.queue_job.exception import JobError
+from odoo.addons.queue_job.exception import JobError, RetryableJobError
 from odoo.exceptions import UserError
 
 from ._repo_requirements import detect_pip_conflicts, create_pip_conflict_alert
@@ -384,6 +384,13 @@ class CloudJob(models.Model):
             ssh_executor.pre_run_checks()
             ssh_executor._publish_bus()
             ssh_executor.run()
+        except RetryableJobError:
+            # Executors can raise RetryableJobError to ask queue_job to
+            # reschedule the job (e.g. the warm rebuild executor uses it
+            # to honour a per-host advisory lock). Let it propagate so
+            # queue_job applies its retry semantics; wrapping it as
+            # JobError would mark the job permanently failed instead.
+            raise
         except Exception as e:
             raise JobError(str(e)) from e
         finally:

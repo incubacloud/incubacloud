@@ -23,6 +23,9 @@ const EMPTY_FORM = () => ({
     backup_retention:      "3M",
     deletion_via_cron:     false,
     backup_tz:             "UTC",
+    quota_gb:              0,
+    alert_threshold_pct:   0,
+    alert_email:           "",
 });
 
 export class BackupBackendDetail extends Component {
@@ -40,11 +43,15 @@ export class BackupBackendDetail extends Component {
             saving: false,
             deleting: false,
             testing: false,
+            refreshingUsage: false,
             error: null,
             backend: this.isNew ? { name: _t("New Backup Backend") } : null,
             form: this.isNew ? EMPTY_FORM() : {},
             has_s3_secret_access_key: false,
             has_passphrase: false,
+            // Usage display (separate from form because not editable here)
+            last_measured_gb: 0,
+            last_measured_at: "",
             confirmDialog: null,
         });
 
@@ -95,6 +102,8 @@ export class BackupBackendDetail extends Component {
             this.state.backend = b;
             this.state.has_s3_secret_access_key = b.has_s3_secret_access_key || false;
             this.state.has_passphrase = b.has_passphrase || false;
+            this.state.last_measured_gb = b.last_measured_gb || 0;
+            this.state.last_measured_at = b.last_measured_at || "";
             this.state.form = {
                 name:                 b.name || "",
                 backend_type:         b.backend_type || "s3",
@@ -111,6 +120,9 @@ export class BackupBackendDetail extends Component {
                 backup_retention:     b.backup_retention || "3M",
                 deletion_via_cron:    b.deletion_via_cron || false,
                 backup_tz:            b.backup_tz || "UTC",
+                quota_gb:             b.quota_gb || 0,
+                alert_threshold_pct:  b.alert_threshold_pct || 0,
+                alert_email:          b.alert_email || "",
             };
             this._snapshotForm();
         } catch (e) {
@@ -118,6 +130,49 @@ export class BackupBackendDetail extends Component {
         } finally {
             this.state.loading = false;
         }
+    }
+
+    async refreshUsage() {
+        if (this.state.refreshingUsage) return;
+        this.state.refreshingUsage = true;
+        try {
+            const result = await rpc("/cloud/measure_backup_usage", {
+                backend_id: this.props.backend_id,
+            });
+            if (result.ok) {
+                this.state.last_measured_gb = result.last_measured_gb || 0;
+                this.state.last_measured_at = result.last_measured_at || "";
+                this.env.toast?.success(_t("Usage refreshed."));
+            } else {
+                this.env.toast?.error(result.error || _t("Failed to measure usage."));
+            }
+        } catch (e) {
+            this.env.toast?.error(_t("Unexpected error measuring usage."));
+        } finally {
+            this.state.refreshingUsage = false;
+        }
+    }
+
+    get usagePct() {
+        const q = parseFloat(this.state.form.quota_gb) || 0;
+        if (q <= 0) return null;
+        return Math.min(100, (this.state.last_measured_gb / q) * 100);
+    }
+
+    get usageBarClass() {
+        const pct = this.usagePct;
+        if (pct === null) return "";
+        // Resolve effective threshold the same way the backend does so
+        // the bar colour matches the alert behaviour. We don't have the
+        // settings default here; default 80 mirrors the system default.
+        const own = parseInt(this.state.form.alert_threshold_pct) || 0;
+        let threshold;
+        if (own === -1) threshold = 101;          // never warn
+        else if (own > 0) threshold = own;
+        else threshold = 80;                       // inherit fallback
+        if (pct >= threshold) return "danger";
+        if (pct >= threshold * 0.75) return "warning";
+        return "ok";
     }
 
     onInput(field, ev) {

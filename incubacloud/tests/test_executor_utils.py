@@ -112,12 +112,46 @@ class TestExecutorRegistry(BaseCase):
     def test_get_unknown_returns_none(self):
         self.assertIsNone(self.reg.get("nonexistent"))
 
-    def test_duplicate_registration_raises(self):
+    def test_duplicate_same_class_silent_noop(self):
+        """Same class re-registering on a worker reload is a no-op.
+
+        Registry must tolerate this — it happens any time the Python
+        process re-imports the module (test harness, queue_job worker
+        restart, dev autoreload).
+        """
         class A:
             pass
         self.reg.register("dup_job", A)
-        with self.assertRaises(ValueError):
-            self.reg.register("dup_job", A)
+        # Same class again → silent, no exception, binding unchanged.
+        self.reg.register("dup_job", A)
+        self.assertIs(self.reg.get("dup_job"), A)
+
+    def test_duplicate_different_class_keeps_first_with_warning(self):
+        """Two distinct classes registering for the same job_type
+        happens when the saas-manager and the tenant module both ship
+        a host_hardening executor and live in the same Python process
+        (different DBs). The registry must NOT raise — it logs a
+        warning and keeps whichever class registered first."""
+        import logging
+
+        class First:
+            pass
+
+        class Second:
+            pass
+
+        self.reg.register("collide_job", First)
+        with self.assertLogs(
+            'odoo.addons.incubacloud.models.registry',
+            level=logging.WARNING,
+        ) as cap:
+            self.reg.register("collide_job", Second)
+        # First wins.
+        self.assertIs(self.reg.get("collide_job"), First)
+        # Warning mentions both classes for traceability.
+        joined = '\n'.join(cap.output)
+        self.assertIn('First', joined)
+        self.assertIn('Second', joined)
 
     def test_all_returns_copy_not_reference(self):
         class B:

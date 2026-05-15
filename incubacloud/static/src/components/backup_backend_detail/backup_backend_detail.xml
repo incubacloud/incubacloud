@@ -26,6 +26,8 @@
                             t-on-click="() => this.setTab('general')">General</button>
                     <button t-att-class="state.tab === 'storage' ? 'ic-tab active' : 'ic-tab'"
                             t-on-click="() => this.setTab('storage')">Storage</button>
+                    <button t-att-class="state.tab === 'usage' ? 'ic-tab active' : 'ic-tab'"
+                            t-on-click="() => this.setTab('usage')">Usage</button>
                     <button t-att-class="state.tab === 'notifications' ? 'ic-tab active' : 'ic-tab'"
                             t-on-click="() => this.setTab('notifications')">Notifications</button>
                     <button t-att-class="state.tab === 'advanced' ? 'ic-tab active' : 'ic-tab'"
@@ -121,6 +123,80 @@
                                     </code>
                                 </div>
                             </t>
+                        </div>
+                    </t>
+
+                    <!-- ── Usage ────────────────────────────────────────── -->
+                    <t t-if="state.tab === 'usage'">
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Current Usage</label>
+                                <t t-if="!isNew">
+                                    <t t-if="usagePct !== null">
+                                        <div class="ic-usage-gauge"
+                                             t-att-data-band="usageBarClass">
+                                            <div class="ic-usage-gauge-bar"
+                                                 t-att-style="'width:' + usagePct + '%'"/>
+                                            <span class="ic-usage-gauge-label">
+                                                <t t-out="state.last_measured_gb.toFixed(2)"/> GB /
+                                                <t t-out="state.form.quota_gb"/> GB
+                                                (<t t-out="usagePct.toFixed(1)"/>%)
+                                            </span>
+                                        </div>
+                                    </t>
+                                    <t t-else="">
+                                        <span class="ic-form-note">
+                                            Usage:
+                                            <t t-out="state.last_measured_gb.toFixed(2)"/> GB
+                                            <t t-if="!state.form.quota_gb">
+                                                — set a quota below to see a % bar and enable alerts.
+                                            </t>
+                                        </span>
+                                    </t>
+                                    <div style="display:flex; align-items:center; gap:10px; margin-top:6px;">
+                                        <span class="ic-form-note">
+                                            <t t-if="state.last_measured_at">
+                                                Last measured: <t t-out="state.last_measured_at"/>
+                                            </t>
+                                            <t t-else="">
+                                                Never measured yet — the daily cron will catch this up.
+                                            </t>
+                                        </span>
+                                        <button class="ic-btn-secondary-action"
+                                                t-att-disabled="state.refreshingUsage"
+                                                t-on-click="refreshUsage">
+                                            <t t-if="state.refreshingUsage">Refreshing…</t>
+                                            <t t-else="">Refresh now</t>
+                                        </button>
+                                    </div>
+                                </t>
+                                <t t-else="">
+                                    <span class="ic-form-note">Save the backend first to start measuring usage.</span>
+                                </t>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Quota (GB)</label>
+                                <input type="number" min="0" step="1"
+                                       t-att-value="state.form.quota_gb"
+                                       t-on-change="(ev) => { state.form.quota_gb = parseFloat(ev.target.value) || 0; }"/>
+                                <span class="ic-form-note">0 = no quota (usage still tracked).</span>
+                            </div>
+                            <div class="ic-form-row">
+                                <label>Alert Threshold (%)</label>
+                                <input type="number" min="-1" max="100" step="1"
+                                       t-att-value="state.form.alert_threshold_pct"
+                                       t-on-change="(ev) => { state.form.alert_threshold_pct = parseInt(ev.target.value) || 0; }"/>
+                                <span class="ic-form-note">0 = inherit settings default; -1 = disabled; 1–100 = explicit.</span>
+                            </div>
+                            <div class="ic-form-row ic-form-row-full">
+                                <label>Alert Email
+                                    <span class="ic-form-note"> — falls back to Notification To</span>
+                                </label>
+                                <input type="email"
+                                       placeholder="ops@example.com"
+                                       t-att-value="state.form.alert_email"
+                                       t-on-input="(ev) => this.onInput('alert_email', ev)"/>
+                            </div>
                         </div>
                     </t>
 

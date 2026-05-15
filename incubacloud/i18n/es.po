@@ -123,6 +123,19 @@ msgstr ".zip"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "0 = inherit settings default; -1 = disabled; 1–100 = explicit."
+msgstr ""
+"0 = heredar el valor por defecto; -1 = desactivado; 1–100 = valor explícito."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "0 = no quota (usage still tracked)."
+msgstr "0 = sin cuota (el uso se sigue midiendo)."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "1g"
 msgstr "1g"
@@ -174,6 +187,47 @@ msgstr "6h"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "7d"
 msgstr "7d"
+
+#. module: incubacloud
+#: model:mail.template,body_html:incubacloud.mail_template_backup_usage_alert
+msgid ""
+"<div>\n"
+"    <p>Hello,</p>\n"
+"    <p>The backup backend\n"
+"        <strong t-out=\"object.name\"/>\n"
+"        is currently at\n"
+"        <strong><t t-out=\"ctx.get('backup_alert_pct_used')\"/>%</strong>\n"
+"        of its configured quota\n"
+"        (<t t-out=\"round(object.last_measured_gb, 2)\"/> GB used of\n"
+"        <t t-out=\"object.quota_gb\"/> GB quota; alert threshold is\n"
+"        <t t-out=\"ctx.get('backup_alert_threshold_pct')\"/>%).</p>\n"
+"    <p>Bucket: <code t-out=\"object.s3_bucket\"/></p>\n"
+"    <p>To stop receiving these alerts, raise the quota, lower the\n"
+"        threshold to <code>-1</code> (disabled), or move objects out\n"
+"        of the bucket.</p>\n"
+"    <p>This alert will not re-fire for at least 7 days while usage\n"
+"        remains above the threshold.</p>\n"
+"</div>\n"
+"        "
+msgstr ""
+"<div>\n"
+"    <p>Hola,</p>\n"
+"    <p>El backend de backup\n"
+"        <strong t-out=\"object.name\"/>\n"
+"        está actualmente al\n"
+"        <strong><t t-out=\"ctx.get('backup_alert_pct_used')\"/>%</strong>\n"
+"        de su cuota configurada\n"
+"        (<t t-out=\"round(object.last_measured_gb, 2)\"/> GB usados de\n"
+"        <t t-out=\"object.quota_gb\"/> GB de cuota; el umbral de aviso es\n"
+"        <t t-out=\"ctx.get('backup_alert_threshold_pct')\"/>%).</p>\n"
+"    <p>Bucket: <code t-out=\"object.s3_bucket\"/></p>\n"
+"    <p>Para dejar de recibir estos avisos, sube la cuota, baja el\n"
+"        umbral a <code>-1</code> (desactivado) o mueve objetos fuera\n"
+"        del bucket.</p>\n"
+"    <p>Este aviso no se repetirá en al menos 7 días mientras el uso\n"
+"        siga por encima del umbral.</p>\n"
+"</div>\n"
+"        "
 
 #. module: incubacloud
 #. odoo-python
@@ -337,9 +391,23 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__alert_email
+msgid "Alert Email"
+msgstr "Email de aviso"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "Alert History"
 msgstr "Historial de alertas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__alert_threshold_pct
+msgid "Alert Threshold (%)"
+msgstr "Umbral de aviso (%)"
 
 #. module: incubacloud
 #. odoo-python
@@ -678,6 +746,12 @@ msgid "Backend connection test failed"
 msgstr "Falló la prueba de conexión con el backend"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid "Backend is missing bucket or credentials."
+msgstr "El backend no tiene bucket o credenciales configurados."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Backend name is required"
@@ -755,6 +829,12 @@ msgid "Backup Type"
 msgstr "Tipo de backup"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Backup Usage Alerts"
+msgstr "Avisos de uso del backup"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__backup_backend_id
 msgid "Backup backend for this instance. Overrides the project default."
 msgstr ""
@@ -778,6 +858,15 @@ msgstr "La restauración de backup solo es compatible con producción."
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Backup scan failed."
 msgstr "Falló el escaneo de backups."
+
+#. module: incubacloud
+#: model:mail.template,subject:incubacloud.mail_template_backup_usage_alert
+msgid ""
+"Backup storage at {{ ctx.get('backup_alert_pct_used') }}% — {{ object.name "
+"}}"
+msgstr ""
+"Almacenamiento de backup al {{ ctx.get('backup_alert_pct_used') }}% — {{ "
+"object.name }}"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1471,6 +1560,12 @@ msgid "Content of the traefik.yml file."
 msgstr "Contenido del archivo traefik.yml."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Contents"
+msgstr "Contenido"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__apt_dependencies
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__apt_dependencies
 msgid "Contents written to odoo/custom/dependencies/apt.txt on deploy."
@@ -1547,7 +1642,6 @@ msgstr "Crear backend"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Create Backup"
 msgstr "Crear backup"
@@ -1575,12 +1669,6 @@ msgstr "Crear instancia"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Create Project"
 msgstr "Crear proyecto"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
-msgid "Create a backup? This may take several minutes."
-msgstr "¿Crear una copia de seguridad? Esto puede tardar varios minutos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1705,6 +1793,12 @@ msgid "Critical"
 msgstr "Crítico"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Current Usage"
+msgstr "Uso actual"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__custom_backup_dst
 msgid "Custom Backup Destination"
 msgstr "Destino de backup personalizado"
@@ -1725,6 +1819,14 @@ msgstr ""
 "El directorio remoto personalizado '%(path)s' no es válido. Use solo letras,"
 " dígitos, puntos, guiones y guiones bajos en cada segmento. Sin '..', "
 "espacios o metacaracteres de shell."
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "DB + filestore"
+msgstr "BD + filestore"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__db_cpus
@@ -1757,6 +1859,14 @@ msgstr "Usuario de BD"
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "DB only"
+msgstr "Solo BD"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Database"
 msgstr "Base de datos"
@@ -1770,11 +1880,21 @@ msgid "Date"
 msgstr "Fecha"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__date_done
+msgid "Date Done"
+msgstr "Fecha de finalización"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Default Backup Backend"
 msgstr "Backend de backup por defecto"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__default_backup_alert_threshold_pct
+msgid "Default backup alert threshold (%)"
+msgstr "Umbral por defecto de avisos de backup (%)"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__backup_backend_id
@@ -1788,6 +1908,40 @@ msgstr ""
 msgid "Default language installed when deploying instances in this project."
 msgstr ""
 "Idioma por defecto instalado al desplegar instancias en este proyecto."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"Default percentage at which an email alert is sent when a\n"
+"                                    backup backend approaches its quota. Each backend can override\n"
+"                                    this on its own Usage tab (set the backend's threshold to 0\n"
+"                                    to inherit this value, -1 to disable, or 1–100 for an explicit\n"
+"                                    percentage)."
+msgstr ""
+"Porcentaje por defecto al que se envía un aviso por email cuando un backend "
+"de backup se acerca a su cuota. Cada backend puede sobrescribir esto en su "
+"propia pestaña Uso (pon el umbral del backend a 0 para heredar este valor, "
+"-1 para desactivar, o 1–100 para un porcentaje explícito)."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__default_backup_alert_threshold_pct
+msgid ""
+"Default percentage at which an email alert is sent when a backup backend's "
+"usage approaches its quota. Per-backend overrides win — set the backend's "
+"own threshold to 0 to inherit this value, -1 to disable, or 1–100 for an "
+"explicit value."
+msgstr ""
+"Porcentaje por defecto al que se envía un aviso por email cuando el uso de "
+"un backend de backup se acerca a su cuota. Las sobrescrituras por backend "
+"mandan — pon el umbral propio del backend a 0 para heredar este valor, -1 "
+"para desactivarlo, o 1–100 para un valor explícito."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Default threshold (%)"
+msgstr "Umbral por defecto (%)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2119,12 +2273,6 @@ msgstr "Descargar"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Download Latest Backup"
-msgstr "Descargar último backup"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Download a database dump"
 msgstr "Descargar un dump de la base de datos"
 
@@ -2133,12 +2281,6 @@ msgstr "Descargar un dump de la base de datos"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Download failed."
 msgstr "Descarga fallida."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Download latest backup"
-msgstr "Descargar último backup"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2503,6 +2645,12 @@ msgstr "Error al cargar usuarios."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Failed to measure usage."
+msgstr "Fallo al medir el uso."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Failed to open terminal."
 msgstr "Error al abrir terminal."
@@ -2603,6 +2751,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Faster, smaller file. Enough for testing/troubleshooting."
 msgstr "Archivo más pequeño y rápido. Suficiente para pruebas / diagnóstico."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Faster, smaller. Enough for testing/debugging schema."
+msgstr "Más rápido y ligero. Suficiente para pruebas/debug del esquema."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2761,6 +2915,38 @@ msgstr "Nombre completo del repositorio (owner/repo) del PR."
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Full setup"
 msgstr "Configuración completa"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "GB"
+msgstr "GB"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid ""
+"GB\n"
+"                                                ("
+msgstr ""
+"GB\n"
+"                                                ("
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
+msgid ""
+"GB\n"
+"                                ("
+msgstr ""
+"GB\n"
+"                                ("
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "GB /"
+msgstr "GB /"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3240,6 +3426,12 @@ msgid "Includes attachments. Larger file."
 msgstr "Incluye los adjuntos. Archivo más grande."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Includes attachments. Larger file. Restorable as-is."
+msgstr "Incluye adjuntos. Archivo más grande. Restaurable tal cual."
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_backup__backup_type__incremental
 msgid "Incremental"
 msgstr "Incremental"
@@ -3269,6 +3461,11 @@ msgstr ""
 "                                        preconfigurada con los permisos y URL de webhook correctos.\n"
 "                                        La aplicación se creará en tu cuenta de GitHub — luego puedes\n"
 "                                        instalarla en cualquier organización que administres."
+
+#. module: incubacloud
+#: model:mail.template,name:incubacloud.mail_template_backup_usage_alert
+msgid "IncubaCloud: Backup backend approaching quota"
+msgstr "IncubaCloud: Backend de backup cercano a la cuota"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3727,6 +3924,11 @@ msgid "Language installed via odoo -i base -l <code> on first deploy."
 msgstr "Idioma instalado via odoo -i base -l <code> en el primer despliegue."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__last_alert_sent_at
+msgid "Last Alert Sent At"
+msgstr "Último aviso enviado"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_auto_rebuild
 msgid "Last Auto-Rebuild"
 msgstr "Última auto-reconstrucción"
@@ -3735,6 +3937,16 @@ msgstr "Última auto-reconstrucción"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_health_check
 msgid "Last Health Check"
 msgstr "Última verificación de salud"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__last_measured_gb
+msgid "Last Measured (GB)"
+msgstr "Último medido (GB)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__last_measured_at
+msgid "Last Measured At"
+msgstr "Última medición"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_rebuild_fingerprint
@@ -3813,6 +4025,12 @@ msgstr "Última verificación"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Last deploy"
 msgstr "Último despliegue"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Last measured:"
+msgstr "Última medición:"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4052,6 +4270,11 @@ msgstr ""
 "defecto (300)."
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_measure_backup_usage_ir_actions_server
+msgid "Measure Backup Backend Usage"
+msgstr "Medir uso de backends de backup"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__member_ids
@@ -4153,6 +4376,12 @@ msgstr "Red"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Neutralized database dump"
 msgstr "Dump neutralizado de la base de datos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Never measured yet — the daily cron will catch this up."
+msgstr "Aún no se ha medido — el cron diario lo actualizará."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4463,6 +4692,26 @@ msgid "No token returned from instance"
 msgstr "No se recibió token de la instancia"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance_backup__size
+msgid ""
+"Non-production: the attached ZIP size, captured at create time. Production: "
+"total bytes of the duplicity files for this backup set, populated by the "
+"backup_list job via boto3 listing of the S3 backend."
+msgstr ""
+"No-producción: tamaño del ZIP adjunto, capturado al crearlo. Producción: "
+"bytes totales de los ficheros duplicity de este set de backup, rellenado por"
+" el job backup_list mediante listado boto3 del backend S3."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance_backup__with_filestore
+msgid ""
+"Non-production: whether the ZIP includes the filestore. Production rows "
+"ignore this — duplicity always backs up database + filestore as a chain."
+msgstr ""
+"No-producción: si el ZIP incluye el filestore. En producción se ignora — "
+"duplicity siempre respalda la base de datos + filestore como una cadena."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
@@ -4734,6 +4983,15 @@ msgid "Optional description"
 msgstr "Descripción opcional"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__alert_email
+msgid ""
+"Optional override of the recipient for usage alerts. Falls back to "
+"``Notification To`` if empty."
+msgstr ""
+"Sobrescritura opcional del destinatario para los avisos de uso. Si está "
+"vacío, usa el campo ``Notificación a``."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__job_id
 msgid "Originating Job"
 msgstr "Tarea originante"
@@ -4922,6 +5180,15 @@ msgstr "Carga"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Pending"
 msgstr "Pendiente"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__alert_threshold_pct
+msgid ""
+"Per-backend override of the system-wide default alert threshold. 0 = inherit"
+" from settings; -1 = disabled; 1–100 = explicit percentage."
+msgstr ""
+"Sobrescritura por backend del umbral por defecto del sistema. 0 = heredar de"
+" ajustes; -1 = desactivado; 1–100 = porcentaje explícito."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__instance_backup_dst
@@ -5256,6 +5523,13 @@ msgstr "En cola"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__quota_gb
+msgid "Quota (GB)"
+msgstr "Cuota (GB)"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid "RAM"
@@ -5394,6 +5668,18 @@ msgstr "Actualizar"
 #: model:ir.actions.server,name:incubacloud.cron_refresh_backup_list_ir_actions_server
 msgid "Refresh Backup Lists (daily)"
 msgstr "Actualizar listas de backup (diario)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Refresh now"
+msgstr "Actualizar ahora"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Refreshing…"
+msgstr "Actualizando…"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__remote_folder
@@ -5684,10 +5970,22 @@ msgstr "En ejecución"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Runs"
+msgstr "Ejecuciones"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__backend_type__s3
 msgid "S3 Compatible"
 msgstr "Compatible con S3"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "S3 chain"
+msgstr "Cadena S3"
 
 #. module: incubacloud
 #. odoo-python
@@ -5842,6 +6140,12 @@ msgstr "Guardar"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Save changes"
 msgstr "Guardar cambios"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Save the backend first to start measuring usage."
+msgstr "Guarda primero el backend para empezar a medir el uso."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6129,10 +6433,24 @@ msgid "Size"
 msgstr "Tamaño"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__size
+msgid "Size (bytes)"
+msgstr "Tamaño (bytes)"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Skip"
 msgstr "Omitir"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__quota_gb
+msgid ""
+"Soft cap used for alert calculations. Set to 0 to disable quota tracking "
+"(usage is still measured for display)."
+msgstr ""
+"Tope blando usado para el cálculo de avisos. Pon 0 para desactivar el "
+"seguimiento de cuota (el uso se sigue midiendo para mostrarlo)."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__source
@@ -6170,6 +6488,12 @@ msgstr "Iniciar"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Start instance"
 msgstr "Iniciar instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Starting…"
+msgstr "Iniciando…"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6512,6 +6836,18 @@ msgstr "Contraseña del panel Traefik"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Triggers a duplicity backup to S3. The chain is incremental:\n"
+"                        full once a week, incrementals in between.\n"
+"                        A backup_list job runs right after to refresh the table below."
+msgstr ""
+"Lanza un backup de duplicity a S3. La cadena es incremental: una completa "
+"por semana e incrementales en el medio. Después se ejecuta un job "
+"backup_list para refrescar la tabla siguiente."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Trust SSH Key"
 msgstr "Confiar clave SSH"
@@ -6591,6 +6927,12 @@ msgstr "Error inesperado durante la prueba."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Unexpected error measuring usage."
+msgstr "Error inesperado al medir el uso."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Unfreeze all"
@@ -6657,9 +6999,33 @@ msgid "Uploading…"
 msgstr "Subiendo…"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Usage"
+msgstr "Uso"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__usage_ratio
 msgid "Usage Ratio"
 msgstr "Ratio de uso"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid "Usage measurement failed"
+msgstr "Fallo en la medición de uso"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
+msgid "Usage refreshed."
+msgstr "Uso actualizado."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Usage:"
+msgstr "Uso:"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6906,6 +7272,11 @@ msgid "Window Start"
 msgstr "Inicio de ventana"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__with_filestore
+msgid "With Filestore"
+msgstr "Con Filestore"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "With filestore"
@@ -7045,6 +7416,12 @@ msgid "click-odoo"
 msgstr "click-odoo"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "click-odoo-backupdb"
+msgstr "click-odoo-backupdb"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__traefik_config_yml
 msgid "config.yml"
 msgstr "config.yml"
@@ -7106,6 +7483,12 @@ msgstr "example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "expires in 2 hours"
+msgstr "expira en 2 horas"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "ghp_xxxxxxxxxxxx"
 msgstr "ghp_xxxxxxxxxxxx"
@@ -7145,6 +7528,14 @@ msgstr "https://s3.us-east-1.amazonaws.com"
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "imported"
 msgstr "imported"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"in the odoo container.\n"
+"                        The ZIP is attached to this list and"
+msgstr "en el contenedor de odoo. El ZIP se adjunta a esta lista y"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7225,6 +7616,12 @@ msgstr "odoo shell --no-http"
 #: code:addons/incubacloud/static/src/components/truncation_banner/truncation_banner.xml:0
 msgid "of"
 msgstr "de"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "ops@example.com"
+msgstr "ops@example.com"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7365,6 +7762,12 @@ msgstr "— por defecto (en_US) —"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "— falls back to Notification To"
+msgstr "— recurre a Notificación a si está vacío"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "— for production instances"
 msgstr "— para instancias de producción"
@@ -7408,6 +7811,13 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "— select host —"
 msgstr "— seleccionar host —"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "— set a quota below to see a % bar and enable alerts."
+msgstr ""
+"— configura una cuota abajo para ver la barra de % y activar los avisos."
 
 #. module: incubacloud
 #. odoo-javascript

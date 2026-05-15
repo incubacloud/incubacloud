@@ -59,4 +59,20 @@ export class BackupBackendsList extends Component {
     newBackend() {
         this.env.navigate("new_backup_backend");
     }
+
+    usagePctOf(b) {
+        const q = parseFloat(b.quota_gb) || 0;
+        if (q <= 0) return 0;
+        return Math.min(100, ((b.last_measured_gb || 0) / q) * 100);
+    }
+
+    // List rows don't carry per-backend threshold or the settings default,
+    // so the bar uses a fixed 80% threshold for colour. The detail page
+    // shows the precise per-backend threshold once opened.
+    usageBandOf(b) {
+        const pct = this.usagePctOf(b);
+        if (pct >= 80) return "danger";
+        if (pct >= 60) return "warning";
+        return "ok";
+    }
 }

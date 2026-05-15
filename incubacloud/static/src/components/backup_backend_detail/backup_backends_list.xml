@@ -60,6 +60,20 @@
                             </t>
                         </div>
 
+                        <!-- Usage bar (only when both quota and a measurement exist) -->
+                        <t t-if="b.quota_gb &gt; 0">
+                            <div class="ic-host-meta" style="font-size:12px; color:#94A3B8;">
+                                <t t-out="b.last_measured_gb.toFixed(2)"/> /
+                                <t t-out="b.quota_gb"/> GB
+                                (<t t-out="usagePctOf(b).toFixed(0)"/>%)
+                            </div>
+                            <div class="ic-usage-gauge-compact"
+                                 t-att-data-band="usageBandOf(b)">
+                                <div class="ic-usage-gauge-bar"
+                                     t-att-style="'width:' + usagePctOf(b) + '%'"/>
+                            </div>
+                        </t>
+
                         <!-- Instance count -->
                         <div class="ic-host-footer-meta">
                             <span class="ic-instances">
