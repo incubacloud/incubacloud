@@ -67,12 +67,19 @@ export class BackupBackendsList extends Component {
     }
 
     // List rows don't carry per-backend threshold or the settings default,
-    // so the bar uses a fixed 80% threshold for colour. The detail page
-    // shows the precise per-backend threshold once opened.
-    usageBandOf(b) {
+    // so the bar uses fixed bands matching the host card (warn 65, danger 85).
+    // The detail page shows the precise per-backend threshold once opened.
+    barClassOf(b) {
         const pct = this.usagePctOf(b);
-        if (pct >= 80) return "danger";
-        if (pct >= 60) return "warning";
-        return "ok";
+        if (!pct) return "bar-empty";
+        if (pct >= 85) return "bar-danger";
+        if (pct >= 65) return "bar-warn";
+        return "bar-ok";
+    }
+
+    usageExtraOf(b) {
+        const used = Number(b.last_measured_gb || 0);
+        const quota = Number(b.quota_gb || 0);
+        return `${used.toFixed(2)} / ${quota} GB`;
     }
 }

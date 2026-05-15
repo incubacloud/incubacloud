@@ -60,19 +60,34 @@
                             </t>
                         </div>
 
-                        <!-- Usage bar (only when both quota and a measurement exist) -->
-                        <t t-if="b.quota_gb &gt; 0">
-                            <div class="ic-host-meta" style="font-size:12px; color:#94A3B8;">
-                                <t t-out="b.last_measured_gb.toFixed(2)"/> /
-                                <t t-out="b.quota_gb"/> GB
-                                (<t t-out="usagePctOf(b).toFixed(0)"/>%)
-                            </div>
-                            <div class="ic-usage-gauge-compact"
-                                 t-att-data-band="usageBandOf(b)">
-                                <div class="ic-usage-gauge-bar"
-                                     t-att-style="'width:' + usagePctOf(b) + '%'"/>
-                            </div>
-                        </t>
+                        <!-- Usage bar (only when quota is set; without quota there is no % to draw) -->
+                        <div class="ic-host-metrics">
+                            <t t-if="b.quota_gb &gt; 0">
+                                <div class="ic-host-metric">
+                                    <span class="ic-metric-label">Usage</span>
+                                    <div class="ic-bar">
+                                        <div t-att-class="'ic-bar-fill ' + barClassOf(b)"
+                                             t-att-style="'width:' + usagePctOf(b) + '%'"/>
+                                    </div>
+                                    <div class="ic-metric-right">
+                                        <span class="ic-metric-value">
+                                            <t t-out="usagePctOf(b).toFixed(0)"/>%
+                                        </span>
+                                        <span class="ic-metric-extra" t-esc="usageExtraOf(b)"/>
+                                    </div>
+                                </div>
+                            </t>
+                            <t t-else="">
+                                <div class="ic-metrics-placeholder">
+                                    <t t-if="b.last_measured_gb &gt; 0">
+                                        <t t-out="b.last_measured_gb.toFixed(2)"/> GB used — set a quota to track %
+                                    </t>
+                                    <t t-else="">
+                                        No usage measured yet
+                                    </t>
+                                </div>
+                            </t>
+                        </div>
 
                         <!-- Instance count -->
                         <div class="ic-host-footer-meta">
