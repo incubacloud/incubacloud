@@ -155,6 +155,10 @@ export class Settings extends Component {
         this.state.form[field] = ev.target.value;
     }
 
+    onIntInput(field, ev) {
+        this.state.form[field] = parseInt(ev.target.value, 10) || 0;
+    }
+
     createOnGitHub() {
         window.location.href = "/cloud/github/setup";
     }

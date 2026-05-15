@@ -178,14 +178,14 @@
                                 <label>Quota (GB)</label>
                                 <input type="number" min="0" step="1"
                                        t-att-value="state.form.quota_gb"
-                                       t-on-change="(ev) => { state.form.quota_gb = parseFloat(ev.target.value) || 0; }"/>
+                                       t-on-change="onQuotaInput"/>
                                 <span class="ic-form-note">0 = no quota (usage still tracked).</span>
                             </div>
                             <div class="ic-form-row">
                                 <label>Alert Threshold (%)</label>
                                 <input type="number" min="-1" max="100" step="1"
                                        t-att-value="state.form.alert_threshold_pct"
-                                       t-on-change="(ev) => { state.form.alert_threshold_pct = parseInt(ev.target.value) || 0; }"/>
+                                       t-on-change="onThresholdInput"/>
                                 <span class="ic-form-note">0 = inherit settings default; -1 = disabled; 1–100 = explicit.</span>
                             </div>
                             <div class="ic-form-row ic-form-row-full">
