@@ -1078,12 +1078,16 @@ class CrudMixin:
                 ICP.get_param('incubacloud.audit_log_retention_days', '90') or 90
             ),
             'job_log_retention_days': settings.job_log_retention_days or 0,
+            'default_backup_alert_threshold_pct': (
+                settings.default_backup_alert_threshold_pct or 0
+            ),
         }
 
     @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
     def cloud_save_general_settings(
         self, autoassign_enabled=False, default_backup_backend_id=None,
         audit_log_retention_days=90, job_log_retention_days=30,
+        default_backup_alert_threshold_pct=80,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1114,10 +1118,16 @@ class CrudMixin:
             'incubacloud.audit_log_retention_days',
             str(max(0, _safe_int(audit_log_retention_days, 90))),
         )
+        # Clamp to 0–100; 0 falls through to "no alerts by default" in the
+        # backend's threshold-resolution logic so it's a safe lower bound.
+        threshold = max(0, min(100, _safe_int(
+            default_backup_alert_threshold_pct, 80,
+        )))
         request.env['cloud.settings'].sudo()._get().write({
             'job_log_retention_days': max(
                 0, _safe_int(job_log_retention_days, 30),
             ),
+            'default_backup_alert_threshold_pct': threshold,
         })
         return {'ok': True}
 

@@ -32,6 +32,7 @@ export class Settings extends Component {
                 default_backup_backend_id: null,
                 audit_log_retention_days: 90,
                 job_log_retention_days: 30,
+                default_backup_alert_threshold_pct: 80,
                 // GitHub
                 app_id: "",
                 installation_id: "",
@@ -125,6 +126,7 @@ export class Settings extends Component {
             this.state.form.default_backup_backend_id = general.default_backup_backend_id || null;
             this.state.form.audit_log_retention_days = general.audit_log_retention_days ?? 90;
             this.state.form.job_log_retention_days = general.job_log_retention_days ?? 30;
+            this.state.form.default_backup_alert_threshold_pct = general.default_backup_alert_threshold_pct ?? 80;
             this.state.backupBackends = backends?.items || backends || [];
             this._savedForm = JSON.stringify(this.state.form);
         } catch {
@@ -181,6 +183,7 @@ export class Settings extends Component {
                 default_backup_backend_id: this.state.form.default_backup_backend_id,
                 audit_log_retention_days: this.state.form.audit_log_retention_days,
                 job_log_retention_days: this.state.form.job_log_retention_days,
+                default_backup_alert_threshold_pct: this.state.form.default_backup_alert_threshold_pct,
             });
         } catch {
             errors.push(_t("General settings"));

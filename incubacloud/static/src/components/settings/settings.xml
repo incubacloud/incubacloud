@@ -129,6 +129,30 @@
                         </div>
                     </div>
 
+                    <div class="ic-settings-section">
+                        <div class="ic-settings-section-header">
+                            <div>
+                                <h2 class="ic-settings-section-title">Backup Usage Alerts</h2>
+                                <p class="ic-settings-section-desc">
+                                    Default percentage at which an email alert is sent when a
+                                    backup backend approaches its quota. Each backend can override
+                                    this on its own Usage tab (set the backend's threshold to 0
+                                    to inherit this value, -1 to disable, or 1–100 for an explicit
+                                    percentage).
+                                </p>
+                            </div>
+                        </div>
+                        <div class="ic-form-grid">
+                            <div class="ic-form-row">
+                                <label>Default threshold (%)</label>
+                                <input type="number" min="0" max="100" class="filter-input"
+                                       style="width:120px;"
+                                       t-att-value="state.form.default_backup_alert_threshold_pct"
+                                       t-on-change="(ev) => { state.form.default_backup_alert_threshold_pct = parseInt(ev.target.value) || 0; }"/>
+                            </div>
+                        </div>
+                    </div>
+
                 </t>
 
 

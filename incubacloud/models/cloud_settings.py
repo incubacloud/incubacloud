@@ -110,6 +110,22 @@ class CloudSettings(models.Model):
              'SESSION_TIMEOUT.',
     )
 
+    # ── Backup usage alert default ────────────────────────────────────────
+    # Per-backend ``alert_threshold_pct`` can opt in (1–100), opt out
+    # (-1 = disabled), or inherit (0 = use this default). This system-wide
+    # default keeps the per-backend form short for the common case while
+    # still letting an operator dial it per backend when needed.
+
+    default_backup_alert_threshold_pct = fields.Integer(
+        string='Default backup alert threshold (%)',
+        default=80,
+        help='Default percentage at which an email alert is sent when a '
+             "backup backend's usage approaches its quota. Per-backend "
+             "overrides win — set the backend's own threshold to 0 to "
+             'inherit this value, -1 to disable, or 1–100 for an explicit '
+             'value.',
+    )
+
     # ── Singleton constraint ───────────────────────────────────────────────
 
     @api.constrains("github_pat")

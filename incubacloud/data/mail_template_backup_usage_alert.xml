@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!--
+        Sent by ``cloud.backup.backend._maybe_send_threshold_alert`` when a
+        backend's measured usage crosses its alert threshold. The Python
+        side passes ``backup_alert_pct_used`` and
+        ``backup_alert_threshold_pct`` via context so the template can
+        render the actual numbers without recomputing.
+    -->
+    <record id="mail_template_backup_usage_alert" model="mail.template">
+        <field name="name">IncubaCloud: Backup backend approaching quota</field>
+        <field name="model_id" ref="model_cloud_backup_backend"/>
+        <field name="subject">Backup storage at {{ ctx.get('backup_alert_pct_used') }}% — {{ object.name }}</field>
+        <field name="email_from">{{ object.email_from or user.email or user.company_id.email or '' }}</field>
+        <field name="body_html" type="html">
+<div>
+    <p>Hello,</p>
+    <p>The backup backend
+        <strong t-out="object.name"/>
+        is currently at
+        <strong><t t-out="ctx.get('backup_alert_pct_used')"/>%</strong>
+        of its configured quota
+        (<t t-out="round(object.last_measured_gb, 2)"/> GB used of
+        <t t-out="object.quota_gb"/> GB quota; alert threshold is
+        <t t-out="ctx.get('backup_alert_threshold_pct')"/>%).</p>
+    <p>Bucket: <code t-out="object.s3_bucket"/></p>
+    <p>To stop receiving these alerts, raise the quota, lower the
+        threshold to <code>-1</code> (disabled), or move objects out
+        of the bucket.</p>
+    <p>This alert will not re-fire for at least 7 days while usage
+        remains above the threshold.</p>
+</div>
+        </field>
+    </record>
+
+</odoo>
