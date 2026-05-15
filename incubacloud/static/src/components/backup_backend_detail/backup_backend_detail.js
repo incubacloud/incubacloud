@@ -185,6 +185,14 @@ export class BackupBackendDetail extends Component {
 
     }
 
+    onQuotaInput(ev) {
+        this.state.form.quota_gb = parseFloat(ev.target.value) || 0;
+    }
+
+    onThresholdInput(ev) {
+        this.state.form.alert_threshold_pct = parseInt(ev.target.value, 10) || 0;
+    }
+
     onPasswordChange(field, value) {
         this.state.form[field] = value;
 

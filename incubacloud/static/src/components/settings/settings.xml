@@ -95,7 +95,7 @@
                                     <input type="number" min="0" class="filter-input"
                                            style="width:120px;"
                                            t-att-value="state.form.audit_log_retention_days"
-                                           t-on-change="(ev) => { state.form.audit_log_retention_days = parseInt(ev.target.value) || 0; }"/>
+                                           t-on-change="(ev) => this.onIntInput('audit_log_retention_days', ev)"/>
                                     <button class="ic-btn ic-btn-secondary ic-audit-purge-btn"
                                             t-att-disabled="state.auditPurging"
                                             t-on-click="purgeAuditLogs">
@@ -124,7 +124,7 @@
                                 <input type="number" min="0" class="filter-input"
                                        style="width:120px;"
                                        t-att-value="state.form.job_log_retention_days"
-                                       t-on-change="(ev) => { state.form.job_log_retention_days = parseInt(ev.target.value) || 0; }"/>
+                                       t-on-change="(ev) => this.onIntInput('job_log_retention_days', ev)"/>
                             </div>
                         </div>
                     </div>
@@ -148,7 +148,7 @@
                                 <input type="number" min="0" max="100" class="filter-input"
                                        style="width:120px;"
                                        t-att-value="state.form.default_backup_alert_threshold_pct"
-                                       t-on-change="(ev) => { state.form.default_backup_alert_threshold_pct = parseInt(ev.target.value) || 0; }"/>
+                                       t-on-change="(ev) => this.onIntInput('default_backup_alert_threshold_pct', ev)"/>
                             </div>
                         </div>
                     </div>
