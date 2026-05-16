@@ -245,7 +245,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             "domains_test": domains_test,
             "smtp_relay_host": inst.smtp_relay_host or "",
             "smtp_relay_port": inst.smtp_relay_port or 587,
-            "smtp_relay_version": "13",
+            "smtp_relay_version": "latest",
             "smtp_relay_user": inst.smtp_relay_user or "",
             "smtp_relay_password": inst.smtp_relay_password or "",
             "smtp_default_from": inst.smtp_relay_user or inst.odoo_admin_email or "",
