@@ -2,12 +2,14 @@ import { Component, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
 import { parseUTC } from "../../utils/dates";
+import { SearchSelect } from "../search_select/search_select";
 
 const ALL_STATES = ["pending", "enqueued", "wait_dependencies", "started", "done", "failed", "cancelled"];
 const ACTIVE_STATES = ["pending", "enqueued", "wait_dependencies", "started"];
 
 export class JobHistory extends Component {
     static template = "incubacloud.JobHistory";
+    static components = { SearchSelect };
     static props = {
         job_id: { type: [Number, Boolean], optional: true },
         instance_id: { type: [Number, Boolean], optional: true },
@@ -22,6 +24,7 @@ export class JobHistory extends Component {
         this.state = useState({
             jobs: [],
             hosts: [],
+            instances: [],
             users: [],
             loading: true,
             alertMode: !!jobId,
@@ -50,8 +53,35 @@ export class JobHistory extends Component {
         const result = await this.orm.call("cloud.job", "load_history", [filters]);
         this.state.jobs = result.jobs;
         this.state.hosts = result.hosts;
+        this.state.instances = result.instances || [];
         this.state.users = result.users || [];
         this.state.loading = false;
+    }
+
+    // ───────────── SearchSelect options ─────────────
+
+    get hostOptions() {
+        return this.state.hosts.map(h => ({ value: h.id, label: h.name }));
+    }
+
+    get instanceOptions() {
+        return this.state.instances.map(i => ({ value: i.id, label: i.name }));
+    }
+
+    get userOptions() {
+        return this.state.users.map(u => ({ value: u.id, label: u.name }));
+    }
+
+    setHost(value) {
+        this.state.filter.host_id = value ? parseInt(value) : null;
+    }
+
+    setInstance(value) {
+        this.state.filter.instance_id = value ? parseInt(value) : null;
+    }
+
+    setUser(value) {
+        this.state.filter.user_id = value ? parseInt(value) : null;
     }
 
     _buildFilters() {
@@ -92,6 +122,10 @@ export class JobHistory extends Component {
         this.loadHistory();
     }
 
+    resetFilter() {
+        this.resetFilters();
+    }
+
     // ───────────── Filters ─────────────
 
     toggleState(s) {
@@ -111,27 +145,9 @@ export class JobHistory extends Component {
         this.loadHistory();
     }
 
-    resetFilter() {
-        this.state.filter.states = [];
-        this.state.filter.host_id = null;
-        this.state.filter.user_id = null;
-        this.state.filter.date_from = "";
-        this.state.filter.date_to = "";
-        this.state.filter.job_category = "operational";
-        this.loadHistory();
-    }
-
     setCategory(cat) {
         this.state.filter.job_category = cat;
         this.loadHistory();
-    }
-
-    onHostChange(ev) {
-        this.state.filter.host_id = ev.target.value ? parseInt(ev.target.value) : null;
-    }
-
-    onUserChange(ev) {
-        this.state.filter.user_id = ev.target.value ? parseInt(ev.target.value) : null;
     }
 
     onDateFromChange(ev) {

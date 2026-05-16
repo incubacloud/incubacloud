@@ -146,6 +146,14 @@
 .filter-select { min-width: 140px; }
 .filter-input  { min-width: 170px; }
 
+.filter-group-search {
+    flex: 1 1 0;
+    min-width: 0;
+
+    .ic-search-select { min-width: 140px; }
+    .filter-label { width: auto; flex-shrink: 0; }
+}
+
 .btn-apply {
     background: $primary-blue;
     border: none;

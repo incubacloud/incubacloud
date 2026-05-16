@@ -51,34 +51,38 @@
             </div>
         </div>
 
-        <!-- Host + dates -->
+        <!-- Host + Instance + User -->
         <div class="filter-row">
-            <div class="filter-group">
+            <div class="filter-group filter-group-search">
                 <span class="filter-label">Host</span>
-                <select class="filter-select" t-on-change="onHostChange">
-                    <option value="">All hosts</option>
-                    <t t-foreach="state.hosts" t-as="h" t-key="h.id">
-                        <option t-att-value="h.id"
-                                t-att-selected="state.filter.host_id == h.id">
-                            <t t-esc="h.name"/>
-                        </option>
-                    </t>
-                </select>
+                <SearchSelect options="hostOptions"
+                              value="state.filter.host_id"
+                              onChange.bind="setHost"
+                              placeholder="'All hosts'"
+                              emptyLabel="'All hosts'"/>
             </div>
 
-            <div class="filter-group" t-if="state.users.length > 1">
+            <div class="filter-group filter-group-search">
+                <span class="filter-label">Instance</span>
+                <SearchSelect options="instanceOptions"
+                              value="state.filter.instance_id"
+                              onChange.bind="setInstance"
+                              placeholder="'All instances'"
+                              emptyLabel="'All instances'"/>
+            </div>
+
+            <div class="filter-group filter-group-search" t-if="state.users.length > 1">
                 <span class="filter-label">User</span>
-                <select class="filter-select" t-on-change="onUserChange">
-                    <option value="">All users</option>
-                    <t t-foreach="state.users" t-as="u" t-key="u.id">
-                        <option t-att-value="u.id"
-                                t-att-selected="state.filter.user_id == u.id">
-                            <t t-esc="u.name"/>
-                        </option>
-                    </t>
-                </select>
+                <SearchSelect options="userOptions"
+                              value="state.filter.user_id"
+                              onChange.bind="setUser"
+                              placeholder="'All users'"
+                              emptyLabel="'All users'"/>
             </div>
+        </div>
 
+        <!-- Dates -->
+        <div class="filter-row">
             <div class="filter-group">
                 <span class="filter-label">From</span>
                 <input type="datetime-local" class="filter-input"
