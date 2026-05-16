@@ -1,5 +1,19 @@
 .ic-hidden { display: none !important; }
 
+// Force dark color-scheme on the entire cloud SPA page. The cloud bundle is
+// only served on `/cloud/...` routes, so this never leaks into Odoo's
+// backend (which expects light). Setting it on `:root` ensures every native
+// widget the page can render — calendar/time popups, autofill panels, the
+// `<select>` dropdown, the scrollbars — uses Chromium's dark variant instead
+// of the OS default. Stacked on body + .ic-app for resilience against any
+// future ancestor that resets it.
+:root,
+html,
+body,
+.ic-app {
+  color-scheme: dark;
+}
+
 .ic-app {
   display: flex;
   flex-direction: column;
@@ -19,6 +33,31 @@
     &::-webkit-scrollbar-track { background: transparent; }
     &::-webkit-scrollbar-thumb { background: $border; border-radius: 3px; }
   }
+}
+
+// Native date/time inputs across the SPA: paint the editor segments and
+// calendar icon with the project palette. `color-scheme: dark` (above) is
+// what makes the calendar/time POPUP itself render dark — these rules
+// only control the field chrome inside the input.
+.ic-app input[type="date"],
+.ic-app input[type="datetime-local"],
+.ic-app input[type="time"],
+.ic-app input[type="month"],
+.ic-app input[type="week"] {
+  color-scheme: dark; // defensive: also set on the input itself in case the
+                     // input ends up outside .ic-app at runtime (portals).
+  &::-webkit-datetime-edit-fields-wrapper { color: $text-primary; }
+  &::-webkit-datetime-edit-text           { color: $text-secondary; padding: 0 1px; }
+  &::-webkit-datetime-edit-year-field,
+  &::-webkit-datetime-edit-month-field,
+  &::-webkit-datetime-edit-day-field,
+  &::-webkit-datetime-edit-hour-field,
+  &::-webkit-datetime-edit-minute-field,
+  &::-webkit-datetime-edit-ampm-field    { color: $text-primary; }
+  // Empty (placeholder) state — keep readable but visibly secondary.
+  &:not(:focus):invalid::-webkit-datetime-edit { color: $text-secondary; opacity: 0.75; }
+  &::-webkit-calendar-picker-indicator   { cursor: pointer; opacity: 0.7; }
+  &::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 }
 
 // ── Body (below header): sidebar + main ──────────────────────────
