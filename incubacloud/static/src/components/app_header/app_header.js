@@ -126,7 +126,7 @@ export class AppHeader extends Component {
     }
 
     openJobs() {
-        this.env.toggleSlideOver("jobs", this._currentInstanceId());
+        this.env.toggleSlideOver("jobs");
     }
 
     goToAlerts() {

@@ -75,6 +75,19 @@
         z-index: 9999;
         max-height: 220px;
         overflow-y: auto;
+
+        // Match the project's thin scrollbar style
+        scrollbar-width: thin;
+        scrollbar-color: $border transparent;
+
+        &::-webkit-scrollbar { width: 6px; }
+        &::-webkit-scrollbar-track { background: transparent; }
+        &::-webkit-scrollbar-thumb {
+            background: $border;
+            border-radius: 3px;
+
+            &:hover { background: lighten($border, 10%); }
+        }
     }
 
     // ── Options ───────────────────────────────────────────────────────────

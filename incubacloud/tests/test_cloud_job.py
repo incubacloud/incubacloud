@@ -236,6 +236,9 @@ class TestCloudJobFormat(TransactionCase):
         result = self.env['cloud.job'].load_history()
         self.assertIn('jobs', result)
         self.assertIn('hosts', result)
+        self.assertIn('instances', result)
+        self.assertIn('users', result)
+        self.assertIsInstance(result['instances'], list)
 
 
 class TestCloudJobLoadHistoryCategory(TransactionCase):

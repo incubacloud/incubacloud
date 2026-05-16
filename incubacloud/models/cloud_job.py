@@ -690,10 +690,20 @@ class CloudJob(models.Model):
 
         jobs = self.search(domain, order='id desc', limit=200)
         hosts = self.env['cloud.host'].search([], order='name asc')
+        instances = self.env['cloud.instance'].search(
+            [], order='project_id, name asc',
+        )
         user_ids = jobs.mapped('create_uid').sorted('name')
         return {
             'jobs': jobs._format_history(),
             'hosts': [{'id': h.id, 'name': h.name} for h in hosts],
+            'instances': [
+                {
+                    'id': i.id,
+                    'name': f"{i.project_id.name}/{i.name}" if i.project_id else i.name,
+                }
+                for i in instances
+            ],
             'users': [{'id': u.id, 'name': u.name} for u in user_ids],
         }
 
