@@ -28,6 +28,15 @@ class CloudAlert(models.Model):
         string='Conflict Data',
         help='List of pip dependency conflicts: [{name, existing, incoming}]',
     )
+    payload = fields.Json(
+        string='Alert Payload',
+        help=(
+            'Generic structured payload attached to the alert. '
+            'Used by instance_error_logs (deduped log line groups), '
+            'and reserved for any future alert that needs to ship '
+            'structured detail beyond the human-readable message.'
+        ),
+    )
     job_id = fields.Many2one(
         'cloud.job',
         ondelete='set null',

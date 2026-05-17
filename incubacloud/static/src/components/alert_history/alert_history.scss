@@ -155,6 +155,104 @@
     &.ah-state-dismissed { background: rgba($text-secondary,    0.15); color: $text-secondary; }
 }
 
+// ── Error log groups (instance_error_logs payload) ────────────────────────────
+
+.ah-error-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ah-error-toggle {
+    background: transparent;
+    border: none;
+    color: $primary-blue;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 0;
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+
+    &:hover { text-decoration: underline; }
+    i { font-size: 11px; }
+}
+
+.ah-error-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    background: rgba($border, 0.15);
+    border-radius: 6px;
+    max-height: 360px;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar { width: 4px; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+}
+
+.ah-error-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba($border, 0.4);
+
+    &:last-child { border-bottom: none; padding-bottom: 0; }
+}
+
+.ah-error-group-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ah-error-count {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: $state-warning;
+    background: rgba($state-warning, 0.15);
+    padding: 1px 6px;
+    border-radius: 3px;
+    min-width: 32px;
+    text-align: center;
+}
+
+.ah-error-fingerprint {
+    font-family: monospace;
+    font-size: 11px;
+    color: $text-primary;
+    background: rgba($border, 0.25);
+    padding: 2px 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.ah-error-samples {
+    margin: 0;
+    padding: 6px 8px;
+    font-family: monospace;
+    font-size: 11px;
+    line-height: 1.45;
+    color: $text-secondary;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 180px;
+    overflow-y: auto;
+
+    &::-webkit-scrollbar { width: 4px; }
+    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+}
+
 // ── Resolve conflict modal ─────────────────────────────────────────────────────
 
 .ah-resolve-box {

@@ -389,6 +389,7 @@ class CrudMixin:
                 ),
                 'job_id': a.job_id.id,
                 'conflict_data': a.conflict_data or [],
+                'payload': a.payload or None,
                 'instance_id': a.instance_id.id or False,
                 'project_id': (
                     a.instance_id.project_id.id if a.instance_id

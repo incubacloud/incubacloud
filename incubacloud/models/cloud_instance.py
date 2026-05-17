@@ -357,6 +357,25 @@ class CloudInstance(models.Model):
         string='Last Health Check',
         readonly=True,
     )
+    cpu_over_threshold_streak = fields.Integer(
+        default=0,
+        readonly=True,
+        help=(
+            'Consecutive instance_health cycles with CPU above the '
+            'warning threshold. Reset to 0 the moment we read a value '
+            'below threshold. An alert is only raised once the streak '
+            'reaches the configured hysteresis depth.'
+        ),
+    )
+    mem_over_threshold_streak = fields.Integer(
+        default=0,
+        readonly=True,
+        help=(
+            'Consecutive instance_health cycles with memory above the '
+            'warning threshold. Hysteresis counterpart of '
+            'cpu_over_threshold_streak.'
+        ),
+    )
 
     compose_services = fields.Char(
         string='Compose Services',
