@@ -4,8 +4,9 @@ Verifies Traefik template defaults, required fields, and the
 ``_release_external_resources`` lifecycle hook fired before a host
 is archived or unlinked.
 """
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+from odoo import http
 from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase, new_test_user
 
@@ -236,3 +237,136 @@ class TestCloudHostRBACGates(TransactionCase):
             ('details', '=', host_name),
         ])
         self.assertEqual(after - before, 1)
+
+
+class TestCloudDeleteHostRoute(TransactionCase):
+    """``/cloud/delete_host`` no-traefik branch must choose between
+    ``unlink`` (truly empty host) and ``archive`` (host with job
+    history) so the ``cloud.job.host_id`` FK doesn't trip when a host
+    accumulates a job before Traefik is deployed.
+
+    Concrete trigger that motivated the branch: on-demand VPS chain
+    (``tenant_vps_provision → host_hardening → full_setup``) — the
+    provision job succeeds and lands on ``cloud.job`` but the chain
+    breaks before Traefik is deployed, so ``host.traefik_deployed`` is
+    still False while ``cloud_job_count >= 1``. The old ``unlink``
+    branch then violated the FK and the user got the Odoo "Another
+    model is using the record …" pop-up.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Same NOT NULL workaround the wider security suite uses so the
+        # manager test user can be created without tripping on optional
+        # res_partner columns added by side modules.
+        cls.env.cr.execute("""
+            SELECT column_name, data_type
+              FROM information_schema.columns
+             WHERE table_name = 'res_partner'
+               AND is_nullable = 'NO'
+               AND column_default IS NULL
+               AND column_name NOT IN ('id', 'name', 'company_type',
+                                       'type', 'lang', 'active',
+                                       'create_uid', 'write_uid',
+                                       'create_date', 'write_date')
+        """)
+        for col, dtype in cls.env.cr.fetchall():
+            default = "''" if 'char' in dtype or 'text' in dtype else "'no'"
+            cls.env.cr.execute(
+                f'ALTER TABLE res_partner '
+                f'ALTER COLUMN "{col}" SET DEFAULT {default}'
+            )
+
+    def setUp(self):
+        super().setUp()
+        self.manager = new_test_user(
+            self.env, login='host_delete_manager',
+            groups='base.group_user,incubacloud.group_cloud_manager',
+        )
+        self.host = self.env['cloud.host'].create({
+            'name': 'Delete Target',
+            'ip_address': '10.0.0.99',
+            'user': 'ubuntu',
+            'wildcard_domain': 'delete.example.com',
+        })
+        # Ensure the precondition the no-traefik branch reacts to.
+        # ``traefik_deployed`` defaults to False but we make the
+        # assumption explicit so a future model change can't silently
+        # invalidate the tests.
+        self.assertFalse(self.host.traefik_deployed)
+
+    def _invoke_delete(self, host_id):
+        """Drive ``cloud_delete_host`` against the test cursor.
+
+        The route reads ``odoo.http.request`` for env + httprequest; we
+        patch the module-level proxy with a ``MagicMock`` spec'd
+        against the real ``http.Request`` class so any access outside
+        the API surface fails loudly (per project policy on mocks).
+        """
+        from odoo.addons.incubacloud.controllers import data_load
+        from odoo.addons.incubacloud.controllers._data_load import (
+            _routes_crud,
+        )
+        fake_request = MagicMock(spec=http.Request)
+        # Spec'd against the real class so any access outside the
+        # documented API surface fails loudly. The route plus the
+        # RBAC helper only touch ``request.env``; if a future change
+        # starts reading another attribute, this mock raises
+        # ``AttributeError`` and the test points the way.
+        fake_request.env = self.env(user=self.manager)
+        # CrudMixin's ``self._sec()`` and ``request.env`` lookups
+        # resolve via ``odoo.http.request``, the werkzeug LocalProxy.
+        # Patch the proxy globally so the resolution through
+        # ``data_load.request`` and ``_routes_crud.request`` (each its
+        # own module-local import) both land on the fake.
+        ctrl = data_load.CloudDataLoadController()
+        with patch.object(http, 'request', fake_request), \
+                patch.object(data_load, 'request', fake_request), \
+                patch.object(_routes_crud, 'request', fake_request):
+            return ctrl.cloud_delete_host(host_id)
+
+    def test_empty_host_no_traefik_is_unlinked(self):
+        """Truly-empty host (no jobs, no Traefik) takes the unlink
+        fast path — same behaviour as before the F-branch fix."""
+        host_id = self.host.id
+        result = self._invoke_delete(host_id)
+        self.assertEqual(result, {'ok': True})
+        self.assertFalse(
+            self.env['cloud.host'].browse(host_id).exists(),
+            "Empty host must be unlinked, not archived.",
+        )
+
+    def test_host_with_jobs_is_archived_and_preserves_jobs(self):
+        """Host carrying any ``cloud.job`` row must be archived (not
+        unlinked) so the FK stays valid and the job history survives.
+
+        This is the regression for the on-demand VPS path where
+        ``tenant_vps_provision`` succeeded but ``host_hardening`` +
+        ``full_setup`` never ran.
+        """
+        job_type = self.env['cloud.job.type'].sudo().search([], limit=1)
+        self.assertTrue(
+            job_type,
+            "At least one cloud.job.type must be seeded by the module.",
+        )
+        job = self.env['cloud.job'].sudo().create({
+            'name': 'historic provision',
+            'host_id': self.host.id,
+            'job_type_id': job_type.id,
+        })
+
+        host_id = self.host.id
+        result = self._invoke_delete(host_id)
+        self.assertEqual(result, {'ok': True})
+
+        # Host survived the call …
+        survivor = self.env['cloud.host'].browse(host_id)
+        self.assertTrue(survivor.exists())
+        # … and is archived (active=False), matching the deployed
+        # branch's semantics so the SPA hides it from the host list.
+        self.assertFalse(survivor.active)
+        # Job history is preserved verbatim — the whole point of the
+        # archive path over the FK-violating unlink path.
+        self.assertTrue(job.exists())
+        self.assertEqual(job.host_id, survivor)
