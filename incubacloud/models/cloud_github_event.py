@@ -183,6 +183,26 @@ class CloudGitHubEvent(models.Model):
         }
         return json.dumps(stub, separators=(',', ':'))
 
+    def _record_pending_push(self, instance, push_info, reason):
+        """Queue a push that could not trigger an immediate rebuild.
+
+        The resulting ``cloud.instance.pending.push`` rows are surfaced in
+        the instance card and consumed by the next successful rebuild's
+        ``on_success`` hook, which folds them into a coalesced follow-up
+        job so that every push remains traceable end-to-end.
+        """
+        self.ensure_one()
+        self.env['cloud.instance.pending.push'].sudo().create({
+            'instance_id': instance.id,
+            'event_id': self.id,
+            'push_repo': push_info.get('push_repo') or '',
+            'push_branch': push_info.get('push_branch') or '',
+            'push_sha': push_info.get('push_sha') or '',
+            'push_message': push_info.get('push_message') or '',
+            'push_by': push_info.get('push_by') or '',
+            'skip_reason': reason,
+        })
+
     def _process_push_event(self):
         """Process a push webhook — trigger auto-rebuild for matching instances."""
         self.ensure_one()
@@ -236,14 +256,24 @@ class CloudGitHubEvent(models.Model):
         now = fields.Datetime.now()
         triggered = []
 
+        push_info = {
+            'push_repo': repo_short,
+            'push_branch': branch,
+            'push_sha': head_sha,
+            'push_message': head_msg,
+            'push_by': pusher,
+        }
+
         for repo in matched:
             inst = repo.instance_id
             if not (inst.auto_rebuild and inst.deployed and inst.host_id):
                 continue
             if (inst.last_auto_rebuild
                     and (now - inst.last_auto_rebuild) < _AUTO_REBUILD_COOLDOWN):
+                self._record_pending_push(inst, push_info, 'cooldown')
                 _logger.info(
-                    "Auto-rebuild skipped for %s (cooldown)", inst.name,
+                    "Auto-rebuild deferred for %s (cooldown) — push %s queued",
+                    inst.name, head_sha,
                 )
                 continue
             # Skip if there's already a running/pending job for this instance
@@ -254,9 +284,10 @@ class CloudGitHubEvent(models.Model):
                 ('state', 'in', ('pending', 'started')),
             ], limit=1)
             if active_job:
+                self._record_pending_push(inst, push_info, 'active_job')
                 _logger.info(
-                    "Auto-rebuild skipped for %s (job %d already %s)",
-                    inst.name, active_job.id, active_job.state,
+                    "Auto-rebuild deferred for %s (job %d already %s) — push %s queued",
+                    inst.name, active_job.id, active_job.state, head_sha,
                 )
                 continue
             try:
@@ -264,11 +295,7 @@ class CloudGitHubEvent(models.Model):
                     inst.host_id.id, inst.id, 'rebuild_instance',
                     payload={
                         'trigger': 'webhook',
-                        'push_repo': repo_short,
-                        'push_branch': branch,
-                        'push_sha': head_sha,
-                        'push_message': head_msg,
-                        'push_by': pusher,
+                        **push_info,
                     },
                 )
                 inst.write({'last_auto_rebuild': now})

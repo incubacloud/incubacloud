@@ -61,12 +61,20 @@ class CloudController(Controller):
         # successful close and retries forever. Render the server's
         # current version into the template so the terminal page tracks
         # Odoo upgrades without a code change.
+        payload = job.payload or {}
+        trigger = payload.get('trigger') or ''
         context = {
             'job_id': job_id,
             'job_name': job.name or '',
             'job_host': job.host_id.name or '',
             'job_instance': job.instance_id.name or '',
             'job_project': job.instance_id.project_id.name or '',
+            'job_trigger': trigger if trigger in ('webhook', 'coalesced') else '',
+            'job_push_sha': payload.get('push_sha') or '',
+            'job_push_branch': payload.get('push_branch') or '',
+            'job_push_message': payload.get('push_message') or '',
+            'job_push_by': payload.get('push_by') or '',
+            'job_coalesced_pushes': payload.get('coalesced_pushes') or [],
             'csrf_token': request.csrf_token(None),
             'session_info': request.env['ir.http'].session_info(),
             'ws_version': WebsocketConnectionHandler._VERSION,

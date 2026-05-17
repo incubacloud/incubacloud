@@ -18,6 +18,8 @@ Flow:
 """
 from datetime import datetime, timezone
 
+from odoo import fields
+
 from .abstract_executor import sql_escape_literal
 from .deploy_instance_executor import DeployInstanceExecutor
 
@@ -422,6 +424,53 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             f"✓ '{inst.name}' rebuilt and restarted"
             f" with updated configuration."
         )
+        self._enqueue_coalesced_rebuild_if_pending(inst)
+
+    def _enqueue_coalesced_rebuild_if_pending(self, inst):
+        """Fold queued pushes into a follow-up rebuild after a successful one.
+
+        Pending pushes accumulated by ``cloud.github.event`` while this
+        rebuild was running (or within the cooldown window) are
+        consumed here in the post-success cursor: their payloads ride
+        along on a new ``rebuild_instance`` job so every skipped push
+        remains visible end-to-end, and the unlink + new enqueue commit
+        atomically with the success write.
+        """
+        if not inst or not inst.host_id:
+            return
+        pending = inst.pending_push_ids.sorted('create_date')
+        if not pending:
+            return
+        coalesced = [p._to_payload() for p in pending]
+        head = coalesced[-1]
+        payload = {
+            'trigger': 'coalesced',
+            'push_repo': head['push_repo'],
+            'push_branch': head['push_branch'],
+            'push_sha': head['push_sha'],
+            'push_message': head['push_message'],
+            'push_by': head['push_by'],
+            'coalesced_pushes': coalesced,
+        }
+        try:
+            self.env['cloud.job'].enqueue(
+                inst.host_id.id, inst.id, 'rebuild_instance',
+                payload=payload,
+            )
+            inst.write({'last_auto_rebuild': fields.Datetime.now()})
+            pending.unlink()
+            self._sys(
+                f"↻ Enqueued coalesced rebuild carrying"
+                f" {len(coalesced)} queued push(es)."
+            )
+        except Exception:
+            # Leave the pending rows intact so the operator can see what
+            # was queued; the next webhook or manual rebuild will pick
+            # them up.
+            self._sys(
+                "⚠ Failed to enqueue coalesced rebuild — pending pushes"
+                " preserved for the next attempt."
+            )
 
     async def on_failure(self, results, errors):
         for err in errors:

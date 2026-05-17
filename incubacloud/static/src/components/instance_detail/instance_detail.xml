@@ -269,11 +269,46 @@
                                     </div>
                                 </div>
                             </t>
-                            <t t-elif="!state.jobs.length">
+                            <t t-elif="!state.jobs.length and !(state.inst.pending_pushes and state.inst.pending_pushes.length)">
                                 <div class="ic-ov-activity-empty">No activity yet.</div>
                             </t>
                             <t t-else="">
                                 <div class="ic-tl">
+                                    <t t-if="state.inst.pending_pushes and state.inst.pending_pushes.length">
+                                        <div class="ic-tl-item ic-tl-item-queued">
+                                            <div class="ic-tl-rail">
+                                                <span class="ic-tl-dot ic-tl-dot-queued ic-tl-pulse"/>
+                                                <span class="ic-tl-line"/>
+                                            </div>
+                                            <div class="ic-tl-content">
+                                                <div class="ic-tl-header">
+                                                    <i class="fa fa-refresh ic-tl-icon"/>
+                                                    <span class="ic-tl-name">
+                                                        <t t-esc="state.inst.pending_pushes.length"/> push(es) queued for next rebuild
+                                                    </span>
+                                                    <span class="ic-ov-job-state state-queued">queued</span>
+                                                </div>
+                                                <ul class="ic-tl-pending-list">
+                                                    <li t-foreach="state.inst.pending_pushes" t-as="pp" t-key="pp.id">
+                                                        <i class="fa fa-github"/>
+                                                        <span class="ic-tl-pp-sha" t-esc="pp.push_sha"/>
+                                                        <t t-if="pp.push_branch">
+                                                            <span class="ic-tl-pp-branch">@<t t-esc="pp.push_branch"/></span>
+                                                        </t>
+                                                        <span class="ic-tl-pp-msg" t-esc="pp.push_message"/>
+                                                        <t t-if="pp.push_by">
+                                                            <span class="ic-tl-pp-by">by <t t-esc="pp.push_by"/></span>
+                                                        </t>
+                                                        <span t-att-class="'ic-tl-pp-reason reason-' + pp.skip_reason"
+                                                              t-esc="pp.skip_reason"/>
+                                                    </li>
+                                                </ul>
+                                                <div class="ic-tl-footer-hint">
+                                                    Will be folded into the rebuild triggered when the current one finishes.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </t>
                                     <t t-foreach="state.jobs" t-as="job" t-key="job.id">
                                         <div class="ic-tl-item" t-on-click="() => this.openJobLog(job)">
                                             <div class="ic-tl-rail">
@@ -294,7 +329,7 @@
                                                     </t>
                                                     <span class="ic-tl-log-hint"><i class="fa fa-terminal"/> Log</span>
                                                 </div>
-                                                <t t-if="job.trigger === 'webhook'">
+                                                <t t-if="job.trigger === 'webhook' or job.trigger === 'coalesced'">
                                                     <div class="ic-tl-trigger">
                                                         <i class="fa fa-github"/>
                                                         <span t-esc="job.push_sha"/>
