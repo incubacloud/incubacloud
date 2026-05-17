@@ -23,18 +23,29 @@ _JOB_LOCK_NAMESPACE = 0x0C10D10B
 
 
 def _webhook_fields(payload):
-    """Extract webhook trigger fields for job serialization."""
+    """Extract webhook trigger fields for job serialization.
+
+    Recognises both ``webhook`` (direct push) and ``coalesced`` (a
+    follow-up rebuild folding in pushes that arrived while a previous
+    rebuild was running). For coalesced jobs ``coalesced_pushes`` lists
+    every queued push so the UI can render the full set, not just the
+    HEAD shown by the primary push_* fields.
+    """
     p = payload or {}
-    if p.get('trigger') != 'webhook':
+    trigger = p.get('trigger')
+    if trigger not in ('webhook', 'coalesced'):
         return {'trigger': ''}
-    return {
-        'trigger': 'webhook',
+    fields = {
+        'trigger': trigger,
         'push_repo': p.get('push_repo', ''),
         'push_branch': p.get('push_branch', ''),
         'push_sha': p.get('push_sha', ''),
         'push_message': p.get('push_message', ''),
         'push_by': p.get('push_by', ''),
     }
+    if trigger == 'coalesced':
+        fields['coalesced_pushes'] = p.get('coalesced_pushes') or []
+    return fields
 
 
 class CloudJob(models.Model):

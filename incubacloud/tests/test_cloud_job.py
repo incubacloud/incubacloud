@@ -7,12 +7,15 @@ Tests focus on the parts that don't require actual SSH execution:
   - cancel_job / retry_job guard conditions
   - _get_executor raises for unknown job types
   - _format / _format_history dict structure
+  - _webhook_fields trigger-aware payload serialization
 """
 import base64
 from datetime import timedelta
 
-from odoo.tests.common import TransactionCase, new_test_user
+from odoo.tests.common import BaseCase, TransactionCase, new_test_user
 from odoo.exceptions import UserError
+
+from odoo.addons.incubacloud.models.cloud_job import _webhook_fields
 
 
 def _ensure_job_type(env, code, apply_to='instance'):
@@ -904,4 +907,67 @@ class TestDuplicityFilenameParser(TransactionCase):
         self.assertIsNone(
             _duplicity_filename_to_iso('some-random.txt'),
         )
+
+
+# ── _webhook_fields helper ────────────────────────────────────────────────────
+#
+# Pure-Python serializer that turns ``cloud.job.payload`` trigger metadata into
+# the dict the SPA / log terminal consume. Recognises ``webhook`` (a direct
+# push) and ``coalesced`` (the follow-up rebuild emitted by
+# ``rebuild_instance_executor.on_success`` carrying every push queued during
+# the previous rebuild). Anything else collapses to ``{'trigger': ''}`` so the
+# UI doesn't paint a half-populated trigger bar for non-webhook jobs.
+
+class TestWebhookFieldsHelper(BaseCase):
+
+    def test_unknown_trigger_collapses_to_empty(self):
+        self.assertEqual(_webhook_fields({'trigger': 'manual'}), {'trigger': ''})
+
+    def test_missing_trigger_collapses_to_empty(self):
+        self.assertEqual(_webhook_fields({}), {'trigger': ''})
+
+    def test_none_payload_collapses_to_empty(self):
+        self.assertEqual(_webhook_fields(None), {'trigger': ''})
+
+    def test_webhook_returns_push_fields_without_coalesced(self):
+        out = _webhook_fields({
+            'trigger': 'webhook',
+            'push_repo': 'owner/repo',
+            'push_branch': 'main',
+            'push_sha': 'abc1234',
+            'push_message': 'fix: x',
+            'push_by': 'dev',
+        })
+        self.assertEqual(out['trigger'], 'webhook')
+        self.assertEqual(out['push_sha'], 'abc1234')
+        self.assertNotIn('coalesced_pushes', out)
+
+    def test_coalesced_includes_coalesced_pushes_list(self):
+        pushes = [
+            {'push_sha': 'aaa1111', 'push_message': 'first'},
+            {'push_sha': 'bbb2222', 'push_message': 'second'},
+        ]
+        out = _webhook_fields({
+            'trigger': 'coalesced',
+            'push_repo': 'owner/repo',
+            'push_branch': 'main',
+            'push_sha': 'bbb2222',
+            'push_message': 'second',
+            'push_by': 'dev',
+            'coalesced_pushes': pushes,
+        })
+        self.assertEqual(out['trigger'], 'coalesced')
+        self.assertEqual(out['coalesced_pushes'], pushes)
+
+    def test_coalesced_missing_list_defaults_to_empty(self):
+        # Defensive: rebuild executor always sets the list, but a malformed
+        # payload should still produce a valid dict so the renderer doesn't
+        # crash.
+        out = _webhook_fields({'trigger': 'coalesced'})
+        self.assertEqual(out['coalesced_pushes'], [])
+
+    def test_webhook_fills_missing_push_fields_with_empty_strings(self):
+        out = _webhook_fields({'trigger': 'webhook'})
+        for k in ('push_repo', 'push_branch', 'push_sha', 'push_message', 'push_by'):
+            self.assertEqual(out[k], '')
 

@@ -310,6 +310,51 @@ class TestProcessPushEventGuards(_GitHubEventBase):
             ev._process_push_event()
         self.assertEqual(len(calls), 1)
 
+    # ── Pending push queue (defer-instead-of-drop) ─────────────────────────
+    #
+    # When a push cannot trigger an immediate rebuild (cooldown active or a
+    # rebuild already running) we now persist it into
+    # ``cloud.instance.pending.push`` instead of silently dropping it. The
+    # ``rebuild_instance_executor.on_success`` hook later coalesces every
+    # queued push into a single follow-up rebuild — see
+    # test_pending_push_coalesce.
+
+    def test_cooldown_path_records_pending_push(self):
+        self.instance.write({'last_auto_rebuild': fields.Datetime.now()})
+        calls, mock = self._enqueue_calls()
+        with mock:
+            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
+            ev._process_push_event()
+        # No new rebuild fired …
+        self.assertEqual(calls, [])
+        # … but the push is queued for the next coalesced rebuild.
+        pending = self.instance.pending_push_ids
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending.skip_reason, 'cooldown')
+        self.assertEqual(pending.push_branch, self.BRANCH)
+        # The body of the payload (sha, message, pusher) is preserved so the
+        # UI can render the queued item without a second webhook lookup.
+        self.assertTrue(pending.push_sha)
+        self.assertEqual(pending.push_by, 'dev')
+
+    def test_active_job_path_records_pending_push(self):
+        rebuild_jt = _ensure_job_type(self.env, 'rebuild_instance')
+        job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'instance_id': self.instance.id,
+            'job_type_id': rebuild_jt.id,
+            'name': 'Active Rebuild',
+        })
+        self._force_job_state(job, 'started')
+        calls, mock = self._enqueue_calls()
+        with mock:
+            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
+            ev._process_push_event()
+        self.assertEqual(calls, [])
+        pending = self.instance.pending_push_ids
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending.skip_reason, 'active_job')
+
 
 class TestProcessPushEventHappyPath(_GitHubEventBase):
 

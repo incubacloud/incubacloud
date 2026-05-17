@@ -20,6 +20,7 @@ from . import cloud_alert
 from . import cloud_host
 from . import cloud_host_whitelist
 from . import cloud_instance
+from . import cloud_instance_pending_push
 from . import cloud_instance_backup
 from . import cloud_instance_domain
 from . import cloud_job

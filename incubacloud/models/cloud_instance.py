@@ -49,13 +49,25 @@ class CloudInstance(models.Model):
     active = fields.Boolean(default=True)
     auto_rebuild = fields.Boolean(
         string='Auto-Rebuild on Push',
-        default=False,
+        default=True,
         help='Automatically trigger a rebuild when a push event is '
              'received on a matching (unfrozen) repo branch.',
     )
     last_auto_rebuild = fields.Datetime(
         string='Last Auto-Rebuild',
         readonly=True,
+    )
+    pending_push_ids = fields.One2many(
+        'cloud.instance.pending.push',
+        'instance_id',
+        string='Pending Pushes',
+        help='Pushes that arrived while a rebuild was running or within '
+             'the auto-rebuild cooldown. They are merged into the next '
+             'rebuild job triggered on completion of the current one.',
+    )
+    pending_push_count = fields.Integer(
+        string='Pending Push Count',
+        compute='_compute_pending_push_count',
     )
     auto_update = fields.Boolean(
         string='Auto-Update Modules on Rebuild',
@@ -242,6 +254,12 @@ class CloudInstance(models.Model):
             self.project_id.remote_folder if self.project_id else ''
         ) or 'instances'
         return f"~/{project_folder}/{self.name}"
+
+    @api.depends('pending_push_ids')
+    def _compute_pending_push_count(self):
+        """Count of pushes queued for the next coalesced rebuild."""
+        for inst in self:
+            inst.pending_push_count = len(inst.pending_push_ids)
 
     @api.depends('domain_ids.hostname', 'domain_ids.sequence')
     def _compute_domain(self):

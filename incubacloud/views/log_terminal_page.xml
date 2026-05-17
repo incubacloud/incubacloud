@@ -166,6 +166,78 @@
             margin-left: 2px;
         }
         @keyframes blink { 50% { opacity: 0; } }
+
+        /* ── Trigger bar ── */
+        .terminal-trigger-bar {
+            background: #252b35;
+            border-bottom: 1px solid #3e3e3e;
+            padding: 8px 16px;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 12px;
+            color: #d4d4d4;
+            flex-shrink: 0;
+        }
+        .terminal-trigger-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+        .terminal-trigger-icon { color: #888; }
+        .terminal-trigger-label {
+            color: #888;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.06em;
+        }
+        .terminal-trigger-sha {
+            color: #93c5fd;
+            font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+            font-weight: 600;
+        }
+        .terminal-trigger-branch { color: #9ca3af; }
+        .terminal-trigger-msg { color: #d4d4d4; }
+        .terminal-trigger-by { color: #888; }
+        .terminal-trigger-tag {
+            margin-left: auto;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: rgba(59, 130, 246, 0.18);
+            color: #93c5fd;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .terminal-coalesced-list {
+            list-style: none;
+            margin: 6px 0 0;
+            padding: 6px 0 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .terminal-coalesced-list li {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 6px;
+            padding: 3px 0;
+            font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+            font-size: 11px;
+        }
+        .terminal-cp-sha { color: #93c5fd; font-weight: 600; }
+        .terminal-cp-branch { color: #9ca3af; font-family: inherit; }
+        .terminal-cp-msg { color: #d4d4d4; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .terminal-cp-by { color: #888; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .terminal-cp-reason {
+            margin-left: auto;
+            padding: 1px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        .terminal-cp-reason.reason-cooldown { background: rgba(234, 179, 8, 0.18); color: #fde68a; }
+        .terminal-cp-reason.reason-active_job { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
     </style>
 </head>
 <body>
@@ -193,6 +265,44 @@
             <span id="state-badge" class="job-state-badge state-pending">pending</span>
         </div>
     </div>
+
+    <t t-if="job_trigger">
+        <div class="terminal-trigger-bar">
+            <div class="terminal-trigger-row">
+                <i class="fa fa-github terminal-trigger-icon"/>
+                <span class="terminal-trigger-label">Triggered by</span>
+                <span class="terminal-trigger-sha" t-esc="job_push_sha"/>
+                <t t-if="job_push_branch">
+                    <span class="terminal-trigger-branch">@<t t-esc="job_push_branch"/></span>
+                </t>
+                <span class="terminal-trigger-msg" t-esc="job_push_message"/>
+                <t t-if="job_push_by">
+                    <span class="terminal-trigger-by">by <t t-esc="job_push_by"/></span>
+                </t>
+                <t t-if="job_trigger == 'coalesced' and job_coalesced_pushes and len(job_coalesced_pushes) > 1">
+                    <span class="terminal-trigger-tag">coalesced · +<t t-esc="len(job_coalesced_pushes) - 1"/> more push(es)</span>
+                </t>
+            </div>
+            <t t-if="job_trigger == 'coalesced' and job_coalesced_pushes">
+                <ul class="terminal-coalesced-list">
+                    <li t-foreach="job_coalesced_pushes" t-as="cp">
+                        <span class="terminal-cp-sha" t-esc="cp.get('push_sha')"/>
+                        <t t-if="cp.get('push_branch')">
+                            <span class="terminal-cp-branch">@<t t-esc="cp.get('push_branch')"/></span>
+                        </t>
+                        <span class="terminal-cp-msg" t-esc="cp.get('push_message')"/>
+                        <t t-if="cp.get('push_by')">
+                            <span class="terminal-cp-by">by <t t-esc="cp.get('push_by')"/></span>
+                        </t>
+                        <t t-if="cp.get('skip_reason')">
+                            <span t-attf-class="terminal-cp-reason reason-#{cp.get('skip_reason')}"
+                                  t-esc="cp.get('skip_reason')"/>
+                        </t>
+                    </li>
+                </ul>
+            </t>
+        </div>
+    </t>
 
     <div class="terminal-body" id="terminal">
         <span id="cursor" class="cursor"/>
