@@ -370,3 +370,64 @@ class TestCloudDeleteHostRoute(TransactionCase):
         # archive path over the FK-violating unlink path.
         self.assertTrue(job.exists())
         self.assertEqual(job.host_id, survivor)
+
+
+class TestSshReadyDomain(TransactionCase):
+    """``_ssh_ready_domain`` is the shared gate that ``cron_collect_metrics``
+    and the prune cron use to skip hosts whose SSH layer cannot connect yet
+    (no captured host key, missing credentials for the declared login_type).
+    Without this filter the crons would spawn jobs that fail synchronously
+    in ``ssh_connect_kwargs()`` and pollute the operator's log feed."""
+
+    def setUp(self):
+        super().setUp()
+        self.Host = self.env['cloud.host']
+
+    def _create(self, **kw):
+        # ``password`` is required on cloud.host, so every host has one even
+        # when login_type='ssh_key'. We blank it explicitly per-test for the
+        # password-path cases via SQL since the ORM field is required.
+        return self.Host.create({
+            'name': kw.pop('name', 'SSH Ready Probe'),
+            'ip_address': '10.0.0.42',
+            'user': 'ubuntu',
+            'wildcard_domain': 'example.com',
+            'password': 'pw-default',
+            'known_hosts_key': 'ssh-ed25519 AAAA... fake',
+            'login_type': 'ssh_key',
+            'key_file': '-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n',
+        } | kw)
+
+    def _search_ready(self, *extra_domain):
+        domain = self.Host._ssh_ready_domain()
+        if extra_domain:
+            domain = list(domain) + list(extra_domain)
+        return self.Host.search(domain)
+
+    def test_complete_ssh_key_host_is_ready(self):
+        host = self._create(name='Complete SSH Key')
+        self.assertIn(host, self._search_ready(('name', '=', 'Complete SSH Key')))
+
+    def test_complete_password_host_is_ready(self):
+        host = self._create(name='Complete Password', login_type='password',
+                            key_file=False)
+        self.assertIn(host, self._search_ready(('name', '=', 'Complete Password')))
+
+    def test_missing_known_hosts_key_is_excluded(self):
+        host = self._create(name='Untrusted Host', known_hosts_key=False)
+        self.assertNotIn(host, self._search_ready(('name', '=', 'Untrusted Host')))
+
+    def test_ssh_key_host_without_key_file_is_excluded(self):
+        host = self._create(name='SSH Key Missing Key', key_file=False)
+        self.assertNotIn(
+            host, self._search_ready(('name', '=', 'SSH Key Missing Key')),
+        )
+
+    # NOTE: ``ip_address``, ``user`` and ``password`` are required=True on
+    # cloud.host (NOT NULL at the DB level). Their corresponding clauses
+    # in ``_ssh_ready_domain`` (``('ip_address', '!=', False)`` etc.) are
+    # defensive belt-and-suspenders against a future field that drops
+    # required=True or a row inserted out-of-band — there is no way to
+    # construct a recordset that violates these constraints from a test
+    # without raising at create/write/SQL time, so they are not covered
+    # here.

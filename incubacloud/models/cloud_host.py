@@ -625,13 +625,28 @@ class CloudHost(models.Model):
 
     # ── Metrics collection (cron) ───────────────────────────────────────────
 
+    def _ssh_ready_domain(self):
+        """Domain matching hosts whose SSH layer can actually connect.
+
+        Filters out hosts pending trust (no captured server key) or
+        missing credentials for their declared ``login_type``. Skipping
+        them at the cron level avoids spawning jobs that would fail on
+        ``ssh_connect_kwargs()`` for hosts the operator hasn't finished
+        configuring yet.
+        """
+        return [
+            ('ip_address', '!=', False),
+            ('user', '!=', False),
+            ('known_hosts_key', '!=', False),
+            '|',
+                '&', ('login_type', '=', 'ssh_key'),  ('key_file', '!=', False),
+                '&', ('login_type', '=', 'password'), ('password', '!=', False),
+        ]
+
     @api.model
     def cron_collect_metrics(self):
         """Called by ir.cron — queue a host_metrics job for each reachable host."""
-        hosts = self.search([
-            ('ip_address', '!=', False),
-            ('user', '!=', False),
-        ])
+        hosts = self.search(self._ssh_ready_domain())
         for host in hosts:
             try:
                 self.env['cloud.job'].enqueue(host.id, False, 'host_metrics')
@@ -644,10 +659,7 @@ class CloudHost(models.Model):
     @api.model
     def cron_docker_prune(self):
         """Called by ir.cron — queue a docker_prune job for each configured host."""
-        hosts = self.search([
-            ('ip_address', '!=', False),
-            ('user', '!=', False),
-        ])
+        hosts = self.search(self._ssh_ready_domain())
         for host in hosts:
             try:
                 self.env['cloud.job'].enqueue(host.id, False, 'docker_prune')
