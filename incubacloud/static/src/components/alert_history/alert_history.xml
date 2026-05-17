@@ -67,6 +67,35 @@
                             </div>
                         </div>
                         <div class="ah-card-message" t-esc="alert.message"/>
+
+                        <!-- Error log groups: dedupe'd payload from instance_health -->
+                        <t t-if="alert.code === 'instance_error_logs' and alert.payload and alert.payload.length">
+                            <div class="ah-error-groups">
+                                <button class="ah-error-toggle"
+                                        t-on-click="() => this.toggleExpanded(alert.id)">
+                                    <i t-att-class="state.expanded[alert.id] ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
+                                    <t t-if="state.expanded[alert.id]">Hide</t>
+                                    <t t-else="">Show</t>
+                                    <t t-esc="' ' + alert.payload.length + ' error group(s)'"/>
+                                </button>
+                                <t t-if="state.expanded[alert.id]">
+                                    <div class="ah-error-list">
+                                        <t t-foreach="alert.payload" t-as="grp" t-key="grp_index">
+                                            <div class="ah-error-group">
+                                                <div class="ah-error-group-head">
+                                                    <span class="ah-error-count" t-esc="'×' + grp.count"/>
+                                                    <code class="ah-error-fingerprint" t-esc="grp.fingerprint"/>
+                                                </div>
+                                                <t t-if="grp.samples and grp.samples.length">
+                                                    <pre class="ah-error-samples"><t t-foreach="grp.samples" t-as="line" t-key="line_index"><t t-esc="line"/><t t-if="!line_last">&#10;</t></t></pre>
+                                                </t>
+                                            </div>
+                                        </t>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+
                         <div class="ah-card-actions" t-if="alert.state === 'active' or alert.job_id">
                             <t t-if="alert.state === 'active' and alert.code === 'pip_conflict' and alert.conflict_data and alert.conflict_data.length">
                                 <button class="ah-btn-resolve" t-on-click="() => this.openResolve(alert)">

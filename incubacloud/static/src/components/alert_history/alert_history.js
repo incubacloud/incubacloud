@@ -20,8 +20,18 @@ export class AlertHistory extends Component {
             stateFilter: "active",
             resolveModal: null,      // { alert, choices: { [pkgName]: chosen_spec } }
             addonConflictModal: null, // { alert }
+            expanded: {},            // { [alertId]: bool } — controls payload reveal
         });
         this.loadAlerts();
+    }
+
+    /**
+     * Toggle the "show details" disclosure for an alert whose payload
+     * carries structured detail (e.g. deduped error log groups).
+     * @param {number} alertId
+     */
+    toggleExpanded(alertId) {
+        this.state.expanded[alertId] = !this.state.expanded[alertId];
     }
 
     goBack() {
