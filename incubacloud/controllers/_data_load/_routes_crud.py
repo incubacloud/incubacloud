@@ -618,12 +618,32 @@ class CrudMixin:
         if host.instance_ids:
             return {'ok': False, 'error': _('Host still has instances. Delete all instances first.')}
         if not host.traefik_deployed:
-            # Nothing was deployed remotely — no SSH cleanup needed and
-            # no historical jobs to preserve. Remove the record outright
-            # so the lifecycle hook can release any external resources
-            # attached to it (downstream modules) while the row goes
-            # away cleanly.
-            host.unlink()
+            # Nothing was deployed remotely — no SSH cleanup needed.
+            # Two sub-cases by job history:
+            #
+            #   * The host has zero ``cloud.job`` rows referencing it
+            #     (truly-untouched fixture / cancel-before-provision):
+            #     ``unlink`` is safe and keeps the table clean.
+            #
+            #   * The host already accumulated jobs (e.g. on-demand VPS
+            #     where ``tenant_vps_provision`` succeeded but the
+            #     chained ``host_hardening`` + ``full_setup`` never ran,
+            #     so Traefik is not deployed yet but provision history
+            #     exists): ``unlink`` would violate the
+            #     ``cloud_job.host_id`` FK constraint (required + no
+            #     ``ondelete``). Archive instead — same semantics the
+            #     ``delete_host`` executor uses on the deployed branch,
+            #     preserves the job history, and ``write({'active':
+            #     False})`` still fires ``_release_external_resources``
+            #     so downstream modules (tenant on-demand VPS release,
+            #     DNS, etc.) clean up provider-side state.
+            has_jobs = bool(request.env['cloud.job'].sudo().search_count(
+                [('host_id', '=', host.id)],
+            ))
+            if has_jobs:
+                host.write({'active': False})
+            else:
+                host.unlink()
             return {'ok': True}
         job_id = request.env['cloud.job'].enqueue(host_id, False, 'delete_host')
         return {'job_id': job_id}
