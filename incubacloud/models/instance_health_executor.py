@@ -167,11 +167,24 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             # 4. ERROR lines in odoo logs since last check — raw sample,
             # capped to _ERROR_LINES_HEAD so a runaway log loop can't
             # blow up parsing memory. Dedupe happens in parse_results.
+            # The grep is anchored to the Odoo log-level field (after the
+            # "<date> <time> <pid>" prefix) so substrings of the word ERROR
+            # inside INFO/DEBUG lines — notably asyncssh logging the very
+            # command we run here — do not generate self-referential
+            # false positives. The trailing sed strips ANSI color codes
+            # that Odoo injects around the level keyword so samples stored
+            # in the alert payload render as plain text.
             (
                 "error_lines",
                 f"cd {d} && "
                 f"docker compose logs --no-color --since '{since}' odoo 2>&1 "
-                f"| grep 'ERROR' | head -{_ERROR_LINES_HEAD} || true",
+                f"| grep -aP "
+                f"'\\b\\d{{4}}-\\d{{2}}-\\d{{2}}\\s+"
+                f"\\d{{2}}:\\d{{2}}:\\d{{2}}[.,]\\d+\\s+\\d+\\s+"
+                f"(\\x1b\\[[0-9;]+m)*(ERROR|CRITICAL)"
+                f"(\\x1b\\[[0-9;]+m)*\\s' "
+                f"| sed -E 's/\\x1b\\[[0-9;]*m//g' "
+                f"| head -{_ERROR_LINES_HEAD} || true",
             ),
         ]
 
