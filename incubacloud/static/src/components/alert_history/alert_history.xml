@@ -84,7 +84,6 @@
                                             <div class="ah-error-group">
                                                 <div class="ah-error-group-head">
                                                     <span class="ah-error-count" t-esc="'×' + grp.count"/>
-                                                    <code class="ah-error-fingerprint" t-esc="grp.fingerprint"/>
                                                 </div>
                                                 <t t-if="grp.samples and grp.samples.length">
                                                     <pre class="ah-error-samples"><t t-foreach="grp.samples" t-as="line" t-key="line_index"><t t-esc="line"/><t t-if="!line_last">&#10;</t></t></pre>

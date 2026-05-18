@@ -222,19 +222,6 @@
     text-align: center;
 }
 
-.ah-error-fingerprint {
-    font-family: monospace;
-    font-size: 11px;
-    color: $text-primary;
-    background: rgba($border, 0.25);
-    padding: 2px 6px;
-    border-radius: 3px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-}
-
 .ah-error-samples {
     margin: 0;
     padding: 6px 8px;
