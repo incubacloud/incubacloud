@@ -211,6 +211,30 @@ class TestInstanceHealthParseResults(BaseCase):
         self.assertFalse(hasattr(self.executor, '_cpu_current'))
         self.assertFalse(hasattr(self.executor, '_error_groups'))
 
+    def test_error_lines_command_anchors_and_strips_ansi(self):
+        """The shell command for the error_lines step must:
+
+        1. Anchor the ERROR keyword to the Odoo log-level field via
+           ``grep -aP`` with a strict PCRE — otherwise INFO/DEBUG lines
+           that happen to contain the substring "ERROR" (notably asyncssh
+           logging the very command this step runs) are harvested as if
+           they were errors and trigger a self-referential alert loop.
+        2. Cover ``CRITICAL`` in addition to ``ERROR`` — a worker crash
+           logs CRITICAL and would otherwise be missed.
+        3. Strip ANSI color codes from output via ``sed`` so the samples
+           stored in the alert payload render as plain text.
+        """
+        self.executor._skipped = False
+        inst = MagicMock(last_health_check=False)
+        self.executor._inst = MagicMock(return_value=inst)
+        self.executor._inst_dir = MagicMock(return_value="~/foo/bar")
+        cmds = dict(self.executor.get_commands())
+        error_cmd = cmds["error_lines"]
+        self.assertIn("grep -aP", error_cmd)
+        self.assertIn("(ERROR|CRITICAL)", error_cmd)
+        self.assertIn("sed -E", error_cmd)
+        self.assertIn(r"\x1b\[[0-9;]*m", error_cmd)
+
 
 # ── InstanceHealthExecutor pure helpers ───────────────────────────────────────
 
