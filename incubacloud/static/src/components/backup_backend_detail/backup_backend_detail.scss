@@ -31,3 +31,29 @@
     &[data-band="warning"] .ic-usage-gauge-bar { background: #F59E0B; }
     &[data-band="danger"]  .ic-usage-gauge-bar { background: #EF4444; }
 }
+
+// The Delete button in the detail footer uses .ic-btn-danger. Defined
+// here (and not in settings.scss, which scopes it under .ic-settings)
+// so the rule applies in any tenant DB where saas_manager is not
+// installed — core must not depend on saas SCSS.
+.ic-btn-danger {
+    border-radius: 6px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+    white-space: nowrap;
+    background: rgba($state-error, 0.1);
+    border: 1px solid rgba($state-error, 0.35);
+    color: $state-error;
+
+    &:hover:not(:disabled) {
+        background: rgba($state-error, 0.18);
+        border-color: $state-error;
+    }
+    &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+}
