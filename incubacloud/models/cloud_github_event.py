@@ -203,6 +203,25 @@ class CloudGitHubEvent(models.Model):
             'skip_reason': reason,
         })
 
+    def _rebuild_job_type(self, inst):
+        """Job code used by webhook-driven auto-rebuild.
+
+        Default: the core ``rebuild_instance``. Modules layered on top
+        (e.g. the SaaS manager) override this to route tenant-bearing
+        instances to the tenant-aware executor, which carries plan and
+        tenant-module sync that the core executor lacks.
+        """
+        return 'rebuild_instance'
+
+    def _rebuild_blocking_codes(self):
+        """Job codes whose active presence defers a new auto-rebuild.
+
+        Default covers the core deploy / rebuild jobs. Overridden by
+        the SaaS manager to also include the tenant-flavoured variants
+        so a push can never race a tenant-rebuild already in flight.
+        """
+        return ('deploy_instance', 'rebuild_instance')
+
     def _process_push_event(self):
         """Process a push webhook — trigger auto-rebuild for matching instances."""
         self.ensure_one()
@@ -279,8 +298,7 @@ class CloudGitHubEvent(models.Model):
             # Skip if there's already a running/pending job for this instance
             active_job = self.env['cloud.job'].search([
                 ('instance_id', '=', inst.id),
-                ('job_type_id.code', 'in',
-                 ('deploy_instance', 'rebuild_instance')),
+                ('job_type_id.code', 'in', self._rebuild_blocking_codes()),
                 ('state', 'in', ('pending', 'started')),
             ], limit=1)
             if active_job:
@@ -292,7 +310,7 @@ class CloudGitHubEvent(models.Model):
                 continue
             try:
                 self.env['cloud.job'].enqueue(
-                    inst.host_id.id, inst.id, 'rebuild_instance',
+                    inst.host_id.id, inst.id, self._rebuild_job_type(inst),
                     payload={
                         'trigger': 'webhook',
                         **push_info,
@@ -386,7 +404,7 @@ class CloudGitHubEvent(models.Model):
                         repo.write({'branch': head_ref, 'commit_sha': False})
                 try:
                     self.env['cloud.job'].enqueue(
-                        inst.host_id.id, inst.id, 'rebuild_instance'
+                        inst.host_id.id, inst.id, self._rebuild_job_type(inst),
                     )
                     _logger.info(
                         "PR preview rebuild triggered for %s (PR #%s)",

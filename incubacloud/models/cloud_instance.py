@@ -540,6 +540,40 @@ class CloudInstance(models.Model):
                 "in Settings → General → Default Backup Backend."
             ))
 
+    def _backup_enabled(self):
+        """Whether this instance should run the doodba ``backup`` service.
+
+        Default: any instance with a usable backup backend (one that
+        resolves a ``backup_dst``) is backup-enabled. Modules layered
+        on top (e.g. SaaS plan logic) may override to opt out.
+        """
+        self.ensure_one()
+        bb = self.effective_backup_backend
+        return bool(bb and bb.backup_dst)
+
+    def expected_services(self):
+        """Compose services this instance is supposed to render and run.
+
+        Single source of truth consumed by deploy / rebuild (to emit
+        the right ``docker-compose.override.yml``) and by the health
+        probe (to know which containers must be ``running``). The
+        shape matches what the copier template actually renders:
+
+        * staging / dev → ``('odoo', 'db')`` only.
+        * production    → ``odoo`` + ``db``, plus ``backup`` when
+          :meth:`_backup_enabled` is true, plus ``smtp`` when a relay
+          host is configured.
+        """
+        self.ensure_one()
+        if self.environment != 'production':
+            return ('odoo', 'db')
+        svcs = ['odoo', 'db']
+        if self._backup_enabled():
+            svcs.append('backup')
+        if self.smtp_relay_host:
+            svcs.append('smtp')
+        return tuple(svcs)
+
     def deploy(self):
         """Enqueue a deploy_instance job for this instance."""
         self.ensure_one()
