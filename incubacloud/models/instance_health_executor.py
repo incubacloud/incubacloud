@@ -193,14 +193,22 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         if getattr(self, '_skipped', False):
             return []
 
-        # 1. Container state
+        # 1. Container state — collect *every* service so the per-service
+        #    alerts below can compare against ``expected_services()``.
+        #    ``self._container_running`` keeps its narrower meaning
+        #    (specifically: is ``odoo`` up?) because it gates the HTTP
+        #    health check and the ``instance_down`` alert downstream.
         state_out = results.get("container_state", {}).get("stdout", "")
-        self._container_running = False
+        self._service_states = {}
         for line in state_out.splitlines():
             parts = line.strip().split('\t')
-            if len(parts) >= 2 and parts[0].strip() == 'odoo':
-                self._container_running = parts[1].strip().lower() == 'running'
-                break
+            if len(parts) >= 2:
+                svc = parts[0].strip()
+                if svc:
+                    self._service_states[svc] = parts[1].strip().lower()
+        self._container_running = (
+            self._service_states.get('odoo') == 'running'
+        )
 
         # 2. CPU / memory snapshot
         cm_out = results.get("cpu_mem_snapshot", {}).get("stdout", "0.0\t0.0").strip()
@@ -354,6 +362,46 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             )
         elif not cpu_over:
             self._resolve_inst_alert('instance_high_cpu')
+
+        # Per-service container state — alert on any expected service
+        # that is not ``running``. ``odoo`` is intentionally excluded
+        # because it has its own end-to-end track (``instance_down``
+        # for the container, ``instance_unresponsive`` for HTTP) which
+        # carries the right severity (``critical``). Backup, db, smtp
+        # going sideways is a ``warning`` — the instance keeps serving
+        # traffic — but stays visible so the operator does not learn
+        # about a 2-day-old broken backup container from a failed cron.
+        expected_other = set(inst.expected_services()) - {'odoo'}
+        all_known = expected_other | {
+            svc for svc in self._service_states
+            if svc != 'odoo'
+        }
+        for svc in sorted(all_known):
+            code = f'instance_service_{svc}_down'
+            if svc not in expected_other:
+                # Service runs on the host but the instance doesn't
+                # actually need it (e.g. backup container left over
+                # from a plan downgrade). Drop any stale alert and
+                # move on — we don't grade what we don't expect.
+                self._resolve_inst_alert(code)
+                continue
+            observed = self._service_states.get(svc)
+            if observed != 'running':
+                issues.append(f'{svc}:{observed or "missing"}')
+                self._inst_alert(
+                    code,
+                    (
+                        f"Container '{svc}' is {observed or 'missing'} "
+                        f"on '{inst.name}'."
+                    ),
+                    level='warning',
+                    payload={'service': svc, 'state': observed or 'missing'},
+                )
+                self._sys(
+                    f"⚠ Service '{svc}' is {observed or 'missing'}."
+                )
+            else:
+                self._resolve_inst_alert(code)
 
         # Error logs — dedupe groups + payload
         if len(self._error_groups) >= _ERROR_GROUPS_WARN:
