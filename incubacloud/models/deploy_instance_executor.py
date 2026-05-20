@@ -153,13 +153,12 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
     def _backup_enabled(self):
         """Whether the backup container should be provisioned for this deploy.
 
-        Hook: inheriting executors can override to gate the backup
-        container on their own business rules (e.g. disable for some
-        instance categories regardless of backend availability).
+        Thin delegator to :meth:`cloud.instance._backup_enabled` so that
+        downstream modules (e.g. SaaS plan logic) only have to override
+        the model side and every executor that needs the answer sees
+        the same value.
         """
-        inst = self._inst()
-        bb = inst.effective_backup_backend
-        return bool(bb and bb.backup_dst)
+        return self._inst()._backup_enabled()
 
     def _backup_retention(self):
         """Effective retention string (e.g. '7D', '3M') for the backup job.
@@ -390,19 +389,13 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
     def _prod_services(self):
         """Return the services present in a production compose file.
 
-        Only include services that are actually rendered by copier:
-        - smtp only when an SMTP relay host is configured.
-        - backup only when a backup backend is enabled.
-        Otherwise the override would reference phantom services and
-        ``docker compose`` fails with "neither image nor build".
+        Thin delegator to :meth:`cloud.instance.expected_services` so
+        that any extension that changes which services an instance
+        actually runs (e.g. SaaS plans that disable ``backup``) is
+        honoured uniformly across deploy, rebuild and the health
+        probe.
         """
-        inst = self._inst()
-        svcs = ['odoo', 'db']
-        if self._backup_enabled():
-            svcs.append('backup')
-        if inst.smtp_relay_host:
-            svcs.append('smtp')
-        return tuple(svcs)
+        return self._inst().expected_services()
 
     def _resource_override_content(self):
         """Generate docker-compose.override.yml with resource limits.
