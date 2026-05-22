@@ -496,7 +496,7 @@ class CloudInstance(models.Model):
                     subdomain = f"{project.remote_folder}-{inst.name}"
                 else:
                     subdomain = inst.name
-                hostname = f"{subdomain}.{host.wildcard_domain}"
+                hostname = f"{subdomain}.{host._subdomain_suffix()}"
                 self.env['cloud.instance.domain'].create({
                     'instance_id': inst.id,
                     'hostname': hostname,
@@ -1017,7 +1017,7 @@ class CloudInstance(models.Model):
                             if project_folder
                             else vals['name']
                         )
-                        hostname = f"{subdomain}.{host.wildcard_domain}"
+                        hostname = f"{subdomain}.{host._subdomain_suffix()}"
                         vals['domain_ids'] = [
                             (0, 0, {'hostname': hostname}),
                         ]
@@ -1025,7 +1025,7 @@ class CloudInstance(models.Model):
                     and vals.get('host_id') and vals.get('name')):
                 host = self.env['cloud.host'].browse(vals['host_id'])
                 if host.wildcard_domain:
-                    hostname = f"{vals['name']}.{host.wildcard_domain}"
+                    hostname = f"{vals['name']}.{host._subdomain_suffix()}"
                     vals['domain_ids'] = [
                         (0, 0, {'hostname': hostname}),
                     ]

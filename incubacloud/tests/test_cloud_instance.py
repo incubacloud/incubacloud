@@ -521,3 +521,52 @@ class TestCronRefreshBackupList(TransactionCase):
         finally:
             self._restore_list_backups(original, mc)
         self.assertNotIn(inst.id, calls)
+
+
+class TestAutoDomainWildcard(TransactionCase):
+    """Auto-generated instance domains substitute the wildcard label.
+
+    ``cloud.host.wildcard_domain`` is stored in wildcard form
+    (``*.example.com``); a concrete hostname must replace the ``*`` label
+    with the instance subdomain, not prepend to the whole wildcard (which
+    would yield an invalid ``sub.*.example.com``)."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'wc-host',
+            'ip_address': '10.0.0.20',
+            'user': 'ubuntu',
+            'wildcard_domain': '*.18.incubacloud.io',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'WC Project'})
+
+    def test_subdomain_suffix_strips_wildcard(self):
+        self.assertEqual(self.host._subdomain_suffix(), '18.incubacloud.io')
+
+    def test_subdomain_suffix_plain_domain_unchanged(self):
+        self.host.wildcard_domain = 'plain.example.com'
+        self.assertEqual(self.host._subdomain_suffix(), 'plain.example.com')
+
+    def test_auto_domain_on_create_substitutes_wildcard(self):
+        inst = self.env['cloud.instance'].create({
+            'name': 'web',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+        })
+        self.assertEqual(len(inst.domain_ids), 1)
+        hostname = inst.domain_ids.hostname
+        self.assertNotIn('*', hostname)
+        self.assertTrue(hostname.endswith('.18.incubacloud.io'), hostname)
+
+    def test_auto_domain_on_host_assign_substitutes_wildcard(self):
+        inst = self.env['cloud.instance'].create({
+            'name': 'api',
+            'project_id': self.project.id,
+        })
+        self.assertFalse(inst.domain_ids)
+        inst.write({'host_id': self.host.id})
+        self.assertEqual(len(inst.domain_ids), 1)
+        hostname = inst.domain_ids.hostname
+        self.assertNotIn('*', hostname)
+        self.assertTrue(hostname.endswith('.18.incubacloud.io'), hostname)

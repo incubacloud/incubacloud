@@ -323,6 +323,19 @@ class CloudHost(models.Model):
         help='Content of the traefik.yml file.',
     )
 
+    def _subdomain_suffix(self):
+        """Return the wildcard domain ready to suffix an instance subdomain.
+
+        ``wildcard_domain`` is stored in wildcard form (e.g.
+        ``*.example.com``); a concrete hostname is built as
+        ``f"{subdomain}.{host._subdomain_suffix()}"``. Stripping the leading
+        ``*.`` turns ``*.example.com`` into ``example.com`` so the result is a
+        valid hostname (``sub.example.com``) instead of ``sub.*.example.com``.
+        A plain domain without the wildcard label is returned unchanged.
+        """
+        self.ensure_one()
+        return (self.wildcard_domain or '').removeprefix('*.')
+
     # ── SSH connection helpers ──────────────────────────────────────────────
 
     def _get_ssh_private_key_bytes(self):

@@ -164,7 +164,7 @@ def _htpasswd_hash(password):
 def _build_inverseproxy(content, wildcard_domain, panel_password):
     """Substitute domain and password hash in inverseproxy.yaml content."""
     traefik_domain = (
-        f"traefik.{wildcard_domain}"
+        f"traefik.{wildcard_domain.removeprefix('*.')}"
         if wildcard_domain else "traefik.localhost"
     )
     # Replace the Host() rule
