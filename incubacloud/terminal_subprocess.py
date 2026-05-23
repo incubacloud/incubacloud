@@ -318,6 +318,14 @@ def main() -> int:
         ssh_connect_kwargs["client_keys"] = [
             base64.b64decode(k) for k in client_keys_b64
         ]
+    else:
+        # Password-auth hosts have no keys. The parent strips
+        # ``client_keys`` (which ``ssh_connect_kwargs()`` set to None)
+        # before serialising, so restore it explicitly here. Without it
+        # asyncssh treats ``client_keys`` as absent and probes
+        # ~/.ssh/id_* — empty/invalid in the container → "Invalid private
+        # key". Auth then uses the password the parent left in kwargs.
+        ssh_connect_kwargs["client_keys"] = None
 
     _SESSION = TerminalSession(
         session_id=args.session_id,
