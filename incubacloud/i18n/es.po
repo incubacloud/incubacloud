@@ -1582,16 +1582,6 @@ msgstr ""
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"Could not access the repository. Check the URL and your GitHub credentials "
-"in Settings."
-msgstr ""
-"Could not access the repository. Check the URL and your GitHub credentials "
-"in Settings."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Could not clone repository. Check the URL and credentials."
 msgstr "No se pudo clonar el repositorio. Verifica la URL y las credenciales."
 
@@ -3031,16 +3021,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"GitHub App does not have access to this repository. Install the App on the "
-"repository's organization or configure a PAT in Settings → GitHub."
-msgstr ""
-"GitHub App does not have access to this repository. Install the App on the "
-"repository's organization or configure a PAT in Settings → GitHub."
-
-#. module: incubacloud
-#. odoo-python
 #: code:addons/incubacloud/models/cloud_github_credential_service.py:0
 msgid "GitHub App is not configured. Go to Settings → GitHub to set it up."
 msgstr ""
@@ -4429,16 +4409,6 @@ msgid "New value entered — will be saved"
 msgstr "Nuevo valor introducido — se guardará"
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"No GitHub credentials configured. Go to Settings → GitHub to set up a GitHub"
-" App or configure a Personal Access Token (PAT)."
-msgstr ""
-"No GitHub credentials configured. Go to Settings → GitHub to set up a GitHub"
-" App or configure a Personal Access Token (PAT)."
-
-#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
 msgid "No active alerts"
@@ -5057,16 +5027,6 @@ msgstr "Propiedad para chequeo ACL rápido en cada llamada al proxy."
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "PAT"
 msgstr "PAT"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"PAT does not have access to this repository. Verify the token has the 'repo'"
-" scope or set up a GitHub App in Settings → GitHub."
-msgstr ""
-"PAT does not have access to this repository. Verify the token has the 'repo'"
-" scope or set up a GitHub App in Settings → GitHub."
 
 #. module: incubacloud
 #. odoo-python
@@ -7898,3 +7858,48 @@ msgstr "↻ Re-detectar instalación"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "↻ Refresh"
 msgstr "↻ Actualizar"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"No GitHub credentials configured. Set up a GitHub App or a Personal Access "
+"Token (PAT) to access private repositories."
+msgstr ""
+"No hay credenciales de GitHub configuradas. Configura una GitHub App o un "
+"Token de Acceso Personal (PAT) para acceder a repositorios privados."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"The PAT does not have access to this repository. Verify the token has the "
+"'repo' scope, or set up a GitHub App."
+msgstr ""
+"El PAT no tiene acceso a este repositorio. Verifica que el token tenga el "
+"ámbito 'repo', o configura una GitHub App."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"The GitHub App does not have access to this repository. Install the App on "
+"the repository's organization, or configure a PAT."
+msgstr ""
+"La GitHub App no tiene acceso a este repositorio. Instala la App en la "
+"organización del repositorio, o configura un PAT."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"Could not access the repository. Check the URL and your GitHub credentials."
+msgstr ""
+"No se pudo acceder al repositorio. Comprueba la URL y tus credenciales de "
+"GitHub."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Open GitHub settings →"
+msgstr "Abrir ajustes de GitHub →"
