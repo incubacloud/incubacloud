@@ -107,6 +107,18 @@
     margin-top: -2px;
 }
 
+.ic-repo-fetch-error-link {
+    margin-left: 6px;
+    color: $primary-blue;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
 // ─── Branch row ───────────────────────────────────────────────────────────────
 
 .ic-repo-editor-branch,

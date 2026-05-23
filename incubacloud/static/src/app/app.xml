@@ -93,7 +93,7 @@
                             embedded="true"/>
                     </t>
 <t t-if="state.route === 'settings' and env.permissions?.can_manage_settings">
-                        <Settings/>
+                        <Settings initialTab="state.params.tab"/>
                     </t>
                     <t t-if="state.route === 'backup_backends' and env.permissions?.can_manage_settings">
                         <BackupBackendsList/>

@@ -18,7 +18,14 @@
                 </div>
 
                 <!-- URL / branch error -->
-                <div t-if="state.branchError" class="ic-repo-fetch-error" t-esc="state.branchError"/>
+                <div t-if="state.branchError" class="ic-repo-fetch-error">
+                    <span t-esc="state.branchError"/>
+                    <a t-if="state.branchSettingsHint and env.permissions?.can_manage_settings"
+                       class="ic-repo-fetch-error-link"
+                       t-on-click.prevent="() => env.navigate('settings', { tab: 'github' })">
+                        Open GitHub settings →
+                    </a>
+                </div>
 
                 <!-- ── Branch ──────────────────────────────────────────── -->
                 <div class="ic-repo-editor-branch">

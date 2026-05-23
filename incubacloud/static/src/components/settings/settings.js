@@ -9,11 +9,13 @@ import { useFormValidation } from "../../utils/use_form_validation";
 export class Settings extends Component {
     static template = "incubacloud.Settings";
     static components = { IcConfirmDialog, CoreRatesTab };
-    static props = {};
+    static props = {
+        initialTab: { type: String, optional: true },
+    };
 
     setup() {
         this.state = useState({
-            tab: "general",
+            tab: this.props.initialTab || "general",
             loading: true,
             saving: false,
             testing: false,

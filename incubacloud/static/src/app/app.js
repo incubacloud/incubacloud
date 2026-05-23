@@ -69,7 +69,10 @@ export function _parseRoute(pathname) {
             }
             return { route: "hosts", params: {} };
         }
-        case "settings": return { route: "settings", params: {} };
+        case "settings": {
+            const tab = new URLSearchParams(window.location.search).get("tab") || undefined;
+            return { route: "settings", params: tab ? { tab } : {} };
+        }
         case "backup-backends": {
             if (parts.length === 1) return { route: "backup_backends", params: {} };
             if (parts[1] === "new") return { route: "new_backup_backend", params: {} };
@@ -103,7 +106,7 @@ export function _buildUrl(route, params = {}) {
         case "new_host":          return `${_BASE}/hosts/new`;
         case "host_detail":       return `${_BASE}/hosts/${params.host_id}`;
 
-        case "settings":              return `${_BASE}/settings`;
+        case "settings":              return params.tab ? `${_BASE}/settings?tab=${params.tab}` : `${_BASE}/settings`;
         case "backup_backends":       return `${_BASE}/backup-backends`;
         case "new_backup_backend":    return `${_BASE}/backup-backends/new`;
         case "backup_backend_detail": return `${_BASE}/backup-backends/${params.backend_id}`;

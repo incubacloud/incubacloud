@@ -261,7 +261,10 @@ class GitHubMixin:
         msg = self._build_github_error(
             app_status, pat_status, bool(pat),
         )
-        return {'ok': False, 'error': msg, 'branches': []}
+        # ``settings_hint`` tells the frontend this error is fixable in the
+        # global GitHub settings, so it can render a direct link there (the
+        # message itself no longer points at an ambiguous "Settings" menu).
+        return {'ok': False, 'error': msg, 'branches': [], 'settings_hint': True}
 
     @staticmethod
     def _build_github_error(app_status, pat_status, has_pat):
@@ -269,20 +272,20 @@ class GitHubMixin:
         if app_status == 'not_configured' and not has_pat:
             return _(
                 "No GitHub credentials configured. "
-                "Go to Settings → GitHub to set up a GitHub App "
-                "or configure a Personal Access Token (PAT)."
+                "Set up a GitHub App or a Personal Access Token (PAT) "
+                "to access private repositories."
             )
         if app_status == 'not_configured' and pat_status == 'no_access':
             return _(
-                "PAT does not have access to this repository. "
-                "Verify the token has the 'repo' scope "
-                "or set up a GitHub App in Settings → GitHub."
+                "The PAT does not have access to this repository. "
+                "Verify the token has the 'repo' scope, "
+                "or set up a GitHub App."
             )
         if app_status == 'no_access' and not has_pat:
             return _(
-                "GitHub App does not have access to this repository. "
-                "Install the App on the repository's organization "
-                "or configure a PAT in Settings → GitHub."
+                "The GitHub App does not have access to this repository. "
+                "Install the App on the repository's organization, "
+                "or configure a PAT."
             )
         if app_status == pat_status == 'no_access':
             return _(
@@ -293,7 +296,7 @@ class GitHubMixin:
             )
         return _(
             "Could not access the repository. Check the URL "
-            "and your GitHub credentials in Settings."
+            "and your GitHub credentials."
         )
 
     @http.route(['/cloud/get_branch_head'], type='jsonrpc', auth='user')
