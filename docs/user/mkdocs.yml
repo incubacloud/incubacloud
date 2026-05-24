@@ -6,7 +6,7 @@ copyright: Copyright &copy; IncubaCloud
 
 repo_url: https://github.com/incubacloud/incubacloud
 repo_name: incubacloud/incubacloud
-edit_uri: edit/19.0/docs/user/docs/
+edit_uri: edit/18.0/docs/user/docs/
 
 theme:
   name: material

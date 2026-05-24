@@ -2,12 +2,12 @@ name: Docs
 
 on:
   push:
-    branches: ["19.0"]
+    branches: ["18.0"]
     paths:
       - "docs/user/**"
       - ".github/workflows/docs.yml"
   pull_request:
-    branches: ["19.0"]
+    branches: ["18.0"]
     paths:
       - "docs/user/**"
       - ".github/workflows/docs.yml"
@@ -51,7 +51,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/19.0'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/18.0'
     runs-on: ubuntu-latest
     permissions:
       contents: write

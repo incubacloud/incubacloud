@@ -7,53 +7,42 @@
             <field name="sequence">5</field>
         </record>
 
-        <record model="res.groups.privilege" id="res_groups_privilege_cloud_security">
-            <field name="name">Cloud</field>
-            <field name="category_id" ref="incubacloud.module_category_cloud_security"/>
-            <field name="sequence">7</field>
-        </record>
-
         <!-- Hierarchy: Manager > Developer > Project Manager > Consultant > Stakeholder
              Each group implies the one below via implied_ids. -->
 
         <record id="group_cloud_user" model="res.groups">
             <field name="name">Stakeholder</field>
-            <field name="sequence">10</field>
             <field name="comment">View assigned projects and instances. Login to remote instances for testing.</field>
-            <field name="privilege_id" ref="res_groups_privilege_cloud_security"/>
+            <field name="category_id" ref="module_category_cloud_security"/>
         </record>
 
         <record id="group_cloud_consultant" model="res.groups">
             <field name="name">Consultant</field>
-            <field name="sequence">20</field>
             <field name="comment">Create staging/dev instances, deploy, rebuild on assigned projects. No terminal, logs or backups.</field>
-            <field name="privilege_id" ref="res_groups_privilege_cloud_security"/>
+            <field name="category_id" ref="module_category_cloud_security"/>
             <field name="implied_ids" eval="[(4, ref('group_cloud_user'))]"/>
         </record>
 
         <record id="group_cloud_project_manager" model="res.groups">
             <field name="name">Project Manager</field>
-            <field name="sequence">30</field>
             <field name="comment">See all projects. Create projects. Same as Consultant but no project-scope restriction.</field>
-            <field name="privilege_id" ref="res_groups_privilege_cloud_security"/>
+            <field name="category_id" ref="module_category_cloud_security"/>
             <field name="implied_ids" eval="[(4, ref('group_cloud_consultant'))]"/>
         </record>
 
         <record id="group_cloud_developer" model="res.groups">
             <field name="name">Developer</field>
-            <field name="sequence">40</field>
             <field name="comment">Terminal, container logs, export, backups, clone to staging. Everything except global settings and deleting production.</field>
-            <field name="privilege_id" ref="res_groups_privilege_cloud_security"/>
+            <field name="category_id" ref="module_category_cloud_security"/>
             <field name="implied_ids" eval="[(4, ref('group_cloud_project_manager'))]"/>
         </record>
 
         <record id="group_cloud_manager" model="res.groups">
             <field name="name">Administrator</field>
-            <field name="sequence">50</field>
             <field name="comment">Full access: hosts, settings, GitHub, backup backends, delete production.</field>
-            <field name="privilege_id" ref="res_groups_privilege_cloud_security"/>
+            <field name="category_id" ref="module_category_cloud_security"/>
             <field name="implied_ids" eval="[(4, ref('group_cloud_developer'))]"/>
-            <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
+            <field name="users" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
         </record>
 
     </data>

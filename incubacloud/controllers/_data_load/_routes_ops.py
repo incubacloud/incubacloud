@@ -31,7 +31,7 @@ class OpsMixin:
 
     # ────────────────────────────────────────────────────────────────────────
 
-    @http.route(['/cloud/deploy_instance'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/deploy_instance'], type='json', auth='user')
     def cloud_deploy_instance(self, instance_id):
         self._sec()._check_can_deploy()
         instance = request.env['cloud.instance'].browse(instance_id)
@@ -43,7 +43,7 @@ class OpsMixin:
             return safe_error_response(exc, _("Failed to deploy instance"))
         return _job_response(request.env, job_id)
 
-    @http.route(['/cloud/rebuild_instance'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/rebuild_instance'], type='json', auth='user')
     def cloud_rebuild_instance(self, instance_id):
         self._sec()._check_can_deploy()
         instance = request.env['cloud.instance'].browse(instance_id)
@@ -109,7 +109,7 @@ class OpsMixin:
             )
         return _("S3 chain")
 
-    @http.route(['/cloud/list_backups'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/list_backups'], type='json', auth='user')
     def cloud_list_backups(self, instance_id, refresh=False):
         """List backups from cloud.instance.backup records.
 
@@ -132,7 +132,7 @@ class OpsMixin:
             'result': self._serialize_backups(instance_id),
         }
 
-    @http.route(['/cloud/get_backup_result'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_backup_result'], type='json', auth='user')
     def cloud_get_backup_result(self, job_id):
         """Poll a backup_list job; return persisted records when done."""
         self._sec()._check_can_manage_backups()
@@ -154,7 +154,7 @@ class OpsMixin:
             'error': job._get_last_system_message() or _('Job failed.'),
         }
 
-    @http.route(['/cloud/create_backup'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/create_backup'], type='json', auth='user')
     def cloud_create_backup(self, instance_id, with_filestore=True):
         """Enqueue a backup_create job.
 
@@ -176,7 +176,7 @@ class OpsMixin:
         job_id = instance.create_backup(with_filestore=bool(with_filestore))
         return {'ok': True, 'job_id': job_id}
 
-    @http.route(['/cloud/clone_to_staging'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/clone_to_staging'], type='json', auth='user')
     def cloud_clone_to_staging(self, instance_id, staging_name):
         self._sec()._check_can_clone_to_staging()
         instance = request.env['cloud.instance'].browse(instance_id)
@@ -191,7 +191,7 @@ class OpsMixin:
         result = instance.clone_to_staging(staging_name.strip())
         return {'ok': True, **result}
 
-    @http.route(['/cloud/download_backup'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/download_backup'], type='json', auth='user')
     def cloud_download_backup(self, instance_id, time, download_type='dump'):
         """Download a backup. Prod: enqueue job. Non-prod: return attachment URL."""
         self._sec()._check_can_manage_backups()
@@ -208,7 +208,7 @@ class OpsMixin:
 
     @http.route(
         ['/cloud/download_backup_neutralized'],
-        type='jsonrpc', auth='user',
+        type='json', auth='user',
     )
     def cloud_download_backup_neutralized(
         self, instance_id, time='live', with_filestore=False,
@@ -236,7 +236,7 @@ class OpsMixin:
         })
         return {'ok': True, 'job_id': job_id}
 
-    @http.route(['/cloud/restore_backup'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/restore_backup'], type='json', auth='user')
     def cloud_restore_backup(self, instance_id, time):
         """Restore a production instance from a duplicity backup."""
         self._sec()._check_can_manage_backups()
@@ -253,7 +253,7 @@ class OpsMixin:
         job_id = instance.restore_backup({'time': time})
         return {'ok': True, 'job_id': job_id}
 
-    @http.route(['/cloud/delete_project'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/delete_project'], type='json', auth='user')
     def cloud_delete_project(self, project_id):
         self._sec()._check_can_delete_project()
         project = request.env['cloud.project'].browse(project_id)
@@ -271,7 +271,7 @@ class OpsMixin:
         project.unlink()
         return {'ok': True}
 
-    @http.route(['/cloud/delete_instance'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/delete_instance'], type='json', auth='user')
     def cloud_delete_instance(self, instance_id):
         inst = request.env['cloud.instance'].browse(instance_id)
         if not inst.exists():
@@ -322,7 +322,7 @@ class OpsMixin:
 
         return run_async(_run())
 
-    @http.route(['/cloud/browse_host_dir'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/browse_host_dir'], type='json', auth='user')
     def cloud_browse_host_dir(self, host_id, path='~'):
         """Browse directories on a remote host via SSH.
 
@@ -445,7 +445,7 @@ class OpsMixin:
             'entries': entries,
         }
 
-    @http.route(['/cloud/import_host_instance'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/import_host_instance'], type='json', auth='user')
     def cloud_import_host_instance(self, host_id, path):
         """Import a running doodba instance from a host directory.
 
@@ -867,7 +867,7 @@ class OpsMixin:
         }
     # ── Container log streaming ────────────────────────────────────────────────
 
-    @http.route(['/cloud/fetch_container_logs'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/fetch_container_logs'], type='json', auth='user')
     def cloud_fetch_container_logs(self, instance_id, service, lines=200):
         """SSH into the instance host and return recent Docker Compose logs.
 

@@ -1,7 +1,7 @@
 # IncubaCloud Core
 
 [![License: ELv2](https://img.shields.io/badge/License-Elastic%20v2-blue.svg)](LICENSE)
-[![Odoo](https://img.shields.io/badge/Odoo-19.0-purple.svg)](https://www.odoo.com)
+[![Odoo](https://img.shields.io/badge/Odoo-18.0-purple.svg)](https://www.odoo.com)
 [![CI](https://github.com/incubacloud/incubacloud/actions/workflows/ci.yml/badge.svg)](https://github.com/incubacloud/incubacloud/actions/workflows/ci.yml)
 
 **IncubaCloud** is an Odoo-native platform for deploying, managing and monitoring remote Odoo instances — host management, instance lifecycle, GitHub integration, backups, terminals and audit trails, all from inside your ERP.
@@ -137,11 +137,11 @@ See [docs/architecture.md](docs/architecture.md) for the full module structure a
 
 ## Installation
 
-Standard Odoo 19.0 module. Add this repository to your `addons_path`, install the Python dependencies and the OCA `queue_job` module.
+Standard Odoo 18.0 module. Add this repository to your `addons_path`, install the Python dependencies and the OCA `queue_job` module.
 
 **Python dependencies:** `asyncssh`, `cryptography`, `boto3`, `PyYAML`
 
-**Odoo dependencies:** `queue_job` ([OCA/queue](https://github.com/OCA/queue) 19.0)
+**Odoo dependencies:** `queue_job` ([OCA/queue](https://github.com/OCA/queue) 18.0)
 
 ---
 

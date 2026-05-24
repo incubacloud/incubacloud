@@ -43,7 +43,7 @@ docs/user/
 
 ## Deployment
 
-CI: `.github/workflows/docs.yml`. Pushes to branch `19.0` that touch `docs/user/**`
+CI: `.github/workflows/docs.yml`. Pushes to branch `18.0` that touch `docs/user/**`
 build and deploy to the `gh-pages` branch. GitHub Pages serves it at
 `https://docs.incubacloud.io`.
 

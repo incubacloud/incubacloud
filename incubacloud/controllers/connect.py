@@ -109,7 +109,7 @@ class InstanceConnectController(http.Controller):
 
     # ── Get users ─────────────────────────────────────────────────────────────
 
-    @http.route(['/cloud/get_instance_users'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_instance_users'], type='json', auth='user')
     def get_instance_users(self, instance_id):
         request.env['cloud.security.mixin']._check_can_connect_as_user()
 
@@ -168,7 +168,7 @@ class InstanceConnectController(http.Controller):
 
     # ── Prepare session ────────────────────────────────────────────────────────
 
-    @http.route(['/cloud/prepare_instance_connect'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/prepare_instance_connect'], type='json', auth='user')
     def prepare_instance_connect(self, instance_id, user_id, user_name=None):
         """Inject a pre-authenticated session into the instance and return
         a one-time URL pointing to the instance's /ic/login endpoint.
@@ -250,7 +250,7 @@ class InstanceConnectController(http.Controller):
             'url': f'https://{domain}/ic/login?t={ic_token}',
         }
 
-    @http.route('/cloud/get_audit_log', type='jsonrpc', auth='user', methods=['POST'])
+    @http.route('/cloud/get_audit_log', type='json', auth='user', methods=['POST'])
     def get_audit_log(
         self, instance_id=None, host_id=None, limit=100,
         q=None, action_filter=None, date_from=None, date_to=None,
@@ -265,7 +265,7 @@ class InstanceConnectController(http.Controller):
             date_to=date_to,
         )
 
-    @http.route('/cloud/purge_audit_logs', type='jsonrpc', auth='user', methods=['POST'])
+    @http.route('/cloud/purge_audit_logs', type='json', auth='user', methods=['POST'])
     def purge_audit_logs(self, days=None):
         if not request.env.user.has_group('incubacloud.group_cloud_manager'):
             return {'ok': False, 'error': 'Unauthorized'}
@@ -275,7 +275,7 @@ class InstanceConnectController(http.Controller):
         count = request.env['cloud.audit.log']._purge_old(days)
         return {'ok': True, 'deleted': count}
 
-    @http.route('/cloud/get_user_preferences', type='jsonrpc', auth='user',
+    @http.route('/cloud/get_user_preferences', type='json', auth='user',
                 methods=['POST'])
     def get_user_preferences(self):
         user = request.env.user
@@ -284,7 +284,7 @@ class InstanceConnectController(http.Controller):
             'cloud_notification_level': user.cloud_notification_level or 'failures',
         }
 
-    @http.route('/cloud/save_user_preferences', type='jsonrpc', auth='user',
+    @http.route('/cloud/save_user_preferences', type='json', auth='user',
                 methods=['POST'])
     def save_user_preferences(self, cloud_notification_level=None):
         valid = {'all', 'failures', 'none'}

@@ -6,7 +6,7 @@ Only the latest minor release of each supported Odoo version receives security f
 
 | Odoo version | Supported |
 |---|---|
-| 19.0 | ✓ |
+| 18.0 | ✓ |
 
 ## Reporting a Vulnerability
 

@@ -48,7 +48,7 @@ pip install asyncssh cryptography boto3 refurb
 
 ### Python
 
-- Target **Python 3.12** and **Odoo 19.0** APIs.
+- Target **Python 3.10** and **Odoo 18.0** APIs.
 - Follow [refurb](https://github.com/dosisod/refurb) idioms:
   - `str.removeprefix()` / `str.removesuffix()` instead of conditional slicing
   - `with suppress(ExcType):` instead of `try/except: pass`
@@ -100,9 +100,9 @@ All new code must be covered by tests. We use three tiers:
 
 ## Pull request process
 
-1. **Fork** the repository and create a branch from `19.0`:
+1. **Fork** the repository and create a branch from `18.0`:
    ```bash
-   git checkout -b feature/my-feature 19.0
+   git checkout -b feature/my-feature 18.0
    ```
 
 2. **Write tests** for your changes. PRs without tests for new behaviour will not be merged.
@@ -112,7 +112,7 @@ All new code must be covered by tests. We use three tiers:
    refurb incubacloud/ incubacloud_connect/
    ```
 
-4. **Open the PR** against the `19.0` branch. Fill in the PR template.
+4. **Open the PR** against the `18.0` branch. Fill in the PR template.
 
 5. A maintainer will review within a reasonable time. Please be patient.
 

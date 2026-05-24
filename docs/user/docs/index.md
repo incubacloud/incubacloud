@@ -51,7 +51,7 @@ the rest — every screen, every option, every troubleshooting note — lives he
 
 Everything you read here is open and auditable.
 The platform's core module is at [github.com/incubacloud/incubacloud](https://github.com/incubacloud/incubacloud).
-This site itself is built from [`docs/user/`](https://github.com/incubacloud/incubacloud/tree/19.0/docs/user)
+This site itself is built from [`docs/user/`](https://github.com/incubacloud/incubacloud/tree/18.0/docs/user)
 in the same repo.
 
 ## Need help?

@@ -13,7 +13,7 @@ from odoo.tests.common import HttpCase
 @tagged('-at_install', 'post_install')
 class TestCloudHealth(HttpCase):
     """The probe targets a public endpoint that still needs a DB context
-    (``auth='public'`` routes are registered per-DB in Odoo 19, not
+    (``auth='public'`` routes are registered per-DB in Odoo 18, not
     server-wide). We pass ``X-Odoo-Database`` explicitly to mimic what a
     real probe configures via the Host/DB-selector layer in front of
     Odoo (nginx/Traefik rule, or a cookie). Without the header the

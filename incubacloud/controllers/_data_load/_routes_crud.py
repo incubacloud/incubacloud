@@ -45,7 +45,7 @@ class CrudMixin:
     # Tag scope map kept on the class for subclass overrides.
     _TAG_MODEL_BY_SCOPE = _TAG_MODEL_BY_SCOPE
 
-    @http.route(['/cloud/get_config'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_config'], type='json', auth='user')
     def cloud_get_config(self):
         """Return feature flags and config for the SPA.
 
@@ -73,7 +73,7 @@ class CrudMixin:
             },
         }
 
-    @http.route(['/cloud/get_projects'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_projects'], type='json', auth='user')
     def cloud_get_projects(self):
         projects, total, truncated, limit = _capped_search(
             request.env['cloud.project'], order='name',
@@ -111,7 +111,7 @@ class CrudMixin:
         'instance': 'cloud.instance.tag',
     }
 
-    @http.route(['/cloud/get_tags'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_tags'], type='json', auth='user')
     def cloud_get_tags(self, scope='project'):
         model = self._TAG_MODEL_BY_SCOPE.get(scope, 'cloud.tag')
         # Defensive cap: tags are naturally bounded (tens in practice) but
@@ -134,7 +134,7 @@ class CrudMixin:
             }
         return payload
 
-    @http.route(['/cloud/get_users'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_users'], type='json', auth='user')
     def cloud_get_users(self, search='', **kw):
         """Search internal users for member picker."""
         self._sec()._check_cloud_group('group_cloud_project_manager')
@@ -149,7 +149,7 @@ class CrudMixin:
         users = request.env['res.users'].search(domain, limit=20)
         return [{'id': u.id, 'name': u.name, 'email': u.email or ''} for u in users]
 
-    @http.route(['/cloud/create_tag'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/create_tag'], type='json', auth='user')
     def cloud_create_tag(self, name, scope='project'):
         # Consultant+ only: tags label projects / hosts / instances and
         # are visible across the SPA. Without a gate any internal user
@@ -171,7 +171,7 @@ class CrudMixin:
         tag = Tag.create({'name': name, 'color': total % 10})
         return {'id': tag.id, 'name': tag.name, 'color': tag.color}
 
-    @http.route(['/cloud/get_hosts'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_hosts'], type='json', auth='user')
     def cloud_get_hosts(self):
         hosts, total, truncated, limit = _capped_search(
             request.env['cloud.host'], order='name',
@@ -232,7 +232,7 @@ class CrudMixin:
             ],
         }
 
-    @http.route(['/cloud/get_dashboard'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_dashboard'], type='json', auth='user')
     def cloud_get_dashboard(self):
         env = request.env
         # Dashboard only needs counts for hosts/instances/projects. Using
@@ -291,12 +291,12 @@ class CrudMixin:
             ],
         }
 
-    @http.route(['/cloud/get_alert_count'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_alert_count'], type='json', auth='user')
     def cloud_get_alert_count(self):
         count = request.env['cloud.alert'].search_count([('state', '=', 'active')])
         return {'count': count}
 
-    @http.route(['/cloud/dismiss_alert'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/dismiss_alert'], type='json', auth='user')
     def cloud_dismiss_alert(self, alert_id):
         # Consultant+ only: dismissing alerts is an operational
         # decision (especially for ``pip_conflict`` / ``addon_conflict``
@@ -311,7 +311,7 @@ class CrudMixin:
         alert.write({'state': 'dismissed'})
         return {'ok': True}
 
-    @http.route(['/cloud/compare_sync'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/compare_sync'], type='json', auth='user')
     def cloud_compare_sync(self, instance_id):
         """Compare instance deps/repos with its project template."""
         # Consultant+ only: same gate as ``cloud_apply_sync`` so the
@@ -333,7 +333,7 @@ class CrudMixin:
             )
         return {'ok': True, 'diff': diff}
 
-    @http.route(['/cloud/apply_sync'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/apply_sync'], type='json', auth='user')
     def cloud_apply_sync(self, instance_id, actions):
         """Apply user-selected sync actions between instance and project."""
         # Consultant+ only: ``apply_sync`` mutates the instance's
@@ -355,7 +355,7 @@ class CrudMixin:
             return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
         return {'ok': True}
 
-    @http.route(['/cloud/get_alert_history'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_alert_history'], type='json', auth='user')
     def cloud_get_alert_history(self, state_filter='all'):
         domain = [] if state_filter == 'all' else [('state', '=', state_filter)]
         alerts = request.env['cloud.alert'].search(
@@ -399,7 +399,7 @@ class CrudMixin:
             for a in alerts
         ]
 
-    @http.route(['/cloud/resolve_pip_conflict'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/resolve_pip_conflict'], type='json', auth='user')
     def cloud_resolve_pip_conflict(self, alert_id, resolutions):
         """Resolve a pip dependency conflict alert.
 
@@ -452,7 +452,7 @@ class CrudMixin:
                 blocked_job.unblock_and_enqueue()
         return {'ok': True}
 
-    @http.route(['/cloud/resolve_addon_conflict'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/resolve_addon_conflict'], type='json', auth='user')
     def cloud_resolve_addon_conflict(self, alert_id, resolutions):
         """Resolve an addon conflict alert.
 
@@ -500,7 +500,7 @@ class CrudMixin:
             blocked_job.unblock_and_enqueue()
         return {'ok': True}
 
-    @http.route(['/cloud/get_secret'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_secret'], type='json', auth='user')
     def cloud_get_secret(self, model, record_id, field):
         """Return the plain-text value of an encrypted password field.
 
@@ -518,7 +518,7 @@ class CrudMixin:
         record.check_access('write')
         value = getattr(record, field, None) or ''
         return {'value': value}
-    @http.route(['/cloud/get_host'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_host'], type='json', auth='user')
     def cloud_get_host(self, host_id):
         host = request.env['cloud.host'].browse(host_id)
         if not host.exists():
@@ -586,7 +586,7 @@ class CrudMixin:
         'exclude_from_autoassign',
     }
 
-    @http.route(['/cloud/host_defaults'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/host_defaults'], type='json', auth='user')
     def cloud_host_defaults(self):
         self._sec()._check_can_manage_hosts()
         Host = request.env['cloud.host']
@@ -599,7 +599,7 @@ class CrudMixin:
             'traefik_yml': defaults.get('traefik_yml', ''),
         }
 
-    @http.route(['/cloud/create_host'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/create_host'], type='json', auth='user')
     def cloud_create_host(self, vals):
         self._sec()._check_can_manage_hosts()
         safe = {k: v for k, v in vals.items() if k in self._HOST_ALLOWED}
@@ -610,7 +610,7 @@ class CrudMixin:
         host = request.env['cloud.host'].create(safe)
         return {'id': host.id, 'name': host.name}
 
-    @http.route(['/cloud/delete_host'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/delete_host'], type='json', auth='user')
     def cloud_delete_host(self, host_id):
         self._sec()._check_can_manage_hosts()
         host = request.env['cloud.host'].browse(host_id)
@@ -649,7 +649,7 @@ class CrudMixin:
         job_id = request.env['cloud.job'].enqueue(host_id, False, 'delete_host')
         return {'job_id': job_id}
 
-    @http.route(['/cloud/trust_host_key'], type='jsonrpc', auth='user', methods=['POST'])
+    @http.route(['/cloud/trust_host_key'], type='json', auth='user', methods=['POST'])
     def cloud_trust_host_key(self, host_id):
         """Connect once (without verification) to capture and store the server
         host public key.  Subsequent connections will verify against it."""
@@ -670,7 +670,7 @@ class CrudMixin:
             return {'ok': False, 'error': _('Connection failed. Check host credentials and network.')}
         return {'ok': True}
 
-    @http.route(['/cloud/save_host'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_host'], type='json', auth='user')
     def cloud_save_host(self, host_id, vals):
         self._sec()._check_can_manage_hosts()
         host = request.env['cloud.host'].browse(host_id)
@@ -705,7 +705,7 @@ class CrudMixin:
 
         return {'ok': True}
 
-    @http.route(['/cloud/setup_whitelist'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/setup_whitelist'], type='json', auth='user')
     def cloud_setup_whitelist(self, host_id):
         self._sec()._check_can_manage_hosts()
         host = request.env['cloud.host'].browse(host_id)
@@ -717,7 +717,7 @@ class CrudMixin:
         return {'job_id': job_id}
     # ── Project detail endpoints ────────────────────────────────────────────
 
-    @http.route(['/cloud/get_project'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_project'], type='json', auth='user')
     def cloud_get_project(self, project_id):
         project = request.env['cloud.project'].browse(project_id)
         if not project.exists():
@@ -765,7 +765,7 @@ class CrudMixin:
             ],
         }
 
-    @http.route(['/cloud/create_project'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/create_project'], type='json', auth='user')
     def cloud_create_project(self, vals):
         self._sec()._check_can_create_project()
         _PROJ_ALLOWED = {
@@ -822,7 +822,7 @@ class CrudMixin:
             )
         return {'id': project.id, 'name': project.name}
 
-    @http.route(['/cloud/save_project'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_project'], type='json', auth='user')
     def cloud_save_project(self, project_id, vals):
         self._sec()._check_cloud_group('group_cloud_consultant')
         project = request.env['cloud.project'].browse(project_id)
@@ -878,7 +878,7 @@ class CrudMixin:
                 active.write({'state': 'dismissed'})
         return {'ok': True}
 
-    @http.route(['/cloud/get_host_instances'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_host_instances'], type='json', auth='user')
     def cloud_get_host_instances(self, host_id):
         host = request.env['cloud.host'].browse(host_id)
         if not host.exists():
@@ -909,7 +909,7 @@ class CrudMixin:
             ],
         }
 
-    @http.route(['/cloud/get_project_instances'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_project_instances'], type='json', auth='user')
     def cloud_get_project_instances(self, project_id):
         project = request.env['cloud.project'].browse(project_id)
         if not project.exists():
@@ -966,7 +966,7 @@ class CrudMixin:
         """
         return None
 
-    @http.route(['/cloud/create_instance'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/create_instance'], type='json', auth='user')
     def cloud_create_instance(self, vals):
         self._sec()._check_can_create_instance()
         repos = vals.pop('repos', None) if isinstance(vals, dict) else None
@@ -1083,7 +1083,7 @@ class CrudMixin:
 
     # ── General settings ──────────────────────────────────────────────────
 
-    @http.route(['/cloud/get_general_settings'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_general_settings'], type='json', auth='user')
     def cloud_get_general_settings(self):
         ICP = request.env['ir.config_parameter'].sudo()
         bb_id = int(ICP.get_param(
@@ -1104,7 +1104,7 @@ class CrudMixin:
             ),
         }
 
-    @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_general_settings'], type='json', auth='user')
     def cloud_save_general_settings(
         self, autoassign_enabled=False, default_backup_backend_id=None,
         audit_log_retention_days=90, job_log_retention_days=30,
@@ -1154,7 +1154,7 @@ class CrudMixin:
 
     # ── Core rate-limit settings ──────────────────────────────────────────
 
-    @http.route(['/cloud/get_core_rate_limits'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_core_rate_limits'], type='json', auth='user')
     def cloud_get_core_rate_limits(self):
         """Return the configured caps for the core-owned rate limits.
 
@@ -1170,7 +1170,7 @@ class CrudMixin:
             ),
         }
 
-    @http.route(['/cloud/save_core_rate_limits'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_core_rate_limits'], type='json', auth='user')
     def cloud_save_core_rate_limits(self, vals):
         """Persist the core rate-limit caps. Any non-positive value is
         stored as 0 and the model treats 0 as "use documented default"
@@ -1189,7 +1189,7 @@ class CrudMixin:
         request.env['cloud.settings'].sudo()._get().write(safe)
         return {'ok': True}
 
-    @http.route(['/cloud/get_langs'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_langs'], type='json', auth='user')
     def cloud_get_langs(self):
         langs = request.env['res.lang'].with_context(active_test=False).search(
             [], order='name asc'
@@ -1329,14 +1329,14 @@ class CrudMixin:
             ],
         }
 
-    @http.route(['/cloud/get_instance'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_instance'], type='json', auth='user')
     def cloud_get_instance(self, instance_id):
         inst = request.env['cloud.instance'].browse(instance_id)
         if not inst.exists():
             return {'ok': False, 'error': _('Instance not found')}
         return self._serialize_instance(inst)
 
-    @http.route(['/cloud/get_project_full'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_project_full'], type='json', auth='user')
     def cloud_get_project_full(self, project_id):
         """Load entire project data in one RPC for instant switching."""
         project = request.env['cloud.project'].browse(project_id)
@@ -1388,7 +1388,7 @@ class CrudMixin:
         'smtp_memory_limit', 'smtp_cpus',
     }
 
-    @http.route(['/cloud/save_instance'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_instance'], type='json', auth='user')
     def cloud_save_instance(self, instance_id, vals):
         self._sec()._check_cloud_group('group_cloud_consultant')
         inst = request.env['cloud.instance'].browse(instance_id)

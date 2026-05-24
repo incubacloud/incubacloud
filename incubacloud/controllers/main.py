@@ -10,7 +10,6 @@ from pathlib import Path
 
 from odoo import http, _
 from odoo.addons.bus.websocket import WebsocketConnectionHandler
-from odoo.fields import Domain
 from odoo.http import request
 from odoo.tools import format_amount, file_open
 from odoo.http import Controller
@@ -206,7 +205,7 @@ class CloudController(Controller):
                 {'error': 'An internal error occurred. Check server logs.'}, status=500
             )
 
-    @http.route(['/cloud/ping'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/ping'], type='json', auth='user')
     def cloud_ping(self):
         return {'response': 'pong'}
 

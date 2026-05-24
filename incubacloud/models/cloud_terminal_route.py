@@ -44,10 +44,10 @@ class CloudTerminalRoute(models.Model):
         help="Ownership for quick ACL check on every proxy call.",
     )
 
-    _session_id_uniq = models.Constraint(
-        'unique (session_id)',
-        'One row per terminal session.',
-    )
+    _sql_constraints = [
+        ('session_id_uniq', 'unique (session_id)',
+         'One row per terminal session.'),
+    ]
 
     # ── Liveness ────────────────────────────────────────────────────────
 

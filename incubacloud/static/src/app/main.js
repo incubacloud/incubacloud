@@ -1,7 +1,7 @@
 import { Loader } from "@incubacloud/components/loader/loader";
 import { getTemplate } from "@web/core/templates";
 import { mount, reactive, whenReady } from "@odoo/owl";
-import { _t, appTranslateFn } from "@web/core/l10n/translation";
+import { _t } from "@web/core/l10n/translation";
 import { session } from "@web/session";
 import { mountComponent } from "@web/env";
 import { Chrome } from "@incubacloud/app/app";
@@ -12,7 +12,7 @@ whenReady(() => {
         getTemplate,
         props: { loader },
         translatableAttributes: ["data-tooltip"],
-        translateFn: appTranslateFn,
+        translateFn: _t,
     });
 });
 (async function startCloudApp() {

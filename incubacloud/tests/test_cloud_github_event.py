@@ -145,11 +145,20 @@ class _GitHubEventBase(TransactionCase):
         return calls, _patch.object(type(Job), 'enqueue', side_effect=_side)
 
     def _force_job_state(self, job, state):
-        """Set job state via SQL to bypass ORM write guards."""
+        """Set job state via SQL to bypass ORM write guards.
+
+        ``state`` is a stored field related to ``queue_job_id.state``. On
+        Odoo 18 a recompute left pending from ``create`` would overwrite
+        the raw value at the next flush (e.g. the flush a ``search`` does
+        before querying). Settle the recompute first, then write the
+        column and drop the stale cache so the value survives.
+        """
+        job.flush_recordset()
         self.env.cr.execute(
             "UPDATE cloud_job SET state = %s WHERE id = %s",
             (state, job.id),
         )
+        job.invalidate_recordset(['state'])
 
 
 # ── _process_push_event ───────────────────────────────────────────────────────

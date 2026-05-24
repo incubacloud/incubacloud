@@ -47,10 +47,10 @@ class CloudRateLimit(models.Model):
     window_start = fields.Datetime(required=True)
     count = fields.Integer(default=0)
 
-    _bucket_uniq = models.Constraint(
-        'unique (bucket)',
-        'One row per rate-limit bucket.',
-    )
+    _sql_constraints = [
+        ('bucket_uniq', 'unique (bucket)',
+         'One row per rate-limit bucket.'),
+    ]
 
     # ── Config accessors ────────────────────────────────────────────────────
 

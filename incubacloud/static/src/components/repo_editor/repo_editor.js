@@ -33,6 +33,7 @@ export class RepoEditor extends Component {
             loadingBranches: false,
             loadingModules:  false,
             branchError:     null,
+            branchSettingsHint: false,
             moduleError:     null,
             freezing:        false,
         });
@@ -52,12 +53,14 @@ export class RepoEditor extends Component {
         if (!url) return;
         this.state.loadingBranches = true;
         this.state.branchError = null;
+        this.state.branchSettingsHint = false;
         this.state.branches = [];
         try {
             const data = await rpc("/cloud/get_repo_branches", { url });
             this.state.branches = data.branches || [];
             if (!data.ok && data.error) {
                 this.state.branchError = data.error;
+                this.state.branchSettingsHint = !!data.settings_hint;
             }
         } catch {
             this.state.branchError = "Could not reach Odoo server";
@@ -173,6 +176,8 @@ export class RepoEditor extends Component {
     async toggleFreeze() {
         const { id, url, branch } = this.props.repo;
         const model = this.props.repoModel;
+        // Freeze/HEAD failures are not credential issues — clear any stale hint.
+        this.state.branchSettingsHint = false;
 
         if (this.isFrozen) {
             // Unfreeze

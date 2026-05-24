@@ -3,6 +3,9 @@
     <record id="cron_purge_audit_logs" model="ir.cron">
         <field name="name">Purge Old Audit Logs</field>
         <field name="model_id" ref="model_cloud_audit_log"/>
+        <!-- Runs as OdooBot: purges via sudo() and the manager group has no
+             write on cloud.audit.log (Odoo 18 pre-checks write here). -->
+        <field name="user_id" ref="base.user_root"/>
         <field name="state">code</field>
         <field name="code">
 ICP = env['ir.config_parameter'].sudo()

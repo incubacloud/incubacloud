@@ -9,6 +9,19 @@ _logger = logging.getLogger(__name__)
 CRON_BOT_LOGIN = "__incubacloud_cron__"
 CRON_BOT_XML_ID = "incubacloud.user_incubacloud_cron"
 
+# Maintenance crons kept running as OdooBot (superuser) instead of the cron
+# bot. Their code server actions target models the cron bot has no write
+# access to (audit log, rate-limit and terminal-route tables stay
+# manager-read-only), and Odoo 18 pre-checks write access on the action's
+# model_id before running the code. The methods do their work via sudo()
+# internally, so running as OdooBot satisfies the pre-check without widening
+# the manager group's ACLs.
+INCUBACLOUD_SUPERUSER_CRONS = {
+    'cron_cloud_terminal_route_gc',
+    'cron_cloud_rate_limit_gc',
+    'cron_purge_audit_logs',
+}
+
 
 class ResUsers(models.Model):
     _inherit = 'res.users'
@@ -144,7 +157,7 @@ class ResUsers(models.Model):
             self.env.ref('base.group_user').id,
             self.env.ref('queue_job.group_queue_job_manager').id,
         ]
-        user.sudo().write({'group_ids': [(4, gid) for gid in required]})
+        user.sudo().write({'groups_id': [(4, gid) for gid in required]})
 
     @api.model
     def _incubacloud_assign_cron_user_id(self, module_name):
@@ -159,7 +172,9 @@ class ResUsers(models.Model):
 
         We only overwrite ``user_id`` when it still points at uid=1
         (the OdooBot default). If an operator has re-routed a cron
-        to a specific user, their choice wins.
+        to a specific user, their choice wins. Maintenance crons listed
+        in ``INCUBACLOUD_SUPERUSER_CRONS`` are skipped so they keep
+        running as OdooBot.
         """
         IMD = self.env['ir.model.data'].sudo()
         bot = self.env.ref(CRON_BOT_XML_ID)
@@ -167,6 +182,11 @@ class ResUsers(models.Model):
             ('module', '=', module_name),
             ('model', '=', 'ir.cron'),
         ])
+        if module_name == 'incubacloud':
+            # Maintenance crons stay on OdooBot — see INCUBACLOUD_SUPERUSER_CRONS.
+            cron_mdata = cron_mdata.filtered(
+                lambda m: m.name not in INCUBACLOUD_SUPERUSER_CRONS
+            )
         if not cron_mdata:
             return
         stale = self.env['ir.cron'].sudo().browse(

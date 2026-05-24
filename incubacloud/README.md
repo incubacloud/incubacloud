@@ -83,7 +83,7 @@ Executor pattern:
 Requirements
 ------------
 
-- Odoo 19.0
+- Odoo 18.0
 - `queue_job` (OCA)
 - Python: `asyncssh`, `cryptography`, `PyJWT`, `PyYAML`, `boto3`
 - Docker image: `ghcr.io/tecnativa/doodba` (includes `click-odoo-contrib`)

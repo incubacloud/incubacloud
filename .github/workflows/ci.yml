@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["19.0"]
+    branches: ["18.0"]
   pull_request:
-    branches: ["19.0"]
+    branches: ["18.0"]
 
 # CN-010: Deny all permissions by default; grant read-only per job.
 # This prevents a compromised step from using GITHUB_TOKEN to push code.
@@ -47,9 +47,9 @@ jobs:
     permissions:
       contents: read
     # CN-011: Pinned to digest to prevent silent image changes.
-    # Update intentionally: docker pull ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
-    #   then: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
-    container: ghcr.io/oca/oca-ci/py3.10-odoo19.0@sha256:9147149654ace4f05a16a4b76772a9f5e4021932291fdffcc8918a13ae80446c
+    # Update intentionally: docker pull ghcr.io/oca/oca-ci/py3.10-odoo18.0:latest
+    #   then: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/oca/oca-ci/py3.10-odoo18.0:latest
+    container: ghcr.io/oca/oca-ci/py3.10-odoo18.0@sha256:9c89abe9181657e92bad6e4374246dc3f36eba8c46bdf6a75de522bfaa5e2cde
 
     services:
       postgres:
@@ -101,7 +101,7 @@ jobs:
 
       - name: Fetch OCA dependencies
         run: |
-          git clone --depth 1 --branch 19.0 https://github.com/OCA/queue.git /opt/odoo/addons-oca/queue
+          git clone --depth 1 --branch 18.0 https://github.com/OCA/queue.git /opt/odoo/addons-oca/queue
           ln -s /opt/odoo/addons-oca/queue/queue_job /opt/odoo/addons/queue_job
 
       - name: Install addons

@@ -37,14 +37,13 @@ class CloudInstance(models.Model):
     _inherit = ['cloud.security.mixin']
     _description = 'Cloud Instance'
 
-    _name_project_uniq = models.Constraint(
-        'unique (project_id, name)',
-        'Instance name must be unique within a project.',
-    )
-    _one_production_per_project = models.Constraint(
-        "EXCLUDE (project_id WITH =) WHERE (environment = 'production' AND project_id IS NOT NULL)",
-        'A project can only have one production instance.',
-    )
+    _sql_constraints = [
+        ('name_project_uniq', 'unique (project_id, name)',
+         'Instance name must be unique within a project.'),
+        ('one_production_per_project',
+         "EXCLUDE (project_id WITH =) WHERE (environment = 'production' AND project_id IS NOT NULL)",
+         'A project can only have one production instance.'),
+    ]
 
     active = fields.Boolean(default=True)
     auto_rebuild = fields.Boolean(
@@ -496,7 +495,7 @@ class CloudInstance(models.Model):
                     subdomain = f"{project.remote_folder}-{inst.name}"
                 else:
                     subdomain = inst.name
-                hostname = f"{subdomain}.{host.wildcard_domain}"
+                hostname = f"{subdomain}.{host._subdomain_suffix()}"
                 self.env['cloud.instance.domain'].create({
                     'instance_id': inst.id,
                     'hostname': hostname,
@@ -1017,7 +1016,7 @@ class CloudInstance(models.Model):
                             if project_folder
                             else vals['name']
                         )
-                        hostname = f"{subdomain}.{host.wildcard_domain}"
+                        hostname = f"{subdomain}.{host._subdomain_suffix()}"
                         vals['domain_ids'] = [
                             (0, 0, {'hostname': hostname}),
                         ]
@@ -1025,7 +1024,7 @@ class CloudInstance(models.Model):
                     and vals.get('host_id') and vals.get('name')):
                 host = self.env['cloud.host'].browse(vals['host_id'])
                 if host.wildcard_domain:
-                    hostname = f"{vals['name']}.{host.wildcard_domain}"
+                    hostname = f"{vals['name']}.{host._subdomain_suffix()}"
                     vals['domain_ids'] = [
                         (0, 0, {'hostname': hostname}),
                     ]

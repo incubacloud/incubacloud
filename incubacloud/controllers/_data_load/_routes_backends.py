@@ -40,7 +40,7 @@ class BackendsMixin:
     # retention; one who could set ``managed_reservation_id`` could orphan
     # a real bucket. Keep them out of the mass-assignment surface.
 
-    @http.route(['/cloud/get_backup_backends'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_backup_backends'], type='json', auth='user')
     def cloud_get_backup_backends(self):
         backends, total, truncated, limit = _capped_search(
             request.env['cloud.backup.backend'], order='name',
@@ -87,7 +87,7 @@ class BackendsMixin:
             'limit': limit,
         }
 
-    @http.route(['/cloud/get_backup_backend'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_backup_backend'], type='json', auth='user')
     def cloud_get_backup_backend(self, backend_id):
         b = request.env['cloud.backup.backend'].browse(backend_id)
         if not b.exists():
@@ -130,7 +130,7 @@ class BackendsMixin:
             ),
         }
 
-    @http.route(['/cloud/create_backup_backend'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/create_backup_backend'], type='json', auth='user')
     def cloud_create_backup_backend(self, vals):
         self._sec()._check_can_manage_settings()
         safe = {
@@ -140,7 +140,7 @@ class BackendsMixin:
         b = request.env['cloud.backup.backend'].create(safe)
         return {'id': b.id, 'name': b.name}
 
-    @http.route(['/cloud/save_backup_backend'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_backup_backend'], type='json', auth='user')
     def cloud_save_backup_backend(self, backend_id, vals):
         self._sec()._check_can_manage_settings()
         b = request.env['cloud.backup.backend'].browse(backend_id)
@@ -153,7 +153,7 @@ class BackendsMixin:
         b.write(safe)
         return {'ok': True}
 
-    @http.route(['/cloud/delete_backup_backend'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/delete_backup_backend'], type='json', auth='user')
     def cloud_delete_backup_backend(self, backend_id):
         self._sec()._check_can_manage_settings()
         b = request.env['cloud.backup.backend'].browse(backend_id)
@@ -222,7 +222,7 @@ class BackendsMixin:
         b.unlink()
         return {'ok': True}
 
-    @http.route(['/cloud/test_backup_backend'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/test_backup_backend'], type='json', auth='user')
     def cloud_test_backup_backend(self, backend_id):
         b = request.env['cloud.backup.backend'].browse(backend_id)
         if not b.exists():
@@ -262,7 +262,7 @@ class BackendsMixin:
         except Exception as exc:
             return safe_error_response(exc, _("Backend connection test failed"))
 
-    @http.route(['/cloud/measure_backup_usage'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/measure_backup_usage'], type='json', auth='user')
     def cloud_measure_backup_usage(self, backend_id):
         """Run an on-demand usage measurement for *backend_id*.
 

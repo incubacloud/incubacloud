@@ -3,6 +3,9 @@
     <record id="cron_cloud_terminal_route_gc" model="ir.cron">
         <field name="name">Garbage-collect stale terminal routes</field>
         <field name="model_id" ref="model_cloud_terminal_route"/>
+        <!-- Runs as OdooBot: GCs via sudo() and the manager group has no
+             write on cloud.terminal.route (Odoo 18 pre-checks write here). -->
+        <field name="user_id" ref="base.user_root"/>
         <field name="state">code</field>
         <field name="code">model._gc()</field>
         <field name="interval_number">5</field>

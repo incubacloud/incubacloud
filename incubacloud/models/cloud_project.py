@@ -1,7 +1,6 @@
 import re
 
 from odoo import api, fields, models, _
-from odoo.fields import Domain
 from odoo.tools import SQL, Query
 from odoo.exceptions import UserError, ValidationError
 

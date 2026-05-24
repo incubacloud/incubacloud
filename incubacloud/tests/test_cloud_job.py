@@ -397,6 +397,10 @@ class TestEnqueueBypassRunningCheck(TransactionCase):
             'instance_id': self.instance.id,
             'name': 'Parent',
         })
+        # Settle the pending ``state`` recompute before the raw write, or
+        # Odoo 18's flush-before-search would recompute it back from the
+        # (empty) ``queue_job_id`` and lose the forced value.
+        self.parent.flush_recordset()
         self.env.cr.execute(
             "UPDATE cloud_job SET state = 'started' WHERE id = %s",
             (self.parent.id,),
@@ -551,7 +555,7 @@ class TestLoadHistoryAccessControl(TransactionCase):
     def test_user_lacks_queue_job_manager_group(self):
         # Sanity: confirm we're testing the right scenario.
         manager_group = self.env.ref('queue_job.group_queue_job_manager')
-        self.assertNotIn(self.user, manager_group.user_ids)
+        self.assertNotIn(self.user, manager_group.users)
 
     def test_load_history_does_not_raise_for_cloud_user(self):
         result = (

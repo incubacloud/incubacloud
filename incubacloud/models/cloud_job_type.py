@@ -5,10 +5,10 @@ class CloudJobType(models.Model):
     _name = "cloud.job.type"
     _description = "Job type for remote execution"
 
-    _code_uniq = models.Constraint(
-        'unique (code)',
-        'Job type code must be unique.',
-    )
+    _sql_constraints = [
+        ('code_uniq', 'unique (code)',
+         'Job type code must be unique.'),
+    ]
 
     name = fields.Char(
         string="Name"
