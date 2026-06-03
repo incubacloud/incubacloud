@@ -285,7 +285,12 @@ class CloudGitHubEvent(models.Model):
 
         for repo in matched:
             inst = repo.instance_id
-            if not (inst.auto_rebuild and inst.deployed and inst.host_id):
+            # Never auto-rebuild an archived instance or one whose host is
+            # deactivated/deleted: the repo match can surface archived
+            # instances (e.g. recycled warms) and ``host_id`` may point at
+            # an archived host, both of which would just fail SSH.
+            if not (inst.active and inst.auto_rebuild and inst.deployed
+                    and inst.host_id and inst.host_id.active):
                 continue
             if (inst.last_auto_rebuild
                     and (now - inst.last_auto_rebuild) < _AUTO_REBUILD_COOLDOWN):
@@ -397,7 +402,11 @@ class CloudGitHubEvent(models.Model):
                 ('pr_repo', '=', repo_full),
             ])
             for inst in instances:
-                if not (inst.deployed and inst.host_id):
+                # Skip archived instances or those on a deactivated/deleted
+                # host — rebuilding them would only fail against a dead
+                # server.
+                if not (inst.active and inst.deployed
+                        and inst.host_id and inst.host_id.active):
                     continue
                 for repo in inst.repo_ids:
                     if _normalize_url(repo.url) == repo_norm and repo.branch != head_ref:

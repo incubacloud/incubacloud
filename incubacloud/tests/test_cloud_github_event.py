@@ -254,6 +254,31 @@ class TestProcessPushEventGuards(_GitHubEventBase):
             ev._process_push_event()
         self.assertEqual(calls, [])
 
+    def test_archived_instance_no_enqueue(self):
+        # The repo match can surface an archived instance (e.g. a recycled
+        # warm); it must never be auto-rebuilt.
+        self.instance.write({'active': False})
+        calls, mock = self._enqueue_calls()
+        with mock:
+            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
+            ev._process_push_event()
+        self.assertEqual(calls, [])
+
+    def test_archived_host_no_enqueue(self):
+        # Instance on a deactivated/deleted host → rebuild would only fail
+        # against a dead server, so skip it.
+        dead = self.env['cloud.host'].create({
+            'name': 'Dead Host', 'ip_address': '10.0.0.9', 'user': 'ubuntu',
+            'wildcard_domain': 'dead.example.com',
+        })
+        dead.write({'active': False})  # no instances yet → allowed
+        self.instance.write({'host_id': dead.id})
+        calls, mock = self._enqueue_calls()
+        with mock:
+            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
+            ev._process_push_event()
+        self.assertEqual(calls, [])
+
     def test_cooldown_active_no_enqueue(self):
         self.instance.write({'last_auto_rebuild': fields.Datetime.now()})
         calls, mock = self._enqueue_calls()
