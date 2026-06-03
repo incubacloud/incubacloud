@@ -37,4 +37,5 @@ from . import (
     test_queue_job_ext,
     test_rotation_tolerance,
     test_pending_push_coalesce,
+    test_github_setup,
 )
