@@ -16,9 +16,10 @@ import re
 import secrets
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
-from odoo import http
+from odoo import _, http
 from odoo.http import request
 
 from ..github.http_utils import safe_urlopen
@@ -34,6 +35,26 @@ _STATE_TTL_SECONDS = 600  # 10 minutes
 
 
 class GitHubSetupController(http.Controller):
+
+    @staticmethod
+    def _github_app_name(base_url, fallback=""):
+        """Derive a fleet-unique GitHub App name from the tenant's host.
+
+        GitHub App names must be globally unique and at most 34 chars.
+        Tenants share the same company name, so we use the host
+        *subdomain* (unique across the IncubaCloud fleet) rather than the
+        company name: take the first DNS label, sanitise non-alphanumerics
+        to hyphens, and cap the result at 34 chars. Falls back to ``app``
+        when no usable label is present.
+
+        :param base_url: the tenant's base URL (e.g. ``https://x.foo.io``).
+        :param fallback: hostname to use when ``base_url`` has none.
+        """
+        host_label = urllib.parse.urlparse(base_url).hostname or fallback or ""
+        slug = re.sub(
+            r"[^a-zA-Z0-9]+", "-", host_label.split(".")[0],
+        ).strip("-") or "app"
+        return f"IncubaCloud-{slug}"[:34]
 
     @http.route(
         "/cloud/github/setup", type="http", auth="user", methods=["GET"]
@@ -76,14 +97,7 @@ class GitHubSetupController(http.Controller):
                 "/cloud/settings?setup_error=requires_https"
             )
 
-        # App name must be globally unique on GitHub; use the company name
-        # so it's meaningful and avoids collisions between instances.
-        company_name = request.env.company.name or request.env.cr.dbname
-        # GitHub App names: letters, digits, hyphens, spaces (max 34 chars).
-        # Normalize: strip specials, collapse whitespace/hyphens.
-        safe = re.sub(r'[^a-zA-Z0-9 -]', '', company_name).strip()
-        safe = re.sub(r'[\s-]+', '-', safe)[:22] or "App"
-        app_name = f"IncubaCloud-{safe}"
+        app_name = self._github_app_name(base_url, host)
 
         manifest = {
             "name": app_name,
@@ -111,32 +125,31 @@ class GitHubSetupController(http.Controller):
                 "active": True,
             }
 
-        # GitHub requires a POST form.  We set the manifest value via JS
-        # (the approach shown in GitHub's own documentation) to avoid any
-        # HTML-attribute encoding issues.  The JSON is base64-encoded so
-        # the JS string literal contains only [A-Za-z0-9+/=] characters.
+        # GitHub requires a POST form.  We render a branded intermediate page
+        # (instead of auto-submitting) so the operator can sign in to GitHub
+        # first if needed \u2014 an unauthenticated POST makes GitHub return an
+        # opaque 500.  The manifest JSON is base64-encoded and carried in a
+        # data attribute; a tiny script decodes it into the hidden field.
         manifest_b64 = base64.b64encode(
             json.dumps(manifest).encode()
         ).decode()
-
-        action = f"{_GITHUB_APP_NEW}?state={state}"
-        html = (
-            "<!DOCTYPE html>"
-            "<html><head><meta charset='utf-8'/>"
-            "<title>Redirecting to GitHub\u2026</title></head>"
-            "<body>"
-            f"<form id='f' method='post' action='{action}'>"
-            "<input type='hidden' name='manifest' id='mi'/>"
-            "</form>"
-            "<script>"
-            f"document.getElementById('mi').value=atob('{manifest_b64}');"
-            "document.getElementById('f').submit();"
-            "</script>"
-            "</body></html>"
-        )
-        return request.make_response(
-            html, headers=[("Content-Type", "text/html; charset=utf-8")]
-        )
+        # Translatable strings live here (not in the QWeb template): Odoo's
+        # makepot does not extract terms from a standalone full-HTML template,
+        # so we pass already-translated text into the template as values.
+        return request.render('incubacloud.github_setup_redirect', {
+            'app_name': app_name,
+            'action': f"{_GITHUB_APP_NEW}?state={state}",
+            'manifest_b64': manifest_b64,
+            'title': _("Create GitHub App"),
+            'heading': _("Create your GitHub App"),
+            'warn': _(
+                "Make sure you are signed in to GitHub first in this "
+                "browser, otherwise GitHub shows a generic error instead "
+                "of the app creation page."
+            ),
+            'signin': _("Open GitHub sign-in"),
+            'cont': _("Continue to GitHub"),
+        })
 
     @http.route(
         "/cloud/github/callback",

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<template id="github_setup_redirect" name="GitHub App Setup Redirect">&lt;!DOCTYPE html&gt;
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title><t t-esc="title"/></title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"/>
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #0F172A;
+            color: #E5E7EB;
+            font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .card {
+            background: #111827;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+            max-width: 460px;
+            width: 100%;
+            padding: 40px 32px;
+            text-align: center;
+        }
+
+        .logo { width: 56px; height: 56px; margin: 0 auto 20px; display: block; }
+
+        h1 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+
+        .app-name {
+            display: inline-block;
+            font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+            font-size: 13px;
+            color: #90c0f0;
+            background: #1F2937;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 4px 10px;
+            margin-bottom: 22px;
+            word-break: break-all;
+        }
+
+        .warn {
+            background: #3a2e1a;
+            border: 1px solid #6b5a2d;
+            color: #f0d080;
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 13px;
+            line-height: 1.5;
+            text-align: left;
+            margin-bottom: 16px;
+        }
+
+        .signin-link {
+            display: inline-block;
+            color: #94A3B8;
+            font-size: 13px;
+            text-decoration: none;
+            margin-bottom: 24px;
+            transition: color 150ms;
+        }
+        .signin-link:hover { color: #E5E7EB; text-decoration: underline; }
+
+        .btn {
+            display: block;
+            width: 100%;
+            border: 0;
+            border-radius: 10px;
+            padding: 12px 20px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(135deg, #2563EB, #1E40AF);
+            cursor: pointer;
+            transition: opacity 150ms;
+        }
+        .btn:hover { opacity: 0.92; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <img class="logo" src="/incubacloud/static/src/img/icon-solid.svg" alt="IncubaCloud"/>
+        <h1><t t-esc="heading"/></h1>
+        <div class="app-name"><t t-esc="app_name"/></div>
+        <div class="warn"><t t-esc="warn"/></div>
+        <a class="signin-link" href="https://github.com/login" target="_blank" rel="noopener"><t t-esc="signin"/> ↗</a>
+        <form id="f" method="post" t-att-action="action">
+            <input type="hidden" name="manifest" id="mi" t-att-data-m="manifest_b64"/>
+            <button type="submit" class="btn"><t t-esc="cont"/> →</button>
+        </form>
+    </div>
+    <script>
+        var el = document.getElementById('mi');
+        el.value = atob(el.dataset.m);
+    </script>
+</body>
+</html>
+</template>
+</odoo>
