@@ -296,6 +296,11 @@ msgid "Active"
 msgstr "Activo"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_pending_push__skip_reason__active_job
+msgid "Active Job"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
 msgid "Active alerts"
@@ -403,6 +408,11 @@ msgid "Alert History"
 msgstr "Historial de alertas"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__payload
+msgid "Alert Payload"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__alert_threshold_pct
@@ -460,21 +470,9 @@ msgstr "Todos los eventos (éxito + fallo)"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
-msgid "All hosts"
-msgstr "Todos los hosts"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
 msgid "All systems are running smoothly."
 msgstr "Todos los sistemas funcionan correctamente."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
-msgid "All users"
-msgstr "Todos los usuarios"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__allocated_cpus
@@ -587,6 +585,11 @@ msgstr "Archivar"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Archive Instance"
 msgstr "Archivar instancia"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__archived_until
+msgid "Archived Until"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -778,6 +781,7 @@ msgstr "Backup"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model,name:incubacloud.model_cloud_backup_backend
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_backend_id
@@ -913,6 +917,7 @@ msgstr "Boost Software License 1.0"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_branch
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__branch
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__branch
 msgid "Branch"
@@ -1364,6 +1369,11 @@ msgstr ""
 "Leave empty to include all addons (*)."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_message
+msgid "Commit Message"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
@@ -1534,6 +1544,21 @@ msgid "Connection successful — bucket is accessible."
 msgstr "Conexión exitosa — el bucket es accesible."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__cpu_over_threshold_streak
+msgid ""
+"Consecutive instance_health cycles with CPU above the warning threshold. "
+"Reset to 0 the moment we read a value below threshold. An alert is only "
+"raised once the streak reaches the configured hysteresis depth."
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__mem_over_threshold_streak
+msgid ""
+"Consecutive instance_health cycles with memory above the warning threshold. "
+"Hysteresis counterpart of cpu_over_threshold_streak."
+msgstr ""
+
+#. module: incubacloud
 #: model:res.groups,name:incubacloud.group_cloud_consultant
 msgid "Consultant"
 msgstr "Consultor"
@@ -1581,9 +1606,37 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Continue to GitHub"
+msgstr "Continuar a GitHub"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_pending_push__skip_reason__cooldown
+msgid "Cooldown"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"Could not access the repository. Check the URL and your GitHub credentials."
+msgstr ""
+"No se pudo acceder al repositorio. Comprueba la URL y tus credenciales de "
+"GitHub."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Could not clone repository. Check the URL and credentials."
 msgstr "No se pudo clonar el repositorio. Verifica la URL y las credenciales."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid ""
+"Could not contact the IncubaCloud platform to cancel this managed backup. "
+"Please retry or contact support."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-python
@@ -1605,6 +1658,11 @@ msgstr "No se pudo listar el directorio"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__count
 msgid "Count"
 msgstr "Cantidad"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__cpu_over_threshold_streak
+msgid "Cpu Over Threshold Streak"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1641,6 +1699,12 @@ msgstr "Crear backup"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__create_date
 msgid "Create Date"
 msgstr "Fecha de creación"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Create GitHub App"
+msgstr "Crear App de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1689,6 +1753,8 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Create your GitHub App"
 msgstr "Crea tu aplicación GitHub"
@@ -1723,6 +1789,7 @@ msgstr "Crea tu primer proyecto para comenzar a gestionar instancias de Odoo."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__create_uid
@@ -1750,6 +1817,7 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__create_date
@@ -1876,7 +1944,6 @@ msgstr "Fecha de finalización"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Default Backup Backend"
 msgstr "Backend de backup por defecto"
@@ -2180,6 +2247,7 @@ msgstr "Descartada"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__display_name
@@ -2369,6 +2437,11 @@ msgstr "Error"
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_event__error
 msgid "Error message if processing failed."
 msgstr "Mensaje de error si el procesamiento falló."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__event_id
+msgid "Event"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__event_type
@@ -2924,16 +2997,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
-msgid ""
-"GB\n"
-"                                ("
-msgstr ""
-"GB\n"
-"                                ("
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "GB /"
 msgstr "GB /"
@@ -2943,6 +3006,12 @@ msgstr "GB /"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "GB free)"
 msgstr "GB libre)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
+msgid "GB used — set a quota to track %"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2983,6 +3052,15 @@ msgstr "General"
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "General settings"
 msgstr "Ajustes generales"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__payload
+msgid ""
+"Generic structured payload attached to the alert. Used by "
+"instance_error_logs (deduped log line groups), and reserved for any future "
+"alert that needs to ship structured detail beyond the human-readable "
+"message."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3149,6 +3227,12 @@ msgid "Head branch of the PR."
 msgstr "Rama HEAD del PR."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "Hide"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__high
 msgid "High"
 msgstr "Alta"
@@ -3271,6 +3355,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__id
@@ -3523,6 +3608,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_connect_token__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__instance_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__instance_id
@@ -3950,6 +4036,7 @@ msgstr "Última verificación"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__write_uid
@@ -3978,6 +4065,7 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__write_date
@@ -4206,6 +4294,22 @@ msgid "Main navigation"
 msgstr "Navegación principal"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid ""
+"Make sure you are signed in to GitHub first in this browser, otherwise "
+"GitHub shows a generic error instead of the app creation page."
+msgstr ""
+"Asegúrate de haber iniciado sesión en GitHub en este navegador; de lo "
+"contrario GitHub muestra un error genérico en lugar de la página de creación"
+" de la app."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__managed_reservation_id
+msgid "Managed Reservation ID"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Manual backups only (ZIP). Stored for 2 hours."
@@ -4253,6 +4357,11 @@ msgstr ""
 #: model:ir.actions.server,name:incubacloud.cron_measure_backup_usage_ir_actions_server
 msgid "Measure Backup Backend Usage"
 msgstr "Medir uso de backends de backup"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__mem_over_threshold_streak
+msgid "Mem Over Threshold Streak"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4407,6 +4516,16 @@ msgstr "Nueva instancia"
 #: code:addons/incubacloud/static/src/components/password_input/password_input.js:0
 msgid "New value entered — will be saved"
 msgstr "Nuevo valor introducido — se guardará"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"No GitHub credentials configured. Set up a GitHub App or a Personal Access "
+"Token (PAT) to access private repositories."
+msgstr ""
+"No hay credenciales de GitHub configuradas. Configura una GitHub App o un "
+"Token de Acceso Personal (PAT) para acceder a repositorios privados."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4662,6 +4781,12 @@ msgid "No token returned from instance"
 msgstr "No se recibió token de la instancia"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
+msgid "No usage measured yet"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance_backup__size
 msgid ""
 "Non-production: the attached ZIP size, captured at create time. Production: "
@@ -4907,9 +5032,34 @@ msgid "Only production instances can be cloned."
 msgstr "Solo se pueden clonar instancias de producción."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Only used for production instances"
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__managed_reservation_id
+msgid ""
+"Opaque id of the cloud.backup.reservation record in the SaaS manager. Empty "
+"for BYO backends."
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_session__state__open
 msgid "Open"
 msgstr "Abrir"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Open GitHub settings →"
+msgstr "Abrir ajustes de GitHub →"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Open GitHub sign-in"
+msgstr "Abrir inicio de sesión de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5140,6 +5290,21 @@ msgstr "Carga"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Pending"
 msgstr "Pendiente"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_instance_pending_push
+msgid "Pending Push Awaiting Coalesced Rebuild"
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pending_push_count
+msgid "Pending Push Count"
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pending_push_ids
+msgid "Pending Pushes"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__alert_threshold_pct
@@ -5446,6 +5611,19 @@ msgid "Purge old logs now"
 msgstr "Purgar logs antiguos ahora"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_by
+msgid "Pusher"
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pending_push_ids
+msgid ""
+"Pushes that arrived while a rebuild was running or within the auto-rebuild "
+"cooldown. They are merged into the next rebuild job triggered on completion "
+"of the current one."
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pip_dependencies
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__pip_dependencies
 msgid "Python Dependencies"
@@ -5742,6 +5920,11 @@ msgstr "Repositorios"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__repo_ids
 msgid "Repositories"
 msgstr "Repositorios"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_repo
+msgid "Repository"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__url
@@ -6341,6 +6524,11 @@ msgid "Shell"
 msgstr "Terminal"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_sha
+msgid "Short SHA"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "Show"
@@ -6404,6 +6592,11 @@ msgid "Skip"
 msgstr "Omitir"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__skip_reason
+msgid "Skip Reason"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__quota_gb
 msgid ""
 "Soft cap used for alert calculations. Set to 0 to disable quota tracking "
@@ -6416,6 +6609,11 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__source
 msgid "Source"
 msgstr "Fuente"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance_pending_push__event_id
+msgid "Source webhook event; cleared if the row is purged later."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6629,9 +6827,29 @@ msgid "The 'action' field from the webhook payload (e.g. opened, closed)."
 msgstr "El campo 'action' de la carga del webhook (ej. opened, closed)."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"The GitHub App does not have access to this repository. Install the App on "
+"the repository's organization, or configure a PAT."
+msgstr ""
+"La GitHub App no tiene acceso a este repositorio. Instala la App en la "
+"organización del repositorio, o configura un PAT."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__ip_address
 msgid "The IP address of the cloud host."
 msgstr "La dirección IP del host cloud."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"The PAT does not have access to this repository. Verify the token has the "
+"'repo' scope, or set up a GitHub App."
+msgstr ""
+"El PAT no tiene acceso a este repositorio. Verifica que el token tenga el "
+"ámbito 'repo', o configura una GitHub App."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6675,6 +6893,14 @@ msgstr "Esta acción requiere el rol '%s' o superior."
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "This instance is already imported."
 msgstr "Esta instancia ya está importada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid ""
+"This managed backend cannot be deleted from this database "
+"(incubacloud_tenant not installed)."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-python
@@ -6961,6 +7187,7 @@ msgstr "Subiendo…"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 msgid "Usage"
 msgstr "Uso"
 
@@ -7187,6 +7414,14 @@ msgstr ""
 "use this commit instead of the branch tip."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__archived_until
+msgid ""
+"When set, this backend is in retention period — the bucket still works for "
+"backup_download but new backups should not be written here. The tenant cron "
+"unlinks the record when the manager confirms the bucket has been purged."
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job__retry_of_id
 msgid "When set, this job is a retry of the referenced failed job."
 msgstr ""
@@ -7225,6 +7460,13 @@ msgstr "Dominio comodín"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Wildcard domain is required"
 msgstr "El dominio wildcard es obligatorio"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Will be folded into the rebuild triggered when the current one finishes."
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__window_start
@@ -7633,6 +7875,18 @@ msgstr "psql -U odoo -d <dbname>"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "push(es) queued for next rebuild"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "queued"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "redirect to (optional)"
 msgstr "redirigir a (opcional)"
 
@@ -7725,12 +7979,6 @@ msgstr "— por defecto (en_US) —"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "— falls back to Notification To"
 msgstr "— recurre a Notificación a si está vacío"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "— for production instances"
-msgstr "— para instancias de producción"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7858,48 +8106,3 @@ msgstr "↻ Re-detectar instalación"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "↻ Refresh"
 msgstr "↻ Actualizar"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"No GitHub credentials configured. Set up a GitHub App or a Personal Access "
-"Token (PAT) to access private repositories."
-msgstr ""
-"No hay credenciales de GitHub configuradas. Configura una GitHub App o un "
-"Token de Acceso Personal (PAT) para acceder a repositorios privados."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"The PAT does not have access to this repository. Verify the token has the "
-"'repo' scope, or set up a GitHub App."
-msgstr ""
-"El PAT no tiene acceso a este repositorio. Verifica que el token tenga el "
-"ámbito 'repo', o configura una GitHub App."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"The GitHub App does not have access to this repository. Install the App on "
-"the repository's organization, or configure a PAT."
-msgstr ""
-"La GitHub App no tiene acceso a este repositorio. Instala la App en la "
-"organización del repositorio, o configura un PAT."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"Could not access the repository. Check the URL and your GitHub credentials."
-msgstr ""
-"No se pudo acceder al repositorio. Comprueba la URL y tus credenciales de "
-"GitHub."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
-msgid "Open GitHub settings →"
-msgstr "Abrir ajustes de GitHub →"
