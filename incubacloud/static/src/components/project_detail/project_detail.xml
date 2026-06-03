@@ -165,9 +165,7 @@
                                 </select>
                             </div>
                             <div class="ic-form-row">
-                                <label>Default Backup Backend
-                                    <span class="ic-section-note"> — for production instances</span>
-                                </label>
+                                <label>Backup Backend</label>
                                 <select t-on-change="(ev) => this.onBackendChange(ev)">
                                     <option value="">— Use global default —</option>
                                     <t t-foreach="state.backupBackends" t-as="bb" t-key="bb.id">
@@ -177,6 +175,7 @@
                                         </option>
                                     </t>
                                 </select>
+                                <span class="ic-form-hint">Only used for production instances</span>
                             </div>
                             <div class="ic-form-row ic-form-row-full">
                                 <label>Tags</label>
