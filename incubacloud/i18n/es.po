@@ -781,6 +781,7 @@ msgstr "Backup"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model,name:incubacloud.model_cloud_backup_backend
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_backend_id
@@ -1618,6 +1619,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Continue to GitHub"
+msgstr "Continuar a GitHub"
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Could not clone repository. Check the URL and credentials."
 msgstr "No se pudo clonar el repositorio. Verifica la URL y las credenciales."
@@ -1693,6 +1700,12 @@ msgid "Create Date"
 msgstr "Fecha de creación"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Create GitHub App"
+msgstr "Crear App de GitHub"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Create Host"
@@ -1739,6 +1752,8 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Create your GitHub App"
 msgstr "Crea tu aplicación GitHub"
@@ -1928,7 +1943,6 @@ msgstr "Fecha de finalización"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Default Backup Backend"
 msgstr "Backend de backup por defecto"
@@ -4259,6 +4273,17 @@ msgid "Main navigation"
 msgstr "Navegación principal"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid ""
+"Make sure you are signed in to GitHub first in this browser, otherwise "
+"GitHub shows a generic error instead of the app creation page."
+msgstr ""
+"Asegúrate de haber iniciado sesión en GitHub en este navegador; de lo "
+"contrario GitHub muestra un error genérico en lugar de la página de creación"
+" de la app."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__managed_reservation_id
 msgid "Managed Reservation ID"
 msgstr ""
@@ -4986,6 +5011,12 @@ msgid "Only production instances can be cloned."
 msgstr "Solo se pueden clonar instancias de producción."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Only used for production instances"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__managed_reservation_id
 msgid ""
 "Opaque id of the cloud.backup.reservation record in the SaaS manager. Empty "
@@ -5002,6 +5033,12 @@ msgstr "Abrir"
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
 msgid "Open GitHub settings →"
 msgstr "Abrir ajustes de GitHub →"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/github_setup.py:0
+msgid "Open GitHub sign-in"
+msgstr "Abrir inicio de sesión de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7855,12 +7892,6 @@ msgstr "— por defecto (en_US) —"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "— falls back to Notification To"
 msgstr "— recurre a Notificación a si está vacío"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "— for production instances"
-msgstr "— para instancias de producción"
 
 #. module: incubacloud
 #. odoo-javascript
