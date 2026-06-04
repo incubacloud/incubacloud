@@ -423,6 +423,93 @@ class TestEnqueueBypassRunningCheck(TransactionCase):
         self.assertEqual(new_job.job_type_id, self.follow_jt)
 
 
+class TestHostScopedRacePrevention(TransactionCase):
+    """Host-only jobs (no instance_id) must serialise per host the same
+    way instance jobs serialise per instance. Regression: the guard used
+    to run only when ``instance_id`` was set, so clicking "Verify host"
+    while a setup/probe was already running launched a parallel job."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'race-host',
+            'ip_address': '10.0.0.9',
+            'user': 'root',
+            'wildcard_domain': 'race.test.local',
+            'login_type': 'password',
+            'password': 'x',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'P'})
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'race-inst',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+        })
+        self.host_jt = _ensure_job_type(self.env, 'test_host_jt', apply_to='host')
+        self.host_jt2 = _ensure_job_type(self.env, 'test_host_jt2', apply_to='host')
+        self.inst_jt = _ensure_job_type(self.env, 'test_inst_jt')
+        # A hidden background job type (its code is in _hidden_job_types).
+        self.hidden_jt = _ensure_job_type(
+            self.env, 'host_metrics', apply_to='host',
+        )
+
+    def _start(self, job):
+        """Force ``job`` into the ``started`` state (stored-related column)."""
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'started' WHERE id = %s", (job.id,),
+        )
+        self.env['cloud.job'].invalidate_model(['state'])
+
+    def _make(self, job_type, instance=False):
+        """Create a cloud.job for the host (optionally instance-scoped)."""
+        return self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'instance_id': instance and instance.id,
+            'job_type_id': job_type.id,
+            'name': job_type.code,
+        })
+
+    def test_active_host_job_blocks_second_host_job(self):
+        """An active host-only job blocks a new host-only enqueue."""
+        self._start(self._make(self.host_jt))
+        with self.assertRaises(UserError):
+            self.env['cloud.job'].enqueue(
+                self.host.id, False, 'test_host_jt2',
+            )
+
+    def test_no_active_host_job_allows_enqueue(self):
+        """With no active host job, the host enqueue succeeds."""
+        new_id = self.env['cloud.job'].enqueue(
+            self.host.id, False, 'test_host_jt',
+        )
+        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+
+    def test_host_job_does_not_block_instance_job(self):
+        """An active host-only job does not block an instance enqueue."""
+        self._start(self._make(self.host_jt))
+        new_id = self.env['cloud.job'].enqueue(
+            self.host.id, self.instance.id, 'test_inst_jt',
+        )
+        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+
+    def test_instance_job_does_not_block_host_job(self):
+        """An active instance job does not block a host-only enqueue."""
+        self._start(self._make(self.inst_jt, instance=self.instance))
+        new_id = self.env['cloud.job'].enqueue(
+            self.host.id, False, 'test_host_jt',
+        )
+        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+
+    def test_hidden_host_job_does_not_block(self):
+        """A hidden background host job (host_metrics) must not block."""
+        self._start(self._make(self.hidden_jt))
+        new_id = self.env['cloud.job'].enqueue(
+            self.host.id, False, 'test_host_jt',
+        )
+        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+
+
 class TestChainFailurePropagation(TransactionCase):
     """When a job fails, chained jobs in wait_dependencies are failed too."""
 

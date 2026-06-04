@@ -385,24 +385,24 @@ export class HostDetail extends Component {
     async runCheck() {
         try {
             await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, 'host_probe']);
-        } catch {
-            this.env.toast?.error(_t("Failed to start host check."));
+        } catch (e) {
+            this.env.toast?.error(e.data?.message || e.message || _t("Failed to start host check."));
         }
     }
 
     async runFullSetup() {
         try {
             await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, 'full_setup']);
-        } catch {
-            this.env.toast?.error(_t("Failed to start full setup."));
+        } catch (e) {
+            this.env.toast?.error(e.data?.message || e.message || _t("Failed to start full setup."));
         }
     }
 
     async hostAction(code) {
         try {
             await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, code]);
-        } catch {
-            this.env.toast?.error(_t("Failed to enqueue host action."));
+        } catch (e) {
+            this.env.toast?.error(e.data?.message || e.message || _t("Failed to enqueue host action."));
         }
     }
 
@@ -506,7 +506,7 @@ export class HostDetail extends Component {
         try {
             await rpc("/cloud/setup_whitelist", { host_id: this.props.host_id });
         } catch (e) {
-            this.env.toast?.error(_t("Failed to enqueue whitelist job."));
+            this.env.toast?.error(e.data?.message || e.message || _t("Failed to enqueue whitelist job."));
         }
     }
 
