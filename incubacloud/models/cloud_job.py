@@ -20,6 +20,10 @@ _logger = logging.getLogger(__name__)
 # requests cannot create parallel jobs. The lock is released on COMMIT
 # or ROLLBACK automatically — no cleanup possible if the process dies.
 _JOB_LOCK_NAMESPACE = 0x0C10D10B
+# Separate namespace for host-scoped jobs (no instance_id). A host.id and an
+# instance.id can collide numerically, so host locks must live in their own
+# namespace to avoid falsely serialising unrelated host/instance work.
+_HOST_JOB_LOCK_NAMESPACE = 0x0C10D10C
 
 
 def _webhook_fields(payload):
@@ -152,6 +156,7 @@ class CloudJob(models.Model):
         # is no active user job for that instance before creating new
         # ones. Locks are released on COMMIT/ROLLBACK automatically.
         seen_instance_ids = set()
+        seen_host_ids = set()
         hidden = self._get_hidden_job_types()
         for step in steps:
             inst_id = step.get('instance_id')
@@ -173,6 +178,30 @@ class CloudJob(models.Model):
                         "it first.",
                         name=running.name,
                     ))
+            elif not inst_id:
+                # Host-only step (provisioning, hardening, full setup…):
+                # serialise per host so two chains can't run concurrently
+                # on the same machine.
+                host_id = step.get('host_id')
+                if host_id and host_id not in seen_host_ids:
+                    self.env.cr.execute(
+                        "SELECT pg_advisory_xact_lock(%s, %s)",
+                        (_HOST_JOB_LOCK_NAMESPACE, host_id),
+                    )
+                    seen_host_ids.add(host_id)
+                    running = self.search([
+                        ('host_id', '=', host_id),
+                        ('instance_id', '=', False),
+                        ('state', 'in', self._active_states),
+                        ('job_type_id.code', 'not in', hidden),
+                    ], limit=1)
+                    if running:
+                        raise UserError(_(
+                            "A job is already running for this host: "
+                            "%(name)s. Wait for it to complete or cancel "
+                            "it first.",
+                            name=running.name,
+                        ))
 
         # 1. Create all cloud.job records (without payloads that need resolving)
         records = []
@@ -285,29 +314,55 @@ class CloudJob(models.Model):
         otherwise block its own descendant. Internal use only;
         anything user-driven goes through the guard unchanged.
         """
-        # Block if there is already an active *user* job for this instance.
+        # Block if there is already an active *user* job for this target.
         # Hidden system jobs (health checks, metrics, probes…) don't block.
-        if instance_id and not bypass_running_check:
-            # Advisory lock: serialise concurrent enqueue() calls for
-            # the same instance. The second caller blocks until the
-            # first commits; when it wakes up the running-job check
-            # below sees the freshly-created job and raises. Released
-            # automatically on COMMIT or ROLLBACK of this tx.
-            self.env.cr.execute(
-                "SELECT pg_advisory_xact_lock(%s, %s)",
-                (_JOB_LOCK_NAMESPACE, instance_id),
-            )
-            running = self.search([
-                ('instance_id', '=', instance_id),
-                ('state', 'in', self._active_states),
-                ('job_type_id.code', 'not in', self._get_hidden_job_types()),
-            ], limit=1)
-            if running:
-                raise UserError(_(
-                    "A job is already running for this instance: %(name)s. "
-                    "Wait for it to complete or cancel it first.",
-                    name=running.name,
-                ))
+        # Instance-scoped jobs serialise per instance; host-scoped jobs
+        # (instance_id falsy) serialise per host. The two scopes are
+        # independent — an instance deploy does not block a host probe and
+        # vice versa.
+        if not bypass_running_check:
+            if instance_id:
+                # Advisory lock: serialise concurrent enqueue() calls for
+                # the same instance. The second caller blocks until the
+                # first commits; when it wakes up the running-job check
+                # below sees the freshly-created job and raises. Released
+                # automatically on COMMIT or ROLLBACK of this tx.
+                self.env.cr.execute(
+                    "SELECT pg_advisory_xact_lock(%s, %s)",
+                    (_JOB_LOCK_NAMESPACE, instance_id),
+                )
+                running = self.search([
+                    ('instance_id', '=', instance_id),
+                    ('state', 'in', self._active_states),
+                    ('job_type_id.code', 'not in', self._get_hidden_job_types()),
+                ], limit=1)
+                if running:
+                    raise UserError(_(
+                        "A job is already running for this instance: %(name)s. "
+                        "Wait for it to complete or cancel it first.",
+                        name=running.name,
+                    ))
+            elif host_id:
+                # Same serialisation, scoped to the host for host-only jobs
+                # (probe, full setup, hardening, provisioning…). Separate
+                # lock namespace so a host.id never collides with an
+                # instance.id.
+                self.env.cr.execute(
+                    "SELECT pg_advisory_xact_lock(%s, %s)",
+                    (_HOST_JOB_LOCK_NAMESPACE, host_id),
+                )
+                running = self.search([
+                    ('host_id', '=', host_id),
+                    ('instance_id', '=', False),
+                    ('state', 'in', self._active_states),
+                    ('job_type_id.code', 'not in', self._get_hidden_job_types()),
+                ], limit=1)
+                if running:
+                    raise UserError(_(
+                        "A job is already running for this host: %(name)s. "
+                        "Wait for it to complete or cancel it first.",
+                        name=running.name,
+                    ))
         job_type_id = self.env["cloud.job.type"].search([
             ("code", "=", job_type_code),
         ], limit=1)
