@@ -82,6 +82,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
     _job_type = "instance_health"
 
+    # Retry transient connection failures (host briefly unreachable) rather
+    # than failing on the first blip; only alert if the host is still
+    # unreachable after the last attempt. See AbstractExecutor.
+    _retry_on_connection_loss = True
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _inst(self):
@@ -275,6 +280,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
     async def on_success(self, results):
         inst = self._inst()
+
+        # We just ran commands over SSH, so the host is reachable: clear any
+        # stale host-unreachable alert left by a previous outage.
+        self._resolve_alert('host_unreachable')
 
         # Always stamp the timestamp so the schedule visibly advances
         # even when the cycle is a no-op (skipped).

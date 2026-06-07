@@ -1,11 +1,55 @@
 import asyncio
 import contextlib
+import errno
 import logging
 import re
+import socket
 from abc import ABC, abstractmethod
+
+import asyncssh
 
 from .registry import executor_registry
 from ._repo_requirements import has_pip_conflicts
+
+# Delay before queue_job re-runs a job that failed to connect to its host.
+# Short enough that a momentary blip recovers quickly, long enough that we
+# don't hammer a host that is briefly rebooting.
+CONNECTION_RETRY_SECONDS = 30
+
+# Errnos that mark a transient, retryable connection problem (host
+# momentarily unreachable / refused / reset / rebooting), as opposed to a
+# permanent misconfiguration.
+_TRANSIENT_ERRNOS = frozenset({
+    errno.ETIMEDOUT, errno.ECONNREFUSED, errno.ECONNRESET,
+    errno.EHOSTUNREACH, errno.ENETUNREACH, errno.EHOSTDOWN,
+})
+
+
+def is_transient_connection_error(exc):
+    """Return True if ``exc`` is a transient SSH/network connection failure.
+
+    These are worth retrying because the host may simply be momentarily
+    unreachable (network blip, sshd briefly busy, VM rebooting). Permanent
+    failures — wrong credentials (``asyncssh.PermissionDenied``) or an
+    unverifiable host key (``asyncssh.HostKeyNotVerifiable``) — are
+    deliberately *not* matched here: they will never succeed on retry, so
+    they must fail fast.
+
+    Matches:
+      * ``asyncssh.ConnectionLost`` — the connection dropped mid-handshake
+        or was lost after establishment (the ``Connection lost`` case).
+      * builtin ``TimeoutError`` / ``ConnectionError`` and
+        ``socket.gaierror`` (DNS) — raised when asyncssh's underlying
+        socket connect fails (the ``Connect call failed`` case).
+      * any ``OSError`` whose errno is a known transient connection errno.
+    """
+    if isinstance(exc, asyncssh.ConnectionLost):
+        return True
+    if isinstance(exc, (TimeoutError, ConnectionError, socket.gaierror)):
+        return True
+    if isinstance(exc, OSError) and exc.errno in _TRANSIENT_ERRNOS:
+        return True
+    return False
 
 _TOKEN_RE = re.compile(r'https://[^@\s]*@(github\.com)', re.IGNORECASE)
 
@@ -105,6 +149,17 @@ def validate_dup_time(raw):
 class AbstractExecutor(ABC):
 
     _job_type = None  # required in subclasses
+
+    # Connection-retry opt-in. When True, a transient connection failure
+    # (see ``is_transient_connection_error``) does not fail the job on the
+    # first try: ``cloud.job.execute`` raises ``RetryableJobError`` so
+    # queue_job reschedules it, up to ``_connection_retry_attempts`` total
+    # attempts. Only when the *last* attempt still cannot connect is a
+    # ``host_unreachable`` alert raised. This keeps momentary blips from
+    # spamming notifications while still surfacing a genuinely down host.
+    # Any non-connection error still fails permanently on the first try.
+    _retry_on_connection_loss = False
+    _connection_retry_attempts = 3
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -447,6 +502,25 @@ class AbstractExecutor(ABC):
                     'level': level,
                     'job_id': self.job.id,
                 })
+
+    def notify_host_unreachable(self, exc, attempts):
+        """Raise a host-scoped alert after connection retries are exhausted.
+
+        Called by ``cloud.job.execute`` on the final failed attempt of a
+        connection-retrying job. Creates (or refreshes) a single
+        ``host_unreachable`` alert for this job's host — deduped by
+        ``_alert`` — which broadcasts to the operator overview. A later
+        successful probe clears it via ``_resolve_alert``.
+
+        :param exc: the connection exception from the last attempt
+        :param attempts: how many attempts were made before giving up
+        """
+        self._alert(
+            'host_unreachable',
+            f"Host unreachable: {attempts} consecutive connection attempts "
+            f"failed. Last error: {type(exc).__name__}: {exc}",
+            level='critical',
+        )
 
     def _resolve_alert(self, code):
         """Dismiss any active alert with the given code for this job's host."""
