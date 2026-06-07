@@ -10,6 +10,7 @@ from . import (
     test_cloud_terminal_route,
     test_cron_bot,
     test_cloud_backup,
+    test_backup_backend_conn,
     test_cloud_instance,
     test_cloud_instance_domain,
     test_cloud_instance_repo,

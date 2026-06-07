@@ -249,8 +249,20 @@ class BackendsMixin:
             code = e.response.get('Error', {}).get('Code', '')
             msg = e.response.get('Error', {}).get('Message', str(e))
             if code in ('301', 'PermanentRedirect'):
-                # Bucket exists but in a different region — still reachable
-                return {'ok': True}
+                # The bucket exists but is served from a different
+                # endpoint/region/jurisdiction than the one configured.
+                # This is NOT a healthy connection: duplicity will fail
+                # (it does not follow the redirect) — so report it as an
+                # error instead of a false green. This was masking an
+                # endpoint/jurisdiction mismatch (e.g. an EU endpoint
+                # pointing at a default-jurisdiction bucket).
+                return {
+                    'ok': False,
+                    'error': _('Endpoint mismatch (301 redirect): the bucket '
+                               'exists but is served from a different '
+                               'endpoint/region/jurisdiction than configured. '
+                               'Check the S3 endpoint URL.'),
+                }
             if code == '403':
                 return {
                     'ok': False,
