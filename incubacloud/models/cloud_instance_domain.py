@@ -52,7 +52,14 @@ class CloudInstanceDomain(models.Model):
         hostnames = [r.hostname for r in self if r.hostname]
         if not hostnames:
             return
-        all_with_same = self.search([('hostname', 'in', hostnames)])
+        # Only active instances reserve a domain. A deployed instance that
+        # is deleted gets archived (active=False) rather than unlinked, so
+        # its domain rows survive; those must not block a new instance from
+        # reusing the same hostname.
+        all_with_same = self.search([
+            ('hostname', 'in', hostnames),
+            ('instance_id.active', '=', True),
+        ])
         by_host = {}
         for rec in all_with_same:
             by_host.setdefault(rec.hostname, []).append(rec)
