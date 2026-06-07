@@ -10,6 +10,10 @@ from odoo.exceptions import UserError
 
 from ._repo_requirements import detect_pip_conflicts, create_pip_conflict_alert
 from .registry import executor_registry
+from .abstract_executor import (
+    CONNECTION_RETRY_SECONDS,
+    is_transient_connection_error,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -412,13 +416,24 @@ class CloudJob(models.Model):
             'host_id': host_id,
             'job_id': job_record.id,
         })
-        # max_retries=1: allow one automatic retry for transient DB errors,
-        # then fail permanently. The execution guard prevents double SSH runs.
+        # max_retries=1 by default: allow one automatic retry for transient
+        # DB errors, then fail permanently. The execution guard prevents
+        # double SSH runs. Executors that opt into connection retries
+        # (``_retry_on_connection_loss``) get a higher cap so a momentarily
+        # unreachable host is retried instead of failing on the first blip —
+        # only transient connection errors consume those retries; any other
+        # exception still fails permanently via JobError on the first try.
+        executor_cls = executor_registry.get(job_type_id.code)
+        max_retries = 1
+        if executor_cls and getattr(
+            executor_cls, '_retry_on_connection_loss', False,
+        ):
+            max_retries = executor_cls._connection_retry_attempts
         channel, priority = self._resolve_channel_priority(
             job_type_id, instance_id,
         )
         delayed = job_record.with_delay(
-            max_retries=1,
+            max_retries=max_retries,
             channel=channel,
             priority=priority,
             description=job_type_id.name,
@@ -458,6 +473,27 @@ class CloudJob(models.Model):
             # JobError would mark the job permanently failed instead.
             raise
         except Exception as e:
+            # Transient connection failures on opt-in executors (the host
+            # monitoring probes) are retried instead of failing on the
+            # first blip. queue_job stored the pre-increment retry count in
+            # set_started, so inside execute() ``queue_job_id.retry`` is the
+            # number of *prior* attempts → this attempt is ``retry + 1``.
+            if (getattr(ssh_executor, '_retry_on_connection_loss', False)
+                    and is_transient_connection_error(e)):
+                qj = self.queue_job_id
+                attempt = (qj.retry or 0) + 1
+                max_retries = qj.max_retries or 0
+                if not max_retries or attempt < max_retries:
+                    # Not the last attempt — reschedule quietly. A single
+                    # momentary blip must never notify anyone.
+                    raise RetryableJobError(
+                        f"Transient connection error on attempt {attempt}"
+                        f"{f'/{max_retries}' if max_retries else ''}: {e}",
+                        seconds=CONNECTION_RETRY_SECONDS,
+                    ) from e
+                # Last attempt still couldn't connect → the host is
+                # genuinely unreachable. Notify, then fail permanently.
+                ssh_executor.notify_host_unreachable(e, attempt)
             raise JobError(str(e)) from e
         finally:
             # After a long-running SSH job, the ORM environment used

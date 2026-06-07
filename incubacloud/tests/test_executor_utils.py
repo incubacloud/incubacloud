@@ -355,3 +355,56 @@ class TestBaseUrlLogic(BaseCase):
 
     def test_subdomain(self):
         self.assertEqual(self._base_url('app.example.com'), 'https://app.example.com')
+
+
+# ── is_transient_connection_error ─────────────────────────────────────────────
+
+class TestIsTransientConnectionError(BaseCase):
+    """The classifier decides which executor exceptions are worth retrying.
+
+    Transient connection failures (host briefly unreachable) must retry;
+    permanent failures (bad credentials, unverifiable host key) and any
+    non-connection error must fail fast.
+    """
+
+    def setUp(self):
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            is_transient_connection_error,
+        )
+        self.f = is_transient_connection_error
+
+    def test_asyncssh_connection_lost_is_transient(self):
+        import asyncssh
+        self.assertTrue(self.f(asyncssh.ConnectionLost('Connection lost')))
+
+    def test_builtin_timeout_is_transient(self):
+        # asyncssh surfaces a socket connect timeout as TimeoutError.
+        self.assertTrue(self.f(TimeoutError(110, 'Connect call failed')))
+
+    def test_connection_refused_is_transient(self):
+        self.assertTrue(self.f(ConnectionRefusedError()))
+
+    def test_dns_failure_is_transient(self):
+        import socket
+        self.assertTrue(self.f(socket.gaierror('name resolution failed')))
+
+    def test_oserror_host_unreachable_is_transient(self):
+        import errno
+        self.assertTrue(self.f(OSError(errno.EHOSTUNREACH, 'no route to host')))
+
+    def test_auth_failure_is_not_transient(self):
+        # Wrong credentials never recover on retry — must fail fast.
+        import asyncssh
+        self.assertFalse(self.f(asyncssh.PermissionDenied('bad creds')))
+
+    def test_host_key_failure_is_not_transient(self):
+        import asyncssh
+        self.assertFalse(self.f(asyncssh.HostKeyNotVerifiable('bad key')))
+
+    def test_generic_error_is_not_transient(self):
+        # A failed boot test / module update is a real failure, not a blip.
+        self.assertFalse(self.f(RuntimeError('safe boot check failed')))
+
+    def test_unrelated_oserror_is_not_transient(self):
+        import errno
+        self.assertFalse(self.f(OSError(errno.ENOENT, 'missing file')))

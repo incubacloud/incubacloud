@@ -1058,3 +1058,115 @@ class TestWebhookFieldsHelper(BaseCase):
         for k in ('push_repo', 'push_branch', 'push_sha', 'push_message', 'push_by'):
             self.assertEqual(out[k], '')
 
+
+class TestConnectionRetryAndNotify(TransactionCase):
+    """Connection-retry path: opt-in executors retry transient connection
+    failures and only raise a ``host_unreachable`` alert once the retries
+    are exhausted; non-opt-in executors keep failing fast on the first try.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        import asyncssh
+        from odoo.addons.incubacloud.models.registry import executor_registry
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            AbstractSSHExecutor,
+        )
+
+        class _ConnLostExecutor(AbstractSSHExecutor):
+            """Opt-in executor that always loses its connection."""
+            _job_type = None
+            _retry_on_connection_loss = True
+            _connection_retry_attempts = 3
+
+            def get_commands(self):
+                return []
+
+            def run(self):
+                raise asyncssh.ConnectionLost('Connection lost')
+
+        class _PlainExecutor(AbstractSSHExecutor):
+            """Non-opt-in executor (default fail-fast behaviour)."""
+            _job_type = None
+
+            def get_commands(self):
+                return []
+
+            def run(self):
+                raise asyncssh.ConnectionLost('Connection lost')
+
+        executor_registry._executors['test_conn_retry'] = _ConnLostExecutor
+        executor_registry._executors['test_conn_plain'] = _PlainExecutor
+        cls.addClassCleanup(
+            executor_registry._executors.pop, 'test_conn_retry', None)
+        cls.addClassCleanup(
+            executor_registry._executors.pop, 'test_conn_plain', None)
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'conn-retry-host',
+            'ip_address': '10.0.0.9',
+            'user': 'root',
+            'login_type': 'password',
+            'password': 'x',
+            'wildcard_domain': 'conn-retry.test.local',
+        })
+        _ensure_job_type(self.env, 'host_metrics', apply_to='host')
+        _ensure_job_type(self.env, 'test_conn_retry', apply_to='host')
+        _ensure_job_type(self.env, 'test_conn_plain', apply_to='host')
+
+    def _enqueue(self, code):
+        jid = self.env['cloud.job'].enqueue(self.host.id, False, code)
+        return self.env['cloud.job'].browse(jid)
+
+    def test_opt_in_job_type_enqueues_with_three_retries(self):
+        # Real wiring: the production host_metrics executor opts in.
+        job = self._enqueue('host_metrics')
+        self.assertEqual(job.queue_job_id.max_retries, 3)
+
+    def test_plain_job_type_enqueues_with_single_retry(self):
+        job = self._enqueue('test_conn_plain')
+        self.assertEqual(job.queue_job_id.max_retries, 1)
+
+    def test_transient_error_retries_while_attempts_remain(self):
+        # ``notify_host_unreachable`` is patched out: its real body writes the
+        # alert through a fresh cursor, which a TransactionCase host (never
+        # committed) can't satisfy. We only assert the execute() decision.
+        from unittest.mock import patch
+        from odoo.addons.queue_job.exception import RetryableJobError
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            AbstractSSHExecutor,
+        )
+        job = self._enqueue('test_conn_retry')
+        # Fresh job → queue_job_id.retry == 0 → this is attempt 1 of 3.
+        with patch.object(
+            AbstractSSHExecutor, 'notify_host_unreachable',
+        ) as notify, self.assertRaises(RetryableJobError):
+            job.execute()
+        # A single blip must never notify anyone.
+        notify.assert_not_called()
+
+    def test_transient_error_notifies_on_last_attempt(self):
+        from unittest.mock import patch
+        from odoo.addons.queue_job.exception import JobError
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            AbstractSSHExecutor,
+        )
+        job = self._enqueue('test_conn_retry')
+        # set_started stores retry pre-increment, so retry=2 makes the next
+        # run attempt 3 of 3 — the last one.
+        self.env.cr.execute(
+            "UPDATE queue_job SET retry = 2 WHERE id = %s",
+            (job.queue_job_id.id,),
+        )
+        job.queue_job_id.invalidate_recordset(['retry'])
+        with patch.object(
+            AbstractSSHExecutor, 'notify_host_unreachable',
+        ) as notify, self.assertRaises(JobError):
+            job.execute()
+        notify.assert_called_once()
+        # Notified with the attempt number (3) — the exhausted last try.
+        self.assertEqual(notify.call_args.args[1], 3)
+
