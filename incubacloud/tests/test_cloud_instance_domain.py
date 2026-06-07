@@ -55,6 +55,19 @@ class TestCloudInstanceDomainConstraint(TransactionCase):
         d = self._domain(self.inst_a, 'secure.example.com')
         self.assertEqual(d.cert_resolver, 'letsencrypt')
 
+    def test_archived_instance_does_not_reserve_hostname(self):
+        """An archived instance's domain must not block hostname reuse.
+
+        Deleting a deployed instance archives it (active=False) rather than
+        unlinking it, so its domain rows survive. A new instance must be
+        able to reuse the same hostname.
+        """
+        self._domain(self.inst_a, 'app.example.com')
+        self.inst_a.active = False
+        # Should not raise: the archived instance no longer reserves it.
+        d = self._domain(self.inst_b, 'app.example.com')
+        self.assertTrue(d.id)
+
     def test_cascade_delete_with_instance(self):
         d = self._domain(self.inst_a, 'temp.example.com')
         did = d.id
