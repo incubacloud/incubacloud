@@ -344,6 +344,34 @@ class TestProcessPushEventGuards(_GitHubEventBase):
             ev._process_push_event()
         self.assertEqual(len(calls), 1)
 
+    # ── Falsy job type → skip (generic seam) ───────────────────────────────
+    #
+    # A subclass may decline a rebuild by returning a falsy job type from
+    # ``_rebuild_job_type`` (the SaaS manager does this for warm-pool
+    # instances condemned to recycling). The handler must skip the
+    # instance entirely — no enqueue and no pending-push record.
+
+    def test_falsy_job_type_skips_enqueue(self):
+        Event = type(self.env['cloud.github.event'])
+        calls, mock = self._enqueue_calls()
+        with mock, patch.object(Event, '_rebuild_job_type', return_value=False):
+            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
+            ev._process_push_event()
+        self.assertEqual(calls, [])
+        self.assertEqual(len(self.instance.pending_push_ids), 0)
+
+    def test_resolved_job_type_is_enqueued_verbatim(self):
+        # Whatever truthy code the resolver returns is the code enqueued.
+        Event = type(self.env['cloud.github.event'])
+        calls, mock = self._enqueue_calls()
+        with mock, patch.object(
+            Event, '_rebuild_job_type', return_value='warm_rebuild_instance',
+        ):
+            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
+            ev._process_push_event()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]['job_type_code'], 'warm_rebuild_instance')
+
     # ── Pending push queue (defer-instead-of-drop) ─────────────────────────
     #
     # When a push cannot trigger an immediate rebuild (cooldown active or a
