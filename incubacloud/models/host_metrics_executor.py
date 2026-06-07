@@ -16,6 +16,11 @@ class HostMetricsExecutor(AbstractSSHExecutor):
 
     _job_type = "host_metrics"
 
+    # Retry transient connection failures (host briefly unreachable) rather
+    # than failing on the first blip; only alert if the host is still
+    # unreachable after the last attempt. See AbstractExecutor.
+    _retry_on_connection_loss = True
+
     def get_commands(self):
         return [
             ("cpu_cores",    "nproc"),
@@ -43,6 +48,9 @@ class HostMetricsExecutor(AbstractSSHExecutor):
 
     async def on_success(self, results):
         host = self.job.host_id
+        # We just ran commands over SSH, so the host is reachable: clear any
+        # stale host-unreachable alert left by a previous outage.
+        self._resolve_alert('host_unreachable')
         host.write({
             'cpu_cores':    self._cpu_cores,
             'ram_total_gb': self._ram_total_gb,
