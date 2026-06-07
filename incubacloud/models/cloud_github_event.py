@@ -210,6 +210,10 @@ class CloudGitHubEvent(models.Model):
         (e.g. the SaaS manager) override this to route tenant-bearing
         instances to the tenant-aware executor, which carries plan and
         tenant-module sync that the core executor lacks.
+
+        A subclass may return a falsy value to decline the auto-rebuild
+        entirely; the webhook handler then skips the instance without
+        enqueuing anything.
         """
         return 'rebuild_instance'
 
@@ -292,6 +296,14 @@ class CloudGitHubEvent(models.Model):
             if not (inst.active and inst.auto_rebuild and inst.deployed
                     and inst.host_id and inst.host_id.active):
                 continue
+            # A subclass may decline to auto-rebuild a given instance by
+            # returning a falsy job type (e.g. the SaaS manager skips a
+            # warm-pool instance already condemned to recycling). Resolve
+            # it before the cooldown/active-job bookkeeping so we never
+            # record a pending push for an instance we will never rebuild.
+            job_type = self._rebuild_job_type(inst)
+            if not job_type:
+                continue
             if (inst.last_auto_rebuild
                     and (now - inst.last_auto_rebuild) < _AUTO_REBUILD_COOLDOWN):
                 self._record_pending_push(inst, push_info, 'cooldown')
@@ -315,7 +327,7 @@ class CloudGitHubEvent(models.Model):
                 continue
             try:
                 self.env['cloud.job'].enqueue(
-                    inst.host_id.id, inst.id, self._rebuild_job_type(inst),
+                    inst.host_id.id, inst.id, job_type,
                     payload={
                         'trigger': 'webhook',
                         **push_info,
@@ -408,12 +420,15 @@ class CloudGitHubEvent(models.Model):
                 if not (inst.active and inst.deployed
                         and inst.host_id and inst.host_id.active):
                     continue
+                job_type = self._rebuild_job_type(inst)
+                if not job_type:
+                    continue
                 for repo in inst.repo_ids:
                     if _normalize_url(repo.url) == repo_norm and repo.branch != head_ref:
                         repo.write({'branch': head_ref, 'commit_sha': False})
                 try:
                     self.env['cloud.job'].enqueue(
-                        inst.host_id.id, inst.id, self._rebuild_job_type(inst),
+                        inst.host_id.id, inst.id, job_type,
                     )
                     _logger.info(
                         "PR preview rebuild triggered for %s (PR #%s)",
