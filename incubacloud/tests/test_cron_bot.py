@@ -1,4 +1,5 @@
 """Tests for the incubacloud cron bot user (P1.26)."""
+from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase
 
 
@@ -55,4 +56,54 @@ class TestCronBotUser(TransactionCase):
         self.assertFalse(
             wrong,
             "cron(s) not assigned to cron bot: %s" % wrong.mapped('cron_name'),
+        )
+
+    def test_all_module_crons_pass_server_action_precheck(self):
+        """Every module cron must satisfy Odoo 19's hardened server-action
+        access gate when run as the bot.
+
+        ``ir.actions.server._can_execute_action_on_records`` authorises a
+        run only if the action is scoped to a group the executing user
+        shares, *or* the user has write access to the action's model.
+        Crons targeting append-only / abstract models (audit log,
+        rate-limit, terminal routes, warm-pool & provisioner helpers)
+        carried neither and failed with ``AccessError`` on every tick.
+
+        We replicate that gate's logic here — reading the action with
+        ``sudo()`` so we test the bot's access to the *model*, not the
+        (unrelated) read ACL on ``ir.actions.server`` itself.
+        """
+        IMD = self.env['ir.model.data']
+        cron_mdata = IMD.search([
+            ('module', '=', 'incubacloud'),
+            ('model', '=', 'ir.cron'),
+        ])
+        crons = self.env['ir.cron'].browse(
+            cron_mdata.mapped('res_id'),
+        ).exists()
+        offenders = []
+        for cron in crons:
+            action = cron.ir_actions_server_id.sudo()
+            groups = action.group_ids
+            if groups:
+                if not (groups & cron.user_id.all_group_ids):
+                    offenders.append(
+                        "%s: user %s is in none of the action groups %s"
+                        % (cron.cron_name, cron.user_id.login,
+                           groups.mapped('full_name'))
+                    )
+                continue
+            # No group restriction → the run requires model write access.
+            model = action.model_id.model
+            try:
+                self.env[model].with_user(cron.user_id).check_access('write')
+            except AccessError:
+                offenders.append(
+                    "%s: user %s lacks write on %s and the action has no group"
+                    % (cron.cron_name, cron.user_id.login, model)
+                )
+        self.assertFalse(
+            offenders,
+            "cron(s) fail the Odoo 19 server-action access gate:\n%s"
+            % "\n".join(offenders),
         )

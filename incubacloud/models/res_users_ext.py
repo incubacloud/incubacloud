@@ -169,12 +169,31 @@ class ResUsers(models.Model):
         ])
         if not cron_mdata:
             return
-        stale = self.env['ir.cron'].sudo().browse(
+        module_crons = self.env['ir.cron'].sudo().browse(
             cron_mdata.mapped('res_id'),
-        ).exists().filtered(lambda c: c.user_id.id == 1)
+        ).exists()
+        stale = module_crons.filtered(lambda c: c.user_id.id == 1)
         if stale:
             stale.write({'user_id': bot.id})
             _logger.info(
                 "reassigned %d %s crons to cron bot user",
                 len(stale), module_name,
             )
+
+        # Odoo 19 hardened ``ir.actions.server.run()``: when an action
+        # carries no ``group_ids``, ``_can_execute_action_on_records``
+        # requires the executing user to have *write* access on the
+        # action's model. The cron bot is a cloud manager but deliberately
+        # lacks write on append-only / abstract orchestration models
+        # (audit log, rate-limit buckets, terminal routes, the warm-pool
+        # and host-provisioner helper AbstractModels), so those crons
+        # raised AccessError before their internal ``sudo()`` ever ran.
+        # Scoping each bot-owned cron's server action to a group the bot
+        # belongs to makes the check take the group-membership branch,
+        # authorising the run without granting broad table write.
+        bot_crons = module_crons.filtered(lambda c: c.user_id.id == bot.id)
+        if bot_crons:
+            manager_group = self.env.ref('incubacloud.group_cloud_manager')
+            bot_crons.ir_actions_server_id.write({
+                'group_ids': [(4, manager_group.id)],
+            })
