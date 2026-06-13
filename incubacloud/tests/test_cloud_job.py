@@ -455,7 +455,16 @@ class TestHostScopedRacePrevention(TransactionCase):
         )
 
     def _start(self, job):
-        """Force ``job`` into the ``started`` state (stored-related column)."""
+        """Force ``job`` into the ``started`` state (stored-related column).
+
+        ``state`` is a stored related field (``queue_job_id.state``). Flush
+        the compute left pending by ``create`` first; otherwise the
+        ``invalidate_model`` below flushes it and overwrites our raw value
+        with NULL (the job has no ``queue_job_id``, so the related recompute
+        resolves to ``False``). On Odoo 18 that clobbered the state and the
+        running-job guard found nothing.
+        """
+        job.flush_recordset(['state'])
         self.env.cr.execute(
             "UPDATE cloud_job SET state = 'started' WHERE id = %s", (job.id,),
         )
