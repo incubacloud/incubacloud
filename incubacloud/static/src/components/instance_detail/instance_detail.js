@@ -16,10 +16,6 @@ import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { IcModal } from "../ic_modal/ic_modal";
 import { SearchSelect } from "../search_select/search_select";
 
-const ODOO_VERSIONS = [
-    "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
-    "14.0", "15.0", "16.0", "17.0", "18.0", "19.0",
-];
 const PG_VERSIONS = ["14", "15", "16", "17", "18"];
 
 // ── Pip requirements helpers ─────────────────────────────────────────────────
@@ -158,7 +154,6 @@ export class InstanceDetail extends Component {
     setup() {
         this.env = useEnv();
         this.orm = useService("orm");
-        this.odooVersions = ODOO_VERSIONS;
         this.pgVersions   = PG_VERSIONS;
 
         this.state = useState({
