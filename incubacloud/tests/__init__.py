@@ -27,6 +27,7 @@ from . import (
     test_export_sanitize,
     test_cloud_security,
     test_odoo_version_normalization,
+    test_import_version_detection,
     test_executor_features,
     test_log_classification,
     test_rebuild_fingerprint,

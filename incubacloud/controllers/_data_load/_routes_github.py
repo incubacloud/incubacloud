@@ -27,6 +27,7 @@ from odoo.http import request
 
 from ...github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
 from ...github.http_utils import safe_urlopen
+from ...models._odoo_versions import ODOO_VERSIONS
 from ._helpers import (
     _gh_seg, _has_encrypted, _has_pat, _parse_github_repo_path,
 )
@@ -39,6 +40,199 @@ _logger = logging.getLogger(__name__)
 # ``repo_url`` (or ``.gitmodules`` URL) cannot redirect git clone to
 # an arbitrary host (SSRF / supply-chain).
 _ALLOWED_GIT_HOSTS = ('github.com', 'www.github.com')
+
+# Odoo series we recognise when determining the version of an imported
+# project. Derived from the single source of truth shared with the
+# ``odoo_version`` selector on cloud.project / cloud.instance so the
+# importer and the selector can never drift apart.
+_SUPPORTED_VERSIONS = frozenset(ODOO_VERSIONS)
+
+# Blob-less clone budget when resolving the real branch of a pinned SHA.
+_SUBRES_CLONE_TIMEOUT = 30
+
+_SSH_URL_RE = re.compile(r'^git@([^:]+):(.+?)(?:\.git)?$')
+
+
+def _to_https(url):
+    """Normalise a git remote (``git@host:path`` / https) to an HTTPS URL."""
+    url = (url or '').strip()
+    m = _SSH_URL_RE.match(url)
+    if m:
+        return f'https://{m.group(1)}/{m.group(2)}.git'
+    return url
+
+
+def _version_from_manifest_text(text):
+    """Return the Odoo series ('18.0') from an ``__manifest__.py`` source.
+
+    The manifest ``version`` field (e.g. ``"18.0.1.0.0"``) starts with the
+    Odoo series. Parsed safely with ``ast.literal_eval``; returns '' when
+    the file is unparseable, lacks a version, or the series is unsupported.
+    """
+    try:
+        data = ast.literal_eval(text)
+    except (ValueError, SyntaxError, TypeError):
+        return ''
+    if not isinstance(data, dict):
+        return ''
+    parts = str(data.get('version', '')).split('.')
+    if len(parts) >= 2:
+        candidate = f'{parts[0]}.{parts[1]}'
+        if candidate in _SUPPORTED_VERSIONS:
+            return candidate
+    return ''
+
+
+def _detect_version_from_disk(root_dir, skip_paths=()):
+    """Odoo series from the project's OWN module manifests (files on disk).
+
+    A project is a single Odoo series, so the authoritative signal is the
+    version declared by its own addons — never a submodule's ``branch=``
+    label. Prefers top-level modules (where own addons live); only then
+    descends, pruning vendored submodule trees in ``skip_paths``.
+    """
+    skip_abs = {os.path.join(root_dir, p) for p in skip_paths if p}
+    # First pass: direct children — the project's own modules sit here.
+    with suppress(OSError):
+        for name in sorted(os.listdir(root_dir)):
+            mpath = os.path.join(root_dir, name, '__manifest__.py')
+            if os.path.isfile(mpath):
+                with suppress(OSError):
+                    ver = _version_from_manifest_text(Path(mpath).read_text())
+                    if ver:
+                        return ver
+    # Second pass: deeper scan, skipping .git and submodule trees.
+    for cur, dirs, files in os.walk(root_dir):
+        dirs[:] = [
+            d for d in dirs
+            if d != '.git' and os.path.join(cur, d) not in skip_abs
+        ]
+        if '__manifest__.py' in files:
+            with suppress(OSError):
+                ver = _version_from_manifest_text(
+                    Path(os.path.join(cur, '__manifest__.py')).read_text()
+                )
+                if ver:
+                    return ver
+    return ''
+
+
+def _detect_version_from_git(tmpdir, skip_paths=()):
+    """Odoo series from own module manifests via ``git show`` (no checkout).
+
+    The preview clones with ``--no-checkout``; read the top-level tree and
+    fetch each candidate ``<module>/__manifest__.py`` blob on demand (cheap
+    with a blob-less clone). ``skip_paths`` excludes submodule containers.
+    """
+    skip = {p for p in skip_paths if p}
+    skip |= {p.split('/')[0] for p in skip}
+    try:
+        ls = subprocess.run(
+            ['git', '-C', tmpdir, 'ls-tree', '--name-only', 'HEAD'],
+            capture_output=True, text=True, timeout=10,
+        )
+    except subprocess.SubprocessError:
+        return ''
+    for name in ls.stdout.splitlines():
+        name = name.strip().rstrip('/')
+        if not name or name in skip:
+            continue
+        try:
+            show = subprocess.run(
+                ['git', '-C', tmpdir, 'show', f'HEAD:{name}/__manifest__.py'],
+                capture_output=True, text=True, timeout=10,
+            )
+        except subprocess.SubprocessError:
+            continue
+        if show.returncode == 0:
+            ver = _version_from_manifest_text(show.stdout)
+            if ver:
+                return ver
+    return ''
+
+
+def _branch_for_sha(sub_url, sha, prefer, tokens=()):
+    """Return the branch the pinned ``sha`` actually lives on, or ''.
+
+    A ``.gitmodules`` ``branch=`` label can be stale (left behind after a
+    version migration); the authoritative branch is the one whose history
+    contains the pinned commit. Clones the remote blob-less (commits/trees
+    only) and asks git which remote branches contain it, preferring
+    ``prefer`` (the project Odoo version) when several do.
+
+    The host is allow-listed before cloning: the URL ultimately comes from
+    an attacker-controllable ``.gitmodules`` (SSRF / supply-chain defense).
+    """
+    if not sha:
+        return ''
+    https = _to_https(sub_url)
+    host = (urlparse(https).hostname or '').lower()
+    if host not in _ALLOWED_GIT_HOSTS or not https.startswith('https://'):
+        return ''
+    candidates = list(dict.fromkeys([t for t in tokens if t] + [None]))
+    for token in candidates:
+        clone_url = (
+            f'https://x-access-token:{token}@{https[len("https://"):]}'
+            if token else https
+        )
+        tmp = tempfile.mkdtemp(prefix='ic_subres_')
+        try:
+            res = subprocess.run(
+                ['git', 'clone', '--filter=blob:none', '--no-checkout',
+                 '--quiet', clone_url, tmp],
+                capture_output=True, timeout=_SUBRES_CLONE_TIMEOUT,
+            )
+            if res.returncode != 0:
+                continue
+            cont = subprocess.run(
+                ['git', '-C', tmp, 'branch', '-r', '--contains', sha],
+                capture_output=True, text=True, timeout=15,
+            )
+            branches = []
+            for line in cont.stdout.splitlines():
+                name = line.strip()
+                if not name or '->' in name:  # skip "origin/HEAD -> ..."
+                    continue
+                name = name.removeprefix('origin/')
+                branches.append(name)
+            if not branches:
+                return ''
+            if prefer and prefer in branches:
+                return prefer
+            return branches[0]
+        except subprocess.SubprocessError:
+            continue
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return ''
+
+
+def _normalize_sub_branch(declared, project_version, sub_url, sha, tokens=()):
+    """Decide the branch to record for a submodule.
+
+    Odoo.sh defines a submodule by *repo + branch* (the pinned commit is a
+    consequence) and a project cannot mix Odoo series, so:
+
+    * empty / '.'                         → the project version ('main' if
+                                            unknown);
+    * version-like label != project       → stale; resolve the branch the
+                                            pinned SHA truly lives on
+                                            (preferring the project
+                                            version), else the project
+                                            version;
+    * otherwise (matches project, or a
+      non-version name like 'main')        → keep what the repo declares.
+    """
+    declared = (declared or '').strip()
+    if not declared or declared == '.':
+        return project_version or 'main'
+    if (re.fullmatch(r'\d+\.\d', declared) and project_version
+            and declared != project_version):
+        return (
+            _branch_for_sha(sub_url, sha, project_version, tokens)
+            or project_version
+        )
+    return declared
 
 
 class GitHubMixin:
@@ -569,15 +763,13 @@ class GitHubMixin:
         except ValueError as exc:
             return safe_error_response(exc, _("Invalid repository URL"))
 
-        # Detect Odoo version early — used as branch fallback for submodules
+        # Detect Odoo version early from the branch name (e.g. branch
+        # '18.0'). When the branch is not version-like (e.g. 'main') the
+        # version is determined later from the project's own manifests.
         _ver_match = re.fullmatch(r'(\d+\.\d)', branch)
-        _SUPPORTED = {
-            '7.0', '8.0', '9.0', '10.0', '11.0', '12.0',
-            '13.0', '14.0', '15.0', '16.0', '17.0', '18.0', '19.0',
-        }
         odoo_version = (
             _ver_match.group(1)
-            if _ver_match and _ver_match.group(1) in _SUPPORTED
+            if _ver_match and _ver_match.group(1) in _SUPPORTED_VERSIONS
             else ''
         )
 
@@ -631,24 +823,18 @@ class GitHubMixin:
                     current[key.strip()] = val.strip()
             if current:
                 submodules.append(current)
-            # First pass: collect explicit branches and infer odoo_version
-            nonlocal odoo_version
-            if not odoo_version:
-                for s in submodules:
-                    sb = s.get('branch', '')
-                    if sb and sb != '.' and re.fullmatch(r'\d+\.\d', sb):
-                        odoo_version = sb
-                        break
+            # Return raw declared branches; the project version is decided
+            # from the project's own manifests and each submodule branch is
+            # normalised later (see _clone_and_extract / the normalisation
+            # pass below). A submodule ``branch=`` label is never trusted to
+            # determine the project's Odoo version.
             result = []
             for s in submodules:
                 if 'url' not in s:
                     continue
-                sub_branch = s.get('branch', '')
-                if not sub_branch or sub_branch == '.':
-                    sub_branch = odoo_version or branch
                 result.append({
                     'url': _resolve_url(s['url']),
-                    'branch': sub_branch,
+                    'branch': s.get('branch', '').strip(),
                     'path': s.get('path', ''),
                 })
             return result
@@ -730,6 +916,15 @@ class GitHubMixin:
                     path = sub.get('path', '')
                     if path in sha_by_path:
                         sub['commit_sha'] = sha_by_path[path]
+
+                # A project is a single Odoo series: decide it from the
+                # project's own manifests (not submodule branch labels).
+                nonlocal odoo_version
+                if not odoo_version:
+                    odoo_version = _detect_version_from_git(
+                        tmpdir,
+                        skip_paths=[s.get('path', '') for s in submodules],
+                    )
 
                 return submodules, main_sha, None
 
@@ -852,6 +1047,15 @@ class GitHubMixin:
                     ),
                 }
             main_sha = ''
+
+        # Record repo + branch for each submodule (Odoo.sh's own model);
+        # a stale version-like label is replaced by the branch the pinned
+        # SHA truly lives on. The commit stays pinned in 'commit_sha'.
+        for sub in submodules or []:
+            sub['branch'] = _normalize_sub_branch(
+                sub.get('branch', ''), odoo_version,
+                sub.get('url', ''), sub.get('commit_sha', ''), tokens,
+            )
 
         result = {
             'ok': True,
@@ -976,36 +1180,6 @@ class GitHubMixin:
             _owner, repo_name = _parse_github_repo_path(url)
         except ValueError as exc:
             return safe_error_response(exc, _("Invalid repository URL"))
-
-        _SUPPORTED_VERSIONS = {
-            '7.0', '8.0', '9.0', '10.0', '11.0', '12.0',
-            '13.0', '14.0', '15.0', '16.0', '17.0', '18.0', '19.0',
-        }
-
-        def _detect_odoo_version_from_manifests(tmpdir):
-            """Scan for __manifest__.py files and extract Odoo version.
-
-            The ``version`` field in an Odoo manifest typically looks like
-            ``"16.0.1.0.0"`` where the first two segments are the Odoo
-            version.  We find the first manifest, parse it safely with
-            ``ast.literal_eval``, and return the version string.
-            """
-            for root, _dirs, files in os.walk(tmpdir):
-                if '__manifest__.py' in files:
-                    fpath = os.path.join(root, '__manifest__.py')
-                    try:
-                        with open(fpath) as f:
-                            data = ast.literal_eval(f.read())
-                        ver = str(data.get('version', ''))
-                        # "16.0.1.0.0" → "16.0"
-                        parts = ver.split('.')
-                        if len(parts) >= 2:
-                            candidate = f'{parts[0]}.{parts[1]}'
-                            if candidate in _SUPPORTED_VERSIONS:
-                                return candidate
-                    except Exception:
-                        continue
-            return ''
 
         # ── Build clone URL with auth ─────────────────────────────────
         svc = request.env['cloud.github.credential.service'].sudo()
@@ -1143,9 +1317,13 @@ class GitHubMixin:
                 elif os.path.isfile(gitmodules_path):
                     repo_type = 'odoosh'
 
-                    # Detect odoo_version from branch
+                    # Detect odoo_version from branch (e.g. branch '18.0')
                     vm = re.fullmatch(r'(\d+\.\d)', branch)
-                    odoo_version = vm.group(1) if vm else ''
+                    odoo_version = (
+                        vm.group(1)
+                        if vm and vm.group(1) in _SUPPORTED_VERSIONS
+                        else ''
+                    )
 
                     # Add the main repo itself first
                     repos_data.append({
@@ -1170,13 +1348,6 @@ class GitHubMixin:
                             current[key.strip()] = val.strip()
                     if current:
                         gm_subs.append(current)
-                    # Infer odoo_version from submodule branches
-                    if not odoo_version:
-                        for s in gm_subs:
-                            sb = s.get('branch', '')
-                            if sb and re.fullmatch(r'\d+\.\d', sb):
-                                odoo_version = sb
-                                break
                     # Submodule SHAs from ls-tree
                     ls_result = subprocess.run(
                         ['git', '-C', tmpdir, 'ls-tree', '-r', 'HEAD'],
@@ -1191,15 +1362,26 @@ class GitHubMixin:
                         ):
                             sha_by_path[parts[3].strip()] = parts[2]
 
+                    # A project is a single Odoo series: decide it from the
+                    # project's own manifests, never submodule branch labels.
+                    if not odoo_version:
+                        odoo_version = _detect_version_from_disk(
+                            tmpdir,
+                            skip_paths=[s.get('path', '') for s in gm_subs],
+                        )
+
                     for s in gm_subs:
                         sub_url = s.get('url', '')
                         if not sub_url:
                             continue
                         sub_url = _ssh_to_https(sub_url)
                         sub_path = s.get('path', '')
-                        sub_branch = s.get('branch', '')
-                        if not sub_branch or sub_branch == '.':
-                            sub_branch = odoo_version or 'main'
+                        # Record repo + branch; a stale version-like label is
+                        # replaced by the branch the pinned SHA truly lives on.
+                        sub_branch = _normalize_sub_branch(
+                            s.get('branch', ''), odoo_version, sub_url,
+                            sha_by_path.get(sub_path, ''), tokens,
+                        )
                         repos_data.append({
                             'url': sub_url,
                             'branch': sub_branch,
@@ -1219,11 +1401,9 @@ class GitHubMixin:
                         'addons': '',
                     }]
 
-                # Fallback: detect Odoo version from __manifest__.py
+                # Fallback (doodba / simple): detect from own manifests.
                 if not odoo_version:
-                    odoo_version = (
-                        _detect_odoo_version_from_manifests(tmpdir)
-                    )
+                    odoo_version = _detect_version_from_disk(tmpdir)
 
                 last_error = None
                 break  # success
