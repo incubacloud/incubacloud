@@ -113,6 +113,15 @@ class CloudInstance(models.Model):
         comodel_name='cloud.host',
         string='Host',
     )
+    move_origin_host_id = fields.Many2one(
+        comodel_name='cloud.host',
+        string='Move Origin Host',
+        copy=False,
+        help='Set to the source host while a cross-host move is in '
+             'flight; cleared once the destination is cut over. A '
+             'non-empty value left after a failed move marks an instance '
+             'an operator can roll back.',
+    )
     status = fields.Selection(
         selection=[
             ('ok', 'OK'),
@@ -773,6 +782,121 @@ class CloudInstance(models.Model):
             },
         ])
         return {'staging_id': staging.id, 'job_id': job_ids[0]}
+
+    # ── Cross-host move ────────────────────────────────────────────────────
+
+    def _move_deploy_job_type(self):
+        """Job type that (re)builds the stack on the destination host
+        during a move.
+
+        Core deploys the bare instance; SaaS overrides this to
+        ``tenant_deploy_instance`` so the tenant module is staged on the
+        new host (the restored DB references it).
+        """
+        return 'deploy_instance'
+
+    def _move_pre_steps(self, source_host):
+        """Return extra chain steps to run BEFORE the move starts.
+
+        Core: none. Inheriting layers (SaaS) prepend host-specific
+        quiescing — e.g. removing the Sablier wake-gate so traffic
+        cannot restart the source and produce writes that the dump
+        (taken right after the source is stopped) would miss.
+        """
+        return []
+
+    def _on_move_cutover(self, origin_host):
+        """Hook fired on a successful host-move cutover, after ``host_id``
+        has flipped to the destination.
+
+        Core: no-op (DNS is the operator's concern on a bare core
+        install). SaaS overrides this to re-point the managed DNS
+        A-record at the new host IP and finalize the tenant.
+        """
+
+    def move_to_host(self, target_host):
+        """Move this deployed instance to ``target_host``, preserving data.
+
+        Reuses the existing executors in one ``enqueue_chain`` so the
+        whole move is a single sequential pipeline. The source is only
+        torn down after the destination is verified healthy and cut
+        over, so a failure at any earlier step leaves the source
+        recoverable (see ``rollback_move``)::
+
+            [pre-steps] → deploy(target) → stop(source) →
+            backup_download(source) → restore(target) →
+            move_cutover(target) → move_cleanup_source(source)
+
+        The app is stopped on the source before the dump so no writes
+        are lost; ``backup_download`` brings the db back up for a
+        consistent final snapshot. ``host_id`` flips to ``target_host``
+        only inside ``move_cutover`` on success.
+        """
+        self.ensure_one()
+        self.env['cloud.security.mixin']._check_can_manage_hosts()
+        source = self.host_id
+        if not source:
+            raise UserError(_("Instance has no host assigned."))
+        if not self.deployed:
+            raise UserError(_("Instance must be deployed before it can move."))
+        if not target_host or target_host == source:
+            raise UserError(_("Pick a different target host."))
+        if (target_host.status != 'compatible'
+                or not target_host.traefik_deployed):
+            raise UserError(_(
+                "Target host '%(name)s' is not ready (must be compatible "
+                "and have Traefik deployed).", name=target_host.name or '?',
+            ))
+        if self.move_origin_host_id:
+            raise UserError(_(
+                "A move is already in progress for this instance."))
+
+        self.move_origin_host_id = source.id
+
+        pre = self._move_pre_steps(source)
+        # pre … deploy(+0) stop(+1) download(+2): restore references the
+        # download job by its 0-indexed position in the chain.
+        download_idx = len(pre) + 2
+        steps = pre + [
+            {'host_id': target_host.id, 'instance_id': self.id,
+             'job_type_code': self._move_deploy_job_type()},
+            {'host_id': source.id, 'instance_id': self.id,
+             'job_type_code': 'stop_instance'},
+            {'host_id': source.id, 'instance_id': self.id,
+             'job_type_code': 'backup_download',
+             'payload': {'time': 'latest', 'download_type': 'all'}},
+            {'host_id': target_host.id, 'instance_id': self.id,
+             'job_type_code': 'restore_instance',
+             'payload': {'mode': 'from_job',
+                         'source_job_id': f'__chain_job_{download_idx}__'}},
+            {'host_id': target_host.id, 'instance_id': self.id,
+             'job_type_code': 'move_cutover'},
+            {'host_id': source.id, 'instance_id': self.id,
+             'job_type_code': 'move_cleanup_source'},
+        ]
+        job_ids = self.env['cloud.job'].enqueue_chain(steps)
+        return {'ok': True, 'job_id': job_ids[0]}
+
+    def rollback_move(self):
+        """Recover a move that failed before cutover.
+
+        Valid when ``move_origin_host_id`` is set and the chain broke
+        (the source was never torn down). ``host_id`` never flips before
+        cutover, so it still points at the source — we just clear the
+        marker and bring the source back up. A retry of ``move_to_host``
+        re-deploys over any half-built destination copy (deploy removes a
+        previous deploy first), so the orphan needs no explicit cleanup.
+        """
+        self.ensure_one()
+        self.env['cloud.security.mixin']._check_can_manage_hosts()
+        origin = self.move_origin_host_id
+        if not origin:
+            raise UserError(_("No move in progress to roll back."))
+        self.move_origin_host_id = False
+        job_id = self.env['cloud.job'].enqueue(
+            origin.id, self.id, 'start_instance', bypass_running_check=True,
+        )
+        return {'ok': True, 'job_id': job_id}
 
     def _post_or_update_pr_comment(self, body):
         """Post or update the GitHub PR comment for this PR preview instance."""

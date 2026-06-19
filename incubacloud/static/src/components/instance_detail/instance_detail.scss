@@ -125,6 +125,59 @@
     &:hover { background: rgba($state-warning, 0.12); }
 }
 
+// ── Move to host ────────────────────────────────────────────────────────────────
+
+.ic-ab-rollback-move {
+    border-color: rgba($state-warning, 0.5);
+    color: $state-warning;
+
+    &:hover {
+        background: rgba($state-warning, 0.12);
+        border-color: $state-warning;
+    }
+}
+
+.ic-migrating-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border: 1px solid rgba($state-warning, 0.4);
+    border-radius: 10px;
+    background: rgba($state-warning, 0.12);
+    color: $state-warning;
+    font-size: 0.72rem;
+
+    i {
+        font-size: 0.7rem;
+        animation: dot-running-pulse 2s ease-in-out infinite;
+    }
+}
+
+.ic-move-picker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    background: $surface-light;
+
+    .ic-move-picker-label {
+        font-size: 0.8125rem;
+        color: $text-secondary;
+    }
+
+    // SearchSelect grows to fill the row; buttons keep their size.
+    > :nth-child(2) {
+        flex: 1 1 220px;
+        min-width: 180px;
+    }
+}
+
 // ── Locked fields ──────────────────────────────────────────────────────────────
 
 .ic-locked-notice {

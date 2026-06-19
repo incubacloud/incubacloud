@@ -191,6 +191,33 @@ class OpsMixin:
         result = instance.clone_to_staging(staging_name.strip())
         return {'ok': True, **result}
 
+    @http.route(['/cloud/move_instance'], type='json', auth='user')
+    def cloud_move_instance(self, instance_id, target_host_id):
+        """Move a deployed instance to another host (manager-only)."""
+        self._sec()._check_can_manage_hosts()
+        instance = request.env['cloud.instance'].browse(instance_id)
+        if not instance.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        target = request.env['cloud.host'].browse(target_host_id)
+        if not target.exists():
+            return {'ok': False, 'error': _('Target host not found')}
+        try:
+            return instance.move_to_host(target)
+        except UserError as exc:
+            return {'ok': False, 'error': str(exc)}
+
+    @http.route(['/cloud/rollback_move'], type='json', auth='user')
+    def cloud_rollback_move(self, instance_id):
+        """Roll back a move that failed before cutover (manager-only)."""
+        self._sec()._check_can_manage_hosts()
+        instance = request.env['cloud.instance'].browse(instance_id)
+        if not instance.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        try:
+            return instance.rollback_move()
+        except UserError as exc:
+            return {'ok': False, 'error': str(exc)}
+
     @http.route(['/cloud/download_backup'], type='json', auth='user')
     def cloud_download_backup(self, instance_id, time, download_type='dump'):
         """Download a backup. Prod: enqueue job. Non-prod: return attachment URL."""

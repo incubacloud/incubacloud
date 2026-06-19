@@ -1251,6 +1251,14 @@ class CrudMixin:
             'host_ip': inst.host_id.ip_address if inst.host_id else '',
             'host_user': inst.host_id.user if inst.host_id else '',
             'host_port': inst.host_id.port if inst.host_id else 22,
+            'move_origin_host_id': (
+                inst.move_origin_host_id.id
+                if inst.move_origin_host_id else None
+            ),
+            'move_origin_host': (
+                inst.move_origin_host_id.name
+                if inst.move_origin_host_id else ''
+            ),
             'odoo_version': inst.odoo_version,
             'odoo_commit_sha': inst.odoo_commit_sha or '',
             'last_deploy_date': last_deploy.create_date if last_deploy else None,
