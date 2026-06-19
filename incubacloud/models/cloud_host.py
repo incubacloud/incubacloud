@@ -241,7 +241,8 @@ class CloudHost(models.Model):
     _MIN_DISK_FREE_GB = 10
 
     @api.model
-    def select_best_host(self, required_cpus=3.75, required_ram_gb=3.75):
+    def select_best_host(self, required_cpus=3.75, required_ram_gb=3.75,
+                         additional_domain=None):
         """Return the best eligible host for a new instance.
 
         Prefers hosts that fit the requested ``required_cpus`` and
@@ -251,13 +252,22 @@ class CloudHost(models.Model):
         place instances while any inheriting auto-provisioning layer
         reacts to the saturation signal independently.
         Only returns empty when there is no compatible host at all.
+
+        ``additional_domain`` is an optional extra search domain ANDed
+        into the eligibility filter (and therefore the fallback too), so
+        inheriting layers can constrain placement without forking this
+        method — e.g. the SaaS layer passes ``[('pool_id', '=', ...)]``
+        to keep free and paid tenants on separate hardware.
         """
-        eligible = self.search([
+        domain = [
             ('status', '=', 'compatible'),
             ('traefik_deployed', '=', True),
             ('exclude_from_autoassign', '=', False),
             ('disk_free_gb', '>=', self._MIN_DISK_FREE_GB),
-        ])
+        ]
+        if additional_domain:
+            domain += additional_domain
+        eligible = self.search(domain)
         if not eligible:
             return self.browse()
 

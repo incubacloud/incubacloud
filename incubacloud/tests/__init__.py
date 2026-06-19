@@ -12,6 +12,7 @@ from . import (
     test_cloud_backup,
     test_backup_backend_conn,
     test_cloud_instance,
+    test_cloud_instance_move,
     test_cloud_instance_domain,
     test_cloud_instance_repo,
     test_cloud_github_app,
