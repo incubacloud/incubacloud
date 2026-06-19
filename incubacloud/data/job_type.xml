@@ -88,6 +88,20 @@
             <field name="description">Restores a doodba instance database from a .zip backup file.</field>
         </record>
 
+        <record id="move_cutover" model="cloud.job.type">
+            <field name="name">Move Cutover</field>
+            <field name="code">move_cutover</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Verifies the destination instance is healthy and cuts the instance over to the new host (flips host_id, re-points DNS).</field>
+        </record>
+
+        <record id="move_cleanup_source" model="cloud.job.type">
+            <field name="name">Move Cleanup (source)</field>
+            <field name="code">move_cleanup_source</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Removes the old host copy after a successful move, without archiving the instance record.</field>
+        </record>
+
         <record id="export_instance" model="cloud.job.type">
             <field name="name">Export for Development</field>
             <field name="code">export_instance</field>

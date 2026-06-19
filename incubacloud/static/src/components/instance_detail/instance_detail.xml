@@ -42,6 +42,12 @@
                                 <span t-att-class="'ic-ic-status-dot ' + statusClass"/>
                                 <span t-esc="statusLabel"/>
                             </span>
+                            <t t-if="isMoving">
+                                <span class="ic-migrating-badge">
+                                    <i class="fa fa-exchange"/>
+                                    Migrating from <t t-esc="state.inst.move_origin_host"/>…
+                                </span>
+                            </t>
                         </div>
 
                         <!-- Row 2: actions (primary + tools + danger) -->
@@ -144,6 +150,23 @@
                                         </button>
                                     </t>
                                 </t>
+                                <!-- Move to host / Roll back move -->
+                                <t t-if="canMoveHost">
+                                    <div class="ic-action-bar-sep"/>
+                                    <button class="ic-action-btn" title="Move to host"
+                                            aria-label="Move instance to another host"
+                                            t-on-click="() => this.openMovePicker()">
+                                        <i class="fa fa-exchange"/> Move to host
+                                    </button>
+                                </t>
+                                <t t-if="isMoving and env.permissions?.can_manage_hosts">
+                                    <div class="ic-action-bar-sep"/>
+                                    <button class="ic-action-btn ic-ab-rollback-move" title="Roll back move"
+                                            aria-label="Roll back move"
+                                            t-on-click="() => this.rollbackMove()">
+                                        <i class="fa fa-undo"/> Roll back move
+                                    </button>
+                                </t>
                                 <div class="ic-action-bar-sep"/>
                             </t>
                             <t t-if="(state.inst.environment === 'production' and env.permissions?.can_delete_production) or (state.inst.environment !== 'production' and env.permissions?.can_edit_instance)">
@@ -154,6 +177,32 @@
                                 </button>
                             </t>
                         </div>
+
+                        <!-- Inline move-to-host picker -->
+                        <t t-if="state.movePicker">
+                            <div class="ic-move-picker">
+                                <span class="ic-move-picker-label">Move to:</span>
+                                <SearchSelect
+                                    options="moveHostOptions"
+                                    value="state.movePicker.targetHostId"
+                                    onChange.bind="onMoveTargetChange"
+                                    placeholder="'Type to search hosts…'"
+                                    emptyLabel="'— pick a host —'"
+                                    loading="state.movePicker.loading"
+                                    onOpen="() => this._loadMoveHosts()"/>
+                                <button class="ic-action-btn ic-ab-deploy"
+                                        title="Move"
+                                        t-att-disabled="!state.movePicker.targetHostId"
+                                        t-on-click="() => this.confirmMove()">
+                                    <i class="fa fa-exchange"/> Move
+                                </button>
+                                <button class="ic-action-btn ic-ab-secondary"
+                                        title="Cancel"
+                                        t-on-click="() => this.closeMovePicker()">
+                                    Cancel
+                                </button>
+                            </div>
+                        </t>
                     </t>
 
                 </div>
