@@ -146,6 +146,19 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f" done",
             ))
 
+        # 3c. Cap the backup container hostname at 64 bytes. `copier update`
+        #     regenerates common.yaml with "hostname: backup.<first_main_domain>"
+        #     (inherited by prod.yaml via `extends`); a long production domain
+        #     pushes it past the kernel limit (__NEW_UTS_LEN = 64) and the
+        #     backup container dies on start with "sethostname: invalid
+        #     argument". Only rewrite when the rendered value exceeds 64,
+        #     falling back to doodba's own short form ("backup.<project_name>").
+        if self._backup_enabled() and inst.environment == 'production':
+            cmds.append((
+                "Cap backup hostname",
+                f"""cd {d} && short="backup.{name}" && short=$(printf '%s' "$short" | cut -c1-64 | sed 's/[.-]*$//') && for f in common.yaml prod.yaml; do [ -f "$f" ] || continue; cur=$(awk '/hostname: backup/{{print $2; exit}}' "$f"); [ -n "$cur" ] || continue; if [ ${{#cur}} -gt 64 ]; then sed -i "s|hostname:[[:space:]]*backup[^[:space:]]*|hostname: $short|" "$f"; echo "Capped backup hostname: $cur (${{#cur}}) -> $short"; else echo "Backup hostname OK: $cur (${{#cur}})"; fi; done""",
+            ))
+
         cmds += [
             # 4. Overwrite backup.env with ours (adds AWS_ENDPOINT_URL).
             (
