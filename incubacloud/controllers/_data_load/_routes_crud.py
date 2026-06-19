@@ -134,6 +134,19 @@ class CrudMixin:
             }
         return payload
 
+    @http.route(['/cloud/get_odoo_versions'], type='json', auth='user')
+    def cloud_get_odoo_versions(self):
+        """Return the supported Odoo series for the version pickers.
+
+        Single source of truth: the ``odoo_version`` Selection shared by
+        ``cloud.project`` / ``cloud.instance``. Serving it here keeps the
+        SPA pickers from hard-coding their own copy of the list.
+        """
+        selection = (
+            request.env['cloud.instance']._fields['odoo_version'].selection
+        )
+        return {'odoo_versions': [code for code, _label in selection]}
+
     @http.route(['/cloud/get_users'], type='json', auth='user')
     def cloud_get_users(self, search='', **kw):
         """Search internal users for member picker."""

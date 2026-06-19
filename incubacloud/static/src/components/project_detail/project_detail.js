@@ -8,11 +8,7 @@ import { IcModal } from "../ic_modal/ic_modal";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required } from "../../utils/validators";
-
-const ODOO_VERSIONS = [
-    '7.0', '8.0', '9.0', '10.0', '11.0', '12.0', '13.0',
-    '14.0', '15.0', '16.0', '17.0', '18.0', '19.0',
-];
+import { fetchOdooVersions } from "../../utils/odoo_versions";
 
 let _nextKey = 1;
 const newRepoKey = () => `new_${_nextKey++}`;
@@ -142,7 +138,7 @@ export class ProjectDetail extends Component {
     static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal };
 
     get isCreate() { return !this.props.project_id; }
-    get odooVersions() { return ODOO_VERSIONS; }
+    get odooVersions() { return this.state.odooVersions; }
     get showOnboarding() {
         if (this.env.currentRoute?.route === "project_settings") return false;
         return this.props.embedded && !this.isCreate
@@ -166,6 +162,7 @@ export class ProjectDetail extends Component {
         this.env = useEnv();
         this.state = useState({
             tab: "general",
+            odooVersions: [],
             loading: true,
             saving: false,
             error: null,
@@ -206,6 +203,7 @@ export class ProjectDetail extends Component {
 
     async loadProject() {
         this.state.loading = true;
+        this.state.odooVersions = await fetchOdooVersions();
         try {
             if (this.isCreate) {
                 const [tagsRes, backends] = await Promise.all([
@@ -221,7 +219,7 @@ export class ProjectDetail extends Component {
                     description: "",
                     project_author: "IncubaCloud",
                     project_license: "BSL-1.0",
-                    odoo_version: defs.odoo_version || ODOO_VERSIONS[ODOO_VERSIONS.length - 1],
+                    odoo_version: defs.odoo_version || this.state.odooVersions.at(-1),
                     odoo_initial_lang: null,
                     backup_backend_id: null,
                 };
@@ -239,7 +237,7 @@ export class ProjectDetail extends Component {
                     description: p.description || "",
                     project_author: p.project_author || "IncubaCloud",
                     project_license: p.project_license || "BSL-1.0",
-                    odoo_version: p.odoo_version || ODOO_VERSIONS[ODOO_VERSIONS.length - 1],
+                    odoo_version: p.odoo_version || this.state.odooVersions.at(-1),
                     odoo_initial_lang: p.odoo_initial_lang || null,
                     backup_backend_id: p.backup_backend_id || null,
                 };

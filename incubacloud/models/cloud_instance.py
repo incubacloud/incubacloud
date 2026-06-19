@@ -10,6 +10,7 @@ from .cloud_host import parse_memory_to_gb
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
 from ._repo_requirements import _normalize_url
+from ._odoo_versions import ODOO_VERSION_SELECTION
 
 _logger = logging.getLogger(__name__)
 _GLOBAL_BACKUP_PARAM = 'incubacloud.backup_backend_id'
@@ -181,13 +182,7 @@ class CloudInstance(models.Model):
     # ── Copier template parameters ──────────────────────────────────────────
 
     odoo_version = fields.Selection(
-        selection=[
-            ('7.0', '7.0'),   ('8.0', '8.0'),   ('9.0', '9.0'),
-            ('10.0', '10.0'), ('11.0', '11.0'), ('12.0', '12.0'),
-            ('13.0', '13.0'), ('14.0', '14.0'), ('15.0', '15.0'),
-            ('16.0', '16.0'), ('17.0', '17.0'), ('18.0', '18.0'),
-            ('19.0', '19.0'),
-        ],
+        selection=ODOO_VERSION_SELECTION,
         string='Odoo Version',
         default='19.0',
     )
