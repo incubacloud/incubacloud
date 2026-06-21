@@ -191,7 +191,7 @@
             letter-spacing: 0.06em;
         }
         .terminal-trigger-sha {
-            color: #93c5fd;
+            color: #2fc78c;
             font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
             font-weight: 600;
         }
@@ -202,8 +202,8 @@
             margin-left: auto;
             padding: 2px 8px;
             border-radius: 10px;
-            background: rgba(59, 130, 246, 0.18);
-            color: #93c5fd;
+            background: rgba(47,199,140,0.18);
+            color: #2fc78c;
             font-size: 10px;
             text-transform: uppercase;
             letter-spacing: 0.04em;
@@ -223,7 +223,7 @@
             font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
             font-size: 11px;
         }
-        .terminal-cp-sha { color: #93c5fd; font-weight: 600; }
+        .terminal-cp-sha { color: #2fc78c; font-weight: 600; }
         .terminal-cp-branch { color: #9ca3af; font-family: inherit; }
         .terminal-cp-msg { color: #d4d4d4; font-family: 'Segoe UI', system-ui, sans-serif; }
         .terminal-cp-by { color: #888; font-family: 'Segoe UI', system-ui, sans-serif; }
@@ -237,7 +237,7 @@
             font-family: 'Segoe UI', system-ui, sans-serif;
         }
         .terminal-cp-reason.reason-cooldown { background: rgba(234, 179, 8, 0.18); color: #fde68a; }
-        .terminal-cp-reason.reason-active_job { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+        .terminal-cp-reason.reason-active_job { background: rgba(47,199,140,0.18); color: #2fc78c; }
     </style>
 </head>
 <body>
