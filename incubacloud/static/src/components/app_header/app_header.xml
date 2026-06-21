@@ -7,7 +7,7 @@
             <!-- Logo -->
             <div class="ic-header-logo" t-on-click="goHome">
                 <svg class="ic-header-logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="28" height="28">
-                    <defs><linearGradient id="ic-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#3B82F6"/><stop offset="100%" stop-color="#1E3A8A"/></linearGradient></defs>
+                    <defs><linearGradient id="ic-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#2fc78c"/><stop offset="100%" stop-color="#14a06e"/></linearGradient></defs>
                     <rect width="256" height="256" rx="60" fill="url(#ic-logo-grad)"/>
                     <g transform="translate(5, 18) scale(2)">
                         <g fill="#FFFFFF">

@@ -274,7 +274,7 @@
     &:focus { outline: none; }
 
     &::selection {
-        background: rgba(#2563EB, 0.35);
+        background: rgba($primary-blue, 0.35);
     }
 }
 
