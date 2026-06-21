@@ -1,22 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 180" width="100%" height="100%">
-  <!-- IncubaCloud — dark lockup with tagline. Stripes in dark slate. -->
-  <g transform="translate(20, 15)">
-    <g fill="#3B82F6">
-      <circle cx="38" cy="68" r="15"/>
-      <circle cx="60" cy="49" r="24"/>
-      <circle cx="82" cy="62" r="19"/>
-      <rect x="22" y="66" width="76" height="19" rx="9"/>
-    </g>
-    <g fill="#0F172A">
-      <rect x="51" y="44" width="17" height="7" rx="2"/>
-      <rect x="48" y="53" width="25" height="7" rx="2"/>
-      <rect x="44" y="62" width="32" height="7" rx="2"/>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 76" fill="none" role="img" aria-label="IncubaCloud — Management and orchestration for Odoo">
+  <g transform="translate(0 4)">
+    <mask id="ic-tg">
+      <path d="M15.5 34.5h17.6a8.3 8.3 0 0 0 .9-16.55A10.4 10.4 0 0 0 13.6 21 7.2 7.2 0 0 0 15.5 34.5Z" fill="#fff"></path>
+      <rect x="18.4" y="27.7" width="13.4" height="2.7" rx="1.35" fill="#000"></rect>
+      <rect x="20.4" y="23.8" width="9.4" height="2.7" rx="1.35" fill="#000"></rect>
+      <rect x="22.4" y="19.9" width="5.4" height="2.7" rx="1.35" fill="#000"></rect>
+    </mask>
+    <rect width="48" height="48" fill="#2fc78c" mask="url(#ic-tg)"></rect>
   </g>
-  <text x="160" y="100" font-family="'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="72" font-weight="700" letter-spacing="-1.5">
-    <tspan fill="#F8FAFC">Incuba</tspan><tspan fill="#3B82F6">Cloud</tspan>
+  <text x="58" y="37" font-family="Space Grotesk, system-ui, sans-serif" font-weight="600" font-size="29" letter-spacing="-0.7">
+    <tspan fill="#e8efea">Incuba</tspan><tspan fill="#2fc78c">Cloud</tspan>
   </text>
-  <text x="165" y="145" font-family="'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="20" font-weight="500" fill="#94A3B8" letter-spacing="0.5">
-    Management and orchestration for Odoo
-  </text>
+  <text x="59" y="60" font-family="JetBrains Mono, monospace" font-weight="400" font-size="11.5" letter-spacing="0.02em" fill="#8ba095">Management and orchestration for Odoo</text>
 </svg>
