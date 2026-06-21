@@ -11,12 +11,12 @@
         <meta http-equiv="content-type" content="text/html, charset=utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
 
-        <!-- Inter font: preconnect then load variable weight for best performance -->
+        <!-- Relay fonts: Space Grotesk (display) + Hanken Grotesk (UI) + JetBrains Mono (data) -->
         <link rel="preconnect" href="https://fonts.googleapis.com"/>
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap"/>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"/>
 
-        <style> body { background: #0f172a; } </style>
+        <style> body { background: #0c100e; } </style>
 
         <script type="text/javascript">
             var odoo = <t t-out="json.dumps({

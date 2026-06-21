@@ -1,39 +1,50 @@
+// ============================================================
+//  IncubaCloud — Relay  ·  variables.scss
+//  Identity: green "online" on warm carbon. Accent strategy = OPTION C
+//  (solid green = ACTION only; state is shown as ghost pill + colored dot).
+//  Keeps the SAME token NAMES as before so existing references resolve;
+//  only the VALUES change. See HANDOFF for the manual touch-ups that
+//  a value swap can't cover (active-nav style, status pills, fonts).
+// ============================================================
+
 // ── Color tokens ────────────────────────────────────────────────────────────
-$primary-blue: #2563EB;
-$primary-dark: #1E40AF;
-$accent: #F97316;         // orange — primary CTAs (Deploy, Create)
-$accent-dark: #EA580C;    // orange hover
+// $primary-blue keeps its name for compatibility but is now the brand GREEN.
+$primary-blue: #2fc78c;   // green-500 — primary/interactive on dark
+$primary-dark: #14a06e;   // green-600 — hover / pressed
+$accent: #2fc78c;         // ACTION (Deploy, Create, OK) — same green family in Option C
+$accent-dark: #14a06e;    // action hover
 
-$background: #0F172A;
-$surface: #111827;
-$surface-light: #1F2937;
-$text-primary: #E5E7EB;
-$text-secondary: #94A3B8;  // slate-400 — more neutral, consistent contrast
-$border: #334155;
+$background: #0c100e;      // carbon-950
+$surface: #121613;         // carbon-900
+$surface-light: #19201b;   // carbon-850
+$text-primary: #e8efea;
+$text-secondary: #8ba095;  // warm carbon muted (was slate-400)
+$border: #2b382f;          // carbon-700
 
-$state-ok: #22C55E;
-$state-warning: #F59E0B;
-$state-error: #EF4444;
-$state-neutral: #6B7280;
+$state-ok: #2fc78c;        // online / healthy = brand green
+$state-warning: #efa53e;   // amber
+$state-error: #f2575b;     // red (slightly lifted for dark)
+$state-neutral: #5f7068;
 
 // ── Toast colors ──────────────────────────────────────────────────────────────
-$toast-success-bg:     #1a3a2a;
+$toast-success-bg:     #15281d;
 $toast-success-border: #2d6b48;
 $toast-success-text:   #7ee2a8;
 
-$toast-error-bg:       #3a1a1a;
+$toast-error-bg:       #2e1718;
 $toast-error-border:   #6b2d2d;
 $toast-error-text:     #f0a0a0;
 
-$toast-warning-bg:     #3a2e1a;
+$toast-warning-bg:     #2e2614;
 $toast-warning-border: #6b5a2d;
 $toast-warning-text:   #f0d080;
 
-$toast-info-bg:        #1a2a3a;
-$toast-info-border:    #2d4a6b;
-$toast-info-text:      #90c0f0;
+// Info toast: teal, NOT a SaaS blue.
+$toast-info-bg:        #16282e;
+$toast-info-border:    #2d5560;
+$toast-info-text:      #8fd0dc;
 
-// ── Code editor (dark GitHub-style theme) ───────────────────────────────────
+// ── Code editor (dark GitHub-style theme) — left as-is, neutral ──────────────
 $code-bg: #0d1117;
 $code-bg-alt: #161b22;
 $code-text: #e6edf3;
@@ -43,15 +54,16 @@ $code-gutter-bg: #161b22;
 $code-gutter-text: #6e7681;
 
 // ── Typography ──────────────────────────────────────────────────────────────
-$font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-$font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+$font-display: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif; // NEW — titles/wordmark
+$font-sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;    // UI/body (was Inter)
+$font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;             // unchanged
 
-// ── Transition durations ────────────────────────────────────────────────────
+// ── Transition durations ──────────────────────────────────────────────────── (unchanged)
 $duration-fast: 150ms;
 $duration-normal: 250ms;
 $duration-slow: 350ms;
 
-// ── Spacing scale (8px base) ─────────────────────────────────────────────────
+// ── Spacing scale (unchanged) ────────────────────────────────────────────────
 $space-1: 4px;
 $space-2: 8px;
 $space-3: 12px;
@@ -62,7 +74,7 @@ $space-8: 32px;
 $space-10: 40px;
 $space-12: 48px;
 
-// ── Border radius scale ───────────────────────────────────────────────────────
+// ── Border radius scale (unchanged) ──────────────────────────────────────────
 $radius-sm: 4px;
 $radius-md: 6px;
 $radius-lg: 10px;
@@ -70,13 +82,13 @@ $radius-xl: 12px;
 $radius-2xl: 16px;
 $radius-pill: 9999px;
 
-// ── Elevation / shadow scale ──────────────────────────────────────────────────
+// ── Elevation / shadow scale (unchanged) ─────────────────────────────────────
 $shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.4);
 $shadow-md:  0 4px 12px rgba(0, 0, 0, 0.5);
 $shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.6);
 $shadow-xl:  0 16px 40px rgba(0, 0, 0, 0.7);
 
-// ── Modal widths ──────────────────────────────────────────────────────────────
+// ── Modal widths (unchanged) ──────────────────────────────────────────────────
 $modal-sm: 420px;   // confirm dialogs
 $modal-md: 540px;   // create/edit forms
 $modal-lg: 680px;   // restore db, conflict resolution
