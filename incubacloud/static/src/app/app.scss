@@ -109,9 +109,10 @@ body,
       }
 
       &.active {
-        background: $primary-blue;
-        color: white;
-        font-weight: 500;
+        background: rgba($primary-blue, 0.13);
+        color: $primary-blue;
+        font-weight: 600;
+        box-shadow: inset 2px 0 0 $primary-blue;   // green hairline = selection, not action
 
         > .fa { opacity: 1; }
       }
@@ -247,6 +248,7 @@ body,
     // Page title (H1) — 22px, bold
     .ic-page-title,
     h1.ic-title {
+        font-family: $font-display;
         font-size: 1.375rem;
         font-weight: 700;
         color: $text-primary;
@@ -267,6 +269,7 @@ body,
 
     // Sub-section / card title (H3) — 15px, semibold
     .ic-card-title {
+        font-family: $font-display;
         font-size: 0.9375rem;
         font-weight: 600;
         color: $text-primary;
