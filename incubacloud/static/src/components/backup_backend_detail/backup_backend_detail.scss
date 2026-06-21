@@ -6,13 +6,13 @@
     width: 100%;
     height: 22px;
     border-radius: 4px;
-    background: #1f2937;
-    border: 1px solid #334155;
+    background: $surface-light;
+    border: 1px solid $border;
     overflow: hidden;
 
     .ic-usage-gauge-bar {
         height: 100%;
-        background: #22C55E;          // ok (green)
+        background: $state-ok;          // ok (green)
         transition: width 200ms ease-out, background 200ms ease-out;
     }
 
@@ -23,13 +23,13 @@
         align-items: center;
         justify-content: center;
         font-size: 12px;
-        color: #E5E7EB;
+        color: $text-primary;
         text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
         pointer-events: none;
     }
 
-    &[data-band="warning"] .ic-usage-gauge-bar { background: #F59E0B; }
-    &[data-band="danger"]  .ic-usage-gauge-bar { background: #EF4444; }
+    &[data-band="warning"] .ic-usage-gauge-bar { background: $state-warning; }
+    &[data-band="danger"]  .ic-usage-gauge-bar { background: $state-error; }
 }
 
 // The Delete button in the detail footer uses .ic-btn-danger. Defined

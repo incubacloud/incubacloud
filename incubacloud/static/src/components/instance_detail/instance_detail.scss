@@ -22,7 +22,7 @@
     &.st-pending  .ic-ic-status-dot { background: $state-neutral; }
     &.st-error    .ic-ic-status-dot { background: $state-error; }
     &.st-provisioning .ic-ic-status-dot {
-        background: $primary-blue;
+        background: $state-warning;
         animation: dot-running-pulse 2s ease-in-out infinite;
     }
 }
@@ -1007,8 +1007,8 @@
 }
 
 .ic-sync-tag-push {
-    background: rgba(#3b82f6, 0.15);
-    color: #3b82f6;
+    background: rgba($primary-blue, 0.15);
+    color: $primary-blue;
 }
 
 .ic-sync-tag-pull {
@@ -1229,8 +1229,8 @@
     font-weight: 600;
 
     &.ic-bk-full {
-        background: rgba(59, 130, 246, 0.15);
-        color: #60a5fa;
+        background: rgba($text-secondary, 0.15);
+        color: $text-secondary;
     }
 
     &.ic-bk-incremental {
@@ -1264,10 +1264,10 @@
 
 .ic-backups-info {
     padding: 10px 14px;
-    background: rgba(59, 130, 246, 0.08);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba($text-secondary, 0.08);
+    border: 1px solid $border;
     border-radius: 8px;
-    color: #93c5fd;
+    color: $text-secondary;
     font-size: 0.8125rem;
     margin-bottom: 12px;
 
@@ -1663,21 +1663,21 @@
 
 .ic-tl-item-queued {
     .ic-tl-content {
-        background: rgba(59, 130, 246, 0.06);
-        border: 1px dashed rgba(59, 130, 246, 0.35);
+        background: rgba($state-warning, 0.06);
+        border: 1px dashed rgba($state-warning, 0.35);
         border-radius: 8px;
         padding: 10px 12px;
     }
 }
 
 .ic-tl-dot-queued {
-    background: #3b82f6 !important;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+    background: $state-warning !important;
+    box-shadow: 0 0 0 3px rgba($state-warning, 0.18);
 }
 
 .ic-ov-job-state.state-queued {
-    background: rgba(59, 130, 246, 0.18);
-    color: #93c5fd;
+    background: rgba($state-warning, 0.18);
+    color: $state-warning;
 }
 
 .ic-tl-pending-list {
@@ -1702,7 +1702,7 @@
 }
 
 .ic-tl-pp-sha {
-    color: #93c5fd;
+    color: $primary-blue;
     font-weight: 600;
 }
 .ic-tl-pp-branch {
@@ -1729,8 +1729,8 @@
         color: #fde68a;
     }
     &.reason-active_job {
-        background: rgba(59, 130, 246, 0.18);
-        color: #93c5fd;
+        background: rgba($primary-blue, 0.18);
+        color: $primary-blue;
     }
 }
 
