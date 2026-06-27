@@ -91,12 +91,11 @@ class CrudMixin:
         if len(q) < 2:
             return {'results': []}
         perms = self._sec()._get_user_permissions()
-        results = []
-        for p in request.env['cloud.project'].search([('name', 'ilike', q)], limit=6):
-            results.append({
-                'type': 'project', 'label': p.name, 'sublabel': 'Project',
-                'route': 'project_detail', 'params': {'project_id': p.id},
-            })
+        results = [
+            {'type': 'project', 'label': p.name, 'sublabel': 'Project',
+             'route': 'project_detail', 'params': {'project_id': p.id}}
+            for p in request.env['cloud.project'].search([('name', 'ilike', q)], limit=6)
+        ]
         for i in request.env['cloud.instance'].search(
                 ['|', ('name', 'ilike', q), ('domain', 'ilike', q)], limit=8):
             sub = i.project_id.name or ''
