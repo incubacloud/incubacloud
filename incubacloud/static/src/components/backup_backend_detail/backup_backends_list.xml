@@ -1,79 +1,79 @@
 <templates>
 
     <t t-name="incubacloud.BackupBackendsList">
-        <div class="ic-dashboard">
+        <div class="rl-page ic-backups-dashboard">
 
             <!-- Header -->
-            <div class="ic-dashboard-header">
-                <h1>Backup Backends</h1>
-                <div class="ic-dashboard-search">
-                    <input type="text" placeholder="Search backends…"
-                           aria-label="Search backends"
-                           t-on-input="onSearchInput"/>
+            <div class="rl-phead">
+                <div class="rl-htext">
+                    <h1 class="rl-ptitle">Backup Backends</h1>
+                    <p class="rl-psub">
+                        <t t-esc="state.total"/> backend<t t-if="state.total !== 1">s</t>
+                    </p>
+                </div>
+                <div class="rl-pactions">
+                    <button class="rl-btn rl-btn-primary" t-on-click="newBackend">
+                        <t t-out="env.icon('plus', 15)"/> New Backend
+                    </button>
                 </div>
             </div>
+
 
             <TruncationBanner truncated="state.truncated"
                               total="state.total"
                               limit="state.limit"
                               label="'backup backends'"/>
 
-            <!-- Grid -->
-            <div class="ic-dashboard-grid">
+            <!-- Loading -->
+            <t t-if="state.loading">
+                <div class="ic-detail-loading">Loading…</div>
+            </t>
 
-                <!-- Action card first -->
-                <div class="ic-action-card" t-on-click="newBackend">
-                    <i class="fa fa-plus ic-action-card-icon"/>
-                    <span class="ic-action-card-label">New Backend</span>
+            <!-- Empty state -->
+            <t t-elif="state.visible_backends.length === 0">
+                <div class="rl-stub">
+                    <span class="rl-si"><t t-out="env.icon('shield', 46)"/></span>
+                    <h3>No backup backends configured</h3>
+                    <p>Set up an S3-compatible backend to enable automated backups for your instances.</p>
                 </div>
+            </t>
 
-                <t t-if="state.visible_backends.length === 0 and !state.loading">
-                    <div class="ic-empty-state">
-                        <i class="fa fa-shield ic-empty-icon"/>
-                        <div class="ic-empty-title">No backup backends configured</div>
-                        <div class="ic-empty-hint">Set up an S3-compatible backend to enable automated backups for your instances.</div>
-                    </div>
-                </t>
+            <!-- Grid of backend cards -->
+            <t t-else="">
+                <div class="rl-grid rl-grid-2 ic-backups-grid">
+                    <t t-foreach="state.visible_backends" t-as="b" t-key="b.id">
+                        <div class="rl-card rl-card-pad ic-backend-card click"
+                             t-on-click="() => this.openBackend(b.id)">
 
-                <t t-if="state.loading">
-                    <div class="ic-detail-loading">Loading…</div>
-                </t>
-
-                <t t-foreach="state.visible_backends" t-as="b" t-key="b.id">
-                    <div class="ic-host-card status-compatible"
-                         t-on-click="() => this.openBackend(b.id)">
-
-                        <!-- Card header: name + type badge -->
-                        <div class="ic-ic-header">
-                            <h3 class="ic-ic-name" t-esc="b.name"/>
-                            <div class="ic-ic-header-spacer"/>
-                            <div class="ic-ic-status">
-                                <span class="ic-ic-status-dot st-host-compatible"/>
-                                <span class="ic-ic-status-label" t-esc="b.backend_type"/>
+                            <!-- Header: name + type badge -->
+                            <div class="ic-backend-card-head">
+                                <span class="rl-rname" t-esc="b.name"/>
+                                <span class="rl-rspacer"/>
+                                <span class="rl-sb active">
+                                    <span class="rl-d"/><t t-esc="b.backend_type"/>
+                                </span>
                             </div>
-                        </div>
 
-                        <!-- Meta: destination + endpoint -->
-                        <div class="ic-host-meta">
+                            <!-- Destination chip -->
                             <t t-if="b.backup_dst">
-                                <code class="ic-ic-host-chip" t-esc="b.backup_dst"/>
+                                <div class="rl-rmeta rl-mono ic-backend-card-dst">
+                                    <code t-esc="b.backup_dst"/>
+                                </div>
                             </t>
-                        </div>
 
-                        <!-- Usage bar (only when quota is set; without quota there is no % to draw) -->
-                        <div class="ic-host-metrics">
+                            <!-- Usage bar (only with a quota) -->
                             <t t-if="b.quota_gb &gt; 0">
-                                <div class="ic-host-metric">
-                                    <span class="ic-metric-label">Usage</span>
-                                    <div class="ic-bar">
-                                        <div t-att-class="'ic-bar-fill ' + barClassOf(b)"
+                                <div class="rl-mbar">
+                                    <div class="rl-mbar-top">
+                                        <span>Usage</span>
+                                        <span><t t-esc="usageExtraOf(b)"/></span>
+                                    </div>
+                                    <div class="rl-mbar-track">
+                                        <div t-att-class="'rl-mbar-fill ' + mbarClassOf(b)"
                                              t-att-style="'width:' + usagePctOf(b) + '%'"/>
                                     </div>
-                                    <div class="ic-metric-right">
-                                        <span class="ic-metric-value">
-                                            <t t-out="usagePctOf(b).toFixed(0)"/>%
-                                        </span>
-                                        <span class="ic-metric-extra" t-esc="usageExtraOf(b)"/>
+                                    <div class="ic-mbar-extra">
+                                        <t t-out="usagePctOf(b).toFixed(0)"/>%
                                     </div>
                                 </div>
                             </t>
@@ -87,19 +87,16 @@
                                     </t>
                                 </div>
                             </t>
-                        </div>
 
-                        <!-- Instance count -->
-                        <div class="ic-host-footer-meta">
-                            <span class="ic-instances">
+                            <!-- Instance count -->
+                            <div class="rl-rmeta ic-backend-card-foot">
                                 <t t-esc="b.instance_count"/> instance<t t-if="b.instance_count !== 1">s</t>
-                            </span>
+                            </div>
+
                         </div>
-
-                    </div>
-                </t>
-
-            </div>
+                    </t>
+                </div>
+            </t>
 
             <t t-if="state.error">
                 <div class="ic-detail-error-state" role="alert">

@@ -13,11 +13,16 @@
                 <!-- Header -->
                 <header class="ic-modal__header">
                     <div class="ic-import-header">
-                        <span class="ic-import-badge">GitHub</span>
+                        <span class="ic-import-badge">
+                            <t t-out="env.icon('git', 13)"/>
+                            GitHub
+                        </span>
                         <h3 id="ic-import-project-title">Import project from GitHub</h3>
                     </div>
                     <button t-if="state.step !== 'progress'"
-                            class="ic-modal__close" t-on-click="close">✕</button>
+                            class="ic-modal__close" aria-label="Close" t-on-click="close">
+                        <t t-out="env.icon('x', 16)"/>
+                    </button>
                 </header>
 
                 <!-- ── Step: Input (URL + Branch) ─────────────────────── -->
@@ -29,8 +34,8 @@
                             all repositories, and create a production instance.
                         </p>
 
-                        <div class="ic-form-group">
-                            <label>GitHub repository URL <span class="required">*</span></label>
+                        <div class="ic-frow">
+                            <label>GitHub repository URL <span class="ic-req">*</span></label>
                             <div class="ic-import-url-row">
                                 <input
                                     type="url"
@@ -40,13 +45,15 @@
                                     t-on-blur="onUrlBlur"
                                 />
                                 <span t-if="state.loadingBranches" class="ic-repo-spinner"
-                                      title="Fetching branches…">⟳</span>
+                                      title="Fetching branches…">
+                                    <span class="ic-spin"/>
+                                </span>
                             </div>
                             <div t-if="state.branchError" class="ic-repo-fetch-error"
                                  t-esc="state.branchError"/>
                         </div>
 
-                        <div class="ic-form-group">
+                        <div class="ic-frow">
                             <label>Branch</label>
                             <SearchSelect
                                 options="state.branches"
@@ -61,13 +68,14 @@
                     </section>
 
                     <footer class="ic-modal__footer">
-                        <button class="ic-btn ic-btn--secondary" t-on-click="close">
+                        <button class="ic-btn ic-btn--ghost" t-on-click="close">
                             Cancel
                         </button>
                         <button
                             class="ic-btn ic-btn--primary"
                             t-on-click="doImport"
                             t-att-disabled="!isUrlValid">
+                            <t t-out="env.icon('download', 15)"/>
                             Import
                         </button>
                     </footer>
@@ -76,15 +84,15 @@
                 <!-- ── Step: Progress ─────────────────────────────────── -->
                 <t t-if="state.step === 'progress'">
                     <section class="ic-modal__body">
-                        <div class="ic-import-progress">
+                        <div class="ic-import-steps">
                             <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
-                                <div class="ic-import-progress-item done">
-                                    <i class="fa fa-check-circle"/>
+                                <div class="ic-jstep done">
+                                    <span class="ic-jstep__icon"><t t-out="env.icon('check', 15)"/></span>
                                     <span t-esc="msg.text"/>
                                 </div>
                             </t>
-                            <div class="ic-import-progress-item pending">
-                                <div class="ic-import-loading-spinner"/>
+                            <div class="ic-jstep run">
+                                <span class="ic-jstep__icon"><span class="ic-spin"/></span>
                                 <span>Importing project…</span>
                             </div>
                         </div>
@@ -95,10 +103,10 @@
                 <!-- ── Step: Done ─────────────────────────────────────── -->
                 <t t-if="state.step === 'done'">
                     <section class="ic-modal__body">
-                        <div class="ic-import-progress">
+                        <div class="ic-import-steps">
                             <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
-                                <div class="ic-import-progress-item done">
-                                    <i class="fa fa-check-circle"/>
+                                <div class="ic-jstep done">
+                                    <span class="ic-jstep__icon"><t t-out="env.icon('check', 15)"/></span>
                                     <span t-esc="msg.text"/>
                                 </div>
                             </t>
@@ -106,6 +114,7 @@
                     </section>
                     <footer class="ic-modal__footer">
                         <button class="ic-btn ic-btn--primary" t-on-click="goToInstance">
+                            <t t-out="env.icon('fwd', 15)"/>
                             Go to instance
                         </button>
                     </footer>
@@ -114,23 +123,25 @@
                 <!-- ── Step: Error ────────────────────────────────────── -->
                 <t t-if="state.step === 'error'">
                     <section class="ic-modal__body">
-                        <div class="ic-import-progress">
+                        <div class="ic-import-steps">
                             <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
-                                <div class="ic-import-progress-item done">
-                                    <i class="fa fa-check-circle"/>
+                                <div class="ic-jstep done">
+                                    <span class="ic-jstep__icon"><t t-out="env.icon('check', 15)"/></span>
                                     <span t-esc="msg.text"/>
                                 </div>
                             </t>
                         </div>
-                        <div class="ic-alert ic-alert--error" role="alert" style="margin-top: 16px;">
-                            <t t-esc="state.error"/>
+                        <div class="ic-alert ic-alert--error" role="alert">
+                            <span class="ic-alert__icon"><t t-out="env.icon('alert', 15)"/></span>
+                            <span class="ic-alert__text"><t t-esc="state.error"/></span>
                         </div>
                     </section>
                     <footer class="ic-modal__footer ic-modal__footer--between">
-                        <button class="ic-btn ic-btn--secondary" t-on-click="retry">
-                            ← Try again
+                        <button class="ic-btn ic-btn--ghost" t-on-click="retry">
+                            <t t-out="env.icon('back', 15)"/>
+                            Try again
                         </button>
-                        <button class="ic-btn ic-btn--secondary" t-on-click="close">
+                        <button class="ic-btn ic-btn--ghost" t-on-click="close">
                             Close
                         </button>
                     </footer>

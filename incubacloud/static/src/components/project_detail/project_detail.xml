@@ -4,32 +4,36 @@
         <div class="ic-host-detail">
 
             <t t-if="state.loading">
-                <div class="ic-detail-loading">Loading project…</div>
+                <div class="ic-rl-detail-scroll">
+                    <div class="ic-detail-loading">Loading project…</div>
+                </div>
             </t>
 
             <!-- Onboarding: no instances yet -->
             <t t-elif="showOnboarding">
-                <div class="ic-onboarding">
-                    <div class="ic-onboarding-icon">
-                        <i class="fa fa-cloud"/>
-                    </div>
-                    <h2 class="ic-onboarding-title">No instances yet</h2>
-                    <p class="ic-onboarding-desc">
-                        Create your first instance to get started with
-                        <strong t-esc="state.project.name"/>.
-                    </p>
-                    <div class="ic-onboarding-cards">
-                        <div class="ic-onboarding-card env-production"
-                             t-on-click="() => this.createInstance('production')">
-                            <i class="fa fa-rocket"/>
-                            <span class="ic-onboarding-card-label">Production</span>
-                            <span class="ic-onboarding-card-hint">Live environment</span>
-                        </div>
-                        <div class="ic-onboarding-card env-staging"
-                             t-on-click="() => this.createInstance('staging')">
-                            <i class="fa fa-flask"/>
-                            <span class="ic-onboarding-card-label">Staging</span>
-                            <span class="ic-onboarding-card-hint">Pre-production testing</span>
+                <div class="ic-rl-detail-scroll">
+                    <div class="rl-page rl-page--narrow">
+                        <div class="rl-stub ic-pd-onboarding">
+                            <span class="rl-si"><i class="fa fa-cloud"/></span>
+                            <h3>No instances yet</h3>
+                            <p>
+                                Create your first instance to get started with
+                                <strong t-esc="state.project.name"/>.
+                            </p>
+                            <div class="rl-grid rl-grid-2 ic-pd-onboarding-cards">
+                                <div class="rl-ghcard ic-pd-onboard-card env-production"
+                                     t-on-click="() => this.createInstance('production')">
+                                    <span class="rl-ghi"><t t-out="env.icon('rocket', 22)"/></span>
+                                    <h3>Production</h3>
+                                    <p>Live environment</p>
+                                </div>
+                                <div class="rl-ghcard ic-pd-onboard-card env-staging"
+                                     t-on-click="() => this.createInstance('staging')">
+                                    <span class="rl-ghi"><t t-out="env.icon('flask', 22)"/></span>
+                                    <h3>Staging</h3>
+                                    <p>Pre-production testing</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -37,330 +41,357 @@
 
             <t t-elif="isCreate or state.project">
 
-                <!-- Header -->
-                <div class="ic-detail-header">
-                    <t t-if="!props.embedded">
-                        <button class="ic-btn-back" t-on-click="goBack">← Projects</button>
-                    </t>
-                    <div class="ic-detail-title">
-                        <t t-if="isCreate">
-                            <h1>New Project</h1>
-                        </t>
-                        <t t-else="">
-                            <h1>Settings</h1>
-                            <span t-att-class="'ic-proj-status-badge status-' + state.project.status"
-                                  t-esc="statusLabel(state.project.status)"/>
-                        </t>
-                    </div>
-                    <t t-if="!isCreate and !props.embedded">
-                        <div class="ic-detail-header-meta">
-                            <span class="ic-detail-probed">
-                                <t t-esc="state.project.instance_count"/> instance<t t-if="state.project.instance_count !== 1">s</t>
-                            </span>
-                        </div>
-                    </t>
-                </div>
+                <div class="ic-rl-detail-scroll">
+                    <div class="rl-page rl-page--narrow">
 
-                <!-- Tabs -->
-                <div class="ic-detail-tabs">
-                    <button t-att-class="state.tab === 'general' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('general')">General</button>
-                    <button t-att-class="state.tab === 'repos' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('repos')">
-                        Repositories
-                        <t t-if="state.repos.length">
-                            <span class="ic-tab-count" t-esc="state.repos.length"/>
+                        <!-- Breadcrumb (edit, non-embedded) -->
+                        <t t-if="!isCreate and !props.embedded">
+                            <div class="rl-crumb">
+                                <a t-on-click="goBack">Projects</a>
+                                <span class="rl-sep">/</span>
+                                <span class="rl-cur" t-esc="state.form.name or state.project.name"/>
+                            </div>
                         </t>
-                    </button>
-                    <button t-att-class="state.tab === 'deps' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('deps')">Dependencies</button>
-                    <t t-if="env.permissions?.can_create_project">
-                        <button t-att-class="state.tab === 'members' ? 'ic-tab active' : 'ic-tab'"
-                                t-on-click="() => this.setTab('members')">
-                            Members
-                            <t t-if="state.members and state.members.length">
-                                <span class="ic-tab-count" t-esc="state.members.length"/>
-                            </t>
-                        </button>
-                    </t>
-                </div>
+                        <t t-elif="isCreate and !props.embedded">
+                            <div class="rl-crumb">
+                                <a t-on-click="goBack">Projects</a>
+                                <span class="rl-sep">/</span>
+                                <span class="rl-cur">New project</span>
+                            </div>
+                        </t>
 
-                <!-- Body -->
-                <div class="ic-detail-body">
-
-                    <!-- General tab -->
-                    <t t-if="state.tab === 'general'">
-                        <div class="ic-form-grid">
-                            <div t-att-class="'ic-form-row' + (validator.fieldError('name') ? ' has-error' : '')">
-                                <label>Name <span class="ic-required">*</span></label>
-                                <input type="text"
-                                       t-att-value="state.form.name"
-                                       t-on-input="(ev) => this.onInput('name', ev)"
-                                       t-on-blur="() => validator.touch('name')"/>
-                                <t t-if="validator.fieldError('name')">
-                                    <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                        <!-- Header -->
+                        <div class="rl-phead">
+                            <div class="rl-htext">
+                                <h1 class="rl-ptitle">
+                                    <t t-if="isCreate">New Project</t>
+                                    <t t-else="">Settings</t>
+                                    <t t-if="state.form.odoo_version">
+                                        <span class="rl-env" style="color:var(--rl-fg2)">Odoo <t t-esc="state.form.odoo_version"/></span>
+                                    </t>
+                                    <t t-if="!isCreate">
+                                        <span t-att-class="'rl-sb ' + statusBadgeClass(state.project.status)">
+                                            <span class="rl-d"/><t t-esc="statusLabel(state.project.status)"/>
+                                        </span>
+                                    </t>
+                                </h1>
+                                <t t-if="!isCreate and !props.embedded">
+                                    <p class="rl-psub">
+                                        <t t-esc="state.project.instance_count"/> instance<t t-if="state.project.instance_count !== 1">s</t>
+                                    </p>
                                 </t>
                             </div>
-                            <div class="ic-form-row">
-                                <label>Author</label>
-                                <input type="text"
-                                       placeholder="IncubaCloud"
-                                       t-att-value="state.form.project_author"
-                                       t-on-input="(ev) => this.onInput('project_author', ev)"/>
-                            </div>
-                            <div t-att-class="'ic-form-row' + (validator.fieldError('odoo_version') ? ' has-error' : '')">
-                                <label>Odoo Version <span class="ic-required">*</span></label>
-                                <select t-on-change="(ev) => this.onInput('odoo_version', ev)">
-                                    <t t-foreach="odooVersions" t-as="v" t-key="v">
-                                        <option t-att-value="v"
-                                                t-att-selected="state.form.odoo_version === v">
-                                            <t t-esc="v"/>
-                                        </option>
-                                    </t>
-                                </select>
-                                <t t-if="validator.fieldError('odoo_version')">
-                                    <span class="ic-field-error" t-esc="validator.fieldError('odoo_version')"/>
+                        </div>
+
+                        <!-- Tabs -->
+                        <div class="rl-tabs">
+                            <button t-att-class="state.tab === 'general' ? 'rl-tab active' : 'rl-tab'"
+                                    t-on-click="() => this.setTab('general')">General</button>
+                            <button t-att-class="state.tab === 'repos' ? 'rl-tab active' : 'rl-tab'"
+                                    t-on-click="() => this.setTab('repos')">
+                                Repositories
+                                <t t-if="state.repos.length">
+                                    <span class="ic-tab-count" t-esc="state.repos.length"/>
                                 </t>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Initial Language</label>
-                                <div class="ic-lang-picker">
-                                    <input type="text"
-                                           placeholder="— default (en_US) —"
-                                           t-att-value="state.langSearch"
-                                           t-on-input="onLangSearchInput"
-                                           t-on-focus="() => { this._ensureLangs(); this.state.langOpen = true; }"
-                                           t-on-blur="onLangBlur"/>
-                                    <t t-if="state.langOpen">
-                                        <div class="ic-lang-dropdown">
-                                            <t t-if="state.langsLoading">
-                                                <div class="ic-lang-option" style="opacity:0.5">Loading…</div>
-                                            </t>
-                                            <t t-else="">
-                                                <div class="ic-lang-option ic-lang-option-default"
-                                                     t-on-mousedown="() => this.selectLang(null)">
-                                                    — default (en_US) —
-                                                </div>
-                                                <t t-foreach="filteredLangs" t-as="lang" t-key="lang.id">
-                                                    <div t-att-class="'ic-lang-option' + (state.form.odoo_initial_lang === lang.id ? ' selected' : '')"
-                                                         t-on-mousedown="() => this.selectLang(lang)"
-                                                         t-esc="lang.name + ' (' + lang.code + ')'"/>
-                                                </t>
-                                            </t>
-                                        </div>
-                                    </t>
-                                </div>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>License</label>
-                                <select t-on-change="(ev) => this.onInput('project_license', ev)">
-                                    <option value="no_license"        t-att-selected="state.form.project_license === 'no_license'">No license</option>
-                                    <option value="Apache-2.0"        t-att-selected="state.form.project_license === 'Apache-2.0'">Apache 2.0</option>
-                                    <option value="BSL-1.0"           t-att-selected="state.form.project_license === 'BSL-1.0'">Boost Software License 1.0</option>
-                                    <option value="AGPL-3.0-or-later" t-att-selected="state.form.project_license === 'AGPL-3.0-or-later'">GNU AGPL 3.0 or later</option>
-                                    <option value="LGPL-3.0-or-later" t-att-selected="state.form.project_license === 'LGPL-3.0-or-later'">GNU LGPL 3.0 or later</option>
-                                    <option value="MIT"               t-att-selected="state.form.project_license === 'MIT'">MIT</option>
-                                    <option value="OEEL-1.0"          t-att-selected="state.form.project_license === 'OEEL-1.0'">Odoo Enterprise Edition License v1.0</option>
-                                    <option value="OPL-1.0"           t-att-selected="state.form.project_license === 'OPL-1.0'">Odoo Proprietary License v1.0</option>
-                                </select>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Backup Backend</label>
-                                <select t-on-change="(ev) => this.onBackendChange(ev)">
-                                    <option value="">— Use global default —</option>
-                                    <t t-foreach="state.backupBackends" t-as="bb" t-key="bb.id">
-                                        <option t-att-value="bb.id"
-                                                t-att-selected="state.form.backup_backend_id === bb.id">
-                                            <t t-esc="bb.name"/>
-                                        </option>
-                                    </t>
-                                </select>
-                                <span class="ic-form-hint">Only used for production instances</span>
-                            </div>
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Tags</label>
-                                <TagSelector
-                                    selected="state.selectedTags"
-                                    available="state.allTags"
-                                    onAdd.bind="addTag"
-                                    onRemove.bind="removeTag"
-                                    onCreate.bind="createTag"
-                                />
-                            </div>
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Description</label>
-                                <textarea rows="5"
-                                          t-att-value="state.form.description"
-                                          t-on-input="(ev) => this.onInput('description', ev)"/>
-                            </div>
-                        </div>
-                    </t>
-
-                    <!-- Dependencies tab -->
-                    <t t-if="state.tab === 'deps'">
-                        <div class="ic-deps-panel">
-                            <div class="ic-deps-section-label">pip.txt — Python</div>
-                            <div class="ic-code-editor-wrap">
-                                <div class="ic-code-gutter">
-                                    <t t-foreach="getLineNumbers('pipDeps')" t-as="n" t-key="n">
-                                        <div class="ic-line-num" t-esc="n"/>
-                                    </t>
-                                </div>
-                                <textarea class="ic-code-area"
-                                          spellcheck="false"
-                                          autocomplete="off"
-                                          autocorrect="off"
-                                          autocapitalize="off"
-                                          t-att-value="state.pipDeps"
-                                          t-on-input="onDepsInput"
-                                          t-on-scroll="onCodeScroll"/>
-                            </div>
-                            <div class="ic-deps-section-label" style="margin-top:16px">apt.txt — System</div>
-                            <div class="ic-code-editor-wrap">
-                                <div class="ic-code-gutter">
-                                    <t t-foreach="getLineNumbers('aptDeps')" t-as="n" t-key="n">
-                                        <div class="ic-line-num" t-esc="n"/>
-                                    </t>
-                                </div>
-                                <textarea class="ic-code-area"
-                                          spellcheck="false"
-                                          autocomplete="off"
-                                          autocorrect="off"
-                                          autocapitalize="off"
-                                          t-att-value="state.aptDeps"
-                                          t-on-input="onAptInput"
-                                          t-on-scroll="onCodeScroll"/>
-                            </div>
-                        </div>
-                    </t>
-
-                    <!-- Members tab -->
-                    <t t-if="state.tab === 'members'">
-                        <div class="ic-members-panel">
-                            <div class="ic-members-add">
-                                <input type="text"
-                                       class="ic-input"
-                                       placeholder="Search users to add..."
-                                       t-att-value="state.memberSearch || ''"
-                                       t-on-input="(ev) => this.searchMembers(ev.target.value)"/>
-                            </div>
-                            <t t-if="state.memberResults and state.memberResults.length">
-                                <div class="ic-members-results">
-                                    <t t-foreach="state.memberResults" t-as="user" t-key="user.id">
-                                        <div class="ic-member-result"
-                                             t-on-click="() => this.addMember(user)">
-                                            <i class="fa fa-user-plus"/>
-                                            <span t-esc="user.name"/>
-                                            <small t-if="user.email" t-esc="user.email"/>
-                                        </div>
-                                    </t>
-                                </div>
-                            </t>
-                            <t t-if="state.members and state.members.length">
-                                <div class="ic-members-list">
-                                    <t t-foreach="state.members" t-as="member" t-key="member.id">
-                                        <div class="ic-member-item">
-                                            <i class="fa fa-user"/>
-                                            <span class="ic-member-name" t-esc="member.name"/>
-                                            <button class="ic-member-remove"
-                                                    t-on-click="() => this.removeMember(member.id)">
-                                                <i class="fa fa-times"/>
-                                            </button>
-                                        </div>
-                                    </t>
-                                </div>
-                            </t>
-                            <t t-elif="!state.members or !state.members.length">
-                                <div class="ic-empty-state">
-                                    <i class="fa fa-users ic-empty-icon"/>
-                                    <div class="ic-empty-title">No members assigned</div>
-                                    <div class="ic-empty-hint">Add users to give Stakeholders and Consultants access to this project.</div>
-                                </div>
-                            </t>
-                        </div>
-                    </t>
-
-                    <!-- Repositories tab — kept mounted to preserve branch cache -->
-                    <div class="ic-repos-list"
-                         t-att-style="state.tab !== 'repos' ? 'display:none' : ''">
-                        <div class="ic-repos-toolbar">
-                            <button class="ic-btn-add-repo" t-on-click="addRepo">
-                                + Add repository
                             </button>
-                            <t t-if="state.repos.length">
-                                <button class="ic-btn-freeze-all" t-on-click="freezeAllRepos"
-                                        t-att-disabled="state.freezingAll"
-                                        title="Pin all repos to their current HEAD">
-                                    <i class="fa fa-lock"/> Freeze all
+                            <button t-att-class="state.tab === 'deps' ? 'rl-tab active' : 'rl-tab'"
+                                    t-on-click="() => this.setTab('deps')">Dependencies</button>
+                            <t t-if="env.permissions?.can_create_project">
+                                <button t-att-class="state.tab === 'members' ? 'rl-tab active' : 'rl-tab'"
+                                        t-on-click="() => this.setTab('members')">
+                                    Members
+                                    <t t-if="state.members and state.members.length">
+                                        <span class="ic-tab-count" t-esc="state.members.length"/>
+                                    </t>
                                 </button>
-                                <button class="ic-btn-freeze-all unfreeze" t-on-click="unfreezeAllRepos"
-                                        title="Unpin all repos — rebuilds will use branch tips">
-                                    <i class="fa fa-unlock-alt"/> Unfreeze all
-                                </button>
-                                <input class="ic-repos-search"
-                                       type="text"
-                                       placeholder="Filter repos…"
-                                       aria-label="Filter repositories"
-                                       t-att-value="state.repoSearch"
-                                       t-on-input="(ev) => { state.repoSearch = ev.target.value; }"/>
                             </t>
                         </div>
-                        <t t-foreach="filteredRepos" t-as="repo" t-key="repo._key">
-                            <RepoEditor
-                                repo="repo"
-                                hasAddons="true"
-                                repoModel="'cloud.project.repo'"
-                                onChange="(field, value) => this.onRepoChange(repo._key, field, value)"
-                                onRemove="() => this.removeRepo(repo._key)"
-                                preferredBranch="state.form.odoo_version || ''"
-                                onFetchRequirements="(url, branch) => this._fetchAndMergeRequirements(url, branch)"
-                            />
-                        </t>
-                        <t t-if="!state.repos.length">
-                            <div class="ic-repos-empty">
-                                No repositories yet — click Add to link a repo.
+
+                        <!-- Body -->
+                        <div class="ic-pd-body">
+
+                            <!-- General tab -->
+                            <t t-if="state.tab === 'general'">
+                                <div class="rl-fgrid">
+                                    <div class="rl-frow"
+                                         t-att-class="validator.fieldError('name') ? 'has-error' : ''">
+                                        <label>Name <span class="rl-req">*</span></label>
+                                        <input type="text"
+                                               t-att-value="state.form.name"
+                                               t-on-input="(ev) => this.onInput('name', ev)"
+                                               t-on-blur="() => validator.touch('name')"/>
+                                        <t t-if="validator.fieldError('name')">
+                                            <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                                        </t>
+                                    </div>
+                                    <div class="rl-frow">
+                                        <label>Author</label>
+                                        <input type="text"
+                                               placeholder="IncubaCloud"
+                                               t-att-value="state.form.project_author"
+                                               t-on-input="(ev) => this.onInput('project_author', ev)"/>
+                                    </div>
+                                    <div class="rl-frow"
+                                         t-att-class="validator.fieldError('odoo_version') ? 'has-error' : ''">
+                                        <label>Odoo Version <span class="rl-req">*</span></label>
+                                        <RlSelect options="odooVersions"
+                                                  value="state.form.odoo_version"
+                                                  onChange="(value) => this.onInput('odoo_version', { target: { value: value } })"
+                                                  ariaLabel="'Odoo version'"/>
+                                        <t t-if="validator.fieldError('odoo_version')">
+                                            <span class="ic-field-error" t-esc="validator.fieldError('odoo_version')"/>
+                                        </t>
+                                    </div>
+                                    <div class="rl-frow">
+                                        <label>Initial Language</label>
+                                        <div class="ic-lang-picker">
+                                            <input type="text"
+                                                   placeholder="— default (en_US) —"
+                                                   t-att-value="state.langSearch"
+                                                   t-on-input="onLangSearchInput"
+                                                   t-on-focus="() => { this._ensureLangs(); this.state.langOpen = true; }"
+                                                   t-on-blur="onLangBlur"/>
+                                            <t t-if="state.langOpen">
+                                                <div class="ic-lang-dropdown">
+                                                    <t t-if="state.langsLoading">
+                                                        <div class="ic-lang-option" style="opacity:0.5">Loading…</div>
+                                                    </t>
+                                                    <t t-else="">
+                                                        <div class="ic-lang-option ic-lang-option-default"
+                                                             t-on-mousedown="() => this.selectLang(null)">
+                                                            — default (en_US) —
+                                                        </div>
+                                                        <t t-foreach="filteredLangs" t-as="lang" t-key="lang.id">
+                                                            <div t-att-class="'ic-lang-option' + (state.form.odoo_initial_lang === lang.id ? ' selected' : '')"
+                                                                 t-on-mousedown="() => this.selectLang(lang)"
+                                                                 t-esc="lang.name + ' (' + lang.code + ')'"/>
+                                                        </t>
+                                                    </t>
+                                                </div>
+                                            </t>
+                                        </div>
+                                    </div>
+                                    <div class="rl-frow">
+                                        <label>License</label>
+                                        <RlSelect options="[
+                                                      { value: 'no_license',        label: 'No license' },
+                                                      { value: 'Apache-2.0',        label: 'Apache 2.0' },
+                                                      { value: 'BSL-1.0',           label: 'Boost Software License 1.0' },
+                                                      { value: 'AGPL-3.0-or-later', label: 'GNU AGPL 3.0 or later' },
+                                                      { value: 'LGPL-3.0-or-later', label: 'GNU LGPL 3.0 or later' },
+                                                      { value: 'MIT',               label: 'MIT' },
+                                                      { value: 'OEEL-1.0',          label: 'Odoo Enterprise Edition License v1.0' },
+                                                      { value: 'OPL-1.0',           label: 'Odoo Proprietary License v1.0' },
+                                                  ]"
+                                                  value="state.form.project_license"
+                                                  onChange="(value) => this.onInput('project_license', { target: { value: value } })"/>
+                                    </div>
+                                    <div class="rl-frow">
+                                        <label>Backup Backend <span class="rl-opt">— only for production</span></label>
+                                        <RlSelect options="backupBackendOptions"
+                                                  value="state.form.backup_backend_id"
+                                                  emptyLabel="'— Use global default —'"
+                                                  onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
+                                    </div>
+                                    <div class="rl-frow rl-full">
+                                        <label>Tags</label>
+                                        <TagSelector
+                                            selected="state.selectedTags"
+                                            available="state.allTags"
+                                            onAdd.bind="addTag"
+                                            onRemove.bind="removeTag"
+                                            onCreate.bind="createTag"
+                                        />
+                                    </div>
+                                    <div class="rl-frow rl-full">
+                                        <label>Description</label>
+                                        <textarea rows="5"
+                                                  t-att-value="state.form.description"
+                                                  t-on-input="(ev) => this.onInput('description', ev)"/>
+                                    </div>
+                                </div>
+                            </t>
+
+                            <!-- Dependencies tab -->
+                            <t t-if="state.tab === 'deps'">
+                                <div class="ic-deps-panel">
+                                    <div class="ic-deps-section-label">pip.txt — Python</div>
+                                    <div class="ic-code-editor-wrap">
+                                        <div class="ic-code-gutter">
+                                            <t t-foreach="getLineNumbers('pipDeps')" t-as="n" t-key="n">
+                                                <div class="ic-line-num" t-esc="n"/>
+                                            </t>
+                                        </div>
+                                        <textarea class="ic-code-area"
+                                                  spellcheck="false"
+                                                  autocomplete="off"
+                                                  autocorrect="off"
+                                                  autocapitalize="off"
+                                                  t-att-value="state.pipDeps"
+                                                  t-on-input="onDepsInput"
+                                                  t-on-scroll="onCodeScroll"/>
+                                    </div>
+                                    <div class="ic-deps-section-label" style="margin-top:16px">apt.txt — System</div>
+                                    <div class="ic-code-editor-wrap">
+                                        <div class="ic-code-gutter">
+                                            <t t-foreach="getLineNumbers('aptDeps')" t-as="n" t-key="n">
+                                                <div class="ic-line-num" t-esc="n"/>
+                                            </t>
+                                        </div>
+                                        <textarea class="ic-code-area"
+                                                  spellcheck="false"
+                                                  autocomplete="off"
+                                                  autocorrect="off"
+                                                  autocapitalize="off"
+                                                  t-att-value="state.aptDeps"
+                                                  t-on-input="onAptInput"
+                                                  t-on-scroll="onCodeScroll"/>
+                                    </div>
+                                </div>
+                            </t>
+
+                            <!-- Members tab -->
+                            <t t-if="state.tab === 'members'">
+                                <div class="ic-members-panel">
+                                    <div class="ic-members-add">
+                                        <input type="text"
+                                               class="ic-input"
+                                               placeholder="Search users to add..."
+                                               t-att-value="state.memberSearch || ''"
+                                               t-on-input="(ev) => this.searchMembers(ev.target.value)"/>
+                                    </div>
+                                    <t t-if="state.memberResults and state.memberResults.length">
+                                        <div class="ic-members-results">
+                                            <t t-foreach="state.memberResults" t-as="user" t-key="user.id">
+                                                <div class="ic-member-result"
+                                                     t-on-click="() => this.addMember(user)">
+                                                    <i class="fa fa-user-plus"/>
+                                                    <span t-esc="user.name"/>
+                                                    <small t-if="user.email" t-esc="user.email"/>
+                                                </div>
+                                            </t>
+                                        </div>
+                                    </t>
+                                    <t t-if="state.members and state.members.length">
+                                        <div class="ic-members-list">
+                                            <t t-foreach="state.members" t-as="member" t-key="member.id">
+                                                <div class="ic-member-item">
+                                                    <t t-out="env.icon('user', 15)"/>
+                                                    <span class="ic-member-name" t-esc="member.name"/>
+                                                    <button class="ic-member-remove"
+                                                            t-on-click="() => this.removeMember(member.id)">
+                                                        <t t-out="env.icon('x', 15)"/>
+                                                    </button>
+                                                </div>
+                                            </t>
+                                        </div>
+                                    </t>
+                                    <t t-elif="!state.members or !state.members.length">
+                                        <div class="rl-stub">
+                                            <span class="rl-si"><i class="fa fa-users"/></span>
+                                            <h3>No members assigned</h3>
+                                            <p>Add users to give Stakeholders and Consultants access to this project.</p>
+                                        </div>
+                                    </t>
+                                </div>
+                            </t>
+
+                            <!-- Repositories tab — kept mounted to preserve branch cache -->
+                            <div class="rl-repolist ic-repos-list"
+                                 t-att-style="state.tab !== 'repos' ? 'display:none' : ''">
+                                <div class="ic-repos-toolbar">
+                                    <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="addRepo">
+                                        <t t-out="env.icon('plus', 14)"/> Add repository
+                                    </button>
+                                    <t t-if="state.repos.length">
+                                        <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="freezeAllRepos"
+                                                t-att-disabled="state.freezingAll"
+                                                title="Pin all repos to their current HEAD">
+                                            <t t-out="env.icon('lock', 15)"/> Freeze all
+                                        </button>
+                                        <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="unfreezeAllRepos"
+                                                title="Unpin all repos — rebuilds will use branch tips">
+                                            <t t-out="env.icon('unlock', 15)"/> Unfreeze all
+                                        </button>
+                                        <input class="ic-repos-search"
+                                               type="text"
+                                               placeholder="Filter repos…"
+                                               aria-label="Filter repositories"
+                                               t-att-value="state.repoSearch"
+                                               t-on-input="(ev) => { state.repoSearch = ev.target.value; }"/>
+                                    </t>
+                                </div>
+                                <t t-foreach="filteredRepos" t-as="repo" t-key="repo._key">
+                                    <RepoEditor
+                                        repo="repo"
+                                        hasAddons="true"
+                                        repoModel="'cloud.project.repo'"
+                                        onChange="(field, value) => this.onRepoChange(repo._key, field, value)"
+                                        onRemove="() => this.removeRepo(repo._key)"
+                                        preferredBranch="state.form.odoo_version || ''"
+                                        onFetchRequirements="(url, branch) => this._fetchAndMergeRequirements(url, branch)"
+                                    />
+                                </t>
+                                <t t-if="!state.repos.length">
+                                    <div class="ic-repos-empty">
+                                        No repositories yet — click Add to link a repo.
+                                    </div>
+                                </t>
                             </div>
-                        </t>
-                    </div>
 
-                </div>
-
-                <!-- Footer -->
-                <div class="ic-detail-footer">
-                    <t t-if="!isCreate">
-                        <button class="ic-btn-delete" t-on-click="deleteProject">
-                            <i class="fa fa-trash-o"/> Delete
-                        </button>
-                    </t>
-                    <t t-if="hasUnsavedChanges">
-                        <span class="ic-unsaved-hint">Unsaved changes</span>
-                    </t>
-                    <t t-if="!isValid">
-                        <div class="ic-footer-hint">
-                            <span class="ic-required">*</span> Name and Odoo version are required.
                         </div>
-                    </t>
-                    <button class="ic-btn-save"
-                            t-att-disabled="!isValid || state.saving || null"
-                            t-on-click="save">
-                        <t t-if="state.saving">
-                            <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
-                            <t t-if="isCreate">Creating…</t>
-                            <t t-else="">Saving…</t>
-                        </t>
-                        <t t-else="">
-                            <t t-if="isCreate">Create Project</t>
-                            <t t-else="">Save changes</t>
-                        </t>
-                    </button>
+
+                        <!-- Footer -->
+                        <div class="rl-formfoot">
+                            <t t-if="hasUnsavedChanges">
+                                <span class="rl-ff-hint ic-unsaved-hint">Unsaved changes</span>
+                            </t>
+                            <t t-elif="!isValid">
+                                <span class="rl-ff-hint">
+                                    <span class="rl-req">*</span> Name and Odoo version are required.
+                                </span>
+                            </t>
+                            <t t-else="">
+                                <span class="rl-ff-hint"/>
+                            </t>
+                            <t t-if="!isCreate">
+                                <button class="rl-btn rl-btn-danger" t-on-click="deleteProject">
+                                    <t t-out="env.icon('trash', 15)"/> Delete
+                                </button>
+                            </t>
+                            <button class="rl-btn rl-btn-primary"
+                                    t-att-disabled="!isValid || state.saving || null"
+                                    t-on-click="save">
+                                <t t-if="state.saving">
+                                    <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
+                                    <t t-if="isCreate">Creating…</t>
+                                    <t t-else="">Saving…</t>
+                                </t>
+                                <t t-else="">
+                                    <t t-if="isCreate">Create Project</t>
+                                    <t t-else="">Save changes</t>
+                                </t>
+                            </button>
+                        </div>
+
+                    </div>
                 </div>
 
             </t>
 
             <t t-elif="state.error">
-                <div class="ic-detail-error-state" role="alert">
-                    <p t-esc="state.error"/>
-                    <button t-on-click="goBack">← Back to Projects</button>
+                <div class="ic-rl-detail-scroll">
+                    <div class="rl-page rl-page--narrow">
+                        <div class="rl-alert" role="alert">
+                            <span class="rl-ai"><t t-out="env.icon('alert', 18)"/></span>
+                            <div>
+                                <div class="rl-at" t-esc="state.error"/>
+                            </div>
+                        </div>
+                        <button class="rl-btn rl-btn-ghost" style="margin-top:14px" t-on-click="goBack">
+                            <t t-out="env.icon('back', 15)"/> Back to Projects
+                        </button>
+                    </div>
                 </div>
             </t>
 

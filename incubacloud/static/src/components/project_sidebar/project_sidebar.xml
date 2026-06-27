@@ -5,8 +5,8 @@
         <div class="ic-psidebar">
 
             <!-- Back to projects -->
-            <button class="ic-psidebar-back" t-on-click="goBack">
-                <i class="fa fa-arrow-left"/> Projects
+            <button class="rl-ctx-back" t-on-click="goBack">
+                <t t-out="env.icon('back', 14)"/> Projects
             </button>
 
             <t t-if="loading">
@@ -21,45 +21,43 @@
 
             <t t-else="">
 
-                <!-- Search (by name or tag) -->
-                <div class="ic-psidebar-search">
-                    <input type="text"
-                           placeholder="Search instances or tags…"
-                           aria-label="Search instances"
-                           t-att-value="ui.search"
-                           t-on-input="onSearchInput"/>
+                <!-- Project name + Odoo version -->
+                <div class="rl-ctx-proj">
+                    <t t-esc="projectName"/>
+                    <t t-if="odooVersion">
+                        <span class="rl-ctx-projver">Odoo <t t-esc="odooVersion"/></span>
+                    </t>
                 </div>
 
                 <!-- Instances grouped by environment -->
                 <t t-foreach="['production', 'staging']" t-as="envKey" t-key="envKey">
-                    <div class="ic-psidebar-section">
-                        <div class="ic-psidebar-section-header">
-                            <span class="ic-psidebar-section-label"
-                                  t-esc="envLabel(envKey)"/>
+                    <div class="rl-ctx-sec">
+                        <div class="rl-ctx-sech">
+                            <span t-esc="envLabel(envKey)"/>
                             <t t-if="env.permissions?.can_create_instance">
-                                <button class="ic-psidebar-add-btn" title="New instance"
+                                <button class="rl-ctx-add" title="New instance"
                                         t-on-click="() => this.createInstance(envKey)">
-                                    <i class="fa fa-plus"/>
+                                    <t t-out="env.icon('plus', 13)"/>
                                 </button>
                             </t>
                         </div>
                         <t t-foreach="filteredGrouped[envKey] || []" t-as="inst" t-key="inst.id">
-                            <div t-att-class="'ic-psidebar-item' + (selectedId === inst.id ? ' active' : '')"
-                                 t-on-click="() => this.selectInstance(inst)">
-                                <div class="ic-psidebar-item-row">
-                                    <span t-att-class="'ic-psidebar-dot ' + statusDot(inst)"/>
-                                    <span class="ic-psidebar-item-name" t-esc="inst.name"/>
-                                    <t t-if="inst.pr_number">
-                                        <span class="ic-pr-badge">PR #<t t-esc="inst.pr_number"/></span>
-                                    </t>
-                                    <t t-if="env.permissions?.can_clone_to_staging and inst.deployed and inst.environment === 'production' and inst.status !== 'provisioning'">
-                                        <button class="ic-psidebar-clone-btn" title="Clone to Staging"
-                                                t-on-click.stop="() => this.cloneToStaging(inst)">
-                                            <i class="fa fa-arrow-down"/>
-                                        </button>
-                                    </t>
-                                    <span class="ic-psidebar-item-ver" t-esc="inst.odoo_version || ''"/>
-                                </div>
+                            <button t-att-class="'rl-ctx-item' + (selectedId === inst.id ? ' active' : '')"
+                                    t-on-click="() => this.selectInstance(inst)">
+                                <span t-att-class="'rl-pill ' + statusPill(inst) + ' rl-pill--bare'">
+                                    <span class="rl-d"/>
+                                </span>
+                                <span class="rl-ctx-name" t-esc="inst.name"/>
+                                <t t-if="inst.pr_number">
+                                    <span class="ic-pr-badge">PR #<t t-esc="inst.pr_number"/></span>
+                                </t>
+                                <span class="rl-ctx-ver" t-esc="inst.odoo_version || ''"/>
+                                <t t-if="env.permissions?.can_clone_to_staging and inst.deployed and inst.environment === 'production' and inst.status !== 'provisioning'">
+                                    <span class="rl-ctx-clone" title="Clone to Staging"
+                                          t-on-click.stop="() => this.cloneToStaging(inst)">
+                                        <t t-out="env.icon('arrowdown', 13)"/>
+                                    </span>
+                                </t>
                                 <t t-if="inst.tags and inst.tags.length">
                                     <div class="ic-psidebar-tag-list">
                                         <t t-foreach="inst.tags" t-as="tag" t-key="tag.id">
@@ -72,28 +70,25 @@
                                         </t>
                                     </div>
                                 </t>
-                            </div>
+                            </button>
                         </t>
                         <t t-if="!(filteredGrouped[envKey] || []).length">
-                            <div class="ic-psidebar-empty">—</div>
+                            <div class="rl-ctx-empty">— no instances</div>
                         </t>
                     </div>
                 </t>
 
                 <!-- Project config section (PM+) -->
                 <t t-if="env.permissions?.can_create_project">
-                    <div class="ic-psidebar-sep"/>
-                    <div class="ic-psidebar-section">
-                        <div class="ic-psidebar-section-header">
-                            <span class="ic-psidebar-section-label">Project</span>
+                    <div class="rl-ctx-sec">
+                        <div class="rl-ctx-sech">
+                            <span>Project</span>
                         </div>
-                        <div t-att-class="'ic-psidebar-item' + (['project_detail', 'project_settings'].includes(activeSection) ? ' active' : '')"
-                             t-on-click="goProjectSettings">
-                            <div class="ic-psidebar-item-row">
-                                <i class="fa fa-cog ic-psidebar-icon"/>
-                                <span class="ic-psidebar-item-name">Settings</span>
-                            </div>
-                        </div>
+                        <button t-att-class="'rl-ctx-item' + (['project_detail', 'project_settings'].includes(activeSection) ? ' active' : '')"
+                                t-on-click="goProjectSettings">
+                            <i class="fa fa-cog ic-psidebar-icon"/>
+                            <span class="rl-ctx-name">Settings</span>
+                        </button>
                     </div>
                 </t>
 
@@ -126,7 +121,7 @@
                             <i class="fa fa-spinner fa-spin"/> Cloning…
                         </t>
                         <t t-else="">
-                            <i class="fa fa-arrow-down"/> Clone
+                            <t t-out="env.icon('arrowdown', 15)"/> Clone
                         </t>
                     </button>
                 </div>

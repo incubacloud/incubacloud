@@ -1,95 +1,91 @@
+// ============================================================================
+//  RemoteFileBrowser — Relay-styled. Rendered INLINE inside host_detail, i.e.
+//  inside `.ic-app`, so the relay `--rl-*` custom properties resolve here and
+//  we can lean on the shared rl-* primitives (rl-row, rl-rico, rl-jstep,
+//  rl-spin). Shared modal chrome (.ic-modal-overlay/.ic-modal/.ic-btn) is
+//  defined in create_project_modal.scss; this file adds the browser specifics.
+// ============================================================================
+
 .ic-modal--filebrowser {
     width: 640px;
     max-height: 80vh;
 }
 
 // ── Breadcrumb ──────────────────────────────────────────────────────────────
-
 .ic-fb-breadcrumb {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 2px;
-    margin-bottom: 12px;
-    font-size: 12px;
+    gap: 3px;
+    margin-bottom: 14px;
+    font-family: var(--rl-fm);
+    font-size: 11.5px;
 }
 
 .ic-fb-bc-item {
-    color: $primary-blue;
+    color: var(--rl-muted);
     cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 3px;
+    padding: 2px 5px;
+    border-radius: 5px;
 
-    &:hover { background: rgba($primary-blue, 0.1); }
-    &:last-child { color: $text-primary; cursor: default; }
-    &:last-child:hover { background: none; }
+    &:hover { color: var(--rl-green); background: var(--rl-surf2); }
+    &:last-child { color: var(--rl-fg2); cursor: default; }
+    &:last-child:hover { background: none; color: var(--rl-fg2); }
 }
 
-.ic-fb-bc-sep {
-    color: $text-secondary;
-    opacity: 0.5;
-}
+.ic-fb-bc-sep { color: var(--rl-faint); }
 
 // ── Directory listing ───────────────────────────────────────────────────────
-
 .ic-fb-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
     max-height: 400px;
     overflow-y: auto;
+    border: 1px solid var(--rl-line);
+    border-radius: var(--rl-r);
+    background: var(--rl-surf);
 
     &::-webkit-scrollbar { width: 4px; }
-    &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+    &::-webkit-scrollbar-thumb { background: var(--rl-line2); border-radius: 2px; }
 }
 
-.ic-fb-entry {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    color: $text-primary;
-    transition: background 0.12s;
+// Tighten the shared rl-row for the compact file list.
+.ic-fb-row {
+    padding: 9px 13px;
 
-    &:hover { background: $surface-light; }
+    .rl-rico { width: 30px; height: 30px; border-radius: 7px; }
+    .rl-rico i { font-size: 14px; }
+    .rl-rname { font-size: 13px; }
 
-    i { width: 16px; text-align: center; color: $text-secondary; }
-}
-
-.ic-fb-entry-doodba {
-    i { color: $state-ok; }
-}
-
-.ic-fb-entry-imported {
-    opacity: 0.5;
+    &.ic-fb-row-doodba .rl-rico { color: var(--rl-green); }
+    &.ic-fb-row-imported { opacity: 0.55; }
 }
 
 .ic-fb-badge {
+    font-family: var(--rl-fm);
     font-size: 10px;
     font-weight: 600;
-    padding: 1px 6px;
-    border-radius: 999px;
-    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 5px;
+    flex: none;
 }
 
 .ic-fb-badge-doodba {
-    background: rgba($state-ok, 0.15);
-    color: $state-ok;
+    background: var(--rl-green-soft);
+    color: var(--rl-green);
 }
 
 .ic-fb-badge-imported {
-    background: rgba($text-secondary, 0.15);
-    color: $text-secondary;
+    background: var(--rl-surf3);
+    color: var(--rl-muted);
 }
 
 .ic-fb-empty {
-    padding: 24px;
+    padding: 26px;
     text-align: center;
-    color: $text-secondary;
-    font-size: 13px;
+    color: var(--rl-muted);
+    font-family: var(--rl-fm);
+    font-size: 12px;
 }
 
 .ic-fb-loading {
@@ -98,35 +94,56 @@
     justify-content: center;
     gap: 10px;
     padding: 40px;
-    color: $text-secondary;
+    color: var(--rl-muted);
     font-size: 13px;
 }
 
-// ── Doodba detected banner ──────────────────────────────────────────────────
+// ── Inline alert (browse/import errors) ─────────────────────────────────────
+.ic-fb-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 14px;
+    padding: 11px 13px;
+    border-radius: var(--rl-rsm);
+    background: var(--rl-red-soft);
+    border: 1px solid rgba(229, 72, 77, 0.4);
+    color: var(--rl-fg);
+    font-size: 12.5px;
+    line-height: 1.45;
 
+    .ic-fb-alert__icon { flex: none; margin-top: 1px; color: var(--rl-red); display: flex; }
+}
+
+// ── Doodba detected banner ──────────────────────────────────────────────────
 .ic-fb-doodba-badge {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    border-radius: 6px;
-    background: rgba($state-ok, 0.08);
-    border: 1px solid rgba($state-ok, 0.2);
-    color: $state-ok;
-    font-size: 12px;
-    font-weight: 500;
+    padding: 9px 12px;
+    margin-bottom: 14px;
+    border-radius: var(--rl-rsm);
+    background: var(--rl-green-soft);
+    border: 1px solid rgba(47, 199, 140, 0.3);
+    color: var(--rl-green);
+    font-family: var(--rl-fm);
+    font-size: 11.5px;
+
+    .ic-fb-doodba-icon { display: flex; flex: none; }
+    .ic-fb-doodba-name strong { color: var(--rl-fg); font-weight: 600; }
+    .ic-fb-doodba-ver { color: var(--rl-muted); }
 }
 
-// ── Path display in footer ──────────────────────────────────────────────────
-
+// ── Footer path display ─────────────────────────────────────────────────────
 .ic-fb-path-display {
     flex: 1;
     min-width: 0;
 
     code {
+        font-family: var(--rl-fm);
         font-size: 11px;
-        color: $text-secondary;
+        color: var(--rl-muted);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -134,22 +151,58 @@
     }
 }
 
-// ── Confirm step ────────────────────────────────────────────────────────────
+.ic-fb-footer-actions {
+    display: flex;
+    gap: 8px;
+    flex: none;
+}
 
+// ── Confirm step ────────────────────────────────────────────────────────────
 .ic-fb-confirm {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
+    background: var(--rl-bg);
+    border: 1px solid var(--rl-line);
+    border-radius: var(--rl-rsm);
+    padding: 14px 15px;
 }
 
 .ic-fb-confirm-row {
     display: flex;
-    gap: 12px;
+    align-items: baseline;
+    gap: 14px;
     font-size: 13px;
 }
 
 .ic-fb-confirm-label {
-    font-weight: 600;
-    color: $text-secondary;
-    min-width: 100px;
+    font-family: var(--rl-fm);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--rl-muted);
+    min-width: 104px;
+    flex: none;
+}
+
+.ic-fb-confirm-val {
+    font-family: var(--rl-fm);
+    font-size: 12.5px;
+    color: var(--rl-fg2);
+    word-break: break-all;
+}
+
+.ic-fb-confirm-hint {
+    margin: 16px 0 0;
+    font-family: var(--rl-fm);
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--rl-muted);
+}
+
+// ── Import progress / done / error step list ────────────────────────────────
+.ic-fb-steps {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0;
 }

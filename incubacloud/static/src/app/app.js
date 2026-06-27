@@ -18,6 +18,7 @@ import { ProjectSidebar } from "../components/project_sidebar/project_sidebar";
 import { MainComponentsContainer } from "@web/core/main_components_container";
 import { ToastContainer } from "../toast/toast_container";
 import { createToastService } from "../toast/toast";
+import { relayIcon } from "../utils/icons";
 
 const _BASE = "/cloud";
 
@@ -141,6 +142,7 @@ export class Chrome extends Component {
             userLogin: '',
             avatarUrl: '',
             alertCount: 0,
+            navCounts: {},   // { projects, hosts, backups, ... } for sidebar badges
             projectName: "",
             slideOver: null,  // { panel: "jobs"|"alerts", instanceId }
         });
@@ -164,6 +166,7 @@ export class Chrome extends Component {
                 this.state.features = config.features || {};
                 this.state.role = config.role || 'stakeholder';
                 this.state.permissions = config.permissions || {};
+                this.state.navCounts = config.nav_counts || {};
                 if (config.user) {
                     this.state.userName = config.user.name || '';
                     this.state.userLogin = config.user.login || '';
@@ -234,12 +237,14 @@ export class Chrome extends Component {
             toast: toastApi,
             toasts,
             dismissToast,
+            icon: relayIcon,
             projectStore,
             setAlertReturnUrl: (url) => { _alertReturnUrl = url; },
             getAlertReturnUrl: () => _alertReturnUrl,
             get alertCount() { return appState.alertCount; },
             get role() { return appState.role; },
             get permissions() { return appState.permissions; },
+            get navCounts() { return appState.navCounts; },
             get userInfo() {
                 return {
                     name: appState.userName,

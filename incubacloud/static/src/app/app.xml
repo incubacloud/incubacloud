@@ -23,16 +23,21 @@
                     <t t-else="">
                         <nav class="ic-sidebar-nav" aria-label="Global navigation">
                             <ul>
+                                <li class="ic-nav-section-label" aria-hidden="true">Infrastructure</li>
                                 <li t-att-class="{ active: ['projects','new_project'].includes(state.route) }"
                                     t-att-aria-current="['projects','new_project'].includes(state.route) ? 'page' : undefined"
                                     t-on-click="() => env.navigate('projects')">
-                                    <i class="fa fa-folder-o" aria-hidden="true"/> Projects
+                                    <t t-out="env.icon('projects', 17)"/>
+                                    <span class="ic-nav-label">Projects</span>
+                                    <span class="ic-nav-count" t-if="env.navCounts?.projects" t-esc="env.navCounts.projects"/>
                                 </li>
                                 <t t-if="env.permissions?.can_manage_hosts">
                                     <li t-att-class="{ active: ['hosts','host_detail','new_host'].includes(state.route) }"
                                         t-att-aria-current="['hosts','host_detail','new_host'].includes(state.route) ? 'page' : undefined"
                                         t-on-click="() => env.navigate('hosts')">
-                                        <i class="fa fa-server" aria-hidden="true"/> Hosts
+                                        <t t-out="env.icon('hosts', 17)"/>
+                                        <span class="ic-nav-label">Hosts</span>
+                                        <span class="ic-nav-count" t-if="env.navCounts?.hosts" t-esc="env.navCounts.hosts"/>
                                     </li>
                                 </t>
 
@@ -40,15 +45,16 @@
                                     <li t-att-class="{ active: ['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) }"
                                         t-att-aria-current="['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) ? 'page' : undefined"
                                         t-on-click="() => env.navigate('backup_backends')">
-                                        <i class="fa fa-shield" aria-hidden="true"/> Backup Backends
+                                        <t t-out="env.icon('backups', 17)"/>
+                                        <span class="ic-nav-label">Backups</span>
+                                        <span class="ic-nav-count" t-if="env.navCounts?.backups" t-esc="env.navCounts.backups"/>
                                     </li>
-
-                                    <li class="ic-nav-section-label" aria-hidden="true">Configuration</li>
 
                                     <li t-att-class="{ active: state.route === 'settings' }"
                                         t-att-aria-current="state.route === 'settings' ? 'page' : undefined"
                                         t-on-click="() => env.navigate('settings')">
-                                        <i class="fa fa-cog" aria-hidden="true"/> Settings
+                                        <t t-out="env.icon('settings', 17)"/>
+                                        <span class="ic-nav-label">Settings</span>
                                     </li>
                                 </t>
                             </ul>

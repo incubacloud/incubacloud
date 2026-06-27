@@ -69,7 +69,7 @@ body,
 
 // ── Sidebar ──────────────────────────────────────────────────────
 .ic-sidebar {
-  width: 200px;
+  width: 212px;
   flex-shrink: 0;
   background: $surface;
   border-right: 1px solid $border;
@@ -103,6 +103,21 @@ body,
         opacity: 0.7;
       }
 
+      > .ic-svg {
+        flex-shrink: 0;
+        opacity: 0.75;
+      }
+
+      .ic-nav-label { flex: 1; min-width: 0; }
+
+      .ic-nav-count {
+        font-family: $font-mono;
+        font-size: 0.72rem;
+        color: $text-secondary;
+        opacity: 0.7;
+        font-weight: 500;
+      }
+
       &:hover {
         background: $surface-light;
         color: $text-primary;
@@ -115,6 +130,8 @@ body,
         box-shadow: inset 2px 0 0 $primary-blue;   // green hairline = selection, not action
 
         > .fa { opacity: 1; }
+        > .ic-svg { opacity: 1; }
+        .ic-nav-count { color: $primary-blue; opacity: 0.9; }
       }
 
       &.ic-nav-section-label {
@@ -441,7 +458,7 @@ body,
     cursor: pointer;
     transition: opacity $duration-fast ease, background $duration-fast ease;
     background: $primary-blue;
-    color: #fff;
+    color: #06140d;
 
     &:hover:not(:disabled) { opacity: 0.88; }
     &:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -819,7 +836,7 @@ body,
     .btn-primary, .btn-secondary {
         background: $primary-blue !important;
         border-color: $primary-blue !important;
-        color: #fff !important;
+        color: #06140d !important;
     }
 }
 
@@ -1079,4 +1096,46 @@ button:active:not(:disabled),
 @keyframes ic-skeleton-pulse {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
+}
+
+// ── Toggle switch ──────────────────────────────────────────────────────────
+// Sliding-pill switch used in place of native checkboxes. The bound boolean
+// is reflected via the `.on` modifier class; the click handler flips it.
+.ic-switch {
+    position: relative;
+    flex: none;
+    width: 34px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid $border;
+    border-radius: $radius-pill;
+    background: $surface-light;
+    cursor: pointer;
+    transition: background $duration-fast, border-color $duration-fast;
+
+    .ic-switch-knob {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: $text-primary;
+        transition: left $duration-fast, background $duration-fast;
+    }
+
+    &.on {
+        background: $primary-blue;
+        border-color: transparent;
+
+        .ic-switch-knob {
+            left: 16px;
+            background: $background;
+        }
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba($primary-blue, 0.4);
+    }
 }
