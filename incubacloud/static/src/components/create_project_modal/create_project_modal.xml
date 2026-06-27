@@ -13,53 +13,54 @@
             <!-- Header -->
             <header class="ic-modal__header">
                 <h3 id="ic-create-project-title">Create project</h3>
-                <button class="ic-modal__close" t-on-click="close">
-                ✕
+                <button class="ic-modal__close" aria-label="Close" t-on-click="close">
+                    <t t-out="env.icon('x', 16)"/>
                 </button>
             </header>
 
             <!-- Body -->
             <section class="ic-modal__body">
-                <div class="ic-form-group">
-                <label>Name <span class="required">*</span></label>
-                <input
-                    type="text"
-                    t-model="state.name"
-                    placeholder="customer-x"
-                />
-                <small>Logical grouping for instances</small>
+                <div class="ic-frow">
+                    <label>Name <span class="ic-req">*</span></label>
+                    <input
+                        type="text"
+                        t-model="state.name"
+                        placeholder="customer-x"
+                    />
+                    <small class="ic-fhint">Logical grouping for instances</small>
                 </div>
 
-                <div class="ic-form-group">
-                <label>Description</label>
-                <textarea
-                    rows="3"
-                    t-model="state.description"
-                    placeholder="Optional description"
-                />
+                <div class="ic-frow">
+                    <label>Description</label>
+                    <textarea
+                        rows="3"
+                        t-model="state.description"
+                        placeholder="Optional description"
+                    />
                 </div>
 
-                <div class="ic-form-group">
-                <label>Tags</label>
-                <TagSelector
-                    selected="state.selectedTags"
-                    available="state.allTags"
-                    onAdd.bind="addTag"
-                    onRemove.bind="removeTag"
-                    onCreate.bind="createTag"
-                />
+                <div class="ic-frow">
+                    <label>Tags</label>
+                    <TagSelector
+                        selected="state.selectedTags"
+                        available="state.allTags"
+                        onAdd.bind="addTag"
+                        onRemove.bind="removeTag"
+                        onCreate.bind="createTag"
+                    />
                 </div>
 
                 <t t-if="state.error">
-                <div class="ic-alert ic-alert--error" role="alert">
-                    <t t-esc="state.error"/>
-                </div>
+                    <div class="ic-alert ic-alert--error" role="alert">
+                        <span class="ic-alert__icon"><t t-out="env.icon('alert', 15)"/></span>
+                        <span class="ic-alert__text"><t t-esc="state.error"/></span>
+                    </div>
                 </t>
             </section>
 
             <!-- Footer -->
             <footer class="ic-modal__footer">
-                <button class="ic-btn ic-btn--secondary" t-on-click="close">
+                <button class="ic-btn ic-btn--ghost" t-on-click="close">
                     Cancel
                 </button>
                 <button

@@ -10,21 +10,21 @@
 // ── Color tokens ────────────────────────────────────────────────────────────
 // $primary-blue keeps its name for compatibility but is now the brand GREEN.
 $primary-blue: #2fc78c;   // green-500 — primary/interactive on dark
-$primary-dark: #14a06e;   // green-600 — hover / pressed
+$primary-dark: #1e9e70;   // green-600 — hover / pressed
 $accent: #2fc78c;         // ACTION (Deploy, Create, OK) — same green family in Option C
-$accent-dark: #14a06e;    // action hover
+$accent-dark: #1e9e70;    // action hover
 
-$background: #0c100e;      // carbon-950
-$surface: #121613;         // carbon-900
-$surface-light: #19201b;   // carbon-850
-$text-primary: #e8efea;
-$text-secondary: #8ba095;  // warm carbon muted (was slate-400)
-$border: #2b382f;          // carbon-700
+$background: #0a0c0d;      // carbon-950 — neutral (no green cast)
+$surface: #101315;         // carbon-900 — lighter than bg for real card elevation
+$surface-light: #181c1f;   // carbon-850 — hover / raised
+$text-primary: #eef1f3;
+$text-secondary: #8a949c;  // cool carbon muted (was slate-400)
+$border: #333a3f;          // carbon-700 — neutral
 
 $state-ok: #2fc78c;        // online / healthy = brand green
 $state-warning: #efa53e;   // amber
-$state-error: #f2575b;     // red (slightly lifted for dark)
-$state-neutral: #5f7068;
+$state-error: #ff6063;     // red (unified with --rl-red)
+$state-neutral: #737d85;   // neutral gray (matches --rl-faint)
 
 // ── Toast colors ──────────────────────────────────────────────────────────────
 $toast-success-bg:     #15281d;
@@ -45,13 +45,15 @@ $toast-info-border:    #2d5560;
 $toast-info-text:      #8fd0dc;
 
 // ── Code editor (dark GitHub-style theme) — left as-is, neutral ──────────────
-$code-bg: #0d1117;
-$code-bg-alt: #161b22;
-$code-text: #e6edf3;
-$code-border: #30363d;
-$code-line-highlight: #1c2128;
-$code-gutter-bg: #161b22;
-$code-gutter-text: #6e7681;
+// Code editor / log panels — carbon-green theme (Relay), matching the
+// prototype `.logs` block (near-black carbon bg + warm-carbon ink/gutter).
+$code-bg: #080b09;
+$code-bg-alt: #0c100e;
+$code-text: #c4d1c9;
+$code-border: #243029;
+$code-line-highlight: #19201b;
+$code-gutter-bg: #0c100e;
+$code-gutter-text: #5f7068;
 
 // ── Typography ──────────────────────────────────────────────────────────────
 $font-display: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif; // NEW — titles/wordmark

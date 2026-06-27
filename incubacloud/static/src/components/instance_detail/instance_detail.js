@@ -15,6 +15,7 @@ import { TagSelector, tagStyle, tagDotStyle } from "../tag_selector/tag_selector
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { IcModal } from "../ic_modal/ic_modal";
 import { SearchSelect } from "../search_select/search_select";
+import { RlSelect } from "../rl_select/rl_select";
 
 const PG_VERSIONS = ["14", "15", "16", "17", "18"];
 
@@ -141,7 +142,7 @@ export class InstanceDetail extends Component {
         embedded:    { type: Boolean, optional: true },
     };
     static template = "incubacloud.InstanceDetail";
-    static components = { RepoEditor, PasswordInput, TagSelector, IcConfirmDialog, IcModal, SearchSelect };
+    static components = { RepoEditor, PasswordInput, TagSelector, IcConfirmDialog, IcModal, SearchSelect, RlSelect };
 
     get isCreate() {
         return !this.props.instance_id;
@@ -149,6 +150,31 @@ export class InstanceDetail extends Component {
 
     get hasUnsavedChanges() {
         return this._savedForm && JSON.stringify(this.state.form) !== this._savedForm;
+    }
+
+    /**
+     * Options for the host RlSelect: maps each available host to a
+     * {value, label} entry where the label shows the host name plus its
+     * free CPU / RAM, keeping numeric ids as the option value.
+     * @returns {{value: number, label: string}[]} host select options
+     */
+    get hostOptions() {
+        return this.state.hosts.map((h) => ({
+            value: h.id,
+            label: `${h.name} (${h.available_cpus} CPU / ${h.available_ram_gb} GB free)`,
+        }));
+    }
+
+    /**
+     * Options for the backup-backend RlSelect: maps each available backup
+     * backend to a {value, label} entry (numeric id as value, name as label).
+     * @returns {{value: number, label: string}[]} backup backend select options
+     */
+    get backupBackendOptions() {
+        return this.state.backupBackends.map((bb) => ({
+            value: bb.id,
+            label: bb.name,
+        }));
     }
 
     setup() {

@@ -21,7 +21,7 @@
                 <button class="ic-slideover-btn" title="Close"
                         aria-label="Close panel"
                         t-on-click="props.onClose">
-                    <i class="fa fa-times"/>
+                    <t t-out="env.icon('x', 16)"/>
                 </button>
             </div>
         </div>

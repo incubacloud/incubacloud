@@ -3,12 +3,13 @@ import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { CoreRatesTab } from "../core_rates_tab/core_rates_tab";
+import { RlSelect } from "../rl_select/rl_select";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 
 export class Settings extends Component {
     static template = "incubacloud.Settings";
-    static components = { IcConfirmDialog, CoreRatesTab };
+    static components = { IcConfirmDialog, CoreRatesTab, RlSelect };
     static props = {
         initialTab: { type: String, optional: true },
     };
@@ -86,6 +87,14 @@ export class Settings extends Component {
 
     get hasUnsavedChanges() {
         return this._savedForm && JSON.stringify(this.state.form) !== this._savedForm;
+    }
+
+    /**
+     * Backup backend options for the RlSelect, derived from loaded backends.
+     * @returns {{value: number, label: string}[]} option list (numeric ids preserved)
+     */
+    get backupBackendOptions() {
+        return this.state.backupBackends.map((bb) => ({ value: bb.id, label: bb.name }));
     }
 
     _checkUrlParams() {

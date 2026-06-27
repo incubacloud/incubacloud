@@ -94,8 +94,24 @@ export class HostsDashboard extends Component {
     barClass(value) {
         if (!value) return 'bar-empty';
         if (value >= 85) return 'bar-danger';
-        if (value >= 65) return 'bar-warn';
+        if (value >= 70) return 'bar-warn';
         return 'bar-ok';
+    }
+
+    /**
+     * Map a metric percentage to the Relay ``rl-mbar-fill`` band class.
+     *
+     * The Relay metric-bar primitive uses bare ``warn``/``crit`` modifier
+     * classes (empty string = the default green). Thresholds match the
+     * shared convention: warn >= 70%, crit >= 85%.
+     *
+     * @param {number} value percentage (0-100)
+     * @returns {string} "" | "warn" | "crit"
+     */
+    mbarClass(value) {
+        if (value >= 85) return 'crit';
+        if (value >= 70) return 'warn';
+        return '';
     }
 
     hasMetrics(host) {

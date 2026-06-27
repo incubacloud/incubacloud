@@ -6,6 +6,7 @@ import { PasswordInput } from "../password_input/password_input";
 import { RemoteFileBrowser } from "../remote_file_browser/remote_file_browser";
 import { TagSelector } from "../tag_selector/tag_selector";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { RlSelect } from "../rl_select/rl_select";
 import { parseUTC } from "../../utils/dates";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus } from "../../utils/use_debounced_bus";
@@ -50,7 +51,7 @@ const EMPTY_FORM = () => ({
 export class HostDetail extends Component {
     static props = { host_id: { type: Number, optional: true } };
     static template = "incubacloud.HostDetail";
-    static components = { PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog };
+    static components = { PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect };
 
     setup() {
         this.env = useEnv();
@@ -560,10 +561,47 @@ export class HostDetail extends Component {
         }[status] || status;
     }
 
+    /**
+     * Map a host status to a Relay state-badge (``rl-sb``) modifier class
+     * for the hero badge. ``compatible``/``degraded`` map to themselves
+     * (relay.scss defines both); the remaining statuses fall back to the
+     * generic severity classes that share the badge styling.
+     *
+     * @param {string} status host lifecycle status
+     * @returns {string} the ``rl-sb`` modifier class name
+     */
+    hostSbClass(status) {
+        return {
+            compatible:  "compatible",
+            degraded:    "degraded",
+            unsupported: "failed",
+            checking:    "provisioning",
+            unknown:     "inactive",
+        }[status] || "inactive";
+    }
+
+    /**
+     * Map a host status to a Relay overview-value (``rl-v``) modifier class
+     * for the Overview "State" row, so the value text picks up the matching
+     * severity colour.
+     *
+     * @param {string} status host lifecycle status
+     * @returns {string} the ``rl-v`` modifier class name ('' for neutral)
+     */
+    hostVClass(status) {
+        return {
+            compatible:  "ok",
+            degraded:    "warn",
+            unsupported: "crit",
+            checking:    "muted",
+            unknown:     "muted",
+        }[status] || "";
+    }
+
     barClass(value) {
         if (!value) return 'bar-empty';
         if (value >= 85) return 'bar-danger';
-        if (value >= 65) return 'bar-warn';
+        if (value >= 70) return 'bar-warn';
         return 'bar-ok';
     }
 

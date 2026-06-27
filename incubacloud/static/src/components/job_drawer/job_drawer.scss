@@ -4,7 +4,7 @@
     width: 300px;
     flex-shrink: 0;
     background: $surface;
-    border-left: 2px solid rgba($border, 0.6); // ← this IS the timeline line
+    border-left: 1px solid $border;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -25,7 +25,8 @@
 }
 
 .job-panel-title {
-    font-size: 13px;
+    font-family: $font-display;
+    font-size: 14px;
     font-weight: 600;
     color: $text-primary;
     display: flex;
@@ -38,9 +39,10 @@
 .job-panel-running {
     display: flex;
     align-items: center;
-    gap: 5px;
-    background: rgba($primary-blue, 0.12);
-    color: $primary-blue;
+    gap: 6px;
+    background: rgba($state-warning, 0.14);
+    color: $state-warning;
+    font-family: $font-mono;
     font-size: 11px;
     font-weight: 700;
     padding: 2px 8px;
@@ -55,176 +57,33 @@
     text-align: center;
 }
 
-// ── Job list ──────────────────────────────────────────────────────────────────
-// No left padding — dots sit flush against the panel's left border (the timeline line)
+// ── Job list (Relay timeline) ─────────────────────────────────────────────────
+// Each entry renders on the shared `rl-tl-*` primitives from relay.scss; only
+// the panel-scoped tweaks live here.
 
 .job-list {
     flex: 1;
     overflow-y: auto;
-    padding: 16px 14px 16px 0;
+    padding: 16px 14px;
 
     &::-webkit-scrollbar { width: 4px; }
     &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
 }
 
-// ── Job entry ─────────────────────────────────────────────────────────────────
-
-.job-entry {
-    margin-bottom: 16px;
-}
-
 .job-cancelled { opacity: 0.6; }
 
-// ── Time row: dot flush to border + date ──────────────────────────────────────
-
-.job-time-row {
-    position: relative;
-    padding-left: 20px; // dot (10px) + gap
-    margin-bottom: 5px;
-
-    // Dot — sits right against the panel's left border (= timeline line)
-    &::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        background: $state-neutral;
-        border: 2px solid $surface;
-        box-sizing: border-box;
-        z-index: 1;
-    }
-}
-
-.job-date {
-    font-size: 11px;
-    font-weight: 600;
-    color: $text-secondary;
-    opacity: 0.8;
-}
-
-// Dot colors per state
-.job-pending .job-time-row::before,
-.job-cancelled .job-time-row::before { background: $state-neutral; }
-
-.job-running .job-time-row::before {
-    background: $primary-blue;
-    animation: dot-pulse 1.4s ease-in-out infinite;
-}
-
-.job-done .job-time-row::before    { background: $state-ok; }
-.job-failed .job-time-row::before  { background: $state-error; }
-.job-blocked .job-time-row::before { background: $state-warning; }
-
-@keyframes dot-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba($primary-blue, 0.5); }
-    50%       { box-shadow: 0 0 0 4px rgba($primary-blue, 0); }
-}
-
-// ── Job card ──────────────────────────────────────────────────────────────────
-
-.job-card {
-    margin-left: 20px; // aligned with date text
-    background: $surface-light;
-    border-radius: 8px;
-    padding: 10px 12px;
-}
-
-// ── Job header row ────────────────────────────────────────────────────────────
-
-.job-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 3px;
-}
-
-.job-name {
-    font-weight: 600;
-    font-size: 12px;
-    color: $text-primary;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-    flex: 1;
-}
-
-// ── State badge ───────────────────────────────────────────────────────────────
-
-.job-badge {
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    padding: 2px 6px;
-    border-radius: 999px;
-    flex-shrink: 0;
-}
-
-.state-pending,
-.state-enqueued,
-.state-wait_dependencies {
-    background: rgba($state-neutral, 0.15);
-    color: $state-neutral;
-}
-
-.state-started {
-    background: rgba($primary-blue, 0.15);
-    color: $primary-blue;
-}
-
-.state-done {
-    background: rgba($state-ok, 0.12);
-    color: $state-ok;
-}
-
-.state-failed {
-    background: rgba($state-error, 0.12);
-    color: $state-error;
-}
-
-.state-blocked {
-    background: rgba($state-warning, 0.15);
-    color: $state-warning;
-}
-
-.state-cancelled {
-    background: rgba($state-neutral, 0.1);
-    color: $state-neutral;
-}
-
-// ── Webhook trigger ───────────────────────────────────────────────────────────
-
-.job-trigger {
-    font-size: 10px;
-    color: $text-secondary;
-    margin-bottom: 4px;
-
-    .fa-github { margin-right: 3px; }
-}
-
-// ── Meta (host) ───────────────────────────────────────────────────────────────
+// ── Meta (host + user) ────────────────────────────────────────────────────────
 
 .job-meta {
-    font-size: 10px;
-    color: $text-secondary;
-    margin-bottom: 6px;
-    opacity: 0.7;
+    .job-meta-sep { opacity: 0.6; }
+    .job-meta-user { color: $text-secondary; }
 }
 
 // ── Progress message ──────────────────────────────────────────────────────────
 
 .job-message {
     display: flex;
-    gap: 4px;
-    font-size: 11px;
-    color: $text-secondary;
-    margin-bottom: 8px;
+    gap: 5px;
     line-height: 1.4;
 
     .job-message-arrow {
@@ -234,71 +93,29 @@
     }
 }
 
-// ── Action buttons ────────────────────────────────────────────────────────────
+// ── Cancel action (danger variant of the timeline action button) ──────────────
 
-.job-actions {
-    display: flex;
-    gap: 5px;
+.rl-tl-abtn.danger {
+    border-color: rgba($state-error, 0.5);
+    color: $state-error;
 
-    button {
-        background: none;
-        border: 1px solid $border;
-        color: $text-secondary;
-        padding: 3px 9px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-size: 11px;
-        font-weight: 500;
-        transition: background 0.15s, color 0.15s, border-color 0.15s;
-
-        &:hover {
-            background: rgba(255, 255, 255, 0.06);
-            color: $text-primary;
-            border-color: lighten($border, 10%);
-        }
-    }
-
-    .danger {
-        border-color: rgba($state-error, 0.5);
-        color: $state-error;
-
-        &:hover {
-            background: rgba($state-error, 0.1);
-            border-color: $state-error;
-        }
-    }
-
-    .muted { opacity: 0.55; }
-
-    .job-download-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        background: none;
-        border: 1px solid rgba($state-ok, 0.45);
-        color: $state-ok;
-        padding: 3px 9px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-size: 11px;
-        font-weight: 500;
-        text-decoration: none;
-        transition: background 0.15s, border-color 0.15s;
-
-        &:hover {
-            background: rgba($state-ok, 0.1);
-            border-color: $state-ok;
-        }
+    &:hover {
+        background: rgba($state-error, 0.1);
+        border-color: $state-error;
     }
 }
 
-.job-toggle-spinner {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: $primary-blue;
-    animation: dot-pulse 1.4s ease-in-out infinite;
+// ── Download action accent (keeps the green "ready" cue) ───────────────────────
+
+.rl-tl-abtn.job-download-btn {
+    border-color: rgba($state-ok, 0.45);
+    color: $state-ok;
+    text-decoration: none;
+
+    &:hover {
+        background: rgba($state-ok, 0.1);
+        border-color: $state-ok;
+    }
 }
 
 // ── Footer ────────────────────────────────────────────────────────────────────

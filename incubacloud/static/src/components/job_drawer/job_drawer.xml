@@ -4,11 +4,11 @@
         <!-- Header -->
         <div class="job-panel-header">
             <span class="job-panel-title">
-                <i class="fa fa-history"/> Jobs
+                <t t-out="env.icon('clock', 15)"/> Jobs
             </span>
             <t t-if="runningCount">
                 <span class="job-panel-running">
-                    <span class="job-toggle-spinner"/>
+                    <span class="rl-spin"/>
                     <t t-esc="runningCount"/>
                 </span>
             </t>
@@ -19,81 +19,86 @@
             <t t-if="!state.jobs.length">
                 <div class="job-panel-empty">No recent jobs</div>
             </t>
-            <t t-foreach="state.jobs" t-as="job" t-key="job.id">
-                <div t-att-class="'job-entry ' + jobClass(job)">
+            <div class="rl-tl">
+                <t t-foreach="state.jobs" t-as="job" t-key="job.id">
+                    <div t-att-class="'rl-tl-item rl-tl-item--static job-entry ' + jobClass(job)">
 
-                    <!-- Dot + date -->
-                    <div class="job-time-row">
-                        <span class="job-date" t-esc="formatDate(job.create_date)"/>
-                    </div>
-
-                    <!-- Card -->
-                    <div class="job-card">
-
-                        <!-- Name + badge -->
-                        <div class="job-header">
-                            <span class="job-name" t-esc="job.name"/>
-                            <span t-att-class="'job-badge state-' + job.state"
-                                  t-esc="stateName(job)"/>
+                        <!-- Rail: dot + connecting line -->
+                        <div class="rl-tl-rail">
+                            <span t-att-class="'rl-tl-dot ' + dotClass(job)"/>
+                            <span class="rl-tl-line"/>
                         </div>
 
-                        <!-- Webhook trigger -->
-                        <t t-if="job.trigger === 'webhook'">
-                            <div class="job-trigger">
-                                <i class="fa fa-github"/>
-                                <span t-esc="job.push_sha"/>
-                                <t t-esc="job.push_message"/>
+                        <!-- Content -->
+                        <div class="rl-tl-content">
+
+                            <!-- Name + state + date -->
+                            <div class="rl-tl-head">
+                                <span class="rl-tl-name" t-esc="job.name"/>
+                                <span t-att-class="'rl-tl-state ' + stateClass(job)" t-esc="stateName(job)"/>
+                                <span class="rl-tl-loghint" t-esc="formatDate(job.create_date)"/>
                             </div>
-                        </t>
 
-                        <!-- Host + user -->
-                        <div class="job-meta">
-                            <span t-esc="job.host"/>
-                            <t t-if="job.user_name">
-                                <span class="job-meta-sep"> · </span>
-                                <span class="job-meta-user" t-esc="job.user_name"/>
+                            <!-- Webhook trigger -->
+                            <t t-if="job.trigger === 'webhook'">
+                                <div class="rl-tl-trigger">
+                                    <i class="fa fa-github"/>
+                                    <span class="rl-sha" t-esc="job.push_sha"/>
+                                    <t t-esc="job.push_message"/>
+                                </div>
                             </t>
-                        </div>
 
-                        <!-- System progress message -->
-                        <t t-if="job.last_system_message">
-                            <div class="job-message">
-                                <span class="job-message-arrow">↳</span>
-                                <span t-esc="job.last_system_message"/>
+                            <!-- Host + user -->
+                            <div class="rl-tl-msg job-meta">
+                                <span t-esc="job.host"/>
+                                <t t-if="job.user_name">
+                                    <span class="job-meta-sep"> · </span>
+                                    <span class="job-meta-user" t-esc="job.user_name"/>
+                                </t>
                             </div>
-                        </t>
 
-                        <!-- Actions -->
-                        <div class="job-actions">
-                            <button t-on-click="() => this.openLog(job)">
-                                <i class="fa fa-file-text-o"/> Log
-                            </button>
-                            <t t-if="['pending', 'enqueued', 'wait_dependencies', 'started'].includes(job.state)">
-                                <button class="danger" t-on-click="() => this.cancelJob(job)">
-                                    <i class="fa fa-times"/> Cancel
-                                </button>
+                            <!-- System progress message -->
+                            <t t-if="job.last_system_message">
+                                <div class="rl-tl-msg job-message">
+                                    <span class="job-message-arrow">↳</span>
+                                    <span t-esc="job.last_system_message"/>
+                                </div>
                             </t>
-                            <t t-if="job.state === 'failed'">
-                                <button t-on-click="() => this.retryJob(job)">
-                                    <i class="fa fa-refresh"/> Retry
-                                </button>
-                            </t>
-                            <t t-if="job.state === 'blocked'">
-                                <button t-on-click="() => env.toggleSlideOver('alerts')">
-                                    <i class="fa fa-exclamation-triangle"/> Resolve
-                                </button>
-                            </t>
-                            <t t-if="job.state === 'done' and job.download_url">
-                                <a class="job-download-btn" t-att-href="job.download_url" download="">
-                                    <i class="fa fa-download"/> Download
-                                </a>
-                            </t>
+
+                            <!-- Actions -->
+                            <div class="rl-tl-foot">
+                                <div class="rl-acts">
+                                    <button class="rl-tl-abtn" t-on-click="() => this.openLog(job)">
+                                        <i class="fa fa-file-text-o"/> Log
+                                    </button>
+                                    <t t-if="['pending', 'enqueued', 'wait_dependencies', 'started'].includes(job.state)">
+                                        <button class="rl-tl-abtn danger" t-on-click="() => this.cancelJob(job)">
+                                            <t t-out="env.icon('x', 15)"/> Cancel
+                                        </button>
+                                    </t>
+                                    <t t-if="job.state === 'failed'">
+                                        <button class="rl-tl-abtn" t-on-click="() => this.retryJob(job)">
+                                            <t t-out="env.icon('refresh', 15)"/> Retry
+                                        </button>
+                                    </t>
+                                    <t t-if="job.state === 'blocked'">
+                                        <button class="rl-tl-abtn" t-on-click="() => env.toggleSlideOver('alerts')">
+                                            <t t-out="env.icon('alert', 15)"/> Resolve
+                                        </button>
+                                    </t>
+                                    <t t-if="job.state === 'done' and job.download_url">
+                                        <a class="rl-tl-abtn job-download-btn" t-att-href="job.download_url" download="">
+                                            <t t-out="env.icon('download', 15)"/> Download
+                                        </a>
+                                    </t>
+                                </div>
+                            </div>
+
                         </div>
 
                     </div>
-
-                </div>
-            </t>
+                </t>
+            </div>
         </div>
 
         <!-- Footer -->

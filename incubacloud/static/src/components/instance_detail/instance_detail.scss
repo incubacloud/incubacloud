@@ -1,30 +1,22 @@
 // instance_detail reuses styles from host_detail.scss
-// (.ic-host-detail, .ic-form-grid, .ic-form-row, .ic-code-editor-wrap, etc.)
+// (.ic-host-detail, .ic-code-editor-wrap, etc.) and is rebuilt on the Relay
+// `rl-*` primitives (relay.scss). The `ic-*` rules kept below are either
+// screen-specific (modals, audit filters, backups, sync, domains) or shared
+// with still-un-migrated screens (host_detail's `ic-action-*`/`ic-ov-*`/
+// `ic-tl-*` layers, and the `dot-running-pulse` keyframe used by
+// hosts_dashboard / project_sidebar). Do not drop those.
 
-// ── Status inline (header) ───────────────────────────────────────────────────
+// ── Relay screen scaffold (instance_detail-specific) ─────────────────────────
 
-.ic-ic-status-inline {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.78rem;
-    margin-left: 8px;
+// Natural page flow (see host_detail.scss): the whole detail scrolls as one
+// page inside .ic-main. Plain block — no nested scroll box.
+.ic-rl-detail-scroll {
+    display: block;
+}
 
-    .ic-ic-status-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        flex-shrink: 0;
-    }
-
-    &.st-running  .ic-ic-status-dot { background: $state-ok; }
-    &.st-stopped  .ic-ic-status-dot { background: $state-warning; }
-    &.st-pending  .ic-ic-status-dot { background: $state-neutral; }
-    &.st-error    .ic-ic-status-dot { background: $state-error; }
-    &.st-provisioning .ic-ic-status-dot {
-        background: $state-warning;
-        animation: dot-running-pulse 2s ease-in-out infinite;
-    }
+// Tighten the gap under the hero so the action bar sits close beneath it.
+.ic-rl-hero {
+    margin-bottom: 10px;
 }
 
 @keyframes dot-running-pulse {
@@ -46,13 +38,6 @@
         opacity: 0.6;
         pointer-events: none;
     }
-}
-
-.ic-action-bar-sep {
-    width: 1px;
-    align-self: stretch;
-    background: $border;
-    margin: 0 4px;
 }
 
 .ic-action-btn {
@@ -93,29 +78,11 @@
     &:hover { background: rgba($state-warning, 0.1); }
 }
 
-.ic-ab-stop {
-    &:hover { color: $state-error; border-color: rgba($state-error, 0.4); }
-}
-
-.ic-ab-start {
-    &:hover { color: $state-ok; border-color: rgba($state-ok, 0.4); }
-}
-
 .ic-ab-secondary {
     padding: 5px 8px;
     color: $text-secondary;
 
     &:hover { color: $text-primary; }
-}
-
-.ic-ab-danger {
-    color: $text-secondary;
-
-    &:hover {
-        color: $state-error;
-        border-color: rgba($state-error, 0.4);
-        background: rgba($state-error, 0.08);
-    }
 }
 
 .ic-ab-warn {
@@ -125,35 +92,7 @@
     &:hover { background: rgba($state-warning, 0.12); }
 }
 
-// ── Move to host ────────────────────────────────────────────────────────────────
-
-.ic-ab-rollback-move {
-    border-color: rgba($state-warning, 0.5);
-    color: $state-warning;
-
-    &:hover {
-        background: rgba($state-warning, 0.12);
-        border-color: $state-warning;
-    }
-}
-
-.ic-migrating-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-left: 8px;
-    padding: 2px 8px;
-    border: 1px solid rgba($state-warning, 0.4);
-    border-radius: 10px;
-    background: rgba($state-warning, 0.12);
-    color: $state-warning;
-    font-size: 0.72rem;
-
-    i {
-        font-size: 0.7rem;
-        animation: dot-running-pulse 2s ease-in-out infinite;
-    }
-}
+// ── Move to host (inline picker) ─────────────────────────────────────────────
 
 .ic-move-picker {
     display: flex;
@@ -199,6 +138,20 @@
     }
 }
 
+// Disabled-field styling for the Relay form grid (locked-after-deploy fields).
+// relay.scss styles rl-frow inputs but not their disabled state.
+.rl-fgrid {
+    input:disabled,
+    select:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    // Section headers (Resources tab) span the full grid width.
+    .ic-form-section-header { margin-top: 6px; }
+}
+
 // ── Language picker ─────────────────────────────────────────────────────────────
 
 .ic-lang-picker {
@@ -237,132 +190,6 @@
     }
 }
 
-// ── Logs tab ─────────────────────────────────────────────────────────────────────
-
-.ic-logs-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    height: 100%;
-}
-
-.ic-logs-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-
-    select {
-        background: $surface-light;
-        color: $text-primary;
-        border: 1px solid $border;
-        border-radius: 5px;
-        padding: 5px 8px;
-        font-size: 0.8125rem;
-        cursor: pointer;
-    }
-}
-
-.ic-logs-error {
-    font-size: 0.8125rem;
-    color: $state-error;
-    padding: 8px 12px;
-    background: rgba($state-error, 0.08);
-    border: 1px solid rgba($state-error, 0.2);
-    border-radius: 5px;
-}
-
-.ic-logs-terminal {
-    flex: 1;
-    background: $code-bg;
-    border: 1px solid $code-border;
-    border-radius: $radius-md;
-    overflow-y: auto;
-    padding: 12px 14px;
-    font-family: $font-mono;
-    font-size: 0.75rem;
-    line-height: 1.55;
-    min-height: 340px;
-    max-height: 520px;
-
-    &::-webkit-scrollbar { width: 5px; }
-    &::-webkit-scrollbar-thumb { background: $code-border; border-radius: 3px; }
-}
-
-.ic-log-line {
-    color: $code-text;
-    white-space: pre-wrap;
-    word-break: break-all;
-}
-
-.ic-logs-empty {
-    color: rgba($code-text, 0.4);
-    font-style: italic;
-    font-size: 0.75rem;
-}
-
-// ── Repos tab ───────────────────────────────────────────────────────────────────
-
-.ic-repos-section {
-    padding: 16px 0;
-
-    .ic-repos-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 12px;
-
-        th {
-            text-align: left;
-            font-size: 0.6875rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: $text-secondary;
-            padding: 0 8px 8px;
-        }
-
-        td {
-            padding: 4px 8px;
-
-            input {
-                width: 100%;
-                box-sizing: border-box;
-            }
-        }
-
-        th:last-child,
-        td:last-child {
-            width: 32px;
-            padding-right: 0;
-        }
-    }
-
-    .ic-repo-remove-btn {
-        background: none;
-        border: none;
-        color: $state-error;
-        cursor: pointer;
-        font-size: 0.875rem;
-        padding: 4px 6px;
-        border-radius: 4px;
-        opacity: 0.7;
-
-        &:hover { opacity: 1; background: rgba($state-error, 0.1); }
-    }
-
-    .ic-repo-add-btn {
-        background: none;
-        border: 1px dashed rgba($border, 0.8);
-        color: $text-secondary;
-        cursor: pointer;
-        font-size: 0.75rem;
-        padding: 6px 14px;
-        border-radius: 5px;
-
-        &:hover { border-color: $primary-blue; color: $primary-blue; }
-    }
-}
-
 // ── Dependencies tab ──────────────────────────────────────────────────────────
 
 .ic-deps-panel {
@@ -372,139 +199,7 @@
     height: 100%;
 }
 
-.ic-deps-notice {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    background: rgba($surface-light, 0.8);
-    border: 1px solid rgba($border, 0.6);
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 0.75rem;
-}
-
-.ic-deps-notice-body {
-    flex: 1;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-}
-
-.ic-deps-added   { color: $state-ok; font-weight: 600; }
-.ic-deps-dup     { color: $text-secondary; }
-.ic-deps-conflict {
-    color: $state-warning;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    align-items: center;
-}
-
-// ── Hero header ──────────────────────────────────────────────────────────────
-
-.ic-hero {
-    background: $surface-light;
-    border: 1px solid $border;
-    border-radius: 10px;
-    padding: 16px 20px;
-    margin-bottom: 4px;
-}
-
-.ic-hero-top {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.ic-hero-name {
-    font-size: 1.35rem;
-    font-weight: 700;
-    margin: 0;
-    color: $text-primary;
-}
-
-.ic-hero-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid $border;
-
-    &.ic-action-loading {
-        opacity: 0.6;
-        pointer-events: none;
-    }
-}
-
-// ── Overview section ─────────────────────────────────────────────────────────
-
-.ic-overview {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 12px 0;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-}
-
-// ── Cards grid ───────────────────────────────────────────────────────────────
-
-.ic-overview-cards {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    flex-shrink: 0;
-
-    @media (max-width: 680px) {
-        grid-template-columns: 1fr;
-    }
-}
-
-// ── Services ─────────────────────────────────────────────────────────────────
-
-.ic-ov-svc-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 4px;
-    padding-top: 8px;
-    border-top: 1px solid $border;
-}
-
-.ic-ov-svc {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.8125rem;
-}
-
-.ic-ov-svc-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-
-    &.svc-up   { background: $state-ok; }
-    &.svc-down { background: $text-secondary; }
-}
-
-.ic-ov-svc-name {
-    color: $text-primary;
-    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-    font-size: 0.75rem;
-}
-
 // ── Misc overview helpers ────────────────────────────────────────────────────
-
-.ic-ov-muted {
-    color: $text-secondary;
-    font-size: 0.75rem;
-}
 
 .ic-ov-ok {
     color: $state-ok;
@@ -578,13 +273,6 @@
     font-weight: 500;
 }
 
-.ic-ov-link {
-    color: $primary-blue;
-    text-decoration: none;
-    font-size: 0.8125rem;
-
-    &:hover { text-decoration: underline; }
-}
 
 // ── Activity feed ────────────────────────────────────────────────────────────
 
@@ -705,17 +393,9 @@
     color: $text-primary;
 }
 
-.ic-tl-trigger {
-    font-size: 0.6875rem;
-    color: $text-secondary;
-    margin-top: 2px;
-
-    .fa-github { margin-right: 3px; }
-
-    span { font-family: monospace; font-size: 0.625rem; margin-right: 4px; }
-
-    span.ic-tl-trigger-by { font-family: inherit; opacity: 0.7; }
-}
+// "by <user>" suffix on a webhook/coalesced trigger line (rendered inside the
+// Relay rl-tl-trigger row in the new markup).
+.ic-tl-trigger-by { opacity: 0.7; }
 
 .ic-tl-msg {
     font-size: 0.75rem;
@@ -741,15 +421,6 @@
     border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
-}
-
-.ic-tl-user-name {
-    font-weight: 500;
-    color: rgba($text-secondary, 0.85);
-}
-
-.ic-tl-time-sep {
-    opacity: 0.5;
 }
 
 .ic-tl-ago {
@@ -810,12 +481,6 @@
     background: rgba($state-error, 0.08);
     border-color: rgba($state-error, 0.5);
     color: $state-error;
-}
-
-.ic-tl-resolve:hover {
-    background: rgba($state-warning, 0.08);
-    border-color: rgba($state-warning, 0.5);
-    color: $state-warning;
 }
 
 .ic-tl-alert-badge {
@@ -883,21 +548,6 @@
         opacity: 0.5;
         cursor: default;
     }
-}
-
-// ── Dependencies notice ──────────────────────────────────────────────────────
-
-.ic-deps-notice-dismiss {
-    background: none;
-    border: none;
-    color: $text-secondary;
-    font-size: 1rem;
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-    flex-shrink: 0;
-
-    &:hover { color: $text-primary; }
 }
 
 // ── Sync with project ────────────────────────────────────────────────────
@@ -1108,29 +758,6 @@
     margin-bottom: 16px;
 }
 
-.ic-btn-refresh-backups {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    color: $text-primary;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    transition: background 0.15s;
-
-    &:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.1);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-}
-
 .ic-backups-error {
     padding: 12px 16px;
     background: rgba(239, 68, 68, 0.1);
@@ -1150,44 +777,6 @@
         margin-right: 6px;
         opacity: 0.6;
     }
-}
-
-.ic-backup-chain {
-    margin-bottom: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.ic-backup-chain-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.04);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    font-size: 0.8125rem;
-}
-
-.ic-backup-chain-label {
-    font-weight: 600;
-    color: $text-primary;
-}
-
-.ic-backup-primary {
-    color: #f59e0b;
-    margin-right: 4px;
-}
-
-.ic-backup-chain-range {
-    color: $text-secondary;
-    font-size: 0.75rem;
-}
-
-.ic-backup-chain-count {
-    margin-left: auto;
-    color: $text-secondary;
-    font-size: 0.75rem;
 }
 
 .ic-backup-table {
@@ -1236,29 +825,6 @@
     &.ic-bk-incremental {
         background: rgba(16, 185, 129, 0.15);
         color: #34d399;
-    }
-}
-
-.ic-btn-create-backup {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    background: rgba($accent, 0.15);
-    border: 1px solid rgba($accent, 0.3);
-    border-radius: 6px;
-    color: $accent;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    transition: background $duration-fast;
-
-    &:hover:not(:disabled) {
-        background: rgba($accent, 0.25);
-    }
-
-    &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
     }
 }
 
@@ -1319,14 +885,6 @@
     + .ic-bk-action-btn {
         margin-left: 4px;
     }
-}
-
-// Download modal options
-.ic-download-options {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin: 12px 0;
 }
 
 .ic-download-group {
@@ -1455,30 +1013,6 @@
 // Restore backup modal
 .ic-restore-backup-box {
     max-width: 440px;
-}
-
-// Clone to staging button (next to instance name)
-.ic-clone-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    margin-left: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
-    background: transparent;
-    color: $text-secondary;
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: all 0.15s;
-    vertical-align: middle;
-
-    &:hover {
-        background: rgba($primary-blue, 0.15);
-        color: $primary-blue;
-        border-color: rgba($primary-blue, 0.3);
-    }
 }
 
 // Clone to staging modal
@@ -1661,50 +1195,6 @@
     }
 }
 
-.ic-tl-item-queued {
-    .ic-tl-content {
-        background: rgba($state-warning, 0.06);
-        border: 1px dashed rgba($state-warning, 0.35);
-        border-radius: 8px;
-        padding: 10px 12px;
-    }
-}
-
-.ic-tl-dot-queued {
-    background: $state-warning !important;
-    box-shadow: 0 0 0 3px rgba($state-warning, 0.18);
-}
-
-.ic-ov-job-state.state-queued {
-    background: rgba($state-warning, 0.18);
-    color: $state-warning;
-}
-
-.ic-tl-pending-list {
-    list-style: none;
-    margin: 6px 0 0;
-    padding: 0;
-    cursor: default;
-
-    li {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        gap: 6px;
-        padding: 4px 0;
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 11px;
-    }
-    li:first-child { border-top: none; }
-
-    .fa-github { color: var(--text-muted, #9ca3af); }
-}
-
-.ic-tl-pp-sha {
-    color: $primary-blue;
-    font-weight: 600;
-}
 .ic-tl-pp-branch {
     color: var(--text-muted, #9ca3af);
 }

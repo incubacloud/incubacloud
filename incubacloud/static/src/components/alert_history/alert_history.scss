@@ -1,15 +1,22 @@
+// ── Page layout ──────────────────────────────────────────────────────────────
+// Root class kept: SlideOver targets `.ic-alert-history` for full-height embed.
+
 .ic-alert-history {
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow-y: auto;
     padding: 24px;
-    gap: 20px;
+    gap: 18px;
     color: $text-primary;
 
     &::-webkit-scrollbar { width: 4px; }
     &::-webkit-scrollbar-thumb { background: $border; border-radius: 2px; }
+
+    .rl-phead { margin-bottom: 0; }
 }
+
+// ── Filters (Show chips) ───────────────────────────────────────────────────────
 
 .ah-filters {
     display: flex;
@@ -17,25 +24,63 @@
     gap: 12px;
 }
 
-// ── Card list ─────────────────────────────────────────────────────────────────
+.ah-filter-label {
+    font-family: $font-mono;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: $text-secondary;
+}
+
+.ah-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ah-chip {
+    font-family: $font-mono;
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    border: 1px solid $border;
+    background: transparent;
+    color: $text-secondary;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+
+    &:hover {
+        color: $text-primary;
+        border-color: lighten($border, 12%);
+    }
+
+    &.active {
+        color: $text-primary;
+        border-color: transparent;
+        background: rgba($state-neutral, 0.28);
+    }
+}
+
+// ── Alert list (each row is a severity banner) ────────────────────────────────
 
 .ah-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
 }
 
+// `.ah-card` rides on `.rl-sevban` (left border + bg from the level class).
 .ah-card {
-    border-left: 3px solid $border;
-    border-radius: 6px;
-    background: rgba($border, 0.08);
-    padding: 12px 14px;
+    margin-bottom: 0;
+    align-items: flex-start;
+}
+
+.ah-card-body {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 6px;
-
-    &.ah-level-warning  { border-left-color: $state-warning; }
-    &.ah-level-critical { border-left-color: $state-error; }
 }
 
 .ah-card-header {
@@ -61,9 +106,6 @@
 }
 
 .ah-card-target {
-    font-weight: 600;
-    font-size: 13px;
-
     &.ah-card-link {
         cursor: pointer;
         &:hover { color: $primary-blue; }
@@ -71,88 +113,46 @@
 }
 
 .ah-card-code {
-    font-family: monospace;
+    font-family: $font-mono;
     font-size: 11px;
     color: $text-secondary;
-    background: rgba($border, 0.25);
+    background: rgba($border, 0.4);
     padding: 1px 6px;
-    border-radius: 3px;
+    border-radius: 4px;
 }
 
 .ah-card-date {
-    font-size: 11px;
+    font-family: $font-mono;
+    font-size: 10.5px;
     color: $text-secondary;
     white-space: nowrap;
 }
 
 .ah-card-message {
-    font-size: 13px;
-    line-height: 1.4;
-    color: $text-secondary;
     word-break: break-word;
 }
 
-.ah-card-actions {
-    display: flex;
-    gap: 8px;
-    padding-top: 4px;
+// ── State badge (overrides rl-sb buckets for alert semantics) ──────────────────
+// An "active" alert is an open problem (red), a "dismissed" one is muted.
+
+.ah-state-badge {
+    text-transform: capitalize;
+
+    &.active    { color: #ff9b9d; .rl-d { background: $state-error; } }
+    &.dismissed { color: $text-secondary; .rl-d { background: $state-neutral; } }
 }
 
-.ah-btn-resolve, .ah-btn-job, .ah-btn-dismiss {
-    font-size: 12px;
-    padding: 4px 10px;
-    border-radius: 4px;
-    border: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
+// ── Actions ────────────────────────────────────────────────────────────────────
+
+.ah-card-actions {
+    margin-top: 2px;
 }
 
 .ah-btn-resolve {
-    background: rgba($state-warning, 0.15);
+    border-color: rgba($state-warning, 0.5);
     color: $state-warning;
-    font-weight: 600;
 
-    &:hover { background: rgba($state-warning, 0.25); }
-}
-
-.ah-btn-job {
-    background: rgba($border, 0.2);
-    color: $text-secondary;
-
-    &:hover { background: rgba($border, 0.35); }
-}
-
-.ah-btn-dismiss {
-    background: rgba($text-secondary, 0.1);
-    color: $text-secondary;
-
-    &:hover { background: rgba($text-secondary, 0.2); }
-}
-
-.ah-level-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: capitalize;
-
-    &.ah-level-warning  { background: rgba($state-warning, 0.15); color: $state-warning; }
-    &.ah-level-critical { background: rgba($state-error,   0.15); color: $state-error; }
-}
-
-.ah-state-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: capitalize;
-
-    &.ah-state-active    { background: rgba($state-error,   0.15); color: $state-error; }
-    &.ah-state-dismissed { background: rgba($text-secondary,    0.15); color: $text-secondary; }
+    &:hover { background: rgba($state-warning, 0.12); border-color: $state-warning; }
 }
 
 // ── Error log groups (instance_error_logs payload) ────────────────────────────
@@ -167,7 +167,8 @@
     background: transparent;
     border: none;
     color: $primary-blue;
-    font-size: 12px;
+    font-family: $font-mono;
+    font-size: 11px;
     cursor: pointer;
     padding: 4px 0;
     align-self: flex-start;
@@ -184,7 +185,7 @@
     flex-direction: column;
     gap: 8px;
     padding: 8px;
-    background: rgba($border, 0.15);
+    background: rgba($border, 0.2);
     border-radius: 6px;
     max-height: 360px;
     overflow-y: auto;
@@ -212,12 +213,13 @@
 
 .ah-error-count {
     flex-shrink: 0;
+    font-family: $font-mono;
     font-size: 11px;
     font-weight: 600;
     color: $state-warning;
     background: rgba($state-warning, 0.15);
     padding: 1px 6px;
-    border-radius: 3px;
+    border-radius: 4px;
     min-width: 32px;
     text-align: center;
 }
@@ -225,11 +227,11 @@
 .ah-error-samples {
     margin: 0;
     padding: 6px 8px;
-    font-family: monospace;
+    font-family: $font-mono;
     font-size: 11px;
     line-height: 1.45;
     color: $text-secondary;
-    background: rgba(0, 0, 0, 0.25);
+    background: #080b09;
     border-radius: 4px;
     white-space: pre-wrap;
     word-break: break-all;
@@ -269,6 +271,7 @@
 }
 
 .ah-conflict-pkg {
+    font-family: $font-display;
     font-size: 13px;
     font-weight: 600;
     color: $text-primary;
@@ -289,7 +292,8 @@
     cursor: pointer;
 
     code {
-        background: rgba($border, 0.3);
+        font-family: $font-mono;
+        background: rgba($border, 0.4);
         padding: 1px 6px;
         border-radius: 4px;
         font-size: 12px;
@@ -298,6 +302,7 @@
 }
 
 .ah-conflict-hint {
+    font-family: $font-mono;
     font-size: 11px;
     color: $text-secondary;
     opacity: 0.7;
