@@ -20,6 +20,9 @@ import { ToastContainer } from "../toast/toast_container";
 import { createToastService } from "../toast/toast";
 import { relayIcon } from "../utils/icons";
 
+// Apply the saved UI theme as early as possible (default: light) to avoid a flash.
+try { document.documentElement.setAttribute("data-ic-theme", localStorage.getItem("ic-theme") || "light"); } catch (e) { /* private mode */ }
+
 const _BASE = "/cloud";
 
 // ── Route extension registry ─────────────────────────────────────────────────

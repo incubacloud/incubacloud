@@ -22,6 +22,7 @@ export class AppHeader extends Component {
             avatarUrl: session.uid ? `/web/image/res.users/${session.uid}/avatar_128` : '',
             avatarLoaded: false,
             showUserMenu: false,
+            theme: document.documentElement.getAttribute("data-ic-theme") || "light",
             showProjectSwitcher: false,
             projects: [],
             projectSearch: "",
@@ -48,10 +49,13 @@ export class AppHeader extends Component {
             }
         };
 
-        // ⌘K / Ctrl+K focuses the global search box.
+        // Ctrl+K (or ⌘K) focuses the global search box. Registered in the
+        // capture phase with stopImmediatePropagation so Odoo's own
+        // command-palette hotkey never fires inside the SPA.
         this._onKeydown = (ev) => {
             if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) {
                 ev.preventDefault();
+                ev.stopImmediatePropagation();
                 const el = document.querySelector(".ic-header-search-input");
                 if (el) { el.focus(); el.select(); }
             }
@@ -59,7 +63,7 @@ export class AppHeader extends Component {
 
         onMounted(() => {
             document.addEventListener("click", this._closeMenus);
-            document.addEventListener("keydown", this._onKeydown);
+            document.addEventListener("keydown", this._onKeydown, true);
             // Override from env.userInfo once config loads
             const info = this.env.userInfo;
             if (info?.name) this.state.userName = info.name;
@@ -68,7 +72,7 @@ export class AppHeader extends Component {
         });
         onWillUnmount(() => {
             document.removeEventListener("click", this._closeMenus);
-            document.removeEventListener("keydown", this._onKeydown);
+            document.removeEventListener("keydown", this._onKeydown, true);
         });
     }
 
@@ -142,6 +146,15 @@ export class AppHeader extends Component {
         ev.stopPropagation();
         this.state.showUserMenu = !this.state.showUserMenu;
         this.state.showProjectSwitcher = false;
+    }
+
+    /** Switch between the light and dark UI theme and persist the choice. */
+    toggleTheme() {
+        const next = this.state.theme === "light" ? "dark" : "light";
+        this.state.theme = next;
+        document.documentElement.setAttribute("data-ic-theme", next);
+        try { localStorage.setItem("ic-theme", next); } catch (e) { /* private mode */ }
+        this.state.showUserMenu = false;
     }
 
     async toggleProjectSwitcher(ev) {
