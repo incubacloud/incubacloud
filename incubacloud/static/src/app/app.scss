@@ -124,7 +124,7 @@ body,
       }
 
       &.active {
-        background: rgba($primary-blue, 0.13);
+        background: rgba(var(--rl-green-rgb), 0.13);
         color: $primary-blue;
         font-weight: 600;
         box-shadow: inset 2px 0 0 $primary-blue;   // green hairline = selection, not action
@@ -188,7 +188,7 @@ body,
       outline: none;
       border-color: $primary-blue;
       background: $surface-light;
-      box-shadow: 0 0 0 2px rgba($primary-blue, 0.2);
+      box-shadow: 0 0 0 2px rgba(var(--rl-green-rgb), 0.2);
     }
   }
 }
@@ -229,7 +229,7 @@ body,
 .ic-toggle-slider {
   position: absolute;
   inset: 0;
-  background: rgba($border, 0.6);
+  background: rgba(var(--rl-line-rgb), 0.6);
   border-radius: 20px;
   transition: background 0.2s;
 
@@ -420,7 +420,7 @@ body,
         letter-spacing: 0.06em;
         color: $text-secondary;
         padding-bottom: 6px;
-        border-bottom: 1px solid rgba($border, 0.5);
+        border-bottom: 1px solid rgba(var(--rl-line-rgb), 0.5);
     }
 
     .ic-form-section-help {
@@ -445,7 +445,7 @@ body,
     &:hover {
         background: $surface-light;
         color: $text-primary;
-        border-color: rgba($text-secondary, 0.5);
+        border-color: rgba(var(--rl-muted-rgb), 0.5);
     }
 }
 
@@ -515,11 +515,11 @@ body,
     input[type="radio"] { margin-top: 3px; flex-shrink: 0; accent-color: $primary-blue; }
 
     &.active {
-        border-color: rgba($primary-blue, 0.5);
-        background: rgba($primary-blue, 0.05);
+        border-color: rgba(var(--rl-green-rgb), 0.5);
+        background: rgba(var(--rl-green-rgb), 0.05);
     }
 
-    &:hover:not(.active) { background: rgba($border, 0.15); }
+    &:hover:not(.active) { background: rgba(var(--rl-line-rgb), 0.15); }
 }
 
 .ic-restore-mode-body {
@@ -545,7 +545,7 @@ body,
     align-items: center;
     justify-content: center;
     gap: 8px;
-    border: 1px dashed rgba($border, 0.8);
+    border: 1px dashed rgba(var(--rl-line-rgb), 0.8);
     border-radius: 8px;
     padding: 24px 16px;
     cursor: pointer;
@@ -556,7 +556,7 @@ body,
 
     &:hover {
         border-color: $primary-blue;
-        background: rgba($primary-blue, 0.04);
+        background: rgba(var(--rl-green-rgb), 0.04);
         color: $text-primary;
     }
 
@@ -589,7 +589,7 @@ body,
     flex: 1;
     min-width: 0;
     background: rgba(0, 0, 0, 0.35);
-    border: 1px solid rgba($border, 0.6);
+    border: 1px solid rgba(var(--rl-line-rgb), 0.6);
     border-radius: 6px;
     padding: 10px 14px;
     overflow-x: auto;
@@ -616,8 +616,8 @@ body,
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba($border, 0.2);
-    border: 1px solid rgba($border, 0.5);
+    background: rgba(var(--rl-line-rgb), 0.2);
+    border: 1px solid rgba(var(--rl-line-rgb), 0.5);
     border-radius: 6px;
     color: $text-secondary;
     font-size: 0.8125rem;
@@ -625,7 +625,7 @@ body,
     transition: all 0.12s;
 
     &:hover {
-        background: rgba($border, 0.4);
+        background: rgba(var(--rl-line-rgb), 0.4);
         color: $text-primary;
     }
 
@@ -635,8 +635,8 @@ body,
 .ic-restore-error {
     font-size: 0.75rem;
     color: $state-error;
-    background: rgba($state-error, 0.08);
-    border: 1px solid rgba($state-error, 0.25);
+    background: rgba(var(--rl-red-rgb), 0.08);
+    border: 1px solid rgba(var(--rl-red-rgb), 0.25);
     border-radius: 6px;
     padding: 8px 12px;
 }
@@ -806,14 +806,14 @@ body,
 .modal .modal-content {
     background: $surface-light !important;
     color: $text-primary !important;
-    border: 1px solid rgba($border, 0.5) !important;
+    border: 1px solid rgba(var(--rl-line-rgb), 0.5) !important;
     border-radius: 10px !important;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6) !important;
 }
 
 .modal .modal-header {
     background: $surface !important;
-    border-bottom: 1px solid rgba($border, 0.4) !important;
+    border-bottom: 1px solid rgba(var(--rl-line-rgb), 0.4) !important;
     border-radius: 10px 10px 0 0 !important;
 
     .modal-title { color: $text-primary !important; }
@@ -826,7 +826,7 @@ body,
 
 .modal .modal-footer {
     background: $surface !important;
-    border-top: 1px solid rgba($border, 0.4) !important;
+    border-top: 1px solid rgba(var(--rl-line-rgb), 0.4) !important;
     border-radius: 0 0 10px 10px !important;
 
     .btn {
@@ -843,7 +843,7 @@ body,
 .o_error_dialog {
     pre {
         color: $text-secondary !important;
-        background: rgba($border, 0.15) !important;
+        background: rgba(var(--rl-line-rgb), 0.15) !important;
         border-radius: 6px !important;
     }
 }
@@ -883,8 +883,8 @@ body,
 .ic-empty-action {
     margin-top: $space-4;
     padding: 7px 18px;
-    background: rgba($primary-blue, 0.12);
-    border: 1px solid rgba($primary-blue, 0.35);
+    background: rgba(var(--rl-green-rgb), 0.12);
+    border: 1px solid rgba(var(--rl-green-rgb), 0.35);
     border-radius: $radius-md;
     color: $primary-blue;
     font-size: 0.8125rem;
@@ -893,7 +893,7 @@ body,
     transition: background $duration-fast ease, border-color $duration-fast ease;
 
     &:hover:not(:disabled) {
-        background: rgba($primary-blue, 0.2);
+        background: rgba(var(--rl-green-rgb), 0.2);
         border-color: $primary-blue;
     }
 }
@@ -929,7 +929,7 @@ select:focus-visible {
 input:focus-visible,
 textarea:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba($primary-blue, 0.3);
+    box-shadow: 0 0 0 2px rgba(var(--rl-green-rgb), 0.3);
 }
 
 // ── Cursor pointer ──────────────────────────────────────────────────────────
@@ -1050,7 +1050,7 @@ button:active:not(:disabled),
     background: linear-gradient(
         90deg,
         $surface-light 25%,
-        rgba($border, 0.4) 50%,
+        rgba(var(--rl-line-rgb), 0.4) 50%,
         $surface-light 75%
     );
     background-size: 200% 100%;
@@ -1136,6 +1136,6 @@ button:active:not(:disabled),
 
     &:focus-visible {
         outline: none;
-        box-shadow: 0 0 0 2px rgba($primary-blue, 0.4);
+        box-shadow: 0 0 0 2px rgba(var(--rl-green-rgb), 0.4);
     }
 }

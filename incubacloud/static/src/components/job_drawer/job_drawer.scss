@@ -40,7 +40,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: rgba($state-warning, 0.14);
+    background: rgba(var(--rl-amber-rgb), 0.14);
     color: $state-warning;
     font-family: $font-mono;
     font-size: 11px;
@@ -52,7 +52,7 @@
 .job-panel-empty {
     padding: 24px 14px;
     font-size: 12px;
-    color: rgba($text-secondary, 0.5);
+    color: rgba(var(--rl-muted-rgb), 0.5);
     font-style: italic;
     text-align: center;
 }
@@ -96,11 +96,11 @@
 // ── Cancel action (danger variant of the timeline action button) ──────────────
 
 .rl-tl-abtn.danger {
-    border-color: rgba($state-error, 0.5);
+    border-color: rgba(var(--rl-red-rgb), 0.5);
     color: $state-error;
 
     &:hover {
-        background: rgba($state-error, 0.1);
+        background: rgba(var(--rl-red-rgb), 0.1);
         border-color: $state-error;
     }
 }
@@ -108,12 +108,12 @@
 // ── Download action accent (keeps the green "ready" cue) ───────────────────────
 
 .rl-tl-abtn.job-download-btn {
-    border-color: rgba($state-ok, 0.45);
+    border-color: rgba(var(--rl-green-rgb), 0.45);
     color: $state-ok;
     text-decoration: none;
 
     &:hover {
-        background: rgba($state-ok, 0.1);
+        background: rgba(var(--rl-green-rgb), 0.1);
         border-color: $state-ok;
     }
 }

@@ -142,7 +142,7 @@
 
   &:hover {
     border-color: $primary-blue;
-    background-color: rgba($primary-blue, 0.06);
+    background-color: rgba(var(--rl-green-rgb), 0.06);
   }
 }
 

@@ -116,23 +116,23 @@
 
     &:hover {
         color: $text-primary;
-        border-color: lighten($border, 12%);
+        border-color: var(--rl-line2);
     }
 
     &.active {
         color: $text-primary;
         border-color: transparent;
-        background: rgba($state-neutral, 0.28);
+        background: rgba(var(--rl-faint-rgb), 0.28);
     }
 
     // State-coloured active chips
     &.jh-chip-pending.active,
     &.jh-chip-enqueued.active,
-    &.jh-chip-wait_dependencies.active { background: rgba($state-warning, 0.18); color: $state-warning; }
-    &.jh-chip-started.active   { background: rgba($state-warning, 0.18); color: $state-warning; }
+    &.jh-chip-wait_dependencies.active { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning; }
+    &.jh-chip-started.active   { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning; }
     &.jh-chip-done.active      { background: $toast-success-bg; color: $state-ok; }
-    &.jh-chip-failed.active    { background: rgba($state-error, 0.16); color: $state-error; }
-    &.jh-chip-cancelled.active { background: rgba($state-neutral, 0.22); color: $text-secondary; }
+    &.jh-chip-failed.active    { background: rgba(var(--rl-red-rgb), 0.16); color: $state-error; }
+    &.jh-chip-cancelled.active { background: rgba(var(--rl-faint-rgb), 0.22); color: $text-secondary; }
 }
 
 // ── Gantt ─────────────────────────────────────────────────────────────────────
@@ -223,7 +223,7 @@ $gantt-row-h: 44px;
 .jh-gantt-row {
     display: flex;
     height: $gantt-row-h;
-    border-bottom: 1px solid rgba($border, 0.5);
+    border-bottom: 1px solid rgba(var(--rl-line-rgb), 0.5);
     transition: background 0.1s;
 
     &:last-child { border-bottom: none; }
@@ -287,8 +287,8 @@ $gantt-row-h: 44px;
     position: relative;
     background: repeating-linear-gradient(
         90deg,
-        rgba($border, 0.18) 0,
-        rgba($border, 0.18) 1px,
+        rgba(var(--rl-line-rgb), 0.18) 0,
+        rgba(var(--rl-line-rgb), 0.18) 1px,
         transparent 1px,
         transparent calc(100% / 6)
     );
@@ -314,7 +314,7 @@ $gantt-row-h: 44px;
     &.jh-gantt-state-wait_dependencies { background: $state-warning; }
     &.jh-gantt-state-started {
         background: $state-warning;
-        box-shadow: 0 0 6px rgba($state-warning, 0.4);
+        box-shadow: 0 0 6px rgba(var(--rl-amber-rgb), 0.4);
         opacity: 1;
     }
     &.jh-gantt-state-done   { background: $state-ok; }
@@ -356,7 +356,7 @@ $gantt-row-h: 44px;
     .jh-log-hint {
         font-family: $font-mono;
         font-size: 10.5px;
-        color: rgba($text-secondary, 0.55);
+        color: rgba(var(--rl-muted-rgb), 0.55);
         margin-left: 8px;
         opacity: 0;
         transition: opacity 0.15s;

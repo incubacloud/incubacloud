@@ -51,13 +51,13 @@
 
     &:hover {
         color: $text-primary;
-        border-color: lighten($border, 12%);
+        border-color: var(--rl-line2);
     }
 
     &.active {
         color: $text-primary;
         border-color: transparent;
-        background: rgba($state-neutral, 0.28);
+        background: rgba(var(--rl-faint-rgb), 0.28);
     }
 }
 
@@ -116,7 +116,7 @@
     font-family: $font-mono;
     font-size: 11px;
     color: $text-secondary;
-    background: rgba($border, 0.4);
+    background: rgba(var(--rl-line-rgb), 0.4);
     padding: 1px 6px;
     border-radius: 4px;
 }
@@ -149,10 +149,10 @@
 }
 
 .ah-btn-resolve {
-    border-color: rgba($state-warning, 0.5);
+    border-color: rgba(var(--rl-amber-rgb), 0.5);
     color: $state-warning;
 
-    &:hover { background: rgba($state-warning, 0.12); border-color: $state-warning; }
+    &:hover { background: rgba(var(--rl-amber-rgb), 0.12); border-color: $state-warning; }
 }
 
 // ── Error log groups (instance_error_logs payload) ────────────────────────────
@@ -185,7 +185,7 @@
     flex-direction: column;
     gap: 8px;
     padding: 8px;
-    background: rgba($border, 0.2);
+    background: rgba(var(--rl-line-rgb), 0.2);
     border-radius: 6px;
     max-height: 360px;
     overflow-y: auto;
@@ -199,7 +199,7 @@
     flex-direction: column;
     gap: 4px;
     padding-bottom: 6px;
-    border-bottom: 1px solid rgba($border, 0.4);
+    border-bottom: 1px solid rgba(var(--rl-line-rgb), 0.4);
 
     &:last-child { border-bottom: none; padding-bottom: 0; }
 }
@@ -217,7 +217,7 @@
     font-size: 11px;
     font-weight: 600;
     color: $state-warning;
-    background: rgba($state-warning, 0.15);
+    background: rgba(var(--rl-amber-rgb), 0.15);
     padding: 1px 6px;
     border-radius: 4px;
     min-width: 32px;
@@ -293,7 +293,7 @@
 
     code {
         font-family: $font-mono;
-        background: rgba($border, 0.4);
+        background: rgba(var(--rl-line-rgb), 0.4);
         padding: 1px 6px;
         border-radius: 4px;
         font-size: 12px;

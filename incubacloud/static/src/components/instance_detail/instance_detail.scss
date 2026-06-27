@@ -56,7 +56,7 @@
     transition: background $duration-fast, border-color $duration-fast;
 
     &:hover {
-        background: rgba($primary-blue, 0.1);
+        background: rgba(var(--rl-green-rgb), 0.1);
         border-color: $primary-blue;
     }
 
@@ -64,18 +64,18 @@
 }
 
 .ic-ab-deploy {
-    background: rgba($accent, 0.12);
-    border-color: rgba($accent, 0.4);
+    background: rgba(var(--rl-green-rgb), 0.12);
+    border-color: rgba(var(--rl-green-rgb), 0.4);
     color: $accent;
 
-    &:hover { background: rgba($accent, 0.22); }
+    &:hover { background: rgba(var(--rl-green-rgb), 0.22); }
 }
 
 .ic-ab-rebuild {
-    border-color: rgba($state-warning, 0.4);
+    border-color: rgba(var(--rl-amber-rgb), 0.4);
     color: $state-warning;
 
-    &:hover { background: rgba($state-warning, 0.1); }
+    &:hover { background: rgba(var(--rl-amber-rgb), 0.1); }
 }
 
 .ic-ab-secondary {
@@ -86,10 +86,10 @@
 }
 
 .ic-ab-warn {
-    border-color: rgba($state-warning, 0.5);
+    border-color: rgba(var(--rl-amber-rgb), 0.5);
     color: $state-warning;
 
-    &:hover { background: rgba($state-warning, 0.12); }
+    &:hover { background: rgba(var(--rl-amber-rgb), 0.12); }
 }
 
 // ── Move to host (inline picker) ─────────────────────────────────────────────
@@ -121,9 +121,9 @@
 
 .ic-locked-notice {
     font-size: 0.75rem;
-    color: rgba($text-secondary, 0.8);
-    background: rgba($border, 0.25);
-    border: 1px solid rgba($border, 0.5);
+    color: rgba(var(--rl-muted-rgb), 0.8);
+    background: rgba(var(--rl-line-rgb), 0.25);
+    border: 1px solid rgba(var(--rl-line-rgb), 0.5);
     border-radius: 5px;
     padding: 7px 12px;
     width: 100%;
@@ -184,8 +184,8 @@
         cursor: pointer;
         color: $text-primary;
 
-        &:hover { background: rgba($primary-blue, 0.1); }
-        &.selected { background: rgba($primary-blue, 0.15); color: $primary-blue; }
+        &:hover { background: rgba(var(--rl-green-rgb), 0.1); }
+        &.selected { background: rgba(var(--rl-green-rgb), 0.15); color: $primary-blue; }
         &.ic-lang-option-default { color: $text-secondary; font-style: italic; }
     }
 }
@@ -318,7 +318,7 @@
     transition: background 0.1s;
     padding: 2px 0;
 
-    &:hover .ic-tl-content { background: rgba($primary-blue, 0.04); }
+    &:hover .ic-tl-content { background: rgba(var(--rl-green-rgb), 0.04); }
 }
 
 .ic-tl-rail {
@@ -351,14 +351,14 @@
 }
 
 @keyframes ic-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba($primary-blue, 0.5); }
-    50%      { box-shadow: 0 0 0 5px rgba($primary-blue, 0); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--rl-green-rgb), 0.5); }
+    50%      { box-shadow: 0 0 0 5px rgba(var(--rl-green-rgb), 0); }
 }
 
 .ic-tl-line {
     flex: 1;
     width: 2px;
-    background: rgba($border, 0.6);
+    background: rgba(var(--rl-line-rgb), 0.6);
     min-height: 12px;
 }
 
@@ -411,7 +411,7 @@
     align-items: center;
     gap: 5px;
     font-size: 0.6875rem;
-    color: rgba($text-secondary, 0.7);
+    color: rgba(var(--rl-muted-rgb), 0.7);
     margin-top: 3px;
 }
 
@@ -430,7 +430,7 @@
 
 .ic-tl-log-hint {
     font-size: 0.6875rem;
-    color: rgba($text-secondary, 0.5);
+    color: rgba(var(--rl-muted-rgb), 0.5);
     margin-left: auto;
     opacity: 0;
     transition: opacity 0.15s;
@@ -471,15 +471,15 @@
     transition: background 0.1s, color 0.1s, border-color 0.1s;
 
     &:hover {
-        background: rgba($primary-blue, 0.08);
+        background: rgba(var(--rl-green-rgb), 0.08);
         border-color: $primary-blue;
         color: $primary-blue;
     }
 }
 
 .ic-tl-cancel:hover {
-    background: rgba($state-error, 0.08);
-    border-color: rgba($state-error, 0.5);
+    background: rgba(var(--rl-red-rgb), 0.08);
+    border-color: rgba(var(--rl-red-rgb), 0.5);
     color: $state-error;
 }
 
@@ -490,8 +490,8 @@
     font-size: 0.625rem;
     font-weight: 600;
     color: $state-warning;
-    background: rgba($state-warning, 0.1);
-    border: 1px solid rgba($state-warning, 0.3);
+    background: rgba(var(--rl-amber-rgb), 0.1);
+    border: 1px solid rgba(var(--rl-amber-rgb), 0.3);
     border-radius: 4px;
     padding: 1px 7px;
     cursor: pointer;
@@ -501,8 +501,8 @@
     .fa { font-size: 0.625rem; }
 
     &:hover {
-        background: rgba($state-warning, 0.2);
-        border-color: rgba($state-warning, 0.6);
+        background: rgba(var(--rl-amber-rgb), 0.2);
+        border-color: rgba(var(--rl-amber-rgb), 0.6);
     }
 }
 
@@ -520,12 +520,12 @@
     text-transform: capitalize;
 }
 
-.jst-done      { color: $state-ok;      background: rgba($state-ok, 0.12); }
-.jst-failed    { color: $state-error;   background: rgba($state-error, 0.12); }
-.jst-cancelled { color: $text-secondary; background: rgba($border, 0.4); }
-.jst-running   { color: $primary-blue;  background: rgba($primary-blue, 0.12); }
-.jst-pending   { color: $text-secondary; background: rgba($border, 0.3); }
-.jst-blocked   { color: $state-warning; background: rgba($state-warning, 0.12); }
+.jst-done      { color: $state-ok;      background: rgba(var(--rl-green-rgb), 0.12); }
+.jst-failed    { color: $state-error;   background: rgba(var(--rl-red-rgb), 0.12); }
+.jst-cancelled { color: $text-secondary; background: rgba(var(--rl-line-rgb), 0.4); }
+.jst-running   { color: $primary-blue;  background: rgba(var(--rl-green-rgb), 0.12); }
+.jst-pending   { color: $text-secondary; background: rgba(var(--rl-line-rgb), 0.3); }
+.jst-blocked   { color: $state-warning; background: rgba(var(--rl-amber-rgb), 0.12); }
 
 .ic-ov-load-more {
     align-self: center;
@@ -633,11 +633,11 @@
     cursor: pointer;
     font-size: 0.75rem;
 
-    &:hover { background: rgba($border, 0.15); }
+    &:hover { background: rgba(var(--rl-line-rgb), 0.15); }
 
     input[type="checkbox"] { flex-shrink: 0; }
     code {
-        background: rgba($border, 0.2);
+        background: rgba(var(--rl-line-rgb), 0.2);
         padding: 1px 6px;
         border-radius: 3px;
         font-size: 0.75rem;
@@ -657,7 +657,7 @@
 }
 
 .ic-sync-tag-push {
-    background: rgba($primary-blue, 0.15);
+    background: rgba(var(--rl-green-rgb), 0.15);
     color: $primary-blue;
 }
 
@@ -667,7 +667,7 @@
 }
 
 .ic-sync-tag-conflict {
-    background: rgba($state-warning, 0.15);
+    background: rgba(var(--rl-amber-rgb), 0.15);
     color: $state-warning;
 }
 
@@ -682,7 +682,7 @@
 .ic-sync-conflict {
     padding: 8px 10px;
     border-radius: 6px;
-    background: rgba($state-warning, 0.05);
+    background: rgba(var(--rl-amber-rgb), 0.05);
     border-left: 3px solid $state-warning;
     display: flex;
     flex-direction: column;
@@ -704,7 +704,7 @@
     color: $text-secondary;
 
     code {
-        background: rgba($border, 0.2);
+        background: rgba(var(--rl-line-rgb), 0.2);
         padding: 1px 4px;
         border-radius: 3px;
         font-size: 0.6875rem;
@@ -727,7 +727,7 @@
     padding: 2px 4px;
 
     code {
-        background: rgba($border, 0.2);
+        background: rgba(var(--rl-line-rgb), 0.2);
         padding: 1px 6px;
         border-radius: 3px;
         font-size: 0.75rem;
@@ -818,7 +818,7 @@
     font-weight: 600;
 
     &.ic-bk-full {
-        background: rgba($text-secondary, 0.15);
+        background: rgba(var(--rl-muted-rgb), 0.15);
         color: $text-secondary;
     }
 
@@ -830,7 +830,7 @@
 
 .ic-backups-info {
     padding: 10px 14px;
-    background: rgba($text-secondary, 0.08);
+    background: rgba(var(--rl-muted-rgb), 0.08);
     border: 1px solid $border;
     border-radius: 8px;
     color: $text-secondary;
@@ -957,7 +957,7 @@
 
     &:focus {
         outline: none;
-        border-color: rgba($primary-blue, 0.5);
+        border-color: rgba(var(--rl-green-rgb), 0.5);
     }
 }
 
@@ -972,7 +972,7 @@
 
     &:focus {
         outline: none;
-        border-color: rgba($primary-blue, 0.5);
+        border-color: rgba(var(--rl-green-rgb), 0.5);
         color: $text-primary;
     }
 }
@@ -989,7 +989,7 @@
     font-size: 0.75rem;
 
     &:hover {
-        background: rgba($state-error, 0.15);
+        background: rgba(var(--rl-red-rgb), 0.15);
         color: $state-error;
     }
 }
@@ -1005,7 +1005,7 @@
     cursor: pointer;
 
     &:hover {
-        border-color: rgba($primary-blue, 0.3);
+        border-color: rgba(var(--rl-green-rgb), 0.3);
         color: $primary-blue;
     }
 }
@@ -1037,7 +1037,7 @@
 
         &:focus {
             outline: none;
-            border-color: rgba($primary-blue, 0.5);
+            border-color: rgba(var(--rl-green-rgb), 0.5);
         }
     }
 }
@@ -1125,7 +1125,7 @@
 
         &:focus {
             outline: none;
-            border-color: rgba($primary-blue, 0.5);
+            border-color: rgba(var(--rl-green-rgb), 0.5);
         }
 
         option { background: #19201b; }
@@ -1154,7 +1154,7 @@
         cursor: pointer;
         white-space: nowrap;
 
-        &:hover { background: darken($primary-blue, 8%); }
+        &:hover { background: var(--rl-green-dim); }
     }
 
     .ic-audit-reset-btn {
@@ -1177,9 +1177,9 @@
         font-size: 0.8125rem;
         font-weight: 500;
         border-radius: $radius-md;
-        background: rgba($state-error, 0.1);
+        background: rgba(var(--rl-red-rgb), 0.1);
         color: $state-error;
-        border: 1px solid rgba($state-error, 0.25);
+        border: 1px solid rgba(var(--rl-red-rgb), 0.25);
         cursor: pointer;
         white-space: nowrap;
         display: flex;
@@ -1188,8 +1188,8 @@
         transition: background $duration-fast ease, border-color $duration-fast ease;
 
         &:hover:not(:disabled) {
-            background: rgba($state-error, 0.18);
-            border-color: rgba($state-error, 0.45);
+            background: rgba(var(--rl-red-rgb), 0.18);
+            border-color: rgba(var(--rl-red-rgb), 0.45);
         }
         &:disabled { opacity: 0.45; cursor: not-allowed; }
     }
@@ -1219,7 +1219,7 @@
         color: #fde68a;
     }
     &.reason-active_job {
-        background: rgba($primary-blue, 0.18);
+        background: rgba(var(--rl-green-rgb), 0.18);
         color: $primary-blue;
     }
 }

@@ -1,7 +1,7 @@
 <templates>
 
     <t t-name="incubacloud.BackupBackendDetail">
-        <div class="ic-host-detail ic-backend-detail">
+        <div class="ic-backend-detail">
 
             <t t-if="state.loading">
                 <div class="ic-detail-loading">Loading…</div>

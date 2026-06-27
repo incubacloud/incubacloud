@@ -49,7 +49,7 @@
     height: 18px;
     padding: 0 5px;
     border-radius: 999px;
-    background: rgba($border, 0.5);
+    background: rgba(var(--rl-line-rgb), 0.5);
     font-size: 10px;
     font-weight: 700;
     color: $text-secondary;
@@ -58,7 +58,7 @@
 }
 
 .rl-tab.active .ic-tab-count {
-    background: rgba($primary-blue, 0.2);
+    background: rgba(var(--rl-green-rgb), 0.2);
     color: $primary-blue;
 }
 
@@ -85,7 +85,7 @@
         width: 100%;
         padding: 8px 12px;
         background: $surface-light;
-        border: 1px solid rgba($border, 0.4);
+        border: 1px solid rgba(var(--rl-line-rgb), 0.4);
         border-radius: 6px;
         color: $text-primary;
         font-size: 13px;
@@ -97,7 +97,7 @@
 
 .ic-members-results {
     background: $surface-light;
-    border: 1px solid rgba($primary-blue, 0.2);
+    border: 1px solid rgba(var(--rl-green-rgb), 0.2);
     border-radius: 6px;
     margin-bottom: 12px;
     max-height: 200px;
@@ -112,7 +112,7 @@
     cursor: pointer;
     color: $text-secondary;
 
-    &:hover { background: rgba($primary-blue, 0.08); color: $text-primary; }
+    &:hover { background: rgba(var(--rl-green-rgb), 0.08); color: $text-primary; }
 
     i { color: $primary-blue; }
     small { margin-left: auto; opacity: 0.6; }

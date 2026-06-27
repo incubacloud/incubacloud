@@ -13,8 +13,8 @@
     transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 
     &:hover {
-        background: rgba($primary-blue, 0.04);
-        border-color: rgba($primary-blue, 0.3);
+        background: rgba(var(--rl-green-rgb), 0.04);
+        border-color: rgba(var(--rl-green-rgb), 0.3);
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     }
 
@@ -36,7 +36,7 @@
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba($border, 0.4);
+    background: rgba(var(--rl-line-rgb), 0.4);
     color: $text-secondary;
 }
 
@@ -109,11 +109,11 @@
     letter-spacing: 0.05em;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba($border, 0.4);
+    background: rgba(var(--rl-line-rgb), 0.4);
     color: $text-secondary;
 
-    &.env-production { background: rgba($state-ok, 0.12);     color: $state-ok; }
-    &.env-staging    { background: rgba($primary-blue, 0.12); color: $primary-blue; }
+    &.env-production { background: rgba(var(--rl-green-rgb), 0.12);     color: $state-ok; }
+    &.env-staging    { background: rgba(var(--rl-green-rgb), 0.12); color: $primary-blue; }
 }
 
 // ── Tag badges ────────────────────────────────────────────────────────────────

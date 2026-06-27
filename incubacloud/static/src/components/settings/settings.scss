@@ -5,7 +5,27 @@
 
 .ic-app {
 
-    .rl-settings-body { max-width: 860px; }
+    .rl-settings-body {
+        max-width: 860px;
+
+        // Each in-tab section is a clearly delimited block: a prominent heading
+        // with a divider above it, so it's obvious which fields belong to which
+        // section. Scoped to settings so the saas screens that reuse
+        // .rl-saas-fsec keep their compact label style.
+        .rl-saas-fsec {
+            font-family: $font-display;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0;
+            text-transform: none;
+            color: var(--rl-fg);
+            margin: 26px 0 6px;
+            padding-top: 18px;
+            border-top: 1px solid var(--rl-line);
+
+            &:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+        }
+    }
 
     // ── GitHub feature card inner content (extends .rl-ghcard) ────────────────
     .rl-set-actions {

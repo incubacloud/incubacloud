@@ -146,6 +146,11 @@
                             <i class="fa fa-bell-o" aria-hidden="true"/> Notifications
                         </button>
                         <div class="ic-header-user-sep"/>
+                        <button class="ic-header-user-action" t-on-click="toggleTheme">
+                            <t t-if="state.theme === 'light'"><i class="fa fa-moon-o" aria-hidden="true"/> Dark theme</t>
+                            <t t-else=""><i class="fa fa-sun-o" aria-hidden="true"/> Light theme</t>
+                        </button>
+                        <div class="ic-header-user-sep"/>
                         <button class="ic-header-user-action" t-on-click="exitToErp">
                             <i class="fa fa-sign-out" aria-hidden="true"/> Exit
                         </button>

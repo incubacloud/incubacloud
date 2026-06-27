@@ -1,43 +1,41 @@
 <templates>
 
     <t t-name="incubacloud.ProjectCard">
-        <div t-att-class="'rl-row click status-' + props.project.status"
+        <div t-att-class="'rl-card rl-card-pad click ic-project-card status-' + props.project.status"
              t-on-click="onEnterProject">
 
-            <div class="rl-rico"><t t-out="env.icon('projects', 17)"/></div>
+            <div class="ic-project-card-head" style="display:flex;align-items:center;gap:11px;margin-bottom:9px;">
+                <div class="rl-rico"><t t-out="env.icon('projects', 17)"/></div>
+                <div class="rl-rname" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" t-esc="props.project.name"/>
+                <span t-att-class="'rl-sb ' + props.project.status">
+                    <span class="rl-d"/><t t-esc="statusLabel(props.project.status)"/>
+                </span>
+            </div>
 
-            <div style="min-width:0">
-                <div class="rl-rname" t-esc="props.project.name"/>
-                <div class="rl-rmeta">
-                    <t t-if="props.project.odoo_version"><t t-esc="props.project.odoo_version"/> · </t>
-                    <t t-esc="props.project.instance_count"/> instance<t t-if="props.project.instance_count !== 1">s</t>
-                    <t t-if="props.project.description"> · <t t-esc="props.project.description"/></t>
+            <div class="rl-rmeta">
+                <t t-if="props.project.odoo_version"><t t-esc="props.project.odoo_version"/> · </t>
+                <t t-esc="props.project.instance_count"/> instance<t t-if="props.project.instance_count !== 1">s</t>
+                <t t-if="props.project.description"> · <t t-esc="props.project.description"/></t>
+            </div>
+
+            <t t-if="props.project.tags and props.project.tags.length">
+                <div class="rl-tag-list">
+                    <t t-foreach="props.project.tags" t-as="tag" t-key="tag.id">
+                        <span class="rl-tag-badge" t-att-style="tagBadgeStyle(tag)">
+                            <span class="ic-tag-dot" t-att-style="tagDotStyle(tag)"/>
+                            <t t-esc="tag.name"/>
+                        </span>
+                    </t>
                 </div>
-                <t t-if="props.project.tags and props.project.tags.length">
-                    <div class="rl-tag-list">
-                        <t t-foreach="props.project.tags" t-as="tag" t-key="tag.id">
-                            <span class="rl-tag-badge" t-att-style="tagBadgeStyle(tag)">
-                                <span class="ic-tag-dot" t-att-style="tagDotStyle(tag)"/>
-                                <t t-esc="tag.name"/>
-                            </span>
-                        </t>
-                    </div>
-                </t>
-            </div>
+            </t>
 
-            <div class="rl-rspacer"/>
-
-            <div class="rl-proj-envs">
-                <t t-foreach="props.project.environments" t-as="envName" t-key="envName">
-                    <span t-att-class="'rl-env ' + envName" t-esc="envName"/>
-                </t>
-            </div>
-
-            <span t-att-class="'rl-sb ' + props.project.status">
-                <span class="rl-d"/><t t-esc="statusLabel(props.project.status)"/>
-            </span>
-
-            <span class="rl-row-chevron"><t t-out="env.icon('fwd', 16)"/></span>
+            <t t-if="props.project.environments and props.project.environments.length">
+                <div class="rl-proj-envs" style="margin-top:10px;">
+                    <t t-foreach="props.project.environments" t-as="envName" t-key="envName">
+                        <span t-att-class="'rl-env ' + envName" t-esc="envName"/>
+                    </t>
+                </div>
+            </t>
         </div>
     </t>
 

@@ -49,7 +49,7 @@
                     </div>
 
                     <!-- Default Backup Backend -->
-                    <div class="rl-saas-fsec" style="margin-top:18px">Default Backup Backend</div>
+                    <div class="rl-saas-fsec">Default Backup Backend</div>
                     <p class="rl-tabnote">
                         The default backup backend used for production instances when
                         no specific backend is selected at the project or instance level.
@@ -65,7 +65,7 @@
                     </div>
 
                     <!-- Audit Log Retention -->
-                    <div class="rl-saas-fsec" style="margin-top:18px">Audit Log Retention</div>
+                    <div class="rl-saas-fsec">Audit Log Retention</div>
                     <p class="rl-tabnote">
                         Automatically purge audit log entries older than the specified
                         number of days. Set to 0 to keep all records indefinitely.
@@ -88,7 +88,7 @@
                     </div>
 
                     <!-- Job Log Retention -->
-                    <div class="rl-saas-fsec" style="margin-top:18px">Job Log Retention</div>
+                    <div class="rl-saas-fsec">Job Log Retention</div>
                     <p class="rl-tabnote">
                         Automatically purge job log chunks (cloud.job.log.chunk) for
                         terminated jobs older than the specified number of days. Active
@@ -104,7 +104,7 @@
                     </div>
 
                     <!-- Backup Usage Alerts -->
-                    <div class="rl-saas-fsec" style="margin-top:18px">Backup Usage Alerts</div>
+                    <div class="rl-saas-fsec">Backup Usage Alerts</div>
                     <p class="rl-tabnote">
                         Default percentage at which an email alert is sent when a
                         backup backend approaches its quota. Each backend can override
@@ -340,7 +340,7 @@
                     </t>
 
                     <!-- PAT — independent of GitHub App -->
-                    <div class="rl-saas-fsec" style="margin-top:22px">Personal Access Token (PAT)</div>
+                    <div class="rl-saas-fsec">Personal Access Token (PAT)</div>
                     <p class="rl-tabnote">
                         Fallback token for accessing private repositories the GitHub App cannot reach (e.g. odoo/enterprise).
                     </p>

@@ -24,6 +24,10 @@
   --rl-green:#2fc78c; --rl-green-soft:rgba(47,199,140,.15); --rl-green-fg:#06140d; --rl-green-dim:#1e9e70;
   --rl-amber:#efa53e; --rl-amber-soft:rgba(239,165,62,.14); --rl-amber-fg:#1c1408;
   --rl-red:#ff6063; --rl-red-soft:rgba(255,96,99,.15);
+  // RGB triplets so rgba(var(--x-rgb), a) translucent overlays follow the active theme.
+  --rl-bg-rgb:10,12,13; --rl-surf-rgb:16,19,21; --rl-surf2-rgb:24,28,31; --rl-line-rgb:38,43,47;
+  --rl-fg-rgb:238,241,243; --rl-muted-rgb:138,148,156; --rl-faint-rgb:115,125,133;
+  --rl-green-rgb:47,199,140; --rl-amber-rgb:239,165,62; --rl-red-rgb:255,96,99;
   // Lifted state-text colours (used on pills/timeline/badges); were hardcoded literals.
   --rl-green-text:#9fe7c4; --rl-amber-text:#f0c987; --rl-red-text:#ff9b9d;
   // Card elevation: surface is now lighter than bg + a hairline top highlight.
@@ -33,6 +37,23 @@
   --rl-fb:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;
   --rl-fm:'JetBrains Mono','Fira Code',monospace;
 }
+
+// ── Light theme (paper / ink + green) — toggled by [data-ic-theme="light"] on <html> ──
+:root[data-ic-theme="light"] {
+  --rl-bg:#f3f7f4; --rl-surf:#f3f7f4; --rl-surf2:#eaf1ec; --rl-surf3:#e2ebe5;
+  --rl-line:#dde6df; --rl-line2:#cdd8d0;
+  --rl-fg:#0e1512; --rl-fg2:#33403a; --rl-muted:#5d6b63; --rl-faint:#7d8a82;
+  --rl-green:#14a06e; --rl-green-soft:rgba(20,160,110,.12); --rl-green-fg:#ffffff; --rl-green-dim:#0c7a55;
+  --rl-amber:#b7791f; --rl-amber-soft:rgba(183,121,31,.13); --rl-amber-fg:#ffffff;
+  --rl-red:#dc4c4f; --rl-red-soft:rgba(220,76,79,.12);
+  --rl-green-text:#0c7a55; --rl-amber-text:#9a6614; --rl-red-text:#c0393c;
+  --rl-card-shadow:0 2px 6px rgba(16,24,20,.10), 0 1px 2px rgba(16,24,20,.06);
+  --rl-bg-rgb:243,247,244; --rl-surf-rgb:243,247,244; --rl-surf2-rgb:234,241,236; --rl-line-rgb:221,230,223;
+  --rl-fg-rgb:14,21,18; --rl-muted-rgb:93,107,99; --rl-faint-rgb:125,138,130;
+  --rl-green-rgb:20,160,110; --rl-amber-rgb:183,121,31; --rl-red-rgb:220,76,79;
+  color-scheme: light;
+}
+[data-ic-theme="light"] body, [data-ic-theme="light"] .ic-app { color-scheme: light; }
 
 // ── Keyframes (global names, rl- prefixed to avoid collisions) ──────────────
 @keyframes rl-pulse { 50% { opacity:.4; } }
@@ -147,8 +168,8 @@
 
   // ── Cards / rows ─────────────────────────────────────────────────────────
   .rl-grid { display:grid; gap:14px; }
-  .rl-grid-2 { grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); }
-  .rl-grid-3 { grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); }
+  .rl-grid-2 { grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); }
+  .rl-grid-3 { grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); }
   .rl-card { background:var(--rl-surf); border:1px solid var(--rl-line); border-radius:var(--rl-r); box-shadow:var(--rl-card-shadow); }
   .rl-card-pad { padding-block:16px; padding-inline:18px; }
   .rl-card-h { padding-block:13px; padding-inline:16px; border-block-end:1px solid var(--rl-line); display:flex; align-items:center; gap:10px;

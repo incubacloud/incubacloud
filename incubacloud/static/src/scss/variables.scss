@@ -8,23 +8,26 @@
 // ============================================================
 
 // ── Color tokens ────────────────────────────────────────────────────────────
-// $primary-blue keeps its name for compatibility but is now the brand GREEN.
-$primary-blue: #2fc78c;   // green-500 — primary/interactive on dark
-$primary-dark: #1e9e70;   // green-600 — hover / pressed
-$accent: #2fc78c;         // ACTION (Deploy, Create, OK) — same green family in Option C
-$accent-dark: #1e9e70;    // action hover
+// These keep their legacy names for compatibility but now resolve to the Relay
+// CSS custom properties (defined in relay.scss), so every ic-* usage follows the
+// active theme (dark default / light via [data-ic-theme="light"]) at runtime.
+// Translucent rgba()/color-fn usages were migrated to --rl-*-rgb / --rl-* tokens.
+$primary-blue: var(--rl-green);
+$primary-dark: var(--rl-green-dim);
+$accent: var(--rl-green);
+$accent-dark: var(--rl-green-dim);
 
-$background: #0a0c0d;      // carbon-950 — neutral (no green cast)
-$surface: #101315;         // carbon-900 — lighter than bg for real card elevation
-$surface-light: #181c1f;   // carbon-850 — hover / raised
-$text-primary: #eef1f3;
-$text-secondary: #8a949c;  // cool carbon muted (was slate-400)
-$border: #333a3f;          // carbon-700 — neutral
+$background: var(--rl-bg);
+$surface: var(--rl-surf);
+$surface-light: var(--rl-surf2);
+$text-primary: var(--rl-fg);
+$text-secondary: var(--rl-muted);
+$border: var(--rl-line);
 
-$state-ok: #2fc78c;        // online / healthy = brand green
-$state-warning: #efa53e;   // amber
-$state-error: #ff6063;     // red (unified with --rl-red)
-$state-neutral: #737d85;   // neutral gray (matches --rl-faint)
+$state-ok: var(--rl-green);
+$state-warning: var(--rl-amber);
+$state-error: var(--rl-red);
+$state-neutral: var(--rl-faint);
 
 // ── Toast colors ──────────────────────────────────────────────────────────────
 $toast-success-bg:     #15281d;

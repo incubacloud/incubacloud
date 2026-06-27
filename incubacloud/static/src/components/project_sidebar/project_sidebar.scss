@@ -73,9 +73,9 @@
   font-weight: 600;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba($primary-blue, 0.15);
+  background: rgba(var(--rl-green-rgb), 0.15);
   color: $primary-blue;
-  border: 1px solid rgba($primary-blue, 0.3);
+  border: 1px solid rgba(var(--rl-green-rgb), 0.3);
   flex-shrink: 0;
   white-space: nowrap;
 }
