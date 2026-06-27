@@ -1,13 +1,53 @@
 // ── Host Detail Page ──────────────────────────────────────────────────────────
+// Rebuilt on the Relay `rl-*` primitives (relay.scss). The `ic-*` rules kept
+// below are either screen-specific (code editor, file sub-tabs, audit filters,
+// whitelist) or shared scaffolding (`.ic-host-detail` flex shell — also reused
+// by instance_detail). Header / tabs / footer / status badges now come from the
+// `rl-*` layer.
 
+// Natural page flow: the whole detail (hero + action bar + tabs + body) scrolls
+// as ONE page inside .ic-main — like the prototype. No full-height flex shell,
+// no nested scroll box (which previously trapped the overview cards and showed
+// a second scrollbar next to the tabs).
 .ic-host-detail {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
     padding: 24px;
     background: $background;
     color: $text-primary;
-    overflow: hidden;
+}
+
+// ── Relay screen scaffold ──────────────────────────────────────────────────────
+// Plain block now (kept as a hook); content flows and .ic-main owns the scroll.
+.ic-rl-detail-scroll {
+    display: block;
+}
+
+// Tighten the gap under the hero so the action bar sits close beneath it.
+.ic-rl-hero {
+    margin-bottom: 10px;
+}
+
+// Sub-line under the Overview "Disk" value (free / total breakdown).
+.rl-ov-sub {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    color: $text-secondary;
+}
+
+// Overview activity empty / loading rows (timeline placeholders).
+.ic-ov-activity-empty {
+    padding: 14px 0;
+    font-size: 13px;
+    color: $text-secondary;
+}
+
+.ic-ov-activity-loading {
+    padding: 8px 0;
+}
+
+// Push the footer Delete button to the far left of the form footer.
+.ic-formfoot-delete {
+    margin-right: auto;
 }
 
 // ── Loading / error states ─────────────────────────────────────────────────────
@@ -38,93 +78,11 @@
     }
 }
 
-// ── Header ─────────────────────────────────────────────────────────────────────
-
-.ic-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid $border;
-    flex-shrink: 0;
-    flex-wrap: wrap;
-}
-
-.ic-btn-back {
-    background: none;
-    border: 1px solid $border;
-    border-radius: $radius-md;
-    padding: 5px 12px;
-    color: $text-secondary;
+// IP:port chip in the hero subtitle.
+.ic-host-ip {
+    font-family: $font-mono;
     font-size: 12px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: color $duration-fast ease, border-color $duration-fast ease, background $duration-fast ease;
-
-    &:hover {
-        color: $text-primary;
-        border-color: rgba($text-primary, 0.3);
-        background: rgba($border, 0.15);
-    }
 }
-
-.ic-detail-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: 1;
-
-    h1 {
-        margin: 0;
-        font-size: 20px;
-        font-weight: 700;
-        color: $text-primary;
-    }
-}
-
-.ic-detail-header-meta {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 12px;
-    color: $text-secondary;
-}
-
-.ic-detail-probed { opacity: 0.75; }
-
-// ── Main tabs ──────────────────────────────────────────────────────────────────
-
-.ic-detail-tabs {
-    display: flex;
-    gap: 2px;
-    margin-top: 20px;
-    border-bottom: 2px solid rgba($border, 0.5);
-    flex-shrink: 0;
-}
-
-.ic-tab {
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    padding: 8px 18px;
-    font-size: 13px;
-    font-weight: 500;
-    color: $text-secondary;
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
-
-    &:hover { color: $text-primary; }
-
-    &.active {
-        color: $primary-blue;
-        border-bottom-color: $primary-blue;
-        font-weight: 600;
-    }
-}
-
-// ── Body ───────────────────────────────────────────────────────────────────────
-// .ic-detail-body is now in app.scss (shared across detail views)
 
 // ── Form grid (overrides for host detail) ─────────────────────────────────────
 
@@ -232,7 +190,7 @@
     // Fill remaining vertical space in the body. `unquote` defers the
     // calc() to runtime CSS — Odoo's SCSS compiler refuses to mix px
     // and vh inside calc and would otherwise abort the bundle.
-    height: unquote("calc(100vh - 340px)");
+    height: unquote("calc(100vh - 360px)");
     min-height: 240px;
 }
 
@@ -278,115 +236,26 @@
     }
 }
 
-// ── Footer ─────────────────────────────────────────────────────────────────────
-
-.ic-detail-footer {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    padding-top: 16px;
-    border-top: 1px solid rgba($border, 0.5);
-    flex-shrink: 0;
-}
-
-.ic-btn-save {
-    background: $primary-blue;
-    color: #fff;
-    border: none;
-    border-radius: $radius-md;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity $duration-fast ease;
-
-    &:hover:not(:disabled) { opacity: 0.88; }
-    &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-}
-
-.ic-btn-secondary-action {
-    background: rgba($primary-blue, 0.1);
-    color: $primary-blue;
-    border: 1px solid rgba($primary-blue, 0.35);
-    border-radius: $radius-md;
-    padding: 8px 16px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background $duration-fast ease, border-color $duration-fast ease;
-
-    &:hover:not(:disabled) {
-        background: rgba($primary-blue, 0.18);
-        border-color: $primary-blue;
-    }
-    &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-}
-
 // ── Whitelist tab ──────────────────────────────────────────────────────────────
 
 .ic-whitelist-panel { max-width: 640px; }
 
-.ic-whitelist-desc {
-    font-size: 12px;
-    color: $text-secondary;
-    margin-bottom: 16px;
-    line-height: 1.6;
-
-    code {
-        background: $surface-light;
-        border: 1px solid $border;
-        border-radius: 3px;
-        padding: 1px 5px;
-        font-size: 11px;
-        font-family: 'Courier New', Courier, monospace;
-    }
-}
-
-.ic-whitelist-list {
-    list-style: none;
+.ic-whitelist-card {
     padding: 0;
-    margin: 0 0 12px;
-    border: 1px solid $border;
-    border-radius: 6px;
+    margin-bottom: 12px;
     overflow: hidden;
 }
 
 .ic-whitelist-item {
-    display: flex;
-    align-items: center;
     padding: 8px 12px;
-    font-size: 13px;
-    font-family: 'Courier New', Courier, monospace;
-    color: $text-primary;
     border-bottom: 1px solid rgba($border, 0.5);
 
     &:last-child { border-bottom: none; }
-    &:hover { background: $surface-light; }
 }
 
-.ic-whitelist-hostname { flex: 1; }
-
-.ic-whitelist-remove {
-    background: none;
-    border: none;
-    color: $text-secondary;
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
+.ic-whitelist-hostname {
+    flex: 1;
     font-size: 12px;
-    transition: color 0.15s, background 0.15s;
-
-    &:hover {
-        color: $state-error;
-        background: rgba($state-error, 0.08);
-    }
 }
 
 .ic-whitelist-empty {
@@ -409,7 +278,7 @@
         border-radius: 6px;
         padding: 7px 10px;
         font-size: 13px;
-        font-family: 'Courier New', Courier, monospace;
+        font-family: $font-mono;
         color: $text-primary;
         transition: border-color 0.15s;
 
@@ -421,35 +290,6 @@
             background: $surface-light;
         }
     }
-}
-
-.ic-whitelist-add-btn {
-    background: $surface;
-    border: 1px solid $border;
-    border-radius: 6px;
-    padding: 7px 14px;
-    font-size: 13px;
-    font-weight: 500;
-    color: $text-primary;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: border-color 0.15s, background 0.15s;
-
-    &:hover { border-color: $primary-blue; color: $primary-blue; }
-}
-
-.ic-whitelist-apply-btn {
-    background: $primary-blue;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s;
-
-    &:hover { opacity: 0.88; }
 }
 
 // ── Audit log filter bar ─────────────────────────────────────────────────────
@@ -494,34 +334,6 @@
 
     .ic-audit-spacer { flex: 1; min-width: 8px; }
 
-    .ic-audit-apply-btn {
-        height: 32px;
-        padding: 0 14px;
-        font-size: 0.8125rem;
-        border-radius: 6px;
-        background: $primary-blue;
-        color: #fff;
-        border: none;
-        cursor: pointer;
-        white-space: nowrap;
-
-        &:hover { background: darken($primary-blue, 8%); }
-    }
-
-    .ic-audit-reset-btn {
-        height: 32px;
-        padding: 0 12px;
-        font-size: 0.8125rem;
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.08);
-        color: $text-secondary;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        cursor: pointer;
-        white-space: nowrap;
-
-        &:hover { background: rgba(255, 255, 255, 0.12); }
-    }
-
     .ic-audit-purge-btn {
         height: 32px;
         padding: 0 12px;
@@ -543,26 +355,5 @@
             border-color: rgba($state-error, 0.45);
         }
         &:disabled { opacity: 0.45; cursor: not-allowed; }
-    }
-}
-
-// ── Footer buttons ──────────────────────────────────────────────────────────────
-
-.ic-btn-delete {
-    background: transparent;
-    color: $state-error;
-    border: 1px solid $state-error;
-    border-radius: $radius-md;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background $duration-fast ease, opacity $duration-fast ease;
-    margin-right: auto; // push to the left
-
-    &:hover:not(:disabled) { background: rgba($state-error, 0.1); }
-    &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
     }
 }

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <t t-name="incubacloud.RlSelect">
+        <div class="rl-sel" t-ref="wrap"
+             t-att-class="{ 'rl-sel--open': state.open, 'rl-sel--disabled': props.disabled }"
+             t-on-keydown="onKeydown">
+
+            <!-- Closed control -->
+            <button type="button" class="rl-sel__trigger"
+                    t-att-disabled="props.disabled || null"
+                    t-att-aria-label="props.ariaLabel"
+                    aria-haspopup="listbox"
+                    t-att-aria-expanded="state.open"
+                    t-on-click="toggle">
+                <span t-att-class="'rl-sel__value' + (isPlaceholder ? ' rl-sel__value--placeholder' : '')"
+                      t-esc="displayLabel"/>
+                <span class="rl-sel__chevron">▾</span>
+            </button>
+
+            <!-- Option list (fixed-positioned to escape overflow clipping) -->
+            <t t-if="state.open">
+                <div class="rl-sel__menu" role="listbox" t-att-style="state.dropdownStyle">
+
+                    <!-- Empty / clear row -->
+                    <t t-if="props.emptyLabel">
+                        <div class="rl-sel__opt"
+                             t-att-class="{ 'rl-sel__opt--selected': isPlaceholder }"
+                             role="option"
+                             t-att-aria-selected="isPlaceholder"
+                             t-on-click="() => this.pickEmpty()">
+                            <t t-esc="props.emptyLabel"/>
+                        </div>
+                    </t>
+
+                    <!-- Options -->
+                    <t t-foreach="_opts" t-as="opt" t-key="opt_index">
+                        <div t-att-class="'rl-sel__opt'
+                                 + (isSelected(opt) ? ' rl-sel__opt--selected' : '')
+                                 + (opt.disabled ? ' rl-sel__opt--disabled' : '')"
+                             role="option"
+                             t-att-aria-selected="isSelected(opt)"
+                             t-on-click="() => this.pick(opt)">
+                            <t t-esc="opt.label"/>
+                        </div>
+                    </t>
+
+                </div>
+            </t>
+
+        </div>
+    </t>
+
+</templates>

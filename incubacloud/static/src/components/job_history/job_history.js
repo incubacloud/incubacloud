@@ -240,6 +240,26 @@ export class JobHistory extends Component {
         }[state] || state;
     }
 
+    /**
+     * View-only mapping of a raw job ``state`` to the Relay state-class used by
+     * the timeline dot (``rl-tl-dot``) and the bare status pill (``rl-pill``):
+     * ``done`` / ``failed`` / ``queued`` (amber, pending-like) / ``running``.
+     * No business logic — purely picks the CSS modifier for the chosen state.
+     * @param {string} state raw cloud.job state
+     * @returns {string} one of "done" | "failed" | "queued" | "running"
+     */
+    ganttDotClass(state) {
+        return {
+            done: "done",
+            failed: "failed",
+            cancelled: "failed",
+            started: "running",
+            pending: "queued",
+            enqueued: "queued",
+            wait_dependencies: "queued",
+        }[state] || "queued";
+    }
+
     // ───────────── Actions ─────────────
 
     openLog(job) {

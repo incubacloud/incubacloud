@@ -1,24 +1,16 @@
+// ── Project context sidebar (rebuilt to relay rl-ctx-* grammar) ──────────────
+//
+// The rail primitives (rl-ctx-back / rl-ctx-proj / rl-ctx-sec / rl-ctx-sech /
+// rl-ctx-add / rl-ctx-item / rl-ctx-name / rl-ctx-ver / rl-ctx-clone /
+// rl-ctx-empty) live in relay.scss. Only the richer features the prototype
+// lacks (search box, PR badge, instance tags, skeleton) and the rail padding
+// remain here.
+
 .ic-psidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 8px 0;
-}
-
-.ic-psidebar-back {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  margin-bottom: 4px;
-  background: none;
-  border: none;
-  color: $text-secondary;
-  font-size: 0.8rem;
-  cursor: pointer;
-  text-align: left;
-
-  &:hover { color: $text-primary; }
+  padding: 12px 10px 24px;
 }
 
 .ic-psidebar-loading {
@@ -27,59 +19,9 @@
   font-size: 0.8rem;
 }
 
-// ── Sections (Production, Staging, Development, Project) ─────────
-.ic-psidebar-section {
-  margin-bottom: 4px;
-}
-
-.ic-psidebar-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px 4px;
-}
-
-.ic-psidebar-section-label {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: $text-secondary;
-  opacity: 0.7;
-}
-
-// ── Instance items ───────────────────────────────────────────────
-.ic-psidebar-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 16px;
-  padding-left: 13px; // 16px - 3px border width
-  border-left: 3px solid transparent;
-  cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
-  font-size: 0.82rem;
-
-  &:hover { background: $surface-light; }
-
-  &.active {
-    border-left-color: $primary-blue;
-    background: rgba($primary-blue, 0.1);
-    color: $text-primary;
-
-    .ic-psidebar-item-ver { color: $text-secondary; }
-    .ic-psidebar-item-name { color: $primary-blue; font-weight: 500; }
-  }
-}
-
-.ic-psidebar-item-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 // ── Search input ─────────────────────────────────────────────────
 .ic-psidebar-search {
-  padding: 8px 12px 4px;
+  padding: 4px 9px 8px;
 
   input {
     width: 100%;
@@ -95,12 +37,13 @@
   }
 }
 
-// ── Tag chips ────────────────────────────────────────────────────
+// ── Tag chips (inside a rl-ctx-item) ─────────────────────────────
 .ic-psidebar-tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  padding-left: 18px; // align with the instance name (dot width + gap)
+  flex-basis: 100%;
+  padding-left: 22px; // align with the instance name (pill + gap)
 }
 
 .ic-psidebar-tag-badge {
@@ -121,85 +64,10 @@
   }
 }
 
-.ic-psidebar-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
+// Allow tag chips to wrap onto a new line beneath the item row.
+.rl-ctx-item { flex-wrap: wrap; }
 
-  &.dot-ok { background: $state-ok; }
-  &.dot-stopped { background: $state-warning; }
-  &.dot-error { background: $state-error; }
-  &.dot-neutral { background: $state-neutral; }
-  &.dot-provisioning {
-    background: #38bdf8;
-    animation: dot-running-pulse 2s ease-in-out infinite;
-  }
-}
-
-.ic-psidebar-item.provisioning {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.ic-psidebar-prov-label {
-  display: block;
-  font-size: 0.625rem;
-  color: $primary-blue;
-}
-
-.ic-psidebar-clone-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 3px;
-  background: transparent;
-  color: $text-secondary;
-  font-size: 0.625rem;
-  cursor: pointer;
-  flex-shrink: 0;
-  padding: 0;
-  position: relative;
-  z-index: 1;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: $text-primary;
-  }
-}
-
-
-.ic-psidebar-item-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: inherit;
-}
-
-.ic-psidebar-item-ver {
-  font-size: 0.72rem;
-  color: $text-secondary;
-  flex-shrink: 0;
-}
-
-.ic-psidebar-icon {
-  width: 14px;
-  text-align: center;
-  font-size: 0.8rem;
-  opacity: 0.7;
-}
-
-.ic-psidebar-empty {
-  padding: 4px 16px;
-  font-size: 0.75rem;
-  color: $text-secondary;
-  opacity: 0.5;
-}
-
+// ── PR badge ─────────────────────────────────────────────────────
 .ic-pr-badge {
   font-size: 0.625rem;
   font-weight: 600;
@@ -212,27 +80,10 @@
   white-space: nowrap;
 }
 
-// ── Add instance button (per environment) ────────────────────────
-.ic-psidebar-add-btn {
-  background: none;
-  border: none;
-  color: $text-secondary;
-  opacity: 0.4;
-  font-size: 0.6875rem;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-  transition: opacity 0.12s, color 0.12s;
-
-  &:hover {
-    opacity: 1;
-    color: $primary-blue;
-  }
-}
-
-// ── Separator ────────────────────────────────────────────────────
-.ic-psidebar-sep {
-  height: 1px;
-  background: $border;
-  margin: 8px 16px;
+// ── Project › Settings cog ───────────────────────────────────────
+.ic-psidebar-icon {
+  width: 14px;
+  text-align: center;
+  font-size: 0.8rem;
+  opacity: 0.7;
 }

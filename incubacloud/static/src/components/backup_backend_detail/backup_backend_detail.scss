@@ -1,41 +1,73 @@
-// Usage gauge — used inside the Usage tab of BackupBackendDetail and
-// (compact variant) inside the BackupBackendsList card.
+// Backup backends — Relay rebuild (list grid + detail form).
+// Structure/primitives come from relay.scss; only screen-specific bits
+// live here.
 
-.ic-usage-gauge {
-    position: relative;
-    width: 100%;
-    height: 22px;
-    border-radius: 4px;
-    background: $surface-light;
-    border: 1px solid $border;
-    overflow: hidden;
+// ── Backends list (grid of cards) ──────────────────────────────────────────
+.ic-backups-dashboard {
 
-    .ic-usage-gauge-bar {
-        height: 100%;
-        background: $state-ok;          // ok (green)
-        transition: width 200ms ease-out, background 200ms ease-out;
-    }
-
-    .ic-usage-gauge-label {
-        position: absolute;
-        inset: 0;
+    .ic-backend-card-head {
         display: flex;
         align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        color: $text-primary;
-        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
-        pointer-events: none;
+        gap: 10px;
+        margin-bottom: 4px;
     }
 
-    &[data-band="warning"] .ic-usage-gauge-bar { background: $state-warning; }
-    &[data-band="danger"]  .ic-usage-gauge-bar { background: $state-error; }
+    .ic-backend-card-dst {
+        margin-bottom: 12px;
+
+        code { font-family: var(--rl-fm); }
+    }
+
+    .ic-mbar-extra {
+        font-family: var(--rl-fm);
+        font-size: 10px;
+        color: var(--rl-faint);
+        margin-top: 3px;
+    }
+
+    .ic-metrics-placeholder {
+        font-size: 12px;
+        color: var(--rl-muted);
+        font-style: italic;
+        padding: 8px 0;
+    }
+
+    .ic-backend-card-foot {
+        margin-top: 10px;
+    }
 }
 
-// The Delete button in the detail footer uses .ic-btn-danger. Defined
-// here (and not in settings.scss, which scopes it under .ic-settings)
-// so the rule applies in any tenant DB where saas_manager is not
-// installed — core must not depend on saas SCSS.
+// ── Backend detail form ─────────────────────────────────────────────────────
+.ic-backend-detail {
+
+    // Backup-destination preview chip.
+    .ic-backup-dst {
+        display: block;
+        padding: 6px 10px;
+        font-size: 12px;
+        background: var(--rl-bg);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        color: var(--rl-fg2);
+        word-break: break-all;
+    }
+
+    // Usage tab: "Last measured …" + Refresh now on one row.
+    .ic-usage-meta-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 6px;
+        flex-wrap: wrap;
+    }
+}
+
+// The Delete button in the detail footer uses .ic-btn-danger. Kept here
+// (and not in settings.scss, which scopes it under .ic-settings) so the
+// rule applies in any tenant DB where saas_manager is not installed —
+// core must not depend on saas SCSS. The button also carries rl-btn
+// rl-btn-danger for the Relay look; this rule is a defensive fallback and
+// the hook the tenant managed-backup patch targets.
 .ic-btn-danger {
     border-radius: 6px;
     padding: 7px 16px;

@@ -1,98 +1,41 @@
-@use '../variables' as *;
+// ─── Repo editor ──────────────────────────────────────────────────────────────
+// The `.rl-repo*` card anatomy is defined in scss/relay.scss. This file holds
+// only the screen-specific glue: the SearchSelect/ModuleSelector embedded inside
+// a repo card, the freeze spinner / sha badge, the fetch-error line, the shared
+// `.ic-module-*` chip+dropdown rules (consumed by module_selector.scss) and the
+// parent repo-screen toolbar/list helpers — all on rl design tokens.
 
-// ─── Repo editor card ─────────────────────────────────────────────────────────
-
-.ic-repo-editor {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 14px 16px;
-    background: $surface;
-    border: 1px solid $border;
-    border-radius: 8px;
-    margin-bottom: 10px;
-
-    // Common input / select reset — dark theme
-    input, select {
-        background: $surface-light;
-        border: 1px solid $border;
-        border-radius: 6px;
-        color: $text-primary;
-        font-size: 13px;
-        padding: 6px 10px;
-        outline: none;
-        transition: border-color 0.15s;
-
-        &:focus {
-            border-color: $primary-blue;
-        }
-
-        &:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-        }
-
-        &::placeholder {
-            color: $text-secondary;
-        }
-    }
-
-    select {
-        appearance: none;
-        padding-right: 28px;
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239CA3AF' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 10px center;
-    }
+// Branch SearchSelect sits in the `rl-repo-branch` slot at a fixed width so the
+// main row stays compact, matching the prototype's `rl-repo-bval` footprint.
+.rl-repo-branch .ic-search-select {
+    width: 150px;
+    flex-shrink: 0;
 }
 
-// ─── Fields wrapper ───────────────────────────────────────────────────────────
-
-.ic-repo-editor-fields {
+// ModuleSelector fills the chip slot of a `rl-repo-mods` row.
+.rl-repo-chip {
     flex: 1;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+
+    .ic-module-selector { width: 100%; }
 }
 
-// ─── URL row ──────────────────────────────────────────────────────────────────
+// The "Modules" / "Exclude" labels align to the top of the chip box.
+.rl-repo-mods {
+    align-items: flex-start;
 
-.ic-repo-editor-url {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-
-    .ic-repo-url-input {
-        flex: 1;
-        min-width: 0;
+    .rl-repo-lbl {
+        flex-shrink: 0;
+        width: 56px;
+        padding-top: 8px;
     }
 }
 
-.ic-repo-remove-btn {
-    flex-shrink: 0;
-    background: transparent;
-    border: none;
-    color: $text-secondary;
-    font-size: 16px;
-    line-height: 1;
-    padding: 4px 6px;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: color 0.15s, background 0.15s;
-
-    &:hover {
-        color: $state-error;
-        background: rgba($state-error, 0.1);
-    }
-}
-
-// ─── Inline spinner / error ───────────────────────────────────────────────────
+// ─── Inline spinner / sha badge / fetch error ─────────────────────────────────
 
 .ic-repo-spinner {
-    color: $text-secondary;
-    font-size: 14px;
+    color: var(--rl-muted);
+    font-size: 13px;
     animation: ic-spin 1s linear infinite;
     display: inline-block;
 }
@@ -101,100 +44,30 @@
     to { transform: rotate(360deg); }
 }
 
+.ic-repo-sha {
+    font-family: var(--rl-fm);
+    font-size: 10.5px;
+    letter-spacing: 0.03em;
+}
+
 .ic-repo-fetch-error {
     font-size: 11px;
-    color: $state-error;
-    margin-top: -2px;
+    color: var(--rl-red);
+    font-family: var(--rl-fm);
+    margin-top: 6px;
 }
 
 .ic-repo-fetch-error-link {
     margin-left: 6px;
-    color: $primary-blue;
+    color: var(--rl-green);
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
 
-    &:hover {
-        text-decoration: underline;
-    }
+    &:hover { text-decoration: underline; }
 }
 
-// ─── Branch row ───────────────────────────────────────────────────────────────
-
-.ic-repo-editor-branch,
-.ic-repo-editor-addons {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-}
-
-.ic-repo-field-label {
-    flex-shrink: 0;
-    width: 60px;
-    padding-top: 7px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: $text-secondary;
-}
-
-.ic-repo-editor-branch .ic-search-select {
-    flex: 1;
-    min-width: 0;
-}
-
-// ─── Freeze button ───────────────────────────────────────────────────────────
-
-.ic-repo-freeze-btn {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: transparent;
-    border: 1px solid $border;
-    border-radius: 6px;
-    color: $text-secondary;
-    font-size: 12px;
-    padding: 5px 8px;
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s, background 0.15s;
-    white-space: nowrap;
-
-    &:hover:not(:disabled) {
-        color: $text-primary;
-        border-color: $text-secondary;
-    }
-
-    &:disabled {
-        opacity: 0.35;
-        cursor: not-allowed;
-    }
-
-    &.frozen {
-        color: $state-warning;
-        border-color: rgba($state-warning, 0.4);
-        background: rgba($state-warning, 0.08);
-
-        &:hover:not(:disabled) {
-            color: lighten($state-warning, 10%);
-            border-color: rgba($state-warning, 0.6);
-        }
-    }
-}
-
-.ic-repo-sha {
-    font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
-    font-size: 11px;
-    letter-spacing: 0.03em;
-}
-
-// ─── Addons / module selector ─────────────────────────────────────────────────
-
-.ic-repo-editor-addons {
-    align-items: flex-start;
-    position: relative;
-}
+// ─── Shared module chip + dropdown (used by module_selector.xml) ──────────────
 
 .ic-module-selector {
     flex: 1;
@@ -211,43 +84,45 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     padding: 5px 8px;
-    background: $surface-light;
-    border: 1px solid $border;
-    border-radius: 6px;
+    background: var(--rl-surf);
+    border: 1px solid var(--rl-line2);
+    border-radius: var(--rl-rsm);
     min-height: 34px;
-    min-width: 0;      // prevent flex blowout — chips must NOT grow the sidebar
-    width: 100%;       // constrain to parent regardless of chip content
+    min-width: 0;
+    width: 100%;
     box-sizing: border-box;
     cursor: text;
 
     &:focus-within {
-        border-color: $primary-blue;
+        border-color: var(--rl-green);
+        box-shadow: 0 0 0 3px var(--rl-green-soft);
     }
 }
 
-// Module pill (specific module selected)
+// Module pill (specific module selected) — mono `rl-rchip` look.
 .ic-module-chip {
     display: inline-flex;
     align-items: center;
     gap: 4px;
     padding: 2px 8px;
-    border-radius: 99px;
-    font-size: 12px;
-    background: rgba($primary-blue, 0.15);
-    color: lighten($primary-blue, 20%);
+    border-radius: 5px;
+    font-family: var(--rl-fm);
+    font-size: 10.5px;
+    background: var(--rl-surf3);
+    color: var(--rl-fg2);
     white-space: nowrap;
-    max-width: 100%;       // chip can't be wider than its container
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
 }
 
-// "ALL" pill
+// "ALL" / "NONE" pill (empty-state).
 .ic-module-chip--all {
-    background: rgba($state-ok, 0.15);
-    color: $state-ok;
+    background: var(--rl-green-soft);
+    color: var(--rl-green);
     font-weight: 600;
     letter-spacing: 0.04em;
 }
@@ -257,7 +132,7 @@
     border: none;
     color: inherit;
     opacity: 0.7;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1;
     padding: 0 1px;
     cursor: pointer;
@@ -268,14 +143,15 @@
 .ic-module-reset-all {
     background: none;
     border: none;
-    color: $text-secondary;
-    font-size: 11px;
+    color: var(--rl-muted);
+    font-family: var(--rl-fm);
+    font-size: 10.5px;
     cursor: pointer;
     padding: 2px 4px;
     border-radius: 4px;
     transition: color 0.15s;
 
-    &:hover { color: $text-primary; }
+    &:hover { color: var(--rl-fg); }
 }
 
 input.ic-module-input {
@@ -283,22 +159,25 @@ input.ic-module-input {
     background: transparent;
     padding: 2px 4px;
     flex: 1;
-    min-width: 60px;   // smaller minimum so chips don't force the container wider
-    max-width: 100%;   // never overflow parent
-    font-size: 12px;
-}
+    min-width: 60px;
+    max-width: 100%;
+    color: var(--rl-fg);
+    font-family: var(--rl-fm);
+    font-size: 11px;
+    outline: none;
 
-// ─── Module dropdown ──────────────────────────────────────────────────────────
+    &::placeholder { color: var(--rl-faint); }
+}
 
 .ic-module-dropdown {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
     right: 0;
-    background: $surface-light;
-    border: 1px solid $border;
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    background: var(--rl-surf2);
+    border: 1px solid var(--rl-line2);
+    border-radius: var(--rl-rsm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     z-index: 100;
     max-height: 220px;
     overflow-y: auto;
@@ -306,77 +185,48 @@ input.ic-module-input {
 
 .ic-module-option {
     padding: 7px 12px;
-    font-size: 12px;
-    color: $text-primary;
+    font-family: var(--rl-fm);
+    font-size: 11.5px;
+    color: var(--rl-fg);
     cursor: pointer;
-    border-radius: 4px;
 
-    &:hover { background: rgba($primary-blue, 0.12); }
+    &:hover { background: var(--rl-surf3); }
 
     &--create {
-        color: $primary-blue;
+        color: var(--rl-green);
         font-weight: 500;
     }
 
     &--loading,
     &--empty {
-        color: $text-secondary;
+        color: var(--rl-muted);
         cursor: default;
 
         &:hover { background: none; }
     }
 
     &--error {
-        color: $state-error;
+        color: var(--rl-red);
         cursor: default;
 
         &:hover { background: none; }
     }
 }
 
-// ─── Repos list wrapper (replaces old table/grid) ─────────────────────────────
+// ─── Parent repo-screen helpers (repos list / toolbar) ────────────────────────
 
 .ic-repos-list {
     display: flex;
     flex-direction: column;
-    padding: 0 16px 8px 0;
+    gap: 10px;
 
     .ic-repos-empty {
-        color: $text-secondary;
-        font-size: 13px;
+        color: var(--rl-muted);
+        font-family: var(--rl-fm);
+        font-size: 12px;
         padding: 20px 0;
         text-align: center;
     }
-
-    // ── Compact horizontal layout: URL + branch side-by-side, addons below ──
-    .ic-repo-editor-fields {
-        flex-direction: row;
-        flex-wrap: wrap;
-        align-items: center;
-    }
-
-    .ic-repo-editor-url { flex: 1; }
-
-    .ic-repo-editor-branch {
-        flex: 0 0 auto;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-
-        .ic-repo-field-label { display: none; }
-
-        .ic-search-select {
-            width: 120px;
-            flex-shrink: 0;
-        }
-
-        select,
-        input { width: 100%; }
-    }
-
-    // Error message and addons selector always occupy their own line
-    .ic-repo-fetch-error,
-    .ic-repo-editor-addons { flex: 0 0 100%; }
 }
 
 .ic-repos-toolbar {
@@ -390,25 +240,28 @@ input.ic-module-input {
 .ic-repos-search {
     margin-left: auto;
     width: 200px;
-    padding: 5px 10px;
-    border-radius: 6px;
-    border: 1px solid $border;
-    background: $surface-light;
-    color: $text-primary;
+    padding: 6px 10px;
+    border-radius: var(--rl-rsm);
+    border: 1px solid var(--rl-line2);
+    background: var(--rl-surf);
+    color: var(--rl-fg);
+    font-family: var(--rl-fm);
     font-size: 12px;
 
-    &::placeholder { color: $text-secondary; }
+    &::placeholder { color: var(--rl-faint); }
     &:focus {
         outline: none;
-        border-color: $primary-blue;
+        border-color: var(--rl-green);
+        box-shadow: 0 0 0 3px var(--rl-green-soft);
     }
 }
 
 .ic-btn-freeze-all {
     background: transparent;
-    border: 1px solid $border;
-    border-radius: 6px;
-    color: $text-secondary;
+    border: 1px solid var(--rl-line2);
+    border-radius: var(--rl-rsm);
+    color: var(--rl-muted);
+    font-family: var(--rl-fb);
     font-size: 12px;
     padding: 6px 12px;
     cursor: pointer;
@@ -418,8 +271,8 @@ input.ic-module-input {
     gap: 5px;
 
     &:hover:not(:disabled) {
-        color: $state-warning;
-        border-color: rgba($state-warning, 0.5);
+        color: var(--rl-amber);
+        border-color: rgba(239, 165, 62, 0.5);
     }
 
     &:disabled {
@@ -428,17 +281,18 @@ input.ic-module-input {
     }
 
     &.unfreeze:hover:not(:disabled) {
-        color: $text-primary;
-        border-color: $text-secondary;
+        color: var(--rl-fg);
+        border-color: var(--rl-line2);
     }
 }
 
 .ic-btn-add-repo {
     align-self: flex-start;
     background: transparent;
-    border: 1px dashed $border;
-    border-radius: 6px;
-    color: $text-secondary;
+    border: 1px dashed var(--rl-line2);
+    border-radius: var(--rl-rsm);
+    color: var(--rl-muted);
+    font-family: var(--rl-fb);
     font-size: 12px;
     padding: 6px 12px;
     cursor: pointer;
@@ -448,7 +302,7 @@ input.ic-module-input {
     gap: 5px;
 
     &:hover {
-        border-color: $primary-blue;
-        color: $primary-blue;
+        border-color: var(--rl-green);
+        color: var(--rl-green);
     }
 }

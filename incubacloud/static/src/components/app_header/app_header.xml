@@ -6,24 +6,16 @@
 
             <!-- Logo -->
             <div class="ic-header-logo" t-on-click="goHome">
-                <svg class="ic-header-logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="28" height="28">
-                    <defs><linearGradient id="ic-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#2fc78c"/><stop offset="100%" stop-color="#14a06e"/></linearGradient></defs>
-                    <rect width="256" height="256" rx="60" fill="url(#ic-logo-grad)"/>
-                    <g transform="translate(5, 18) scale(2)">
-                        <g fill="#FFFFFF">
-                            <circle cx="38" cy="68" r="15"/>
-                            <circle cx="60" cy="49" r="24"/>
-                            <circle cx="82" cy="62" r="19"/>
-                            <rect x="22" y="66" width="76" height="19" rx="9"/>
-                        </g>
-                        <g fill="url(#ic-logo-grad)">
-                            <rect x="51" y="44" width="17" height="7" rx="2"/>
-                            <rect x="48" y="53" width="25" height="7" rx="2"/>
-                            <rect x="44" y="62" width="32" height="7" rx="2"/>
-                        </g>
-                    </g>
+                <svg class="ic-header-logo-icon" viewBox="0 0 48 48" fill="none" width="26" height="26">
+                    <mask id="ic-logo-mask">
+                        <path d="M15.5 34.5h17.6a8.3 8.3 0 0 0 .9-16.55A10.4 10.4 0 0 0 13.6 21 7.2 7.2 0 0 0 15.5 34.5Z" fill="#fff"/>
+                        <rect x="18.4" y="27.7" width="13.4" height="2.7" rx="1.35" fill="#000"/>
+                        <rect x="20.4" y="23.8" width="9.4" height="2.7" rx="1.35" fill="#000"/>
+                        <rect x="22.4" y="19.9" width="5.4" height="2.7" rx="1.35" fill="#000"/>
+                    </mask>
+                    <rect width="48" height="48" fill="#2fc78c" mask="url(#ic-logo-mask)"/>
                 </svg>
-                <span class="ic-header-logo-text">IncubaCloud</span>
+                <span class="ic-header-logo-text">Incuba<i class="ic-logo-accent">Cloud</i></span>
             </div>
 
             <!-- Breadcrumb / Project switcher -->
@@ -74,6 +66,38 @@
                 </t>
             </div>
 
+            <!-- Global search (⌘K) -->
+            <div class="ic-header-search-wrap">
+                <i class="fa fa-search ic-header-search-icon" aria-hidden="true"/>
+                <input type="text" class="ic-header-search-input"
+                       placeholder="Search instances, hosts, projects…"
+                       t-att-value="state.globalSearch"
+                       t-on-input="onGlobalSearch"
+                       t-on-focus="onSearchFocus"
+                       aria-label="Global search"/>
+                <span class="ic-header-search-kbd" aria-hidden="true">⌘K</span>
+                <t t-if="state.showSearch">
+                    <div class="ic-header-search-dropdown">
+                        <t t-if="state.searchLoading and !state.searchResults.length">
+                            <div class="ic-header-search-msg">Searching…</div>
+                        </t>
+                        <t t-elif="!state.searchResults.length">
+                            <div class="ic-header-search-msg">No results</div>
+                        </t>
+                        <t t-else="">
+                            <t t-foreach="state.searchResults" t-as="r" t-key="r.type + '-' + r_index">
+                                <button class="ic-header-search-item"
+                                        t-on-click="() => this.goToSearchResult(r)">
+                                    <t t-out="env.icon(searchResultIcon(r.type), 15)"/>
+                                    <span class="ic-header-search-label" t-esc="r.label"/>
+                                    <span class="ic-header-search-sub" t-esc="r.sublabel"/>
+                                </button>
+                            </t>
+                        </t>
+                    </div>
+                </t>
+            </div>
+
             <!-- Spacer -->
             <div class="ic-header-spacer"/>
 
@@ -81,7 +105,7 @@
             <t t-if="env.permissions?.can_edit_instance">
                 <button class="ic-header-icon-btn" t-on-click="openJobs" title="Job History"
                         aria-label="Job history">
-                    <i class="fa fa-clock-o" aria-hidden="true"/>
+                    <t t-out="env.icon('clock', 15)"/>
                 </button>
             </t>
 
@@ -145,20 +169,14 @@
             <div class="ic-form-grid" style="margin: 12px 0;">
                 <div class="ic-form-row">
                     <label>Email notifications</label>
-                    <select t-on-change="(ev) => { state.notifLevel = ev.target.value; }">
-                        <option value="all"
-                                t-att-selected="state.notifLevel === 'all'">
-                            All events (success + failure)
-                        </option>
-                        <option value="failures"
-                                t-att-selected="state.notifLevel === 'failures'">
-                            Failures only
-                        </option>
-                        <option value="none"
-                                t-att-selected="state.notifLevel === 'none'">
-                            None
-                        </option>
-                    </select>
+                    <RlSelect value="state.notifLevel"
+                              ariaLabel="'Email notifications'"
+                              options="[
+                                  { value: 'all',      label: 'All events (success + failure)' },
+                                  { value: 'failures', label: 'Failures only' },
+                                  { value: 'none',     label: 'None' },
+                              ]"
+                              onChange="(value) => { state.notifLevel = value; }"/>
                 </div>
             </div>
             <div class="ic-confirm-actions">

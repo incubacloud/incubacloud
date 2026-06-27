@@ -1,421 +1,117 @@
-// ── Settings Page ─────────────────────────────────────────────────────────────
+// ── Settings Page (Relay) ─────────────────────────────────────────────────────
+// Structure + primitives come from relay.scss (rl-page, rl-tabs, rl-saas-fsec,
+// rl-fgrid, rl-frow, rl-ftoggle, rl-sw, rl-wiz, rl-ghcard, rl-formfoot). Only
+// the screen-specific bits below (GitHub wizard inner content) live here.
 
-.ic-settings {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    padding: 24px;
-    background: $background;
-    color: $text-primary;
-    overflow: hidden;
+.ic-app {
 
-    // ── Section ───────────────────────────────────────────────────────────────
+    .rl-settings-body { max-width: 860px; }
 
-    .ic-settings-section {
-        margin-top: 24px;
-        max-width: 860px;
-    }
-
-    .ic-settings-section-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 20px;
-    }
-
-    .ic-settings-section-title {
-        margin: 0 0 4px;
-        font-size: 15px;
-        font-weight: 600;
-        color: $text-primary;
-    }
-
-    .ic-settings-section-desc {
-        margin: 0;
-        font-size: 12px;
-        color: $text-secondary;
-    }
-
-    // ── Buttons ───────────────────────────────────────────────────────────────
-
-    .ic-btn {
-        border-radius: 6px;
-        padding: 7px 16px;
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: opacity 0.15s, background 0.15s;
-        white-space: nowrap;
-
-        &:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-        }
-    }
-
-    .ic-btn-primary {
-        background: $primary-blue;
-        color: #fff;
-        border: none;
-
-        &:hover:not(:disabled) { opacity: 0.88; }
-    }
-
-    .ic-btn-secondary {
-        background: rgba($primary-blue, 0.1);
-        border: 1px solid rgba($primary-blue, 0.35);
-        color: $primary-blue;
-
-        &:hover:not(:disabled) {
-            background: rgba($primary-blue, 0.18);
-            border-color: $primary-blue;
-        }
-    }
-
-    .ic-btn-danger {
-        background: rgba($state-error, 0.1);
-        border: 1px solid rgba($state-error, 0.35);
-        color: $state-error;
-
-        &:hover:not(:disabled) {
-            background: rgba($state-error, 0.18);
-            border-color: $state-error;
-        }
-    }
-
-    .ic-btn-github {
-        background: rgba($primary-blue, 0.1);
-        border: 1px solid rgba($primary-blue, 0.35);
-        color: $primary-blue;
-        flex-shrink: 0;
-        align-self: flex-start;
-
-        &:hover { background: rgba($primary-blue, 0.18); border-color: $primary-blue; }
-    }
-
-    .ic-btn-sm {
-        padding: 4px 10px;
-        font-size: 12px;
-    }
-
-    // ── Input row (input + inline button) ────────────────────────────────────
-
-    .ic-input-row {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-
-        input { flex: 1; }
-    }
-
-    // ── Inline badge ─────────────────────────────────────────────────────────
-
-    .ic-badge {
-        display: inline-block;
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        padding: 2px 6px;
-        border-radius: 999px;
-        vertical-align: middle;
-        margin-left: 6px;
-
-        &--warning {
-            background: rgba($state-warning, 0.15);
-            color: $state-warning;
-            border: 1px solid rgba($state-warning, 0.3);
-        }
-    }
-
-    // ── Hint text ─────────────────────────────────────────────────────────────
-
-    .ic-settings-hint {
-        margin: 4px 0 0;
-        font-size: 11px;
-        color: $text-secondary;
-        font-style: italic;
-    }
-
-    // ── PEM textarea ──────────────────────────────────────────────────────────
-
-    .ic-settings-pem {
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 12px;
-        line-height: 1.5;
-    }
-
-    // ── PAT section (independent of App) ────────────────────────────────────
-
-    .ic-settings-separator {
-        border: none;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        margin: 24px 0 16px;
-    }
-
-    .ic-settings-subtitle {
-        color: $text-primary;
-        font-size: 14px;
-        font-weight: 600;
-        margin: 0 0 4px;
-    }
-
-    .ic-settings-desc {
-        color: $text-secondary;
-        font-size: 12px;
-        margin: 0 0 12px;
-    }
-
-    .ic-pat-row {
-        display: flex;
-        gap: 12px;
-        align-items: center;
-
-        input {
-            flex: 1;
-            background: $surface-light;
-            border: 1px solid $border;
-            color: $text-primary;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 13px;
-
-            &::placeholder { color: $text-secondary; }
-            &:focus {
-                outline: none;
-                border-color: $primary-blue;
-            }
-        }
-
-        .ic-btn-save {
-            white-space: nowrap;
-        }
-    }
-
-    // ── Form actions ─────────────────────────────────────────────────────────
-
-    .ic-settings-actions {
-        display: flex;
-        gap: 10px;
-        margin-top: 20px;
-    }
-
-    // ── GitHub wizard ─────────────────────────────────────────────────────────
-
-    .ic-gh-steps {
-        display: flex;
-        align-items: center;
-        gap: 0;
-        margin-bottom: 24px;
-    }
-
-    .ic-gh-step {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        color: $text-secondary;
-        font-size: 12px;
-        font-weight: 500;
-
-        .ic-gh-step-num {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            border: 2px solid $border;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 11px;
-            font-weight: 700;
-            flex-shrink: 0;
-            transition: all 0.2s;
-        }
-
-        &.active {
-            color: $primary-blue;
-
-            .ic-gh-step-num {
-                border-color: $primary-blue;
-                background: $primary-blue;
-                color: #fff;
-            }
-        }
-
-        &.done {
-            color: $state-ok;
-
-            .ic-gh-step-num {
-                border-color: $state-ok;
-                background: $state-ok;
-                color: #fff;
-            }
-        }
-    }
-
-    .ic-gh-step-connector {
-        flex: 1;
-        height: 2px;
-        background: $border;
-        margin: 0 8px;
-        max-width: 60px;
-    }
-
-    // ── Step cards ───────────────────────────────────────────────────────────
-
-    .ic-gh-card {
-        display: flex;
-        gap: 20px;
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid $border;
-        background: $surface-light;
-        margin-bottom: 16px;
-
-        &--active {
-            border-color: rgba($primary-blue, 0.4);
-            background: rgba($primary-blue, 0.04);
-        }
-
-        &--connected {
-            border-color: rgba($state-ok, 0.35);
-            background: rgba($state-ok, 0.04);
-        }
-    }
-
-    .ic-gh-card-icon {
-        font-size: 28px;
-        color: $text-secondary;
-        width: 36px;
-        flex-shrink: 0;
-        text-align: center;
-        padding-top: 2px;
-
-        &--pending { color: $state-warning; }
-        &--ok { color: $state-ok; }
-    }
-
-    .ic-gh-card-body {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .ic-gh-card-title {
-        margin: 0 0 8px;
-        font-size: 14px;
-        font-weight: 600;
-        color: $text-primary;
-    }
-
-    .ic-gh-card-desc {
-        margin: 0 0 12px;
-        font-size: 12px;
-        color: $text-secondary;
-        line-height: 1.6;
-    }
-
-    .ic-gh-card-warning {
-        margin: 0 0 12px;
-        font-size: 12px;
-        color: $state-warning;
-        background: rgba($state-warning, 0.08);
-        border: 1px solid rgba($state-warning, 0.2);
-        border-radius: 6px;
-        padding: 8px 12px;
-    }
-
-    .ic-gh-card-hint {
-        margin: 8px 0 0;
-        font-size: 11px;
-        color: $text-secondary;
-        font-style: italic;
-    }
-
-    .ic-gh-card-actions {
+    // ── GitHub feature card inner content (extends .rl-ghcard) ────────────────
+    .rl-set-actions {
         display: flex;
         gap: 10px;
         align-items: center;
         flex-wrap: wrap;
     }
 
-    .ic-gh-install-hint {
+    .rl-set-warning {
+        margin: 0 0 12px;
         font-size: 12px;
-        color: $text-secondary;
-        background: rgba($primary-blue, 0.06);
-        border-left: 3px solid rgba($primary-blue, 0.4);
+        color: var(--rl-amber);
+        background: var(--rl-amber-soft);
+        border: 1px solid rgba(239, 165, 62, 0.3);
+        border-radius: var(--rl-rsm);
         padding: 8px 12px;
-        border-radius: 0 4px 4px 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .rl-set-hint {
+        margin: 8px 0 0;
+        font-size: 11px;
+        color: var(--rl-faint);
+        font-style: italic;
+    }
+
+    .rl-set-hintbox {
+        font-size: 12px;
+        color: var(--rl-muted);
+        background: var(--rl-surf);
+        border-left: 3px solid var(--rl-green);
+        padding: 8px 12px;
+        border-radius: 0 var(--rl-rsm) var(--rl-rsm) 0;
         margin-bottom: 14px;
         line-height: 1.5;
 
-        .fa { margin-right: 6px; color: $primary-blue; }
+        .fa { margin-right: 6px; color: var(--rl-green); }
+        strong { color: var(--rl-fg2); }
     }
 
-    // ── Status grid (step 3) ─────────────────────────────────────────────────
-
-    .ic-gh-status-grid {
+    // ── Status grid (connected step) ─────────────────────────────────────────
+    .rl-set-status {
         display: grid;
-        grid-template-columns: 120px 1fr;
+        grid-template-columns: 130px 1fr;
         gap: 6px 12px;
-        margin-bottom: 16px;
+        margin: 8px 0 14px;
         font-size: 12px;
     }
 
-    .ic-gh-status-label {
-        color: $text-secondary;
-        font-weight: 500;
+    .rl-set-status-k {
+        color: var(--rl-muted);
+        font-family: var(--rl-fm);
         align-self: center;
     }
 
-    .ic-gh-status-value {
-        color: $text-primary;
-        font-family: 'Courier New', Courier, monospace;
-        font-size: 11px;
+    .rl-set-status-v {
+        color: var(--rl-fg);
+        font-family: var(--rl-fm);
+        font-size: 11.5px;
         align-self: center;
-
-        .fa { margin-right: 4px; color: $state-ok; }
+        word-break: break-all;
     }
 
-    .ic-gh-inline-msg {
+    .rl-set-inline-msg {
         margin: 10px 0 0;
         font-size: 12px;
         padding: 6px 10px;
-        border-radius: 5px;
+        border-radius: var(--rl-rsm);
 
-        &--success {
-            color: $state-ok;
-            background: rgba($state-ok, 0.08);
-        }
-        &--error {
-            color: $state-error;
-            background: rgba($state-error, 0.08);
-        }
+        &--success { color: var(--rl-green); background: var(--rl-green-soft); }
+        &--info    { color: #9fd6e2; background: rgba(79, 182, 198, 0.1); }
+        &--error   { color: #ff9b9d; background: var(--rl-red-soft); }
     }
 
-    // ── Manual toggle ─────────────────────────────────────────────────────────
-
-    .ic-gh-manual-toggle {
+    // ── Manual configuration (collapsible) ───────────────────────────────────
+    .rl-set-manual-toggle {
         display: inline-flex;
         align-items: center;
         gap: 6px;
         font-size: 12px;
-        color: $text-secondary;
+        color: var(--rl-muted);
         cursor: pointer;
-        padding: 6px 0;
+        padding: 12px 0 6px;
         user-select: none;
         transition: color 0.15s;
 
-        &:hover { color: $text-primary; }
+        &:hover { color: var(--rl-fg); }
 
         .fa { font-size: 10px; }
     }
 
-    .ic-gh-manual {
+    .rl-set-manual {
         margin-top: 12px;
         padding: 16px;
-        border: 1px solid $border;
-        border-radius: 8px;
-        background: $surface-light;
+        border: 1px solid var(--rl-line);
+        border-radius: var(--rl-r);
+        background: var(--rl-surf);
+    }
+
+    .rl-set-pem {
+        font-family: var(--rl-fm) !important;
+        font-size: 12px;
+        line-height: 1.5;
     }
 
 }

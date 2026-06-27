@@ -4,7 +4,7 @@
 <t t-name="incubacloud.TruncationBanner">
     <t t-if="props.truncated">
         <div class="ic-truncation-banner" role="status">
-            <i class="fa fa-exclamation-triangle"/>
+            <t t-out="env.icon('alert', 15)"/>
             <span>
                 Showing the first <t t-esc="props.limit"/>
                 of <t t-esc="props.total"/>

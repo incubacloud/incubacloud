@@ -136,6 +136,41 @@ export class JobDrawer extends Component {
         }[job.state] || "";
     }
 
+    /**
+     * View-only mapping of a job state to the Relay timeline-dot class
+     * (``rl-tl-dot`` modifier): ``done`` / ``failed`` / ``queued`` (amber) /
+     * ``running`` (amber, pulsing). Picks the dot colour only, no logic.
+     * @param {Object} job the job record
+     * @returns {string} one of "done" | "failed" | "queued" | "running"
+     */
+    dotClass(job) {
+        return {
+            done: "done",
+            failed: "failed",
+            cancelled: "failed",
+            started: "running",
+            blocked: "queued",
+            pending: "queued",
+            enqueued: "queued",
+            wait_dependencies: "queued",
+        }[job.state] || "queued";
+    }
+
+    /**
+     * View-only mapping of a job state to the Relay ``rl-tl-state`` pill class
+     * (``done`` / ``failed`` / ``queued``). Used to colour the small state tag
+     * shown next to the job name; mirrors :meth:`dotClass` colour buckets.
+     * @param {Object} job the job record
+     * @returns {string} one of "done" | "failed" | "queued"
+     */
+    stateClass(job) {
+        return {
+            done: "done",
+            failed: "failed",
+            cancelled: "failed",
+        }[job.state] || "queued";
+    }
+
     stateName(job) {
         return {
             pending: "Pending",

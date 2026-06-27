@@ -1,6 +1,7 @@
-@use "../../scss/variables" as *;
-
 // ─── SearchSelect ─────────────────────────────────────────────────────────────
+// Generic searchable single-select, restyled onto the rl design tokens.
+// The dropdown is position:fixed (coords injected from _computeDropdownStyle)
+// so it escapes any overflow:hidden ancestor (e.g. a modal body / repo card).
 
 .ic-search-select {
     position: relative;
@@ -19,18 +20,20 @@
         flex: 1;
         min-width: 0;
         padding: 6px 28px 6px 10px; // right room for chevron/spinner
-        background: $surface-light;
-        border: 1px solid $border;
-        border-radius: 6px;
-        color: $text-primary;
-        font-size: 13px;
-        transition: border-color 0.15s;
+        background: var(--rl-surf);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        color: var(--rl-fg);
+        font-family: var(--rl-fm);
+        font-size: 12px;
+        transition: border-color 0.15s, box-shadow 0.15s;
 
-        &::placeholder { color: $text-secondary; }
+        &::placeholder { color: var(--rl-faint); }
 
         &:focus {
             outline: none;
-            border-color: $primary-blue;
+            border-color: var(--rl-green);
+            box-shadow: 0 0 0 3px var(--rl-green-soft);
         }
 
         &:disabled {
@@ -44,49 +47,48 @@
         position: absolute;
         right: 8px;
         pointer-events: none;
-        color: $text-secondary;
+        color: var(--rl-faint);
         font-size: 11px;
     }
 
     &__spinner {
-        // fa-spin already provides the animation — no extra keyframes needed
+        // fa-spin already provides the animation
         top: 50%;
         transform: translateY(-50%);
     }
 
     &--open &__input {
-        border-color: $primary-blue;
+        border-color: var(--rl-green);
+        box-shadow: 0 0 0 3px var(--rl-green-soft);
         border-bottom-left-radius: 0;
         border-bottom-right-radius: 0;
     }
 
     // ── Dropdown ──────────────────────────────────────────────────────────
-    // position:fixed + coordinates are set via inline style (_computeDropdownStyle)
-    // so the dropdown escapes any overflow:hidden/auto ancestor (e.g. modal body).
+    // position:fixed + inline coords (see _computeDropdownStyle in the .js).
 
     &__dropdown {
         position: fixed; // fallback; overridden by inline style from JS
-        background: $surface-light;
-        border: 1px solid $primary-blue;
+        background: var(--rl-surf2);
+        border: 1px solid var(--rl-green);
         border-top: none;
-        border-bottom-left-radius: 6px;
-        border-bottom-right-radius: 6px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        border-bottom-left-radius: var(--rl-rsm);
+        border-bottom-right-radius: var(--rl-rsm);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
         z-index: 9999;
         max-height: 220px;
         overflow-y: auto;
 
-        // Match the project's thin scrollbar style
         scrollbar-width: thin;
-        scrollbar-color: $border transparent;
+        scrollbar-color: var(--rl-line2) transparent;
 
         &::-webkit-scrollbar { width: 6px; }
         &::-webkit-scrollbar-track { background: transparent; }
         &::-webkit-scrollbar-thumb {
-            background: $border;
+            background: var(--rl-line2);
             border-radius: 3px;
 
-            &:hover { background: lighten($border, 10%); }
+            &:hover { background: var(--rl-faint); }
         }
     }
 
@@ -94,38 +96,35 @@
 
     &__option {
         padding: 7px 12px;
-        font-size: 13px;
-        color: $text-primary;
+        font-family: var(--rl-fm);
+        font-size: 12px;
+        color: var(--rl-fg);
         cursor: pointer;
 
-        &:hover { background: rgba($primary-blue, 0.12); }
+        &:hover { background: var(--rl-surf3); }
 
         &--selected {
-            color: $primary-blue;
+            color: var(--rl-green);
             font-weight: 600;
         }
 
         &--empty {
-            color: $text-secondary;
+            color: var(--rl-muted);
             font-style: italic;
         }
 
         &--create {
-            color: $primary-blue;
+            color: var(--rl-green);
             font-weight: 500;
         }
 
         &--hint {
-            color: $text-secondary;
+            color: var(--rl-muted);
             cursor: default;
-            font-size: 12px;
+            font-size: 11.5px;
             padding: 8px 12px;
 
             &:hover { background: none; }
         }
     }
-}
-
-@keyframes ic-spin {
-    to { transform: rotate(360deg); }
 }

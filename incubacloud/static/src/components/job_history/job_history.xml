@@ -4,46 +4,53 @@
 
     <!-- ── Page header ── -->
     <t t-if="!props.embedded">
-        <div class="history-header">
-            <div class="history-header-left">
-                <h1 class="history-title">Job History</h1>
+        <div class="rl-phead">
+            <div class="rl-htext">
+                <h1 class="rl-ptitle">Job History</h1>
             </div>
-            <button class="refresh-btn" t-on-click="loadHistory">↻ Refresh</button>
+            <div class="rl-pactions">
+                <button class="rl-btn rl-btn-ghost" t-on-click="loadHistory">
+                    <t t-out="env.icon('refresh', 15)"/> Refresh
+                </button>
+            </div>
         </div>
     </t>
 
     <!-- ── Alert context banner ── -->
     <t t-if="state.alertMode">
-        <div class="alert-mode-banner">
-            Showing job linked to alert ·
-            <button class="btn-link" t-on-click="clearAlertMode">Show all jobs</button>
+        <div class="rl-sevban info">
+            <span class="rl-si2"><t t-out="env.icon('clock', 18)"/></span>
+            <div>
+                <div class="rl-at">Showing job linked to alert</div>
+                <button class="jh-link" t-on-click="clearAlertMode">Show all jobs</button>
+            </div>
         </div>
     </t>
 
 
     <!-- ── Filters ── -->
-    <div t-att-class="'history-filters' + (state.alertMode ? ' filters-hidden' : '')">
+    <div t-att-class="'jh-filters' + (state.alertMode ? ' jh-filters-hidden' : '')">
 
         <!-- Category chips -->
-        <div class="filter-group">
-            <span class="filter-label">Category</span>
-            <div class="state-chips">
-                <button t-att-class="'state-chip' + (state.filter.job_category === 'operational' ? ' active' : '')"
+        <div class="jh-filter-group">
+            <span class="jh-filter-label">Category</span>
+            <div class="jh-chips">
+                <button t-att-class="'jh-chip' + (state.filter.job_category === 'operational' ? ' active' : '')"
                         t-on-click="() => this.setCategory('operational')">Operational</button>
-                <button t-att-class="'state-chip' + (state.filter.job_category === 'admin' ? ' active' : '')"
+                <button t-att-class="'jh-chip' + (state.filter.job_category === 'admin' ? ' active' : '')"
                         t-on-click="() => this.setCategory('admin')">Admin</button>
-                <button t-att-class="'state-chip' + (state.filter.job_category === 'all' ? ' active' : '')"
+                <button t-att-class="'jh-chip' + (state.filter.job_category === 'all' ? ' active' : '')"
                         t-on-click="() => this.setCategory('all')">All</button>
             </div>
         </div>
 
         <!-- State chips -->
-        <div class="filter-group">
-            <span class="filter-label">State</span>
-            <div class="state-chips">
+        <div class="jh-filter-group">
+            <span class="jh-filter-label">State</span>
+            <div class="jh-chips">
                 <t t-foreach="allStateKeys" t-as="s" t-key="s">
                     <button
-                        t-att-class="'state-chip state-chip-' + s + (state.filter.states.includes(s) ? ' active' : '')"
+                        t-att-class="'jh-chip jh-chip-' + s + (state.filter.states.includes(s) ? ' active' : '')"
                         t-on-click="() => this.toggleState(s)">
                         <t t-esc="stateLabel(s)"/>
                     </button>
@@ -52,9 +59,9 @@
         </div>
 
         <!-- Host + Instance + User -->
-        <div class="filter-row">
-            <div class="filter-group filter-group-search">
-                <span class="filter-label">Host</span>
+        <div class="jh-filter-row">
+            <div class="jh-filter-group jh-filter-group-search">
+                <span class="jh-filter-label">Host</span>
                 <SearchSelect options="hostOptions"
                               value="state.filter.host_id"
                               onChange.bind="setHost"
@@ -62,8 +69,8 @@
                               emptyLabel="'All hosts'"/>
             </div>
 
-            <div class="filter-group filter-group-search">
-                <span class="filter-label">Instance</span>
+            <div class="jh-filter-group jh-filter-group-search">
+                <span class="jh-filter-label">Instance</span>
                 <SearchSelect options="instanceOptions"
                               value="state.filter.instance_id"
                               onChange.bind="setInstance"
@@ -71,8 +78,8 @@
                               emptyLabel="'All instances'"/>
             </div>
 
-            <div class="filter-group filter-group-search" t-if="state.users.length > 1">
-                <span class="filter-label">User</span>
+            <div class="jh-filter-group jh-filter-group-search" t-if="state.users.length > 1">
+                <span class="jh-filter-label">User</span>
                 <SearchSelect options="userOptions"
                               value="state.filter.user_id"
                               onChange.bind="setUser"
@@ -82,24 +89,24 @@
         </div>
 
         <!-- Dates -->
-        <div class="filter-row">
-            <div class="filter-group">
-                <span class="filter-label">From</span>
-                <input type="datetime-local" class="filter-input"
+        <div class="jh-filter-row">
+            <div class="jh-filter-group">
+                <span class="jh-filter-label">From</span>
+                <input type="datetime-local" class="jh-filter-input"
                        t-att-value="state.filter.date_from"
                        t-on-change="onDateFromChange"/>
             </div>
 
-            <div class="filter-group">
-                <span class="filter-label">To</span>
-                <input type="datetime-local" class="filter-input"
+            <div class="jh-filter-group">
+                <span class="jh-filter-label">To</span>
+                <input type="datetime-local" class="jh-filter-input"
                        t-att-value="state.filter.date_to"
                        t-on-change="onDateToChange"/>
             </div>
 
-            <div class="filter-actions">
-                <button class="btn-apply" t-on-click="applyFilter">Apply</button>
-                <button class="btn-reset" t-on-click="resetFilter">Reset</button>
+            <div class="jh-filter-actions">
+                <button class="rl-btn rl-btn-primary rl-btn-sm" t-on-click="applyFilter">Apply</button>
+                <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="resetFilter">Reset</button>
             </div>
         </div>
     </div>
@@ -120,38 +127,39 @@
     <t t-else="">
 
         <!-- ── Gantt ── -->
-        <div class="gantt-section">
-            <div class="gantt-section-header">
-                <span class="gantt-title">Timeline</span>
-                <div class="gantt-window-btns">
-                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 1 ? ' active' : '')"
+        <div class="rl-card jh-gantt">
+            <div class="jh-gantt-head">
+                <span class="rl-tlh">Timeline</span>
+                <div class="jh-gantt-wins">
+                    <button t-att-class="'jh-win' + (state.ganttHours === 1 ? ' active' : '')"
                             t-on-click="() => this.setGanttWindow(1)">1h</button>
-                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 6 ? ' active' : '')"
+                    <button t-att-class="'jh-win' + (state.ganttHours === 6 ? ' active' : '')"
                             t-on-click="() => this.setGanttWindow(6)">6h</button>
-                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 24 ? ' active' : '')"
+                    <button t-att-class="'jh-win' + (state.ganttHours === 24 ? ' active' : '')"
                             t-on-click="() => this.setGanttWindow(24)">24h</button>
-                    <button t-att-class="'gantt-win-btn' + (state.ganttHours === 168 ? ' active' : '')"
+                    <button t-att-class="'jh-win' + (state.ganttHours === 168 ? ' active' : '')"
                             t-on-click="() => this.setGanttWindow(168)">7d</button>
                 </div>
             </div>
 
             <t t-if="!ganttJobs.length">
-                <div class="ic-empty-state">
-                    <i class="fa fa-calendar-o ic-empty-icon"/>
-                    <div class="ic-empty-title">No jobs in this time window</div>
-                    <div class="ic-empty-hint">Try expanding the time range or adjusting filters.</div>
-                    <button class="ic-empty-action" t-on-click="() => this.setGanttWindow(168)">
+                <div class="rl-stub">
+                    <span class="rl-si"><i class="fa fa-calendar-o"/></span>
+                    <h3>No jobs in this time window</h3>
+                    <p>Try expanding the time range or adjusting filters.</p>
+                    <button class="rl-btn rl-btn-ghost rl-btn-sm" style="margin-top:12px;"
+                            t-on-click="() => this.setGanttWindow(168)">
                         <i class="fa fa-expand"/> Show last 7 days
                     </button>
                 </div>
             </t>
             <t t-else="">
                 <!-- X-axis ticks -->
-                <div class="gantt-axis">
-                    <div class="gantt-label-col"/>
-                    <div class="gantt-track-col">
+                <div class="jh-gantt-axis">
+                    <div class="jh-gantt-label-col"/>
+                    <div class="jh-gantt-track-col">
                         <t t-foreach="ganttTicks" t-as="tick" t-key="tick.pct">
-                            <span class="gantt-tick"
+                            <span class="jh-gantt-tick"
                                   t-att-style="'left:' + tick.pct + '%'">
                                 <t t-esc="tick.label"/>
                             </span>
@@ -160,28 +168,28 @@
                 </div>
 
                 <!-- Rows -->
-                <div class="gantt-body">
+                <div class="jh-gantt-body">
                     <t t-foreach="ganttJobs" t-as="job" t-key="job.id">
-                        <div class="gantt-row">
-                            <div class="gantt-label" t-att-title="job.name + ' · ' + job.host">
-                                <span t-att-class="'state-dot state-dot-' + job.state"/>
-                                <div class="gantt-label-lines">
-                                    <span class="gantt-label-name" t-esc="job.name"/>
+                        <div class="jh-gantt-row">
+                            <div class="jh-gantt-label" t-att-title="job.name + ' · ' + job.host">
+                                <span t-att-class="'rl-tl-dot ' + ganttDotClass(job.state)"/>
+                                <div class="jh-gantt-label-lines">
+                                    <span class="jh-gantt-label-name" t-esc="job.name"/>
                                     <t t-if="job.trigger === 'webhook'">
-                                        <span class="gantt-label-trigger">
+                                        <span class="jh-gantt-label-trigger">
                                             <i class="fa fa-github"/>
                                             <t t-esc="job.push_sha"/>
                                             <t t-esc="job.push_message"/>
                                         </span>
                                     </t>
-                                    <span class="gantt-label-host">
+                                    <span class="jh-gantt-label-host">
                                         <t t-if="job.instance_name" t-esc="job.instance_name + ' · '"/>
                                         <t t-esc="job.host"/>
                                     </span>
                                 </div>
                             </div>
-                            <div class="gantt-track">
-                                <div t-att-class="'gantt-bar gantt-state-' + job.state"
+                            <div class="jh-gantt-track">
+                                <div t-att-class="'jh-gantt-bar jh-gantt-state-' + job.state"
                                      t-att-style="'left:' + job.ganttLeft.toFixed(2) + '%;width:' + job.ganttWidth.toFixed(2) + '%'"
                                      t-att-title="stateName(job.state) + ' · ' + formatDuration(job.duration_s)"
                                      t-on-click="() => this.openLog(job)"/>
@@ -193,19 +201,20 @@
         </div>
 
         <!-- ── Table ── -->
-        <div class="history-table-wrap">
+        <div class="rl-card jh-table-wrap">
             <t t-if="!state.jobs.length">
-                <div class="ic-empty-state">
-                    <i class="fa fa-search ic-empty-icon"/>
-                    <div class="ic-empty-title">No jobs found</div>
-                    <div class="ic-empty-hint">No jobs match the current filters. Try resetting or broadening your criteria.</div>
-                    <button class="ic-empty-action" t-on-click="() => this.resetFilters()">
-                        <i class="fa fa-times-circle"/> Reset filters
+                <div class="rl-stub">
+                    <span class="rl-si"><i class="fa fa-search"/></span>
+                    <h3>No jobs found</h3>
+                    <p>No jobs match the current filters. Try resetting or broadening your criteria.</p>
+                    <button class="rl-btn rl-btn-ghost rl-btn-sm" style="margin-top:12px;"
+                            t-on-click="() => this.resetFilters()">
+                        <t t-out="env.icon('x', 15)"/> Reset filters
                     </button>
                 </div>
             </t>
             <t t-else="">
-                <table class="history-table history-table-clickable">
+                <table class="rl-table jh-table">
                     <thead>
                         <tr>
                             <th>State</th>
@@ -219,26 +228,28 @@
                     </thead>
                     <tbody>
                         <t t-foreach="state.jobs" t-as="job" t-key="job.id">
-                            <tr class="history-row history-row-link"
+                            <tr class="click"
                                 title="Click to view log"
                                 t-on-click="() => this.openLog(job)">
                                 <td>
-                                    <span t-att-class="'job-badge state-' + job.state"
-                                          t-esc="stateName(job.state)"/>
+                                    <span t-att-class="'rl-pill rl-pill--bare ' + ganttDotClass(job.state)">
+                                        <span class="rl-d"/>
+                                        <t t-esc="stateName(job.state)"/>
+                                    </span>
                                 </td>
-                                <td class="col-name">
+                                <td class="jh-col-name">
                                     <t t-esc="job.name"/>
                                     <t t-if="job.trigger === 'webhook'">
-                                        <span class="col-trigger"><i class="fa fa-github"/> <t t-esc="job.push_sha"/> <t t-esc="job.push_message"/></span>
+                                        <span class="jh-col-trigger"><i class="fa fa-github"/> <t t-esc="job.push_sha"/> <t t-esc="job.push_message"/></span>
                                     </t>
                                 </td>
-                                <td class="col-instance" t-esc="job.instance_name || '—'"/>
-                                <td class="col-host" t-esc="job.host"/>
-                                <td class="col-user" t-esc="job.user_name || '—'"/>
-                                <td class="col-date" t-esc="formatDate(job.create_date)"/>
-                                <td class="col-dur">
+                                <td t-esc="job.instance_name || '—'"/>
+                                <td class="rl-mono" t-esc="job.host"/>
+                                <td t-esc="job.user_name || '—'"/>
+                                <td class="rl-mono jh-col-date" t-esc="formatDate(job.create_date)"/>
+                                <td class="rl-mono jh-col-dur">
                                     <span t-esc="formatDuration(job.duration_s)"/>
-                                    <span class="history-log-hint"><i class="fa fa-terminal"/> Log</span>
+                                    <span class="jh-log-hint"><t t-out="env.icon('terminal', 14)"/> Log</span>
                                 </td>
                             </tr>
                         </t>

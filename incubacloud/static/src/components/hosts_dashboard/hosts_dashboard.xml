@@ -1,132 +1,133 @@
 <templates>
 
     <t t-name="incubacloud.HostsDashboard">
-        <div class="ic-dashboard">
+        <div class="rl-page ic-hosts-dashboard">
 
             <!-- Header -->
-            <div class="ic-dashboard-header">
-                <h1>Hosts</h1>
-                <div class="ic-dashboard-search">
-                    <input type="text" placeholder="Search hosts…" aria-label="Search hosts" t-on-input="onSearchInput"/>
+            <div class="rl-phead">
+                <div class="rl-htext">
+                    <h1 class="rl-ptitle">Hosts</h1>
+                    <p class="rl-psub">
+                        <t t-esc="state.total"/> host<t t-if="state.total !== 1">s</t>
+                    </p>
+                </div>
+                <div class="rl-pactions">
+                    <button class="rl-btn rl-btn-primary" t-on-click="onAddHost">
+                        <t t-out="env.icon('plus', 15)"/> Add Host
+                    </button>
                 </div>
             </div>
+
 
             <TruncationBanner truncated="state.truncated"
                               total="state.total"
                               limit="state.limit"
                               label="'hosts'"/>
 
-            <!-- Grid -->
-            <div class="ic-dashboard-grid">
-
-                <!-- Action card first -->
-                <div class="ic-action-card" t-on-click="onAddHost">
-                    <i class="fa fa-plus ic-action-card-icon"/>
-                    <span class="ic-action-card-label">Add Host</span>
+            <!-- Empty state -->
+            <t t-if="state.visible_hosts.length === 0">
+                <div class="rl-stub">
+                    <span class="rl-si"><t t-out="env.icon('hosts', 46)"/></span>
+                    <h3>No hosts configured</h3>
+                    <p>Add a server to start deploying Odoo instances.</p>
                 </div>
+            </t>
 
-                <t t-if="state.visible_hosts.length === 0">
-                    <div class="ic-empty-state">
-                        <i class="fa fa-server ic-empty-icon"/>
-                        <div class="ic-empty-title">No hosts configured</div>
-                        <div class="ic-empty-hint">Add a server to start deploying Odoo instances.</div>
-                    </div>
-                </t>
+            <!-- Grid of host cards -->
+            <t t-else="">
+                <div class="rl-grid rl-grid-2 ic-hosts-grid">
+                    <t t-foreach="state.visible_hosts" t-as="host" t-key="host.id">
+                        <div class="rl-card rl-card-pad ic-host-card click"
+                             t-att-class="'status-' + host.status"
+                             t-on-click="() => this.onViewHost(host)">
 
-                <t t-foreach="state.visible_hosts" t-as="host" t-key="host.id">
-                    <div t-att-class="'ic-host-card status-' + host.status"
-                         t-on-click="() => this.onViewHost(host)">
-
-                        <!-- Card header: name + status -->
-                        <div class="ic-ic-header">
-                            <h3 class="ic-ic-name" t-esc="host.name"/>
-                            <div class="ic-ic-header-spacer"/>
-                            <div class="ic-ic-status">
-                                <span t-att-class="'ic-ic-status-dot st-host-' + host.status"/>
-                                <span class="ic-ic-status-label" t-esc="statusLabel(host.status)"/>
+                            <!-- Header: name + status badge -->
+                            <div class="ic-host-card-head">
+                                <span class="rl-rname" t-esc="host.name"/>
+                                <span class="rl-rspacer"/>
+                                <span t-att-class="'rl-sb ' + host.status">
+                                    <span class="rl-d"/><t t-esc="statusLabel(host.status)"/>
+                                </span>
                             </div>
-                        </div>
 
-                        <!-- Meta: ip + specs inline -->
-                        <div class="ic-host-meta">
-                            <t t-if="host.ip_address">
-                                <code class="ic-ic-host-chip" t-esc="host.ip_address"/>
-                            </t>
-                            <t t-if="hasMetrics(host)">
-                                <span class="ic-spec-chip"><t t-esc="host.cpu_cores"/> cores</span>
-                                <span class="ic-spec-chip"><t t-esc="formatRam(host.ram_total_gb)"/> RAM</span>
-                            </t>
-                        </div>
-
-                        <!-- Tags -->
-                        <t t-if="host.tags and host.tags.length">
-                            <div class="ic-host-tag-list">
-                                <t t-foreach="host.tags" t-as="tag" t-key="tag.id">
-                                    <span class="ic-host-tag-badge" t-att-style="tagBadgeStyle(tag)">
-                                        <span class="ic-tag-dot" t-att-style="tagDotStyle(tag)"/>
-                                        <t t-esc="tag.name"/>
-                                    </span>
+                            <!-- Meta: ip · cores · ram · region -->
+                            <div class="rl-rmeta ic-host-card-meta">
+                                <t t-if="host.ip_address"><code t-esc="host.ip_address"/></t>
+                                <t t-if="hasMetrics(host)">
+                                    <t t-if="host.ip_address"> · </t><t t-esc="host.cpu_cores"/> cores
+                                    · <t t-esc="formatRam(host.ram_total_gb)"/> RAM
                                 </t>
+                                <t t-if="host.region"> · <t t-esc="host.region"/></t>
                             </div>
-                        </t>
 
-                        <!-- Usage (allocated CPU / RAM) + Disk -->
-                        <div class="ic-host-metrics">
+                            <!-- Tags -->
+                            <t t-if="host.tags and host.tags.length">
+                                <div class="rl-tag-list">
+                                    <t t-foreach="host.tags" t-as="tag" t-key="tag.id">
+                                        <span class="rl-tag-badge" t-att-style="tagBadgeStyle(tag)">
+                                            <span class="ic-tag-dot" t-att-style="tagDotStyle(tag)"/>
+                                            <t t-esc="tag.name"/>
+                                        </span>
+                                    </t>
+                                </div>
+                            </t>
+
+                            <!-- Metric bars: CPU/RAM usage + Disk -->
                             <t t-if="hasMetrics(host)">
-                                <t t-call="incubacloud.HostMetricBar">
-                                    <t t-set="label" t-value="'Usage'"/>
-                                    <t t-set="value" t-value="usagePct(host)"/>
-                                    <t t-set="cls" t-value="barClass(usagePct(host))"/>
-                                    <t t-set="extra" t-value="usageExtra(host)"/>
-                                </t>
-                                <t t-call="incubacloud.HostMetricBar">
-                                    <t t-set="label" t-value="'Disk'"/>
-                                    <t t-set="value" t-value="host.disk"/>
-                                    <t t-set="cls" t-value="barClass(host.disk)"/>
-                                    <t t-set="extra" t-value="diskExtra(host)"/>
-                                </t>
+                                <div class="ic-host-mbars">
+                                    <div class="rl-mbar">
+                                        <div class="rl-mbar-top">
+                                            <span>CPU / RAM</span>
+                                            <span><t t-esc="usagePct(host)"/>%</span>
+                                        </div>
+                                        <div class="rl-mbar-track">
+                                            <div t-att-class="'rl-mbar-fill ' + mbarClass(usagePct(host))"
+                                                 t-att-style="'width:' + usagePct(host) + '%'"/>
+                                        </div>
+                                        <t t-if="usageExtra(host)">
+                                            <div class="ic-mbar-extra" t-esc="usageExtra(host)"/>
+                                        </t>
+                                    </div>
+                                    <div class="rl-mbar">
+                                        <div class="rl-mbar-top">
+                                            <span>Disk</span>
+                                            <span><t t-esc="host.disk"/>%</span>
+                                        </div>
+                                        <div class="rl-mbar-track">
+                                            <div t-att-class="'rl-mbar-fill ' + mbarClass(host.disk)"
+                                                 t-att-style="'width:' + host.disk + '%'"/>
+                                        </div>
+                                        <t t-if="diskExtra(host)">
+                                            <div class="ic-mbar-extra" t-esc="diskExtra(host)"/>
+                                        </t>
+                                    </div>
+                                </div>
                             </t>
                             <t t-else="">
                                 <div class="ic-metrics-placeholder">
                                     No specs yet — run Check from the host page
                                 </div>
                             </t>
+
+                            <!-- Footer: instance count · SSH trust · last probed -->
+                            <div class="rl-rmeta ic-host-card-foot">
+                                <span><t t-esc="host.instance_count"/> instance<t t-if="host.instance_count !== 1">s</t></span>
+                                <t t-if="host.has_known_hosts_key">
+                                    <span class="ic-ssh-ok"> · SSH ✓</span>
+                                </t>
+                                <t t-else="">
+                                    <span class="ic-ssh-untrusted"> · SSH untrusted</span>
+                                </t>
+                                <t t-if="host.last_probed">
+                                    <span> · <t t-esc="timeAgo(host.last_probed)"/></span>
+                                </t>
+                            </div>
+
                         </div>
+                    </t>
+                </div>
+            </t>
 
-                        <!-- Instance count + last probed -->
-                        <div class="ic-host-footer-meta">
-                            <span class="ic-instances">
-                                <t t-esc="host.instance_count"/> instance<t t-if="host.instance_count !== 1">s</t>
-                            </span>
-                            <t t-if="host.last_probed">
-                                <span class="ic-last-probed">
-                                    · <t t-esc="timeAgo(host.last_probed)"/>
-                                </span>
-                            </t>
-                        </div>
-
-                    </div>
-                </t>
-
-            </div>
-        </div>
-
-    </t>
-
-    <!-- Metric bar partial -->
-    <t t-name="incubacloud.HostMetricBar">
-        <div class="ic-host-metric">
-            <span class="ic-metric-label" t-esc="label"/>
-            <div class="ic-bar">
-                <div t-att-class="'ic-bar-fill ' + cls"
-                     t-att-style="'width:' + value + '%'"/>
-            </div>
-            <div class="ic-metric-right">
-                <span class="ic-metric-value"><t t-esc="value"/>%</span>
-                <t t-if="extra">
-                    <span class="ic-metric-extra" t-esc="extra"/>
-                </t>
-            </div>
         </div>
     </t>
 

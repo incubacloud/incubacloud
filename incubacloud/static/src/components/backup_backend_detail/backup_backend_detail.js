@@ -3,6 +3,7 @@ import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { PasswordInput } from "../password_input/password_input";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
+import { RlSelect } from "../rl_select/rl_select";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required, email, retention } from "../../utils/validators";
@@ -31,7 +32,7 @@ const EMPTY_FORM = () => ({
 export class BackupBackendDetail extends Component {
     static props = { backend_id: { type: Number, optional: true } };
     static template = "incubacloud.BackupBackendDetail";
-    static components = { PasswordInput, IcConfirmDialog };
+    static components = { PasswordInput, IcConfirmDialog, RlSelect };
 
     setup() {
         this.env = useEnv();
@@ -175,6 +176,23 @@ export class BackupBackendDetail extends Component {
         return "ok";
     }
 
+    /**
+     * Relay ``rl-gauge-fill`` band class for the Usage gauge.
+     *
+     * Maps the resolved alert band (``usageBarClass``: ""/"warning"/
+     * "danger") onto the bare modifiers the rl-gauge primitive uses
+     * (""/"warn"/"crit"), so the gauge colour still tracks the alert
+     * threshold exactly as before.
+     *
+     * @returns {string} "" | "warn" | "crit"
+     */
+    get gaugeBand() {
+        const band = this.usageBarClass;
+        if (band === "danger") return "crit";
+        if (band === "warning") return "warn";
+        return "";
+    }
+
     onInput(field, ev) {
         this.state.form[field] = ev.target.value;
 
@@ -183,6 +201,18 @@ export class BackupBackendDetail extends Component {
     onCheckbox(field, ev) {
         this.state.form[field] = ev.target.checked;
 
+    }
+
+    /**
+     * Flip a boolean form field. Backs the Relay ``rl-sw`` switch buttons
+     * (Notifications "Report on success", Advanced "Deletion cron"), which
+     * are ``<button>`` elements with no ``checked`` property — so they
+     * can't reuse ``onCheckbox`` directly.
+     *
+     * @param {string} field form key to toggle
+     */
+    toggleField(field) {
+        this.state.form[field] = !this.state.form[field];
     }
 
     onQuotaInput(ev) {

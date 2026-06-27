@@ -1,313 +1,319 @@
 <templates>
 
     <t t-name="incubacloud.BackupBackendDetail">
-        <div class="ic-host-detail">
+        <div class="ic-host-detail ic-backend-detail">
 
             <t t-if="state.loading">
                 <div class="ic-detail-loading">Loading…</div>
             </t>
 
             <t t-elif="state.backend">
+                <div class="rl-page rl-page--narrow">
 
-                <!-- Header -->
-                <div class="ic-detail-header">
-                    <button class="ic-btn-back" t-on-click="goBack">← Backup Backends</button>
-                    <div class="ic-detail-title">
-                        <h1>
+                    <!-- Breadcrumb -->
+                    <div class="rl-crumb">
+                        <a t-on-click="goBack">Backup Backends</a>
+                        <span class="rl-sep">/</span>
+                        <span class="rl-cur">
                             <t t-if="isNew">New Backup Backend</t>
                             <t t-else="" t-esc="state.backend.name"/>
-                        </h1>
+                        </span>
                     </div>
-                </div>
 
-                <!-- Tabs -->
-                <div class="ic-detail-tabs">
-                    <button t-att-class="state.tab === 'general' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('general')">General</button>
-                    <button t-att-class="state.tab === 'storage' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('storage')">Storage</button>
-                    <button t-att-class="state.tab === 'usage' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('usage')">Usage</button>
-                    <button t-att-class="state.tab === 'notifications' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('notifications')">Notifications</button>
-                    <button t-att-class="state.tab === 'advanced' ? 'ic-tab active' : 'ic-tab'"
-                            t-on-click="() => this.setTab('advanced')">Advanced</button>
-                </div>
-
-                <!-- Tab content -->
-                <div class="ic-detail-body">
-
-                    <!-- ── General ──────────────────────────────────────── -->
-                    <t t-if="state.tab === 'general'">
-                        <div class="ic-form-grid">
-                            <div t-att-class="'ic-form-row' + (validator.fieldError('name') ? ' has-error' : '')">
-                                <label>Name <span class="ic-required">*</span></label>
-                                <input type="text"
-                                       placeholder="My S3 Backup"
-                                       t-att-value="state.form.name"
-                                       t-on-input="(ev) => this.onInput('name', ev)"
-                                       t-on-blur="() => validator.touch('name')"/>
-                                <t t-if="validator.fieldError('name')">
-                                    <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
-                                </t>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Type</label>
-                                <select disabled="1">
-                                    <option value="s3">S3 Compatible</option>
-                                </select>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Image Version</label>
-                                <input type="text"
-                                       placeholder="latest"
-                                       t-att-value="state.form.backup_image_version"
-                                       t-on-input="(ev) => this.onInput('backup_image_version', ev)"/>
-                            </div>
+                    <!-- Header -->
+                    <div class="rl-phead">
+                        <div class="rl-htext ic-detail-title">
+                            <h1 class="rl-ptitle">
+                                <t t-if="isNew">New Backup Backend</t>
+                                <t t-else="" t-esc="state.backend.name"/>
+                            </h1>
                         </div>
-                    </t>
+                    </div>
 
-                    <!-- ── Storage ──────────────────────────────────────── -->
-                    <t t-if="state.tab === 'storage'">
-                        <div class="ic-form-grid">
-                            <div t-att-class="'ic-form-row' + (validator.fieldError('s3_bucket') ? ' has-error' : '')">
-                                <label>Bucket <span class="ic-required">*</span></label>
-                                <input type="text"
-                                       placeholder="my-backup-bucket"
-                                       t-att-value="state.form.s3_bucket"
-                                       t-on-input="(ev) => this.onInput('s3_bucket', ev)"
-                                       t-on-blur="() => validator.touch('s3_bucket')"/>
-                                <t t-if="validator.fieldError('s3_bucket')">
-                                    <span class="ic-field-error" t-esc="validator.fieldError('s3_bucket')"/>
-                                </t>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Path</label>
-                                <input type="text"
-                                       placeholder="backups"
-                                       t-att-value="state.form.s3_path"
-                                       t-on-input="(ev) => this.onInput('s3_path', ev)"/>
-                            </div>
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Endpoint URL
-                                    <span class="ic-form-note"> — leave empty for AWS S3</span>
-                                </label>
-                                <input type="text"
-                                       placeholder="https://s3.us-east-1.amazonaws.com"
-                                       t-att-value="state.form.s3_endpoint_url"
-                                       t-on-input="(ev) => this.onInput('s3_endpoint_url', ev)"/>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Access Key ID</label>
-                                <input type="text"
-                                       t-att-value="state.form.s3_access_key_id"
-                                       t-on-input="(ev) => this.onInput('s3_access_key_id', ev)"/>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Secret Access Key</label>
-                                <PasswordInput
-                                    hasValue="state.has_s3_secret_access_key"
-                                    onChange="(val) => this.onPasswordChange('s3_secret_access_key', val)"/>
-                            </div>
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Passphrase</label>
-                                <PasswordInput
-                                    hasValue="state.has_passphrase"
-                                    onChange="(val) => this.onPasswordChange('passphrase', val)"/>
-                            </div>
-                            <t t-if="backupDst">
-                                <div class="ic-form-row ic-form-row-full">
-                                    <label>Backup Destination (preview)</label>
-                                    <code class="ic-host-ip" style="display:block;padding:6px 10px;font-size:12px">
-                                        <t t-esc="backupDst"/>
-                                    </code>
+                    <!-- Tabs -->
+                    <div class="rl-tabs">
+                        <button t-att-class="'rl-tab' + (state.tab === 'general' ? ' active' : '')"
+                                t-on-click="() => this.setTab('general')">General</button>
+                        <button t-att-class="'rl-tab' + (state.tab === 'storage' ? ' active' : '')"
+                                t-on-click="() => this.setTab('storage')">Storage</button>
+                        <button t-att-class="'rl-tab' + (state.tab === 'usage' ? ' active' : '')"
+                                t-on-click="() => this.setTab('usage')">Usage</button>
+                        <button t-att-class="'rl-tab' + (state.tab === 'notifications' ? ' active' : '')"
+                                t-on-click="() => this.setTab('notifications')">Notifications</button>
+                        <button t-att-class="'rl-tab' + (state.tab === 'advanced' ? ' active' : '')"
+                                t-on-click="() => this.setTab('advanced')">Advanced</button>
+                    </div>
+
+                    <!-- Tab content -->
+                    <div class="ic-detail-body">
+
+                        <!-- ── General ──────────────────────────────────────── -->
+                        <t t-if="state.tab === 'general'">
+                            <div class="rl-fgrid">
+                                <div t-att-class="'rl-frow' + (validator.fieldError('name') ? ' has-error' : '')">
+                                    <label>Name <span class="rl-req">*</span></label>
+                                    <input type="text"
+                                           placeholder="My S3 Backup"
+                                           t-att-value="state.form.name"
+                                           t-on-input="(ev) => this.onInput('name', ev)"
+                                           t-on-blur="() => validator.touch('name')"/>
+                                    <t t-if="validator.fieldError('name')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                                    </t>
                                 </div>
-                            </t>
-                        </div>
-                    </t>
+                                <div class="rl-frow">
+                                    <label>Type</label>
+                                    <RlSelect value="'s3'"
+                                              disabled="true"
+                                              ariaLabel="'Backend type'"
+                                              options="[{ value: 's3', label: 'S3 Compatible' }]"
+                                              onChange="() => {}"/>
+                                </div>
+                                <div class="rl-frow">
+                                    <label>Image Version</label>
+                                    <input type="text"
+                                           placeholder="latest"
+                                           t-att-value="state.form.backup_image_version"
+                                           t-on-input="(ev) => this.onInput('backup_image_version', ev)"/>
+                                </div>
+                            </div>
+                        </t>
 
-                    <!-- ── Usage ────────────────────────────────────────── -->
-                    <t t-if="state.tab === 'usage'">
-                        <div class="ic-form-grid">
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Current Usage</label>
-                                <t t-if="!isNew">
-                                    <t t-if="usagePct !== null">
-                                        <div class="ic-usage-gauge"
-                                             t-att-data-band="usageBarClass">
-                                            <div class="ic-usage-gauge-bar"
-                                                 t-att-style="'width:' + usagePct + '%'"/>
-                                            <span class="ic-usage-gauge-label">
-                                                <t t-out="state.last_measured_gb.toFixed(2)"/> GB /
-                                                <t t-out="state.form.quota_gb"/> GB
-                                                (<t t-out="usagePct.toFixed(1)"/>%)
-                                            </span>
-                                        </div>
+                        <!-- ── Storage ──────────────────────────────────────── -->
+                        <t t-if="state.tab === 'storage'">
+                            <div class="rl-fgrid">
+                                <div t-att-class="'rl-frow' + (validator.fieldError('s3_bucket') ? ' has-error' : '')">
+                                    <label>Bucket <span class="rl-req">*</span></label>
+                                    <input type="text"
+                                           placeholder="my-backup-bucket"
+                                           t-att-value="state.form.s3_bucket"
+                                           t-on-input="(ev) => this.onInput('s3_bucket', ev)"
+                                           t-on-blur="() => validator.touch('s3_bucket')"/>
+                                    <t t-if="validator.fieldError('s3_bucket')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('s3_bucket')"/>
                                     </t>
-                                    <t t-else="">
-                                        <span class="ic-form-note">
-                                            Usage:
-                                            <t t-out="state.last_measured_gb.toFixed(2)"/> GB
-                                            <t t-if="!state.form.quota_gb">
-                                                — set a quota below to see a % bar and enable alerts.
-                                            </t>
-                                        </span>
-                                    </t>
-                                    <div style="display:flex; align-items:center; gap:10px; margin-top:6px;">
-                                        <span class="ic-form-note">
-                                            <t t-if="state.last_measured_at">
-                                                Last measured: <t t-out="state.last_measured_at"/>
-                                            </t>
-                                            <t t-else="">
-                                                Never measured yet — the daily cron will catch this up.
-                                            </t>
-                                        </span>
-                                        <button class="ic-btn-secondary-action"
-                                                t-att-disabled="state.refreshingUsage"
-                                                t-on-click="refreshUsage">
-                                            <t t-if="state.refreshingUsage">Refreshing…</t>
-                                            <t t-else="">Refresh now</t>
-                                        </button>
+                                </div>
+                                <div class="rl-frow">
+                                    <label>Path</label>
+                                    <input type="text"
+                                           placeholder="backups"
+                                           t-att-value="state.form.s3_path"
+                                           t-on-input="(ev) => this.onInput('s3_path', ev)"/>
+                                </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Endpoint URL
+                                        <span class="rl-opt"> — leave empty for AWS S3</span>
+                                    </label>
+                                    <input type="text"
+                                           placeholder="https://s3.us-east-1.amazonaws.com"
+                                           t-att-value="state.form.s3_endpoint_url"
+                                           t-on-input="(ev) => this.onInput('s3_endpoint_url', ev)"/>
+                                </div>
+                                <div class="rl-frow">
+                                    <label>Access Key ID</label>
+                                    <input type="text"
+                                           t-att-value="state.form.s3_access_key_id"
+                                           t-on-input="(ev) => this.onInput('s3_access_key_id', ev)"/>
+                                </div>
+                                <div class="rl-frow">
+                                    <label>Secret Access Key</label>
+                                    <PasswordInput
+                                        hasValue="state.has_s3_secret_access_key"
+                                        onChange="(val) => this.onPasswordChange('s3_secret_access_key', val)"/>
+                                </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Passphrase</label>
+                                    <PasswordInput
+                                        hasValue="state.has_passphrase"
+                                        onChange="(val) => this.onPasswordChange('passphrase', val)"/>
+                                </div>
+                                <t t-if="backupDst">
+                                    <div class="rl-frow rl-full">
+                                        <label>Backup Destination (preview)</label>
+                                        <code class="rl-mono ic-backup-dst" t-esc="backupDst"/>
+                                    </div>
+                                </t>
+                            </div>
+                        </t>
+
+                        <!-- ── Usage ────────────────────────────────────────── -->
+                        <t t-if="state.tab === 'usage'">
+                            <t t-if="!isNew">
+                                <t t-if="usagePct !== null">
+                                    <div class="rl-gauge">
+                                        <div t-att-class="'rl-gauge-fill ' + gaugeBand"
+                                             t-att-style="'width:' + usagePct + '%'"/>
+                                    </div>
+                                    <div class="rl-rmeta">
+                                        <t t-out="state.last_measured_gb.toFixed(2)"/> GB /
+                                        <t t-out="state.form.quota_gb"/> GB
+                                        (<t t-out="usagePct.toFixed(1)"/>%)
                                     </div>
                                 </t>
                                 <t t-else="">
-                                    <span class="ic-form-note">Save the backend first to start measuring usage.</span>
+                                    <div class="rl-rmeta">
+                                        Usage:
+                                        <t t-out="state.last_measured_gb.toFixed(2)"/> GB
+                                        <t t-if="!state.form.quota_gb">
+                                            — set a quota below to see a % bar and enable alerts.
+                                        </t>
+                                    </div>
                                 </t>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Quota (GB)</label>
-                                <input type="number" min="0" step="1"
-                                       t-att-value="state.form.quota_gb"
-                                       t-on-change="onQuotaInput"/>
-                                <span class="ic-form-note">0 = no quota (usage still tracked).</span>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Alert Threshold (%)</label>
-                                <input type="number" min="-1" max="100" step="1"
-                                       t-att-value="state.form.alert_threshold_pct"
-                                       t-on-change="onThresholdInput"/>
-                                <span class="ic-form-note">0 = inherit settings default; -1 = disabled; 1–100 = explicit.</span>
-                            </div>
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Alert Email
-                                    <span class="ic-form-note"> — falls back to Notification To</span>
-                                </label>
-                                <input type="email"
-                                       placeholder="ops@example.com"
-                                       t-att-value="state.form.alert_email"
-                                       t-on-input="(ev) => this.onInput('alert_email', ev)"/>
-                            </div>
-                        </div>
-                    </t>
+                                <div class="ic-usage-meta-row">
+                                    <span class="rl-rmeta">
+                                        <t t-if="state.last_measured_at">
+                                            Last measured: <t t-out="state.last_measured_at"/>
+                                        </t>
+                                        <t t-else="">
+                                            Never measured yet — the daily cron will catch this up.
+                                        </t>
+                                    </span>
+                                    <button class="rl-btn rl-btn-ghost rl-btn-sm"
+                                            t-att-disabled="state.refreshingUsage"
+                                            t-on-click="refreshUsage">
+                                        <t t-if="state.refreshingUsage">Refreshing…</t>
+                                        <t t-else=""><t t-out="env.icon('refresh', 14)"/> Refresh now</t>
+                                    </button>
+                                </div>
+                            </t>
+                            <t t-else="">
+                                <div class="rl-rmeta">Save the backend first to start measuring usage.</div>
+                            </t>
 
-                    <!-- ── Notifications ─────────────────────────────────── -->
-                    <t t-if="state.tab === 'notifications'">
-                        <div class="ic-form-grid">
-                            <div t-att-class="'ic-form-row' + (validator.fieldError('email_from') ? ' has-error' : '')">
-                                <label>From</label>
-                                <input type="email"
-                                       placeholder="backups@example.com"
-                                       t-att-value="state.form.email_from"
-                                       t-on-input="(ev) => this.onInput('email_from', ev)"
-                                       t-on-blur="() => validator.touch('email_from')"/>
-                                <t t-if="validator.fieldError('email_from')">
-                                    <span class="ic-field-error" t-esc="validator.fieldError('email_from')"/>
-                                </t>
-                            </div>
-                            <div t-att-class="'ic-form-row' + (validator.fieldError('email_to') ? ' has-error' : '')">
-                                <label>To</label>
-                                <input type="email"
-                                       placeholder="admin@example.com"
-                                       t-att-value="state.form.email_to"
-                                       t-on-input="(ev) => this.onInput('email_to', ev)"
-                                       t-on-blur="() => validator.touch('email_to')"/>
-                                <t t-if="validator.fieldError('email_to')">
-                                    <span class="ic-field-error" t-esc="validator.fieldError('email_to')"/>
-                                </t>
-                            </div>
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Report on success</label>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <input type="checkbox"
-                                           t-att-checked="state.form.smtp_report_success"
-                                           t-on-change="(ev) => this.onCheckbox('smtp_report_success', ev)"/>
-                                    <span>Send email notification on successful backup</span>
+                            <div class="rl-fgrid" style="margin-top:14px">
+                                <div class="rl-frow">
+                                    <label>Quota (GB)</label>
+                                    <input type="number" min="0" step="1"
+                                           t-att-value="state.form.quota_gb"
+                                           t-on-change="onQuotaInput"/>
+                                    <span class="ic-form-note">0 = no quota (usage still tracked).</span>
+                                </div>
+                                <div class="rl-frow">
+                                    <label>Alert Threshold (%)</label>
+                                    <input type="number" min="-1" max="100" step="1"
+                                           t-att-value="state.form.alert_threshold_pct"
+                                           t-on-change="onThresholdInput"/>
+                                    <span class="ic-form-note">0 = inherit settings default; -1 = disabled; 1–100 = explicit.</span>
+                                </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Alert Email
+                                        <span class="rl-opt"> — falls back to Notification To</span>
+                                    </label>
+                                    <input type="email"
+                                           placeholder="ops@example.com"
+                                           t-att-value="state.form.alert_email"
+                                           t-on-input="(ev) => this.onInput('alert_email', ev)"/>
                                 </div>
                             </div>
-                        </div>
-                    </t>
+                        </t>
 
-                    <!-- ── Advanced ──────────────────────────────────────── -->
-                    <t t-if="state.tab === 'advanced'">
-                        <div class="ic-form-grid">
-                            <div t-att-class="'ic-form-row' + (validator.fieldError('backup_retention') ? ' has-error' : '')">
-                                <label>Retention Period</label>
-                                <input type="text"
-                                       placeholder="3M"
-                                       t-att-value="state.form.backup_retention"
-                                       t-on-input="(ev) => this.onInput('backup_retention', ev)"
-                                       t-on-blur="() => validator.touch('backup_retention')"/>
-                                <span class="ic-form-note">Examples: 3M (3 months), 30D (30 days), 1Y (1 year)</span>
-                                <t t-if="validator.fieldError('backup_retention')">
-                                    <span class="ic-field-error" t-esc="validator.fieldError('backup_retention')"/>
-                                </t>
-                            </div>
-                            <div class="ic-form-row">
-                                <label>Timezone</label>
-                                <input type="text"
-                                       placeholder="UTC"
-                                       t-att-value="state.form.backup_tz"
-                                       t-on-input="(ev) => this.onInput('backup_tz', ev)"/>
-                            </div>
-                            <div class="ic-form-row ic-form-row-full">
-                                <label>Deletion cron</label>
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <input type="checkbox"
-                                           t-att-checked="state.form.deletion_via_cron"
-                                           t-on-change="(ev) => this.onCheckbox('deletion_via_cron', ev)"/>
-                                    <span>Enable automatic cleanup of old backups</span>
+                        <!-- ── Notifications ─────────────────────────────────── -->
+                        <t t-if="state.tab === 'notifications'">
+                            <div class="rl-fgrid">
+                                <div t-att-class="'rl-frow' + (validator.fieldError('email_from') ? ' has-error' : '')">
+                                    <label>From</label>
+                                    <input type="email"
+                                           placeholder="backups@example.com"
+                                           t-att-value="state.form.email_from"
+                                           t-on-input="(ev) => this.onInput('email_from', ev)"
+                                           t-on-blur="() => validator.touch('email_from')"/>
+                                    <t t-if="validator.fieldError('email_from')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('email_from')"/>
+                                    </t>
+                                </div>
+                                <div t-att-class="'rl-frow' + (validator.fieldError('email_to') ? ' has-error' : '')">
+                                    <label>To</label>
+                                    <input type="email"
+                                           placeholder="admin@example.com"
+                                           t-att-value="state.form.email_to"
+                                           t-on-input="(ev) => this.onInput('email_to', ev)"
+                                           t-on-blur="() => validator.touch('email_to')"/>
+                                    <t t-if="validator.fieldError('email_to')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('email_to')"/>
+                                    </t>
                                 </div>
                             </div>
-                        </div>
-                    </t>
+                            <div class="rl-ftoggle">
+                                <div>
+                                    <div class="rl-tl-label">Report on success</div>
+                                    <div class="rl-th">Send email notification on successful backup</div>
+                                </div>
+                                <button t-att-class="'rl-sw' + (state.form.smtp_report_success ? ' on' : '')"
+                                        t-on-click="() => this.toggleField('smtp_report_success')"/>
+                            </div>
+                        </t>
+
+                        <!-- ── Advanced ──────────────────────────────────────── -->
+                        <t t-if="state.tab === 'advanced'">
+                            <div class="rl-fgrid">
+                                <div t-att-class="'rl-frow' + (validator.fieldError('backup_retention') ? ' has-error' : '')">
+                                    <label>Retention Period</label>
+                                    <input type="text"
+                                           placeholder="3M"
+                                           t-att-value="state.form.backup_retention"
+                                           t-on-input="(ev) => this.onInput('backup_retention', ev)"
+                                           t-on-blur="() => validator.touch('backup_retention')"/>
+                                    <span class="ic-form-note">Examples: 3M (3 months), 30D (30 days), 1Y (1 year)</span>
+                                    <t t-if="validator.fieldError('backup_retention')">
+                                        <span class="ic-field-error" t-esc="validator.fieldError('backup_retention')"/>
+                                    </t>
+                                </div>
+                                <div class="rl-frow">
+                                    <label>Timezone</label>
+                                    <input type="text"
+                                           placeholder="UTC"
+                                           t-att-value="state.form.backup_tz"
+                                           t-on-input="(ev) => this.onInput('backup_tz', ev)"/>
+                                </div>
+                            </div>
+                            <div class="rl-ftoggle">
+                                <div>
+                                    <div class="rl-tl-label">Deletion cron</div>
+                                    <div class="rl-th">Enable automatic cleanup of old backups</div>
+                                </div>
+                                <button t-att-class="'rl-sw' + (state.form.deletion_via_cron ? ' on' : '')"
+                                        t-on-click="() => this.toggleField('deletion_via_cron')"/>
+                            </div>
+                        </t>
+
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="rl-formfoot ic-detail-footer">
+                        <t t-if="!isNew">
+                            <button class="rl-btn rl-btn-danger ic-btn-danger"
+                                    t-att-disabled="state.deleting"
+                                    t-on-click="deleteBackend">
+                                <t t-out="env.icon('trash', 15)"/>
+                                <t t-if="state.deleting"> Deleting…</t>
+                                <t t-else=""> Delete</t>
+                            </button>
+                        </t>
+                        <div class="rl-ff-hint"/>
+                        <t t-if="!isNew">
+                            <button class="rl-btn rl-btn-ghost ic-btn-secondary-action"
+                                    t-att-disabled="state.testing"
+                                    t-on-click="testConnection">
+                                <t t-if="state.testing">Testing…</t>
+                                <t t-else="">Test Connection</t>
+                            </button>
+                        </t>
+                        <button class="rl-btn rl-btn-primary ic-btn-save"
+                                t-att-disabled="state.saving"
+                                t-on-click="save">
+                            <t t-if="state.saving">
+                                <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
+                                <t t-if="isNew">Creating…</t>
+                                <t t-else="">Saving…</t>
+                            </t>
+                            <t t-else="">
+                                <t t-if="isNew">Create Backend</t>
+                                <t t-else="">Save changes</t>
+                            </t>
+                        </button>
+                    </div>
 
                 </div>
-
-                <!-- Footer -->
-                <div class="ic-detail-footer">
-                    <t t-if="!isNew">
-                        <button class="ic-btn-danger"
-                                t-att-disabled="state.deleting"
-                                t-on-click="deleteBackend">
-                            <i class="fa fa-trash"/>
-                            <t t-if="state.deleting"> Deleting…</t>
-                            <t t-else=""> Delete</t>
-                        </button>
-                    </t>
-                    <div style="flex: 1;"/>
-                    <t t-if="!isNew">
-                        <button class="ic-btn-secondary-action"
-                                t-att-disabled="state.testing"
-                                t-on-click="testConnection">
-                            <t t-if="state.testing">Testing…</t>
-                            <t t-else="">Test Connection</t>
-                        </button>
-                    </t>
-                    <button class="ic-btn-save"
-                            t-att-disabled="state.saving"
-                            t-on-click="save">
-                        <t t-if="state.saving">
-                            <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
-                            <t t-if="isNew">Creating…</t>
-                            <t t-else="">Saving…</t>
-                        </t>
-                        <t t-else="">
-                            <t t-if="isNew">Create Backend</t>
-                            <t t-else="">Save changes</t>
-                        </t>
-                    </button>
-                </div>
-
             </t>
 
             <!-- Error state -->

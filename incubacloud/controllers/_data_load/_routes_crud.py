@@ -59,10 +59,19 @@ class CrudMixin:
         """
         perms = self._sec()._get_user_permissions()
         user = request.env.user
+        # Sidebar count badges. search_count honours record rules, so each
+        # number reflects only what this user may see (and we gate by the
+        # same permission flags that gate the nav items themselves).
+        nav_counts = {'projects': request.env['cloud.project'].search_count([])}
+        if perms.get('can_manage_hosts'):
+            nav_counts['hosts'] = request.env['cloud.host'].search_count([])
+        if perms.get('can_manage_settings'):
+            nav_counts['backups'] = request.env['cloud.backup.backend'].search_count([])
         return {
             'features': {},
             'role': perms.pop('role', 'stakeholder'),
             'permissions': perms,
+            'nav_counts': nav_counts,
             'user': {
                 'name': user.name or user.login or '',
                 'login': user.login or '',
@@ -72,6 +81,39 @@ class CrudMixin:
                 ),
             },
         }
+
+    @http.route(['/cloud/global_search'], type='jsonrpc', auth='user')
+    def cloud_global_search(self, query=''):
+        """Cross-entity search for the header search box. Returns matching
+        projects, instances and (if permitted) hosts. ``search()`` honours
+        record rules, so results respect each user's access."""
+        q = (query or '').strip()
+        if len(q) < 2:
+            return {'results': []}
+        perms = self._sec()._get_user_permissions()
+        results = []
+        for p in request.env['cloud.project'].search([('name', 'ilike', q)], limit=6):
+            results.append({
+                'type': 'project', 'label': p.name, 'sublabel': 'Project',
+                'route': 'project_detail', 'params': {'project_id': p.id},
+            })
+        for i in request.env['cloud.instance'].search(
+                ['|', ('name', 'ilike', q), ('domain', 'ilike', q)], limit=8):
+            sub = i.project_id.name or ''
+            if i.domain:
+                sub = (sub + ' · ' + i.domain) if sub else i.domain
+            results.append({
+                'type': 'instance', 'label': i.name, 'sublabel': sub,
+                'route': 'instance_detail',
+                'params': {'project_id': i.project_id.id, 'instance_id': i.id},
+            })
+        if perms.get('can_manage_hosts'):
+            for h in request.env['cloud.host'].search([('name', 'ilike', q)], limit=5):
+                results.append({
+                    'type': 'host', 'label': h.name, 'sublabel': 'Host',
+                    'route': 'host_detail', 'params': {'host_id': h.id},
+                })
+        return {'results': results}
 
     @http.route(['/cloud/get_projects'], type='jsonrpc', auth='user')
     def cloud_get_projects(self):

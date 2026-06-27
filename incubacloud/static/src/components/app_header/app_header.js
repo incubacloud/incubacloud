@@ -3,10 +3,11 @@ import { rpc } from "@web/core/network/rpc";
 import { session } from "@web/session";
 import { _t } from "@web/core/l10n/translation";
 import { IcModal } from "../ic_modal/ic_modal";
+import { RlSelect } from "../rl_select/rl_select";
 
 export class AppHeader extends Component {
     static template = "incubacloud.AppHeader";
-    static components = { IcModal };
+    static components = { IcModal, RlSelect };
     static props = {
         alertCount:   { type: Number },
         currentRoute: { type: String },
@@ -24,6 +25,11 @@ export class AppHeader extends Component {
             showProjectSwitcher: false,
             projects: [],
             projectSearch: "",
+            // Global search (header, ⌘K)
+            globalSearch: "",
+            searchResults: [],
+            showSearch: false,
+            searchLoading: false,
             // Notification preferences modal
             showNotifModal: false,
             notifLevel: "failures",
@@ -37,17 +43,72 @@ export class AppHeader extends Component {
             if (!ev.target.closest(".ic-header-switcher-wrap")) {
                 this.state.showProjectSwitcher = false;
             }
+            if (!ev.target.closest(".ic-header-search-wrap")) {
+                this.state.showSearch = false;
+            }
+        };
+
+        // ⌘K / Ctrl+K focuses the global search box.
+        this._onKeydown = (ev) => {
+            if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) {
+                ev.preventDefault();
+                const el = document.querySelector(".ic-header-search-input");
+                if (el) { el.focus(); el.select(); }
+            }
         };
 
         onMounted(() => {
             document.addEventListener("click", this._closeMenus);
+            document.addEventListener("keydown", this._onKeydown);
             // Override from env.userInfo once config loads
             const info = this.env.userInfo;
             if (info?.name) this.state.userName = info.name;
             if (info?.login) this.state.userLogin = info.login;
             if (info?.avatarUrl) this.state.avatarUrl = info.avatarUrl;
         });
-        onWillUnmount(() => document.removeEventListener("click", this._closeMenus));
+        onWillUnmount(() => {
+            document.removeEventListener("click", this._closeMenus);
+            document.removeEventListener("keydown", this._onKeydown);
+        });
+    }
+
+    onGlobalSearch(ev) {
+        const value = ev.target.value;
+        this.state.globalSearch = value;
+        clearTimeout(this._searchTimeout);
+        if (!value || value.trim().length < 2) {
+            this.state.searchResults = [];
+            this.state.showSearch = false;
+            return;
+        }
+        this.state.showSearch = true;
+        this.state.searchLoading = true;
+        this._searchTimeout = setTimeout(async () => {
+            try {
+                const data = await rpc("/cloud/global_search", { query: value });
+                this.state.searchResults = data.results || [];
+            } catch (_e) {
+                this.state.searchResults = [];
+            }
+            this.state.searchLoading = false;
+        }, 220);
+    }
+
+    searchResultIcon(type) {
+        return type === "project" ? "projects" : (type === "host" ? "hosts" : "instance");
+    }
+
+    goToSearchResult(r) {
+        this.state.showSearch = false;
+        this.state.globalSearch = "";
+        this.state.searchResults = [];
+        this.env.navigate(r.route, r.params || {});
+    }
+
+    onSearchFocus() {
+        if (this.state.searchResults.length) {
+            this.state.showSearch = true;
+        }
     }
 
     get initials() {

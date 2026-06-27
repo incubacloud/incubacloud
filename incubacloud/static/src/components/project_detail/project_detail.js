@@ -5,6 +5,7 @@ import { TagSelector } from "../tag_selector/tag_selector";
 import { RepoEditor } from "../repo_editor/repo_editor";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { IcModal } from "../ic_modal/ic_modal";
+import { RlSelect } from "../rl_select/rl_select";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required } from "../../utils/validators";
@@ -135,10 +136,18 @@ export class ProjectDetail extends Component {
         embedded:   { type: Boolean, optional: true },
     };
     static template = "incubacloud.ProjectDetail";
-    static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal };
+    static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal, RlSelect };
 
     get isCreate() { return !this.props.project_id; }
     get odooVersions() { return this.state.odooVersions; }
+
+    /**
+     * Backup backend options for the RlSelect, derived from loaded backends.
+     * @returns {{value: number, label: string}[]} option list (numeric ids preserved)
+     */
+    get backupBackendOptions() {
+        return this.state.backupBackends.map((bb) => ({ value: bb.id, label: bb.name }));
+    }
     get showOnboarding() {
         if (this.env.currentRoute?.route === "project_settings") return false;
         return this.props.embedded && !this.isCreate
@@ -589,6 +598,16 @@ export class ProjectDetail extends Component {
 
     statusLabel(status) {
         return { ok: _t("OK"), warning: _t("Warning"), error: _t("Error") }[status] || status;
+    }
+
+    /**
+     * Map a project status to the matching ``rl-sb`` state-badge CSS class.
+     * View-helper only (no state change); used by the header status badge.
+     * @param {string} status project status (``ok`` / ``warning`` / ``error``)
+     * @returns {string} the ``rl-sb`` modifier class (``ok`` / ``warn`` / ``failed``)
+     */
+    statusBadgeClass(status) {
+        return { ok: "ok", warning: "warn", error: "failed" }[status] || "ok";
     }
 
     getLineNumbers(field) {

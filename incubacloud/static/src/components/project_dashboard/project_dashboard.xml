@@ -1,21 +1,26 @@
 <templates>
 
     <t t-name="incubacloud.ProjectDashboard">
-        <div class="ic-dashboard">
+        <div class="rl-page">
 
             <!-- Header -->
-            <div class="ic-dashboard-header">
-                <h1>Projects</h1>
-
-                <div class="ic-dashboard-search">
-                    <input
-                    type="text"
-                    placeholder="Search projects…"
-                    aria-label="Search projects"
-                    t-on-input="onSearchInput"
-                    />
+            <div class="rl-phead">
+                <div class="rl-htext">
+                    <h1 class="rl-ptitle">Projects</h1>
+                    <p class="rl-psub">
+                        <t t-esc="state.total"/> project<t t-if="state.total !== 1">s</t>
+                    </p>
                 </div>
-
+                <t t-if="env.permissions?.can_create_project">
+                    <div class="rl-pactions">
+                        <button class="rl-btn rl-btn-ghost" t-on-click="openImportGitHub">
+                            <t t-out="env.icon('git', 15)"/> Import from GitHub
+                        </button>
+                        <button class="rl-btn rl-btn-primary" t-on-click="() => this.openCreateProject()">
+                            <t t-out="env.icon('plus', 15)"/> New Project
+                        </button>
+                    </div>
+                </t>
             </div>
 
             <TruncationBanner truncated="state.truncated"
@@ -23,40 +28,31 @@
                               limit="state.limit"
                               label="'projects'"/>
 
-            <!-- Projects Grid -->
-            <div class="ic-dashboard-grid">
-                <!-- Action cards first (visible to PM+) -->
-                <t t-if="env.permissions?.can_create_project">
-                    <div class="ic-action-card" t-on-click="() => this.openCreateProject()">
-                        <i class="fa fa-plus ic-action-card-icon"/>
-                        <span class="ic-action-card-label">New Project</span>
-                    </div>
-                    <div class="ic-action-card" t-on-click="openImportGitHub">
-                        <i class="fa fa-github ic-action-card-icon"/>
-                        <span class="ic-action-card-label">Import from GitHub</span>
-                    </div>
-                </t>
+            <!-- Empty state -->
+            <t t-if="state.visible_projects.length === 0">
+                <div class="rl-stub">
+                    <span class="rl-si"><t t-out="env.icon('projects', 46)"/></span>
+                    <h3>No projects yet</h3>
+                    <p>Create your first project to start managing Odoo instances.</p>
+                    <t t-if="env.permissions?.can_create_project">
+                        <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
+                                t-on-click="() => this.openCreateProject()">
+                            <t t-out="env.icon('plus', 15)"/> Create your first project
+                        </button>
+                    </t>
+                </div>
+            </t>
 
-                <t t-if="state.visible_projects.length === 0">
-                    <div class="ic-empty-state">
-                        <i class="fa fa-folder-open-o ic-empty-icon"/>
-                        <div class="ic-empty-title">No projects yet</div>
-                        <div class="ic-empty-hint">Create your first project to start managing Odoo instances.</div>
-                        <t t-if="env.permissions?.can_create_project">
-                            <button class="ic-empty-action" t-on-click="() => this.openCreateProject()">
-                                <i class="fa fa-plus"/> Create your first project
-                            </button>
-                        </t>
-                    </div>
-                </t>
-
-                <t t-foreach="state.visible_projects" t-as="project" t-key="project.id">
-                    <ProjectCard project="project"/>
-                </t>
-            </div>
+            <!-- Projects list (rows in a card) -->
+            <t t-else="">
+                <div class="rl-card">
+                    <t t-foreach="state.visible_projects" t-as="project" t-key="project.id">
+                        <ProjectCard project="project"/>
+                    </t>
+                </div>
+            </t>
 
         </div>
-
     </t>
 
 </templates>

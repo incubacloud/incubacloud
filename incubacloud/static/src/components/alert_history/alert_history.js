@@ -155,4 +155,28 @@ export class AlertHistory extends Component {
             hour: "2-digit", minute: "2-digit",
         });
     }
+
+    /**
+     * View-only mapping of an alert ``level`` to the Relay severity-banner
+     * modifier class (``rl-sevban`` variant): ``info`` / ``warning`` /
+     * ``critical``. Anything not warning/critical falls back to ``info``.
+     * No business logic — only selects the banner colour.
+     * @param {string} level raw alert level
+     * @returns {string} one of "info" | "warning" | "critical"
+     */
+    levelClass(level) {
+        if (level === "critical") return "critical";
+        if (level === "warning") return "warning";
+        return "info";
+    }
+
+    /**
+     * View-only choice of the leading severity icon for an alert banner:
+     * the ``alert`` glyph for warning/critical, the ``clock`` glyph for info.
+     * @param {string} level raw alert level
+     * @returns {string} env.icon name ("alert" | "clock")
+     */
+    levelIcon(level) {
+        return (level === "warning" || level === "critical") ? "alert" : "clock";
+    }
 }

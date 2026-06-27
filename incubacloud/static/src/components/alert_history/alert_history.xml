@@ -4,23 +4,27 @@
 
     <!-- Header -->
     <t t-if="!props.embedded">
-        <div class="history-header">
-            <div class="history-header-left">
-                <h1 class="history-title">Alert History</h1>
+        <div class="rl-phead">
+            <div class="rl-htext">
+                <h1 class="rl-ptitle">Alert History</h1>
             </div>
-            <button class="refresh-btn" t-on-click="loadAlerts">↻ Refresh</button>
+            <div class="rl-pactions">
+                <button class="rl-btn rl-btn-ghost" t-on-click="loadAlerts">
+                    <t t-out="env.icon('refresh', 15)"/> Refresh
+                </button>
+            </div>
         </div>
     </t>
 
     <!-- Filters -->
     <div class="ah-filters">
-        <span class="filter-label">Show</span>
-        <div class="state-chips">
-            <button t-att-class="'state-chip' + (state.stateFilter === 'all' ? ' active' : '')"
+        <span class="ah-filter-label">Show</span>
+        <div class="ah-chips">
+            <button t-att-class="'ah-chip' + (state.stateFilter === 'all' ? ' active' : '')"
                     t-on-click="() => this.setFilter('all')">All</button>
-            <button t-att-class="'state-chip' + (state.stateFilter === 'active' ? ' active' : '')"
+            <button t-att-class="'ah-chip' + (state.stateFilter === 'active' ? ' active' : '')"
                     t-on-click="() => this.setFilter('active')">Active</button>
-            <button t-att-class="'state-chip' + (state.stateFilter === 'dismissed' ? ' active' : '')"
+            <button t-att-class="'ah-chip' + (state.stateFilter === 'dismissed' ? ' active' : '')"
                     t-on-click="() => this.setFilter('dismissed')">Dismissed</button>
         </div>
     </div>
@@ -39,85 +43,92 @@
 
     <t t-else="">
         <t t-if="!state.alerts.length">
-            <div class="history-empty">No alerts found.</div>
+            <div class="rl-stub">
+                <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+                <h3>No alerts found</h3>
+                <p>Nothing to show for the current filter.</p>
+            </div>
         </t>
         <t t-else="">
             <div class="ah-list">
                 <t t-foreach="state.alerts" t-as="alert" t-key="alert.id">
-                    <div t-att-class="'ah-card ah-level-' + alert.level">
-                        <div class="ah-card-header">
-                            <div class="ah-card-left">
-                                <span t-att-class="'ah-level-badge ah-level-' + alert.level"
-                                      t-esc="alert.level"/>
-                                <t t-if="alert.instance_id and alert.project_id">
-                                    <span class="ah-card-target ah-card-link"
-                                          t-on-click.stop="() => this.goToInstance(alert)"
-                                          t-esc="alert.target or alert.host or '—'"/>
-                                </t>
-                                <t t-else="">
-                                    <span class="ah-card-target"
-                                          t-esc="alert.target or alert.host or '—'"/>
-                                </t>
-                                <span class="ah-card-code" t-esc="alert.code"/>
+                    <div t-att-class="'rl-sevban ah-card ' + levelClass(alert.level)">
+                        <span class="rl-si2"><t t-out="env.icon(levelIcon(alert.level), 18)"/></span>
+                        <div class="ah-card-body">
+                            <div class="ah-card-header">
+                                <div class="ah-card-left">
+                                    <t t-if="alert.instance_id and alert.project_id">
+                                        <span class="rl-at ah-card-target ah-card-link"
+                                              t-on-click.stop="() => this.goToInstance(alert)"
+                                              t-esc="alert.target or alert.host or '—'"/>
+                                    </t>
+                                    <t t-else="">
+                                        <span class="rl-at ah-card-target"
+                                              t-esc="alert.target or alert.host or '—'"/>
+                                    </t>
+                                    <span class="ah-card-code" t-esc="alert.code"/>
+                                </div>
+                                <div class="ah-card-right">
+                                    <span t-att-class="'rl-sb ah-state-badge ' + alert.state"
+                                          ><span class="rl-d"/><t t-esc="alert.state"/></span>
+                                    <span class="ah-card-date" t-esc="formatDate(alert.create_date)"/>
+                                </div>
                             </div>
-                            <div class="ah-card-right">
-                                <span t-att-class="'ah-state-badge ah-state-' + alert.state"
-                                      t-esc="alert.state"/>
-                                <span class="ah-card-date" t-esc="formatDate(alert.create_date)"/>
-                            </div>
-                        </div>
-                        <div class="ah-card-message" t-esc="alert.message"/>
+                            <div class="rl-ad ah-card-message" t-esc="alert.message"/>
 
-                        <!-- Error log groups: dedupe'd payload from instance_health -->
-                        <t t-if="alert.code === 'instance_error_logs' and alert.payload and alert.payload.length">
-                            <div class="ah-error-groups">
-                                <button class="ah-error-toggle"
-                                        t-on-click="() => this.toggleExpanded(alert.id)">
-                                    <i t-att-class="state.expanded[alert.id] ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
-                                    <t t-if="state.expanded[alert.id]">Hide</t>
-                                    <t t-else="">Show</t>
-                                    <t t-esc="' ' + alert.payload.length + ' error group(s)'"/>
-                                </button>
-                                <t t-if="state.expanded[alert.id]">
-                                    <div class="ah-error-list">
-                                        <t t-foreach="alert.payload" t-as="grp" t-key="grp_index">
-                                            <div class="ah-error-group">
-                                                <div class="ah-error-group-head">
-                                                    <span class="ah-error-count" t-esc="'×' + grp.count"/>
+                            <!-- Error log groups: dedupe'd payload from instance_health -->
+                            <t t-if="alert.code === 'instance_error_logs' and alert.payload and alert.payload.length">
+                                <div class="ah-error-groups">
+                                    <button class="ah-error-toggle"
+                                            t-on-click="() => this.toggleExpanded(alert.id)">
+                                        <i t-att-class="state.expanded[alert.id] ? 'fa fa-caret-down' : 'fa fa-caret-right'"/>
+                                        <t t-if="state.expanded[alert.id]">Hide</t>
+                                        <t t-else="">Show</t>
+                                        <t t-esc="' ' + alert.payload.length + ' error group(s)'"/>
+                                    </button>
+                                    <t t-if="state.expanded[alert.id]">
+                                        <div class="ah-error-list">
+                                            <t t-foreach="alert.payload" t-as="grp" t-key="grp_index">
+                                                <div class="ah-error-group">
+                                                    <div class="ah-error-group-head">
+                                                        <span class="ah-error-count" t-esc="'×' + grp.count"/>
+                                                    </div>
+                                                    <t t-if="grp.samples and grp.samples.length">
+                                                        <pre class="ah-error-samples"><t t-foreach="grp.samples" t-as="line" t-key="line_index"><t t-esc="line"/><t t-if="!line_last">&#10;</t></t></pre>
+                                                    </t>
                                                 </div>
-                                                <t t-if="grp.samples and grp.samples.length">
-                                                    <pre class="ah-error-samples"><t t-foreach="grp.samples" t-as="line" t-key="line_index"><t t-esc="line"/><t t-if="!line_last">&#10;</t></t></pre>
-                                                </t>
-                                            </div>
-                                        </t>
-                                    </div>
-                                </t>
-                            </div>
-                        </t>
+                                            </t>
+                                        </div>
+                                    </t>
+                                </div>
+                            </t>
 
-                        <div class="ah-card-actions" t-if="alert.state === 'active' or alert.job_id">
-                            <t t-if="alert.state === 'active' and alert.code === 'pip_conflict' and alert.conflict_data and alert.conflict_data.length">
-                                <button class="ah-btn-resolve" t-on-click="() => this.openResolve(alert)">
-                                    <i class="fa fa-wrench"/> Resolve
-                                </button>
-                            </t>
-                            <t t-elif="alert.state === 'active' and alert.code === 'addon_conflict'">
-                                <button class="ah-btn-resolve" t-on-click="() => this.openAddonConflict(alert)">
-                                    <i class="fa fa-wrench"/> Resolve
-                                </button>
-                            </t>
-                            <t t-if="alert.job_id">
-                                <button class="ah-btn-job"
-                                        t-on-click="() => this.openJob(alert.job_id)">
-                                    <i class="fa fa-terminal"/> View job
-                                </button>
-                            </t>
-                            <t t-if="alert.state === 'active' and alert.code !== 'pip_conflict' and alert.code !== 'addon_conflict'">
-                                <button class="ah-btn-dismiss"
-                                        t-on-click="() => this.dismissAlert(alert)">
-                                    <i class="fa fa-check"/> Dismiss
-                                </button>
-                            </t>
+                            <div class="rl-tl-foot ah-card-actions" t-if="alert.state === 'active' or alert.job_id">
+                                <div class="rl-acts">
+                                    <t t-if="alert.state === 'active' and alert.code === 'pip_conflict' and alert.conflict_data and alert.conflict_data.length">
+                                        <button class="rl-tl-abtn ah-btn-resolve" t-on-click="() => this.openResolve(alert)">
+                                            <t t-out="env.icon('settings', 14)"/> Resolve
+                                        </button>
+                                    </t>
+                                    <t t-elif="alert.state === 'active' and alert.code === 'addon_conflict'">
+                                        <button class="rl-tl-abtn ah-btn-resolve" t-on-click="() => this.openAddonConflict(alert)">
+                                            <t t-out="env.icon('settings', 14)"/> Resolve
+                                        </button>
+                                    </t>
+                                    <t t-if="alert.job_id">
+                                        <button class="rl-tl-abtn"
+                                                t-on-click="() => this.openJob(alert.job_id)">
+                                            <t t-out="env.icon('terminal', 15)"/> View job
+                                        </button>
+                                    </t>
+                                    <t t-if="alert.state === 'active' and alert.code !== 'pip_conflict' and alert.code !== 'addon_conflict'">
+                                        <button class="rl-tl-abtn"
+                                                t-on-click="() => this.dismissAlert(alert)">
+                                            <t t-out="env.icon('check', 15)"/> Dismiss
+                                        </button>
+                                    </t>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </t>

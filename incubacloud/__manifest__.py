@@ -84,6 +84,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             ('include', 'incubacloud.base_app'),
             # Cloud files
             'incubacloud/static/src/scss/variables.scss',
+            'incubacloud/static/src/scss/relay.scss',
             'incubacloud/static/src/utils/**/*',
             'incubacloud/static/src/toast/**/*',
             'incubacloud/static/src/store/**/*',

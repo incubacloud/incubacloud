@@ -157,6 +157,21 @@ export class ProjectSidebar extends Component {
         return "dot-stopped";
     }
 
+    /**
+     * Map an instance to the matching ``rl-pill`` status CSS class, for the
+     * bare status dot shown in each context-sidebar item. View-helper only
+     * (no state change); mirrors the dot semantics of ``statusDot``.
+     * @param {Object} inst instance record from the project store
+     * @returns {string} an ``rl-pill`` status modifier class
+     */
+    statusPill(inst) {
+        if (inst.status === "provisioning") return "provisioning";
+        if (!inst.deployed) return "draft";
+        if (inst.running) return "running";
+        if (inst.status === "error") return "crashed";
+        return "stopped";
+    }
+
     cloneToStaging(inst) {
         this.ui.cloneModal = {
             instanceId: inst.id,

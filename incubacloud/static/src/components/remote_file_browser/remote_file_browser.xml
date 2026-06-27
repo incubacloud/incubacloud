@@ -12,7 +12,9 @@
                 <header class="ic-modal__header">
                     <h3 id="ic-remote-browser-title">Import Instance from Host</h3>
                     <button t-if="state.step !== 'importing'"
-                            class="ic-modal__close" t-on-click="props.onCancel">✕</button>
+                            class="ic-modal__close" aria-label="Close" t-on-click="props.onCancel">
+                        <t t-out="env.icon('x', 16)"/>
+                    </button>
                 </header>
 
                 <!-- ── Browse step ────────────────────────────────── -->
@@ -33,26 +35,29 @@
 
                         <t t-if="state.loading">
                             <div class="ic-fb-loading">
-                                <div class="ic-import-loading-spinner"/>
+                                <span class="rl-spin"/>
                                 <span>Loading directory…</span>
                             </div>
                         </t>
 
                         <t t-elif="state.error">
-                            <div class="ic-alert ic-alert--error" role="alert" t-esc="state.error"/>
+                            <div class="ic-fb-alert" role="alert">
+                                <span class="ic-fb-alert__icon"><t t-out="env.icon('alert', 15)"/></span>
+                                <span t-esc="state.error"/>
+                            </div>
                         </t>
 
                         <t t-else="">
                             <!-- Current dir is doodba badge -->
                             <t t-if="state.isDoodba">
                                 <div class="ic-fb-doodba-badge">
-                                    <i class="fa fa-check-circle"/>
-                                    Doodba instance detected
+                                    <span class="ic-fb-doodba-icon"><t t-out="env.icon('check', 15)"/></span>
+                                    <span>Doodba instance detected</span>
                                     <t t-if="state.copierInfo.project_name">
-                                        — <strong t-esc="state.copierInfo.project_name"/>
+                                        <span class="ic-fb-doodba-name">— <strong t-esc="state.copierInfo.project_name"/></span>
                                     </t>
                                     <t t-if="state.copierInfo.odoo_version">
-                                        (Odoo <t t-esc="state.copierInfo.odoo_version"/>)
+                                        <span class="ic-fb-doodba-ver">(Odoo <t t-esc="state.copierInfo.odoo_version"/>)</span>
                                     </t>
                                 </div>
                             </t>
@@ -61,20 +66,22 @@
                             <div class="ic-fb-list">
                                 <!-- Parent dir -->
                                 <t t-if="state.parentPath">
-                                    <div class="ic-fb-entry ic-fb-entry-dir"
-                                         t-on-click="goUp">
-                                        <i class="fa fa-level-up"/>
-                                        <span>..</span>
+                                    <div class="rl-row click ic-fb-row" t-on-click="goUp">
+                                        <div class="rl-rico"><i class="fa fa-level-up"/></div>
+                                        <div class="rl-rname">..</div>
                                     </div>
                                 </t>
 
                                 <t t-foreach="state.entries" t-as="entry" t-key="entry.name">
-                                    <div t-att-class="'ic-fb-entry ic-fb-entry-dir'
-                                         + (entry.is_doodba ? ' ic-fb-entry-doodba' : '')
-                                         + (entry.already_imported ? ' ic-fb-entry-imported' : '')"
+                                    <div t-att-class="'rl-row click ic-fb-row'
+                                         + (entry.is_doodba ? ' ic-fb-row-doodba' : '')
+                                         + (entry.already_imported ? ' ic-fb-row-imported' : '')"
                                          t-on-click="() => this.onClickDir(entry)">
-                                        <i t-att-class="entry.is_doodba ? 'fa fa-cube' : 'fa fa-folder'"/>
-                                        <span t-esc="entry.name"/>
+                                        <div class="rl-rico">
+                                            <i t-att-class="entry.is_doodba ? 'fa fa-cube' : 'fa fa-folder'"/>
+                                        </div>
+                                        <div class="rl-rname" t-esc="entry.name"/>
+                                        <div class="rl-rspacer"/>
                                         <t t-if="entry.is_doodba">
                                             <span class="ic-fb-badge ic-fb-badge-doodba">doodba</span>
                                         </t>
@@ -95,8 +102,8 @@
                         <div class="ic-fb-path-display">
                             <code t-esc="state.currentPath"/>
                         </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button class="ic-btn ic-btn--secondary" t-on-click="props.onCancel">
+                        <div class="ic-fb-footer-actions">
+                            <button class="ic-btn ic-btn--ghost" t-on-click="props.onCancel">
                                 Cancel
                             </button>
                             <button class="ic-btn ic-btn--primary"
@@ -115,31 +122,33 @@
                         <div class="ic-fb-confirm">
                             <div class="ic-fb-confirm-row">
                                 <span class="ic-fb-confirm-label">Path</span>
-                                <code t-esc="state.currentPath"/>
+                                <code class="ic-fb-confirm-val" t-esc="state.currentPath"/>
                             </div>
                             <t t-if="state.copierInfo.project_name">
                                 <div class="ic-fb-confirm-row">
                                     <span class="ic-fb-confirm-label">Project</span>
-                                    <span t-esc="state.copierInfo.project_name"/>
+                                    <span class="ic-fb-confirm-val" t-esc="state.copierInfo.project_name"/>
                                 </div>
                             </t>
                             <t t-if="state.copierInfo.odoo_version">
                                 <div class="ic-fb-confirm-row">
                                     <span class="ic-fb-confirm-label">Odoo Version</span>
-                                    <span t-esc="state.copierInfo.odoo_version"/>
+                                    <span class="ic-fb-confirm-val" t-esc="state.copierInfo.odoo_version"/>
                                 </div>
                             </t>
                         </div>
-                        <p class="ic-import-hint" style="margin-top: 16px;">
+                        <p class="ic-fb-confirm-hint">
                             This will create a project and instance in IncubaCloud mapped to
                             this directory. The running instance will not be affected.
                         </p>
                     </section>
                     <footer class="ic-modal__footer ic-modal__footer--between">
-                        <button class="ic-btn ic-btn--secondary" t-on-click="backToBrowse">
-                            ← Back
+                        <button class="ic-btn ic-btn--ghost" t-on-click="backToBrowse">
+                            <t t-out="env.icon('back', 15)"/>
+                            Back
                         </button>
                         <button class="ic-btn ic-btn--primary" t-on-click="doImport">
+                            <t t-out="env.icon('download', 15)"/>
                             Import
                         </button>
                     </footer>
@@ -148,15 +157,15 @@
                 <!-- ── Importing step ─────────────────────────────── -->
                 <t t-if="state.step === 'importing'">
                     <section class="ic-modal__body">
-                        <div class="ic-import-progress">
+                        <div class="ic-fb-steps">
                             <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
-                                <div class="ic-import-progress-item done">
-                                    <i class="fa fa-check-circle"/>
+                                <div class="rl-jstep done">
+                                    <span class="rl-si2"><t t-out="env.icon('check', 15)"/></span>
                                     <span t-esc="msg.text"/>
                                 </div>
                             </t>
-                            <div class="ic-import-progress-item pending">
-                                <div class="ic-import-loading-spinner"/>
+                            <div class="rl-jstep run">
+                                <span class="rl-si2"><span class="rl-spin"/></span>
                                 <span>Importing instance…</span>
                             </div>
                         </div>
@@ -167,10 +176,10 @@
                 <!-- ── Done step ──────────────────────────────────── -->
                 <t t-if="state.step === 'done'">
                     <section class="ic-modal__body">
-                        <div class="ic-import-progress">
+                        <div class="ic-fb-steps">
                             <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
-                                <div class="ic-import-progress-item done">
-                                    <i class="fa fa-check-circle"/>
+                                <div class="rl-jstep done">
+                                    <span class="rl-si2"><t t-out="env.icon('check', 15)"/></span>
                                     <span t-esc="msg.text"/>
                                 </div>
                             </t>
@@ -178,6 +187,7 @@
                     </section>
                     <footer class="ic-modal__footer">
                         <button class="ic-btn ic-btn--primary" t-on-click="goToInstance">
+                            <t t-out="env.icon('fwd', 15)"/>
                             Go to instance
                         </button>
                     </footer>
@@ -186,20 +196,25 @@
                 <!-- ── Error step ─────────────────────────────────── -->
                 <t t-if="state.step === 'error'">
                     <section class="ic-modal__body">
-                        <div class="ic-import-progress">
+                        <div class="ic-fb-steps">
                             <t t-foreach="state.messages" t-as="msg" t-key="msg_index">
-                                <div class="ic-import-progress-item done">
-                                    <i class="fa fa-check-circle"/>
+                                <div class="rl-jstep done">
+                                    <span class="rl-si2"><t t-out="env.icon('check', 15)"/></span>
                                     <span t-esc="msg.text"/>
                                 </div>
                             </t>
                         </div>
-                        <div class="ic-alert ic-alert--error" role="alert" style="margin-top: 16px;"
-                             t-esc="state.error"/>
+                        <div class="ic-fb-alert" role="alert">
+                            <span class="ic-fb-alert__icon"><t t-out="env.icon('alert', 15)"/></span>
+                            <span t-esc="state.error"/>
+                        </div>
                     </section>
                     <footer class="ic-modal__footer ic-modal__footer--between">
-                        <button class="ic-btn ic-btn--secondary" t-on-click="retry">← Try again</button>
-                        <button class="ic-btn ic-btn--secondary" t-on-click="props.onCancel">Close</button>
+                        <button class="ic-btn ic-btn--ghost" t-on-click="retry">
+                            <t t-out="env.icon('back', 15)"/>
+                            Try again
+                        </button>
+                        <button class="ic-btn ic-btn--ghost" t-on-click="props.onCancel">Close</button>
                     </footer>
                 </t>
 

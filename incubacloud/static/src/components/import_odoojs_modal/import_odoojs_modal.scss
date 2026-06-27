@@ -1,34 +1,50 @@
+// ============================================================================
+//  ImportProjectModal — Relay-styled standalone dialog (dialog-service mount).
+//  Mounts OUTSIDE `.ic-app`, so relay `--rl-*` vars do not resolve here; we use
+//  literal Relay palette hex values. Shared chrome (`.ic-modal-overlay`,
+//  `.ic-modal`, `.ic-frow`, `.ic-btn`, `.ic-alert`) is defined in
+//  create_project_modal.scss; this file only adds import-specific bits.
+// ============================================================================
+
 .ic-modal--import {
     width: 580px;
     max-height: 85vh;
 }
 
+// ── Header ──────────────────────────────────────────────────────────────────
 .ic-import-header {
     display: flex;
     align-items: center;
     gap: 10px;
 
-    h3 {
-        margin: 0;
-    }
+    h3 { margin: 0; }
 }
 
 .ic-import-badge {
-    background: #24292f;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 4px;
-    letter-spacing: 0.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #202a23;
+    border: 1px solid #2b382f;
+    color: #c4d1c9;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 6px;
+    letter-spacing: 0.04em;
     white-space: nowrap;
+
+    svg { width: 13px; height: 13px; }
 }
 
+// ── Input step ──────────────────────────────────────────────────────────────
 .ic-import-hint {
-    font-size: 13px;
-    color: $text-secondary;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    color: #8ba095;
     margin: 0 0 16px;
-    line-height: 1.5;
+    line-height: 1.55;
 }
 
 .ic-import-url-row {
@@ -36,151 +52,73 @@
     align-items: center;
     gap: 8px;
 
-    input {
-        flex: 1;
-    }
+    input { flex: 1; }
 
     .ic-repo-spinner {
-        flex-shrink: 0;
-        color: $text-secondary;
-        font-size: 16px;
-    }
-}
-
-.ic-import-repos-hint {
-    display: block;
-    font-size: 12px;
-    color: $text-secondary;
-    margin-bottom: 8px;
-}
-
-.ic-import-repo-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-bottom: 8px;
-
-    // Compact horizontal layout: URL + branch side by side
-    .ic-repo-editor-fields {
-        flex-direction: row;
+        flex: none;
+        display: inline-flex;
         align-items: center;
-    }
-
-    .ic-repo-editor-url {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .ic-repo-editor-branch {
-        flex: 0 0 120px;
-
-        .ic-repo-field-label {
-            display: none;
-        }
-
-        .ic-search-select {
-            width: 100%;
-        }
-    }
-}
-
-.ic-import-add-repo {
-    background: transparent;
-    border: 1px dashed $border;
-    border-radius: 6px;
-    color: $text-secondary;
-    cursor: pointer;
-    font-size: 13px;
-    padding: 6px 12px;
-    width: 100%;
-    text-align: left;
-
-    &:hover {
-        border-color: $primary-blue;
-        color: $primary-blue;
     }
 }
 
 .ic-repo-fetch-error {
-    margin-top: 6px;
-    font-size: 12px;
-    color: $state-error;
+    margin-top: 7px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    color: #ff6063;
 }
 
-// ── Loading state ────────────────────────────────────────────────────────────
-
-.ic-import-loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 20px;
-    text-align: center;
-}
-
-.ic-import-loading-spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid rgba($border, 0.4);
-    border-top-color: $primary-blue;
+// ── Spinner ─────────────────────────────────────────────────────────────────
+.ic-spin {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #2b382f;
+    border-top-color: #efa53e;
     border-radius: 50%;
-    animation: ic-spin 0.8s linear infinite;
-    margin-bottom: 16px;
+    animation: ic-spin-rot 0.7s linear infinite;
 }
 
-@keyframes ic-spin {
-    to { transform: rotate(360deg); }
-}
+@keyframes ic-spin-rot { to { transform: rotate(360deg); } }
 
-.ic-import-loading-text {
-    font-size: 14px;
-    font-weight: 600;
-    color: $text-primary;
-    margin: 0 0 6px;
-}
-
-.ic-import-loading-hint {
-    font-size: 12px;
-    color: $text-secondary;
-    margin: 0;
-}
-
-.ic-modal__footer--between {
-    justify-content: space-between;
-}
-
-.ic-import-footer-actions {
-    display: flex;
-    gap: 8px;
-}
-
-// ── Progress items ──────────────────────────────────────────────────────────
-
-.ic-import-progress {
+// ── Step list (progress / done / error) — Relay rl-jstep look ───────────────
+.ic-import-steps {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 16px 0;
+    padding: 4px 0;
 }
 
-.ic-import-progress-item {
+.ic-jstep {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 11px;
+    padding: 9px 0;
+    border-bottom: 1px solid #243029;
+    font-family: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 13px;
 
-    &.done {
-        color: $state-ok;
-        i { color: $state-ok; }
+    &:last-child { border-bottom: none; }
+
+    .ic-jstep__icon {
+        width: 18px;
+        height: 18px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
-    &.pending {
-        color: $text-secondary;
-        .ic-import-loading-spinner {
-            width: 16px;
-            height: 16px;
-            border-width: 2px;
-            margin-bottom: 0;
-        }
+    svg { width: 15px; height: 15px; }
+
+    &.pending { color: #5f7068; }
+
+    &.run {
+        color: #efa53e;
+        .ic-jstep__icon svg { display: none; }
+    }
+
+    &.done {
+        color: #c4d1c9;
+        .ic-jstep__icon { color: #2fc78c; }
     }
 }
