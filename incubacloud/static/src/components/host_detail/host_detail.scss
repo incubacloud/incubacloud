@@ -232,7 +232,7 @@
     &:focus { outline: none; }
 
     &::selection {
-        background: rgba($primary-blue, 0.35);
+        background: rgba(var(--rl-green-rgb), 0.35);
     }
 }
 
@@ -248,7 +248,7 @@
 
 .ic-whitelist-item {
     padding: 8px 12px;
-    border-bottom: 1px solid rgba($border, 0.5);
+    border-bottom: 1px solid rgba(var(--rl-line-rgb), 0.5);
 
     &:last-child { border-bottom: none; }
 }
@@ -316,7 +316,7 @@
 
         &:focus {
             outline: none;
-            border-color: rgba($primary-blue, 0.5);
+            border-color: rgba(var(--rl-green-rgb), 0.5);
         }
 
         option { background: #19201b; }
@@ -340,9 +340,9 @@
         font-size: 0.8125rem;
         font-weight: 500;
         border-radius: $radius-md;
-        background: rgba($state-error, 0.1);
+        background: rgba(var(--rl-red-rgb), 0.1);
         color: $state-error;
-        border: 1px solid rgba($state-error, 0.25);
+        border: 1px solid rgba(var(--rl-red-rgb), 0.25);
         cursor: pointer;
         white-space: nowrap;
         display: flex;
@@ -351,8 +351,8 @@
         transition: background $duration-fast ease, border-color $duration-fast ease;
 
         &:hover:not(:disabled) {
-            background: rgba($state-error, 0.18);
-            border-color: rgba($state-error, 0.45);
+            background: rgba(var(--rl-red-rgb), 0.18);
+            border-color: rgba(var(--rl-red-rgb), 0.45);
         }
         &:disabled { opacity: 0.45; cursor: not-allowed; }
     }

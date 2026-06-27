@@ -43,9 +43,9 @@
                 </div>
             </t>
 
-            <!-- Projects list (rows in a card) -->
+            <!-- Projects grid (cards) -->
             <t t-else="">
-                <div class="rl-card">
+                <div class="rl-grid rl-grid-3">
                     <t t-foreach="state.visible_projects" t-as="project" t-key="project.id">
                         <ProjectCard project="project"/>
                     </t>

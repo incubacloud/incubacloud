@@ -78,7 +78,7 @@
     outline: none;
     border-color: $primary-blue;
     background: $surface-light;
-    box-shadow: 0 0 0 2px rgba($primary-blue, 0.18);
+    box-shadow: 0 0 0 2px rgba(var(--rl-green-rgb), 0.18);
   }
 }
 .ic-header-search-kbd {
