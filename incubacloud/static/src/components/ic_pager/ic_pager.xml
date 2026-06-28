@@ -1,0 +1,19 @@
+<templates>
+
+    <t t-name="incubacloud.IcPager">
+        <div class="rl-pager" t-if="props.total > props.limit">
+            <span class="rl-pager-info"><t t-esc="from"/>–<t t-esc="to"/> of <t t-esc="props.total"/></span>
+            <button class="rl-pager-btn" type="button"
+                    t-att-disabled="!canPrev"
+                    t-on-click="prev" aria-label="Previous page">
+                <t t-out="env.icon('back', 14)"/>
+            </button>
+            <button class="rl-pager-btn" type="button"
+                    t-att-disabled="!canNext"
+                    t-on-click="next" aria-label="Next page">
+                <t t-out="env.icon('fwd', 14)"/>
+            </button>
+        </div>
+    </t>
+
+</templates>

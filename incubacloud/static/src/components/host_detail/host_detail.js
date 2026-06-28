@@ -7,6 +7,7 @@ import { RemoteFileBrowser } from "../remote_file_browser/remote_file_browser";
 import { TagSelector } from "../tag_selector/tag_selector";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { RlSelect } from "../rl_select/rl_select";
+import { IcPager } from "../ic_pager/ic_pager";
 import { parseUTC } from "../../utils/dates";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus } from "../../utils/use_debounced_bus";
@@ -51,7 +52,12 @@ const EMPTY_FORM = () => ({
 export class HostDetail extends Component {
     static props = { host_id: { type: Number, optional: true } };
     static template = "incubacloud.HostDetail";
-    static components = { PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect };
+    static components = { PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager };
+
+    /** Rows per page for the server-paginated audit log. */
+    get pageSize() {
+        return 20;
+    }
 
     setup() {
         this.env = useEnv();
@@ -86,6 +92,8 @@ export class HostDetail extends Component {
             // Audit log
             auditLog: [],
             auditLogLoading: false,
+            auditOffset: 0,
+            auditTotal: 0,
             auditFilter: { q: '', action: '', date_from: '', date_to: '' },
             auditActions: [],
             auditPurging: false,
@@ -290,28 +298,33 @@ export class HostDetail extends Component {
         this.state.auditLogLoading = true;
         const f = this.state.auditFilter;
         try {
-            const entries = await rpc("/cloud/get_audit_log", {
+            const res = await rpc("/cloud/get_audit_log", {
                 host_id: this.props.host_id,
+                offset: this.state.auditOffset,
+                limit: this.pageSize,
                 q: f.q || null,
                 action_filter: f.action || null,
                 date_from: f.date_from || null,
                 date_to: f.date_to || null,
             });
-            this.state.auditLog = entries || [];
-            if (!f.q && !f.action && !f.date_from && !f.date_to) {
-                const seen = new Set();
-                this.state.auditActions = (entries || [])
-                    .map(e => e.action)
-                    .filter(a => a && !seen.has(a) && seen.add(a));
-            }
+            this.state.auditLog = res.entries || [];
+            this.state.auditTotal = res.total || 0;
+            this.state.auditActions = res.actions || [];
         } catch (_e) { console.warn("Failed to load audit log:", _e); }
         this.state.auditLogLoading = false;
     }
 
-    applyAuditFilter() { this._loadAuditLog(); }
+    applyAuditFilter() { this.state.auditOffset = 0; this._loadAuditLog(); }
+
+    /** Audit-log paginator: jump to a page and reload. */
+    auditGoPage(offset) {
+        this.state.auditOffset = offset;
+        this._loadAuditLog();
+    }
 
     resetAuditFilter() {
         this.state.auditFilter = { q: '', action: '', date_from: '', date_to: '' };
+        this.state.auditOffset = 0;
         this._loadAuditLog();
     }
 
@@ -325,6 +338,7 @@ export class HostDetail extends Component {
                         ? _t("Deleted %s old audit log entries").replace('%s', result.deleted)
                         : _t("No old entries to purge")
                 );
+                this.state.auditOffset = 0;
                 this._loadAuditLog();
             }
         } catch (_) {

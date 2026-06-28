@@ -252,13 +252,14 @@ class InstanceConnectController(http.Controller):
 
     @http.route('/cloud/get_audit_log', type='jsonrpc', auth='user', methods=['POST'])
     def get_audit_log(
-        self, instance_id=None, host_id=None, limit=100,
+        self, instance_id=None, host_id=None, limit=100, offset=0,
         q=None, action_filter=None, date_from=None, date_to=None,
     ):
         return request.env['cloud.job'].get_audit_log(
             instance_id=instance_id,
             host_id=host_id,
             limit=limit,
+            offset=offset,
             q=q,
             action_filter=action_filter,
             date_from=date_from,

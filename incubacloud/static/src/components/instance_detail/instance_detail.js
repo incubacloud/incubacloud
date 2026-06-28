@@ -16,6 +16,7 @@ import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { IcModal } from "../ic_modal/ic_modal";
 import { SearchSelect } from "../search_select/search_select";
 import { RlSelect } from "../rl_select/rl_select";
+import { IcPager } from "../ic_pager/ic_pager";
 
 const PG_VERSIONS = ["14", "15", "16", "17", "18"];
 
@@ -142,10 +143,15 @@ export class InstanceDetail extends Component {
         embedded:    { type: Boolean, optional: true },
     };
     static template = "incubacloud.InstanceDetail";
-    static components = { RepoEditor, PasswordInput, TagSelector, IcConfirmDialog, IcModal, SearchSelect, RlSelect };
+    static components = { RepoEditor, PasswordInput, TagSelector, IcConfirmDialog, IcModal, SearchSelect, RlSelect, IcPager };
 
     get isCreate() {
         return !this.props.instance_id;
+    }
+
+    /** Rows per page for the server-paginated lists (backups, audit log). */
+    get pageSize() {
+        return 20;
     }
 
     get hasUnsavedChanges() {
@@ -228,12 +234,15 @@ export class InstanceDetail extends Component {
             backupsData:      null,
             backupsError:     null,
             backupsJobId:     null,
+            backupsOffset:    0,
             downloadModal:    null,  // { time, type, loading }
             createBackupModal: null,  // { withFilestore, loading }
             restoreBackupModal: null,  // { time, confirmName, loading }
             // audit log
             auditLog:         [],
             auditLogLoading:  false,
+            auditOffset:      0,
+            auditTotal:       0,
             auditFilter:      { q: '', action: '', date_from: '', date_to: '' },
             auditActions:     [],
             auditPurging:     false,
@@ -1508,7 +1517,11 @@ export class InstanceDetail extends Component {
         this.state.backupsLoading = true;
         this.state.backupsError = null;
         try {
-            const res = await rpc("/cloud/list_backups", { instance_id: this.props.instance_id });
+            const res = await rpc("/cloud/list_backups", {
+                instance_id: this.props.instance_id,
+                offset: this.state.backupsOffset,
+                limit: this.pageSize,
+            });
             if (!res.ok) {
                 this.state.backupsError = res.error;
                 return;
@@ -1521,8 +1534,15 @@ export class InstanceDetail extends Component {
         }
     }
 
+    /** Backups paginator: jump to a page and reload. */
+    backupsGoPage(offset) {
+        this.state.backupsOffset = offset;
+        this._loadBackups();
+    }
+
     async refreshBackups() {
         this.state.backupsError = null;
+        this.state.backupsOffset = 0;
         const data = await this._enqueueJob(
             () => rpc("/cloud/list_backups", {
                 instance_id: this.props.instance_id,
@@ -1550,7 +1570,11 @@ export class InstanceDetail extends Component {
             // queued callback, this kills any RPC already in flight.
             if (!this._safePoll.alive) return;
             try {
-                const res = await rpc("/cloud/get_backup_result", { job_id: jobId });
+                const res = await rpc("/cloud/get_backup_result", {
+                    job_id: jobId,
+                    offset: this.state.backupsOffset,
+                    limit: this.pageSize,
+                });
                 if (!this._safePoll.alive) return;
                 if (!res.ok) {
                     this.state.backupsError = res.error || _t("Backup scan failed.");
@@ -1814,29 +1838,33 @@ export class InstanceDetail extends Component {
         this.state.auditLogLoading = true;
         const f = this.state.auditFilter;
         try {
-            const entries = await rpc("/cloud/get_audit_log", {
+            const res = await rpc("/cloud/get_audit_log", {
                 instance_id: this.props.instance_id,
+                offset: this.state.auditOffset,
+                limit: this.pageSize,
                 q: f.q || null,
                 action_filter: f.action || null,
                 date_from: f.date_from || null,
                 date_to: f.date_to || null,
             });
-            this.state.auditLog = entries || [];
-            // Build action list from first unfiltered load
-            if (!f.q && !f.action && !f.date_from && !f.date_to) {
-                const seen = new Set();
-                this.state.auditActions = (entries || [])
-                    .map(e => e.action)
-                    .filter(a => a && !seen.has(a) && seen.add(a));
-            }
+            this.state.auditLog = res.entries || [];
+            this.state.auditTotal = res.total || 0;
+            this.state.auditActions = res.actions || [];
         } catch (_e) { console.warn("Failed to load audit log:", _e); }
         this.state.auditLogLoading = false;
     }
 
-    applyAuditFilter() { this._loadAuditLog(); }
+    applyAuditFilter() { this.state.auditOffset = 0; this._loadAuditLog(); }
+
+    /** Audit-log paginator: jump to a page and reload. */
+    auditGoPage(offset) {
+        this.state.auditOffset = offset;
+        this._loadAuditLog();
+    }
 
     resetAuditFilter() {
         this.state.auditFilter = { q: '', action: '', date_from: '', date_to: '' };
+        this.state.auditOffset = 0;
         this._loadAuditLog();
     }
 
@@ -1850,6 +1878,7 @@ export class InstanceDetail extends Component {
                         ? _t("Deleted %s old audit log entries").replace('%s', result.deleted)
                         : _t("No old entries to purge")
                 );
+                this.state.auditOffset = 0;
                 this._loadAuditLog();
             }
         } catch (_) {
