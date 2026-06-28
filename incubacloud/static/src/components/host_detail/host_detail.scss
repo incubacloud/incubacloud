@@ -334,26 +334,32 @@
 
     .ic-audit-spacer { flex: 1; min-width: 8px; }
 
-    .ic-audit-purge-btn {
-        height: 32px;
-        padding: 0 12px;
-        font-size: 0.8125rem;
-        font-weight: 500;
-        border-radius: $radius-md;
-        background: rgba(var(--rl-red-rgb), 0.1);
-        color: $state-error;
-        border: 1px solid rgba(var(--rl-red-rgb), 0.25);
-        cursor: pointer;
-        white-space: nowrap;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        transition: background $duration-fast ease, border-color $duration-fast ease;
+    .rl-pager { margin-block-start: 0; }
+}
 
-        &:hover:not(:disabled) {
-            background: rgba(var(--rl-red-rgb), 0.18);
-            border-color: rgba(var(--rl-red-rgb), 0.45);
-        }
-        &:disabled { opacity: 0.45; cursor: not-allowed; }
+// Audit-log purge button now lives in the form footer (activity tab). Kept at
+// top level (was nested under .ic-audit-filters) so it styles correctly there,
+// left-aligned while "Save changes" stays on the right.
+.rl-formfoot .ic-audit-purge-btn {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: $radius-md;
+    background: rgba(var(--rl-red-rgb), 0.1);
+    color: $state-error;
+    border: 1px solid rgba(var(--rl-red-rgb), 0.25);
+    cursor: pointer;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-inline-end: auto;
+    transition: background $duration-fast ease, border-color $duration-fast ease;
+
+    &:hover:not(:disabled) {
+        background: rgba(var(--rl-red-rgb), 0.18);
+        border-color: rgba(var(--rl-red-rgb), 0.45);
     }
+    &:disabled { opacity: 0.45; cursor: not-allowed; }
 }

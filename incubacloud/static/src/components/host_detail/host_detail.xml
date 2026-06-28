@@ -511,13 +511,9 @@
                                     <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="applyAuditFilter">Apply</button>
                                     <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="resetAuditFilter">Reset</button>
                                     <div class="ic-audit-spacer"/>
-                                    <button class="ic-audit-purge-btn"
-                                            t-att-disabled="state.auditPurging"
-                                            title="Delete entries older than the configured retention period"
-                                            t-on-click="purgeAuditLogs">
-                                        <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
-                                        Purge old logs
-                                    </button>
+                                    <IcPager offset="state.auditOffset" limit="pageSize"
+                                             total="state.auditTotal"
+                                             onPage="(o) => this.auditGoPage(o)"/>
                                 </div>
 
                                 <t t-if="state.auditLogLoading">
@@ -552,9 +548,6 @@
                                         </tbody>
                                     </table>
                                 </t>
-                                <IcPager offset="state.auditOffset" limit="pageSize"
-                                         total="state.auditTotal"
-                                         onPage="(o) => this.auditGoPage(o)"/>
                             </div>
                         </t>
 
@@ -562,28 +555,39 @@
 
                 </div>
 
-                <!-- Footer: save / delete (config tabs only, not activity) -->
-                <t t-if="state.tab !== 'overview' and state.tab !== 'activity'">
+                <!-- Footer: purge (activity tab) or save/delete (config tabs); hidden on overview -->
+                <t t-if="state.tab !== 'overview'">
                     <div class="rl-formfoot">
-                        <t t-if="!isNew and env.permissions?.can_manage_hosts">
-                            <button class="rl-btn rl-btn-danger ic-formfoot-delete" t-on-click="deleteHost">
-                                <t t-out="env.icon('trash', 15)"/> Delete
+                        <t t-if="state.tab === 'activity'">
+                            <button class="ic-audit-purge-btn"
+                                    t-att-disabled="state.auditPurging"
+                                    title="Delete entries older than the configured retention period"
+                                    t-on-click="purgeAuditLogs">
+                                <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
+                                Purge old logs
                             </button>
                         </t>
-                        <span class="rl-ff-hint">Fill in the required fields *</span>
-                        <button class="rl-btn rl-btn-primary"
-                                t-att-disabled="state.saving"
-                                t-on-click="save">
-                            <t t-if="state.saving">
-                                <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
-                                <t t-if="isNew">Creating…</t>
-                                <t t-else="">Saving…</t>
+                        <t t-else="">
+                            <t t-if="!isNew and env.permissions?.can_manage_hosts">
+                                <button class="rl-btn rl-btn-danger ic-formfoot-delete" t-on-click="deleteHost">
+                                    <t t-out="env.icon('trash', 15)"/> Delete
+                                </button>
                             </t>
-                            <t t-else="">
-                                <t t-if="isNew">Create Host</t>
-                                <t t-else="">Save changes</t>
-                            </t>
-                        </button>
+                            <span class="rl-ff-hint">Fill in the required fields *</span>
+                            <button class="rl-btn rl-btn-primary"
+                                    t-att-disabled="state.saving"
+                                    t-on-click="save">
+                                <t t-if="state.saving">
+                                    <i class="fa fa-spinner fa-spin" style="margin-right:5px"/>
+                                    <t t-if="isNew">Creating…</t>
+                                    <t t-else="">Saving…</t>
+                                </t>
+                                <t t-else="">
+                                    <t t-if="isNew">Create Host</t>
+                                    <t t-else="">Save changes</t>
+                                </t>
+                            </button>
+                        </t>
                     </div>
                 </t>
 
