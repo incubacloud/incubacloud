@@ -282,6 +282,13 @@
     tr:last-child td { border-block-end:none; }
     tbody tr.click { cursor:pointer; &:hover { background:var(--rl-surf2); } } }
   .rl-mono { font-family:var(--rl-fm); }
+  // ── Pager (server-side pagination controls; reusable via IcPager) ─────────
+  .rl-pager { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-block-start:12px; }
+  .rl-pager-info { font-family:var(--rl-fm); font-size:11.5px; color:var(--rl-muted); }
+  .rl-pager-btn { width:28px; height:28px; border-radius:var(--rl-rsm); border:1px solid var(--rl-line2);
+    background:transparent; color:var(--rl-muted); display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
+    &:hover:not(:disabled) { background:var(--rl-surf2); color:var(--rl-fg); }
+    &:disabled { opacity:.4; cursor:not-allowed; } }
   .rl-logs { background:#080b09; border:1px solid var(--rl-line); border-radius:var(--rl-r); padding-block:14px; padding-inline:16px;
     font-family:var(--rl-fm); font-size:12px; line-height:1.75; max-block-size:340px; overflow-y:auto; color:var(--rl-fg2);
     .rl-ts { color:var(--rl-faint); } .rl-ok { color:var(--rl-green); } .rl-dim { color:var(--rl-muted); } }
