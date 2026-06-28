@@ -1615,6 +1615,9 @@
                         </table>
                     </t>
                 </t>
+                <IcPager offset="state.backupsOffset" limit="pageSize"
+                         total="state.backupsData?.total || 0"
+                         onPage="(o) => this.backupsGoPage(o)"/>
             </div>
         </t>
 
@@ -1685,6 +1688,9 @@
                         </tbody>
                     </table>
                 </t>
+                <IcPager offset="state.auditOffset" limit="pageSize"
+                         total="state.auditTotal"
+                         onPage="(o) => this.auditGoPage(o)"/>
             </div>
         </t>
 

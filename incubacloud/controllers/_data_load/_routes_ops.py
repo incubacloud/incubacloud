@@ -61,12 +61,19 @@ class OpsMixin:
 
     # ── Backup management ──────────────────────────────────────────────────
 
-    def _serialize_backups(self, instance_id):
-        """Return backup records for an instance as a dict."""
-        backups = request.env['cloud.instance.backup'].sudo().search([
-            ('instance_id', '=', instance_id),
-        ], order='backup_time desc')
+    def _serialize_backups(self, instance_id, offset=0, limit=None):
+        """Return a page of backup records for an instance as a dict.
+
+        ``total`` is the unpaginated count so the SPA can drive a paginator.
+        """
+        Backup = request.env['cloud.instance.backup'].sudo()
+        domain = [('instance_id', '=', instance_id)]
+        total = Backup.search_count(domain)
+        backups = Backup.search(
+            domain, order='backup_time desc', offset=offset, limit=limit,
+        )
         return {
+            'total': total,
             'backups': [{
                 'id': b.id,
                 'type': b.backup_type,
@@ -110,7 +117,7 @@ class OpsMixin:
         return _("S3 chain")
 
     @http.route(['/cloud/list_backups'], type='jsonrpc', auth='user')
-    def cloud_list_backups(self, instance_id, refresh=False):
+    def cloud_list_backups(self, instance_id, refresh=False, offset=0, limit=None):
         """List backups from cloud.instance.backup records.
 
         refresh=True enqueues a backup_list job (production: SSH scan,
@@ -129,11 +136,11 @@ class OpsMixin:
 
         return {
             'ok': True, 'state': 'done',
-            'result': self._serialize_backups(instance_id),
+            'result': self._serialize_backups(instance_id, offset=offset, limit=limit),
         }
 
     @http.route(['/cloud/get_backup_result'], type='jsonrpc', auth='user')
-    def cloud_get_backup_result(self, job_id):
+    def cloud_get_backup_result(self, job_id, offset=0, limit=None):
         """Poll a backup_list job; return persisted records when done."""
         self._sec()._check_can_manage_backups()
         job = request.env['cloud.job'].browse(job_id)
@@ -146,7 +153,7 @@ class OpsMixin:
             inst_id = job.instance_id.id if job.instance_id else None
             return {
                 'ok': True, 'state': 'done',
-                'result': self._serialize_backups(inst_id) if inst_id else {},
+                'result': self._serialize_backups(inst_id, offset=offset, limit=limit) if inst_id else {},
             }
         return {
             'ok': False,

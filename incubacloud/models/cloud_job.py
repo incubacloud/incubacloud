@@ -1069,19 +1069,26 @@ class CloudJob(models.Model):
 
     @api.model
     def get_audit_log(
-        self, instance_id=None, host_id=None, limit=100,
+        self, instance_id=None, host_id=None, limit=100, offset=0,
         q=None, action_filter=None, date_from=None, date_to=None,
     ):
-        """Return audit log entries for a given instance or host."""
+        """Return a page of audit log entries for an instance or host.
+
+        Returns ``{'entries', 'total', 'actions'}``: ``total`` drives the
+        paginator and ``actions`` is the full set of distinct action names
+        for the target (ignoring the current filters) so the filter
+        dropdown stays complete across pages.
+        """
+        empty = {'entries': [], 'total': 0, 'actions': []}
         if not self.env.user.has_group('incubacloud.group_cloud_manager'):
-            return []
-        domain = []
+            return empty
         if instance_id:
-            domain.append(('instance_id', '=', int(instance_id)))
+            base = [('instance_id', '=', int(instance_id))]
         elif host_id:
-            domain.append(('host_id', '=', int(host_id)))
+            base = [('host_id', '=', int(host_id))]
         else:
-            return []
+            return empty
+        domain = list(base)
         if q:
             domain += ['|',
                 ('user_id.name', 'ilike', q),
@@ -1093,6 +1100,10 @@ class CloudJob(models.Model):
             domain.append(('create_date', '>=', date_from))
         if date_to:
             domain.append(('create_date', '<=', date_to))
-        return self.env['cloud.audit.log'].search(
-            domain, order='id desc', limit=limit,
+        Log = self.env['cloud.audit.log']
+        total = Log.search_count(domain)
+        entries = Log.search(
+            domain, order='id desc', limit=limit, offset=offset,
         )._format()
+        actions = [a for (a,) in Log._read_group(base, groupby=['action']) if a]
+        return {'entries': entries, 'total': total, 'actions': actions}

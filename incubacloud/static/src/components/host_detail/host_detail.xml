@@ -552,6 +552,9 @@
                                         </tbody>
                                     </table>
                                 </t>
+                                <IcPager offset="state.auditOffset" limit="pageSize"
+                                         total="state.auditTotal"
+                                         onPage="(o) => this.auditGoPage(o)"/>
                             </div>
                         </t>
 
