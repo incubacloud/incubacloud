@@ -326,7 +326,13 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                     f"/var/lib/postgresql/data"
                     f" --user postgres"
                     f" --entrypoint postgres"
-                    f" postgres:"
+                    # postgres-autoconf (not vanilla postgres:*-alpine): it
+                    # bundles pgvector, which the cloned cluster needs to open
+                    # the Odoo 19 ``ai`` embedding index. The plain image lacks
+                    # ``$libdir/vector`` and the boot test would abort on it.
+                    # The tag stays pinned to postgres_version so the temp PG
+                    # major matches the pg_basebackup source cluster.
+                    f" ghcr.io/tecnativa/postgres-autoconf:"
                     f"{inst.postgres_version or '17'}-alpine"
                     f" -D /var/lib/postgresql/data"
                     f" && sleep 5"
