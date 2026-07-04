@@ -219,8 +219,17 @@ class TestJobEmailNotificationFilters(TransactionCase):
             'user': 'ubuntu',
             'wildcard_domain': 'mail.example.com',
         })
-        # A subscriber that would receive every event.
-        self.env.user.write({'cloud_notification_level': 'all'})
+        # A subscriber that would receive every event. Grant the
+        # project-manager cloud group so this user can read host-level
+        # jobs (rule_job_all) — the positive-control test drives a
+        # host-only job, which non-managers cannot see on a clean DB
+        # (devel happens to grant the group, hiding this in local runs).
+        self.env.user.write({
+            'cloud_notification_level': 'all',
+            'group_ids': [
+                (4, self.env.ref('incubacloud.group_cloud_project_manager').id),
+            ],
+        })
         self.env.user.partner_id.write({'email': 'ops@example.com'})
 
     def _job(self, code):
