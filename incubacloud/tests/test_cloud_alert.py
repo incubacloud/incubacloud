@@ -151,3 +151,93 @@ class TestCloudAlertProjectAndConflictData(TransactionCase):
         })
         alert = self._alert(instance_id=inst.id)
         self.assertFalse(alert.conflict_data)
+
+
+class TestCloudAlertGC(TransactionCase):
+    """``_gc`` drops old dismissed alerts and never touches active ones."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'GC Host',
+            'ip_address': '10.0.0.60',
+            'user': 'ubuntu', 'wildcard_domain': 'gc.example.com',
+        })
+
+    def _alert(self, state='dismissed', days_old=0):
+        """Create an alert and optionally backdate its write_date."""
+        alert = self.env['cloud.alert'].create({
+            'code': 'gc_test',
+            'message': 'gc test alert',
+            'host_id': self.host.id,
+            'state': state,
+        })
+        if days_old:
+            self.env.cr.execute(
+                "UPDATE cloud_alert SET write_date ="
+                " now() - make_interval(days => %s) WHERE id = %s",
+                (days_old, alert.id),
+            )
+            self.env['cloud.alert'].invalidate_model(['write_date'])
+        return alert
+
+    def test_old_dismissed_is_purged(self):
+        old = self._alert(state='dismissed', days_old=90)
+        self.env['cloud.alert']._gc()
+        self.assertFalse(old.exists())
+
+    def test_recent_dismissed_is_kept(self):
+        recent = self._alert(state='dismissed', days_old=10)
+        self.env['cloud.alert']._gc()
+        self.assertTrue(recent.exists())
+
+    def test_old_active_is_kept(self):
+        """Active means unresolved — age alone never deletes it."""
+        active = self._alert(state='active', days_old=365)
+        self.env['cloud.alert']._gc()
+        self.assertTrue(active.exists())
+
+
+class TestCloudAlertDismissAll(TransactionCase):
+    """Bulk dismiss sweeps informational alerts but never the conflict
+    alerts that gate deploys."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'DA Host',
+            'ip_address': '10.0.0.61',
+            'user': 'ubuntu', 'wildcard_domain': 'da.example.com',
+        })
+
+    def _alert(self, code, level='warning'):
+        """Create an active host-scoped alert with the given code."""
+        return self.env['cloud.alert'].create({
+            'code': code,
+            'level': level,
+            'message': f'{code} alert',
+            'host_id': self.host.id,
+        })
+
+    def test_dismisses_non_conflict_and_keeps_conflicts(self):
+        info = self._alert('job_failed')
+        crit = self._alert('host_unreachable', level='critical')
+        pip = self._alert('pip_conflict')
+        addon = self._alert('addon_conflict')
+
+        count = self.env['cloud.alert'].action_dismiss_all()
+
+        self.assertGreaterEqual(count, 2)
+        self.assertEqual(info.state, 'dismissed')
+        self.assertEqual(crit.state, 'dismissed')
+        self.assertEqual(pip.state, 'active')
+        self.assertEqual(addon.state, 'active')
+
+    def test_level_filter_limits_the_sweep(self):
+        warn = self._alert('job_failed')
+        crit = self._alert('host_unreachable', level='critical')
+
+        self.env['cloud.alert'].action_dismiss_all(level_filter='critical')
+
+        self.assertEqual(crit.state, 'dismissed')
+        self.assertEqual(warn.state, 'active')

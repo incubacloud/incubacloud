@@ -1,8 +1,10 @@
 import logging
+from datetime import timedelta
 
 from psycopg2 import sql as psql
 
 from odoo import api, fields, models
+from odoo.exceptions import AccessError
 
 _logger = logging.getLogger(__name__)
 
@@ -22,6 +24,219 @@ class ResUsers(models.Model):
         string='Cloud Job Notifications',
         default='failures',
     )
+
+    cloud_notification_mode = fields.Selection(
+        selection=[
+            ('immediate', 'Immediate'),
+            ('daily_digest', 'Daily digest'),
+        ],
+        string='Cloud Email Delivery',
+        default='immediate',
+        help=(
+            'Immediate: one email per event. Daily digest: events are '
+            'batched into one summary email per day — except severe '
+            'failures (production deploys/rebuilds, critical alerts), '
+            'which are always sent immediately.'
+        ),
+    )
+
+    cloud_muted_project_ids = fields.Many2many(
+        comodel_name='cloud.project',
+        relation='cloud_user_muted_project_rel',
+        column1='user_id',
+        column2='project_id',
+        string='Muted Cloud Projects',
+        help=(
+            'Projects that never interrupt this user: no emails, no '
+            'digest entries, no live toasts. The alerts panel and '
+            'badge still show everything.'
+        ),
+    )
+
+    cloud_last_digest_at = fields.Datetime(
+        string='Last Cloud Digest Sent',
+        help=(
+            'Watermark of the daily digest window. Advanced after each '
+            'run — also when the window turned out empty.'
+        ),
+    )
+
+    def _cloud_project_muted(self, project):
+        """Return True when *project* is in this user's muted list.
+
+        Falsy/empty projects are never muted — host-level events have
+        no project to mute by.
+        """
+        self.ensure_one()
+        return bool(project) and project in self.cloud_muted_project_ids
+
+    @api.model
+    def _cron_send_cloud_digest(self):
+        """Send the daily cloud digest to every opted-in user.
+
+        Each user runs in its own try/except so one broken mailbox
+        cannot starve the rest; the per-user watermark only advances
+        after a successful send (or a genuinely empty window).
+        """
+        now = fields.Datetime.now()
+        users = self.search([
+            ('share', '=', False),
+            ('active', '=', True),
+            ('cloud_notification_level', '!=', 'none'),
+            ('cloud_notification_mode', '=', 'daily_digest'),
+        ])
+        for user in users:
+            try:
+                self._send_cloud_digest_for(user, now)
+            except Exception:
+                _logger.exception(
+                    'cloud digest failed for user %s', user.id,
+                )
+
+    @api.model
+    def _send_cloud_digest_for(self, user, now):
+        """Build and send one user's digest for ``(watermark, now]``.
+
+        Content is searched *as the user* — the cloud.job/cloud.alert
+        record rules stay the single source of truth — and muted
+        projects are excluded; the surviving records are then re-read
+        with sudo only to format display values (a member may read a
+        job without having read access to its host's name).
+        Returns True when a mail was actually sent.
+        """
+        since = user.cloud_last_digest_at or (now - timedelta(days=1))
+        muted_ids = user.cloud_muted_project_ids.ids
+        CloudJob = self.env['cloud.job']
+        job_domain = [
+            ('write_date', '>', since),
+            ('write_date', '<=', now),
+            ('job_type_id.code', 'not in', CloudJob._get_hidden_job_types()),
+        ]
+        # Only add the mute legs when something is actually muted:
+        # a dotted ``not in []`` does NOT mean "match all" — it drops
+        # every record (empty-subselect semantics). The explicit
+        # ``instance_id = False`` branch keeps host-level jobs, whose
+        # NULL instance must never be swallowed by the traversal.
+        if muted_ids:
+            job_domain += [
+                '|',
+                ('instance_id', '=', False),
+                ('instance_id.project_id', 'not in', muted_ids),
+            ]
+        if user.cloud_notification_level == 'all':
+            job_domain.append(('state', 'in', ('failed', 'done')))
+        else:
+            job_domain.append(('state', '=', 'failed'))
+        alert_domain = [
+            ('create_date', '>', since),
+            ('create_date', '<=', now),
+        ]
+        if muted_ids:
+            alert_domain += [
+                '!', '|',
+                ('project_id', 'in', muted_ids),
+                ('instance_id.project_id', 'in', muted_ids),
+            ]
+        try:
+            jobs = CloudJob.with_user(user).search(
+                job_domain, order='write_date desc', limit=100,
+            )
+            alerts = self.env['cloud.alert'].with_user(user).search(
+                alert_domain, order='create_date desc', limit=100,
+            )
+        except AccessError:
+            # No cloud ACLs at all — nothing this user could digest.
+            jobs = CloudJob
+            alerts = self.env['cloud.alert']
+        if not jobs and not alerts:
+            user.sudo().cloud_last_digest_at = now
+            return False
+        email = user.partner_id.email
+        if not email:
+            # No mailbox to deliver to; advancing avoids an unbounded
+            # backlog the day the user finally sets an address.
+            _logger.warning(
+                'cloud digest skipped for user %s: no email set', user.id,
+            )
+            user.sudo().cloud_last_digest_at = now
+            return False
+        values = self._cloud_digest_values(
+            user, jobs.sudo(), alerts.sudo(), since, now,
+        )
+        body = self.env['ir.qweb']._render(
+            'incubacloud.mail_cloud_digest', values,
+        )
+        subject = (
+            f"[IncubaCloud] Daily digest: {values['failed_count']} failed"
+            f" job(s), {values['alert_count']} new alert(s)"
+        )
+        self.env['mail.mail'].sudo().create({
+            'subject': subject,
+            'body_html': body,
+            'email_to': email,
+            'auto_delete': True,
+        }).send()
+        user.sudo().cloud_last_digest_at = now
+        return True
+
+    @api.model
+    def _cloud_digest_values(self, user, jobs, alerts, since, now):
+        """Format sudo'd records into the plain dicts the digest QWeb
+        template renders — the template never touches the ORM.
+        """
+        def _when(dt):
+            return fields.Datetime.context_timestamp(
+                user, dt,
+            ).strftime('%Y-%m-%d %H:%M')
+
+        def _job_target(job):
+            if job.instance_id:
+                project = job.instance_id.project_id.name
+                name = job.instance_id.name
+                return f'{project} / {name}' if project else name
+            return job.host_id.name or ''
+
+        def _alert_target(alert):
+            if alert.host_id:
+                return alert.host_id.name
+            if alert.instance_id:
+                project = alert.instance_id.project_id.name
+                name = alert.instance_id.name
+                return f'{project} / {name}' if project else name
+            return alert.project_id.name or ''
+
+        base_url = self.env['ir.config_parameter'].sudo().get_param(
+            'web.base.url', '',
+        )
+        failed, done = [], []
+        for job in jobs:
+            row = {
+                'name': job.name,
+                'target': _job_target(job),
+                'when': _when(job.write_date),
+                'url': f'{base_url}/cloud/log/{job.id}',
+            }
+            (failed if job.state == 'failed' else done).append(row)
+        alert_rows = [
+            {
+                'level': a.level,
+                'message': a.message,
+                'target': _alert_target(a),
+                'when': _when(a.create_date),
+            }
+            for a in alerts
+        ]
+        return {
+            'period_start': _when(since),
+            'period_end': _when(now),
+            'failed_jobs': failed,
+            'done_jobs': done,
+            'alerts': alert_rows,
+            'failed_count': len(failed),
+            'done_count': len(done),
+            'alert_count': len(alert_rows),
+            'console_url': f'{base_url}/cloud/ui',
+        }
 
     @api.model
     def _incubacloud_ensure_cron_bot(self):

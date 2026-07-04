@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from odoo import api, fields, models
+from odoo.exceptions import AccessError
 
 
 class CloudAlert(models.Model):
@@ -64,7 +67,11 @@ class CloudAlert(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         records = super().create(vals_list)
-        records._broadcast_overview()
+        records._broadcast_overview(
+            critical=records.filtered(
+                lambda r: r.level == 'critical' and r.state == 'active',
+            ),
+        )
         return records
 
     def write(self, vals):
@@ -90,22 +97,94 @@ class CloudAlert(models.Model):
     # layer: ``rule_alert_member`` excludes targetless rows from
     # stakeholders/consultants, so only project-managers+ see them.
 
-    def _broadcast_overview(self):
+    @api.model
+    def _gc(self, older_than_days=60):
+        """Drop dismissed alerts older than N days. Cron-invoked.
+
+        Active alerts are never touched — active means unresolved, no
+        matter how old. Dismissed rows are resolved history and would
+        otherwise grow without bound (nothing else deletes them).
+        """
+        cutoff = fields.Datetime.now() - timedelta(days=older_than_days)
+        self.sudo().search([
+            ('state', '=', 'dismissed'),
+            ('write_date', '<', cutoff),
+        ]).unlink()
+
+    def _broadcast_overview(self, critical=None):
         """Notify every active internal user that the alert overview may
         have changed — they will refetch ``/cloud/get_alert_count`` and
         ``/cloud/get_dashboard`` through the normal ACL path.
 
-        The payload is intentionally empty: the bus does not respect
-        ``ir.rule`` filters, so we never ship actual alert data through
-        it. The client treats the event as an invalidation tick only.
+        The payload is empty by default: the bus does not respect
+        ``ir.rule`` filters, so we never ship alert data blindly through
+        it. The one exception is *critical* alerts: the client toasts
+        them live, so each user's event carries the subset of new
+        critical alerts that user is allowed to read — visibility is
+        checked per user before the send, keeping the record rules
+        authoritative.
         """
-        self._broadcast_overview_from(self.env)
+        self._broadcast_overview_from(self.env, critical=critical)
 
     @api.model
-    def _broadcast_overview_from(self, env):
+    def _broadcast_overview_from(self, env, critical=None):
         users = env['res.users'].search([
             ('share', '=', False),
             ('active', '=', True),
         ])
         for user in users:
-            user._bus_send('cloud_overview', {})
+            payload = {}
+            if critical:
+                visible = critical.filtered(
+                    lambda a, u=user: self._alert_visible_to(a, u)
+                    and not self._alert_muted_for(a, u),
+                )
+                if visible:
+                    payload = {'critical': [
+                        {'id': a.id, 'message': a.message}
+                        for a in visible.sudo()
+                    ]}
+            user._bus_send('cloud_overview', payload)
+
+    @api.model
+    def _alert_visible_to(self, alert, user):
+        """Return True when *user* passes ACL + record rules to read
+        *alert* — gates what travels on their bus channel.
+        """
+        try:
+            alert.with_user(user).check_access('read')
+        except AccessError:
+            return False
+        return True
+
+    @api.model
+    def _alert_muted_for(self, alert, user):
+        """Return True when the alert's project is muted by *user* —
+        muted projects never toast, though they stay in the panel.
+        """
+        project = alert.project_id or (
+            alert.instance_id.project_id if alert.instance_id else None
+        )
+        return user._cloud_project_muted(project)
+
+    @api.model
+    def action_dismiss_all(self, level_filter=None):
+        """Dismiss every active, non-blocking alert visible to the
+        current user and return how many were affected.
+
+        Conflict alerts (``pip_conflict`` / ``addon_conflict``) are
+        excluded — they gate deploys and have their own Resolve flow,
+        so a bulk sweep must never silence them. Record rules scope
+        the search; the write access check covers the rest.
+        """
+        domain = [
+            ('state', '=', 'active'),
+            ('code', 'not in', ('pip_conflict', 'addon_conflict')),
+        ]
+        if level_filter in ('warning', 'critical'):
+            domain.append(('level', '=', level_filter))
+        alerts = self.search(domain)
+        if alerts:
+            alerts.check_access('write')
+            alerts.write({'state': 'dismissed'})
+        return len(alerts)

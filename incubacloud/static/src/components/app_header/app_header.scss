@@ -412,3 +412,78 @@
 
   &:hover { background: $surface-light; color: $text-primary; }
 }
+
+// Notification preferences modal — single column so the wide
+// "Delivery" select never overflows the narrow modal, and every
+// field (incl. muted projects) takes the full width.
+.ic-notif-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 12px 0;
+
+  .ic-form-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: $text-secondary;
+    }
+  }
+}
+
+// Muted-project pills: compact so many fit, capped height with an
+// inner scroll so a long list never inflates the modal.
+.ic-notif-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 112px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  padding: 2px;
+}
+
+.ic-notif-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-family: $font-mono;
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 2px 4px 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: rgba(var(--rl-faint-rgb), 0.28);
+  color: $text-primary;
+
+  .ic-notif-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ic-notif-chip-x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: $text-secondary;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover { color: $text-primary; background: rgba(var(--rl-faint-rgb), 0.5); }
+  }
+}

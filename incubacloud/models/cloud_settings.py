@@ -344,11 +344,11 @@ class CloudSettings(models.Model):
         list in the dashboard without digging through logs.
 
         When the model is not linked to a host/instance/project (e.g.
-        ``cloud.settings``, ``cloud.github.app``) we cannot create an
-        alert — ``cloud.alert._check_target`` requires exactly one of
-        those three. Those cases stay log-only, which is acceptable
-        because the same warning was already emitted in
-        ``_rotate_encrypted_column``.
+        ``cloud.settings``, ``cloud.github.app``) we skip the alert —
+        a targetless row would be invisible to the member-scoped record
+        rule and impossible to trace back to a record. Those cases stay
+        log-only, which is acceptable because the same warning was
+        already emitted in ``_rotate_encrypted_column``.
         """
         Alert = self.env['cloud.alert'].sudo()
         Model = self.env[model_name]

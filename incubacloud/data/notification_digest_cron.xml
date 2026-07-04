@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="cron_cloud_notification_digest" model="ir.cron">
+        <field name="name">Send daily cloud notification digest</field>
+        <field name="model_id" ref="base.model_res_users"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_send_cloud_digest()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 07:00:00')"/>
+        <field name="active">True</field>
+    </record>
+</odoo>

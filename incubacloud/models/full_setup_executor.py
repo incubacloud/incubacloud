@@ -366,6 +366,6 @@ class FullSetupExecutor(AbstractSSHExecutor):
             'setup_failed',
             "Host setup failed. Check the job log for details."
             " Re-run Setup to retry.",
-            level='error',
+            level='critical',
         )
         self._host().write({'status': 'unsupported'})

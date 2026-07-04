@@ -234,7 +234,7 @@
                                                 <span class="rl-tl-name" t-esc="job.name"/>
                                                 <span t-att-class="'rl-tl-state ' + (jobStateClass(job.state) === 'jst-done' ? 'done' : jobStateClass(job.state) === 'jst-failed' ? 'failed' : 'queued')"
                                                       t-esc="job.state"/>
-                                                <t t-if="job.has_alert">
+                                                <t t-if="job.requires_action">
                                                     <span class="ic-tl-alert-badge"
                                                           t-on-click.stop="() => env.toggleSlideOver('alerts')">
                                                         <t t-out="env.icon('alert', 13)"/> Action required

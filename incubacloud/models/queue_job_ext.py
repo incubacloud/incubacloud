@@ -46,8 +46,14 @@ class QueueJob(models.Model):
             # Explicitly write cloud_job.state via SQL so it is visible
             # to the frontend even when flush_all() is never called
             # (failure path).
+            # write_date travels with the state so consumers that
+            # window on "when did it reach a terminal state" (the
+            # daily digest) see the transition — a raw UPDATE would
+            # otherwise leave write_date at the last ORM write.
             self.env.cr.execute(
-                "UPDATE cloud_job SET state = %s WHERE id = %s",
+                "UPDATE cloud_job SET state = %s,"
+                " write_date = (now() at time zone 'UTC')"
+                " WHERE id = %s",
                 (new_state, cjob.id),
             )
             # The raw UPDATE bypasses the ORM, so the cached value of
@@ -64,7 +70,8 @@ class QueueJob(models.Model):
             # wait_dependencies for the same instance.
             if new_state == "failed" and cjob.instance_id:
                 self.env.cr.execute(
-                    "UPDATE cloud_job SET state = 'failed'"
+                    "UPDATE cloud_job SET state = 'failed',"
+                    " write_date = (now() at time zone 'UTC')"
                     " WHERE instance_id = %s"
                     "   AND state = 'wait_dependencies'"
                     "   AND id != %s",
@@ -83,7 +90,9 @@ class QueueJob(models.Model):
             # Broadcast job update to all active internal users so every
             # user watching the cloud UI gets real-time notifications.
             # Also send email based on each user's notification preference.
-            self.env['cloud.job']._broadcast_job_update(cjob.id)
+            self.env['cloud.job']._broadcast_job_update(
+                cjob.id, state=new_state,
+            )
             self.env['cloud.job']._notify_by_email(cjob, new_state)
             _logger.info(
                 "[queue_job_ext] broadcast cloud.job id=%s state=%s",

@@ -1,5 +1,6 @@
 import { Component, useState, onMounted, onWillUnmount, onWillStart, useSubEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
+import { _t } from "@web/core/l10n/translation";
 import { useService } from "@web/core/utils/hooks";
 import { useDebouncedBus } from "../utils/use_debounced_bus";
 import { createProjectStore } from "../store/project_store";
@@ -161,7 +162,44 @@ export class Chrome extends Component {
         // (e.g. dismiss-all-selected) would otherwise trigger as many
         // ``get_alert_count`` RPCs as there are rows affected.
         const triggerAlertRefresh = useDebouncedBus(() => this._pollAlertCount());
-        this._onOverviewUpdate = () => triggerAlertRefresh();
+        this._onOverviewUpdate = (payload) => {
+            triggerAlertRefresh();
+            // Critical alerts ride the overview event already filtered
+            // per user on the server (record rules checked before each
+            // send) — safe to display without a round-trip.
+            for (const alert of payload?.critical || []) {
+                this._toastApi?.error(alert.message);
+            }
+        };
+
+        /**
+         * Live job toasts. Chunk-flush events carry a running state and
+         * are ignored; the terminal transition (done/failed) fetches
+         * displayable info back through the ACL path — jobs the user
+         * cannot see (and hidden background types) return ok:false and
+         * never toast.
+         * @param {{id: number, state: string}} payload bus event
+         */
+        this._toastedJobs = new Set();
+        this._onJobEvent = async (payload) => {
+            const { id, state } = payload || {};
+            if (!id || (state !== "done" && state !== "failed")) return;
+            const key = `${id}:${state}`;
+            if (this._toastedJobs.has(key)) return;
+            if (this._toastedJobs.size > 500) this._toastedJobs.clear();
+            this._toastedJobs.add(key);
+            try {
+                const brief = await rpc("/cloud/get_job_brief", { job_id: id });
+                if (!brief?.ok) return;
+                if (brief.state === "done") {
+                    this._toastApi?.success(_t("%s completed", brief.name));
+                } else if (brief.state === "failed") {
+                    this._toastApi?.error(
+                        _t("%s failed — check the job log", brief.name),
+                    );
+                }
+            } catch (_e) { console.debug("Job toast skipped:", _e); }
+        };
 
         onWillStart(async () => {
             try {
@@ -215,12 +253,14 @@ export class Chrome extends Component {
             window.addEventListener("popstate", this._onPopState);
             this._pollAlertCount();
             this._busService.subscribe("cloud_overview", this._onOverviewUpdate);
+            this._busService.subscribe("cloud_jobs", this._onJobEvent);
             this._busService.start();
         });
 
         onWillUnmount(() => {
             window.removeEventListener("popstate", this._onPopState);
             this._busService.unsubscribe("cloud_overview", this._onOverviewUpdate);
+            this._busService.unsubscribe("cloud_jobs", this._onJobEvent);
         });
 
         const appState = this.state;
@@ -228,6 +268,9 @@ export class Chrome extends Component {
         let _alertReturnUrl = null;
         // Toast notification service
         const { toastApi, toasts, dismissToast } = createToastService();
+        // Referenced by the bus handlers above (they only run
+        // post-mount, long after setup finished assigning this).
+        this._toastApi = toastApi;
 
         // Single source of truth for project data on the SPA side.
         // Owns the cloud_jobs bus subscription that drives the
