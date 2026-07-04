@@ -97,7 +97,13 @@ jobs:
         #
         # Bumping all three in-place lines CI up with what the runtime
         # doodba image pins (requirements.txt, audited by pip-audit).
-        run: pip install --upgrade 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3'
+        #
+        # openupgradelib: transitive dependency of OCA ``queue_job``,
+        # which now declares it in ``external_dependencies``. Without it
+        # ``oca_init_test_database`` fails to install queue_job. Not
+        # pinned/audited — pip-audit excludes it (git URL in pip.txt)
+        # and it never executes in our tests.
+        run: pip install --upgrade 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib'
 
       - name: Fetch OCA dependencies
         run: |
