@@ -197,9 +197,15 @@ class TestQueueJobExtFailureAlert(TransactionCase):
         self.assertEqual(probe_alert.state, 'active')
 
 
+@tagged('post_install', '-at_install')
 class TestJobEmailNotificationFilters(TransactionCase):
     """``_notify_by_email`` must skip hidden job types and cancelled
-    jobs — only user-visible success/failure events reach the inbox."""
+    jobs — only user-visible success/failure events reach the inbox.
+
+    ``post_install``: setUp creates a res.users, which crashes at
+    at_install on the ``res_partner.autopost_bills`` NOT NULL column
+    (the ``account`` module owning it loads later).
+    """
 
     def _job_type(self, code, apply_to='host'):
         jt = self.env['cloud.job.type'].search(
@@ -219,18 +225,28 @@ class TestJobEmailNotificationFilters(TransactionCase):
             'user': 'ubuntu',
             'wildcard_domain': 'mail.example.com',
         })
-        # A subscriber that would receive every event. Grant the
-        # project-manager cloud group so this user can read host-level
-        # jobs (rule_job_all) — the positive-control test drives a
-        # host-only job, which non-managers cannot see on a clean DB
-        # (devel happens to grant the group, hiding this in local runs).
-        self.env.user.write({
-            'cloud_notification_level': 'all',
+        # A DEDICATED subscriber that wants every event and can read
+        # host-level jobs (project-manager group → rule_job_all). Do
+        # not lean on self.env.user: who that is, and which groups /
+        # email it carries, differs between devel and the CI runner —
+        # the reason the positive-control test flaked only in CI.
+        self.subscriber = self.env['res.users'].create({
+            'name': 'mail-subscriber',
+            'login': 'mail-subscriber',
+            'email': 'ops@example.com',
             'group_ids': [
+                (4, self.env.ref('base.group_user').id),
                 (4, self.env.ref('incubacloud.group_cloud_project_manager').id),
             ],
         })
-        self.env.user.partner_id.write({'email': 'ops@example.com'})
+        self.subscriber.cloud_notification_level = 'all'
+
+    def _sub_mail_count(self):
+        """Job-notification mails delivered to the dedicated subscriber."""
+        return self.env['mail.mail'].sudo().search_count([
+            ('subject', 'like', '[IncubaCloud] Job%'),
+            ('email_to', '=', 'ops@example.com'),
+        ])
 
     def _job(self, code):
         """Create a cloud.job of *code* on the test host."""
@@ -260,11 +276,12 @@ class TestJobEmailNotificationFilters(TransactionCase):
         self.assertEqual(self._mail_count(), before)
 
     def test_visible_failure_still_sends_email(self):
-        """Positive control: the filters must not silence real events."""
+        """Positive control: the filters must not silence real events —
+        the dedicated subscriber receives the failure mail."""
         job = self._job('host_probe')
-        before = self._mail_count()
+        before = self._sub_mail_count()
         self.env['cloud.job']._notify_by_email(job, 'failed')
-        self.assertGreater(self._mail_count(), before)
+        self.assertGreater(self._sub_mail_count(), before)
 
 
 class TestJobRequiresActionFlag(TransactionCase):
