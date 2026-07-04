@@ -6,7 +6,7 @@ from datetime import timedelta
 from odoo import models, fields, api, _
 from odoo.addons.queue_job.delay import chain as delay_chain
 from odoo.addons.queue_job.exception import JobError, RetryableJobError
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 
 from ._repo_requirements import detect_pip_conflicts, create_pip_conflict_alert
 from .registry import executor_registry
@@ -586,6 +586,21 @@ class CloudJob(models.Model):
         """
         return set(self._severe_job_types)
 
+    # Alert codes that block (re-)enqueueing a job until the operator
+    # resolves them (see the pre-check in ``enqueue`` and
+    # ``blocked_alert_id``). Only these warrant an "Action required"
+    # badge in the UI; any other alert linked to a job is informational
+    # — a plain failure only needs a Retry.
+    _actionable_alert_codes = frozenset({'pip_conflict', 'addon_conflict'})
+
+    @api.model
+    def _get_actionable_alert_codes(self):
+        """Return alert codes that require operator action before the
+        job can run again. Override in child modules and call super()
+        to extend.
+        """
+        return set(self._actionable_alert_codes)
+
     @api.model
     def _create_job_failed_alert(self, cjob, exc_message=None):
         """Persist a ``cloud.alert`` when a job transitions to failed.
@@ -599,8 +614,9 @@ class CloudJob(models.Model):
             ``docker_prune`` …) are skipped — they self-heal on the
             next tick and would flood the panel with noise.
           * Jobs without any host/instance/project target are skipped;
-            the alert model requires at least one (constraint
-            ``_check_target``).
+            a targetless alert would be invisible to the member-scoped
+            record rule (targetless rows are reserved for global
+            platform events).
         """
         if cjob.job_type_id.code in self._get_hidden_job_types():
             return None
@@ -651,17 +667,33 @@ class CloudJob(models.Model):
 
     @api.model
     def _dismiss_job_failed_alerts(self, cjob):
-        """Mark active ``job_failed`` alerts for this cjob as dismissed.
+        """Mark stale active ``job_failed`` alerts as dismissed when a
+        job reaches ``done``.
 
-        Called when the same cloud.job later transitions to ``done``
-        (operator reintented and it worked). Keeps the Alerts panel
-        tidy — nobody wants to see resolved failures stacked.
+        ``retry_job`` always creates a *fresh* cloud.job (linked via
+        ``retry_of_id``), so matching only ``job_id == cjob.id`` would
+        leave the original failure's alert active forever. Instead we
+        dismiss every active ``job_failed`` alert whose originating job
+        has the same type and target: if a rebuild now succeeds on this
+        instance, earlier rebuild failures are resolved history. Keeps
+        the Alerts panel tidy — nobody wants to see fixed failures
+        stacked.
         """
-        stale = self.env['cloud.alert'].sudo().search([
+        domain = [
             ('code', '=', 'job_failed'),
-            ('job_id', '=', cjob.id),
             ('state', '=', 'active'),
-        ])
+            ('job_id.job_type_id', '=', cjob.job_type_id.id),
+        ]
+        if cjob.instance_id:
+            domain.append(('instance_id', '=', cjob.instance_id.id))
+        else:
+            # Host-scoped job: never touch instance-scoped alerts that
+            # happen to live on the same host.
+            domain += [
+                ('host_id', '=', cjob.host_id.id),
+                ('instance_id', '=', False),
+            ]
+        stale = self.env['cloud.alert'].sudo().search(domain)
         if stale:
             stale.write({'state': 'dismissed'})
         return stale
@@ -693,11 +725,16 @@ class CloudJob(models.Model):
         for att in attachments:
             att_map.setdefault(att.res_id, att.id)
 
-        # Build a set of job IDs that generated active alerts
-        alert_job_ids = set(
+        # Jobs whose active alert actually demands operator action
+        # (conflicts that block re-running). Informational alerts
+        # (``job_failed``, …) don't count — a failed job only needs a
+        # Retry, so flagging it "Action required" would be misleading.
+        actionable_codes = list(self._get_actionable_alert_codes())
+        action_job_ids = set(
             self.env['cloud.alert'].search([
                 ('job_id', 'in', self.ids),
                 ('state', '=', 'active'),
+                ('code', 'in', actionable_codes),
             ]).mapped('job_id.id')
         ) if self.ids else set()
 
@@ -711,7 +748,9 @@ class CloudJob(models.Model):
                 "job_type_code": job.job_type_id.code,
                 "instance_id": job.instance_id.id if job.instance_id else None,
                 "state": 'blocked' if job.blocked_alert_id else job.state,
-                "has_alert": job.id in alert_job_ids,
+                "requires_action": (
+                    bool(job.blocked_alert_id) or job.id in action_job_ids
+                ),
                 "create_date": job.create_date,
                 "last_system_message": job._get_last_system_message(),
                 "download_url": (
@@ -994,7 +1033,7 @@ class CloudJob(models.Model):
         return records
 
     @api.model
-    def _broadcast_job_update(self, job_id):
+    def _broadcast_job_update(self, job_id, state=None):
         """Send bus notification for a job state change to all active users.
 
         Hidden job types (host_metrics, instance_health, docker_prune,
@@ -1014,17 +1053,63 @@ class CloudJob(models.Model):
             ('share', '=', False),
             ('active', '=', True),
         ])
+        # ``state`` lets the client toast terminal transitions without
+        # polling: it is only present when the caller knows it
+        # (queue_job_ext passes the terminal state it just wrote);
+        # create/chunk-flush broadcasts omit it and the client ignores
+        # them. Passing it explicitly instead of reading ``job.state``
+        # here matters twice: no ORM read on the hot chunk-flush path,
+        # and no premature materialisation of the stored related state
+        # at create() time (the queue.job may not exist yet). Only
+        # id + state travel on the bus — the bus ignores record rules,
+        # so anything richer (name, target) must be fetched back
+        # through the ACL path (``/cloud/get_job_brief``).
+        payload = {'id': job_id}
+        if state:
+            payload['state'] = state
         for user in users:
-            user._bus_send('cloud_jobs', {'id': job_id})
+            user._bus_send('cloud_jobs', payload)
 
     @api.model
     def _notify_by_email(self, job, state):
-        """Email active internal users according to their notification prefs."""
+        """Email active internal users according to their notification prefs.
+
+        Skips:
+          * ``cancelled`` — a user-initiated non-event; the preference
+            labels only promise success + failure.
+          * Hidden job types (``host_metrics``, …) — they run on cron
+            every few minutes, so a persistent failure (e.g. host down)
+            would email every subscriber per tick. The bus and alert
+            channels already filter them for the same reason.
+        """
+        if state == 'cancelled':
+            return
+        if job.job_type_id.code in self._get_hidden_job_types():
+            return
+        # Start from every subscribed internal user, then narrow to
+        # what each may actually read (the cloud.job record rules —
+        # single source of truth, not a duplicated membership domain)
+        # and hasn't muted. A user who cannot see the job in the UI
+        # must not learn about it by email.
         users = self.env['res.users'].search([
             ('share', '=', False),
             ('active', '=', True),
             ('cloud_notification_level', '!=', 'none'),
-        ])
+        ]).filtered(
+            lambda u: self._job_visible_to(job, u)
+            and not self._job_muted_for(job, u)
+        )
+        # Digest users only get instant mail for severe failures
+        # (production deploys/rebuilds); everything else reaches them
+        # in the daily digest instead.
+        severe = (
+            state == 'failed'
+            and job.job_type_id.code in self._get_severe_job_types()
+        )
+        if not severe:
+            users = users.filtered(
+                lambda u: u.cloud_notification_mode != 'daily_digest',
+            )
         for user in users:
             if (
                 user.cloud_notification_level == 'failures'
@@ -1045,6 +1130,26 @@ class CloudJob(models.Model):
                 'email_to': email,
                 'auto_delete': True,
             }).send()
+
+    @api.model
+    def _job_visible_to(self, job, user):
+        """Return True when *user* passes ACL + record rules to read
+        *job* — used to scope job emails to what the UI would show.
+        """
+        try:
+            job.with_user(user).check_access('read')
+        except AccessError:
+            return False
+        return True
+
+    @api.model
+    def _job_muted_for(self, job, user):
+        """Return True when the job's project is muted by *user* —
+        shared by email, digest and the live-toast brief endpoint so
+        every personal channel honours the same mute list.
+        """
+        project = job.instance_id.project_id if job.instance_id else None
+        return user._cloud_project_muted(project)
 
     @api.model
     def _build_email_body(self, job, state):

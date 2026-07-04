@@ -27,6 +27,25 @@
             <button t-att-class="'ah-chip' + (state.stateFilter === 'dismissed' ? ' active' : '')"
                     t-on-click="() => this.setFilter('dismissed')">Dismissed</button>
         </div>
+        <span class="ah-filter-label">Level</span>
+        <div class="ah-chips">
+            <button t-att-class="'ah-chip' + (state.levelFilter === 'all' ? ' active' : '')"
+                    t-on-click="() => this.setLevelFilter('all')">All</button>
+            <button t-att-class="'ah-chip' + (state.levelFilter === 'critical' ? ' active' : '')"
+                    t-on-click="() => this.setLevelFilter('critical')">Critical</button>
+            <button t-att-class="'ah-chip' + (state.levelFilter === 'warning' ? ' active' : '')"
+                    t-on-click="() => this.setLevelFilter('warning')">Warning</button>
+        </div>
+        <t t-if="canDismissAll">
+            <button class="rl-tl-abtn"
+                    title="Dismisses the listed non-conflict alerts for all users"
+                    t-on-click="openDismissAll">
+                <t t-out="env.icon('check', 14)"/> Dismiss all
+            </button>
+        </t>
+        <IcPager offset="state.offset" limit="pageSize"
+                 total="state.total"
+                 onPage="(o) => this.goPage(o)"/>
     </div>
 
     <!-- Loading -->
@@ -123,6 +142,7 @@
                                     </t>
                                     <t t-if="alert.state === 'active' and alert.code !== 'pip_conflict' and alert.code !== 'addon_conflict'">
                                         <button class="rl-tl-abtn"
+                                                title="Dismisses this alert for all users"
                                                 t-on-click="() => this.dismissAlert(alert)">
                                             <t t-out="env.icon('check', 15)"/> Dismiss
                                         </button>
@@ -213,6 +233,23 @@
                 </button>
             </t>
             <button class="ic-confirm-btn-ok" t-on-click="confirmResolve">Apply &amp; Resolve</button>
+        </div>
+    </IcModal>
+
+    <!-- Bulk dismiss confirmation -->
+    <IcModal t-if="state.dismissAllModal"
+             title="'Dismiss all alerts'"
+             boxClass="'ic-confirm-box'"
+             onClose="() => this.closeDismissAll()">
+        <h3 class="ic-confirm-title">Dismiss all alerts</h3>
+        <p class="ic-confirm-message">
+            This dismisses every listed non-conflict alert
+            <strong>for all users</strong>, not just for you.
+            Conflict alerts that block deploys are kept.
+        </p>
+        <div class="ic-confirm-actions">
+            <button class="ic-confirm-btn-cancel" t-on-click="closeDismissAll">Cancel</button>
+            <button class="ic-confirm-btn-ok" t-on-click="confirmDismissAll">Dismiss all</button>
         </div>
     </IcModal>
 

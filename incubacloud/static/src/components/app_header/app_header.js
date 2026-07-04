@@ -4,10 +4,11 @@ import { session } from "@web/session";
 import { _t } from "@web/core/l10n/translation";
 import { IcModal } from "../ic_modal/ic_modal";
 import { RlSelect } from "../rl_select/rl_select";
+import { SearchSelect } from "../search_select/search_select";
 
 export class AppHeader extends Component {
     static template = "incubacloud.AppHeader";
-    static components = { IcModal, RlSelect };
+    static components = { IcModal, RlSelect, SearchSelect };
     static props = {
         alertCount:   { type: Number },
         currentRoute: { type: String },
@@ -34,6 +35,9 @@ export class AppHeader extends Component {
             // Notification preferences modal
             showNotifModal: false,
             notifLevel: "failures",
+            notifMode: "immediate",
+            notifMuted: [],        // [{id, name}] muted projects
+            notifProjects: [],     // [{id, name}] pickable projects
             notifSaving: false,
         });
 
@@ -230,7 +234,15 @@ export class AppHeader extends Component {
         try {
             const prefs = await rpc("/cloud/get_user_preferences", {});
             this.state.notifLevel = prefs?.cloud_notification_level || "failures";
+            this.state.notifMode = prefs?.cloud_notification_mode || "immediate";
+            this.state.notifMuted = prefs?.cloud_muted_projects || [];
         } catch (_e) { console.debug("Preferences fetch skipped:", _e); }
+        try {
+            const data = await rpc("/cloud/get_projects", {});
+            this.state.notifProjects = (data?.items || []).map(
+                (p) => ({ id: p.id, name: p.name }),
+            );
+        } catch (_e) { console.debug("Projects fetch skipped:", _e); }
         this.state.showNotifModal = true;
     }
 
@@ -238,11 +250,43 @@ export class AppHeader extends Component {
         this.state.showNotifModal = false;
     }
 
+    /** Projects still pickable in the mute selector (not muted yet). */
+    get mutableProjects() {
+        const muted = new Set(this.state.notifMuted.map((p) => p.id));
+        return this.state.notifProjects
+            .filter((p) => !muted.has(p.id))
+            .map((p) => ({ value: String(p.id), label: p.name }));
+    }
+
+    /**
+     * Add the SearchSelect pick to the muted list.
+     * @param {string} value stringified project id from the selector
+     */
+    addMutedProject(value) {
+        const id = parseInt(value, 10);
+        const project = this.state.notifProjects.find((p) => p.id === id);
+        if (project && !this.state.notifMuted.some((p) => p.id === id)) {
+            this.state.notifMuted.push({ id: project.id, name: project.name });
+        }
+    }
+
+    /**
+     * Remove a project chip from the muted list.
+     * @param {number} id project id
+     */
+    removeMutedProject(id) {
+        this.state.notifMuted = this.state.notifMuted.filter(
+            (p) => p.id !== id,
+        );
+    }
+
     async saveNotifPrefs() {
         this.state.notifSaving = true;
         try {
             await rpc("/cloud/save_user_preferences", {
                 cloud_notification_level: this.state.notifLevel,
+                cloud_notification_mode: this.state.notifMode,
+                cloud_muted_project_ids: this.state.notifMuted.map((p) => p.id),
             });
             this.env.toast?.success(_t("Notification preferences saved"));
             this.state.showNotifModal = false;

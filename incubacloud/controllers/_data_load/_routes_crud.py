@@ -10,7 +10,7 @@ import logging
 import asyncssh
 
 from odoo import _, fields, http
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.http import request
 
 from ...github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
@@ -409,13 +409,65 @@ class CrudMixin:
             return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
         return {'ok': True}
 
-    @http.route(['/cloud/get_alert_history'], type='jsonrpc', auth='user')
-    def cloud_get_alert_history(self, state_filter='all'):
-        domain = [] if state_filter == 'all' else [('state', '=', state_filter)]
-        alerts = request.env['cloud.alert'].search(
-            domain, order='create_date desc', limit=500,
+    @http.route(['/cloud/get_job_brief'], type='jsonrpc', auth='user')
+    def cloud_get_job_brief(self, job_id):
+        """Minimal job info for the live toast: the bus only ships
+        ``{id, state}`` (it ignores record rules), so the client comes
+        back through this ACL-checked path for anything displayable.
+        Returns ``{'ok': False}`` for jobs the user cannot read and for
+        hidden background types — neither should ever toast.
+        """
+        try:
+            job_id = int(job_id)
+        except (TypeError, ValueError):
+            return {'ok': False}
+        job = request.env['cloud.job'].browse(job_id)
+        try:
+            if not job.exists():
+                return {'ok': False}
+            job.check_access('read')
+        except AccessError:
+            return {'ok': False}
+        if job.job_type_id.code in request.env['cloud.job']._get_hidden_job_types():
+            return {'ok': False}
+        # Muted projects never toast — same personal mute list the
+        # email/digest channels honour.
+        if request.env['cloud.job']._job_muted_for(job, request.env.user):
+            return {'ok': False}
+        return {
+            'ok': True,
+            'id': job.id,
+            'name': job.name,
+            'state': job.state,
+        }
+
+    @http.route(['/cloud/dismiss_all_alerts'], type='jsonrpc', auth='user')
+    def cloud_dismiss_all_alerts(self, level_filter=None):
+        """Bulk-dismiss the active non-conflict alerts visible to the
+        caller. Same consultant gate as the single dismiss."""
+        self._sec()._check_cloud_group('group_cloud_consultant')
+        count = request.env['cloud.alert'].action_dismiss_all(
+            level_filter=level_filter,
         )
-        return [
+        return {'ok': True, 'count': count}
+
+    @http.route(['/cloud/get_alert_history'], type='jsonrpc', auth='user')
+    def cloud_get_alert_history(self, state_filter='all', level_filter='all',
+                                offset=0, limit=20):
+        domain = [] if state_filter == 'all' else [('state', '=', state_filter)]
+        if level_filter in ('warning', 'critical'):
+            domain.append(('level', '=', level_filter))
+        try:
+            offset = max(0, int(offset))
+            limit = min(100, max(1, int(limit)))
+        except (TypeError, ValueError):
+            offset, limit = 0, 20
+        Alert = request.env['cloud.alert']
+        total = Alert.search_count(domain)
+        alerts = Alert.search(
+            domain, order='create_date desc', offset=offset, limit=limit,
+        )
+        entries = [
             {
                 'id': a.id,
                 'code': a.code,
@@ -452,6 +504,7 @@ class CrudMixin:
             }
             for a in alerts
         ]
+        return {'total': total, 'alerts': entries}
 
     @http.route(['/cloud/resolve_pip_conflict'], type='jsonrpc', auth='user')
     def cloud_resolve_pip_conflict(self, alert_id, resolutions):

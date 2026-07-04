@@ -2,12 +2,14 @@
 
 import { Component, useState, useEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
+import { _t } from "@web/core/l10n/translation";
 import { parseUTC } from "../../utils/dates";
 import { IcModal } from "../ic_modal/ic_modal";
+import { IcPager } from "../ic_pager/ic_pager";
 
 export class AlertHistory extends Component {
     static template = "incubacloud.AlertHistory";
-    static components = { IcModal };
+    static components = { IcModal, IcPager };
     static props = {
         embedded: { type: Boolean, optional: true },
     };
@@ -16,13 +18,22 @@ export class AlertHistory extends Component {
         this.env = useEnv();
         this.state = useState({
             alerts: [],
+            total: 0,
+            offset: 0,
             loading: true,
             stateFilter: "active",
+            levelFilter: "all",      // all | warning | critical
             resolveModal: null,      // { alert, choices: { [pkgName]: chosen_spec } }
             addonConflictModal: null, // { alert }
+            dismissAllModal: false,  // bulk-dismiss confirmation
             expanded: {},            // { [alertId]: bool } — controls payload reveal
         });
         this.loadAlerts();
+    }
+
+    /** Server-side page size for the alert list. */
+    get pageSize() {
+        return 20;
     }
 
     /**
@@ -46,16 +57,74 @@ export class AlertHistory extends Component {
 
     async loadAlerts() {
         this.state.loading = true;
-        this.state.alerts = await rpc("/cloud/get_alert_history", {
+        const data = await rpc("/cloud/get_alert_history", {
             state_filter: this.state.stateFilter,
+            level_filter: this.state.levelFilter,
+            offset: this.state.offset,
+            limit: this.pageSize,
         });
+        this.state.alerts = data.alerts;
+        this.state.total = data.total;
         this.state.loading = false;
         this.env.refreshAlertCount();
     }
 
     setFilter(f) {
         this.state.stateFilter = f;
+        this.state.offset = 0;
         this.loadAlerts();
+    }
+
+    setLevelFilter(f) {
+        this.state.levelFilter = f;
+        this.state.offset = 0;
+        this.loadAlerts();
+    }
+
+    /**
+     * IcPager callback — jump to the page starting at *offset*.
+     * @param {number} offset new zero-based row offset
+     */
+    goPage(offset) {
+        this.state.offset = offset;
+        this.loadAlerts();
+    }
+
+    /**
+     * Whether the bulk "Dismiss all" affordance makes sense for the
+     * current view: something is listed and we are not looking at
+     * already-dismissed history.
+     */
+    get canDismissAll() {
+        return this.state.stateFilter !== "dismissed" && this.state.total > 0;
+    }
+
+    openDismissAll() {
+        this.state.dismissAllModal = true;
+    }
+
+    closeDismissAll() {
+        this.state.dismissAllModal = false;
+    }
+
+    /**
+     * Bulk-dismiss the active non-conflict alerts (server enforces the
+     * conflict exclusion and record-rule scoping), then reload.
+     */
+    async confirmDismissAll() {
+        this.state.dismissAllModal = false;
+        try {
+            const res = await rpc("/cloud/dismiss_all_alerts", {
+                level_filter: this.state.levelFilter,
+            });
+            this.env.toast?.success(
+                _t("%s alert(s) dismissed", res.count),
+            );
+        } catch (_e) {
+            this.env.toast?.error(_t("Failed to dismiss alerts"));
+        }
+        this.state.offset = 0;
+        await this.loadAlerts();
     }
 
     openJob(jobId) {

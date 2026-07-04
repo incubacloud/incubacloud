@@ -168,10 +168,11 @@
                 <i class="fa fa-bell-o"/> Notification Preferences
             </h3>
             <p class="ic-confirm-message">
-                Choose when to receive email notifications for cloud jobs.
-                In-app notifications are always shown.
+                Choose what reaches you by email and when. Muted projects
+                never interrupt you (no emails, no live toasts) but stay
+                visible in the alerts panel.
             </p>
-            <div class="ic-form-grid" style="margin: 12px 0;">
+            <div class="ic-notif-form">
                 <div class="ic-form-row">
                     <label>Email notifications</label>
                     <RlSelect value="state.notifLevel"
@@ -182,6 +183,33 @@
                                   { value: 'none',     label: 'None' },
                               ]"
                               onChange="(value) => { state.notifLevel = value; }"/>
+                </div>
+                <div class="ic-form-row" t-if="state.notifLevel !== 'none'">
+                    <label>Delivery</label>
+                    <RlSelect value="state.notifMode"
+                              ariaLabel="'Email delivery mode'"
+                              options="[
+                                  { value: 'immediate',    label: 'Immediate (one email per event)' },
+                                  { value: 'daily_digest', label: 'Daily digest (severe failures still immediate)' },
+                              ]"
+                              onChange="(value) => { state.notifMode = value; }"/>
+                </div>
+                <div class="ic-form-row">
+                    <label>Muted projects</label>
+                    <div t-if="state.notifMuted.length" class="ic-notif-chips">
+                        <t t-foreach="state.notifMuted" t-as="proj" t-key="proj.id">
+                            <span class="ic-notif-chip">
+                                <span class="ic-notif-chip-name" t-esc="proj.name"/>
+                                <button class="ic-notif-chip-x" type="button"
+                                        t-att-aria-label="'Unmute ' + proj.name"
+                                        t-on-click="() => this.removeMutedProject(proj.id)">×</button>
+                            </span>
+                        </t>
+                    </div>
+                    <SearchSelect options="mutableProjects"
+                                  value="null"
+                                  placeholder="'Mute a project…'"
+                                  onChange="(value) => this.addMutedProject(value)"/>
                 </div>
             </div>
             <div class="ic-confirm-actions">

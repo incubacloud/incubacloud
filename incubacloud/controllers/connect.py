@@ -280,18 +280,46 @@ class InstanceConnectController(http.Controller):
                 methods=['POST'])
     def get_user_preferences(self):
         user = request.env.user
+        # sudo for the muted names only: the user chose these projects
+        # while they were visible; a later membership change must not
+        # break the preferences modal.
+        muted = [
+            {'id': p.id, 'name': p.name}
+            for p in user.cloud_muted_project_ids.sudo()
+        ]
         return {
             'ok': True,
             'cloud_notification_level': user.cloud_notification_level or 'failures',
+            'cloud_notification_mode': user.cloud_notification_mode or 'immediate',
+            'cloud_muted_projects': muted,
         }
 
     @http.route('/cloud/save_user_preferences', type='jsonrpc', auth='user',
                 methods=['POST'])
-    def save_user_preferences(self, cloud_notification_level=None):
+    def save_user_preferences(self, cloud_notification_level=None,
+                              cloud_notification_mode=None,
+                              cloud_muted_project_ids=None):
+        """Persist the caller's notification preferences.
+
+        Muted ids are sanitised to existing projects; muting only
+        restricts the caller's own notifications, so no visibility
+        check is needed beyond existence.
+        """
         valid = {'all', 'failures', 'none'}
         if cloud_notification_level not in valid:
             return {'ok': False, 'error': 'Invalid notification level'}
-        request.env.user.sudo().write({
+        if cloud_notification_mode not in ('immediate', 'daily_digest'):
+            return {'ok': False, 'error': 'Invalid delivery mode'}
+        vals = {
             'cloud_notification_level': cloud_notification_level,
-        })
+            'cloud_notification_mode': cloud_notification_mode,
+        }
+        if cloud_muted_project_ids is not None:
+            try:
+                ids = [int(i) for i in cloud_muted_project_ids]
+            except (TypeError, ValueError):
+                return {'ok': False, 'error': 'Invalid muted project ids'}
+            projects = request.env['cloud.project'].sudo().browse(ids).exists()
+            vals['cloud_muted_project_ids'] = [(6, 0, projects.ids)]
+        request.env.user.sudo().write(vals)
         return {'ok': True}
