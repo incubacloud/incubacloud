@@ -96,6 +96,22 @@ export class SearchSelect extends Component {
         this.props.onOpen?.();
     }
 
+    /**
+     * Reopen the dropdown on click. After ``pick`` closes it the input
+     * keeps focus, so a later click never re-fires ``focus`` — without
+     * this the list would only reopen by typing. No-op while already
+     * open so clicking to reposition the caret does not toggle it shut.
+     */
+    onInputClick() {
+        if (this.props.disabled || this.props.loading) return;
+        if (!this.state.open) {
+            this.state.input = "";
+            this.state.dropdownStyle = this._computeDropdownStyle();
+            this.state.open = true;
+            this.props.onOpen?.();
+        }
+    }
+
     onInput(ev) {
         this.state.input = ev.target.value;
         this.state.open = true;

@@ -10,7 +10,7 @@
              }">
 
             <!-- Input row -->
-            <div class="ic-search-select__input-wrap" t-ref="wrap">
+            <div class="ic-search-select__input-wrap" t-ref="wrap" t-on-click="onInputClick">
                 <input
                     class="ic-search-select__input"
                     type="text"
