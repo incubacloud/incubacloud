@@ -94,9 +94,7 @@ class GitHubWebhookController(http.Controller):
                 headers=[("Content-Type", "text/plain")],
             )
 
-        service = request.env["cloud.github.credential.service"].sudo()
-
-        secret = service.resolve_webhook_secret(payload_bytes, signature)
+        secret = request.env["cloud.github.credential.service"].sudo().resolve_webhook_secret(payload_bytes, signature)
 
         if secret is None:
             # No secret configured — reject to prevent unauthenticated deployments
