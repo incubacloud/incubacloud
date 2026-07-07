@@ -163,6 +163,10 @@ class CloudJob(models.Model):
         seen_host_ids = set()
         hidden = self._get_hidden_job_types()
         for step in steps:
+            # Same server-side role gate as ``enqueue`` — an arbitrary
+            # chain of steps must not let a low-privilege caller smuggle a
+            # manager-only job type through ``call_kw``.
+            self._check_job_type_allowed(step['job_type_code'])
             inst_id = step.get('instance_id')
             if inst_id and inst_id not in seen_instance_ids:
                 self.env.cr.execute(
@@ -318,6 +322,10 @@ class CloudJob(models.Model):
         otherwise block its own descendant. Internal use only;
         anything user-driven goes through the guard unchanged.
         """
+        # Server-side role gate: the public entrypoint is reachable via
+        # call_kw with only create-ACL, so enforce the per-type manager
+        # requirement here, not only in the HTTP controllers.
+        self._check_job_type_allowed(job_type_code)
         # Block if there is already an active *user* job for this target.
         # Hidden system jobs (health checks, metrics, probes…) don't block.
         # Instance-scoped jobs serialise per instance; host-scoped jobs
@@ -569,6 +577,23 @@ class CloudJob(models.Model):
         "rebuild_instance",
     })
 
+    # Job types whose enqueue requires the manager role. ``enqueue`` and
+    # ``enqueue_chain`` are public @api.model methods reachable via the
+    # stock ``call_kw`` JSON-RPC endpoint by anyone with create-ACL on
+    # cloud.job (consultant+), so the manager gates that live only in the
+    # HTTP controllers would be bypassed by a direct RPC call. These are
+    # the host-level, destructive/administrative types whose only
+    # legitimate origin is a manager-gated controller/SPA page or a cron
+    # (which enqueues with sudo). Extend via _get_manager_job_types().
+    _manager_job_types = frozenset({
+        "delete_host",
+        "setup_whitelist",
+        "full_setup",
+        "host_probe",
+        "docker_prune",
+        "delete_project",
+    })
+
     def _get_hidden_job_types(self):
         """Return job type codes that should not appear in the UI job drawer.
 
@@ -585,6 +610,34 @@ class CloudJob(models.Model):
         alert. Override in child modules and call super() to extend.
         """
         return set(self._severe_job_types)
+
+    @api.model
+    def _get_manager_job_types(self):
+        """Return job type codes that require the manager role to enqueue.
+
+        Override in child modules and call super() to extend, e.g. the
+        SaaS manager adds provisioning/hardening types::
+
+            def _get_manager_job_types(self):
+                return super()._get_manager_job_types() | {'provision_vps'}
+        """
+        return set(self._manager_job_types)
+
+    @api.model
+    def _check_job_type_allowed(self, job_type_code):
+        """Raise ``AccessError`` if the caller may not enqueue this type.
+
+        Superuser/sudo internal callers (crons, executors chaining a
+        follow-up) bypass the check; everyone else must hold the manager
+        role for the privileged types. This is the server-side backstop
+        for the public ``enqueue``/``enqueue_chain`` entrypoints.
+        """
+        if self.env.su:
+            return
+        if job_type_code in self._get_manager_job_types():
+            self.env['cloud.security.mixin']._check_cloud_group(
+                'group_cloud_manager',
+            )
 
     # Alert codes that block (re-)enqueueing a job until the operator
     # resolves them (see the pre-check in ``enqueue`` and
@@ -890,6 +943,19 @@ class CloudJob(models.Model):
         return result
 
     def cancel_job(self):
+        """Cancel an active job.
+
+        ``state`` is a stored related on ``queue_job_id.state`` with no
+        inverse, so writing it directly never reaches the queue.job — the
+        runner would pick a queued job up and clobber the cancellation.
+        A job that has not started yet is therefore cancelled through the
+        queue.job so the runner skips it entirely (``button_cancelled``)
+        and the terminal state syncs back cleanly as ``cancelled``. A
+        started job cannot be force-cancelled by queue_job (its runner is
+        mid-flight), so we set ``state`` cancelled as a cooperative stop
+        flag the executor polls on a separate cursor (``_check_cancel``).
+        """
+        self.ensure_one()
         if self.blocked_alert_id:
             raise UserError(_(
                 "Blocked jobs cannot be cancelled. "
@@ -897,7 +963,10 @@ class CloudJob(models.Model):
             ))
         if self.state not in self._active_states:
             raise UserError(_("Only active jobs can be cancelled."))
-        self.write({'state': 'cancelled'})
+        if self.state == 'started' or not self.queue_job_id:
+            self.write({'state': 'cancelled'})
+        else:
+            self.queue_job_id.button_cancelled()
 
     def retry_job(self):
         self.ensure_one()

@@ -58,6 +58,10 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
                 f"cd {d} && docker compose exec -T backup"
                 f" sh -c 'dup restore --time \"{time}\" --force"
                 f" \"$DST\" \"$SRC\"'",
+                # Abort before dropdb/createdb: a failed restore must never
+                # fall through to destroying the production database and
+                # then importing a stale/absent SQL dump.
+                {"stop_on_failure": True},
             ),
             (
                 "Drop database",
@@ -74,7 +78,8 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
             (
                 "Import SQL",
                 f"cd {d} && docker compose exec -T backup"
-                f" sh -c 'psql -d {dbname} -f $SRC/{dbname}.sql'",
+                f" sh -c 'psql -v ON_ERROR_STOP=1 -d {dbname}"
+                f" -f $SRC/{dbname}.sql'",
                 {"stop_on_failure": True},
             ),
             (

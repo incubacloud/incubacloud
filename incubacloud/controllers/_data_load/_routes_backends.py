@@ -2,8 +2,6 @@
 
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
-import logging
-
 import boto3
 from botocore.exceptions import ClientError, ParamValidationError
 
@@ -12,8 +10,6 @@ from odoo.http import request
 
 from ._helpers import _capped_search, _has_encrypted
 from .._safe_error import safe_error_response
-
-_logger = logging.getLogger(__name__)
 
 
 class BackendsMixin:
@@ -89,6 +85,10 @@ class BackendsMixin:
 
     @http.route(['/cloud/get_backup_backend'], type='jsonrpc', auth='user')
     def cloud_get_backup_backend(self, backend_id):
+        # Manager-gated like its save/delete siblings: this returns
+        # s3_access_key_id in the clear, which the ACL alone would expose
+        # to any stakeholder.
+        self._sec()._check_can_manage_settings()
         b = request.env['cloud.backup.backend'].browse(backend_id)
         if not b.exists():
             return {'ok': False, 'error': _('Backend not found')}
@@ -173,57 +173,21 @@ class BackendsMixin:
                     len(instances), names,
                 ),
             }
-        # Managed-backup intercept (D.6 trigger A): convert delete into
-        # "enter retention" via the manager. The local record stays so
-        # the tenant can still run backup_download during the retention
-        # window; the cleanup cron unlinks it once the manager confirms
-        # the bucket is purged. Fail-closed: if the manager call fails
-        # we DO NOT unlink — better a visible error than an orphan.
+        # Externally-managed backend: hand the delete to the managing
+        # module's teardown hook (it converts it into "enter retention").
+        # The managing module returns the result dict; core stays oblivious
+        # to what a managed backup is. Fail-closed: the hook does not unlink
+        # unless its own teardown succeeded.
         if b.managed_reservation_id:
-            try:
-                from odoo.addons.incubacloud_tenant.controllers import (
-                    backup_storage as _bs,
-                )
-            except ImportError:
-                return {
-                    'ok': False,
-                    'error': _(
-                        'This managed backend cannot be deleted from '
-                        'this database (incubacloud_tenant not '
-                        'installed).',
-                    ),
-                }
-            try:
-                result = _bs.TenantBackupStorageController().cancel(
-                    reservation_id=b.managed_reservation_id,
-                )
-            except Exception as exc:
-                _logger.warning(
-                    'managed-backend delete intercept failed for '
-                    'backend=%s reservation=%s err=%s',
-                    b.id, b.managed_reservation_id, exc,
-                )
-                return {
-                    'ok': False,
-                    'error': _(
-                        'Could not contact the IncubaCloud platform to '
-                        'cancel this managed backup. Please retry or '
-                        'contact support.',
-                    ),
-                }
-            if not result.get('ok'):
-                return result
-            return {
-                'ok': True,
-                'archived': True,
-                'retention_until': result.get('retention_until'),
-                'days_remaining': result.get('days_remaining'),
-            }
+            return b._on_managed_backend_delete()
         b.unlink()
         return {'ok': True}
 
     @http.route(['/cloud/test_backup_backend'], type='jsonrpc', auth='user')
     def cloud_test_backup_backend(self, backend_id):
+        # Manager-gated, consistent with measure/save: this fires an
+        # outbound S3 call using the stored credentials.
+        self._sec()._check_can_manage_settings()
         b = request.env['cloud.backup.backend'].browse(backend_id)
         if not b.exists():
             return {'ok': False, 'error': _('Backend not found.')}

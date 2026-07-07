@@ -197,29 +197,29 @@ class TestCloudInstanceHealthCron(TransactionCase):
             base['host_id'] = self.host.id
         return self.env['cloud.instance'].create(base | kw)
 
-    def _patch_enqueue(self):
-        """Patch cloud.job.enqueue and return call log."""
-        calls = []
+    def _patch_enqueue(self, side_effect):
+        """Patch cloud.job.enqueue with the given side_effect callable.
+
+        ``delattr`` on the class after the test restores MRO lookup so
+        downstream modules (SaaS) see the correct override instead of a
+        stale own-attribute.
+        """
         Model = self.env['cloud.job']
-        original = type(Model).enqueue
-
-        def _mock(self_model, host_id, instance_id, job_type_code, payload=None):
-            calls.append((host_id, instance_id, job_type_code))
-            return 0
-
-        type(Model).enqueue = _mock
-        return calls, original, type(Model)
-
-    def _restore_enqueue(self, original, model_class):
-        model_class.enqueue = original
+        model_class = type(Model)
+        model_class.enqueue = side_effect
+        self.addCleanup(delattr, model_class, 'enqueue')
 
     def test_deployed_instance_with_host_gets_job(self):
         inst = self._create_instance(deployed=True)
-        calls, original, mc = self._patch_enqueue()
-        try:
-            self.env['cloud.instance'].cron_instance_health()
-        finally:
-            self._restore_enqueue(original, mc)
+        calls = []
+
+        def _mock(self_model, host_id, instance_id, job_type_code,
+                  payload=None):
+            calls.append((host_id, instance_id, job_type_code))
+            return 0
+
+        self._patch_enqueue(side_effect=_mock)
+        self.env['cloud.instance'].cron_instance_health()
         self.assertTrue(any(
             c[1] == inst.id and c[2] == 'instance_health'
             for c in calls
@@ -227,20 +227,28 @@ class TestCloudInstanceHealthCron(TransactionCase):
 
     def test_non_deployed_instance_skipped(self):
         inst = self._create_instance(deployed=False)
-        calls, original, mc = self._patch_enqueue()
-        try:
-            self.env['cloud.instance'].cron_instance_health()
-        finally:
-            self._restore_enqueue(original, mc)
+        calls = []
+
+        def _mock(self_model, host_id, instance_id, job_type_code,
+                  payload=None):
+            calls.append((host_id, instance_id, job_type_code))
+            return 0
+
+        self._patch_enqueue(side_effect=_mock)
+        self.env['cloud.instance'].cron_instance_health()
         self.assertFalse(any(c[1] == inst.id for c in calls))
 
     def test_instance_without_host_skipped(self):
         inst = self._create_instance(deployed=True, with_host=False)
-        calls, original, mc = self._patch_enqueue()
-        try:
-            self.env['cloud.instance'].cron_instance_health()
-        finally:
-            self._restore_enqueue(original, mc)
+        calls = []
+
+        def _mock(self_model, host_id, instance_id, job_type_code,
+                  payload=None):
+            calls.append((host_id, instance_id, job_type_code))
+            return 0
+
+        self._patch_enqueue(side_effect=_mock)
+        self.env['cloud.instance'].cron_instance_health()
         self.assertFalse(any(c[1] == inst.id for c in calls))
 
     def test_last_health_check_field_writable(self):

@@ -58,6 +58,17 @@ class TestCloudHostTraefikDefaults(TransactionCase):
             host.traefik_inverseproxy_yaml.lower(),
         )
 
+    def test_defaults_acme_storage_is_persistent(self):
+        """ACME storage must point at the mounted ``acme`` volume, not a
+        relative path (which Traefik would write to the container's
+        ephemeral FS, losing certs on every recreate)."""
+        host = self._create()
+        self.assertIn(
+            'storage: "/etc/traefik/acme/acme.json"',
+            host.traefik_yml,
+        )
+        self.assertNotIn('storage: "acme.json"', host.traefik_yml)
+
 
 class TestCloudHostReleaseHook(TransactionCase):
     """The ``_release_external_resources`` hook must fire on every

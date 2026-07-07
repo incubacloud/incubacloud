@@ -502,7 +502,7 @@ class TestParseReposYaml(BaseCase):
         yaml_str = """
 core:
   remotes:
-    core: git@github.com:incubacloud/core.git
+    core: git@github.com:incubacloud/incubacloud.git
   target: core 19.0
 """
         repos = self._parse(yaml_str)

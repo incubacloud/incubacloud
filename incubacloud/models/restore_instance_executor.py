@@ -102,8 +102,8 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
             (
                 "Verify backup file",
                 # 600 + chown to the odoo container's UID — the SSH user
-                # (root) and the container's odoo user are not the same
-                # UID, so a plain ``chmod 600`` would leave the bind-
+                # and the container's odoo user are not the same UID, so a
+                # plain ``chmod 600`` would leave the bind-
                 # mounted zip unreadable from inside the container
                 # (click-odoo-restoredb prints "Path '/mnt/restore.zip'
                 # is not readable."). We discover the UID dynamically so
@@ -119,8 +119,12 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
                 f' && [ -n "$ODOO_UID" ]'
                 f' || (echo "Could not discover odoo container UID" >&2'
                 f' && exit 1)'
-                f' && chown "$ODOO_UID":"$ODOO_UID" {remote}'
-                f' && chmod 600 {remote}',
+                # ``sudo`` so this works when the SSH user is a non-root
+                # sudoer (some VPS providers, and every hardened host runs
+                # as ``incubacloud``): chowning to another UID needs
+                # CAP_CHOWN. A no-op when the SSH user is already root.
+                f' && sudo chown "$ODOO_UID":"$ODOO_UID" {remote}'
+                f' && sudo chmod 600 {remote}',
                 {"stop_on_failure": True},
             ),
             (

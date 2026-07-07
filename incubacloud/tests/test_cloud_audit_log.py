@@ -33,6 +33,15 @@ class _AuditBase(TransactionCase):
 
 class TestAuditLogPurgeOld(_AuditBase):
 
+    def setUp(self):
+        super().setUp()
+        # _purge_old is a global purge and these tests assert exact
+        # deleted counts. The pre-production snapshot carries real audit
+        # rows, so start from an empty table. Rolled back with the test
+        # transaction (TransactionCase), so nothing persists.
+        self.env.cr.execute("DELETE FROM cloud_audit_log")
+        self.AuditLog.invalidate_model()
+
     def test_zero_days_returns_zero_and_keeps_entries(self):
         old = self._create_entry(days_old=100)
         count = self.AuditLog._purge_old(0)

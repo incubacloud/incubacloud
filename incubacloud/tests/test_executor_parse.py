@@ -326,3 +326,37 @@ class TestInstanceHealthBlockingJobs(BaseCase):
         # ('id', '!=', 42) must be in the domain — otherwise the executor
         # would always block itself.
         self.assertIn(('id', '!=', 42), domain)
+
+
+# ── Default (base) parse_results is fail-closed ────────────────────────────────
+
+class TestDefaultParseResultsFailClosed(BaseCase):
+    """The base AbstractExecutor.parse_results must fail-closed.
+
+    The lifecycle executors (start/stop/restart/delete_*) deliberately do
+    not override parse_results, so the base default is what decides their
+    success. It must flag any non-zero exit as an error; otherwise a failed
+    ``docker compose up -d`` would report the job done and leave the
+    instance state falsely 'ok'.
+    """
+
+    def setUp(self):
+        from odoo.addons.incubacloud.models.start_instance_executor import (
+            StartInstanceExecutor,
+        )
+        self.executor = _make_executor(StartInstanceExecutor)
+
+    def test_all_zero_exit_returns_no_errors(self):
+        results = {"Start": {"exit_status": 0, "stdout": ""}}
+        self.assertEqual(self.executor.parse_results(results), [])
+
+    def test_nonzero_exit_returns_error(self):
+        results = {"Start": {"exit_status": 1, "stdout": ""}}
+        errors = self.executor.parse_results(results)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Start", errors[0])
+
+    def test_missing_exit_status_treated_as_failure(self):
+        # A step with no recorded exit_status must not pass silently.
+        results = {"Start": {"stdout": ""}}
+        self.assertEqual(len(self.executor.parse_results(results)), 1)

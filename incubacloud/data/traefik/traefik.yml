@@ -36,7 +36,7 @@ certificatesResolvers:
   letsencrypt:
     acme:
       email: "mail@mycustomdomain.com"
-      storage: "acme.json"
+      storage: "/etc/traefik/acme/acme.json"
       # CA server to use.
       # UnComment the line to use Let's Encrypt's staging server
       #caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"

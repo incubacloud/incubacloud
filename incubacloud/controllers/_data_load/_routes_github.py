@@ -242,6 +242,10 @@ class GitHubMixin:
 
     @http.route(['/cloud/get_github_app'], type='jsonrpc', auth='user')
     def cloud_get_github_app(self):
+        # Manager-gated like save_github_app. The read uses sudo, so
+        # without this any logged-in user (even without a cloud role)
+        # could see the app_id/installation_id/slug.
+        self._sec()._check_can_manage_settings()
         app = request.env['cloud.github.app'].sudo().search([], limit=1)
         if not app:
             return {

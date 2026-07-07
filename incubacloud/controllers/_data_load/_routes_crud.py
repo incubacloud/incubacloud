@@ -234,6 +234,12 @@ class CrudMixin:
             request.env['ir.config_parameter'].sudo()
             .get_param('incubacloud.host_autoassign', '0') == '1'
         )
+        # Non-managers reach this endpoint only through the instance
+        # move-host picker, which needs id/name/capacity — not the SSH
+        # reconnaissance fields. Redact ip/port/user/login_type unless the
+        # caller manages hosts, so a stakeholder cannot enumerate every
+        # host's SSH endpoint.
+        is_manager = self._sec()._has_cloud_group('group_cloud_manager')
         return {
             'autoassign_enabled': autoassign,
             'total': total,
@@ -250,10 +256,10 @@ class CrudMixin:
                         {'id': t.id, 'name': t.name, 'color': t.color}
                         for t in host.tag_ids
                     ],
-                    'ip_address': host.ip_address,
-                    'port': host.port,
-                    'user': host.user,
-                    'login_type': host.login_type,
+                    'ip_address': host.ip_address if is_manager else '',
+                    'port': host.port if is_manager else 0,
+                    'user': host.user if is_manager else '',
+                    'login_type': host.login_type if is_manager else '',
                     'has_password': _has_encrypted(host, 'password'),
                     'has_key_file': _has_encrypted(host, 'key_file'),
                     'has_known_hosts_key':
@@ -627,6 +633,9 @@ class CrudMixin:
         return {'value': value}
     @http.route(['/cloud/get_host'], type='jsonrpc', auth='user')
     def cloud_get_host(self, host_id):
+        # Manager-gated like the host detail editor it feeds (save/delete
+        # are already manager-only). Exposes the full SSH endpoint config.
+        self._sec()._check_can_manage_hosts()
         host = request.env['cloud.host'].browse(host_id)
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
@@ -1192,6 +1201,9 @@ class CrudMixin:
 
     @http.route(['/cloud/get_general_settings'], type='jsonrpc', auth='user')
     def cloud_get_general_settings(self):
+        # Manager-gated, matching save_general_settings. The reads below
+        # use sudo, so without this any logged-in user could see them.
+        self._sec()._check_can_manage_hosts()
         ICP = request.env['ir.config_parameter'].sudo()
         bb_id = int(ICP.get_param(
             'incubacloud.backup_backend_id', 0,
