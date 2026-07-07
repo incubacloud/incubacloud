@@ -53,7 +53,8 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17
+        # Match production (postgres-autoconf:18, see common.yaml DB_VERSION).
+        image: postgres:18
         env:
           POSTGRES_DB: test_odoo
           POSTGRES_USER: odoo
