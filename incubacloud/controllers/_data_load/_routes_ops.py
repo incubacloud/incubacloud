@@ -382,7 +382,7 @@ class OpsMixin:
 
         # Resolve ~ and get listing
         try:
-            stdout, _ = self._ssh_run(host, (
+            stdout, _stderr = self._ssh_run(host, (
                 f'cd {_quote_remote_path(path)} 2>/dev/null'
                 f' && pwd && echo "---" && ls -1pA 2>/dev/null'
             ))
@@ -421,7 +421,7 @@ class OpsMixin:
                 for d in dirs[:50]
             )
             try:
-                check_stdout, _ = self._ssh_run(host, checks)
+                check_stdout, _stderr = self._ssh_run(host, checks)
             except Exception:
                 check_stdout = ''
             doodba_dirs = set()
@@ -436,7 +436,7 @@ class OpsMixin:
         copier_info = {}
         with suppress(Exception):
             cp_q = shlex.quote(current_path)
-            stdout_check, _ = self._ssh_run(host, (
+            stdout_check, _stderr = self._ssh_run(host, (
                 f'[ -f {cp_q}/.copier-answers.yml ] && '
                 f'[ -f {cp_q}/docker-compose.yml ] && '
                 f'cat {cp_q}/.copier-answers.yml || echo ""'
@@ -485,8 +485,13 @@ class OpsMixin:
 
         Reads all config files via SSH, creates project + instance.
         """
-
-        self._sec()._check_can_create_instance()
+        # Manager-gated like browse_host_dir: importing reads the host's
+        # ``.docker/*.env`` secrets over SSH and materialises them as
+        # records, so it is a host-level operation, not a plain instance
+        # create. (Today the developer-only field ACLs on the host
+        # credentials already block a lower role, but the gate must match
+        # the sensitivity in its own right.)
+        self._sec()._check_can_manage_hosts()
         host = request.env['cloud.host'].browse(host_id)
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}

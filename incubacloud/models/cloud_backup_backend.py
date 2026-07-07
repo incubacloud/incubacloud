@@ -150,20 +150,18 @@ class CloudBackupBackend(models.Model):
         readonly=True,
     )
 
-    # ── Managed backup association (set only by the SaaS managed flow) ────
-    # When non-empty, this backend was provisioned by the IncubaCloud
-    # managed backup product. The opaque id points at a
-    # ``cloud.backup.reservation`` record living in the SaaS manager
-    # database; the tenant uses it to call status / change_plan / cancel
-    # endpoints on the manager. Empty for BYO backends — the rest of the
-    # system stays oblivious to the managed lifecycle.
+    # ── Externally-managed backend association (opaque hook field) ────────
+    # When non-empty, this backend is managed by an external module that
+    # sets this opaque id and overrides ``_on_managed_backend_delete``.
+    # Core stores the id but never interprets it and knows nothing about
+    # the managing module — empty for self-managed (BYO) backends.
 
     managed_reservation_id = fields.Char(
         string='Managed Reservation ID',
         readonly=True,
         copy=False,
-        help='Opaque id of the cloud.backup.reservation record in the '
-             'SaaS manager. Empty for BYO backends.',
+        help='Opaque id set by an external module that manages this '
+             'backend. Core does not interpret it. Empty for BYO backends.',
     )
     archived_until = fields.Datetime(
         string='Archived Until',
@@ -189,6 +187,24 @@ class CloudBackupBackend(models.Model):
     def unlink(self):
         self._check_can_manage_settings()
         return super().unlink()
+
+    def _on_managed_backend_delete(self):
+        """Hook: convert a delete of an externally-managed backend into the
+        managing module's own teardown.
+
+        Called by the delete endpoint when ``managed_reservation_id`` is
+        set. The managing module (which set that id) overrides this to run
+        its teardown and returns a JSON-RPC result dict. Core has no
+        managed-backup concept, so by default such a backend cannot be
+        deleted here.
+        """
+        self.ensure_one()
+        return {
+            'ok': False,
+            'error': _(
+                'This managed backend cannot be deleted from this database.'
+            ),
+        }
 
     @api.model_create_multi
     def create(self, vals_list):

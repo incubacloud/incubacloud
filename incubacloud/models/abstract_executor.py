@@ -576,9 +576,19 @@ class AbstractExecutor(ABC):
     def parse_results(self, results):
         """Validate outputs. Return error strings (empty list = success).
 
+        Default policy is fail-closed: any command that exited non-zero is
+        an error, so an executor that does not override this still fails
+        the job (and reaches ``on_failure``) instead of silently reporting
+        success. Executors whose steps intentionally tolerate a non-zero
+        exit must override this and skip those labels.
+
         results: dict of {label: {'stdout': str, 'exit_status': int}}
         """
-        return []
+        return [
+            f"'{label}' exited with status {data.get('exit_status')}"
+            for label, data in results.items()
+            if data.get('exit_status', 1) != 0
+        ]
 
     async def on_success(self, results):
         """Called when parse_results returns an empty list."""

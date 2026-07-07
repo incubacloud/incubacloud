@@ -22,6 +22,7 @@ from . import (
     test_pip_conflict,
     test_backup_list_parser,
     test_backup_download_neutralized,
+    test_backup_restore,
     test_deploy_executor,
     test_credential_service,
     test_export_sanitize,

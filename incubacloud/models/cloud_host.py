@@ -685,7 +685,11 @@ class CloudHost(models.Model):
         hosts = self.search(self._ssh_ready_domain())
         for host in hosts:
             try:
-                self.env['cloud.job'].enqueue(host.id, False, 'docker_prune')
+                # docker_prune is a manager-gated job type; the cron bot is
+                # not a cloud manager, so enqueue with sudo.
+                self.env['cloud.job'].sudo().enqueue(
+                    host.id, False, 'docker_prune',
+                )
             except Exception as e:
                 _logger.warning(
                     "Could not enqueue docker_prune job for host %s: %s",

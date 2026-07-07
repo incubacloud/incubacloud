@@ -151,6 +151,90 @@ class TestCloudJobCancelRetry(TransactionCase):
         with self.assertRaises(UserError):
             self.job.retry_job()
 
+    def test_cancel_queued_job_cancels_underlying_queue_job(self):
+        """Cancelling a queued (not-started) job routes through the
+        queue.job (button_cancelled) so the runner skips it, instead of
+        the state write being clobbered when the runner starts it."""
+        from unittest.mock import patch
+        qjob = self.env['queue.job'].sudo().create({
+            'uuid': 'cancel-queued-uuid',
+            'name': 'qj-cancel', 'state': 'enqueued',
+            'method_name': 'load_jobs', 'model_name': 'cloud.job',
+            'func_string': 'cloud.job().load_jobs()',
+        })
+        self.job.write({'queue_job_uuid': 'cancel-queued-uuid'})
+        self.job.invalidate_recordset(['queue_job_id', 'state'])
+        self.assertEqual(self.job.state, 'enqueued')
+        with patch.object(
+            type(self.job.queue_job_id), 'button_cancelled',
+        ) as mock_cancel:
+            self.job.cancel_job()
+        mock_cancel.assert_called_once()
+
+
+class TestEnqueueJobTypeGate(TransactionCase):
+    """The public enqueue entrypoint must enforce a per-type role gate so
+    a consultant cannot enqueue host-destructive jobs by direct RPC.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Optional modules may add NOT NULL columns to res_partner without
+        # defaults; new_test_user() creates a partner without those fields.
+        # Patch a safe SQL default so the users can be created regardless
+        # of what is installed in the snapshot DB.
+        cls.env.cr.execute("""
+            SELECT column_name, data_type
+              FROM information_schema.columns
+             WHERE table_name = 'res_partner'
+               AND is_nullable = 'NO'
+               AND column_default IS NULL
+               AND column_name NOT IN ('id', 'name', 'company_type',
+                                       'type', 'lang', 'active',
+                                       'create_uid', 'write_uid',
+                                       'create_date', 'write_date')
+        """)
+        for col, dtype in cls.env.cr.fetchall():
+            default = "''" if 'char' in dtype or 'text' in dtype else "'no'"
+            cls.env.cr.execute(
+                f'ALTER TABLE res_partner '
+                f'ALTER COLUMN "{col}" SET DEFAULT {default}'
+            )
+
+    def setUp(self):
+        super().setUp()
+        from odoo.exceptions import AccessError
+        self.AccessError = AccessError
+        self.Job = self.env['cloud.job']
+        self.consultant = new_test_user(
+            self.env, login='ic_consultant_gate',
+            groups='base.group_user,incubacloud.group_cloud_consultant',
+        )
+        self.manager = new_test_user(
+            self.env, login='ic_manager_gate',
+            groups='base.group_user,incubacloud.group_cloud_manager',
+        )
+
+    def test_consultant_blocked_from_manager_type(self):
+        job = self.Job.with_user(self.consultant)
+        for code in ('delete_host', 'full_setup', 'delete_project'):
+            with self.assertRaises(self.AccessError):
+                job._check_job_type_allowed(code)
+
+    def test_consultant_allowed_non_privileged_type(self):
+        job = self.Job.with_user(self.consultant)
+        # Must not raise for lifecycle/deploy types.
+        job._check_job_type_allowed('start_instance')
+        job._check_job_type_allowed('deploy_instance')
+
+    def test_manager_allowed_privileged_type(self):
+        self.Job.with_user(self.manager)._check_job_type_allowed('delete_host')
+
+    def test_sudo_bypasses_gate(self):
+        # Internal callers (crons, executors) use sudo and must pass.
+        self.Job.sudo()._check_job_type_allowed('delete_host')
+
 
 class TestCloudJobGetExecutor(TransactionCase):
 

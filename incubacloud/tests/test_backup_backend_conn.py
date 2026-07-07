@@ -34,6 +34,11 @@ class TestBackupBackendConnTest(TransactionCase):
             's3_endpoint_url': 'https://eu.example.r2.cloudflarestorage.com',
         })
         self.controller = _routes_backends.BackendsMixin()
+        # The endpoint is now manager-gated via ``self._sec()`` (defined
+        # on the composed controller). Stub it on the isolated mixin so
+        # the gate resolves; under TransactionCase the env is superuser
+        # so _check_can_manage_settings passes.
+        self.controller._sec = lambda: self.env['cloud.security.mixin']
 
     def _call_with(self, client_side_effect):
         """Invoke the endpoint with a mocked request env and boto3 client.

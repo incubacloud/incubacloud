@@ -1,15 +1,8 @@
-"""Abstract credential service for GitHub App authentication.
+"""Credential service for GitHub App authentication.
 
 This model acts as a *service* (no database table — ``_auto = False``) that
 the rest of the system calls via ``self.env['cloud.github.credential.service']``.
-
-Default implementation (BYO mode):
-    Reads credentials from the ``cloud.github.app`` singleton.
-
-Extension point (PaaS mode):
-    ``incubacloud_paas`` inherits this model and overrides ``get_credentials``
-    and ``resolve_webhook_project`` to pull credentials from system parameters
-    instead.  The engine and webhook controller remain unchanged.
+It reads credentials from the ``cloud.github.app`` singleton.
 """
 
 import logging
@@ -43,7 +36,6 @@ class GitHubCredentialService(models.AbstractModel):
         """Return ``GitHubAppCredentials`` for the current system.
 
         Raises ``UserError`` if no GitHub App is configured.
-        Override in ``incubacloud_paas`` for platform-managed credentials.
         """
         app = self.env["cloud.github.app"].sudo().search([], limit=1)
         if not app:
@@ -52,21 +44,21 @@ class GitHubCredentialService(models.AbstractModel):
             )
         return app._get_credentials()
 
-    def resolve_webhook_project(self, payload_bytes: bytes, signature: str):
-        """Validate an incoming webhook signature and identify its source.
+    def resolve_webhook_secret(self, payload_bytes: bytes, signature: str):
+        """Validate an incoming webhook signature against the configured secret.
 
-        Returns:
-            ``(project_or_None, secret_or_None)`` — ``secret`` is the matching
-            webhook secret if validation succeeded; both are ``None`` if no
-            match was found or no secret is configured.
-
-        Override in ``incubacloud_paas`` to use the platform-wide secret.
+        Returns the matching webhook secret on success, an empty string if
+        a secret is configured but the signature failed to validate, or
+        ``None`` if no webhook secret is configured at all. The controller
+        relies on the empty-string vs ``None`` distinction to report the
+        right error (bad signature vs not configured).
         """
         app = self.env["cloud.github.app"].sudo().search([], limit=1)
-        if app and app.webhook_secret:
-            if validate_hmac_sha256(payload_bytes, signature, app.webhook_secret):
-                return None, app.webhook_secret
-        return None, None
+        if not (app and app.webhook_secret):
+            return None
+        if validate_hmac_sha256(payload_bytes, signature, app.webhook_secret):
+            return app.webhook_secret
+        return ""
 
     def test_connection(self) -> dict:
         """Test current credentials by calling the GitHub API.

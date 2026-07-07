@@ -14,15 +14,13 @@ class ExecutorRegistry:
       class object is the same; we silently ignore the second
       registration.
     * **Two modules registering separate classes for the same
-      _job_type** — happens when ``incubacloud_saas_manager`` and
-      ``incubacloud_tenant`` coexist in the addons path. Both ship a
-      ``host_hardening`` executor with their own recipe (manager
-      includes Hetzner Firewall, tenant does not). The Python process
-      can only hold one binding at a time. We log a warning and keep
-      the FIRST registration — whichever module loaded first wins.
-      In a real-world deployment the two modules live in different
-      databases anyway, so the in-process binding is mostly used by
-      whichever DB the worker is currently serving.
+      _job_type** — can happen when two dependent modules in the addons
+      path each ship an executor with the same ``_job_type`` and their
+      own recipe. The Python process can only hold one binding at a time,
+      so we log a warning and keep the FIRST registration (whichever
+      module loaded first wins). In a real-world deployment such modules
+      live in different databases anyway, so the in-process binding is
+      mostly used by whichever DB the worker is currently serving.
     """
 
     def __init__(self):

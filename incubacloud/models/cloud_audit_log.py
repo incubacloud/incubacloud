@@ -48,7 +48,12 @@ class CloudAuditLog(models.Model):
         if not days or int(days) <= 0:
             return 0
         cutoff = fields.Datetime.now() - timedelta(days=int(days))
-        old = self.search([('create_date', '<', cutoff)])
+        # Purge with sudo: the model is deliberately append-only (the
+        # manager ACL grants no unlink), so the scheduled retention purge
+        # — the only sanctioned deletion path — runs elevated, mirroring
+        # cloud.job.log.chunk._purge_old. Without this the cron and the
+        # manual endpoint raise AccessError once rows age past retention.
+        old = self.sudo().search([('create_date', '<', cutoff)])
         count = len(old)
         old.unlink()
         return count

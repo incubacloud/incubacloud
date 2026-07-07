@@ -121,6 +121,20 @@ class TestQueueJobExtFailureAlert(TransactionCase):
         self.assertIn('host_probe', alert.message.lower())
         self.assertIn('Network is unreachable', alert.message)
 
+    def test_cancelling_queued_job_syncs_cancelled_without_alert(self):
+        # A queued (not-yet-started) job cancelled via cancel_job goes
+        # through the queue.job (button_cancelled). queue_job_ext must sync
+        # cloud.job.state to 'cancelled' and raise neither a failure alert
+        # nor a failure email (cancelled is a documented non-event).
+        cjob, qjob = self._make('deploy_instance', 'uuid-cancel-queued')
+        qjob.write({'state': 'cancelled'})
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(cjob.state, 'cancelled')
+        alert = self.env['cloud.alert'].search([
+            ('job_id', '=', cjob.id), ('code', '=', 'job_failed'),
+        ])
+        self.assertFalse(alert, "cancellation must not raise a failure alert")
+
     def test_failure_creates_critical_alert_for_severe_type(self):
         cjob, qjob = self._make('deploy_instance', 'uuid-crit')
         qjob.write({
