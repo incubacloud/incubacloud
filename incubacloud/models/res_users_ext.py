@@ -6,6 +6,8 @@ from psycopg2 import sql as psql
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
 
+from .encrypted_char import EncryptedChar
+
 _logger = logging.getLogger(__name__)
 
 CRON_BOT_LOGIN = "__incubacloud_cron__"
@@ -59,6 +61,27 @@ class ResUsers(models.Model):
             'Watermark of the daily digest window. Advanced after each '
             'run — also when the window turned out empty.'
         ),
+    )
+
+    cloud_telegram_bot_token = EncryptedChar(
+        string='Telegram Bot Token',
+        help='Bot token from @BotFather. Stored encrypted.',
+    )
+    cloud_telegram_chat_id = fields.Char(
+        string='Telegram Chat ID',
+        help='Numeric chat or channel ID where the bot sends messages.',
+    )
+    cloud_webhook_url = fields.Char(
+        string='External Webhook URL',
+        help='HTTPS endpoint that receives POST notifications on job '
+             'state changes. Payloads are signed with HMAC-SHA256 '
+             'when a signing secret is configured.',
+    )
+    cloud_webhook_secret = EncryptedChar(
+        string='Webhook Signing Secret',
+        help='HMAC-SHA256 secret used to sign webhook payloads. '
+             'Set to the same value the receiving endpoint expects '
+             'in the X-IncubaCloud-Signature header.',
     )
 
     def _cloud_project_muted(self, project):

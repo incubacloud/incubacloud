@@ -487,3 +487,91 @@
     &:hover { color: $text-primary; background: rgba(var(--rl-faint-rgb), 0.5); }
   }
 }
+
+// Telegram / webhook sections inside the notification modal
+.ic-notif-divider {
+  border: none;
+  border-top: 1px solid rgba(var(--rl-muted-rgb), 0.3);
+  margin: 4px 0;
+}
+
+.ic-notif-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-primary;
+
+  .fa { font-size: 13px; color: $text-secondary; }
+}
+
+.ic-notif-inline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ic-notif-inline-input {
+  flex: 1;
+  font-family: $font-mono;
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid $border;
+  background: $surface;
+  color: $text-primary;
+  outline: none;
+
+  &::placeholder { color: $text-secondary; }
+  &:focus { border-color: $accent; }
+}
+
+.ic-notif-inline-btn {
+  flex: none;
+  font-family: $font-mono;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid $border;
+  background: $surface-light;
+  color: $text-secondary;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover { color: $text-primary; border-color: $accent; }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.ic-notif-test-btn {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  font-family: $font-mono;
+  font-size: 11px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid $border;
+  background: $surface-light;
+  color: $text-secondary;
+  cursor: pointer;
+
+  &:hover { color: $accent; border-color: $accent; }
+  &:disabled { opacity: 0.5; cursor: default; }
+}
+
+.ic-notif-url-input {
+  font-family: $font-mono;
+  font-size: 12px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid $border;
+  background: $surface;
+  color: $text-primary;
+  outline: none;
+
+  &::placeholder { color: $text-secondary; }
+  &:focus { border-color: $accent; }
+}

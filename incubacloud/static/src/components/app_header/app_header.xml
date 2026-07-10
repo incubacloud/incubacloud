@@ -209,7 +209,63 @@
                     <SearchSelect options="mutableProjects"
                                   value="null"
                                   placeholder="'Mute a project…'"
-                                  onChange="(value) => this.addMutedProject(value)"/>
+                                   onChange="(value) => this.addMutedProject(value)"/>
+                </div>
+
+                <div class="ic-notif-divider"/>
+
+                <h4 class="ic-notif-section-title">
+                    <i class="fa fa-send-o"/> Telegram
+                </h4>
+                <div class="ic-form-row">
+                    <label>Bot token</label>
+                    <PasswordInput hasValue="state.telegramTokenConfigured"
+                                   onChange="(v) => this.onTelegramTokenChange(v)"/>
+                </div>
+                <div class="ic-form-row">
+                    <label>Chat ID</label>
+                    <div class="ic-notif-inline">
+                        <input class="ic-notif-inline-input"
+                               type="text"
+                               t-att-value="state.telegramChatId"
+                               t-on-input="(ev) => state.telegramChatId = ev.target.value"
+                               placeholder="'e.g. 123456789 or @channelname'"/>
+                        <button class="ic-notif-inline-btn"
+                                type="button"
+                                t-att-disabled="state.telegramDetecting"
+                                t-on-click="detectChatId">
+                            <t t-if="state.telegramDetecting">…</t>
+                            <t t-else="">Detect</t>
+                        </button>
+                    </div>
+                </div>
+                <button class="ic-notif-test-btn"
+                        type="button"
+                        t-att-disabled="state.telegramTesting"
+                        t-on-click="sendTelegramTest">
+                    <t t-if="state.telegramTesting">Sending…</t>
+                    <t t-else="">
+                        <i class="fa fa-send"/> Send test message
+                    </t>
+                </button>
+
+                <div class="ic-notif-divider"/>
+
+                <h4 class="ic-notif-section-title">
+                    <i class="fa fa-external-link"/> External webhook
+                </h4>
+                <div class="ic-form-row">
+                    <label>Webhook URL</label>
+                    <input type="text"
+                           class="ic-notif-url-input"
+                           t-att-value="state.webhookUrl"
+                           t-on-input="(ev) => state.webhookUrl = ev.target.value"
+                           placeholder="'https://hooks.example.com/cloud'"/>
+                </div>
+                <div class="ic-form-row">
+                    <label>Signing secret</label>
+                    <PasswordInput hasValue="state.webhookSecretConfigured"
+                                   onChange="(v) => this.onWebhookSecretChange(v)"/>
                 </div>
             </div>
             <div class="ic-confirm-actions">

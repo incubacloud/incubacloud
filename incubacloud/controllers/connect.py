@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import shlex
+import urllib.request
 
 import asyncssh
 
@@ -292,13 +293,21 @@ class InstanceConnectController(http.Controller):
             'cloud_notification_level': user.cloud_notification_level or 'failures',
             'cloud_notification_mode': user.cloud_notification_mode or 'immediate',
             'cloud_muted_projects': muted,
+            'cloud_telegram_configured': bool(user.cloud_telegram_bot_token),
+            'cloud_telegram_chat_id': user.cloud_telegram_chat_id or '',
+            'cloud_webhook_configured': bool(user.cloud_webhook_secret),
+            'cloud_webhook_url': user.cloud_webhook_url or '',
         }
 
     @http.route('/cloud/save_user_preferences', type='jsonrpc', auth='user',
                 methods=['POST'])
     def save_user_preferences(self, cloud_notification_level=None,
                               cloud_notification_mode=None,
-                              cloud_muted_project_ids=None):
+                              cloud_muted_project_ids=None,
+                              cloud_telegram_bot_token=None,
+                              cloud_telegram_chat_id=None,
+                              cloud_webhook_url=None,
+                              cloud_webhook_secret=None):
         """Persist the caller's notification preferences.
 
         Muted ids are sanitised to existing projects; muting only
@@ -321,5 +330,81 @@ class InstanceConnectController(http.Controller):
                 return {'ok': False, 'error': 'Invalid muted project ids'}
             projects = request.env['cloud.project'].sudo().browse(ids).exists()
             vals['cloud_muted_project_ids'] = [(6, 0, projects.ids)]
+        if cloud_telegram_bot_token:
+            vals['cloud_telegram_bot_token'] = cloud_telegram_bot_token
+        if cloud_telegram_chat_id is not None:
+            vals['cloud_telegram_chat_id'] = cloud_telegram_chat_id.strip()
+        if cloud_webhook_url is not None:
+            url = cloud_webhook_url.strip()
+            if url and not url.startswith('https://'):
+                return {'ok': False, 'error': 'Webhook URL must start with https://'}
+            vals['cloud_webhook_url'] = url
+        if cloud_webhook_secret:
+            vals['cloud_webhook_secret'] = cloud_webhook_secret
         request.env.user.sudo().write(vals)
+        return {'ok': True}
+
+    @http.route('/cloud/telegram_detect_chat_id', type='jsonrpc', auth='user',
+                methods=['POST'])
+    def telegram_detect_chat_id(self):
+        """Poll the user's Telegram bot for the most recent chat_id.
+
+        Calls ``getUpdates`` and returns the chat_id of the last
+        message the bot received. The user must send at least one
+        message to their bot first.
+        """
+        token = request.env.user.cloud_telegram_bot_token
+        if not token:
+            return {'ok': False, 'error': 'No Telegram bot token configured'}
+        url = f"https://api.telegram.org/bot{token}/getUpdates"
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+        except Exception as exc:
+            _logger.warning('telegram getUpdates failed: %s', exc)
+            return {'ok': False, 'error': 'Failed to contact Telegram API'}
+        if not data.get('ok'):
+            return {'ok': False, 'error': data.get('description', 'Unknown error')}
+        updates = data.get('result', [])
+        if not updates:
+            return {'ok': False, 'error': 'No messages received yet. Send any message to your bot first.'}
+        last = updates[-1]
+        chat = (last.get('message', {})
+                .get('chat', {}))
+        chat_id = chat.get('id') or (last.get('channel_post', {})
+                                     .get('chat', {})
+                                     .get('id'))
+        if not chat_id:
+            return {'ok': False, 'error': 'Could not determine chat ID from latest update'}
+        return {'ok': True, 'chat_id': str(chat_id)}
+
+    @http.route('/cloud/telegram_send_test', type='jsonrpc', auth='user',
+                methods=['POST'])
+    def telegram_send_test(self):
+        """Send a test message to the user's configured Telegram chat."""
+        token = request.env.user.cloud_telegram_bot_token
+        chat_id = request.env.user.cloud_telegram_chat_id
+        if not token:
+            return {'ok': False, 'error': 'No Telegram bot token configured'}
+        if not chat_id:
+            return {'ok': False, 'error': 'No Telegram chat ID configured'}
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = json.dumps({
+            'chat_id': chat_id,
+            'text': '\U0001F7E2 IncubaCloud test notification — your Telegram integration is working.',
+            'parse_mode': 'Markdown',
+        }).encode()
+        try:
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={'Content-Type': 'application/json'},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+        except Exception as exc:
+            _logger.warning('telegram sendTest failed: %s', exc)
+            return {'ok': False, 'error': 'Failed to contact Telegram API'}
+        if not data.get('ok'):
+            return {'ok': False, 'error': data.get('description', 'Unknown error')}
         return {'ok': True}

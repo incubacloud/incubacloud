@@ -58,6 +58,9 @@ _SECRET_FIELDS = {
     'cloud.backup.backend': {
         's3_secret_access_key', 'passphrase',
     },
+    'res.users': {
+        'cloud_telegram_bot_token', 'cloud_webhook_secret',
+    },
 }
 
 

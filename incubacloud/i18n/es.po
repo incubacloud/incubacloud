@@ -28,6 +28,36 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.js:0
+msgid "%s alert(s) dismissed"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.js:0
+msgid "%s completed"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.js:0
+msgid "%s failed — check the job log"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "'e.g. 123456789 or @channelname'"
+msgstr "'p.ej. 123456789 o @canal'"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "'https://hooks.example.com/cloud'"
+msgstr "'https://hooks.ejemplo.com/cloud'"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "(Odoo"
 msgstr "(Odoo"
@@ -58,28 +88,17 @@ msgstr "+ Agregar dominio"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "+ Add repository"
-msgstr "+ Agregar repositorio"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "+ Create new project"
 msgstr "+ Crear nuevo proyecto"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "+ New Project"
-msgstr "+ Nuevo proyecto"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "+ Register Host"
-msgstr "+ Registrar host"
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid ""
+", not just for you.\n"
+"            Conflict alerts that block deploys are kept."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -110,10 +129,8 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 ". The Installation ID\n"
-"                                        is auto-detected from the webhook."
+"                                    is auto-detected from the webhook."
 msgstr ""
-". El ID de instalación\n"
-"                                        se auto-detecta desde el webhook."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -230,6 +247,28 @@ msgstr ""
 "        "
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid ""
+"<span style=\"background:#fef2f2;color:#dc2626;font-size:11px;padding:2px "
+"8px;border-radius:10px;\">critical</span>"
+msgstr ""
+
+#. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid ""
+"<span style=\"background:#fef3c7;color:#d97706;font-size:11px;padding:2px "
+"8px;border-radius:10px;\">warning</span>"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"A job is already running for this host: %(name)s. Wait for it to complete or"
+" cancel it first."
+msgstr ""
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
@@ -238,6 +277,12 @@ msgid ""
 msgstr ""
 "Ya hay una tarea en ejecución para esta instancia: %(name)s. Espera a que "
 "termine o cancélala primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "A move is already in progress for this instance."
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_instance_one_production_per_project
@@ -302,12 +347,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "Active alerts"
-msgstr "Alertas activas"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Add"
 msgstr "Agregar"
@@ -323,6 +362,13 @@ msgstr "Agregar Host"
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid "Add a server to start deploying Odoo instances."
 msgstr "Agrega un servidor para comenzar a desplegar instancias de Odoo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Add repository"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -434,7 +480,6 @@ msgstr "Alerta no encontrada o ya resuelta"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
 #: code:addons/incubacloud/static/src/components/slide_over/slide_over.js:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__alert_ids
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__alert_ids
@@ -455,24 +500,9 @@ msgid "All"
 msgstr "Todos"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "All actions"
-msgstr "Todas las acciones"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__all
 msgid "All events (success + failure)"
 msgstr "Todos los eventos (éxito + fallo)"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "All systems are running smoothly."
-msgstr "Todos los sistemas funcionan correctamente."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__allocated_cpus
@@ -499,8 +529,6 @@ msgid "An internal error occurred. Check server logs."
 msgstr "Se ha producido un error interno. Revise los logs del servidor."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__apache-2_0
 msgid "Apache 2.0"
 msgstr "Apache 2.0"
@@ -622,12 +650,6 @@ msgid "Author"
 msgstr "Autor"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Auto (recommended)"
-msgstr "Auto (recomendado)"
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__auto_rebuild
 msgid "Auto-Rebuild on Push"
 msgstr "Auto-reconstruir al hacer push"
@@ -672,8 +694,8 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Auto-rebuild"
-msgstr "Auto-reconstrucción"
+msgid "Auto-rebuild on push"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -686,10 +708,8 @@ msgstr "Auto-actualizar módulos al reconstruir"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Automatic setup requires HTTPS.\n"
-"                                            Configure manually below."
+"                                        Configure manually below."
 msgstr ""
-"Automatic setup requires HTTPS.\n"
-"                                            Configure manually below."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -706,22 +726,17 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Automatically purge audit log entries older than the specified\n"
-"                                    number of days. Set to 0 to keep all records indefinitely."
+"                        number of days. Set to 0 to keep all records indefinitely."
 msgstr ""
-"Elimina automáticamente entradas del log de auditoría más antiguas que el número\n"
-"                                    de días especificado. Ponga 0 para conservar todos los registros indefinidamente."
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Automatically purge job log chunks (cloud.job.log.chunk) for\n"
-"                                    terminated jobs older than the specified number of days. Active\n"
-"                                    jobs are never purged. Set to 0 to keep all chunks indefinitely."
+"                        terminated jobs older than the specified number of days. Active\n"
+"                        jobs are never purged. Set to 0 to keep all chunks indefinitely."
 msgstr ""
-"Elimina automáticamente los chunks de log de jobs (cloud.job.log.chunk) de\n"
-"                                    jobs terminados más antiguos que el número de días especificado. Los jobs\n"
-"                                    activos nunca se purgan. Ponga 0 para conservar todos los chunks indefinidamente."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__auto_rebuild
@@ -741,6 +756,18 @@ msgstr "CPUs disponibles"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__available_ram_gb
 msgid "Available RAM (GB)"
 msgstr "RAM disponible (GB)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
+msgid "Back"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Back to Projects"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-python
@@ -791,7 +818,7 @@ msgstr "Backend de backup"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/app/app.xml:0
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 msgid "Backup Backends"
 msgstr "Backends de backup"
@@ -874,6 +901,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Backups"
 msgstr "Backups"
@@ -907,11 +935,20 @@ msgid "Blocking Alert"
 msgstr "Alerta bloqueante"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__bsl-1_0
 msgid "Boost Software License 1.0"
 msgstr "Boost Software License 1.0"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Bot token"
+msgstr "Token del bot"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_telegram_bot_token
+msgid "Bot token from @BotFather. Stored encrypted."
+msgstr "Token del bot obtenido de @BotFather. Se almacena cifrado."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -941,6 +978,13 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_project_repo__branch
 msgid "Branch to use for deployments."
 msgstr "Rama a usar para despliegues."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid ""
+"Bring the instance back up on its source host (%s) and cancel the move."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -981,9 +1025,9 @@ msgstr "CPU"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "CPU /"
-msgstr "CPU /"
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+msgid "CPU / RAM"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__cpu_cores
@@ -1035,7 +1079,6 @@ msgstr "Cancelar tarea"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.js:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Cancelled"
 msgstr "Cancelado"
@@ -1117,6 +1160,18 @@ msgstr "Cambios guardados"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Chat ID"
+msgstr "ID de chat"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Chat ID detected"
+msgstr "ID de chat detectado"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Check"
 msgstr "Verificar"
@@ -1145,11 +1200,10 @@ msgstr "Verificando"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
-"Choose when to receive email notifications for cloud jobs.\n"
-"                In-app notifications are always shown."
+"Choose what reaches you by email and when. Muted projects\n"
+"                never interrupt you (no emails, no live toasts) but stay\n"
+"                visible in the alerts panel."
 msgstr ""
-"Elija cuándo recibir notificaciones por email para los jobs de cloud.\n"
-"                Las notificaciones en la app se muestran siempre."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1212,6 +1266,7 @@ msgstr "Clonando…"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/create_project_modal/create_project_modal.xml:0
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
@@ -1236,6 +1291,8 @@ msgid "Closed At"
 msgstr "Cerrado en"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: model:ir.actions.act_url,name:incubacloud.action_go_to_cloud_app
 #: model:ir.module.category,name:incubacloud.module_category_cloud_security
 #: model:ir.ui.menu,name:incubacloud.incubacloud_menu_root
@@ -1247,6 +1304,11 @@ msgstr "Cloud"
 #: model:ir.model,name:incubacloud.model_cloud_audit_log
 msgid "Cloud Audit Log"
 msgstr "Log de auditoría de Cloud"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_notification_mode
+msgid "Cloud Email Delivery"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model,name:incubacloud.model_cloud_host
@@ -1403,6 +1465,11 @@ msgid "Compatible"
 msgstr "Compatible"
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid "Completed jobs ("
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__compose_services
 msgid "Compose Services"
 msgstr "Servicios Compose"
@@ -1429,7 +1496,6 @@ msgstr "Configuración"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Configuration"
 msgstr "Configuración"
@@ -1631,12 +1697,10 @@ msgid "Could not clone repository. Check the URL and credentials."
 msgstr "No se pudo clonar el repositorio. Verifica la URL y las credenciales."
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
-msgid ""
-"Could not contact the IncubaCloud platform to cancel this managed backup. "
-"Please retry or contact support."
-msgstr ""
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Could not detect chat ID"
+msgstr "No se pudo detectar el ID de chat"
 
 #. module: incubacloud
 #. odoo-python
@@ -1846,15 +1910,11 @@ msgid "Creating…"
 msgstr "Creando…"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__level__critical
 msgid "Critical"
 msgstr "Crítico"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "Current Usage"
-msgstr "Uso actual"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__custom_backup_dst
@@ -1924,6 +1984,22 @@ msgid "DB only"
 msgstr "Solo BD"
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid "Daily cloud digest"
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_mode__daily_digest
+msgid "Daily digest"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Dark theme"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Database"
@@ -1971,15 +2047,11 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Default percentage at which an email alert is sent when a\n"
-"                                    backup backend approaches its quota. Each backend can override\n"
-"                                    this on its own Usage tab (set the backend's threshold to 0\n"
-"                                    to inherit this value, -1 to disable, or 1–100 for an explicit\n"
-"                                    percentage)."
+"                        backup backend approaches its quota. Each backend can override\n"
+"                        this on its own Usage tab (set the backend's threshold to 0\n"
+"                        to inherit this value, -1 to disable, or 1–100 for an explicit\n"
+"                        percentage)."
 msgstr ""
-"Porcentaje por defecto al que se envía un aviso por email cuando un backend "
-"de backup se acerca a su cuota. Cada backend puede sobrescribir esto en su "
-"propia pestaña Uso (pon el umbral del backend a 0 para heredar este valor, "
-"-1 para desactivar, o 1–100 para un porcentaje explícito)."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__default_backup_alert_threshold_pct
@@ -2085,6 +2157,12 @@ msgid "Deletion cron"
 msgstr "Cron de eliminación"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Delivery"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__delivery_id
 msgid "Delivery ID"
 msgstr "ID de entrega"
@@ -2148,6 +2226,12 @@ msgstr "Detalles"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Detect"
+msgstr "Detectar"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Detection failed."
 msgstr "Falló la detección."
@@ -2198,6 +2282,7 @@ msgstr "Desconectar aplicación GitHub"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid "Disk"
 msgstr "Disco"
 
@@ -2222,6 +2307,18 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "Dismiss all"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "Dismiss all alerts"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/toast/toast_container.xml:0
 msgid "Dismiss notification"
 msgstr "Descartar notificación"
@@ -2232,6 +2329,18 @@ msgstr "Descartar notificación"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__state__dismissed
 msgid "Dismissed"
 msgstr "Descartada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "Dismisses the listed non-conflict alerts for all users"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "Dismisses this alert for all users"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__display_name
@@ -2305,7 +2414,6 @@ msgstr "Dominios"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.js:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Done"
 msgstr "Hecho"
@@ -2414,6 +2522,15 @@ msgstr "URL del endpoint"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+msgid ""
+"Endpoint mismatch (301 redirect): the bucket exists but is served from a "
+"different endpoint/region/jurisdiction than configured. Check the S3 "
+"endpoint URL."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Env:"
 msgstr "Entorno:"
@@ -2514,11 +2631,26 @@ msgid "Export instance"
 msgstr "Exportar instancia"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_webhook_url
+msgid "External Webhook URL"
+msgstr "URL del webhook externo"
+
+#. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.js:0
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "External webhook"
+msgstr "Webhook externo"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Failed"
 msgstr "Fallido"
+
+#. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid "Failed jobs ("
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2606,9 +2738,21 @@ msgstr "Falló al detectar la instalación de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Failed to detect chat ID"
+msgstr "Fallo al detectar el ID de chat"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Failed to disconnect the app."
 msgstr "Error al desconectar la aplicación."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.js:0
+msgid "Failed to dismiss alerts"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2675,6 +2819,12 @@ msgstr "Error al cargar datos del formulario."
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Failed to load host."
 msgstr "Error al cargar el host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Failed to load hosts."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2776,6 +2926,12 @@ msgstr "Falló al guardar: %s"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Failed to send test message"
+msgstr "Fallo al enviar mensaje de prueba"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Failed to start full setup."
 msgstr "Error al iniciar configuración completa."
@@ -2793,8 +2949,6 @@ msgid "Failed to trust SSH host key."
 msgstr "Falló al confiar en la clave SSH del host."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__failures
 msgid "Failures only"
 msgstr "Solo fallos"
@@ -2869,6 +3023,13 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Filestore"
 msgstr "Filestore"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Fill in the required fields *"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2990,10 +3151,8 @@ msgstr "GB"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid ""
 "GB\n"
-"                                                ("
+"                                        ("
 msgstr ""
-"GB\n"
-"                                                ("
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3003,26 +3162,16 @@ msgstr "GB /"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "GB free)"
-msgstr "GB libre)"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 msgid "GB used — set a quota to track %"
 msgstr ""
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__agpl-3_0-or-later
 msgid "GNU AGPL 3.0 or later"
 msgstr "GNU AGPL 3.0 o posterior"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__lgpl-3_0-or-later
 msgid "GNU LGPL 3.0 or later"
 msgstr "GNU LGPL 3.0 o posterior"
@@ -3031,6 +3180,11 @@ msgstr "GNU LGPL 3.0 o posterior"
 #: model:ir.actions.server,name:incubacloud.cron_cloud_rate_limit_gc_ir_actions_server
 msgid "Garbage-collect expired rate-limit buckets"
 msgstr "Recolectar buckets de rate-limit expirados"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_alert_gc_ir_actions_server
+msgid "Garbage-collect old dismissed alerts"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_terminal_route_gc_ir_actions_server
@@ -3199,6 +3353,12 @@ msgstr "Navegación global"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Global search"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Go to Alerts"
 msgstr "Ir a alertas"
@@ -3209,6 +3369,26 @@ msgstr "Ir a alertas"
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Go to instance"
 msgstr "Ir a instancia"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_webhook_secret
+msgid ""
+"HMAC-SHA256 secret used to sign webhook payloads. Set to the same value the "
+"receiving endpoint expects in the X-IncubaCloud-Signature header."
+msgstr ""
+"Secreto HMAC-SHA256 usado para firmar los payloads del webhook. Debe "
+"coincidir con el valor que el endpoint receptor espera en la cabecera "
+"X-IncubaCloud-Signature."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_webhook_url
+msgid ""
+"HTTPS endpoint that receives POST notifications on job state changes. "
+"Payloads are signed with HMAC-SHA256 when a signing secret is configured."
+msgstr ""
+"Endpoint HTTPS que recibe notificaciones POST sobre cambios de estado de "
+"jobs. Los payloads se firman con HMAC-SHA256 cuando se configura un secreto "
+"de firma."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__rebuild_fingerprint
@@ -3327,7 +3507,7 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/app/app.xml:0
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid "Hosts"
 msgstr "Hosts"
@@ -3429,6 +3609,19 @@ msgid "Image Version"
 msgstr "Versión de imagen"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_mode__immediate
+msgid "Immediate"
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_notification_mode
+msgid ""
+"Immediate: one email per event. Daily digest: events are batched into one "
+"summary email per day — except severe failures (production deploys/rebuilds,"
+" critical alerts), which are always sent immediately."
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
@@ -3504,6 +3697,11 @@ msgstr "Incremental"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Incuba"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "IncubaCloud"
 msgstr "IncubaCloud"
@@ -3518,14 +3716,10 @@ msgstr "Ajustes de IncubaCloud"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "IncubaCloud will redirect you to GitHub to create a GitHub App\n"
-"                                        pre-configured with the right permissions and webhook URL.\n"
-"                                        The app will be created in your GitHub account — you can then\n"
-"                                        install it on any organization you manage."
+"                                    pre-configured with the right permissions and webhook URL.\n"
+"                                    The app will be created in your GitHub account — you can then\n"
+"                                    install it on any organization you manage."
 msgstr ""
-"IncubaCloud te redirigirá a GitHub para crear una aplicación GitHub\n"
-"                                        preconfigurada con los permisos y URL de webhook correctos.\n"
-"                                        La aplicación se creará en tu cuenta de GitHub — luego puedes\n"
-"                                        instalarla en cualquier organización que administres."
 
 #. module: incubacloud
 #: model:mail.template,name:incubacloud.mail_template_backup_usage_alert
@@ -3540,6 +3734,7 @@ msgstr "Información"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Infrastructure"
 msgstr "Infraestructura"
@@ -3688,6 +3883,12 @@ msgstr "La instancia no está en ejecución"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Instance must be deployed before it can move."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "Instance must be deployed first."
 msgstr "La instancia debe estar desplegada primero."
 
@@ -3755,8 +3956,8 @@ msgstr "Instancia:"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__instance_ids
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__instance_ids
 msgid "Instances"
@@ -3960,13 +4161,6 @@ msgstr "Tareas"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "Jobs will appear here once you deploy or probe a host."
-msgstr ""
-"Las tareas aparecerán aquí una vez que despliegues o verifiques un host."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Key stored — upload a new file only to replace it."
 msgstr "Clave guardada — suba un nuevo archivo solo para reemplazarla."
@@ -3998,6 +4192,11 @@ msgstr "Último aviso enviado"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_auto_rebuild
 msgid "Last Auto-Rebuild"
 msgstr "Última auto-reconstrucción"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_last_digest_at
+msgid "Last Cloud Digest Sent"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__last_health_check
@@ -4119,6 +4318,8 @@ msgstr ""
 "Dejar vacío para AWS S3. Configurar para MinIO, Wasabi, Backblaze, etc."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__level
 msgid "Level"
 msgstr "Nivel"
@@ -4129,6 +4330,12 @@ msgstr "Nivel"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__project_license
 msgid "License"
 msgstr "Licencia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Light theme"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-python
@@ -4164,12 +4371,6 @@ msgstr "Entorno en vivo"
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Loading directory…"
 msgstr "Cargando directorio…"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid "Loading host…"
-msgstr "Cargando host…"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4233,6 +4434,11 @@ msgid "Log Chunks"
 msgstr "Fragmentos de log"
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid "Log →"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/create_project_modal/create_project_modal.xml:0
 msgid "Logical grouping for instances"
@@ -4275,8 +4481,6 @@ msgstr ""
 "Los valores menores aparecen primero en la barra de acciones personalizadas."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__mit
 msgid "MIT"
 msgstr "MIT"
@@ -4388,9 +4592,69 @@ msgstr "Método de autenticación para el host cloud."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Migrating from"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Migration started."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
 msgid "Modules"
 msgstr "Módulos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Move"
+msgstr ""
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_origin_host_id
+msgid "Move Origin Host"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Move failed"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Move instance"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Move instance to another host"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Move rolled back."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Move to host"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Move to:"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4405,6 +4669,17 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Must be a positive integer"
 msgstr "Debe ser un entero positivo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_muted_project_ids
+msgid "Muted Cloud Projects"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Muted projects"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4506,16 +4781,40 @@ msgid "New Project"
 msgstr "Nuevo proyecto"
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid "New alerts ("
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "New host"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "New instance"
 msgstr "Nueva instancia"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "New project"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/password_input/password_input.js:0
 msgid "New value entered — will be saved"
 msgstr "Nuevo valor introducido — se guardará"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/ic_pager/ic_pager.xml:0
+msgid "Next page"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-python
@@ -4526,12 +4825,6 @@ msgid ""
 msgstr ""
 "No hay credenciales de GitHub configuradas. Configura una GitHub App o un "
 "Token de Acceso Personal (PAT) para acceder a repositorios privados."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "No active alerts"
-msgstr "Sin alertas activas"
 
 #. module: incubacloud
 #. odoo-python
@@ -4553,8 +4846,8 @@ msgstr "Sin actividad aún."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
-msgid "No alerts found."
-msgstr "No se encontraron alertas."
+msgid "No alerts found"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4580,10 +4873,8 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "No backup backend configured. Assign one in this instance's Networking tab,\n"
-"                                        in the project settings, or set a global default in Settings → Backups."
+"                        in the project settings, or set a global default in Settings → Backups."
 msgstr ""
-"No backup backend configured. Assign one in this instance's Networking tab,\n"
-"                                        in the project settings, or set a global default in Settings → Backups."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4687,14 +4978,6 @@ msgstr ""
 "criteria."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "No jobs yet"
-msgstr "No hay tareas aún"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__no_license
 msgid "No license"
 msgstr "Sin licencia"
@@ -4710,6 +4993,12 @@ msgstr "Sin miembros asignados"
 #: code:addons/incubacloud/static/src/components/module_selector/module_selector.xml:0
 msgid "No modules found"
 msgstr "No se encontraron módulos"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "No move in progress to roll back."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4758,6 +5047,7 @@ msgstr "No hay repositorios aún — haz clic en Agregar para vincular un repo."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: code:addons/incubacloud/static/src/components/search_select/search_select.xml:0
 msgid "No results"
 msgstr "Sin resultados"
@@ -4807,9 +5097,6 @@ msgstr ""
 "duplicity siempre respalda la base de datos + filestore como una cadena."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__odoo_proxy__none
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_security__none
 #: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__none
@@ -4845,6 +5132,12 @@ msgstr "No establecido"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Not trusted"
 msgstr "No de confianza"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "Nothing to show for the current filter."
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__email_from
@@ -4898,6 +5191,11 @@ msgstr ""
 " desactivar la eliminación completamente."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_telegram_chat_id
+msgid "Numeric chat or channel ID where the bot sends messages."
+msgstr "ID numérico del chat o canal donde el bot envía los mensajes."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_app__app_id
 msgid "Numeric identifier of the GitHub App (found in App settings)."
 msgstr ""
@@ -4921,6 +5219,8 @@ msgstr "Prefijo de objeto dentro del bucket (ej. backups o clients/acme)."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "Odoo"
 msgstr "Odoo"
 
@@ -4935,8 +5235,6 @@ msgid "Odoo Configuration"
 msgstr "Configuración de Odoo"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__oeel-1_0
 msgid "Odoo Enterprise Edition License v1.0"
 msgstr "Odoo Enterprise Edition License v1.0"
@@ -4947,8 +5245,6 @@ msgid "Odoo Memory Limit"
 msgstr "Límite de memoria Odoo"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__opl-1_0
 msgid "Odoo Proprietary License v1.0"
 msgstr "Odoo Proprietary License v1.0"
@@ -5032,16 +5328,10 @@ msgid "Only production instances can be cloned."
 msgstr "Solo se pueden clonar instancias de producción."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "Only used for production instances"
-msgstr ""
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__managed_reservation_id
 msgid ""
-"Opaque id of the cloud.backup.reservation record in the SaaS manager. Empty "
-"for BYO backends."
+"Opaque id set by an external module that manages this backend. Core does not"
+" interpret it. Empty for BYO backends."
 msgstr ""
 
 #. module: incubacloud
@@ -5139,7 +5429,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Overview"
@@ -5286,7 +5575,6 @@ msgstr "Carga"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.js:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Pending"
 msgstr "Pendiente"
@@ -5341,6 +5629,12 @@ msgstr "Token de acceso personal"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Personal Access Token (PAT)"
 msgstr "Token de acceso personal (PAT)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Pick a different target host."
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__pid
@@ -5432,6 +5726,12 @@ msgstr "Pruebas de pre-producción"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Preparing…"
 msgstr "Preparando…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/ic_pager/ic_pager.xml:0
+msgid "Previous page"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__domain
@@ -5546,29 +5846,30 @@ msgstr "Proyecto no encontrado"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
 #: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "Projects"
 msgstr "Proyectos"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_muted_project_ids
+msgid ""
+"Projects that never interrupt this user: no emails, no digest entries, no "
+"live toasts. The alerts panel and badge still show everything."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
 msgid ""
 "Protect the GitHub webhook and the terminal opener\n"
-"                        against CPU DoS and resource exhaustion. All values\n"
-"                        are requests per minute, tumbling window. Changes\n"
-"                        apply immediately — no redeploy needed. Set any\n"
-"                        field to a non-positive number and the model will\n"
-"                        fall back to the documented default."
+"            against CPU DoS and resource exhaustion. All values\n"
+"            are requests per minute, tumbling window. Changes\n"
+"            apply immediately — no redeploy needed. Set any\n"
+"            field to a non-positive number and the model will\n"
+"            fall back to the documented default."
 msgstr ""
-"Proteja el webhook de GitHub y el abridor de terminal\n"
-"                        contra DoS de CPU y agotamiento de recursos. Todos los valores\n"
-"                        son peticiones por minuto, ventana fija. Los cambios\n"
-"                        se aplican inmediatamente — sin redeploy. Ponga cualquier\n"
-"                        campo a un número no positivo y el modelo recurrirá\n"
-"                        al valor documentado por defecto."
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__status__provisioning
@@ -5654,10 +5955,15 @@ msgstr "UUID de tarea en cola"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.js:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Queued"
 msgstr "En cola"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Quitar repositorio"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5759,14 +6065,8 @@ msgstr "Recibido"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Recent Activity"
-msgstr "Actividad reciente"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "Recent jobs"
-msgstr "Tareas recientes"
+msgid "Recent activity"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5798,7 +6098,9 @@ msgstr "Redirigir este hostname a otro (ej. example.com → www.example.com)"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Refresh"
 msgstr "Actualizar"
 
@@ -5874,12 +6176,6 @@ msgid "Remove \"%s\"? Traefik will be stopped and all remote files deleted."
 msgstr ""
 "¿Eliminar \"%s\"? Traefik se detendrá y todos los archivos remotos se "
 "borrarán."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
-msgid "Remove repository"
-msgstr "Eliminar repositorio"
 
 #. module: incubacloud
 #. odoo-python
@@ -5988,12 +6284,6 @@ msgstr "Resolver conflictos pip"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.xml:0
-msgid "Resolve →"
-msgstr "Resolver →"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Resources"
 msgstr "Recursos"
@@ -6084,6 +6374,25 @@ msgid "Retry of"
 msgstr "Reintento de"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Roll back"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Roll back failed"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Roll back move"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_rotate_encrypted_secrets_ir_actions_server
 msgid "Rotate Encrypted Secrets (MultiFernet)"
 msgstr "Rotar secretos cifrados (MultiFernet)"
@@ -6104,7 +6413,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.js:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__running
@@ -6118,8 +6426,6 @@ msgid "Runs"
 msgstr "Ejecuciones"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_backup_backend__backend_type__s3
 msgid "S3 Compatible"
 msgstr "Compatible con S3"
@@ -6235,15 +6541,11 @@ msgid "SSH user is required"
 msgstr "El usuario SSH es obligatorio"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_security__ssl
 msgid "SSL/TLS"
 msgstr "SSL/TLS"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_security__starttls
 msgid "STARTTLS"
 msgstr "STARTTLS"
@@ -6309,44 +6611,13 @@ msgstr "Escaneando…"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
-msgid "Search backends"
-msgstr "Buscar backends"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
-msgid "Search backends…"
-msgstr "Buscar backends…"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
-msgid "Search hosts"
-msgstr "Buscar hosts"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
-msgid "Search hosts…"
-msgstr "Buscar hosts…"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
-msgid "Search instances"
-msgstr "Buscar instancias"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
-msgid "Search instances or tags…"
-msgstr "Buscar instancias o etiquetas…"
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Search instances, hosts, projects…"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-#: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
 msgid "Search projects"
 msgstr "Buscar proyectos"
 
@@ -6355,12 +6626,6 @@ msgstr "Buscar proyectos"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Search projects..."
 msgstr "Buscar proyectos..."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
-msgid "Search projects…"
-msgstr "Buscar proyectos…"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6374,6 +6639,12 @@ msgstr "Buscar usuario o acción…"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Search users to add..."
 msgstr "Buscar usuarios para agregar..."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Searching…"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6420,6 +6691,11 @@ msgid "Self-hosted"
 msgstr "Auto-alojado"
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_notification_digest_ir_actions_server
+msgid "Send daily cloud notification digest"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Send email notification on successful backup"
@@ -6427,9 +6703,21 @@ msgstr "Enviar notificación por correo en backup exitoso"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Send test message"
+msgstr "Enviar mensaje de prueba"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Sender email is invalid"
 msgstr "El email del remitente no es válido"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Sending…"
+msgstr "Enviando…"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__sequence
@@ -6487,6 +6775,14 @@ msgid "Set to True once business logic has handled this event."
 msgstr ""
 "Se establece en Verdadero una vez que la lógica de negocio ha procesado este"
 " evento."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_origin_host_id
+msgid ""
+"Set to the source host while a cross-host move is in flight; cleared once "
+"the destination is cut over. A non-empty value left after a failed move "
+"marks an instance an operator can roll back."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6554,8 +6850,8 @@ msgstr "Mostrar últimos 7 días"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
-msgid "Showing job linked to alert ·"
-msgstr "Mostrando tarea vinculada a alerta ·"
+msgid "Showing job linked to alert"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6573,6 +6869,12 @@ msgstr "Sid"
 #: code:addons/incubacloud/static/src/components/slide_over/slide_over.xml:0
 msgid "Side panel"
 msgstr "Panel lateral"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Signing secret"
+msgstr "Secreto de firma"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6767,6 +7069,36 @@ msgid "Tags"
 msgstr "Etiquetas"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Target host '%(name)s' is not ready (must be compatible and have Traefik "
+"deployed)."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "Target host not found"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Telegram"
+msgstr "Telegram"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_telegram_bot_token
+msgid "Telegram Bot Token"
+msgstr "Token del bot de Telegram"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_telegram_chat_id
+msgid "Telegram Chat ID"
+msgstr "ID de chat de Telegram"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
 msgid "Terminal open (per instance)"
@@ -6816,6 +7148,12 @@ msgstr "Probar conexión"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Test message sent"
+msgstr "Mensaje de prueba enviado"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Testing…"
@@ -6856,10 +7194,8 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "The default backup backend used for production instances when\n"
-"                                    no specific backend is selected at the project or instance level."
+"                        no specific backend is selected at the project or instance level."
 msgstr ""
-"Backend de backup por defecto para instancias de producción cuando\n"
-"                                    no se selecciona uno específico a nivel de proyecto o instancia."
 
 #. module: incubacloud
 #. odoo-python
@@ -6889,6 +7225,12 @@ msgid "This action requires the '%s' role or higher."
 msgstr "Esta acción requiere el rol '%s' o superior."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "This dismisses every listed non-conflict alert"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "This instance is already imported."
@@ -6896,10 +7238,17 @@ msgstr "Esta instancia ya está importada."
 
 #. module: incubacloud
 #. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
+#: code:addons/incubacloud/models/cloud_backup_backend.py:0
+msgid "This managed backend cannot be deleted from this database."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid ""
-"This managed backend cannot be deleted from this database "
-"(incubacloud_tenant not installed)."
+"This migrates the instance to the selected host. The instance will be "
+"briefly unavailable (a few minutes) while data is copied; it comes back "
+"automatically."
 msgstr ""
 
 #. module: incubacloud
@@ -6981,6 +7330,24 @@ msgid "To"
 msgstr "Para"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Toggle auto-rebuild"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Toggle auto-update"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Toggle automatic host assignment"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_connect_token__token
 msgid "Token"
 msgstr "Token"
@@ -7043,6 +7410,13 @@ msgstr "Confiar clave SSH"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Trusted"
 msgstr "De confianza"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
+#: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
+msgid "Try again"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7338,13 +7712,13 @@ msgstr "Volúmenes"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/dashboard/dashboard.js:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Waiting"
 msgstr "Esperando"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: code:addons/incubacloud/static/src/components/project_card/project_card.js:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__level__warning
@@ -7354,11 +7728,29 @@ msgid "Warning"
 msgstr "Advertencia"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_last_digest_at
+msgid ""
+"Watermark of the daily digest window. Advanced after each run — also when "
+"the window turned out empty."
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__webhook_secret
 msgid "Webhook Secret"
 msgstr "Secreto del webhook"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_webhook_secret
+msgid "Webhook Signing Secret"
+msgstr "Secreto de firma del webhook"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Webhook URL"
+msgstr "URL del webhook"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7375,12 +7767,9 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "When enabled, new instances will be automatically placed on the\n"
-"                                    host with the most available resources. When disabled, a host\n"
-"                                    must be selected manually."
+"                        host with the most available resources. When disabled, a host\n"
+"                        must be selected manually."
 msgstr ""
-"When enabled, new instances will be automatically placed on the\n"
-"                                    host with the most available resources. When disabled, a host\n"
-"                                    must be selected manually."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__pr_reviews_enabled
@@ -7513,18 +7902,23 @@ msgid "You have unsaved changes. Leave this page without saving?"
 msgstr "Tiene cambios sin guardar. ¿Salir de esta página sin guardar?"
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid ""
+"You receive this summary because your delivery preference\n"
+"                        is set to <strong>Daily digest</strong>. Severe failures\n"
+"                        are still emailed immediately. Manage preferences from\n"
+"                        your"
+msgstr ""
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Your GitHub App was created. Now install it on the GitHub\n"
-"                                        organization that owns your repositories. Click the button below\n"
-"                                        — GitHub will let you choose which organization and repositories\n"
-"                                        to grant access."
+"                                    organization that owns your repositories. Click the button below\n"
+"                                    — GitHub will let you choose which organization and repositories\n"
+"                                    to grant access."
 msgstr ""
-"Tu aplicación GitHub fue creada. Ahora instálala en la organización\n"
-"                                        de GitHub propietaria de tus repositorios. Haz clic en el botón\n"
-"                                        — GitHub te permitirá elegir a qué organización y repositorios\n"
-"                                        dar acceso."
 
 #. module: incubacloud
 #. odoo-python
@@ -7568,6 +7962,12 @@ msgstr "auto-completado al crear la aplicación"
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "automatically."
 msgstr "automatically."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
+msgid "backend"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7624,6 +8024,11 @@ msgid "click-odoo-backupdb"
 msgstr "click-odoo-backupdb"
 
 #. module: incubacloud
+#: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
+msgid "cloud console"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__traefik_config_yml
 msgid "config.yml"
 msgstr "config.yml"
@@ -7637,8 +8042,10 @@ msgstr "config.yml es obligatorio"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
-msgid "cores"
-msgstr "cores"
+msgid ""
+"cores\n"
+"                                    ·"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7691,6 +8098,12 @@ msgstr "expira en 2 horas"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "for all users"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "ghp_xxxxxxxxxxxx"
 msgstr "ghp_xxxxxxxxxxxx"
@@ -7706,6 +8119,12 @@ msgstr "github.com → Settings → Applications → GitHub Apps"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "globalwhitelist"
 msgstr "globalwhitelist"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+msgid "host"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7744,6 +8163,7 @@ msgstr "en el contenedor de odoo. El ZIP se adjunta a esta lista y"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/project_card/project_card.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "instance"
 msgstr "instance"
@@ -7815,6 +8235,7 @@ msgstr "odoo shell --no-http"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/ic_pager/ic_pager.xml:0
 #: code:addons/incubacloud/static/src/components/truncation_banner/truncation_banner.xml:0
 msgid "of"
 msgstr "de"
@@ -7837,6 +8258,12 @@ msgstr "destruir permanentemente"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "pip.txt — Python"
 msgstr "pip.txt — Python"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
+msgid "project"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7887,14 +8314,30 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "rebuild on push to unfrozen repos"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "redirect to (optional)"
 msgstr "redirigir a (opcional)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"runs click-odoo-update during rebuild. Disable to skip module migrations and"
+" the safe boot test."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/project_card/project_card.xml:0
+#: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "s"
 msgstr "s"
@@ -7910,6 +8353,12 @@ msgstr "skip"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "smtp.example.com"
 msgstr "smtp.example.com"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "source"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7946,21 +8395,15 @@ msgstr "ubuntu"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "— None —"
-msgstr "— Ninguno —"
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+msgid "· SSH untrusted"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "— Use global default —"
-msgstr "— Usar valor global por defecto —"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "— Use project/global default —"
-msgstr "— Usar valor del proyecto/global —"
+#: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+msgid "· SSH ✓"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7994,31 +8437,21 @@ msgstr "— dejar vacío para omitir"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
+msgid "— no instances"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "— only for production"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "— production only"
 msgstr "— solo producción"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "— rebuild on push to unfrozen repos"
-msgstr "— reconstruir al hacer push a repos no congelados"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid ""
-"— runs click-odoo-update during rebuild. Disable to skip module migrations "
-"and the safe boot test."
-msgstr ""
-"— ejecuta click-odoo-update durante el rebuild. Desactive para saltar "
-"migraciones de módulos y el boot test seguro."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "— select host —"
-msgstr "— seleccionar host —"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8026,12 +8459,6 @@ msgstr "— seleccionar host —"
 msgid "— set a quota below to see a % bar and enable alerts."
 msgstr ""
 "— configura una cuota abajo para ver la barra de % y activar los avisos."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
-msgid "← Back"
-msgstr "← Volver"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8050,31 +8477,6 @@ msgstr "← Volver a hosts"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "← Back to Instances"
 msgstr "← Volver a instancias"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "← Back to Projects"
-msgstr "← Volver a proyectos"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "← Backup Backends"
-msgstr "← Backends de backup"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "← Projects"
-msgstr "← Proyectos"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
-#: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
-msgid "← Try again"
-msgstr "← Intentar de nuevo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8102,7 +8504,6 @@ msgstr "↻ Re-detectar instalación"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
-#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
-msgid "↻ Refresh"
-msgstr "↻ Actualizar"
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "⌘K"
+msgstr ""

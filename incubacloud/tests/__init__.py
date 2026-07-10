@@ -26,6 +26,7 @@ from . import (
     test_deploy_executor,
     test_credential_service,
     test_export_sanitize,
+    test_external_notify,
     test_cloud_security,
     test_odoo_version_normalization,
     test_import_version_detection,
