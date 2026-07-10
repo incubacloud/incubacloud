@@ -1332,7 +1332,7 @@ class CloudJob(models.Model):
             url, data=payload,
             headers={'Content-Type': 'application/json'},
         )
-        urllib.request.urlopen(req, timeout=10)
+        urllib.request.urlopen(req, timeout=10)  # nosec B310 — only Telegram API (HTTPS)
 
     @api.model
     def _send_webhook(self, user, job, state, severe):
@@ -1367,7 +1367,7 @@ class CloudJob(models.Model):
         req = urllib.request.Request(
             user.cloud_webhook_url, data=payload, headers=headers,
         )
-        urllib.request.urlopen(req, timeout=10)
+        urllib.request.urlopen(req, timeout=10)  # nosec B310 — only user-provided HTTPS URL
 
     # ── Audit trail ───────────────────────────────────────────────────────
 
