@@ -359,7 +359,7 @@ class InstanceConnectController(http.Controller):
         url = f"https://api.telegram.org/bot{token}/getUpdates"
         try:
             req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — only Telegram API (HTTPS)
                 data = json.loads(resp.read())
         except Exception as exc:
             _logger.warning('telegram getUpdates failed: %s', exc)
@@ -400,7 +400,7 @@ class InstanceConnectController(http.Controller):
                 url, data=payload,
                 headers={'Content-Type': 'application/json'},
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — only Telegram API (HTTPS)
                 data = json.loads(resp.read())
         except Exception as exc:
             _logger.warning('telegram sendTest failed: %s', exc)
