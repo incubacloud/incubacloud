@@ -5,10 +5,11 @@ import { _t } from "@web/core/l10n/translation";
 import { IcModal } from "../ic_modal/ic_modal";
 import { RlSelect } from "../rl_select/rl_select";
 import { SearchSelect } from "../search_select/search_select";
+import { PasswordInput } from "../password_input/password_input";
 
 export class AppHeader extends Component {
     static template = "incubacloud.AppHeader";
-    static components = { IcModal, RlSelect, SearchSelect };
+    static components = { IcModal, RlSelect, SearchSelect, PasswordInput };
     static props = {
         alertCount:   { type: Number },
         currentRoute: { type: String },
@@ -39,6 +40,14 @@ export class AppHeader extends Component {
             notifMuted: [],        // [{id, name}] muted projects
             notifProjects: [],     // [{id, name}] pickable projects
             notifSaving: false,
+            // Telegram
+            telegramTokenConfigured: false,
+            telegramChatId: "",
+            telegramDetecting: false,
+            telegramTesting: false,
+            // Webhook
+            webhookSecretConfigured: false,
+            webhookUrl: "",
         });
 
         this._closeMenus = (ev) => {
@@ -236,6 +245,10 @@ export class AppHeader extends Component {
             this.state.notifLevel = prefs?.cloud_notification_level || "failures";
             this.state.notifMode = prefs?.cloud_notification_mode || "immediate";
             this.state.notifMuted = prefs?.cloud_muted_projects || [];
+            this.state.telegramTokenConfigured = prefs?.cloud_telegram_configured || false;
+            this.state.telegramChatId = prefs?.cloud_telegram_chat_id || "";
+            this.state.webhookSecretConfigured = prefs?.cloud_webhook_configured || false;
+            this.state.webhookUrl = prefs?.cloud_webhook_url || "";
         } catch (_e) { console.debug("Preferences fetch skipped:", _e); }
         try {
             const data = await rpc("/cloud/get_projects", {});
@@ -287,6 +300,10 @@ export class AppHeader extends Component {
                 cloud_notification_level: this.state.notifLevel,
                 cloud_notification_mode: this.state.notifMode,
                 cloud_muted_project_ids: this.state.notifMuted.map((p) => p.id),
+                cloud_telegram_bot_token: this.state._telegramToken || "",
+                cloud_telegram_chat_id: this.state.telegramChatId || "",
+                cloud_webhook_url: this.state.webhookUrl || "",
+                cloud_webhook_secret: this.state._webhookSecret || "",
             });
             this.env.toast?.success(_t("Notification preferences saved"));
             this.state.showNotifModal = false;
@@ -295,5 +312,47 @@ export class AppHeader extends Component {
         } finally {
             this.state.notifSaving = false;
         }
+    }
+
+    async detectChatId() {
+        this.state.telegramDetecting = true;
+        try {
+            const res = await rpc("/cloud/telegram_detect_chat_id", {});
+            if (res?.ok) {
+                this.state.telegramChatId = res.chat_id || "";
+                this.env.toast?.success(_t("Chat ID detected"));
+            } else {
+                this.env.toast?.error(res?.error || _t("Could not detect chat ID"));
+            }
+        } catch (_) {
+            this.env.toast?.error(_t("Failed to detect chat ID"));
+        } finally {
+            this.state.telegramDetecting = false;
+        }
+    }
+
+    async sendTelegramTest() {
+        this.state.telegramTesting = true;
+        try {
+            const res = await rpc("/cloud/telegram_send_test", {});
+            if (res?.ok) {
+                this.env.toast?.success(_t("Test message sent"));
+            } else {
+                this.env.toast?.error(res?.error || _t("Failed to send test message"));
+            }
+        } catch (_) {
+            this.env.toast?.error(_t("Failed to send test message"));
+        } finally {
+            this.state.telegramTesting = false;
+        }
+    }
+
+    /** Set from PasswordInput onChange — store in temp state for save. */
+    onTelegramTokenChange(value) {
+        this.state._telegramToken = value;
+    }
+
+    onWebhookSecretChange(value) {
+        this.state._webhookSecret = value;
     }
 }

@@ -1,6 +1,10 @@
 import contextlib
+import hashlib
+import hmac
+import json
 import logging
 import re
+import urllib.request
 from datetime import timedelta
 
 from odoo import models, fields, api, _
@@ -1238,6 +1242,132 @@ class CloudJob(models.Model):
             f"</table>"
             f"<p><a href='{log_url}'>View logs</a></p>"
         )
+
+    @api.model
+    def _notify_external(self, job, state):
+        """Push job notifications to Telegram and/or external webhooks.
+
+        Runs the same user filter as ``_notify_by_email``: only active
+        internal users who are subscribed, can see the job via record
+        rules, and haven't muted its project. Digest-mode users only
+        receive severe failures immediately — everything else waits for
+        the daily digest, matching the email delivera-bility promise.
+
+        Telegram and webhook sends each run inside a try/except so one
+        broken endpoint can never starve another user's notification.
+        """
+        if state == 'cancelled':
+            return
+        if job.job_type_id.code in self._get_hidden_job_types():
+            return
+        users = self.env['res.users'].search([
+            ('share', '=', False),
+            ('active', '=', True),
+            ('cloud_notification_level', '!=', 'none'),
+        ]).filtered(
+            lambda u: self._job_visible_to(job, u)
+            and not self._job_muted_for(job, u)
+        )
+        severe = (
+            state == 'failed'
+            and job.job_type_id.code in self._get_severe_job_types()
+        )
+        if not severe:
+            users = users.filtered(
+                lambda u: u.cloud_notification_mode != 'daily_digest',
+            )
+        for user in users:
+            if (
+                user.cloud_notification_level == 'failures'
+                and state != 'failed'
+            ):
+                continue
+            if user.cloud_telegram_bot_token and user.cloud_telegram_chat_id:
+                try:
+                    self._send_telegram(user, job, state, severe)
+                except Exception:
+                    _logger.warning(
+                        'telegram send failed for user %s', user.id,
+                    )
+            if user.cloud_webhook_url:
+                try:
+                    self._send_webhook(user, job, state, severe)
+                except Exception:
+                    _logger.warning(
+                        'webhook send failed for user %s', user.id,
+                    )
+
+    @api.model
+    def _send_telegram(self, user, job, state, severe):
+        """POST a job state notification to the user's Telegram chat.
+
+        Uses the Bot API ``sendMessage`` endpoint. Failure is logged
+        but never propagated — a bad token or connectivity blip must
+        not abort the notification pipeline for other users.
+        """
+        base_url = self.env['ir.config_parameter'].sudo().get_param(
+            'web.base.url', '',
+        )
+        emoji = '\U0001F534' if state == 'failed' else '\U0001F7E2'
+        severity_tag = ' \u26A0\uFE0F SEVERE' if severe else ''
+        lines = [
+            f"{emoji} *{job.name}* {state}{severity_tag}",
+            f"Host: {job.host_id.name}",
+        ]
+        if job.instance_id:
+            lines.append(f"Instance: {job.instance_id.name}")
+        lines.append(f"Logs: {base_url}/cloud/log/{job.id}")
+        text = '\n'.join(lines)
+        url = (
+            f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}"
+            f"/sendMessage"
+        )
+        payload = json.dumps({
+            'chat_id': user.cloud_telegram_chat_id,
+            'text': text,
+            'parse_mode': 'Markdown',
+            'disable_web_page_preview': True,
+        }).encode()
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={'Content-Type': 'application/json'},
+        )
+        urllib.request.urlopen(req, timeout=10)
+
+    @api.model
+    def _send_webhook(self, user, job, state, severe):
+        """POST a signed JSON notification to the user's webhook URL.
+
+        The ``X-IncubaCloud-Signature`` header carries the HMAC-SHA256
+        hex digest so the receiver can verify authenticity and integrity.
+        When *user* has no signing secret the header is omitted — basic
+        HTTPS alone serves as the authenticity channel.
+        """
+        base_url = self.env['ir.config_parameter'].sudo().get_param(
+            'web.base.url', '',
+        )
+        payload = json.dumps({
+            'event': 'job_state_change',
+            'job_id': job.id,
+            'job_name': job.name,
+            'state': state,
+            'severe': severe,
+            'host': job.host_id.name,
+            'instance': job.instance_id.name if job.instance_id else None,
+            'log_url': f'{base_url}/cloud/log/{job.id}',
+            'timestamp': fields.Datetime.now(),
+        }).encode()
+        headers = {'Content-Type': 'application/json'}
+        secret = user.cloud_webhook_secret or ''
+        if secret:
+            sig = hmac.new(
+                secret.encode(), payload, hashlib.sha256,
+            ).hexdigest()
+            headers['X-IncubaCloud-Signature'] = 'sha256=' + sig
+        req = urllib.request.Request(
+            user.cloud_webhook_url, data=payload, headers=headers,
+        )
+        urllib.request.urlopen(req, timeout=10)
 
     # ── Audit trail ───────────────────────────────────────────────────────
 

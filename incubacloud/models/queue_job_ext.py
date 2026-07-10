@@ -94,6 +94,7 @@ class QueueJob(models.Model):
                 cjob.id, state=new_state,
             )
             self.env['cloud.job']._notify_by_email(cjob, new_state)
+            self.env['cloud.job']._notify_external(cjob, new_state)
             _logger.info(
                 "[queue_job_ext] broadcast cloud.job id=%s state=%s",
                 cjob.id, new_state,
