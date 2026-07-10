@@ -248,7 +248,9 @@ class FullSetupExecutor(AbstractSSHExecutor):
             (
                 "Start Traefik",
                 "cd ~/traefik && docker compose"
-                " -p inverseproxy -f inverseproxy.yaml up -d",
+                " -p inverseproxy -f inverseproxy.yaml up -d"
+                " && docker compose -p inverseproxy"
+                " -f inverseproxy.yaml restart proxy",
             ),
             # ── Phase 4: Whitelist ────────────────────────────────────
             (
