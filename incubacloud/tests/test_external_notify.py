@@ -591,3 +591,80 @@ class TestExternalNotifyUnconfigured(TransactionCase):
         })
         self.env['cloud.job']._notify_external(self.job, 'failed')
         mock_open.assert_not_called()
+
+
+@tagged('post_install', '-at_install')
+class TestEmailToggle(TransactionCase):
+    """When cloud_email_enabled is False, email is skipped but
+    Telegram (and any other channel) still fires."""
+
+    def _job_type(self, code, apply_to='host'):
+        jt = self.env['cloud.job.type'].search(
+            [('code', '=', code)], limit=1,
+        )
+        if not jt:
+            jt = self.env['cloud.job.type'].create({
+                'name': code, 'code': code, 'apply_to': apply_to,
+            })
+        return jt
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'et-host',
+            'ip_address': '10.0.0.54',
+            'user': 'ubuntu',
+            'wildcard_domain': 'et.example.com',
+        })
+        jt = self._job_type('host_probe')
+        self.job = self.env['cloud.job'].sudo().create({
+            'host_id': self.host.id,
+            'job_type_id': jt.id,
+            'name': 'Email toggle test',
+            'queue_job_uuid': 'uuid-et',
+        })
+
+    def _subscriber(self, email_enabled=True, with_telegram=False):
+        vals = {
+            'name': 'et-user',
+            'login': 'et-user',
+            'email': 'et@example.com',
+            'group_ids': [
+                (4, self.env.ref('base.group_user').id),
+                (4, self.env.ref('incubacloud.group_cloud_project_manager').id),
+            ],
+            'cloud_notification_level': 'all',
+            'cloud_email_enabled': email_enabled,
+        }
+        if with_telegram:
+            vals['cloud_telegram_bot_token'] = 'test-bot-token'
+            vals['cloud_telegram_chat_id'] = '123456789'
+        return self.env['res.users'].create(vals)
+
+    def _mail_count(self, email='et@example.com'):
+        """Count outgoing job-notification mails to a specific recipient."""
+        return self.env['mail.mail'].sudo().search_count([
+            ('subject', 'like', '[IncubaCloud] Job%'),
+            ('email_to', '=', email),
+        ])
+
+    def test_email_disabled_sends_no_email(self):
+        """cloud_email_enabled=False → _notify_by_email skips the user."""
+        self._subscriber(email_enabled=False)
+        before = self._mail_count('et@example.com')
+        self.env['cloud.job']._notify_by_email(self.job, 'failed')
+        self.assertEqual(self._mail_count('et@example.com'), before)
+
+    def test_email_enabled_sends_email(self):
+        """cloud_email_enabled=True (default) → email is sent (positive control)."""
+        self._subscriber(email_enabled=True)
+        before = self._mail_count('et@example.com')
+        self.env['cloud.job']._notify_by_email(self.job, 'failed')
+        self.assertGreater(self._mail_count('et@example.com'), before)
+
+    @patch('odoo.addons.incubacloud.models.cloud_job.urllib.request.urlopen')
+    def test_email_disabled_telegram_still_fires(self, mock_open):
+        """Disabling email must not affect Telegram delivery."""
+        self._subscriber(email_enabled=False, with_telegram=True)
+        self.env['cloud.job']._notify_external(self.job, 'failed')
+        mock_open.assert_called()

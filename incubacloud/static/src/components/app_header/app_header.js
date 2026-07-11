@@ -35,8 +35,10 @@ export class AppHeader extends Component {
             searchLoading: false,
             // Notification preferences modal
             showNotifModal: false,
+            expandedSection: null,  // 'email' | 'telegram' | 'webhook' | null
             notifLevel: "failures",
             notifMode: "immediate",
+            emailEnabled: true,
             notifMuted: [],        // [{id, name}] muted projects
             notifProjects: [],     // [{id, name}] pickable projects
             notifSaving: false,
@@ -88,6 +90,22 @@ export class AppHeader extends Component {
             document.removeEventListener("keydown", this._onKeydown, true);
         });
     }
+
+    // ── Notification preference dots ────────────────────────────────────
+
+    get emailConfigured() {
+        return this.state.emailEnabled;
+    }
+
+    get telegramConfigured() {
+        return this.state.telegramTokenConfigured;
+    }
+
+    get webhookConfigured() {
+        return !!this.state.webhookUrl;
+    }
+
+    // ── UI helpers ───────────────────────────────────────────────────────
 
     onGlobalSearch(ev) {
         const value = ev.target.value;
@@ -238,12 +256,38 @@ export class AppHeader extends Component {
         window.location.href = '/odoo';
     }
 
+    // ── Notification preferences accordion ──────────────────────────────
+
+    toggleSection(name) {
+        this.state.expandedSection = (
+            this.state.expandedSection === name ? null : name
+        );
+    }
+
+    async _savePrefsSilent() {
+        // Persist current form values without closing the modal.
+        // Used by Detect / Send test buttons so the backend sees
+        // the values the user just typed.
+        await rpc("/cloud/save_user_preferences", {
+            cloud_notification_level: this.state.notifLevel,
+            cloud_notification_mode: this.state.notifMode,
+            cloud_email_enabled: this.state.emailEnabled,
+            cloud_muted_project_ids: this.state.notifMuted.map((p) => p.id),
+            cloud_telegram_bot_token: this.state._telegramToken || "",
+            cloud_telegram_chat_id: this.state.telegramChatId || "",
+            cloud_webhook_url: this.state.webhookUrl || "",
+            cloud_webhook_secret: this.state._webhookSecret || "",
+        });
+    }
+
     async openNotifModal() {
         this.state.showUserMenu = false;
+        this.state.expandedSection = null;
         try {
             const prefs = await rpc("/cloud/get_user_preferences", {});
             this.state.notifLevel = prefs?.cloud_notification_level || "failures";
             this.state.notifMode = prefs?.cloud_notification_mode || "immediate";
+            this.state.emailEnabled = prefs?.cloud_email_enabled !== false;
             this.state.notifMuted = prefs?.cloud_muted_projects || [];
             this.state.telegramTokenConfigured = prefs?.cloud_telegram_configured || false;
             this.state.telegramChatId = prefs?.cloud_telegram_chat_id || "";
@@ -296,15 +340,33 @@ export class AppHeader extends Component {
     async saveNotifPrefs() {
         this.state.notifSaving = true;
         try {
-            await rpc("/cloud/save_user_preferences", {
-                cloud_notification_level: this.state.notifLevel,
-                cloud_notification_mode: this.state.notifMode,
-                cloud_muted_project_ids: this.state.notifMuted.map((p) => p.id),
-                cloud_telegram_bot_token: this.state._telegramToken || "",
-                cloud_telegram_chat_id: this.state.telegramChatId || "",
-                cloud_webhook_url: this.state.webhookUrl || "",
-                cloud_webhook_secret: this.state._webhookSecret || "",
-            });
+            const hasToken = (
+                this.state._telegramToken || this.state.telegramTokenConfigured
+            );
+            const hasChatId = !!this.state.telegramChatId;
+            if (hasToken && !hasChatId) {
+                this.env.toast?.error(
+                    _t("Telegram Chat ID is required when a bot token is configured"),
+                );
+                return;
+            }
+            if (hasChatId && !hasToken) {
+                this.env.toast?.error(
+                    _t("Telegram Bot Token is required when a chat ID is configured"),
+                );
+                return;
+            }
+            const hasSecret = (
+                this.state._webhookSecret || this.state.webhookSecretConfigured
+            );
+            const hasUrl = !!this.state.webhookUrl;
+            if (hasSecret && !hasUrl) {
+                this.env.toast?.error(
+                    _t("Webhook URL is required when a signing secret is configured"),
+                );
+                return;
+            }
+            await this._savePrefsSilent();
             this.env.toast?.success(_t("Notification preferences saved"));
             this.state.showNotifModal = false;
         } catch (_) {
@@ -317,6 +379,7 @@ export class AppHeader extends Component {
     async detectChatId() {
         this.state.telegramDetecting = true;
         try {
+            await this._savePrefsSilent();
             const res = await rpc("/cloud/telegram_detect_chat_id", {});
             if (res?.ok) {
                 this.state.telegramChatId = res.chat_id || "";
@@ -334,6 +397,7 @@ export class AppHeader extends Component {
     async sendTelegramTest() {
         this.state.telegramTesting = true;
         try {
+            await this._savePrefsSilent();
             const res = await rpc("/cloud/telegram_send_test", {});
             if (res?.ok) {
                 this.env.toast?.success(_t("Test message sent"));

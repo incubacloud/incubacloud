@@ -1168,6 +1168,7 @@ class CloudJob(models.Model):
             ('share', '=', False),
             ('active', '=', True),
             ('cloud_notification_level', '!=', 'none'),
+            ('cloud_email_enabled', '=', True),
         ]).filtered(
             lambda u: self._job_visible_to(job, u)
             and not self._job_muted_for(job, u)
