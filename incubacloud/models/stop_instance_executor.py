@@ -14,13 +14,25 @@ class StopInstanceExecutor(AbstractSSHExecutor):
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
     def get_commands(self):
+        """Return the command(s) to stop a running doodba instance.
+
+        By default stops all compose services. When ``payload.services``
+        is a non-empty list of service names, only those services are
+        stopped — used by ``move_to_host`` to quiesce ``odoo`` while
+        leaving ``db`` and ``backup`` alive for the subsequent
+        ``backup_create``/``backup_download`` steps.
+        """
         inst = self._inst()
         d = self._inst_dir(inst)
+        payload = self.job.payload or {}
+        services = payload.get('services')
+        if services:
+            service_args = ' '.join(s for s in services if s)
+            cmd = f"cd {d} && docker compose stop {service_args}"
+        else:
+            cmd = f"cd {d} && docker compose stop"
         return [
-            (
-                "Stop containers",
-                f"cd {d} && docker compose stop",
-            ),
+            ("Stop containers", cmd),
         ]
 
     async def on_success(self, results):

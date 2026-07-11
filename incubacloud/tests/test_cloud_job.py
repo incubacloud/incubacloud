@@ -662,6 +662,80 @@ class TestChainFailurePropagation(TransactionCase):
         )
         self.assertEqual(self._db_state(job2), 'done')
 
+    def test_wait_dependencies_queue_job_cancelled_too(self):
+        """Cancelling cloud_job in wait_dependencies also cancels their
+        underlying queue_job records — the first UPDATE (cloud_job →
+        failed) does not propagate to queue_job, leaving orphan workers
+        that the second UPDATE now cleans up."""
+        job1 = self._job(state='started')
+        job2 = self._job(state='wait_dependencies')
+
+        # Create queue_job records linked to both cloud_jobs.
+        self.env.cr.execute("""
+            INSERT INTO queue_job (uuid, name, state, model_name, method_name,
+                                   channel, retry, identity_key)
+            VALUES
+            ('uuid-1', 'Job 1', 'failed', 'cloud.job', 'execute',
+             'root.incubacloud', 0, 'key1')
+            RETURNING id
+        """)
+        qid1 = self.env.cr.fetchone()[0]
+        self.env.cr.execute("""
+            INSERT INTO queue_job (uuid, name, state, model_name, method_name,
+                                   channel, retry, identity_key)
+            VALUES
+            ('uuid-2', 'Job 2', 'wait_dependencies', 'cloud.job', 'execute',
+             'root.incubacloud', 0, 'key2')
+            RETURNING id
+        """)
+        qid2 = self.env.cr.fetchone()[0]
+
+        self.env.cr.execute(
+            "UPDATE cloud_job SET queue_job_id = %s WHERE id = %s",
+            (qid1, job1.id),
+        )
+        self.env.cr.execute(
+            "UPDATE cloud_job SET queue_job_id = %s WHERE id = %s",
+            (qid2, job2.id),
+        )
+
+        # Simulate the full queue_job_ext failure-propagation path.
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'failed',"
+            " write_date = (now() at time zone 'UTC')"
+            " WHERE instance_id = %s"
+            "   AND state = 'wait_dependencies'"
+            "   AND id != %s",
+            (self.instance.id, job1.id),
+        )
+        self.assertEqual(self._db_state(job2), 'failed')
+        # Second UPDATE: cancel orphan queue_job records.
+        self.env.cr.execute(
+            "UPDATE queue_job q SET state = 'cancelled',"
+            " date_cancelled = (now() at time zone 'UTC')"
+            " FROM cloud_job c"
+            " WHERE c.queue_job_id = q.id"
+            "   AND c.instance_id = %s"
+            "   AND c.state = 'failed'"
+            "   AND c.id != %s"
+            "   AND q.state = 'wait_dependencies'",
+            (self.instance.id, job1.id),
+        )
+        # Verify queue_job for job2 was cancelled.
+        self.env.cr.execute(
+            "SELECT state FROM queue_job WHERE uuid = 'uuid-2'"
+        )
+        self.assertEqual(
+            self.env.cr.fetchone()[0], 'cancelled',
+        )
+        # queue_job for job1 was already failed — not touched.
+        self.env.cr.execute(
+            "SELECT state FROM queue_job WHERE uuid = 'uuid-1'"
+        )
+        self.assertEqual(
+            self.env.cr.fetchone()[0], 'failed',
+        )
+
 
 class TestLoadHistoryAccessControl(TransactionCase):
     """Non-Job-Queue-Manager cloud users must be able to open the SPA's

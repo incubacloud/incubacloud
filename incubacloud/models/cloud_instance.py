@@ -124,6 +124,14 @@ class CloudInstance(models.Model):
              'non-empty value left after a failed move marks an instance '
              'an operator can roll back.',
     )
+    move_target_host_id = fields.Many2one(
+        comodel_name='cloud.host',
+        string='Move Target Host',
+        copy=False,
+        help='Destination host while a cross-host move is in flight; '
+             'cleared on cutover. Lets stuck-move recovery identify the '
+             'half-built destination copy for cleanup.',
+    )
     status = fields.Selection(
         selection=[
             ('ok', 'OK'),
@@ -817,16 +825,20 @@ class CloudInstance(models.Model):
         whole move is a single sequential pipeline. The source is only
         torn down after the destination is verified healthy and cut
         over, so a failure at any earlier step leaves the source
-        recoverable (see ``rollback_move``)::
+        recoverable (see ``rollback_move`` / ``cron_recover_stuck_moves``)::
 
-            [pre-steps] → deploy(target) → stop(source) →
-            backup_download(source) → restore(target) →
-            move_cutover(target) → move_cleanup_source(source)
+            [pre-steps] → deploy(target) → stop(source, odoo only) →
+            backup_create(source) → backup_download(source) →
+            restore(target) → move_cutover(target) →
+            move_cleanup_source(source)
 
-        The app is stopped on the source before the dump so no writes
-        are lost; ``backup_download`` brings the db back up for a
-        consistent final snapshot. ``host_id`` flips to ``target_host``
-        only inside ``move_cutover`` on success.
+        Only the ``odoo`` service is stopped on the source (not ``db`` or
+        ``backup``) so the backup container stays alive for the following
+        steps. ``backup_create`` freshes a snapshot to S3 (db up, odoo
+        quiesced = consistent) so ``backup_download`` restores a current
+        copy rather than a potentially stale scheduled backup.
+        ``host_id`` flips to ``target_host`` only inside ``move_cutover``
+        on success.
         """
         self.ensure_one()
         self.env['cloud.security.mixin']._check_can_manage_hosts()
@@ -846,18 +858,27 @@ class CloudInstance(models.Model):
         if self.move_origin_host_id:
             raise UserError(_(
                 "A move is already in progress for this instance."))
+        if not self.instance_backup_dst:
+            raise UserError(_(
+                "This instance has no resolvable backup backend, so a "
+                "move cannot transfer its data. Configure a backup "
+                "backend (instance, project or global) first."))
 
         self.move_origin_host_id = source.id
+        self.move_target_host_id = target_host.id
 
         pre = self._move_pre_steps(source)
-        # pre … deploy(+0) stop(+1) download(+2): restore references the
-        # download job by its 0-indexed position in the chain.
-        download_idx = len(pre) + 2
+        # pre … deploy(+0) stop(+1) backup_create(+2) download(+3):
+        # restore references the download job by its 0-indexed position.
+        download_idx = len(pre) + 3
         steps = pre + [
             {'host_id': target_host.id, 'instance_id': self.id,
              'job_type_code': self._move_deploy_job_type()},
             {'host_id': source.id, 'instance_id': self.id,
-             'job_type_code': 'stop_instance'},
+             'job_type_code': 'stop_instance',
+             'payload': {'services': ['odoo']}},
+            {'host_id': source.id, 'instance_id': self.id,
+             'job_type_code': 'backup_create'},
             {'host_id': source.id, 'instance_id': self.id,
              'job_type_code': 'backup_download',
              'payload': {'time': 'latest', 'download_type': 'all'}},
@@ -874,25 +895,45 @@ class CloudInstance(models.Model):
         return {'ok': True, 'job_id': job_ids[0]}
 
     def rollback_move(self):
-        """Recover a move that failed before cutover.
+        """Recover a move that failed before cutover (user entrypoint).
 
-        Valid when ``move_origin_host_id`` is set and the chain broke
-        (the source was never torn down). ``host_id`` never flips before
-        cutover, so it still points at the source — we just clear the
-        marker and bring the source back up. A retry of ``move_to_host``
-        re-deploys over any half-built destination copy (deploy removes a
-        previous deploy first), so the orphan needs no explicit cleanup.
+        Gates on the host-management ACL and then runs the shared
+        recovery. ``host_id`` never flips before cutover, so it still
+        points at the source; the helper clears the marker and brings
+        the source back up. A retry of ``move_to_host`` re-deploys over
+        any half-built destination copy.
         """
         self.ensure_one()
         self.env['cloud.security.mixin']._check_can_manage_hosts()
+        if not self.move_origin_host_id:
+            raise UserError(_("No move in progress to roll back."))
+        job_id = self._do_rollback_move()
+        return {'ok': True, 'job_id': job_id}
+
+    def _do_rollback_move(self):
+        """Core stuck-move recovery, WITHOUT the ACL check.
+
+        Clears the in-flight markers and brings the source back up.
+        Shared by ``rollback_move`` (gated on ACL) and the unattended
+        ``cron_recover_stuck_moves`` watchdog (runs via sudo).
+
+        ``host_id`` never flips before cutover, so it still points at the
+        source. Returns the ``start_instance`` cloud.job id, or ``False``
+        when there is nothing to recover / the source is not startable.
+        """
+        self.ensure_one()
         origin = self.move_origin_host_id
         if not origin:
-            raise UserError(_("No move in progress to roll back."))
-        self.move_origin_host_id = False
-        job_id = self.env['cloud.job'].enqueue(
+            return False
+        self.write({
+            'move_origin_host_id': False,
+            'move_target_host_id': False,
+        })
+        if self.host_id != origin:
+            return False
+        return self.env['cloud.job'].enqueue(
             origin.id, self.id, 'start_instance', bypass_running_check=True,
         )
-        return {'ok': True, 'job_id': job_id}
 
     def _post_or_update_pr_comment(self, body):
         """Post or update the GitHub PR comment for this PR preview instance."""
@@ -972,6 +1013,7 @@ class CloudInstance(models.Model):
         instances = self.search([
             ('deployed', '=', True),
             ('environment', '=', 'production'),
+            ('move_origin_host_id', '=', False),
         ])
         for inst in instances:
             if not inst.host_id or not inst.instance_backup_dst:
@@ -1007,6 +1049,69 @@ class CloudInstance(models.Model):
                     "Could not enqueue instance_health for %s: %s",
                     inst.name, e,
                 )
+
+    @api.model
+    def cron_recover_stuck_moves(self):
+        """Watchdog: recover instances stranded by a failed host move.
+
+        A move stamps ``move_origin_host_id`` before enqueuing its job
+        chain (atomically, same transaction) and clears it only on a
+        successful cutover. If the chain dies before cutover, the marker
+        stays set and the source was left with ``odoo`` stopped — the
+        instance is down with no automatic recovery.
+
+        For every instance whose marker is set AND has no in-flight job
+        (every non-hidden job reached a terminal state), the move is
+        dead: clear the markers, restart the source, and raise one
+        critical alert. Instances that still have an active job are a
+        move in progress and are left alone.
+
+        No grace period is needed: ``move_to_host`` commits the marker
+        and the chain jobs in the same transaction, so a set marker with
+        no active job always means a fully-terminated (failed) chain.
+        """
+        Job = self.env['cloud.job']
+        hidden = Job._get_hidden_job_types()
+        active_states = Job._active_states
+        Alert = self.env['cloud.alert'].sudo()
+        stuck = self.search([('move_origin_host_id', '!=', False)])
+        for inst in stuck:
+            in_flight = Job.search_count([
+                ('instance_id', '=', inst.id),
+                ('state', 'in', active_states),
+                ('job_type_id.code', 'not in', hidden),
+            ])
+            if in_flight:
+                continue
+            origin = inst.move_origin_host_id
+            try:
+                inst._do_rollback_move()
+            except Exception:  # noqa: BLE001
+                _logger.exception(
+                    "Stuck-move recovery failed for instance %s", inst.id,
+                )
+                continue
+            already = Alert.search_count([
+                ('instance_id', '=', inst.id),
+                ('code', '=', 'move_stuck'),
+                ('state', '=', 'active'),
+            ])
+            if not already:
+                Alert.create({
+                    'code': 'move_stuck',
+                    'level': 'critical',
+                    'message': _(
+                        "Move of '%(name)s' failed before cutover; "
+                        "source host '%(host)s' was restarted "
+                        "automatically.",
+                        name=inst.name, host=origin.name or '?',
+                    ),
+                    'instance_id': inst.id,
+                    'project_id': (
+                        inst.project_id.id if inst.project_id else False
+                    ),
+                    'host_id': origin.id,
+                })
 
     # ── Resource estimation for auto-assign ───────────────────────────────
     _RESOURCE_DEFAULTS = {
