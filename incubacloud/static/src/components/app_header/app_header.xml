@@ -164,109 +164,187 @@
         <IcModal t-if="state.showNotifModal"
                  title="'Notification Preferences'"
                  onClose="() => this.closeNotifModal()">
-            <h3 class="ic-confirm-title">
-                <i class="fa fa-bell-o"/> Notification Preferences
-            </h3>
-            <p class="ic-confirm-message">
-                Choose what reaches you by email and when. Muted projects
-                never interrupt you (no emails, no live toasts) but stay
-                visible in the alerts panel.
-            </p>
-            <div class="ic-notif-form">
-                <div class="ic-form-row">
-                    <label>Email notifications</label>
-                    <RlSelect value="state.notifLevel"
-                              ariaLabel="'Email notifications'"
-                              options="[
-                                  { value: 'all',      label: 'All events (success + failure)' },
-                                  { value: 'failures', label: 'Failures only' },
-                                  { value: 'none',     label: 'None' },
-                              ]"
-                              onChange="(value) => { state.notifLevel = value; }"/>
-                </div>
-                <div class="ic-form-row" t-if="state.notifLevel !== 'none'">
-                    <label>Delivery</label>
-                    <RlSelect value="state.notifMode"
-                              ariaLabel="'Email delivery mode'"
-                              options="[
-                                  { value: 'immediate',    label: 'Immediate (one email per event)' },
-                                  { value: 'daily_digest', label: 'Daily digest (severe failures still immediate)' },
-                              ]"
-                              onChange="(value) => { state.notifMode = value; }"/>
-                </div>
-                <div class="ic-form-row">
-                    <label>Muted projects</label>
-                    <div t-if="state.notifMuted.length" class="ic-notif-chips">
-                        <t t-foreach="state.notifMuted" t-as="proj" t-key="proj.id">
-                            <span class="ic-notif-chip">
-                                <span class="ic-notif-chip-name" t-esc="proj.name"/>
-                                <button class="ic-notif-chip-x" type="button"
-                                        t-att-aria-label="'Unmute ' + proj.name"
-                                        t-on-click="() => this.removeMutedProject(proj.id)">×</button>
-                            </span>
-                        </t>
+            <div class="ic-notif-modal">
+                <p class="ic-confirm-message">
+                    Choose what reaches you and when. Muted projects never
+                    interrupt you (no notifications, no live toasts) but stay
+                    visible in the alerts panel.
+                </p>
+
+                <!-- ══════════════════════════════════════════════════════
+                     General settings — always visible
+                     ══════════════════════════════════════════════════════ -->
+                <div class="ic-notif-card">
+                    <div class="ic-notif-card-header ic-notif-card-header--static">
+                        <span class="ic-notif-card-name">General settings</span>
                     </div>
-                    <SearchSelect options="mutableProjects"
-                                  value="null"
-                                  placeholder="'Mute a project…'"
-                                   onChange="(value) => this.addMutedProject(value)"/>
+                    <div class="ic-notif-card-body">
+                        <div class="ic-form-row">
+                            <label>What to receive</label>
+                            <RlSelect value="state.notifLevel"
+                                      ariaLabel="'What to receive'"
+                                      options="[
+                                          { value: 'all',      label: 'All events (success + failure)' },
+                                          { value: 'failures', label: 'Failures only' },
+                                          { value: 'none',     label: 'None' },
+                                      ]"
+                                      onChange="(value) => { state.notifLevel = value; }"/>
+                        </div>
+                        <div class="ic-form-row" t-if="state.notifLevel !== 'none'">
+                            <label>Delivery mode</label>
+                            <RlSelect value="state.notifMode"
+                                      ariaLabel="'Delivery mode'"
+                                      options="[
+                                          { value: 'immediate',    label: 'Immediate (one notification per event)' },
+                                          { value: 'daily_digest', label: 'Daily digest (severe failures still immediate)' },
+                                      ]"
+                                      onChange="(value) => { state.notifMode = value; }"/>
+                        </div>
+                        <div class="ic-form-row">
+                            <label>Muted projects</label>
+                            <div t-if="state.notifMuted.length" class="ic-notif-chips">
+                                <t t-foreach="state.notifMuted" t-as="proj" t-key="proj.id">
+                                    <span class="ic-notif-chip">
+                                        <span class="ic-notif-chip-name" t-esc="proj.name"/>
+                                        <button class="ic-notif-chip-x" type="button"
+                                                t-att-aria-label="'Unmute ' + proj.name"
+                                                t-on-click="() => this.removeMutedProject(proj.id)">×</button>
+                                    </span>
+                                </t>
+                            </div>
+                            <SearchSelect options="mutableProjects"
+                                          value="null"
+                                          placeholder="'Mute a project…'"
+                                          onChange="(value) => this.addMutedProject(value)"/>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="ic-notif-divider"/>
-
-                <h4 class="ic-notif-section-title">
-                    <i class="fa fa-send-o"/> Telegram
-                </h4>
-                <div class="ic-form-row">
-                    <label>Bot token</label>
-                    <PasswordInput hasValue="state.telegramTokenConfigured"
-                                   onChange="(v) => this.onTelegramTokenChange(v)"/>
+                <!-- ══════════════════════════════════════════════════════
+                     Email
+                     ══════════════════════════════════════════════════════ -->
+                <div class="ic-notif-card">
+                    <div class="ic-notif-card-header"
+                         t-on-click="() => this.toggleSection('email')">
+                        <span t-att-class="emailConfigured ? 'ic-notif-card-dot configured' : 'ic-notif-card-dot empty'"/>
+                        <span class="ic-notif-card-name">Email</span>
+                        <span class="ic-notif-card-sub" t-if="emailConfigured">enabled</span>
+                        <span class="ic-notif-card-sub" t-else="">disabled</span>
+                        <i t-att-class="state.expandedSection === 'email' ? 'fa fa-chevron-up ic-notif-card-chevron' : 'fa fa-chevron-down ic-notif-card-chevron'"/>
+                    </div>
+                    <div class="ic-notif-card-body" t-if="state.expandedSection === 'email'">
+                        <p class="ic-notif-help">
+                            When enabled, cloud job notifications are sent to
+                            <strong t-esc="env.userInfo?.email or 'your configured email'"/>
+                            based on your general settings above.
+                        </p>
+                        <p class="ic-notif-help">
+                            Disabling email does not affect other notification
+                            channels — they continue following your general
+                            settings. If you disable email and have no other
+                            channel configured, you will receive no notifications
+                            at all.
+                        </p>
+                        <div class="rl-ftoggle">
+                            <div>
+                                <div class="rl-tl-label">Send email notifications</div>
+                                <div class="rl-th">Toggle off to stop receiving cloud alerts by email</div>
+                            </div>
+                            <button type="button"
+                                    t-att-class="'rl-sw' + (state.emailEnabled ? ' on' : '')"
+                                    aria-label="Toggle email notifications"
+                                    t-on-click="() => { state.emailEnabled = !state.emailEnabled; }"/>
+                        </div>
+                    </div>
                 </div>
-                <div class="ic-form-row">
-                    <label>Chat ID</label>
-                    <div class="ic-notif-inline">
-                        <input class="ic-notif-inline-input"
-                               type="text"
-                               t-att-value="state.telegramChatId"
-                               t-on-input="(ev) => state.telegramChatId = ev.target.value"
-                               placeholder="'e.g. 123456789 or @channelname'"/>
-                        <button class="ic-notif-inline-btn"
+
+                <!-- ══════════════════════════════════════════════════════
+                     Telegram
+                     ══════════════════════════════════════════════════════ -->
+                <div class="ic-notif-card">
+                    <div class="ic-notif-card-header"
+                         t-on-click="() => this.toggleSection('telegram')">
+                        <span t-att-class="telegramConfigured ? 'ic-notif-card-dot configured' : 'ic-notif-card-dot empty'"/>
+                        <span class="ic-notif-card-name">Telegram</span>
+                        <span class="ic-notif-card-sub" t-if="telegramConfigured">configured</span>
+                        <span class="ic-notif-card-sub" t-else="">not configured</span>
+                        <i t-att-class="state.expandedSection === 'telegram' ? 'fa fa-chevron-up ic-notif-card-chevron' : 'fa fa-chevron-down ic-notif-card-chevron'"/>
+                    </div>
+                    <div class="ic-notif-card-body" t-if="state.expandedSection === 'telegram'">
+                        <div class="ic-form-row">
+                            <label>Bot token</label>
+                            <PasswordInput hasValue="state.telegramTokenConfigured"
+                                           emptyHint="'Get this from @BotFather on Telegram'"
+                                           onChange="(v) => this.onTelegramTokenChange(v)"/>
+                        </div>
+                        <div class="ic-form-row">
+                            <label>Chat ID</label>
+                            <div class="ic-notif-inline">
+                                <input class="ic-notif-inline-input"
+                                       type="text"
+                                       t-att-value="state.telegramChatId"
+                                       t-on-input="(ev) => state.telegramChatId = ev.target.value"
+                                       placeholder="'e.g. 123456789 or @channelname'"/>
+                                <button class="ic-notif-inline-btn"
+                                        type="button"
+                                        t-att-disabled="state.telegramDetecting"
+                                        t-on-click="detectChatId">
+                                    <t t-if="state.telegramDetecting">…</t>
+                                    <t t-else="">Detect</t>
+                                </button>
+                            </div>
+                        </div>
+                        <button class="ic-notif-test-btn"
                                 type="button"
-                                t-att-disabled="state.telegramDetecting"
-                                t-on-click="detectChatId">
-                            <t t-if="state.telegramDetecting">…</t>
-                            <t t-else="">Detect</t>
+                                t-att-disabled="state.telegramTesting"
+                                t-on-click="sendTelegramTest">
+                            <t t-if="state.telegramTesting">Sending…</t>
+                            <t t-else="">
+                                <i class="fa fa-send"/> Send test message
+                            </t>
                         </button>
                     </div>
                 </div>
-                <button class="ic-notif-test-btn"
-                        type="button"
-                        t-att-disabled="state.telegramTesting"
-                        t-on-click="sendTelegramTest">
-                    <t t-if="state.telegramTesting">Sending…</t>
-                    <t t-else="">
-                        <i class="fa fa-send"/> Send test message
-                    </t>
-                </button>
 
-                <div class="ic-notif-divider"/>
+                <!-- ══════════════════════════════════════════════════════
+                     External webhook
+                     ══════════════════════════════════════════════════════ -->
+                <div class="ic-notif-card">
+                    <div class="ic-notif-card-header"
+                         t-on-click="() => this.toggleSection('webhook')">
+                        <span t-att-class="webhookConfigured ? 'ic-notif-card-dot configured' : 'ic-notif-card-dot empty'"/>
+                        <span class="ic-notif-card-name">External webhook</span>
+                        <span class="ic-notif-card-sub" t-if="webhookConfigured">configured</span>
+                        <span class="ic-notif-card-sub" t-else="">not configured</span>
+                        <i t-att-class="state.expandedSection === 'webhook' ? 'fa fa-chevron-up ic-notif-card-chevron' : 'fa fa-chevron-down ic-notif-card-chevron'"/>
+                    </div>
+                    <div class="ic-notif-card-body" t-if="state.expandedSection === 'webhook'">
+                        <p class="ic-notif-help">
+                            Receive POST notifications on your own HTTPS endpoint
+                            when jobs change state. When a signing secret is set,
+                            payloads include an <code>X-IncubaCloud-Signature:
+                            sha256=&lt;hex&gt;</code> header for your endpoint to
+                            verify with HMAC-SHA256.
+                            See <code>docs/webhooks.md</code> for payload format
+                            and verification examples.
+                        </p>
+                        <div class="ic-form-row">
+                            <label>Webhook URL</label>
+                            <input type="text"
+                                   class="ic-notif-url-input"
+                                   t-att-value="state.webhookUrl"
+                                   t-on-input="(ev) => state.webhookUrl = ev.target.value"
+                                   placeholder="'https://hooks.example.com/cloud'"/>
+                        </div>
+                        <div class="ic-form-row">
+                            <label>Signing secret</label>
+                            <PasswordInput hasValue="state.webhookSecretConfigured"
+                                           emptyHint="'Choose a secret and set the same value on your endpoint'"
+                                           onChange="(v) => this.onWebhookSecretChange(v)"/>
+                        </div>
+                    </div>
+                </div>
 
-                <h4 class="ic-notif-section-title">
-                    <i class="fa fa-external-link"/> External webhook
-                </h4>
-                <div class="ic-form-row">
-                    <label>Webhook URL</label>
-                    <input type="text"
-                           class="ic-notif-url-input"
-                           t-att-value="state.webhookUrl"
-                           t-on-input="(ev) => state.webhookUrl = ev.target.value"
-                           placeholder="'https://hooks.example.com/cloud'"/>
-                </div>
-                <div class="ic-form-row">
-                    <label>Signing secret</label>
-                    <PasswordInput hasValue="state.webhookSecretConfigured"
-                                   onChange="(v) => this.onWebhookSecretChange(v)"/>
-                </div>
             </div>
             <div class="ic-confirm-actions">
                 <button class="ic-confirm-btn-cancel" t-on-click="closeNotifModal">Cancel</button>

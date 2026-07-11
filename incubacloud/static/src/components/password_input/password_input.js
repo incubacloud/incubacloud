@@ -11,6 +11,9 @@ import { _t } from "@web/core/l10n/translation";
  * Props:
  *   hasValue  — bool: whether a password is already stored server-side
  *   required  — bool (default false)
+ *   emptyHint — str:  custom hint shown when no value is stored and the
+ *                     user hasn't typed anything (replaces the default
+ *                     "Leave blank to auto-generate a strong password")
  *   onChange  — (value: string) => void — called with the new value as the
  *               user types; called with "" when the field is cleared
  *               (backend keeps the existing value when "" is received)
@@ -20,6 +23,7 @@ export class PasswordInput extends Component {
     static props = {
         hasValue:  { type: Boolean },
         required:  { type: Boolean, optional: true },
+        emptyHint: { type: String, optional: true },
         onChange:  { type: Function },
     };
 
@@ -42,6 +46,9 @@ export class PasswordInput extends Component {
         }
         if (this.props.hasValue) {
             return _t("Value stored — type a new one to replace it");
+        }
+        if (this.props.emptyHint) {
+            return _t(this.props.emptyHint);
         }
         return _t("Leave blank to auto-generate a strong password");
     }

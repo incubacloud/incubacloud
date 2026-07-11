@@ -1200,9 +1200,9 @@ msgstr "Verificando"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
-"Choose what reaches you by email and when. Muted projects\n"
-"                never interrupt you (no emails, no live toasts) but stay\n"
-"                visible in the alerts panel."
+"Choose what reaches you and when. Muted projects never\n"
+"                    interrupt you (no notifications, no live toasts) but stay\n"
+"                    visible in the alerts panel."
 msgstr ""
 
 #. module: incubacloud
@@ -2157,15 +2157,15 @@ msgid "Deletion cron"
 msgstr "Cron de eliminación"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "Delivery"
-msgstr ""
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__delivery_id
 msgid "Delivery ID"
 msgstr "ID de entrega"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Delivery mode"
+msgstr "Modo de entrega"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2476,8 +2476,16 @@ msgstr "Backend de backup efectivo"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "Email notifications"
-msgstr "Notificaciones por email"
+msgid "Email"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid ""
+"Email notifications are controlled by your general\n"
+"                            settings above. You receive them at"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3203,6 +3211,7 @@ msgstr "General"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "General settings"
 msgstr "Ajustes generales"
@@ -5145,12 +5154,6 @@ msgid "Notification From"
 msgstr "Notificación desde"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "Notification Preferences"
-msgstr "Preferencias de notificación"
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__email_to
 msgid "Notification To"
 msgstr "Notificación para"
@@ -6054,6 +6057,15 @@ msgstr "Error al reconstruir"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Rebuilding…"
 msgstr "Reconstruyendo…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid ""
+"Receive POST notifications on your own HTTPS endpoint\n"
+"                            when jobs change state. When a signing secret is set,\n"
+"                            payloads include an"
+msgstr ""
 
 #. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.view_cloud_github_event_form
@@ -7094,9 +7106,23 @@ msgid "Telegram Bot Token"
 msgstr "Token del bot de Telegram"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Telegram Bot Token is required when a chat ID is configured"
+msgstr ""
+"El token del bot de Telegram es obligatorio si se configura un ID de chat"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_telegram_chat_id
 msgid "Telegram Chat ID"
 msgstr "ID de chat de Telegram"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Telegram Chat ID is required when a bot token is configured"
+msgstr ""
+"El ID de chat de Telegram es obligatorio si se configura un token del bot"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7754,6 +7780,18 @@ msgstr "URL del webhook"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Webhook URL is required when a signing secret is configured"
+msgstr "La URL del webhook es obligatoria si se configura un secreto de firma"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "What to receive"
+msgstr "Qué recibir"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid ""
 "When checked, this host will not be selected automatically for new "
@@ -7878,6 +7916,14 @@ msgstr "Con filestore"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Without filestore"
 msgstr "Sin filestore"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid ""
+"X-IncubaCloud-Signature:\n"
+"                            sha256=<hex>"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8041,6 +8087,12 @@ msgstr "config.yml es obligatorio"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "configured"
+msgstr "configurado"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid ""
 "cores\n"
@@ -8058,6 +8110,18 @@ msgstr "customer-x"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "differs"
 msgstr "differs"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "disabled"
+msgstr "desactivado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "docs/webhooks.md"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8104,6 +8168,14 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid ""
+"for payload format\n"
+"                            and verification examples."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "ghp_xxxxxxxxxxxx"
 msgstr "ghp_xxxxxxxxxxxx"
@@ -8119,6 +8191,15 @@ msgstr "github.com → Settings → Applications → GitHub Apps"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "globalwhitelist"
 msgstr "globalwhitelist"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid ""
+"header for your endpoint to\n"
+"                            verify with HMAC-SHA256.\n"
+"                            See"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8217,6 +8298,7 @@ msgstr "myproject-staging"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "not configured"
 msgstr "no configurado"

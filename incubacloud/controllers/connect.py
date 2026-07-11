@@ -292,6 +292,7 @@ class InstanceConnectController(http.Controller):
             'ok': True,
             'cloud_notification_level': user.cloud_notification_level or 'failures',
             'cloud_notification_mode': user.cloud_notification_mode or 'immediate',
+            'cloud_email_enabled': user.cloud_email_enabled,
             'cloud_muted_projects': muted,
             'cloud_telegram_configured': bool(user.cloud_telegram_bot_token),
             'cloud_telegram_chat_id': user.cloud_telegram_chat_id or '',
@@ -304,6 +305,7 @@ class InstanceConnectController(http.Controller):
     def save_user_preferences(self, cloud_notification_level=None,
                               cloud_notification_mode=None,
                               cloud_muted_project_ids=None,
+                              cloud_email_enabled=None,
                               cloud_telegram_bot_token=None,
                               cloud_telegram_chat_id=None,
                               cloud_webhook_url=None,
@@ -323,6 +325,8 @@ class InstanceConnectController(http.Controller):
             'cloud_notification_level': cloud_notification_level,
             'cloud_notification_mode': cloud_notification_mode,
         }
+        if cloud_email_enabled is not None:
+            vals['cloud_email_enabled'] = bool(cloud_email_enabled)
         if cloud_muted_project_ids is not None:
             try:
                 ids = [int(i) for i in cloud_muted_project_ids]

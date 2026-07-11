@@ -27,6 +27,14 @@ class ResUsers(models.Model):
         default='failures',
     )
 
+    cloud_email_enabled = fields.Boolean(
+        string='Email Notifications Enabled',
+        default=True,
+        help='When unchecked, no cloud job emails are sent to this '
+             'user regardless of their notification level. Other '
+             'notification channels are not affected.',
+    )
+
     cloud_notification_mode = fields.Selection(
         selection=[
             ('immediate', 'Immediate'),
