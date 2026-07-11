@@ -1356,7 +1356,7 @@ class CloudJob(models.Model):
             'host': job.host_id.name,
             'instance': job.instance_id.name if job.instance_id else None,
             'log_url': f'{base_url}/cloud/log/{job.id}',
-            'timestamp': fields.Datetime.now(),
+            'timestamp': fields.Datetime.to_string(fields.Datetime.now()),
         }).encode()
         headers = {'Content-Type': 'application/json'}
         secret = user.cloud_webhook_secret or ''
