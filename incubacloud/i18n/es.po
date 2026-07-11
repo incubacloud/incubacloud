@@ -2217,6 +2217,17 @@ msgid "Description"
 msgstr "Descripción"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_target_host_id
+msgid ""
+"Destination host while a cross-host move is in flight; cleared on cutover. "
+"Lets stuck-move recovery identify the half-built destination copy for "
+"cleanup."
+msgstr ""
+"Host de destino mientras un traslado entre hosts está en curso; se limpia en"
+" el corte. Permite a la recuperación de traslados atascados identificar la "
+"copia a medio construir en el destino para su limpieza."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
@@ -2254,6 +2265,17 @@ msgstr ""
 #: model:res.groups,name:incubacloud.group_cloud_developer
 msgid "Developer"
 msgstr "Desarrollador"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid ""
+"Disabling email does not affect other notification\n"
+"                            channels — they continue following your general\n"
+"                            settings. If you disable email and have no other\n"
+"                            channel configured, you will receive no notifications\n"
+"                            at all."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2480,11 +2502,8 @@ msgid "Email"
 msgstr ""
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid ""
-"Email notifications are controlled by your general\n"
-"                            settings above. You receive them at"
+#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_email_enabled
+msgid "Email Notifications Enabled"
 msgstr ""
 
 #. module: incubacloud
@@ -4630,6 +4649,11 @@ msgid "Move Origin Host"
 msgstr ""
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_target_host_id
+msgid "Move Target Host"
+msgstr "Host de destino del traslado"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Move failed"
@@ -4646,6 +4670,16 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Move instance to another host"
 msgstr ""
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Move of '%(name)s' failed before cutover; source host '%(host)s' was "
+"restarted automatically."
+msgstr ""
+"El traslado de '%(name)s' falló antes del corte; el host de origen "
+"'%(host)s' se reinició automáticamente."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6099,6 +6133,11 @@ msgid "Record not found"
 msgstr "Registro no encontrado"
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_recover_stuck_moves_ir_actions_server
+msgid "Recover Stuck Instance Moves"
+msgstr "Recuperar traslados de instancia atascados"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__redirect_to
 msgid "Redirect To"
 msgstr "Redirigir a"
@@ -6716,6 +6755,12 @@ msgstr "Enviar notificación por correo en backup exitoso"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Send email notifications"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Send test message"
 msgstr "Enviar mensaje de prueba"
 
@@ -7258,6 +7303,17 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"This instance has no resolvable backup backend, so a move cannot transfer "
+"its data. Configure a backup backend (instance, project or global) first."
+msgstr ""
+"Esta instancia no tiene un backend de respaldo resoluble, por lo que un "
+"traslado no puede transferir sus datos. Configure un backend de respaldo "
+"(instancia, proyecto o global) primero."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "This instance is already imported."
 msgstr "Esta instancia ya está importada."
@@ -7371,6 +7427,18 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Toggle automatic host assignment"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Toggle email notifications"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Toggle off to stop receiving cloud alerts by email"
 msgstr ""
 
 #. module: incubacloud
@@ -7802,6 +7870,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "When enabled, cloud job notifications are sent to"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "When enabled, new instances will be automatically placed on the\n"
@@ -7861,6 +7935,13 @@ msgid "When set, this job is blocked waiting for the alert to be resolved."
 msgstr ""
 "Cuando se establece, esta tarea está bloqueada esperando que se resuelva la "
 "alerta."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_email_enabled
+msgid ""
+"When unchecked, no cloud job emails are sent to this user regardless of "
+"their notification level. Other notification channels are not affected."
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__traefik_deployed
@@ -8035,6 +8116,12 @@ msgstr "backups@example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "based on your general settings above."
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "by"
 msgstr "by"
@@ -8146,6 +8233,12 @@ msgstr "duplicity list-current-files \"$DST\""
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "e.g. api.example.com"
 msgstr "ej. api.example.com"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "enabled"
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript

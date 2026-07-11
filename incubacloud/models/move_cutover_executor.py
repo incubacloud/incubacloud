@@ -56,6 +56,7 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
             'status': 'ok',
             'running': True,
             'move_origin_host_id': False,
+            'move_target_host_id': False,
         })
         self._sys(f"✓ Cut over to host '{target.name}'.")
         # Hook: SaaS re-points DNS at the new host IP and finalizes the

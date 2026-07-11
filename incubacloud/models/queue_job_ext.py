@@ -78,11 +78,31 @@ class QueueJob(models.Model):
                     (cjob.instance_id.id, cjob.id),
                 )
                 if self.env.cr.rowcount:
-                    # Same reason as above: raw UPDATE, clear the cache.
                     self.env['cloud.job'].invalidate_model(['state'])
                     _logger.info(
                         "[queue_job_ext] cancelled %d chained"
                         " jobs for instance %s",
+                        self.env.cr.rowcount,
+                        cjob.instance_id.id,
+                    )
+                # Also cancel the underlying queue_job records still stuck
+                # in wait_dependencies: the cloud_job cancellation above
+                # does not propagate to queue_job, leaving orphan workers.
+                self.env.cr.execute(
+                    "UPDATE queue_job q SET state = 'cancelled',"
+                    " date_cancelled = (now() at time zone 'UTC')"
+                    " FROM cloud_job c"
+                    " WHERE c.queue_job_id = q.id"
+                    "   AND c.instance_id = %s"
+                    "   AND c.state = 'failed'"
+                    "   AND c.id != %s"
+                    "   AND q.state = 'wait_dependencies'",
+                    (cjob.instance_id.id, cjob.id),
+                )
+                if self.env.cr.rowcount:
+                    _logger.info(
+                        "[queue_job_ext] cancelled %d orphan"
+                        " queue_job records for instance %s",
                         self.env.cr.rowcount,
                         cjob.instance_id.id,
                     )

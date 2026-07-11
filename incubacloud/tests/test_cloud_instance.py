@@ -530,6 +530,27 @@ class TestCronRefreshBackupList(TransactionCase):
             self._restore_list_backups(original, mc)
         self.assertNotIn(inst.id, calls)
 
+    def test_move_in_flight_skipped(self):
+        """Instances with move_origin_host_id set are excluded from
+        the backup list refresh (the stack may be down during a move
+        and the backup container unreachable)."""
+        inst = self._create_instance(
+            'moving', 'odoo,db,backup',
+        )
+        source = self.env['cloud.host'].create({
+            'name': 'src2',
+            'ip_address': '10.0.0.11',
+            'user': 'ubuntu',
+            'wildcard_domain': 'src2.example.com',
+        })
+        inst.move_origin_host_id = source.id
+        calls, original, mc = self._patch_list_backups()
+        try:
+            self.env['cloud.instance'].cron_refresh_backup_list()
+        finally:
+            self._restore_list_backups(original, mc)
+        self.assertNotIn(inst.id, calls)
+
 
 class TestAutoDomainWildcard(TransactionCase):
     """Auto-generated instance domains substitute the wildcard label.
