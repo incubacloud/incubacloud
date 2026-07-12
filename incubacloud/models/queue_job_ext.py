@@ -109,12 +109,17 @@ class QueueJob(models.Model):
 
             # Broadcast job update to all active internal users so every
             # user watching the cloud UI gets real-time notifications.
-            # Also send email based on each user's notification preference.
+            # External notifications (email, Telegram, webhook) for
+            # failures are handled by cloud.alert._dispatch_notifications()
+            # so there is a single, unified code path. For successful
+            # completion we still notify directly because no alert is
+            # created for done/cancelled.
             self.env['cloud.job']._broadcast_job_update(
                 cjob.id, state=new_state,
             )
-            self.env['cloud.job']._notify_by_email(cjob, new_state)
-            self.env['cloud.job']._notify_external(cjob, new_state)
+            if new_state != 'failed':
+                self.env['cloud.job']._notify_by_email(cjob, new_state)
+                self.env['cloud.job']._notify_external(cjob, new_state)
             _logger.info(
                 "[queue_job_ext] broadcast cloud.job id=%s state=%s",
                 cjob.id, new_state,

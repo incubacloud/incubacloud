@@ -59,6 +59,10 @@ class TestExternalNotifyGates(TransactionCase):
         })
         self._visible_jt = self._job_type('host_probe')
         self._hidden_jt = self._job_type('host_metrics')
+        self.env['res.users'].sudo().browse(2).write({
+            'cloud_telegram_bot_token': '',
+            'cloud_telegram_chat_id': '',
+        })
 
     def _job(self, jt=None):
         return self.env['cloud.job'].sudo().create({
@@ -226,6 +230,10 @@ class TestExternalNotifyPreferences(TransactionCase):
         })
         self._visible_jt = self._job_type('host_probe')
         self._deploy_jt = self._job_type('deploy_instance')
+        self.env['res.users'].sudo().browse(2).write({
+            'cloud_telegram_bot_token': '',
+            'cloud_telegram_chat_id': '',
+        })
 
     def _user_with_telegram(self, **overrides):
         vals = {
@@ -526,6 +534,10 @@ class TestExternalNotifyUnconfigured(TransactionCase):
             'ip_address': '10.0.0.53',
             'user': 'ubuntu',
             'wildcard_domain': 'naked.example.com',
+        })
+        self.env['res.users'].sudo().browse(2).write({
+            'cloud_telegram_bot_token': '',
+            'cloud_telegram_chat_id': '',
         })
         jt = self.env['cloud.job.type'].search(
             [('code', '=', 'host_probe')], limit=1,

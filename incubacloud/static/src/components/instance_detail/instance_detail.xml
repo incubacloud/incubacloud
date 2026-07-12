@@ -399,7 +399,7 @@
                             <!-- Recent Activity (Consultant+ only) -->
                             <t t-if="env.permissions?.can_edit_instance">
                                 <p class="rl-tlh">Recent activity</p>
-                                <t t-if="state.jobsLoading and !state.jobs.length">
+                                <t t-if="state.jobsLoading and !timelineJobs.length">
                                     <div class="ic-ov-activity-loading">
                                         <div class="ic-skeleton-row">
                                             <div class="ic-skeleton-label"/>
@@ -411,7 +411,7 @@
                                         </div>
                                     </div>
                                 </t>
-                                <t t-elif="!state.jobs.length and !(state.inst.pending_pushes and state.inst.pending_pushes.length)">
+                                <t t-elif="!timelineJobs.length and !(state.inst.pending_pushes and state.inst.pending_pushes.length)">
                                     <div class="ic-ov-activity-empty">No activity yet.</div>
                                 </t>
                                 <t t-else="">
@@ -453,8 +453,22 @@
                                                 </div>
                                             </div>
                                         </t>
-                                        <t t-foreach="state.jobs.slice(0, 4)" t-as="job" t-key="job.id">
-                                            <div class="rl-tl-item" t-on-click="() => this.openJobLog(job)">
+                                        <t t-foreach="timelineJobs" t-as="job" t-key="job._overflow ? 'overflow' : job.id">
+                                            <t t-if="job._overflow">
+                                                <div class="rl-tl-item rl-tl-item--static">
+                                                    <div class="rl-tl-rail">
+                                                        <span class="rl-tl-dot"/>
+                                                        <span class="rl-tl-line"/>
+                                                    </div>
+                                                    <div class="rl-tl-content">
+                                                        <span class="rl-tl-overflow">
+                                                            +<t t-esc="job.count"/> pending
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </t>
+                                            <t t-else="">
+                                                <div class="rl-tl-item" t-on-click="() => this.openJobLog(job)">
                                                 <div class="rl-tl-rail">
                                                     <span t-att-class="'rl-tl-dot ' + (jobStateClass(job.state) === 'jst-done' ? 'done' : jobStateClass(job.state) === 'jst-failed' ? 'failed' : (isActiveJob(job.state) ? 'running' : (job.state === 'pending' ? 'queued' : '')))"/>
                                                     <span class="rl-tl-line"/>
@@ -527,9 +541,10 @@
                                                     </div>
                                                 </div>
                                             </div>
+                                            </t>
                                         </t>
                                     </div>
-                                    <t t-if="hasMoreJobs or state.jobs.length > 4">
+                                    <t t-if="hasMoreJobs or timelineJobs.length > 5">
                                         <button class="rl-btn rl-btn-ghost" style="margin-top:6px" t-on-click="viewAllJobs">
                                             View all activity <t t-out="env.icon('fwd', 15)"/>
                                         </button>

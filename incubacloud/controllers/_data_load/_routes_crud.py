@@ -1324,15 +1324,8 @@ class CrudMixin:
              ('deploy_instance', 'rebuild_instance')),
             ('state', 'in', ('done', 'failed')),
         ], order='id desc', limit=1)
-        hidden = Job._get_hidden_job_types()
-        jobs = Job.search([
-            ('instance_id', '=', inst.id),
-            ('job_type_id.code', 'not in', hidden),
-        ], order='id desc', limit=5)
-        jobs_total = Job.search_count([
-            ('instance_id', '=', inst.id),
-            ('job_type_id.code', 'not in', hidden),
-        ])
+        timeline = Job._get_instance_timeline(inst.id, max_visible=5)
+        jobs_total = timeline['total']
         return {
             'id': inst.id,
             'name': inst.name,
@@ -1441,7 +1434,8 @@ class CrudMixin:
                 }
                 for r in inst.repo_ids
             ],
-            'jobs': jobs._format(),
+            'activeJobs': timeline['active'],
+            'recentJobs': timeline['recent'],
             'jobsTotal': jobs_total,
             'custom_actions': [
                 {
