@@ -383,16 +383,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../reference/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
   
     
   
   Reference
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -731,7 +734,7 @@
         
   
   <span class="md-ellipsis">
-    Hire a Hetzner VPS
+    Order a VPS
   </span>
   
 
@@ -1054,16 +1057,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../reference/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Reference
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/notifications/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Notifications
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1194,7 +1263,8 @@ customer database.</p>
 <ul>
 <li>Your project's Git URL (find it on the Odoo.sh dashboard).</li>
 <li>A backup ZIP from Odoo.sh.</li>
-<li>An IncubaCloud account with at least a Starter plan.</li>
+<li>An IncubaCloud account — for production use a paid plan (Free-plan instances
+  sleep when idle and get no automatic backups).</li>
 <li>A host (yours or hired).</li>
 </ul>
 <h2 id="step-1-import-the-project-from-git">Step 1 — import the project from Git<a class="headerlink" href="#step-1-import-the-project-from-git" title="Permanent link">&para;</a></h2>
@@ -1267,8 +1337,7 @@ access to all submodule repos, not just the main one.</p>
 <details class="note">
 <summary>I want to keep both running for a few days</summary>
 <p>Don't change DNS yet. Test the IncubaCloud instance via its
-auto-generated subdomain (<code>&lt;random&gt;.incubacloud.host</code>). When confident,
-flip DNS in your registrar.</p>
+auto-generated subdomain. When confident, flip DNS in your registrar.</p>
 </details>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>

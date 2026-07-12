@@ -383,16 +383,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../reference/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
   
     
   
   Reference
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -848,7 +851,7 @@
         
   
   <span class="md-ellipsis">
-    Hire a Hetzner VPS
+    Order a VPS
   </span>
   
 
@@ -1063,16 +1066,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../reference/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Reference
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/notifications/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Notifications
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1209,7 +1278,7 @@ environment promotion (staging → production). They also scope which team membe
 can see what.</p>
 </div>
 <h2 id="1-open-the-dashboard">1. Open the dashboard<a class="headerlink" href="#1-open-the-dashboard" title="Permanent link">&para;</a></h2>
-<p>From <code>/cloud/ui</code>, click <strong>New Project</strong> at the top right. A side panel slides in
+<p>From <code>/cloud</code>, click <strong>New Project</strong> at the top right. A side panel slides in
 with the project form.</p>
 <h2 id="2-fill-in-the-basics">2. Fill in the basics<a class="headerlink" href="#2-fill-in-the-basics" title="Permanent link">&para;</a></h2>
 <ul>
@@ -1227,10 +1296,11 @@ with the project form.</p>
 <code>Project detail → Settings → Repository</code>.</p>
 <div class="admonition warning">
 <p class="admonition-title">Private repositories</p>
-<p>For SSH URLs, add the platform's deploy key (visible in <code>Project → Settings → Deploy key</code>)
-to your repo's authorized keys.
-For HTTPS with private repos, use a personal access token in the URL:
-<code>https://&lt;token&gt;@github.com/your-org/your-repo.git</code>.</p>
+<p>For private GitHub repos, install the platform's <strong>GitHub App</strong>
+(<code>Settings → GitHub App</code>) — it grants repository access without sharing
+credentials — or store a personal access token in <code>Settings → GitHub</code>.
+Plain HTTPS URLs with an embedded token
+(<code>https://&lt;token&gt;@github.com/your-org/your-repo.git</code>) also work.</p>
 </div>
 <h2 id="4-pick-a-backup-backend-optional-recommended">4. Pick a backup backend (optional, recommended)<a class="headerlink" href="#4-pick-a-backup-backend-optional-recommended" title="Permanent link">&para;</a></h2>
 <p>Select an existing backup backend or skip and configure one later from
@@ -1253,7 +1323,7 @@ and a button invites you to deploy the first instance.</p>
 (see <a href="../../backups/restore/">Backups → Restore</a>).</p>
 <h2 id="verify-it-worked">Verify it worked<a class="headerlink" href="#verify-it-worked" title="Permanent link">&para;</a></h2>
 <ul class="task-list">
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The new project shows up in your <code>/cloud/ui</code> dashboard list.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The new project shows up in your <code>/cloud</code> dashboard list.</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Opening it shows the sidebar and a <code>Deploy instance</code> CTA.</li>
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> If you connected a repo, the project detail shows the detected layout.</li>
 </ul>
@@ -1262,7 +1332,7 @@ and a button invites you to deploy the first instance.</p>
 <summary>Repo connection says \"unable to authenticate\"</summary>
 <p>Verify the URL works from your terminal first:
 <code>git clone &lt;your-url&gt; /tmp/test-clone</code>. If that succeeds, double-check the
-deploy key (SSH) or token (HTTPS) is present and active.</p>
+GitHub App installation covers this repository (or that the token is active).</p>
 </details>
 <details class="note">
 <summary>Layout not detected</summary>

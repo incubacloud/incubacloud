@@ -383,16 +383,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../reference/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/" class="md-tabs__link">
+          
   
     
   
   Reference
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -866,7 +869,7 @@
         
   
   <span class="md-ellipsis">
-    Hire a Hetzner VPS
+    Order a VPS
   </span>
   
 
@@ -1081,16 +1084,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../reference/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Reference
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9" id="__nav_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/notifications/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Notifications
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1242,7 +1311,8 @@ log in real time.</p>
 <p class="admonition-title">Prerequisites</p>
 <ul>
 <li>A project (<a href="../first-project/">create one</a>).</li>
-<li>A host: either <a href="../../hosts/connect/">your own VPS</a> or <a href="../../hosts/hire/">a Hetzner VPS</a>.</li>
+<li>A host: either <a href="../../hosts/connect/">your own VPS</a> or
+  <a href="../../hosts/hire/">one ordered through the platform</a>.</li>
 </ul>
 </div>
 <h2 id="1-open-the-project-and-click-deploy-instance">1. Open the project and click <code>Deploy instance</code><a class="headerlink" href="#1-open-the-project-and-click-deploy-instance" title="Permanent link">&para;</a></h2>
@@ -1256,7 +1326,7 @@ re-deploys, so it's worth getting comfortable with each field.</p>
 </ul>
 <h2 id="3-pick-the-host">3. Pick the host<a class="headerlink" href="#3-pick-the-host" title="Permanent link">&para;</a></h2>
 <p>Select one of your registered hosts. The platform checks capacity automatically
-and prevents over-provisioning. If your hosts are all full, <a href="../../hosts/hire/">hire a new one</a>
+and prevents over-provisioning. If your hosts are all full, <a href="../../hosts/hire/">order a new one</a>
 or <a href="../../hosts/connect/">connect another</a>.</p>
 <h2 id="4-pick-an-odoo-version">4. Pick an Odoo version<a class="headerlink" href="#4-pick-an-odoo-version" title="Permanent link">&para;</a></h2>
 <p>Versions 7.0 to 19.0 are supported. The version influences which modules are available
@@ -1282,7 +1352,8 @@ Let's Encrypt certificate automatically and wires up HTTPS.</p>
 <p>The domain's A or AAAA record must already point to the host's IP <strong>at the moment
 of deployment</strong>, otherwise Let's Encrypt will fail to validate. Set the DNS first.</p>
 </div>
-<p>If you skip the domain, we generate a subdomain <code>&lt;random&gt;.incubacloud.host</code> for testing.</p>
+<p>If you skip the domain, the platform generates a subdomain under its base domain
+for testing (on the hosted SaaS: <code>&lt;name&gt;.&lt;your-subdomain&gt;.incubacloud.io</code>).</p>
 <h2 id="7-hit-deploy">7. Hit Deploy<a class="headerlink" href="#7-hit-deploy" title="Permanent link">&para;</a></h2>
 <p>A job starts. The job log opens automatically. You'll see the steps in order:</p>
 <ol>
