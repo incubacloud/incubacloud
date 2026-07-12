@@ -1,7 +1,14 @@
+import hashlib
+import hmac
+import json
+import logging
+import urllib.request
 from datetime import timedelta
 
-from odoo import api, fields, models
+from odoo import api, fields, models, _
 from odoo.exceptions import AccessError
+
+_logger = logging.getLogger(__name__)
 
 
 class CloudAlert(models.Model):
@@ -67,12 +74,28 @@ class CloudAlert(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         records = super().create(vals_list)
-        records._broadcast_overview(
-            critical=records.filtered(
-                lambda r: r.level == 'critical' and r.state == 'active',
-            ),
-        )
+        for record in records.filtered(
+            lambda r: r.state == 'active',
+        ):
+            record._dispatch_notifications()
         return records
+
+    def _dispatch_notifications(self):
+        """Central dispatcher for every active alert.
+        
+        This is the single point through which ALL alert notifications
+        flow — bus broadcast, email, Telegram, and webhooks. Any code
+        that creates a ``cloud.alert`` gets full-channel delivery
+        without needing to know which transports exist.
+        
+        Critical alerts always bypass digest-mode gating.
+        """
+        critical = self.level == 'critical'
+        self._broadcast_overview(critical=self if critical else self.browse())
+        # Email, Telegram, webhook
+        self._notify_alert_external()
+        if critical or self.level == 'warning':
+            self._notify_alert_email()
 
     def write(self, vals):
         res = super().write(vals)
@@ -188,3 +211,191 @@ class CloudAlert(models.Model):
             alerts.check_access('write')
             alerts.write({'state': 'dismissed'})
         return len(alerts)
+
+    # ── Unified notification pipeline ──────────────────────────────────
+
+    def _notify_alert_email(self):
+        """Send alert email to every applicable internal user.
+        
+        Filtering mirrors ``cloud_job._notify_by_email``: subscribed
+        internal users who can see the alert via record rules, haven't
+        muted its project, and whose notification level covers the
+        alert's severity. Digest-mode users only receive critical
+        alerts immediately.
+        """
+        users = self._alert_notification_users()
+        if not users:
+            return
+        critical = self.level == 'critical'
+        if not critical:
+            users = users.filtered(
+                lambda u: u.cloud_notification_mode != 'daily_digest',
+            )
+        for user in users:
+            if (
+                user.cloud_notification_level == 'failures'
+                and self.level != 'critical'
+            ):
+                continue
+            email = user.partner_id.email
+            if not email:
+                continue
+            level_label = self.level.capitalize()
+            subject = (
+                f"[IncubaCloud] {level_label} alert: {self.message}"
+            )
+            body = self._build_alert_email_body()
+            self.env['mail.mail'].sudo().create({
+                'subject': subject,
+                'body_html': body,
+                'email_to': email,
+                'auto_delete': True,
+            }).send()
+
+    def _notify_alert_external(self):
+        """Push alert to Telegram and webhook channels for every
+        applicable internal user.
+        
+        Telegram and webhook sends each run inside try/except so one
+        broken endpoint never starves another user's notification.
+        """
+        users = self._alert_notification_users()
+        if not users:
+            return
+        critical = self.level == 'critical'
+        if not critical:
+            users = users.filtered(
+                lambda u: u.cloud_notification_mode != 'daily_digest',
+            )
+        for user in users:
+            if (
+                user.cloud_notification_level == 'failures'
+                and self.level != 'critical'
+            ):
+                continue
+            if user.cloud_telegram_bot_token and user.cloud_telegram_chat_id:
+                try:
+                    self._send_alert_telegram(user)
+                except Exception:
+                    _logger.warning(
+                        'alert telegram send failed for user %s', user.id,
+                    )
+            if user.cloud_webhook_url:
+                try:
+                    self._send_alert_webhook(user)
+                except Exception:
+                    _logger.warning(
+                        'alert webhook send failed for user %s', user.id,
+                    )
+
+    def _alert_notification_users(self):
+        """Return the user set eligible to receive alert notifications.
+        
+        Active internal users subscribed at any level — visibility and
+        mute are checked per-alert, not here, so callers can reuse this
+        set across multiple alerts.
+        """
+        return self.with_context(active_test=False).env['res.users'].search([
+            ('share', '=', False),
+            ('active', '=', True),
+            ('cloud_notification_level', '!=', 'none'),
+        ]).filtered(
+            lambda u: self._alert_visible_to(self, u)
+            and not self._alert_muted_for(self, u)
+        )
+
+    def _send_alert_telegram(self, user):
+        """POST an alert notification to the user's Telegram chat."""
+        emoji = '\U0001F534' if self.level == 'critical' else '\U0001F7E1'
+        lines = [
+            f"{emoji} *Alert:* {self.message}",
+        ]
+        if self.instance_id:
+            lines.append(f"Instance: {self.instance_id.name}")
+        if self.host_id:
+            lines.append(f"Host: {self.host_id.name}")
+        if self.job_id:
+            base_url = self.env['ir.config_parameter'].sudo().get_param(
+                'web.base.url', '',
+            )
+            lines.append(f"Logs: {base_url}/cloud/log/{self.job_id.id}")
+        text = '\n'.join(lines)
+        url = (
+            f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}"
+            f"/sendMessage"
+        )
+        payload = json.dumps({
+            'chat_id': user.cloud_telegram_chat_id,
+            'text': text,
+            'parse_mode': 'Markdown',
+            'disable_web_page_preview': True,
+        }).encode()
+        req = urllib.request.Request(
+            url, data=payload,
+            headers={'Content-Type': 'application/json'},
+        )
+        urllib.request.urlopen(req, timeout=10)  # nosec B310
+
+    def _send_alert_webhook(self, user):
+        """POST a signed JSON alert notification to the user's webhook URL."""
+        base_url = self.env['ir.config_parameter'].sudo().get_param(
+            'web.base.url', '',
+        )
+        payload = json.dumps({
+            'event': 'alert',
+            'alert_id': self.id,
+            'code': self.code,
+            'message': self.message,
+            'level': self.level,
+            'instance': self.instance_id.name if self.instance_id else None,
+            'host': self.host_id.name if self.host_id else None,
+            'job_id': self.job_id.id if self.job_id else None,
+            'log_url': (
+                f'{base_url}/cloud/log/{self.job_id.id}'
+                if self.job_id else None
+            ),
+            'timestamp': fields.Datetime.to_string(fields.Datetime.now()),
+        }).encode()
+        headers = {'Content-Type': 'application/json'}
+        secret = user.cloud_webhook_secret or ''
+        if secret:
+            sig = hmac.new(
+                secret.encode(), payload, hashlib.sha256,
+            ).hexdigest()
+            headers['X-IncubaCloud-Signature'] = 'sha256=' + sig
+        req = urllib.request.Request(
+            user.cloud_webhook_url, data=payload, headers=headers,
+        )
+        urllib.request.urlopen(req, timeout=10)  # nosec B310
+
+    def _build_alert_email_body(self):
+        """Render a simple HTML body for an alert email."""
+        instance_line = (
+            f"<tr><td><b>Instance</b></td>"
+            f"<td>{self.instance_id.name}</td></tr>"
+            if self.instance_id else ""
+        )
+        host_line = (
+            f"<tr><td><b>Host</b></td>"
+            f"<td>{self.host_id.name}</td></tr>"
+            if self.host_id else ""
+        )
+        job_line = (
+            f"<tr><td><b>Job</b></td>"
+            f"<td>{self.job_id.name}</td></tr>"
+            if self.job_id else ""
+        )
+        log_url = (
+            f"/cloud/log/{self.job_id.id}" if self.job_id else ""
+        )
+        level_label = self.level.capitalize()
+        return (
+            f"<p><b>{level_label} alert:</b> {self.message}</p>"
+            f"<table>"
+            f"{instance_line}"
+            f"{host_line}"
+            f"{job_line}"
+            f"</table>"
+            + (f"<p><a href='{log_url}'>View logs</a></p>"
+               if log_url else "")
+        )

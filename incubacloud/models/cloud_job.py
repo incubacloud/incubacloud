@@ -536,17 +536,49 @@ class CloudJob(models.Model):
         }
 
     @api.model
-    def get_instance_jobs(self, instance_id, limit=20, offset=0):
-        """Return jobs for a specific instance (for the instance overview)."""
+    def _get_instance_timeline(self, instance_id, max_visible=5):
+        """Return instance jobs formatted for the vertical activity timeline.
+
+        Active jobs (running/waiting chains) are returned in execution order
+        (id asc = running first). Recent terminal jobs fill the remaining
+        slots above the chain. The caller composes the final timeline by
+        reversing active jobs so the running job renders at the bottom.
+
+        Returns ``{active, recent, total}`` where *active* and *recent* are
+        lists of ``_format()`` dicts.
+        """
         hidden = self._get_hidden_job_types()
-        domain = [
+        base = [
             ('instance_id', '=', instance_id),
             ('job_type_id.code', 'not in', hidden),
         ]
-        total = self.search_count(domain)
-        jobs = self.search(domain, order='id desc',
-                           limit=limit, offset=offset)
-        return {'jobs': jobs._format(), 'total': total}
+        active = self.search(
+            base + [('state', 'in', self._active_states)],
+            order='id asc',
+        )
+        recent_limit = max(0, max_visible - min(len(active), max_visible))
+        recent = self.env['cloud.job']
+        if recent_limit > 0:
+            recent = self.search(
+                base + [('state', 'in', self._terminal_states)],
+                order='id desc', limit=recent_limit,
+            )
+        total = self.search_count(base)
+        return {
+            'active': active._format(),
+            'recent': recent._format(),
+            'total': total,
+        }
+
+    @api.model
+    def get_instance_jobs(self, instance_id, limit=20, offset=0):
+        """Return jobs for a specific instance (for the instance overview)."""
+        data = self._get_instance_timeline(instance_id, max_visible=limit)
+        return {
+            'activeJobs': data['active'],
+            'recentJobs': data['recent'],
+            'total': data['total'],
+        }
 
     @api.model
     def get_host_jobs(self, host_id, limit=5, offset=0):

@@ -226,7 +226,8 @@ export class InstanceDetail extends Component {
             connectDialog:    null,
             shellDialog:      null,
             // activity (jobs)
-            jobs:             [],
+            activeJobs:       [],
+            recentJobs:       [],
             jobsTotal:        0,
             jobsLoading:      false,
             // backups
@@ -319,7 +320,8 @@ export class InstanceDetail extends Component {
                 instance_id: this.props.instance_id,
             });
             this.state.inst = inst;
-            this.state.jobs = inst.jobs || [];
+            this.state.activeJobs = inst.activeJobs || [];
+            this.state.recentJobs = inst.recentJobs || [];
             this.state.jobsTotal = inst.jobsTotal || 0;
             // Patch the project store so the sidebar reflects this
             // instance's fresh status without waiting for its own bus
@@ -417,7 +419,8 @@ export class InstanceDetail extends Component {
         this.state.hosts = (hosts || []).filter(h => h.status === "compatible" && h.traefik_deployed);
         this.state.backupBackends = backends || [];
         this.state.inst = inst;
-        this.state.jobs = inst.jobs || [];
+        this.state.activeJobs = inst.activeJobs || [];
+        this.state.recentJobs = inst.recentJobs || [];
         this.state.jobsTotal = inst.jobsTotal || 0;
         if (inst.odoo_initial_lang) {
             this.state._initialLangId = inst.odoo_initial_lang;
@@ -565,14 +568,33 @@ export class InstanceDetail extends Component {
             const data = await this.orm.call("cloud.job", "get_instance_jobs", [
                 this.props.instance_id, 5, 0,
             ]);
-            this.state.jobs = data.jobs;
+            this.state.activeJobs = data.activeJobs;
+            this.state.recentJobs = data.recentJobs;
             this.state.jobsTotal = data.total;
         } catch (_e) { console.warn("Failed to load jobs:", _e); }
         this.state.jobsLoading = false;
     }
 
+    get timelineJobs() {
+        const MAX = 5;
+        const active = this.state.activeJobs || [];
+        const recent = this.state.recentJobs || [];
+        const result = [];
+        if (active.length <= MAX) {
+            result.push(...[...active].reverse());
+        } else {
+            result.push({
+                _overflow: true,
+                count: active.length - (MAX - 1),
+            });
+            result.push(...[...active].reverse().slice(-(MAX - 1)));
+        }
+        result.unshift(...[...recent].reverse());
+        return result;
+    }
+
     get hasMoreJobs() {
-        return this.state.jobsTotal > this.state.jobs.length;
+        return this.state.jobsTotal > (this.state.activeJobs || []).length + (this.state.recentJobs || []).length;
     }
 
     viewAllJobs() {
