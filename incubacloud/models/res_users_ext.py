@@ -115,6 +115,7 @@ class ResUsers(models.Model):
             ('active', '=', True),
             ('cloud_notification_level', '!=', 'none'),
             ('cloud_notification_mode', '=', 'daily_digest'),
+            ('cloud_email_enabled', '=', True),
         ])
         for user in users:
             try:
@@ -161,6 +162,9 @@ class ResUsers(models.Model):
         alert_domain = [
             ('create_date', '>', since),
             ('create_date', '<=', now),
+            # job_failed alerts are redundant here — the digest's job
+            # section already lists every failed job with its log URL.
+            ('code', '!=', 'job_failed'),
         ]
         if muted_ids:
             alert_domain += [
@@ -168,6 +172,8 @@ class ResUsers(models.Model):
                 ('project_id', 'in', muted_ids),
                 ('instance_id.project_id', 'in', muted_ids),
             ]
+        if user.cloud_notification_level == 'failures':
+            alert_domain.append(('level', '=', 'critical'))
         try:
             jobs = CloudJob.with_user(user).search(
                 job_domain, order='write_date desc', limit=100,
