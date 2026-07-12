@@ -82,20 +82,18 @@ class CloudAlert(models.Model):
 
     def _dispatch_notifications(self):
         """Central dispatcher for every active alert.
-        
+
         This is the single point through which ALL alert notifications
         flow — bus broadcast, email, Telegram, and webhooks. Any code
         that creates a ``cloud.alert`` gets full-channel delivery
         without needing to know which transports exist.
-        
+
         Critical alerts always bypass digest-mode gating.
         """
         critical = self.level == 'critical'
         self._broadcast_overview(critical=self if critical else self.browse())
-        # Email, Telegram, webhook
         self._notify_alert_external()
-        if critical or self.level == 'warning':
-            self._notify_alert_email()
+        self._notify_alert_email()
 
     def write(self, vals):
         res = super().write(vals)
@@ -191,6 +189,22 @@ class CloudAlert(models.Model):
         return user._cloud_project_muted(project)
 
     @api.model
+    def _alert_user_eligible(self, user, channel='email'):
+        """Return True when *user* should receive this alert on *channel*.
+
+        Encapsulates the notification-level + channel-toggle logic so the
+        email and external paths stay in sync.
+        """
+        if user.cloud_notification_level == 'none':
+            return False
+        if channel == 'email' and not user.cloud_email_enabled:
+            return False
+        if user.cloud_notification_level == 'failures':
+            if self.code != 'job_failed' and self.level != 'critical':
+                return False
+        return True
+
+    @api.model
     def action_dismiss_all(self, level_filter=None):
         """Dismiss every active, non-blocking alert visible to the
         current user and return how many were affected.
@@ -232,10 +246,7 @@ class CloudAlert(models.Model):
                 lambda u: u.cloud_notification_mode != 'daily_digest',
             )
         for user in users:
-            if (
-                user.cloud_notification_level == 'failures'
-                and self.level != 'critical'
-            ):
+            if not self._alert_user_eligible(user, channel='email'):
                 continue
             email = user.partner_id.email
             if not email:
@@ -268,10 +279,7 @@ class CloudAlert(models.Model):
                 lambda u: u.cloud_notification_mode != 'daily_digest',
             )
         for user in users:
-            if (
-                user.cloud_notification_level == 'failures'
-                and self.level != 'critical'
-            ):
+            if not self._alert_user_eligible(user, channel='external'):
                 continue
             if user.cloud_telegram_bot_token and user.cloud_telegram_chat_id:
                 try:
