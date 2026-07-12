@@ -43,18 +43,34 @@ Toggle it on and pick a mode:
 ### Webhook
 
 Point the platform at any HTTPS endpoint to integrate with Slack bridges,
-on-call tools or your own automation. Each job state change POSTs a JSON
-payload:
+on-call tools or your own automation. Two event types arrive as JSON POSTs —
+`job_state_change` for successful job completions, and `alert` for failures
+and infrastructure alerts:
 
 ```json
 {
   "event": "job_state_change",
   "job_id": 123,
   "job_name": "Deploy Instance",
-  "state": "failed",
-  "severe": true,
+  "state": "done",
+  "severe": false,
   "host": "host-1",
   "instance": "production",
+  "log_url": "https://…/cloud/log/123",
+  "timestamp": "2026-07-12 10:00:00"
+}
+```
+
+```json
+{
+  "event": "alert",
+  "alert_id": 45,
+  "code": "job_failed",
+  "level": "critical",
+  "message": "Deploy Instance on production failed",
+  "host": "host-1",
+  "instance": "production",
+  "job_id": 123,
   "log_url": "https://…/cloud/log/123",
   "timestamp": "2026-07-12 10:00:00"
 }

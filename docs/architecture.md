@@ -355,24 +355,36 @@ Alert codes in use: `job_failed`, `disk_critical`, `host_unreachable`, `instance
 
 ### Notification channels
 
-Job terminal states (`done`/`failed`) fan out from the `queue.job` state bridge to four channels. Recipients are always **active internal users filtered by record-rule visibility** and their own preferences (level `all`/`failures`/`none`, muted projects):
+All channels share one recipient rule: **active internal users filtered by record-rule visibility** and their own preferences (level `all`/`failures`/`none`, muted projects). Two paths feed them:
+
+- **Alert pipeline (unified)** — every `cloud.alert` creation calls `_dispatch_notifications()`, which fans out to email, Telegram and webhook. Job **failures** create a `job_failed` alert and are notified through this path — there is a single code path for infrastructure alerts and failed jobs.
+- **Job path** — successful job completion (`done`) is notified directly from the `queue.job` state bridge (no alert is created for successes).
 
 | Channel | Enabled by | Notes |
 |---|---|---|
 | Bus (real-time) | always | `cloud_jobs` (job events → toasts) and `cloud_overview` (alert badge + critical alert toasts) |
-| Email | per-user toggle | Immediate or **daily digest** (07:00 cron, QWeb template, watermark per user). Severe failures (deploy/rebuild) bypass digest mode. |
+| Email | per-user toggle | Immediate or **daily digest** (07:00 cron, QWeb template, watermark per user). Critical alerts and severe failures bypass digest mode. |
 | Telegram | bot token + chat id set | Markdown message via the Bot API; chat-id auto-detect and test-message endpoints in the UI |
-| Webhook (HMAC) | HTTPS URL set | JSON POST per state change, optionally signed |
+| Webhook (HMAC) | HTTPS URL set | JSON POST per event, optionally signed |
 
-Webhook payload:
+For users at level `failures`, the alert pipeline only delivers `job_failed` alerts and critical alerts.
+
+Webhook payloads — two event types:
 
 ```json
 {"event": "job_state_change", "job_id": 123, "job_name": "Deploy Instance",
- "state": "failed", "severe": true, "host": "host-1", "instance": "prod",
+ "state": "done", "severe": false, "host": "host-1", "instance": "prod",
  "log_url": "https://…/cloud/log/123", "timestamp": "2026-07-12 10:00:00"}
 ```
 
-When a secret is configured the request carries `X-IncubaCloud-Signature: sha256=<hex>` — HMAC-SHA256 of the raw body. Verify with a constant-time compare. No secret → no header.
+```json
+{"event": "alert", "alert_id": 45, "code": "job_failed", "level": "critical",
+ "message": "Deploy Instance on prod failed", "host": "host-1",
+ "instance": "prod", "job_id": 123, "log_url": "https://…/cloud/log/123",
+ "timestamp": "2026-07-12 10:00:00"}
+```
+
+When a secret is configured the request carries `X-IncubaCloud-Signature: sha256=<hex>` — HMAC-SHA256 of the raw body — on both event types. Verify with a constant-time compare. No secret → no header.
 
 A separate email alert covers **backup bucket usage** (quota threshold per backend, 7-day debounce), outside the alert panel.
 
