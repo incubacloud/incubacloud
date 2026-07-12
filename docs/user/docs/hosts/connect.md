@@ -14,7 +14,7 @@ and request HTTPS automatically.
 
 ### 1. Open the hosts page
 
-Go to `/cloud/ui/hosts`. Click **New Host**.
+Go to `/cloud/hosts`. Click **New Host**.
 
 ### 2. Fill in connection details
 

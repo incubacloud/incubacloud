@@ -36,7 +36,7 @@
 - **Deploy** instances via [copier](https://copier.readthedocs.io/) with automatic module initialization
 - **Safe rebuild**: new Docker images are tested with a boot test against a cloned database before applying — if it fails, the instance keeps the old image
 - **Auto-update modules** via `click-odoo-update` checksums (only changed modules are updated)
-- Start, stop, restart, pause and delete operations
+- Start, stop, restart and delete operations
 - Clone production to staging with database and filestore copy
 - Rebuild fingerprinting for smart cache invalidation
 - Pluggable action system for custom job types
@@ -68,7 +68,7 @@
 
 - **5-tier RBAC**: Stakeholder (read-only) → Consultant → Project Manager → Developer → Administrator
 - Audit trail with filtering, configurable retention and automated purge
-- Multi-user attribution and job notifications
+- Multi-user attribution; job notifications via email (immediate or daily digest), Telegram and HMAC-signed webhooks
 - Encrypted secrets (Fernet) for passwords, SSH keys and S3 credentials
 - HMAC-SHA256 validated GitHub webhooks
 
@@ -165,26 +165,14 @@ odoo --test-enable --stop-after-init --workers=0 \
 
 ## Roadmap
 
-### Near term
+Highlights (see [docs/roadmap.md](docs/roadmap.md) for the full picture):
 
-- Additional transport backends (the `BaseTransport` ABC is in place)
-- Internationalisation — additional language packs (only Spanish shipped today)
-- Extension point documentation for third-party modules
-- `EncryptedChar` key rotation tooling
-- Structured log export (JSON)
-- Job duration tracking and per-executor statistics on the dashboard
-
-### Medium term
-
-- GitLab and Gitea support via the existing `cloud.project.repo` model
-- Provider abstraction (`cloud.provider`) for API-based VPS providers alongside SSH
-- Notification integrations (Slack, Telegram, email) for job state changes and alerts
-
-### Long term
-
-- Host groups spanning multiple datacentres
-- Instance replication and failover
-- Centralised metrics aggregation
+- **Agentless monitoring** — metric history, external HTTP/TLS health checks, configurable alert thresholds, dashboard sparklines
+- **Instance log rotation and log access** — guaranteed rotation per instance plus a better container log viewer
+- **User SSH keys and direct shell access** — per-user keys (manual or imported from GitHub), per-instance grants, full audit
+- **Login with GitHub** — platform sign-in via GitHub OAuth
+- **Managed version upgrades** — staging upgrade, smoke tests, approval, cutover with rollback (OpenUpgrade / Enterprise upgrade service)
+- **Data migrations (ETL)** — assisted data onboarding from spreadsheets, other Odoo databases or other ERPs
 
 Open a GitHub issue with the `enhancement` label to influence priorities.
 

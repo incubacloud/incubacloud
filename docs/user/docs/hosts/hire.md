@@ -1,70 +1,78 @@
-# Hire a Hetzner VPS
+# Order a VPS through the platform
 
-Order a Hetzner VPS from inside the platform. We provision it, configure SSH and the
-proxy, and hand it back ready as a registered host.
+!!! info "IncubaCloud SaaS — paid plans"
+    On-demand VPS ordering is available on the hosted service, on paid plans
+    (Starter and up). Self-hosted deployments and Free-plan accounts
+    [connect their own VPS](connect.md) instead.
+
+Order a Hetzner Cloud VPS without leaving IncubaCloud. The platform creates the
+server, locks SSH down to the platform, installs Docker and the proxy, and
+registers it as a host ready to receive instances.
 
 ## Pricing
 
-You pay **Hetzner's catalog price** as listed in the form. We don't add a fee,
-and we don't pass on a discount. Charges appear on your next invoice prorated to today.
+VPS usage is billed **by the hour with a monthly cap**: you never pay more than
+the server's monthly catalog price, and short-lived servers only cost the hours
+they ran. Your plan discounts the catalog price — 5% on Starter, 10% on
+Professional, 15% on Business. The charge appears as a line on your subscription
+invoice.
+
+If the new server exceeds your plan's host quota, an extra-host line is added
+automatically (see [Billing → Extras](../billing/index.md#extras)).
 
 ## Walkthrough
 
-### 1. Open `/cloud/ui/hosts`
+### 1. Open your Hosts dashboard
 
-Click **Hire VPS** (next to **New Host**).
+In your control plane, go to `/cloud/hosts` and click **Order VPS**.
 
-### 2. Pick a region
+### 2. Pick size and location
 
-Closer to your users is faster. EU options (Helsinki, Nuremberg, Falkenstein) are typical.
-US options (Ashburn, Hillsboro) work for North-American users.
+The catalog (sizes, prices, locations, live availability) comes straight from
+Hetzner, with your plan discount already applied. Pick the size that fits your
+workload and a region close to your users — EU (Helsinki, Nuremberg,
+Falkenstein) or US (Ashburn, Hillsboro).
 
-### 3. Pick a size
+### 3. Choose the hostname
 
-We list the available Hetzner plans with vCPU, RAM, disk, and monthly price.
-Pick the size that fits your workload.
+If the platform manages your DNS, the new host gets a name like
+`vps1.<your-subdomain>.incubacloud.io` automatically. You can point your own
+DNS at it later for custom domains.
 
-| Plan | vCPU | RAM | Disk | Best for |
-| --- | --- | --- | --- | --- |
-| CX22 | 2 | 4 GB | 40 GB | One small Odoo + a staging |
-| CX32 | 4 | 8 GB | 80 GB | Production with moderate traffic |
-| CX42 | 8 | 16 GB | 160 GB | Multiple production instances |
-| CX52 | 16 | 32 GB | 320 GB | Large multi-tenant deployment |
+### 4. Confirm
 
-### 4. Confirm and pay
-
-The platform creates the VPS at Hetzner. Provisioning takes 60–90 seconds.
-
-### 5. Watch the log
-
-We:
+Provisioning takes a couple of minutes end to end:
 
 1. Create the server at Hetzner.
-2. Generate an Ed25519 SSH keypair.
-3. Configure SSH-only access (password auth disabled).
-4. Install Docker and Traefik.
-5. Run the health probe.
+2. Generate an SSH keypair and lock SSH to key-only access, firewalled to the
+   platform.
+3. Install Docker and Traefik (Full Setup) and harden the host.
+4. Run the health probe.
 
-When the job ends in green, the host shows up in your list.
+When the job ends in green, the host shows up in your list, ready for deploys.
 
 ## Cancellation
 
-Open `/cloud/ui/hosts`, find the host, and click **Cancel VPS**.
-We delete the VPS at Hetzner and stop billing immediately. The next invoice
-shows a prorated refund line for unused days.
+Open the host, and delete/release it from the host actions. Billing stops with
+the hourly meter; the subscription invoice reflects only the hours used (never
+more than the monthly cap).
 
 ## Troubleshooting
 
+??? note "Ordering is refused on my plan"
+    The Free plan cannot order on-demand VPS. Upgrade to a paid plan or
+    [connect your own server](connect.md).
+
 ??? note "Provisioning failed: out of capacity"
     Hetzner sometimes runs out of stock in a specific region for a specific size.
-    Retry with a different region. Your card is not charged for failed provisions.
+    Retry with a different region — failed provisions are not billed.
 
 ??? note "Provisioning failed: rate limit"
     Hetzner enforces creation rate limits. Wait 5 minutes and retry.
 
-??? note "I want to attach extra storage / a backup snapshot service"
-    Out of scope today. Use the host's local disk and our [backup backends](../backups/index.md)
-    pointed at S3 — that gives you the same outcome with portability across providers.
+??? note "I want extra storage or a snapshot service"
+    Out of scope today. Use the host's local disk plus [backup backends](../backups/index.md)
+    pointed at S3 — same outcome, portable across providers.
 
 ## See also
 
