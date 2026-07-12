@@ -896,6 +896,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#extras" class="md-nav__link">
+    <span class="md-ellipsis">
+      Extras
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vps-billing" class="md-nav__link">
     <span class="md-ellipsis">
       VPS billing
@@ -926,6 +935,15 @@
   <a href="#changing-plans" class="md-nav__link">
     <span class="md-ellipsis">
       Changing plans
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#if-a-payment-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      If a payment fails
     </span>
   </a>
   
@@ -1090,6 +1108,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#extras" class="md-nav__link">
+    <span class="md-ellipsis">
+      Extras
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#vps-billing" class="md-nav__link">
     <span class="md-ellipsis">
       VPS billing
@@ -1126,6 +1153,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#if-a-payment-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      If a payment fails
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cancellation" class="md-nav__link">
     <span class="md-ellipsis">
       Cancellation
@@ -1149,7 +1185,7 @@
                   
 
   
-    <a href="https://github.com/incubacloud/incubacloud/edit/18.0/docs/user/docs/billing/index.md" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/billing/index.md" title="Edit this page" class="md-content__button md-icon">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1158,6 +1194,11 @@
 
 
 <h1 id="billing">Billing<a class="headerlink" href="#billing" title="Permanent link">&para;</a></h1>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS</p>
+<p>Billing applies to the hosted service. Self-hosted deployments of the open
+core module have no plans or invoices.</p>
+</div>
 <h2 id="plans">Plans<a class="headerlink" href="#plans" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1176,7 +1217,7 @@
 <td>0 €</td>
 <td>0 €</td>
 <td>1</td>
-<td>1 (sleeping)</td>
+<td>1 (sleeps when idle)</td>
 <td>—</td>
 </tr>
 <tr>
@@ -1207,44 +1248,78 @@
 </table>
 <p>Annual saves 22%. You can switch monthly ⇄ annual at any time;
 the new rate kicks in on the next renewal.</p>
+<h2 id="extras">Extras<a class="headerlink" href="#extras" title="Permanent link">&para;</a></h2>
+<p>If you need more capacity without jumping a tier, add extra hosts or instances
+from <code>My account → IncubaCloud → Extras</code>. Per unit and month:</p>
+<table>
+<thead>
+<tr>
+<th>Plan</th>
+<th>Extra host</th>
+<th>Extra instance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Starter</td>
+<td>3 €</td>
+<td>2 €</td>
+</tr>
+<tr>
+<td>Professional</td>
+<td>5 €</td>
+<td>3 €</td>
+</tr>
+<tr>
+<td>Business</td>
+<td>7 €</td>
+<td>4 €</td>
+</tr>
+</tbody>
+</table>
 <h2 id="vps-billing">VPS billing<a class="headerlink" href="#vps-billing" title="Permanent link">&para;</a></h2>
-<p>If you <a href="../hosts/hire/">hire a VPS</a> through us, the cost is the
-<strong>Hetzner catalog price</strong>, prorated to the day. We don't add a fee and we don't
-pass on a discount. The line shows up on your next invoice.</p>
+<p>If you <a href="../hosts/hire/">order a VPS</a> through the platform, it is billed <strong>by the
+hour with a monthly cap</strong> — you never pay more than the VPS's monthly price, and
+short-lived servers only cost the hours they ran. Your plan gives a discount on
+the catalog price: 5% (Starter), 10% (Professional), 15% (Business). The line
+appears on your subscription invoice. Ordering a VPS beyond your plan's host
+quota automatically adds an extra-host line.</p>
 <p>If you <a href="../hosts/connect/">bring your own VPS</a>, nothing extra is billed —
 only your IncubaCloud plan.</p>
 <h2 id="payment">Payment<a class="headerlink" href="#payment" title="Permanent link">&para;</a></h2>
-<p>We use <a href="https://stripe.com">Stripe</a>. Card and SEPA Direct Debit are accepted.
-For SEPA, the first invoice may take a few business days to confirm.</p>
+<p>We use <a href="https://stripe.com">Stripe</a>. Payment is by card; the card is saved
+(tokenized by Stripe) to charge the recurring subscription.</p>
 <h2 id="invoices">Invoices<a class="headerlink" href="#invoices" title="Permanent link">&para;</a></h2>
 <p>Invoices are generated automatically and stored under
 <code>My account → Invoices</code>. They're VAT-compliant for EU customers.
 Add your VAT number under <code>My account → Billing details</code> to have it appear
 on the invoice (and to apply reverse-charge if applicable).</p>
 <h2 id="changing-plans">Changing plans<a class="headerlink" href="#changing-plans" title="Permanent link">&para;</a></h2>
-<p><code>My account → Plan → Change plan</code>. The new plan takes effect immediately.
-Differences are prorated:</p>
+<p><code>My account → IncubaCloud → Change plan</code>, or from your control plane.</p>
 <ul>
-<li><strong>Upgrading</strong> — you're charged the prorated difference today.</li>
-<li><strong>Downgrading</strong> — you keep the higher tier until the end of the current period,
-  then drop to the lower one.</li>
+<li><strong>Upgrading</strong> — takes effect immediately: limits are raised on the spot and the
+  subscription lines switch to the new plan. One upgrade per billing cycle.
+  Upgrading from Free goes through checkout first.</li>
+<li><strong>Downgrading</strong> — scheduled for the start of your next billing cycle; you keep
+  the higher tier until then. You can cancel a pending downgrade at any time.</li>
 </ul>
 <div class="admonition warning">
 <p class="admonition-title">Downgrading with too many resources</p>
-<p>If you're using more hosts or instances than the lower plan allows,
-the platform refuses the downgrade until you remove the excess.
-Archive what you don't need first.</p>
+<p>A downgrade is refused while you use more hosts or instances than the target
+plan allows (unless the excess can be converted to paid extras), or while
+paid-only resources — an on-demand VPS or Managed Backup Storage — are still
+active. Release those first.</p>
 </div>
+<h2 id="if-a-payment-fails">If a payment fails<a class="headerlink" href="#if-a-payment-fails" title="Permanent link">&para;</a></h2>
+<p>We retry and notify you. If the subscription stays unpaid, the platform
+progressively steps in: external resources are released after ~7 days, your
+instances are suspended after ~14 days, and data is deleted after ~30 days.
+Paying at any point before deletion restores service immediately.</p>
 <h2 id="cancellation">Cancellation<a class="headerlink" href="#cancellation" title="Permanent link">&para;</a></h2>
-<p><code>My account → Plan → Cancel subscription</code>. Your account stays usable until the
-end of the current billing period. After that, instances are paused (not deleted)
-for 30 days, then archived. You can re-subscribe anytime to restore access.</p>
-<p>If you also want your data deleted, request it from the contact form.</p>
-<div class="admonition note">
-<p class="admonition-title">Reference page is in progress</p>
-<p>A more detailed page on invoices, taxes, and subscription edge cases is
-coming soon.</p>
-</div>
+<p>If you don't want to continue, downgrade to Free (keeps one instance, no
+automatic backups) or request cancellation from the
+<a href="https://www.incubacloud.io/contactus">contact form</a>. If you also want your data
+deleted, say so in the request.</p>
 
 
 

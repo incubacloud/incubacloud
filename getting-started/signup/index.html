@@ -596,9 +596,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-fill-in-the-signup-form" class="md-nav__link">
+  <a href="#2-choose-your-subdomain-and-sign-in" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Fill in the signup form
+      2. Choose your subdomain and sign in
     </span>
   </a>
   
@@ -614,9 +614,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-open-your-dashboard" class="md-nav__link">
+  <a href="#4-open-your-control-plane" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Open your dashboard
+      4. Open your control plane
     </span>
   </a>
   
@@ -1095,9 +1095,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-fill-in-the-signup-form" class="md-nav__link">
+  <a href="#2-choose-your-subdomain-and-sign-in" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Fill in the signup form
+      2. Choose your subdomain and sign in
     </span>
   </a>
   
@@ -1113,9 +1113,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-open-your-dashboard" class="md-nav__link">
+  <a href="#4-open-your-control-plane" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Open your dashboard
+      4. Open your control plane
     </span>
   </a>
   
@@ -1154,7 +1154,7 @@
                   
 
   
-    <a href="https://github.com/incubacloud/incubacloud/edit/18.0/docs/user/docs/getting-started/signup.md" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/getting-started/signup.md" title="Edit this page" class="md-content__button md-icon">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1163,13 +1163,13 @@
 
 
 <h1 id="create-your-account">Create your account<a class="headerlink" href="#create-your-account" title="Permanent link">&para;</a></h1>
-<p>This guide walks you through registering, choosing a plan, paying (if applicable),
-and reaching your empty dashboard.</p>
 <div class="admonition info">
-<p class="admonition-title">What this guide covers</p>
-<p>Account creation, email verification, plan selection, and first login.
-For changing plan or upgrading later, see the <a href="../../billing/">billing reference</a>.</p>
+<p class="admonition-title">IncubaCloud SaaS</p>
+<p>This page applies to the hosted service at incubacloud.io. If you self-host
+the open core module, there is no signup — install the module and open <code>/cloud</code>.</p>
 </div>
+<p>This guide walks you through registering, choosing a plan, paying (if applicable),
+and reaching your own IncubaCloud control plane.</p>
 <h2 id="1-pick-a-plan">1. Pick a plan<a class="headerlink" href="#1-pick-a-plan" title="Permanent link">&para;</a></h2>
 <p>Open <a href="https://www.incubacloud.io/pricing">the pricing page</a> and click the button on
 the plan that matches your stage. There are four:</p>
@@ -1185,7 +1185,7 @@ the plan that matches your stage. There are four:</p>
 <tr>
 <td><strong>Free</strong></td>
 <td>Looking around</td>
-<td>1 host, 1 sleeping instance, no automatic backups</td>
+<td>1 host, 1 instance (sleeps when idle), no automatic backups</td>
 </tr>
 <tr>
 <td><strong>Starter</strong></td>
@@ -1200,51 +1200,59 @@ the plan that matches your stage. There are four:</p>
 <tr>
 <td><strong>Business</strong></td>
 <td>Agencies &amp; mid-size companies</td>
-<td>25 hosts, 50 instances, 30-day backups, direct support</td>
+<td>25 hosts, 50 instances, 30-day backups, dedicated host</td>
 </tr>
 </tbody>
 </table>
-<p>You can change plan at any moment with no downtime. Free has no card requirement.</p>
-<h2 id="2-fill-in-the-signup-form">2. Fill in the signup form<a class="headerlink" href="#2-fill-in-the-signup-form" title="Permanent link">&para;</a></h2>
-<p>Enter your email, choose a password, and confirm. We send you a verification email
-immediately — click the link inside to activate the account.</p>
-<div class="admonition warning">
-<p class="admonition-title">Verification email not arriving?</p>
-<p>Check spam first. If still missing after 5 minutes, request a new verification
-link from the login page (<code>Resend verification email</code>). Mail providers occasionally
-delay first-time messages from new domains.</p>
+<p>You can change plan at any moment. Free has no card requirement.</p>
+<div class="admonition note">
+<p class="admonition-title">Free plan instances sleep</p>
+<p>On the Free plan your instance is suspended after ~30 minutes without traffic
+and wakes automatically on the next request (the first request after a nap takes
+a few seconds). Paid plans run 24/7.</p>
 </div>
+<h2 id="2-choose-your-subdomain-and-sign-in">2. Choose your subdomain and sign in<a class="headerlink" href="#2-choose-your-subdomain-and-sign-in" title="Permanent link">&para;</a></h2>
+<p>Enter the subdomain you want for your control plane (e.g. <code>acme</code> →
+<code>acme.incubacloud.io</code>), then continue with a social login — <strong>Google</strong> or
+<strong>Odoo.com</strong> (GitHub is planned). There is no email-and-password form and no
+separate verification email: your identity comes from the provider you pick.</p>
+<p>Subdomain rules: 3–63 characters, letters/digits/hyphens (a DNS label). Reserved
+names (<code>www</code>, <code>api</code>, <code>admin</code>, …) are not available.</p>
 <h2 id="3-complete-payment-paid-plans-only">3. Complete payment (paid plans only)<a class="headerlink" href="#3-complete-payment-paid-plans-only" title="Permanent link">&para;</a></h2>
-<p>We use <a href="https://stripe.com">Stripe</a>. Card and SEPA Direct Debit are accepted.
-The platform creates the subscription and unlocks your dashboard as soon as the
-payment confirms — usually within a few seconds.</p>
-<p>Invoices are generated automatically and stored under
-<code>My account → Invoices</code>. They're VAT-compliant for EU customers
-(provide your VAT number during signup or anytime after in <code>My account → Billing details</code>).</p>
-<h2 id="4-open-your-dashboard">4. Open your dashboard<a class="headerlink" href="#4-open-your-dashboard" title="Permanent link">&para;</a></h2>
-<p>After signup completes, you land on <code>/cloud/ui</code> — your dashboard. It's empty.
-That's expected. The header shows your account email on the right.</p>
+<p>We use <a href="https://stripe.com">Stripe</a>; payment is by card, saved for the recurring
+subscription. The platform provisions your control plane as soon as the payment
+confirms — usually within a few seconds. On the Free plan this step is skipped and
+provisioning starts immediately.</p>
+<p>Invoices are generated automatically and available under
+<code>My account → Invoices</code> on incubacloud.io. They're VAT-compliant for EU customers.</p>
+<h2 id="4-open-your-control-plane">4. Open your control plane<a class="headerlink" href="#4-open-your-control-plane" title="Permanent link">&para;</a></h2>
+<p>When provisioning finishes you get your own IncubaCloud at
+<code>https://&lt;your-subdomain&gt;.incubacloud.io</code>. Log in with the same social account —
+tenant instances use IncubaCloud single sign-on.</p>
+<p>Your dashboard at <code>/cloud</code> is empty. That's expected.</p>
 <p><a href="../first-project/"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.22 19.03a.75.75 0 0 1 0-1.06L18.19 13H3.75a.75.75 0 0 1 0-1.5h14.44l-4.97-4.97a.749.749 0 0 1 .326-1.275.75.75 0 0 1 .734.215l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0"/></svg></span> Next: create your first project</a></p>
 <h2 id="verify-it-worked">Verify it worked<a class="headerlink" href="#verify-it-worked" title="Permanent link">&para;</a></h2>
 <ul class="task-list">
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> You can log in at <code>/web/login</code> with the email you used.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> Your dashboard at <code>/cloud/ui</code> loads without errors.</li>
-<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> If you chose a paid plan, the next invoice line item shows the prorated cost.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> <code>https://&lt;your-subdomain&gt;.incubacloud.io</code> loads and you can sign in.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The dashboard at <code>/cloud</code> opens without errors.</li>
+<li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> <code>My account</code> on incubacloud.io shows your plan (and, on paid plans, the subscription).</li>
 </ul>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <details class="note">
-<summary>Signup says \"email already in use\"</summary>
-<p>You may have signed up before. Try the password reset flow at <code>/web/reset_password</code>.</p>
+<summary>The subdomain I want is taken or rejected</summary>
+<p>Labels must be 3–63 chars and unique; a few names are reserved. Pick a variant
+(e.g. <code>acme-erp</code>).</p>
 </details>
 <details class="note">
-<summary>Payment succeeded but dashboard is still locked</summary>
-<p>Reload after 60 seconds. If still locked, <a href="https://www.incubacloud.io/contactus">contact us</a>
-with the Stripe receipt id (it starts with <code>pi_</code> or <code>ch_</code>).</p>
+<summary>Payment succeeded but my control plane isn't up yet</summary>
+<p>Provisioning normally takes under a minute. If it's still not reachable after a
+few minutes, <a href="https://www.incubacloud.io/contactus">contact us</a> with the receipt
+id from Stripe.</p>
 </details>
 <details class="note">
-<summary>Two-factor authentication</summary>
-<p>We strongly recommend enabling 2FA from <code>My account → Security</code> before
-you start adding hosts and customer data.</p>
+<summary>Can my teammates log in too?</summary>
+<p>Yes — invite them from your control plane. Additional users join by invitation
+(there is no open signup on your instance).</p>
 </details>
 
 

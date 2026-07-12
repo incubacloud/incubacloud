@@ -1010,6 +1010,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#managed-backup-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Managed Backup Storage
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#encryption" class="md-nav__link">
     <span class="md-ellipsis">
       Encryption
@@ -1051,7 +1060,7 @@
                   
 
   
-    <a href="https://github.com/incubacloud/incubacloud/edit/18.0/docs/user/docs/backups/index.md" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/backups/index.md" title="Edit this page" class="md-content__button md-icon">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1073,6 +1082,11 @@ S3-compatible service. You hold the keys. We run the schedule and the encryption
 <p>The backup format is the standard Odoo dump (<code>dump.sql + filestore/</code>) wrapped
 in an encrypted archive.</p>
 <h2 id="retention-by-plan">Retention by plan<a class="headerlink" href="#retention-by-plan" title="Permanent link">&para;</a></h2>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS</p>
+<p>Plan-based retention applies to the hosted service. Self-hosted deployments
+configure retention per backend.</p>
+</div>
 <table>
 <thead>
 <tr>
@@ -1101,6 +1115,47 @@ in an encrypted archive.</p>
 </table>
 <p>Manual backups never expire. They count against your bucket storage,
 not against the retention window.</p>
+<h2 id="managed-backup-storage">Managed Backup Storage<a class="headerlink" href="#managed-backup-storage" title="Permanent link">&para;</a></h2>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS — paid add-on</p>
+</div>
+<p>If you'd rather not bring your own bucket, the platform can provision one for
+you: a dedicated bucket with its own scoped credentials, handed to you as a
+ready-to-use backup backend. Three tiers:</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Included storage</th>
+<th>Monthly</th>
+<th>Overage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Starter</td>
+<td>20 GB</td>
+<td>2.99 €</td>
+<td>0.05 €/GB</td>
+</tr>
+<tr>
+<td>Standard</td>
+<td>100 GB</td>
+<td>8.99 €</td>
+<td>0.04 €/GB</td>
+</tr>
+<tr>
+<td>Pro</td>
+<td>500 GB</td>
+<td>29.99 €</td>
+<td>0.03 €/GB</td>
+</tr>
+</tbody>
+</table>
+<p>Usage is measured periodically; storage beyond the included amount is billed as
+overage on your subscription invoice. If you cancel the add-on, backups are kept
+for a 30-day retention window before the bucket is purged. Downgrading to a
+smaller tier gives you a grace period to get usage under the new limit.</p>
 <h2 id="encryption">Encryption<a class="headerlink" href="#encryption" title="Permanent link">&para;</a></h2>
 <p>Every backup is encrypted with the <strong>passphrase</strong> you set on the backend before
 it leaves the host. We don't store the passphrase in clear and we can't recover it.

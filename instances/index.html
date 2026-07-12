@@ -1131,7 +1131,7 @@
                   
 
   
-    <a href="https://github.com/incubacloud/incubacloud/edit/18.0/docs/user/docs/instances/index.md" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/instances/index.md" title="Edit this page" class="md-content__button md-icon">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1147,8 +1147,9 @@ one filestore. It belongs to a project and runs on a host.</p>
 <li><strong>Production instance</strong> — customer-facing. Re-deploys go through the safe-rebuild
   flow (boot test before swap). One per project.</li>
 <li><strong>Staging instance</strong> — test copy. Re-deploys are direct. As many as your plan allows.</li>
-<li><strong>Sleeping instance</strong> (Free plan) — automatically suspended after 14 days of inactivity
-  to save resources. Wakes up on next request.</li>
+<li><strong>Sleeping instance</strong> (SaaS Free plan) — automatically suspended after ~30 minutes
+  without traffic to save resources. Wakes up on the next request (the first request
+  after a nap takes a few seconds).</li>
 </ul>
 <h2 id="lifecycle">Lifecycle<a class="headerlink" href="#lifecycle" title="Permanent link">&para;</a></h2>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>deploy → running → rebuild → running → ... → archive

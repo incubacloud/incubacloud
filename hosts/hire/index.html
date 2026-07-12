@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#hire-a-hetzner-vps" class="md-skip">
+        <a href="#order-a-vps-through-the-platform" class="md-skip">
           Skip to content
         </a>
       
@@ -797,45 +797,36 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-open-clouduihosts" class="md-nav__link">
+  <a href="#1-open-your-hosts-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
-      1. Open /cloud/ui/hosts
+      1. Open your Hosts dashboard
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-pick-a-region" class="md-nav__link">
+  <a href="#2-pick-size-and-location" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Pick a region
+      2. Pick size and location
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-pick-a-size" class="md-nav__link">
+  <a href="#3-choose-the-hostname" class="md-nav__link">
     <span class="md-ellipsis">
-      3. Pick a size
+      3. Choose the hostname
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-confirm-and-pay" class="md-nav__link">
+  <a href="#4-confirm" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Confirm and pay
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#5-watch-the-log" class="md-nav__link">
-    <span class="md-ellipsis">
-      5. Watch the log
+      4. Confirm
     </span>
   </a>
   
@@ -1147,45 +1138,36 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-open-clouduihosts" class="md-nav__link">
+  <a href="#1-open-your-hosts-dashboard" class="md-nav__link">
     <span class="md-ellipsis">
-      1. Open /cloud/ui/hosts
+      1. Open your Hosts dashboard
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-pick-a-region" class="md-nav__link">
+  <a href="#2-pick-size-and-location" class="md-nav__link">
     <span class="md-ellipsis">
-      2. Pick a region
+      2. Pick size and location
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#3-pick-a-size" class="md-nav__link">
+  <a href="#3-choose-the-hostname" class="md-nav__link">
     <span class="md-ellipsis">
-      3. Pick a size
+      3. Choose the hostname
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#4-confirm-and-pay" class="md-nav__link">
+  <a href="#4-confirm" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Confirm and pay
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#5-watch-the-log" class="md-nav__link">
-    <span class="md-ellipsis">
-      5. Watch the log
+      4. Confirm
     </span>
   </a>
   
@@ -1238,7 +1220,7 @@
                   
 
   
-    <a href="https://github.com/incubacloud/incubacloud/edit/18.0/docs/user/docs/hosts/hire.md" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/hosts/hire.md" title="Edit this page" class="md-content__button md-icon">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1246,92 +1228,69 @@
   
 
 
-<h1 id="hire-a-hetzner-vps">Hire a Hetzner VPS<a class="headerlink" href="#hire-a-hetzner-vps" title="Permanent link">&para;</a></h1>
-<p>Order a Hetzner VPS from inside the platform. We provision it, configure SSH and the
-proxy, and hand it back ready as a registered host.</p>
+<h1 id="order-a-vps-through-the-platform">Order a VPS through the platform<a class="headerlink" href="#order-a-vps-through-the-platform" title="Permanent link">&para;</a></h1>
+<div class="admonition info">
+<p class="admonition-title">IncubaCloud SaaS — paid plans</p>
+<p>On-demand VPS ordering is available on the hosted service, on paid plans
+(Starter and up). Self-hosted deployments and Free-plan accounts
+<a href="../connect/">connect their own VPS</a> instead.</p>
+</div>
+<p>Order a Hetzner Cloud VPS without leaving IncubaCloud. The platform creates the
+server, locks SSH down to the platform, installs Docker and the proxy, and
+registers it as a host ready to receive instances.</p>
 <h2 id="pricing">Pricing<a class="headerlink" href="#pricing" title="Permanent link">&para;</a></h2>
-<p>You pay <strong>Hetzner's catalog price</strong> as listed in the form. We don't add a fee,
-and we don't pass on a discount. Charges appear on your next invoice prorated to today.</p>
+<p>VPS usage is billed <strong>by the hour with a monthly cap</strong>: you never pay more than
+the server's monthly catalog price, and short-lived servers only cost the hours
+they ran. Your plan discounts the catalog price — 5% on Starter, 10% on
+Professional, 15% on Business. The charge appears as a line on your subscription
+invoice.</p>
+<p>If the new server exceeds your plan's host quota, an extra-host line is added
+automatically (see <a href="../../billing/#extras">Billing → Extras</a>).</p>
 <h2 id="walkthrough">Walkthrough<a class="headerlink" href="#walkthrough" title="Permanent link">&para;</a></h2>
-<h3 id="1-open-clouduihosts">1. Open <code>/cloud/ui/hosts</code><a class="headerlink" href="#1-open-clouduihosts" title="Permanent link">&para;</a></h3>
-<p>Click <strong>Hire VPS</strong> (next to <strong>New Host</strong>).</p>
-<h3 id="2-pick-a-region">2. Pick a region<a class="headerlink" href="#2-pick-a-region" title="Permanent link">&para;</a></h3>
-<p>Closer to your users is faster. EU options (Helsinki, Nuremberg, Falkenstein) are typical.
-US options (Ashburn, Hillsboro) work for North-American users.</p>
-<h3 id="3-pick-a-size">3. Pick a size<a class="headerlink" href="#3-pick-a-size" title="Permanent link">&para;</a></h3>
-<p>We list the available Hetzner plans with vCPU, RAM, disk, and monthly price.
-Pick the size that fits your workload.</p>
-<table>
-<thead>
-<tr>
-<th>Plan</th>
-<th>vCPU</th>
-<th>RAM</th>
-<th>Disk</th>
-<th>Best for</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>CX22</td>
-<td>2</td>
-<td>4 GB</td>
-<td>40 GB</td>
-<td>One small Odoo + a staging</td>
-</tr>
-<tr>
-<td>CX32</td>
-<td>4</td>
-<td>8 GB</td>
-<td>80 GB</td>
-<td>Production with moderate traffic</td>
-</tr>
-<tr>
-<td>CX42</td>
-<td>8</td>
-<td>16 GB</td>
-<td>160 GB</td>
-<td>Multiple production instances</td>
-</tr>
-<tr>
-<td>CX52</td>
-<td>16</td>
-<td>32 GB</td>
-<td>320 GB</td>
-<td>Large multi-tenant deployment</td>
-</tr>
-</tbody>
-</table>
-<h3 id="4-confirm-and-pay">4. Confirm and pay<a class="headerlink" href="#4-confirm-and-pay" title="Permanent link">&para;</a></h3>
-<p>The platform creates the VPS at Hetzner. Provisioning takes 60–90 seconds.</p>
-<h3 id="5-watch-the-log">5. Watch the log<a class="headerlink" href="#5-watch-the-log" title="Permanent link">&para;</a></h3>
-<p>We:</p>
+<h3 id="1-open-your-hosts-dashboard">1. Open your Hosts dashboard<a class="headerlink" href="#1-open-your-hosts-dashboard" title="Permanent link">&para;</a></h3>
+<p>In your control plane, go to <code>/cloud/hosts</code> and click <strong>Order VPS</strong>.</p>
+<h3 id="2-pick-size-and-location">2. Pick size and location<a class="headerlink" href="#2-pick-size-and-location" title="Permanent link">&para;</a></h3>
+<p>The catalog (sizes, prices, locations, live availability) comes straight from
+Hetzner, with your plan discount already applied. Pick the size that fits your
+workload and a region close to your users — EU (Helsinki, Nuremberg,
+Falkenstein) or US (Ashburn, Hillsboro).</p>
+<h3 id="3-choose-the-hostname">3. Choose the hostname<a class="headerlink" href="#3-choose-the-hostname" title="Permanent link">&para;</a></h3>
+<p>If the platform manages your DNS, the new host gets a name like
+<code>vps1.&lt;your-subdomain&gt;.incubacloud.io</code> automatically. You can point your own
+DNS at it later for custom domains.</p>
+<h3 id="4-confirm">4. Confirm<a class="headerlink" href="#4-confirm" title="Permanent link">&para;</a></h3>
+<p>Provisioning takes a couple of minutes end to end:</p>
 <ol>
 <li>Create the server at Hetzner.</li>
-<li>Generate an Ed25519 SSH keypair.</li>
-<li>Configure SSH-only access (password auth disabled).</li>
-<li>Install Docker and Traefik.</li>
+<li>Generate an SSH keypair and lock SSH to key-only access, firewalled to the
+   platform.</li>
+<li>Install Docker and Traefik (Full Setup) and harden the host.</li>
 <li>Run the health probe.</li>
 </ol>
-<p>When the job ends in green, the host shows up in your list.</p>
+<p>When the job ends in green, the host shows up in your list, ready for deploys.</p>
 <h2 id="cancellation">Cancellation<a class="headerlink" href="#cancellation" title="Permanent link">&para;</a></h2>
-<p>Open <code>/cloud/ui/hosts</code>, find the host, and click <strong>Cancel VPS</strong>.
-We delete the VPS at Hetzner and stop billing immediately. The next invoice
-shows a prorated refund line for unused days.</p>
+<p>Open the host, and delete/release it from the host actions. Billing stops with
+the hourly meter; the subscription invoice reflects only the hours used (never
+more than the monthly cap).</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<details class="note">
+<summary>Ordering is refused on my plan</summary>
+<p>The Free plan cannot order on-demand VPS. Upgrade to a paid plan or
+<a href="../connect/">connect your own server</a>.</p>
+</details>
 <details class="note">
 <summary>Provisioning failed: out of capacity</summary>
 <p>Hetzner sometimes runs out of stock in a specific region for a specific size.
-Retry with a different region. Your card is not charged for failed provisions.</p>
+Retry with a different region — failed provisions are not billed.</p>
 </details>
 <details class="note">
 <summary>Provisioning failed: rate limit</summary>
 <p>Hetzner enforces creation rate limits. Wait 5 minutes and retry.</p>
 </details>
 <details class="note">
-<summary>I want to attach extra storage / a backup snapshot service</summary>
-<p>Out of scope today. Use the host's local disk and our <a href="../../backups/">backup backends</a>
-pointed at S3 — that gives you the same outcome with portability across providers.</p>
+<summary>I want extra storage or a snapshot service</summary>
+<p>Out of scope today. Use the host's local disk plus <a href="../../backups/">backup backends</a>
+pointed at S3 — same outcome, portable across providers.</p>
 </details>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>

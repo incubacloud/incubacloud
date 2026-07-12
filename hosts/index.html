@@ -1033,7 +1033,7 @@
                   
 
   
-    <a href="https://github.com/incubacloud/incubacloud/edit/18.0/docs/user/docs/hosts/index.md" title="Edit this page" class="md-content__button md-icon">
+    <a href="https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/hosts/index.md" title="Edit this page" class="md-content__button md-icon">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1043,14 +1043,15 @@
 
 <h1 id="hosts">Hosts<a class="headerlink" href="#hosts" title="Permanent link">&para;</a></h1>
 <p>A <strong>host</strong> is a server (VPS or physical) where instances run. You can connect
-your own VPS or hire one through the platform.</p>
+your own VPS or order one through the platform.</p>
 <h2 id="two-paths">Two paths<a class="headerlink" href="#two-paths" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Connect your own</strong> — for any VPS you already have. Hetzner, OVH, DigitalOcean,
   AWS EC2, on-premises — anything that exposes SSH.
   <a href="connect/"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.22 19.03a.75.75 0 0 1 0-1.06L18.19 13H3.75a.75.75 0 0 1 0-1.5h14.44l-4.97-4.97a.749.749 0 0 1 .326-1.275.75.75 0 0 1 .734.215l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0"/></svg></span> Walkthrough</a></li>
-<li><strong>Hire one through us</strong> — we provision a Hetzner VPS, configure SSH and the proxy,
-  and hand it back ready. Charged at Hetzner's catalog price (no markup).
+<li><strong>Order one through the platform</strong> <em>(SaaS, paid plans)</em> — we provision a Hetzner
+  VPS, lock down SSH, configure the proxy and register it ready to use. Billed by
+  the hour with a monthly cap, minus your plan's discount.
   <a href="hire/"><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13.22 19.03a.75.75 0 0 1 0-1.06L18.19 13H3.75a.75.75 0 0 1 0-1.5h14.44l-4.97-4.97a.749.749 0 0 1 .326-1.275.75.75 0 0 1 .734.215l6.25 6.25a.75.75 0 0 1 0 1.06l-6.25 6.25a.75.75 0 0 1-1.06 0"/></svg></span> Walkthrough</a></li>
 </ul>
 <h2 id="what-we-install">What we install<a class="headerlink" href="#what-we-install" title="Permanent link">&para;</a></h2>
@@ -1061,12 +1062,12 @@ your own VPS or hire one through the platform.</p>
   the right instance based on the domain.</li>
 <li><strong>Let's Encrypt cert manager</strong>. HTTPS is automatic when you add a custom domain.</li>
 </ul>
-<p>The host stays under your control — root access is yours, billing (for hired VPS)
-is between you and Hetzner via our consolidated invoice.</p>
+<p>The host stays under your control — root access is yours. VPS ordered through
+the platform are billed on your IncubaCloud subscription invoice.</p>
 <h2 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="connect/">Connect your own VPS</a></li>
-<li><a href="hire/">Hire a Hetzner VPS</a></li>
+<li><a href="hire/">Order a VPS through the platform</a></li>
 <li>Check host health (Host detail → Check)</li>
 <li>Whitelist external domains that may proxy through (Host detail → Whitelist)</li>
 <li>Audit who did what on the host (Host detail → Audit Logs)</li>
