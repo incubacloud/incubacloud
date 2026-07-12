@@ -6,10 +6,12 @@ exit, host disk usage climbs past the alert threshold.
 **Who runs it:** ops.
 
 `docker_prune` is a scheduled `cloud.job` per host that runs
-`docker system prune -af --volumes` (scoped by label) to reclaim
-space from unused images, stopped containers and dangling volumes.
-When it fails, the host stops reclaiming space and can eventually
-fill up — killing running containers.
+`docker system prune -af` to reclaim space from unused images,
+stopped containers, networks and build cache. It does **not** touch
+volumes (no `--volumes`). When it fails, the host stops reclaiming
+space and can eventually fill up — killing running containers.
+Manually enqueuing it requires the Administrator role (server-side
+manager gate on the job type).
 
 ## Symptoms / triggers
 
@@ -103,6 +105,7 @@ disappeared after a manual prune, the root cause is Docker labelling
 ## References
 
 - [RB-05](RB-05-triage-failed-job.md) — general failed-job triage.
-- `cloud_host_docker_prune` cron (in `incubacloud` data) — the cron
-  definition.
-- `models/cloud_host.py::_docker_prune_one` — the SSH-side command.
+- `cron_docker_prune` ("Docker Prune — All Hosts", in
+  `incubacloud/data/docker_prune_cron.xml`) — the cron definition;
+  entrypoint `cloud_host.cron_docker_prune`.
+- `models/docker_prune_executor.py` — the SSH-side command.

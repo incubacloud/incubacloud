@@ -9,6 +9,13 @@ This site documents the platform from a user's perspective. Quickstarts live
 on [the marketing site's `/docs` section](https://www.incubacloud.io/docs);
 the rest — every screen, every option, every troubleshooting note — lives here.
 
+!!! info "One product, two ways to run it"
+    IncubaCloud comes as a **hosted SaaS** (incubacloud.io — signup, plans,
+    on-demand VPS, managed backup storage) and as a **self-hosted open core
+    module** you install on your own Odoo. The control plane you use day-to-day
+    is the same in both. Pages and sections that only exist on the hosted
+    service are marked with an *IncubaCloud SaaS* admonition like this one.
+
 ## Where to start
 
 <div class="grid cards" markdown>

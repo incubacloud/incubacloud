@@ -1,6 +1,6 @@
 # Reference
 
-Per-screen documentation for the IncubaCloud SPA at `/cloud/ui`.
+Per-screen documentation for the IncubaCloud SPA at `/cloud`.
 
 !!! note "This section is being built out"
     Reference pages are added as we ship features and as customers ask for them.
@@ -15,6 +15,7 @@ Per-screen documentation for the IncubaCloud SPA at `/cloud/ui`.
 - [Backups](../backups/index.md) — backup backends, schedules, encryption.
 - [Billing](../billing/index.md) — plans, invoices, subscription changes.
 - [Migrations](../migrations/index.md) — bringing data from elsewhere.
+- [Notifications](notifications.md) — in-app, email, Telegram and webhook channels.
 
 ## Coming soon
 

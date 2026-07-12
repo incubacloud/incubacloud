@@ -85,7 +85,7 @@ note which module and run the hook manually (below).
 4. **Smoke-test one cron** to confirm it runs under the new user:
 
    ```python
-   env.ref('incubacloud.cron_terminal_route_gc').method_direct_trigger()
+   env.ref('incubacloud.cron_cloud_terminal_route_gc').method_direct_trigger()
    ```
 
    Then check `ir_cron.log` for a successful run entry.

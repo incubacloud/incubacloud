@@ -1,9 +1,9 @@
 # RB-07: Investigate a webhook replay
 
 **Severity:** info
-**Typical trigger:** `Duplicate delivery — already processed` log
-line, or an alert from an external SIEM flagging repeated
-`X-GitHub-Delivery` headers.
+**Typical trigger:** `GitHub webhook replay ignored` log line, or an
+alert from an external SIEM flagging repeated `X-GitHub-Delivery`
+headers.
 **Who runs it:** ops, with security escalation if the replay traces
 back to a non-GitHub source IP.
 
@@ -22,18 +22,26 @@ transient 500), but an occasional one is a replay attempt.
 
 ## Diagnosis
 
-1. **Pull the duplicate log entries** with full context:
+1. **Pull the duplicate log entries** with full context. The rejected
+   replay is logged at INFO as
+   `GitHub webhook replay ignored: delivery=<uuid> event=<type> action=<action>`
+   (the string `Duplicate delivery — already processed.` is the HTTP
+   *response body*, not the log line):
 
    ```bash
-   odoo$ grep 'Duplicate delivery' /var/log/odoo/odoo.log | tail -50
+   odoo$ grep 'webhook replay ignored' /var/log/odoo/odoo.log | tail -50
    ```
 
-   Each line includes the `delivery_id` and the source IP.
+   The event row does **not** store the source IP — get it from the
+   HTTP access log (proxy or Odoo access log) by matching the request
+   timestamp on `POST /cloud/github/webhook`.
 
-2. **Look up the original delivery** in `cloud.github.event`:
+2. **Look up the original delivery** in `cloud.github.event`. The
+   repository lives inside the JSON payload:
 
    ```sql
-   db$ SELECT id, event_type, create_date, repo, ref, source_ip
+   db$ SELECT id, event_type, action, create_date, processed, error,
+              payload->'repository'->>'full_name' AS repo
        FROM cloud_github_event
        WHERE delivery_id = '<uuid>';
    ```
@@ -41,7 +49,7 @@ transient 500), but an occasional one is a replay attempt.
    There is exactly one row (that's the point of the UNIQUE index).
    The `create_date` is when we first accepted it.
 
-3. **Classify the replay**:
+3. **Classify the replay** (source IP from the access log):
    - Source IP in GitHub's published hook ranges
      (`https://api.github.com/meta` → `.hooks`) → benign retry.
    - Source IP not in GitHub's ranges, same HMAC valid → **possible
@@ -66,17 +74,18 @@ swallowed the replay. Close the ticket.
    $ invoke restart
    ```
 
-3. **Audit recent accepted deliveries** from the same source IP:
+3. **Audit recent accepted deliveries** for the affected repository
+   (cross-check IPs against the access log for the same window):
 
    ```sql
-   db$ SELECT delivery_id, event_type, create_date, ref
+   db$ SELECT delivery_id, event_type, action, create_date, processed
        FROM cloud_github_event
-       WHERE source_ip = '<ip>'
+       WHERE payload->'repository'->>'full_name' = '<owner>/<repo>'
          AND create_date > NOW() - INTERVAL '7 days'
        ORDER BY create_date;
    ```
 
-   Anything non-GitHub is suspicious — pull the payload for each and
+   Anything unexpected is suspicious — pull the payload for each and
    confirm with the repo owner whether they actually triggered that
    event.
 

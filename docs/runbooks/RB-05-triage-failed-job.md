@@ -55,8 +55,11 @@ closes when the same job succeeds (e.g. on a retry).
      the last `stderr` chunk.
    - `IntegrityError` / `psycopg2.errors.*` → schema problem → likely
      needs a developer.
-   - `RateLimitError` → the job hit its own rate limit
-     ([RB-04](RB-04-tune-rate-limits.md)).
+   - `RetryableJobError` with a connection message → a transient SSH
+     connection failure being auto-retried (up to 3 attempts, 30 s
+     backoff). Only the final failed attempt raises the
+     `host_unreachable` alert — a job seen in `pending` with
+     `retry > 0` is probably still self-healing; wait before acting.
 
 ## Resolution
 
@@ -68,28 +71,24 @@ attempt. Resolve the underlying cause, then retry:
    key, host out of disk, malformed `cloud.instance` field).
 2. **Retry the job** from the queue.job UI:
    - Settings → Technical → Queue → click the job → "Requeue".
-   - On success the executor calls `_dismiss_job_failed_alerts()`
-     and the alert closes itself.
+   - On success the `queue.job` state write triggers
+     `_dismiss_job_failed_alerts()` and the alert closes itself.
 3. **For repeatedly-failing jobs** (3+ retries), do not just re-run
    — escalate to a developer. The `exc_message` field is the
    handoff: paste it into the issue along with the `cloud_job` id.
 
 If the job is **stuck in `started`** for hours (executor process
 died mid-run, leaving no failure record), force it into a terminal
-state so the alert reflects reality:
-
-```sql
-db$ UPDATE queue_job
-    SET state = 'failed',
-        exc_message = 'Manually marked failed: executor died'
-    WHERE id = <queue_job_id> AND state = 'started';
-```
-
-Then trigger the cloud.job-side bookkeeping from `odoo shell`:
+state so the alert reflects reality. Do it through the ORM — the
+alert/state bookkeeping hangs off `queue.job.write()`, so a plain
+SQL UPDATE would skip it:
 
 ```python
+# odoo shell
 job = env['queue.job'].browse(<id>)
-env['queue.job']._incubacloud_on_state_change(job, 'failed')
+job.write({'state': 'failed',
+           'exc_message': 'Manually marked failed: executor died'})
+env.cr.commit()
 ```
 
 ## Rollback

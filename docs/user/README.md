@@ -26,7 +26,6 @@ to avoid CI failures.
 docs/user/
 ├── mkdocs.yml          # Site config + nav
 ├── requirements.txt    # mkdocs-material pin (CI uses this exact version)
-├── overrides/          # Theme overrides (templates, hooks)
 └── docs/
     ├── CNAME           # Custom domain (docs.incubacloud.io) — copied to gh-pages
     ├── index.md        # Landing page
@@ -52,6 +51,10 @@ but do not publish.
 
 ## Writing docs
 
+- **One site, two editions**: this site covers both the hosted SaaS and the
+  self-hosted core module. Mark SaaS-only pages/sections with an
+  `!!! info "IncubaCloud SaaS"` admonition. Never document private (saas repo)
+  internals here — only user-visible behaviour.
 - **Tone**: outcome-first. Tell the reader what they'll get done, not which library
   we use under the hood. Keep it second-person and direct.
 - **Length**: most pages should fit in 500–800 words. Use admonitions

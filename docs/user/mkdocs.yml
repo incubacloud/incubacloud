@@ -106,7 +106,7 @@ nav:
   - Hosts:
     - hosts/index.md
     - Connect your own VPS: hosts/connect.md
-    - Hire a Hetzner VPS: hosts/hire.md
+    - Order a VPS: hosts/hire.md
   - Backups:
     - backups/index.md
     - Restore a backup: backups/restore.md
@@ -114,4 +114,6 @@ nav:
   - Migrations:
     - migrations/index.md
     - From Odoo.sh: migrations/from-odoosh.md
-  - Reference: reference/index.md
+  - Reference:
+    - reference/index.md
+    - Notifications: reference/notifications.md

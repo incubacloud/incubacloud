@@ -17,7 +17,7 @@ Thanks for your interest in contributing. Please read this document before openi
 ### Requirements
 
 - Docker + Docker Compose
-- Python 3.12
+- Python 3.10+ (CI runs the test suite on 3.10; lint and type-check run on 3.12)
 - [invoke](https://www.pyinvoke.org/)
 
 ### Clone and run
@@ -39,7 +39,7 @@ For a standard Odoo setup, add the path to `odoo.conf` and install via CLI or UI
 ### Python dependencies
 
 ```bash
-pip install asyncssh cryptography boto3 refurb
+pip install asyncssh cryptography boto3 PyYAML bcrypt refurb
 ```
 
 ---
@@ -48,7 +48,7 @@ pip install asyncssh cryptography boto3 refurb
 
 ### Python
 
-- Target **Python 3.12** and **Odoo 19.0** APIs.
+- Target **Python 3.10+** (the CI test image runs 3.10) and **Odoo 19.0** APIs.
 - Follow [refurb](https://github.com/dosisod/refurb) idioms:
   - `str.removeprefix()` / `str.removesuffix()` instead of conditional slicing
   - `with suppress(ExcType):` instead of `try/except: pass`
@@ -60,7 +60,7 @@ pip install asyncssh cryptography boto3 refurb
 ### JavaScript / OWL
 
 - Use the existing **OWL patterns** in the codebase (hooks, `useState`, `onWillStart`).
-- For confirmation dialogs, use the **project's own `_confirm()` pattern** — never Odoo's `ConfirmationDialog`. See the [architecture docs](docs/architecture.md#frontend-spa) for the pattern.
+- For confirmation dialogs, use the **project's own confirm dialog** (`static/src/components/ic_confirm_dialog/`) — never Odoo's `ConfirmationDialog`.
 - Do not add new external JS dependencies.
 
 ### Odoo-specific
@@ -70,7 +70,7 @@ pip install asyncssh cryptography boto3 refurb
   2. A matching `cloud.job.type` record in `data/job_type.xml`.
   3. Tests covering `get_commands()`, `parse_results()`, and the `on_success()` / `on_failure()` paths.
 - All DB writes inside an executor must use **fresh cursors** (see [architecture docs](docs/architecture.md#transaction-model)).
-- Bus notifications must be sent from the **main cursor** only, never from postcommit hooks.
+- Bus notifications must be sent **inside a transaction** (PostgreSQL `NOTIFY` delivers on commit) — inside executors, via the same fresh-cursor pattern as log flushes. Never from postcommit hooks.
 
 ---
 

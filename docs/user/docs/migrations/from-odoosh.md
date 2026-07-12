@@ -13,7 +13,8 @@ from the backup ZIP you download from Odoo.sh. Each step is straightforward.
 
 - Your project's Git URL (find it on the Odoo.sh dashboard).
 - A backup ZIP from Odoo.sh.
-- An IncubaCloud account with at least a Starter plan.
+- An IncubaCloud account — for production use a paid plan (Free-plan instances
+  sleep when idle and get no automatic backups).
 - A host (yours or hired).
 
 ## Step 1 — import the project from Git
@@ -86,8 +87,7 @@ confident, then cancel.
 
 ??? note "I want to keep both running for a few days"
     Don't change DNS yet. Test the IncubaCloud instance via its
-    auto-generated subdomain (`<random>.incubacloud.host`). When confident,
-    flip DNS in your registrar.
+    auto-generated subdomain. When confident, flip DNS in your registrar.
 
 ## See also
 

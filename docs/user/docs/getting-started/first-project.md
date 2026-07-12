@@ -11,7 +11,7 @@ IncubaCloud lives under a project.
 
 ## 1. Open the dashboard
 
-From `/cloud/ui`, click **New Project** at the top right. A side panel slides in
+From `/cloud`, click **New Project** at the top right. A side panel slides in
 with the project form.
 
 ## 2. Fill in the basics
@@ -31,10 +31,11 @@ If you don't have a repo yet, skip this step. You can add it later from
 `Project detail → Settings → Repository`.
 
 !!! warning "Private repositories"
-    For SSH URLs, add the platform's deploy key (visible in `Project → Settings → Deploy key`)
-    to your repo's authorized keys.
-    For HTTPS with private repos, use a personal access token in the URL:
-    `https://<token>@github.com/your-org/your-repo.git`.
+    For private GitHub repos, install the platform's **GitHub App**
+    (`Settings → GitHub App`) — it grants repository access without sharing
+    credentials — or store a personal access token in `Settings → GitHub`.
+    Plain HTTPS URLs with an embedded token
+    (`https://<token>@github.com/your-org/your-repo.git`) also work.
 
 ## 4. Pick a backup backend (optional, recommended)
 
@@ -65,7 +66,7 @@ You can clone production data to a staging instance at any time
 
 ## Verify it worked
 
-- [x] The new project shows up in your `/cloud/ui` dashboard list.
+- [x] The new project shows up in your `/cloud` dashboard list.
 - [x] Opening it shows the sidebar and a `Deploy instance` CTA.
 - [x] If you connected a repo, the project detail shows the detected layout.
 
@@ -74,7 +75,7 @@ You can clone production data to a staging instance at any time
 ??? note "Repo connection says \"unable to authenticate\""
     Verify the URL works from your terminal first:
     `git clone <your-url> /tmp/test-clone`. If that succeeds, double-check the
-    deploy key (SSH) or token (HTTPS) is present and active.
+    GitHub App installation covers this repository (or that the token is active).
 
 ??? note "Layout not detected"
     We look for `.copier-answers.yml` and `.gitmodules` in the repo root.
