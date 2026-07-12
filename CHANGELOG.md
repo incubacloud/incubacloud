@@ -11,6 +11,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - Telegram and HMAC-signed webhook push notifications for job state changes, with per-channel configuration, chat-id auto-detect and test-message actions
+- Unified alert notification pipeline: every alert (including job failures, routed through their `job_failed` alert) dispatches to email, Telegram and webhook from a single code path
+- Instance activity timeline split into active and recent jobs with an overflow indicator
 - Watchdog cron that recovers instances stranded by a cross-host move that failed before cutover
 
 ### Fixed
