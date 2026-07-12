@@ -1,11 +1,11 @@
 # Create your account
 
-This guide walks you through registering, choosing a plan, paying (if applicable),
-and reaching your empty dashboard.
+!!! info "IncubaCloud SaaS"
+    This page applies to the hosted service at incubacloud.io. If you self-host
+    the open core module, there is no signup — install the module and open `/cloud`.
 
-!!! info "What this guide covers"
-    Account creation, email verification, plan selection, and first login.
-    For changing plan or upgrading later, see the [billing reference](../billing/index.md).
+This guide walks you through registering, choosing a plan, paying (if applicable),
+and reaching your own IncubaCloud control plane.
 
 ## 1. Pick a plan
 
@@ -14,55 +14,65 @@ the plan that matches your stage. There are four:
 
 | Plan | Best for | What you get |
 | --- | --- | --- |
-| **Free** | Looking around | 1 host, 1 sleeping instance, no automatic backups |
+| **Free** | Looking around | 1 host, 1 instance (sleeps when idle), no automatic backups |
 | **Starter** | Freelancers & solo devs | 3 hosts, 5 instances, 7-day backups |
 | **Professional** | Small businesses | 10 hosts, 20 instances, 14-day backups |
-| **Business** | Agencies & mid-size companies | 25 hosts, 50 instances, 30-day backups, direct support |
+| **Business** | Agencies & mid-size companies | 25 hosts, 50 instances, 30-day backups, dedicated host |
 
-You can change plan at any moment with no downtime. Free has no card requirement.
+You can change plan at any moment. Free has no card requirement.
 
-## 2. Fill in the signup form
+!!! note "Free plan instances sleep"
+    On the Free plan your instance is suspended after ~30 minutes without traffic
+    and wakes automatically on the next request (the first request after a nap takes
+    a few seconds). Paid plans run 24/7.
 
-Enter your email, choose a password, and confirm. We send you a verification email
-immediately — click the link inside to activate the account.
+## 2. Choose your subdomain and sign in
 
-!!! warning "Verification email not arriving?"
-    Check spam first. If still missing after 5 minutes, request a new verification
-    link from the login page (`Resend verification email`). Mail providers occasionally
-    delay first-time messages from new domains.
+Enter the subdomain you want for your control plane (e.g. `acme` →
+`acme.incubacloud.io`), then continue with a social login — **Google** or
+**Odoo.com** (GitHub is planned). There is no email-and-password form and no
+separate verification email: your identity comes from the provider you pick.
+
+Subdomain rules: 3–63 characters, letters/digits/hyphens (a DNS label). Reserved
+names (`www`, `api`, `admin`, …) are not available.
 
 ## 3. Complete payment (paid plans only)
 
-We use [Stripe](https://stripe.com). Card and SEPA Direct Debit are accepted.
-The platform creates the subscription and unlocks your dashboard as soon as the
-payment confirms — usually within a few seconds.
+We use [Stripe](https://stripe.com); payment is by card, saved for the recurring
+subscription. The platform provisions your control plane as soon as the payment
+confirms — usually within a few seconds. On the Free plan this step is skipped and
+provisioning starts immediately.
 
-Invoices are generated automatically and stored under
-`My account → Invoices`. They're VAT-compliant for EU customers
-(provide your VAT number during signup or anytime after in `My account → Billing details`).
+Invoices are generated automatically and available under
+`My account → Invoices` on incubacloud.io. They're VAT-compliant for EU customers.
 
-## 4. Open your dashboard
+## 4. Open your control plane
 
-After signup completes, you land on `/cloud/ui` — your dashboard. It's empty.
-That's expected. The header shows your account email on the right.
+When provisioning finishes you get your own IncubaCloud at
+`https://<your-subdomain>.incubacloud.io`. Log in with the same social account —
+tenant instances use IncubaCloud single sign-on.
+
+Your dashboard at `/cloud` is empty. That's expected.
 
 [:octicons-arrow-right-24: Next: create your first project](first-project.md)
 
 ## Verify it worked
 
-- [x] You can log in at `/web/login` with the email you used.
-- [x] Your dashboard at `/cloud/ui` loads without errors.
-- [x] If you chose a paid plan, the next invoice line item shows the prorated cost.
+- [x] `https://<your-subdomain>.incubacloud.io` loads and you can sign in.
+- [x] The dashboard at `/cloud` opens without errors.
+- [x] `My account` on incubacloud.io shows your plan (and, on paid plans, the subscription).
 
 ## Troubleshooting
 
-??? note "Signup says \"email already in use\""
-    You may have signed up before. Try the password reset flow at `/web/reset_password`.
+??? note "The subdomain I want is taken or rejected"
+    Labels must be 3–63 chars and unique; a few names are reserved. Pick a variant
+    (e.g. `acme-erp`).
 
-??? note "Payment succeeded but dashboard is still locked"
-    Reload after 60 seconds. If still locked, [contact us](https://www.incubacloud.io/contactus)
-    with the Stripe receipt id (it starts with `pi_` or `ch_`).
+??? note "Payment succeeded but my control plane isn't up yet"
+    Provisioning normally takes under a minute. If it's still not reachable after a
+    few minutes, [contact us](https://www.incubacloud.io/contactus) with the receipt
+    id from Stripe.
 
-??? note "Two-factor authentication"
-    We strongly recommend enabling 2FA from `My account → Security` before
-    you start adding hosts and customer data.
+??? note "Can my teammates log in too?"
+    Yes — invite them from your control plane. Additional users join by invitation
+    (there is no open signup on your instance).

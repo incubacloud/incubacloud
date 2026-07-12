@@ -1,194 +1,271 @@
 # API Endpoints
 
-All endpoints are defined in `incubacloud/controllers/`. Unless noted, endpoints use JSON-RPC 2.0 (`type="json"`) and require `auth="user"` (logged-in Odoo session).
+All endpoints are defined in `incubacloud/controllers/`. Unless noted, endpoints are JSON-RPC (`type="jsonrpc"`, the Odoo 19 dispatcher), require `auth="user"` (logged-in internal Odoo session) and are called via POST. The SPA additionally calls a few `cloud.job` model methods through the standard Odoo ORM RPC (`/web/dataset/call_kw`) — see [Jobs](#jobs-and-audit-log).
+
+Access control is layered:
+
+1. **Record rules** scope what each user can see (project membership).
+2. **Role gates** inside each endpoint enforce the 5-tier RBAC before acting.
+3. A few sensitive reads have an extra **field whitelist** (see [Secrets](#secrets)).
+
+## Role gates
+
+Groups form a hierarchy (each implies the previous): `user` < `consultant` < `project_manager` < `developer` < `manager`. Gates used in the tables below:
+
+| Gate | Required group |
+|---|---|
+| manage hosts / manage settings | `group_cloud_manager` |
+| deploy / create instance | `group_cloud_consultant` |
+| terminal / view logs / manage backups / clone to staging / export | `group_cloud_developer` |
+| create project | `group_cloud_project_manager` |
+| delete project | `group_cloud_manager` |
+| delete instance | manager if production, consultant otherwise |
+| connect as user | `group_cloud_user` |
+
+`sudo()`/superuser bypasses all gates. "record rules" in the tables means no explicit gate — visibility is delegated to record rules.
 
 ---
 
-## Health
+## Health and configuration
 
-| Method | Path | Description |
+| Path | Gate | Description |
 |---|---|---|
-| JSONRPC | `/cloud/ping` | Returns `{"ok": true}`. Use to verify session is alive. |
+| `/cloud/ping` | none | Liveness check, returns `{response: "pong"}`. |
+| `/cloud/get_config` | none | Feature flags, permissions and global settings for the SPA. |
+| `/cloud/get_dashboard` | record rules | Counts (hosts, projects, instances), active alerts, recent jobs. |
+| `/cloud/get_langs` | none | Available Odoo language codes and names. |
+| `/cloud/get_odoo_versions` | none | Supported Odoo versions (7.0 – 19.0). |
+| `/cloud/global_search` | record rules | Cross-entity search (projects, instances, hosts). |
+| `/cloud/get_users` | project manager | Internal users (for member pickers). |
+| `/cloud/get_tags` | none | All tags with id, name, color. |
+| `/cloud/create_tag` | consultant | Create tag; color auto-assigned. |
 
----
-
-## Configuration
-
-| Method | Path | Description |
-|---|---|---|
-| JSONRPC | `/cloud/get_config` | Feature flags and global settings for the SPA. |
-| JSONRPC | `/cloud/get_dashboard` | Counts (hosts, projects, instances), active alerts, recent jobs. |
-| JSONRPC | `/cloud/get_langs` | Available Odoo language codes and names. |
-
----
-
-## Tags
-
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_tags` | — | All tags with id, name, color. |
-| JSONRPC | `/cloud/create_tag` | `{name}` | Create tag. Color is auto-assigned. |
-
----
+`GET /cloud/health` is a separate **public** HTTP endpoint (DB liveness probe returning 200/503, rate-limited per IP) intended for external uptime monitors.
 
 ## Hosts
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_hosts` | — | List all hosts with metrics and instance count. |
-| JSONRPC | `/cloud/get_host` | `{id}` | Full host detail including Traefik config and alerts. |
-| JSONRPC | `/cloud/create_host` | `{name, ip_address, port, user, login_type, ...}` | Create host. |
-| JSONRPC | `/cloud/save_host` | `{id, ...fields}` | Update host. Also syncs `whitelist_ids`. |
-| JSONRPC | `/cloud/delete_host` | `{id}` | Archive or delete host. |
-| JSONRPC | `/cloud/setup_whitelist` | `{id}` | Enqueue whitelist setup SSH job. |
-| JSONRPC | `/cloud/get_host_instances` | `{host_id}` | Instances deployed on a host. |
-| JSONRPC | `/cloud/dismiss_alert` | `{alert_id}` | Mark alert as dismissed. |
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_hosts` | none¹ | List hosts with metrics and instance count. |
+| `/cloud/get_host` | manage hosts | Full host detail including Traefik config and alerts. |
+| `/cloud/host_defaults` | manage hosts | Defaults for the new-host form. |
+| `/cloud/create_host` | manage hosts | Create host (field whitelist enforced). |
+| `/cloud/save_host` | manage hosts | Update host; also syncs whitelist entries. |
+| `/cloud/delete_host` | manage hosts | Archive or delete host. |
+| `/cloud/trust_host_key` | manage hosts | Pin the host's SSH key (TOFU confirmation). |
+| `/cloud/setup_whitelist` | manage hosts | Enqueue whitelist setup SSH job. |
+| `/cloud/get_host_instances` | record rules | Instances deployed on a host. |
+| `/cloud/browse_host_dir` | manage hosts | Browse a remote directory (path-safety validated). |
+| `/cloud/import_host_instance` | manage hosts | Import an instance already running on the host (reads `.copier-answers.yml`, `repos.yaml`, compose files). |
 
----
+¹ SSH-related fields are redacted from the response unless the caller is a manager.
 
 ## Projects
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_projects` | — | List all projects with instance count and status. |
-| JSONRPC | `/cloud/get_project` | `{id}` | Full project detail (repos, dependencies, backup backend). |
-| JSONRPC | `/cloud/save_project` | `{id, ...fields}` | Update project. Repos are replaced by the `repos` array. |
-| JSONRPC | `/cloud/delete_project` | `{id}` | Delete project (fails if instances exist). |
-| JSONRPC | `/cloud/get_project_instances` | `{project_id}` | Instances in a project. |
-
----
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_projects` | record rules | Paginated project list (`{items, total, truncated, limit}`). |
+| `/cloud/get_project` | record rules | Project detail (repos, dependencies, backup backend). |
+| `/cloud/get_project_full` | record rules | Project + instances + jobs in one payload (SPA store). |
+| `/cloud/create_project` | create project | Create project (field whitelist enforced). |
+| `/cloud/save_project` | consultant | Update project; repos replaced by the `repos` array. |
+| `/cloud/delete_project` | delete project | Delete project (fails if instances exist). |
+| `/cloud/get_project_instances` | record rules | Instances in a project. |
+| `/cloud/import_project` | create instance | Import a project from a Git URL (doodba or Odoo.sh layout; SSRF host allowlist). |
 
 ## Instances
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_instance` | `{id}` | Full instance detail (Odoo config, DB, SMTP, repos). |
-| JSONRPC | `/cloud/create_instance` | `{project_id, name, environment, host_id, ...}` | Create instance with repos. |
-| JSONRPC | `/cloud/save_instance` | `{id, ...fields}` | Update instance. |
-| JSONRPC | `/cloud/delete_instance` | `{id}` | Delete instance record. |
-| JSONRPC | `/cloud/deploy_instance` | `{id}` | Enqueue `deploy_instance` SSH job. |
-| JSONRPC | `/cloud/rebuild_instance` | `{instance_id}` | Enqueue `rebuild_instance` SSH job. Blocked if a job is already running. |
-| JSONRPC | `/cloud/clone_to_staging` | `{instance_id, staging_name}` | Clone production instance to staging (DB + config). |
-| JSONRPC | `/cloud/list_backups` | `{instance_id, refresh?}` | List backups for instance. If `refresh=true`, enqueues a refresh job. |
-| JSONRPC | `/cloud/create_backup` | `{instance_id}` | Enqueue backup creation job. |
-| JSONRPC | `/cloud/download_backup` | `{instance_id, backup_time}` | Enqueue backup download job. Returns attachment URL when ready. |
-| JSONRPC | `/cloud/restore_backup` | `{instance_id, backup_time}` | Enqueue backup restore job (production only). |
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_instance` | record rules | Full instance detail (Odoo config, DB, SMTP, repos, domains). |
+| `/cloud/create_instance` | create instance | Create instance with repos. May return `{blocked: true, reason}` (`pip_conflict`, `host_required`, `no_host`). |
+| `/cloud/save_instance` | consultant | Update instance (field whitelist enforced). |
+| `/cloud/delete_instance` | delete instance | Tear down and delete/archive the instance. |
+| `/cloud/deploy_instance` | deploy | Enqueue `deploy_instance` job. |
+| `/cloud/rebuild_instance` | deploy | Enqueue `rebuild_instance` job (safe rebuild with boot test). |
+| `/cloud/clone_to_staging` | clone to staging | Clone production instance to a staging (DB + config). |
+| `/cloud/move_instance` | manage hosts | Move an instance to another host (chained jobs: deploy → quiesce → fresh backup → restore → cutover → cleanup). |
+| `/cloud/rollback_move` | manage hosts | Recover a move that failed before cutover (restarts the source). |
+| `/cloud/resolve_pip_conflict` | consultant | Apply the chosen resolution for a Python dependency conflict. |
+| `/cloud/resolve_addon_conflict` | consultant | Apply the chosen resolution for an addon conflict. |
+| `/cloud/compare_sync` | consultant | Diff instance config vs. what is deployed on the host. |
+| `/cloud/apply_sync` | consultant | Apply the config diff to the host. |
+| `/cloud/fetch_container_logs` | view logs | Tail container logs for the log viewer page. |
 
----
+Deploy/rebuild endpoints include data-race prevention: if a job is already running for the instance, the response is an error (or a `{blocked: true, alert_id, alert_code, conflicts}` envelope when a blocking pip-conflict alert exists).
 
-## Backup Backends
+## Backups
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_backup_backends` | — | List all S3 backends (no secrets). |
-| JSONRPC | `/cloud/get_backup_backend` | `{id}` | Backend detail (no `s3_secret_access_key` or `passphrase`). |
-| JSONRPC | `/cloud/create_backup_backend` | `{name, s3_bucket, s3_path, s3_access_key_id, ...}` | Create backend. Passphrase and secret key auto-generated if omitted. |
-| JSONRPC | `/cloud/save_backup_backend` | `{id, ...fields}` | Update backend. Empty secret fields preserve the existing value. |
-| JSONRPC | `/cloud/delete_backup_backend` | `{id}` | Delete backend. |
-| JSONRPC | `/cloud/test_backup_backend` | `{id}` | Test S3 connectivity via boto3. Returns `{ok, error}`. |
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/list_backups` | manage backups | Paginated backup list for an instance (`offset`/`limit`). |
+| `/cloud/get_backup_result` | manage backups | Poll the outcome of a backup-related job. |
+| `/cloud/create_backup` | manage backups | Enqueue backup creation job. |
+| `/cloud/download_backup` | manage backups | Enqueue backup download job; returns attachment URL when ready. |
+| `/cloud/download_backup_neutralized` | manage backups | Same, but neutralized (crons off, mail servers archived, credentials scrubbed). |
+| `/cloud/restore_backup` | manage backups | Enqueue in-place restore job. |
 
----
+Uploading an external ZIP goes through the HTTP endpoint `POST /cloud/instance/<id>/restore` (multipart, ≤ 2 GiB, rate-limited, CSRF-protected).
+
+## Backup backends
+
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_backup_backends` | record rules | List S3 backends (no secrets, truncation-capped). |
+| `/cloud/get_backup_backend` | manage settings | Backend detail (never returns `s3_secret_access_key` / `passphrase`). |
+| `/cloud/create_backup_backend` | manage settings | Create backend; passphrase and secret auto-generated if omitted. |
+| `/cloud/save_backup_backend` | manage settings | Update backend; empty secret fields preserve the stored value. |
+| `/cloud/delete_backup_backend` | manage settings | Delete backend. |
+| `/cloud/test_backup_backend` | manage settings | Test S3 connectivity via boto3. |
+| `/cloud/measure_backup_usage` | manage settings | Measure bucket usage (feeds quota alerts). |
 
 ## Secrets
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_secret` | `{model, field, record_id}` | Returns the plaintext value of an encrypted field. |
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_secret` | developer + whitelist + write access | Return the plaintext of one encrypted field. |
 
-Allowed `(model, field)` pairs:
+Allowed `(model, field)` pairs (`_SECRET_FIELDS`):
 
-| Model | Field |
+| Model | Fields |
 |---|---|
-| `cloud.host` | `password` |
-| `cloud.host` | `traefik_panel_password` |
-| `cloud.instance` | `odoo_admin_password` |
-| `cloud.instance` | `postgres_password` |
-| `cloud.instance` | `smtp_relay_password` |
-| `cloud.backup.backend` | `s3_secret_access_key` |
-| `cloud.backup.backend` | `passphrase` |
+| `cloud.host` | `password`, `traefik_panel_password` |
+| `cloud.instance` | `odoo_admin_password`, `postgres_password`, `smtp_relay_password` |
+| `cloud.backup.backend` | `s3_secret_access_key`, `passphrase` |
+| `res.users` | `cloud_telegram_bot_token`, `cloud_webhook_secret` |
 
-The caller must have **write access** to the record. Requests for non-whitelisted fields return an error.
+The caller must be in `group_cloud_developer`, the pair must be whitelisted, **and** the caller needs write access to the record. Anything else returns an error. Secrets are stored with `EncryptedChar` (Fernet) — see `docs/architecture.md`.
 
----
+## Alerts
 
-## Jobs
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_alert_count` | record rules | Active alert count for the header badge. |
+| `/cloud/get_alert_history` | record rules | Paginated alert history (`state_filter`, `level_filter`, `offset`, `limit`). |
+| `/cloud/dismiss_alert` | consultant + write access | Dismiss one alert. |
+| `/cloud/dismiss_all_alerts` | consultant | Dismiss all non-blocking visible alerts (`pip_conflict`/`addon_conflict` excluded). |
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_jobs` | `{limit?, offset?}` | Paginated job history. |
-| JSONRPC | `/cloud/get_job` | `{id}` | Job detail with state, host, instance, timestamps. |
-| JSONRPC | `/cloud/load_job_chunks` | `{id, after_id?}` | Log chunks for job (excludes `execution_guard`). Use `after_id` for incremental polling. |
-| JSONRPC | `/cloud/cancel_job` | `{id}` | Cancel a pending or started job. |
-| JSONRPC | `/cloud/retry_job` | `{id}` | Re-enqueue a failed or cancelled job. |
+## Jobs and audit log
 
----
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_job_brief` | read access | Minimal job state + last system message (used after bus events). |
+| `/cloud/get_audit_log` | record rules | Paginated, filterable audit log (`instance_id` or `host_id`, `q`, `action_filter`, `date_from/to`, `offset`, `limit`). |
+| `/cloud/purge_audit_logs` | manager | Purge audit rows older than the retention window. |
 
-## GitHub Integration
+There are **no** dedicated `/cloud/*` routes for job history, log chunks or cancel/retry. The SPA calls `cloud.job` model methods through the standard ORM RPC instead: `load_history` (paginated history), `get_host_jobs`, `enqueue(host_id, instance_id, job_type_code)` (host-level actions such as `host_probe` and `full_setup`; role-gated server-side) and `cancel_job`. The job log terminal page consumes chunks over WebSocket with an HTTP polling fallback (see [Static pages](#static-pages-and-public-http-endpoints)).
 
-| Method | Path | Body | Description |
-|---|---|---|---|
-| JSONRPC | `/cloud/get_github_app` | — | GitHub App status. Returns `{configured, has_installation, app_id}`. Private key is never returned. |
-| JSONRPC | `/cloud/save_github_app` | `{app_id, private_key?, webhook_secret?, github_pat?}` | Update GitHub App credentials. |
-| JSONRPC | `/cloud/test_github_connection` | — | Call GitHub API to validate current credentials. |
-| JSONRPC | `/cloud/get_repo_branches` | `{repo_url}` | Fetch branch list from GitHub (uses App token or PAT). |
-| JSONRPC | `/cloud/get_repo_modules` | `{repo_url, branch}` | Fetch Odoo addon module names from repository. |
-| JSONRPC | `/cloud/get_repo_requirements` | `{repo_url, branch}` | Fetch `requirements.txt` content. |
-| JSONRPC | `/cloud/fetch_odoojs_submodules` | `{repo_url, branch}` | Fetch `.gitmodules` for odoo.sh import wizard. |
+## Notification preferences
 
----
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_user_preferences` | own user | Notification prefs; secrets returned only as booleans (`cloud_telegram_configured`, `cloud_webhook_configured`). |
+| `/cloud/save_user_preferences` | own user | Save prefs (level, mode, email toggle, muted projects, Telegram, webhook; webhook URL must be `https://`). |
+| `/cloud/telegram_detect_chat_id` | own user | Poll the bot's `getUpdates` to auto-detect the chat id. |
+| `/cloud/telegram_send_test` | own user | Send a test message to the configured chat. |
 
-## GitHub Webhooks
+The outbound job-state webhook (payload, `X-IncubaCloud-Signature` HMAC header) is documented in `docs/architecture.md`.
+
+## Platform settings
+
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_general_settings` | manage hosts | Global defaults (singleton `cloud.settings`). |
+| `/cloud/save_general_settings` | manage hosts | Update global defaults. |
+| `/cloud/get_core_rate_limits` | manage hosts | Current admin-tunable rate limits. |
+| `/cloud/save_core_rate_limits` | manage hosts | Update rate limits. |
+
+## GitHub integration
+
+App management (all gated on **manage settings**):
+
+| Path | Description |
+|---|---|
+| `/cloud/get_github_app` | App status `{configured, has_installation, app_id}`. Private key never returned. |
+| `/cloud/save_github_app` | Update App credentials (force-confirm on destructive overwrite). |
+| `/cloud/save_github_pat` | Store a personal access token (fallback auth). |
+| `/cloud/test_github_connection` | Validate current credentials against the GitHub API. |
+| `/cloud/reset_github_app` | Clear the stored App. |
+| `/cloud/detect_github_installation` | Detect/refresh the installation id. |
+
+Repository operations (all gated on **consultant**):
+
+| Path | Description |
+|---|---|
+| `/cloud/get_repo_branches` | Branch list (App token or PAT). |
+| `/cloud/get_branch_head` | Head commit of a branch. |
+| `/cloud/get_repo_modules` | Odoo addon names in a repository. |
+| `/cloud/get_repo_requirements` | `requirements.txt` content. |
+| `/cloud/fetch_odoojs_submodules` | `.gitmodules` for the Odoo.sh import wizard (SSRF host allowlist). |
+| `/cloud/freeze_repo` / `/cloud/unfreeze_repo` | Toggle auto-rebuild freeze on one repo. |
+| `/cloud/freeze_all_repos` / `/cloud/unfreeze_all_repos` | Bulk freeze/unfreeze (record-rule scoped). |
+
+## Terminal
+
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/terminal/open` | terminal + rate limits | Spawn a PTY subprocess for an instance shell; returns session id. |
+| `/cloud/terminal/<sid>/output` | session owner | Poll output chunks. |
+| `/cloud/terminal/<sid>/input` | session owner | Send base64 keystrokes. |
+| `/cloud/terminal/<sid>/resize` | session owner | Resize the PTY. |
+| `/cloud/terminal/<sid>/close` | session owner | Close the session. |
+
+`GET /cloud/terminal/<sid>` (HTTP) renders the xterm.js page; only the session's owner may load it.
+
+## Instance connect
+
+| Path | Gate | Description |
+|---|---|---|
+| `/cloud/get_instance_users` | connect as user + read access | List the instance's internal Odoo users (via docker exec). |
+| `/cloud/prepare_instance_connect` | connect as user + read access | Inject a one-time session token, return the `/ic/login` redirect URL. |
+
+## Static pages and public HTTP endpoints
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/cloud/github/webhook` | public (HMAC-SHA256) | Receive GitHub App webhooks. Validates `X-Hub-Signature-256` header. Returns 200 or 401. |
-| GET | `/cloud/github/setup` | user | Start GitHub App creation via manifest flow. |
-| GET | `/cloud/github/callback` | user | Handle GitHub callback after app creation (exchanges code for credentials). |
+| GET | `/cloud`, `/cloud/<path>` | user | SPA shell (OWL app); deep links land on the same handler. |
+| GET | `/cloud/log/<job_id>` | user | Job log terminal page. Live chunks over **WebSocket**, with a 10 s HTTP polling fallback. |
+| GET | `/cloud/log/<job_id>/download` | user | Download the job log as a `.log` file. |
+| GET | `/cloud/instance/<id>/logs` | user (view logs) | Container log viewer (polls `/cloud/fetch_container_logs` every 4 s). |
+| POST | `/cloud/instance/<id>/restore` | user (manage backups) | Upload a backup ZIP (≤ 2 GiB) and enqueue restore. Rate-limited. |
+| GET | `/cloud/terminal/<sid>` | user (owner) | xterm.js terminal page. |
+| GET | `/cloud/health` | **public** | DB liveness probe → 200/503 (429 when rate-limited). |
+| POST | `/cloud/github/webhook` | **public** | GitHub App webhook receiver. HMAC-SHA256 signature required, per-IP rate limit, replay protection by delivery id. |
+| GET | `/cloud/github/setup` | user (manage settings) | Start GitHub App creation via manifest flow. |
+| GET | `/cloud/github/callback` | user (manage settings) | Exchange the manifest code for credentials (state token, 10 min TTL). |
 
----
+All SPA/log/terminal pages additionally require an **internal** user (portal/public users get 404).
 
-## Instance Connect
+## Rate limiting
 
-| Method | Path | Body | Description |
+DB-backed tumbling counters (`cloud.rate.limit`), 60-second windows, atomic upserts. The admin-tunable caps live in Settings → Rates:
+
+| Endpoint | Scope | Default | Tunable |
 |---|---|---|---|
-| JSONRPC | `/cloud/get_instance_users` | `{instance_id}` | List active Odoo users in a running instance (via SSH + psycopg2). |
-| JSONRPC | `/cloud/prepare_instance_connect` | `{instance_id, user_id}` | Inject a pre-auth session token into the instance and return a redirect URL. |
+| `POST /cloud/instance/<id>/restore` | per user | 2/min | no |
+| `GET /cloud/health` | per IP | 60/min | no |
+| `POST /cloud/github/webhook` | per IP | 300/min | yes |
+| `/cloud/terminal/open` | per user | 10/min | yes |
+| `/cloud/terminal/open` | per instance | 30/min | yes |
 
----
-
-## Static pages
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/cloud/ui` | user | Main SPA (OWL app). |
-| GET | `/cloud/ui/<path>` | user | Deep-link entry point for any SPA route. |
-| GET | `/cloud/log/<int:job_id>` | user | Log terminal page (polls chunks via JSONRPC every 600ms). |
-| GET | `/cloud/instance/<int:instance_id>/logs` | user | Container log viewer for a running instance. |
-| POST | `/cloud/instance/<int:instance_id>/restore` | user | Upload and restore a backup ZIP to an instance. |
-
----
+Exceeding a limit returns HTTP 429 (HTTP endpoints, webhook adds `Retry-After: 60`) or `{ok: false, error}` (JSON-RPC).
 
 ## Error handling
 
-All application-level endpoints return a consistent JSON envelope:
+Application errors use a consistent envelope:
 
-**Success:**
-```json
-{"ok": true, "data": {...}}
-```
-
-**Error:**
 ```json
 {"ok": false, "error": "Human-readable error message"}
 ```
 
-**Blocked (conflict):**
+Unexpected exceptions are logged with a correlation id and returned as `"<message> (ref: <id>)"`; `UserError`/`ValidationError`/`AccessError` messages pass through verbatim.
+
+Gated create/deploy flows can return a **blocked** envelope instead:
+
 ```json
 {"blocked": true, "reason": "pip_conflict", "message": "..."}
 ```
 
-Deploy and rebuild endpoints include data race prevention — if a job is already running for the instance, the endpoint returns:
+Success responses are **not** uniformly wrapped: mutating endpoints generally return `{"ok": true, ...}`, while read endpoints return bare data objects or lists (e.g. `get_projects` → `{items, total, truncated, limit}`, `get_secret` → `{value}`).
 
-```json
-{"ok": false, "error": "A job is already running: Deploy Instance. Wait for it to complete or cancel it first."}
-```
+Plain-HTTP endpoints use real status codes instead of the JSON-RPC envelope: the restore upload returns `{"error": ...}` with 400/403/404/429/500 or `{"job_id": ...}` on success; `/cloud/health` returns `{"status": "ok"|"down"|"rate_limited"}`; the GitHub webhook responds with plain text.

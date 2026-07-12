@@ -12,10 +12,11 @@ Each step is independent — if you already have an account, jump straight to st
 
 ## What you'll need
 
-- An email address.
-- A payment method if you choose a paid plan (we use Stripe — card or SEPA).
+- A Google or Odoo.com account to sign in with (hosted SaaS).
+- A payment method if you choose a paid plan (we use Stripe — card).
 - Optionally: a Git repo URL for your custom code.
-- Optionally: a VPS you already own (or [hire one from us](../hosts/hire.md)).
+- Optionally: a VPS you already own (or [order one through the platform](../hosts/hire.md)
+  on a paid plan).
 
 ## After get-started
 

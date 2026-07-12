@@ -16,6 +16,10 @@ in an encrypted archive.
 
 ## Retention by plan
 
+!!! info "IncubaCloud SaaS"
+    Plan-based retention applies to the hosted service. Self-hosted deployments
+    configure retention per backend.
+
 | Plan | Automatic backup retention |
 | --- | --- |
 | Free | None (manual backups only) |
@@ -25,6 +29,25 @@ in an encrypted archive.
 
 Manual backups never expire. They count against your bucket storage,
 not against the retention window.
+
+## Managed Backup Storage
+
+!!! info "IncubaCloud SaaS — paid add-on"
+
+If you'd rather not bring your own bucket, the platform can provision one for
+you: a dedicated bucket with its own scoped credentials, handed to you as a
+ready-to-use backup backend. Three tiers:
+
+| Tier | Included storage | Monthly | Overage |
+| --- | --- | --- | --- |
+| Starter | 20 GB | 2.99 € | 0.05 €/GB |
+| Standard | 100 GB | 8.99 € | 0.04 €/GB |
+| Pro | 500 GB | 29.99 € | 0.03 €/GB |
+
+Usage is measured periodically; storage beyond the included amount is billed as
+overage on your subscription invoice. If you cancel the add-on, backups are kept
+for a 30-day retention window before the bucket is purged. Downgrading to a
+smaller tier gives you a grace period to get usage under the new limit.
 
 ## Encryption
 

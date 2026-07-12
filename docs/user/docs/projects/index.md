@@ -1,7 +1,7 @@
 # Projects
 
 A **project** groups everything that belongs to one customer or one product:
-its instances, its repositories, its environments, its billing line.
+its instances, its repositories, its environments.
 
 ## Concepts
 
