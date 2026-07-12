@@ -139,7 +139,7 @@ See [docs/architecture.md](docs/architecture.md) for the full module structure a
 
 Standard Odoo 19.0 module. Add this repository to your `addons_path`, install the Python dependencies and the OCA `queue_job` module.
 
-**Python dependencies:** `asyncssh`, `cryptography`, `boto3`, `PyYAML`
+**Python dependencies:** `asyncssh`, `cryptography`, `boto3`, `PyYAML`, `bcrypt`
 
 **Odoo dependencies:** `queue_job` ([OCA/queue](https://github.com/OCA/queue) 19.0)
 

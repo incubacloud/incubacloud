@@ -127,5 +127,3 @@ the new empty database at that point, so no user data is at risk.
   rotating the Fernet key (the off-site backup was encrypted with
   the old key but its transit integrity is now uncertain).
 - `doodba.yaml` — `backup` service definition.
-- [`docs/project_backup_plan.md`](../project_backup_plan.md) —
-  original design doc for the backup system.

@@ -61,15 +61,17 @@ events across workers.
 ### 3. Rate limit windows must hit the DB
 
 [`models/cloud_rate_limit.py`](../../incubacloud/models/cloud_rate_limit.py)
-records every hit as a row — workers see each other's hits. Verify
-by tailing the table during a burst:
+keeps one row per bucket per 60-second window and increments it with
+an atomic upsert — workers see each other's hits. Verify by tailing
+the table during a burst:
 
 ```sql
-db$ SELECT COUNT(*) FROM cloud_rate_limit
-    WHERE hit_at > NOW() - INTERVAL '10 seconds';
+db$ SELECT bucket, count FROM cloud_rate_limit
+    WHERE window_start > NOW() - INTERVAL '60 seconds'
+    ORDER BY count DESC;
 ```
 
-Counter should grow regardless of which worker took the request.
+The `count` should grow regardless of which worker took the request.
 
 ### 4. Cron bot ownership
 

@@ -57,7 +57,7 @@ odoo$ ps -eo pid,etime,cmd | grep terminal_subprocess | grep -v grep
 
    ```python
    # From `odoo shell`:
-   env.ref('incubacloud.cron_terminal_route_gc').method_direct_trigger()
+   env.ref('incubacloud.cron_cloud_terminal_route_gc').method_direct_trigger()
    ```
 
 2. **Kill orphan processes** (those with no route row). Collect the

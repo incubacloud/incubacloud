@@ -5,46 +5,53 @@
 slips past the current cap.
 **Who runs it:** ops.
 
-`cloud.rate.limit` (core) and `saas.rate.limit` (SaaS) are
-sliding-window counters with per-action caps. Each `hit()` call
-records the action; if the count in the window exceeds the cap the
-caller sees `RateLimitError` → HTTP 429. Caps are configurable via
-`ir.config_parameter`; defaults live in the model.
+`cloud.rate.limit` is a DB-backed **tumbling-window counter**: one row
+per bucket (e.g. `webhook_ip:1.2.3.4`, `terminal_user:42`,
+`terminal_instance:7`) per 60-second window, incremented with an atomic
+upsert. `hit()` returns `True`/`False` — it never raises. When it
+returns `False` the caller answers HTTP 429 (HTTP endpoints) or
+`{ok: false, error}` (JSON-RPC). Admin-tunable caps live as fields on
+`cloud.settings`; two buckets (restore upload = 2/min/user, health =
+60/min/IP) are hardcoded.
 
 ## Symptoms / triggers
 
 - "Too many requests" toast on the SPA, repeated on retry.
-- `cloud.alert` of severity `warning` with subject containing
-  "rate-limit exceeded".
-- A spike of 429s in the access log on a known legitimate burst
-  (e.g. a redeploy script triggering 50 jobs at once).
+- HTTP 429 on `/cloud/github/webhook` (with `Retry-After: 60`) or
+  `/cloud/health`.
+- A spike of 429s on a known legitimate burst (e.g. a busy GitHub org
+  pushing to many repos at once).
 - Conversely: an audit shows a brute-force pattern that the current
   cap allowed through.
 
 ## Diagnosis
 
-Find the actions actually being throttled:
+Find the buckets actually being throttled:
 
 ```sql
-db$ SELECT action, COUNT(*) AS hits, MAX(hit_at) AS most_recent
+db$ SELECT bucket, count, window_start
     FROM cloud_rate_limit
-    WHERE hit_at > NOW() - INTERVAL '1 hour'
-    GROUP BY action
-    ORDER BY hits DESC;
+    WHERE window_start > NOW() - INTERVAL '1 hour'
+    ORDER BY count DESC
+    LIMIT 20;
 ```
 
-Then look up the current cap for the noisy action. Caps live as
-`ir.config_parameter` keyed `incubacloud.rate_limit.<action>` (core)
-or `saas.rate_limit.<action>` (SaaS). Falls back to the per-action
-default in `_get_cap()`:
+Then look at the current caps. The tunable ones are fields on the
+`cloud.settings` singleton (defaults in parentheses):
+
+- `rate_limit_webhook_per_min` (300) — GitHub webhook, per IP
+- `rate_limit_terminal_per_min` (30) — terminal opens, per instance
+- `rate_limit_terminal_user_per_min` (10) — terminal opens, per user
 
 ```sql
-db$ SELECT key, value FROM ir_config_parameter
-    WHERE key LIKE '%rate_limit%';
+db$ SELECT rate_limit_webhook_per_min,
+           rate_limit_terminal_per_min,
+           rate_limit_terminal_user_per_min
+    FROM cloud_settings;
 ```
 
-The "Rates" tab in Settings shows the same data with current cap
-side by side; use it for a quick eyeball check.
+The "Rates" tab in Settings shows the same values; use it for a quick
+eyeball check. A value ≤ 0 falls back to the in-code default.
 
 ## Resolution
 
@@ -52,29 +59,28 @@ There are two scenarios, with opposite remedies.
 
 ### Scenario A: legitimate traffic being throttled
 
-Raise the cap for the affected action. From the Settings → "Rates"
-tab, edit the row and save — the model writes the parameter. From
-SQL, set the parameter directly:
+Raise the cap from the Settings → "Rates" tab (preferred), or from SQL:
 
 ```sql
-db$ INSERT INTO ir_config_parameter (key, value)
-    VALUES ('incubacloud.rate_limit.deploy_instance', '20')
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+db$ UPDATE cloud_settings SET rate_limit_webhook_per_min = 600;
 ```
 
-The new cap takes effect on the next `hit()` call — no restart
-needed.
+The new cap takes effect on the next `hit()` call — no restart needed.
+(If you changed it via SQL, invalidate caches or restart so the ORM
+cache doesn't serve the old value.)
+
+The restore-upload (2/min/user) and health (60/min/IP) caps are not
+tunable — those limits changing would be a code change, not an ops
+action.
 
 ### Scenario B: cap was too permissive
 
-Lower the cap the same way. **Then** purge the existing window so
-the new cap is enforced from now, not retroactively from N minutes
-ago:
+Lower the cap the same way. **Then** reset the offending bucket's
+current window so the new cap is enforced from now:
 
 ```sql
 db$ DELETE FROM cloud_rate_limit
-    WHERE action = 'login_attempt'
-      AND hit_at < NOW() - INTERVAL '1 minute';
+    WHERE bucket = 'webhook_ip:203.0.113.7';
 ```
 
 If the abuse is by a known IP / user, prefer blocking at the proxy
@@ -82,23 +88,17 @@ layer first — rate limits are last-line, not first-line.
 
 ## Rollback
 
-Caps are single key/value pairs in `ir_config_parameter`. To revert,
-either set the previous value back, or delete the row to fall back
-to the in-code default:
+Set the previous value back on `cloud.settings` (Rates tab or SQL
+UPDATE). Setting a tunable cap to `0` falls back to the in-code
+default.
 
-```sql
-db$ DELETE FROM ir_config_parameter
-    WHERE key = 'incubacloud.rate_limit.deploy_instance';
-```
-
-The GC cron (every hour) prunes window rows older than the longest
-configured window; you do not need to rotate state manually.
+The GC cron (daily) prunes counter rows whose window started more than
+24 hours ago; you do not need to rotate state manually.
 
 ## References
 
 - [`models/cloud_rate_limit.py`](../../incubacloud/models/cloud_rate_limit.py)
-  — `hit()`, `_get_cap()`, `_gc()`.
+  — `hit()`, `_get_cap()`, `_gc()`, `RATE_LIMIT_DEFAULTS`.
+- `models/cloud_settings.py` — the tunable cap fields.
 - `static/src/components/core_rates_tab/` — the Settings UI tab.
 - `tests/test_cloud_rate_limit.py` — windows / GC / test-mode bypass.
-- `saas.rate.limit` (in `incubacloud_saas_manager`) — same shape,
-  separate table, same tuning procedure.

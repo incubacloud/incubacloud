@@ -6,7 +6,8 @@ log in real time.
 
 !!! info "Prerequisites"
     - A project ([create one](first-project.md)).
-    - A host: either [your own VPS](../hosts/connect.md) or [a Hetzner VPS](../hosts/hire.md).
+    - A host: either [your own VPS](../hosts/connect.md) or
+      [one ordered through the platform](../hosts/hire.md).
 
 ## 1. Open the project and click `Deploy instance`
 
@@ -22,7 +23,7 @@ re-deploys, so it's worth getting comfortable with each field.
 ## 3. Pick the host
 
 Select one of your registered hosts. The platform checks capacity automatically
-and prevents over-provisioning. If your hosts are all full, [hire a new one](../hosts/hire.md)
+and prevents over-provisioning. If your hosts are all full, [order a new one](../hosts/hire.md)
 or [connect another](../hosts/connect.md).
 
 ## 4. Pick an Odoo version
@@ -55,7 +56,8 @@ Let's Encrypt certificate automatically and wires up HTTPS.
     The domain's A or AAAA record must already point to the host's IP **at the moment
     of deployment**, otherwise Let's Encrypt will fail to validate. Set the DNS first.
 
-If you skip the domain, we generate a subdomain `<random>.incubacloud.host` for testing.
+If you skip the domain, the platform generates a subdomain under its base domain
+for testing (on the hosted SaaS: `<name>.<your-subdomain>.incubacloud.io`).
 
 ## 7. Hit Deploy
 

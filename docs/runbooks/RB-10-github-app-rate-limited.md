@@ -22,21 +22,21 @@ in the SPA that lists branches, opens PRs or fetches commits works.
 
 ## Diagnosis
 
-1. **Check which credential is in use** for the impacted
-   `cloud.github.app`:
+1. **Check which credential is in use.** The App lives on the
+   `cloud.github.app` singleton; the fallback PAT lives on
+   `cloud.settings.github_pat` (not on the app record):
 
    ```sql
-   db$ SELECT id, name, app_id, installation_id,
+   db$ SELECT id, app_id, installation_id, slug,
               private_key IS NOT NULL AS has_key,
-              pat IS NOT NULL AS has_pat,
-              last_token_refresh
-       FROM cloud_github_app
-       ORDER BY id;
+              webhook_secret IS NOT NULL AS has_webhook_secret
+       FROM cloud_github_app;
+   db$ SELECT github_pat IS NOT NULL AS has_pat FROM cloud_settings;
    ```
 
-   `last_token_refresh` more than 1h ago + `has_key = true` →
-   token cache is stale (App token re-mints itself every hour).
-   `has_pat = true` and 401s → PAT is revoked or expired.
+   `has_key = true` → the App is configured (installation tokens
+   re-mint themselves hourly via the in-memory cache).
+   `has_pat = true` and 401s → the PAT is revoked or expired.
 
 2. **Inspect the headers** GitHub returned, from the log:
 
@@ -64,9 +64,10 @@ in the SPA that lists branches, opens PRs or fetches commits works.
    ```
 
 3. **Once recovered**, audit the hot path that exhausted the budget.
-   The usual culprit is a polling cron set too aggressive (see
-   `cloud.github.app._token_cache` — App tokens auto-refresh and
-   shouldn't burn through budget on their own).
+   The usual culprit is a polling cron set too aggressive (the
+   module-level token cache in `incubacloud/github/token_cache.py`
+   auto-refreshes App tokens and shouldn't burn through budget on
+   its own).
 
 ### Secondary rate-limit hit
 
@@ -83,26 +84,19 @@ required.
 ### PAT revoked
 
 1. **Issue a fresh PAT** with the same scopes (`repo`, `read:org`).
-2. **Update the `cloud.github.app` record**:
-
-   ```sql
-   db$ UPDATE cloud_github_app
-       SET pat = '<new-token>'
-       WHERE id = <id>;
-   ```
-
-   (The field is `EncryptedChar`; setting via SQL bypasses
-   encryption — prefer the SPA UI or `odoo shell` if the install
-   uses MultiFernet rotation. SQL is the emergency-only path.)
-
-3. **Force a token-cache flush** so the next call uses the new PAT:
+2. **Store it on `cloud.settings`** — via the SPA (Settings → GitHub,
+   which calls `/cloud/save_github_pat`), or from `odoo shell`:
 
    ```python
-   env['cloud.github.app'].browse(<id>).write({'pat': '<new-pat>'})
+   env['cloud.settings'].search([]).write({'github_pat': '<new-pat>'})
+   env.cr.commit()
    ```
 
-4. **Smoke-test** by listing branches in the SPA for an instance
-   tied to that app.
+   Do **not** UPDATE via SQL: the field is `EncryptedChar`, and a raw
+   SQL write stores the token in plaintext instead of `enc:…`.
+
+3. **Smoke-test** by listing branches in the SPA for a project
+   using that credential.
 
 ### App private key revoked / installation deleted
 
