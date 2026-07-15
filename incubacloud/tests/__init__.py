@@ -12,6 +12,7 @@ from . import (
     test_cron_bot,
     test_cloud_backup,
     test_backup_backend_conn,
+    test_general_settings,
     test_cloud_instance,
     test_cloud_instance_move,
     test_cloud_instance_domain,

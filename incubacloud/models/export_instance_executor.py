@@ -57,6 +57,7 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
             f"  --exclude='dumps' "
             f"  --exclude='postgres' "
             f"  --exclude='secrets' "
+            f"  --exclude='docker-compose.override.yml' "
             f"  . {staging}/ && "
             # 2. Strip tokens from repos.yaml URLs
             f"if [ -f {staging}/odoo/custom/src/repos.yaml ]; then "

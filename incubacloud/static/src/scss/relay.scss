@@ -81,7 +81,7 @@
   // variant is kept for create/onboarding flows that read better when contained.
   .rl-page { padding-block-start:24px; padding-inline:30px; padding-block-end:64px; max-inline-size:none; }
   .rl-page--wide { max-inline-size:none; }
-  .rl-page--narrow { max-inline-size:980px; }
+  .rl-page--narrow { max-inline-size:980px; }  // deprecated — all views now full-width
 
   .rl-crumb {
     display:flex; align-items:center; gap:7px; font-family:var(--rl-fm);

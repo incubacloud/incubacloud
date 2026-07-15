@@ -25,7 +25,7 @@
                      ═══════════════════════════════════════════════════════════ -->
                 <t t-if="isCreate">
                     <div class="ic-rl-detail-scroll">
-                        <div class="rl-page rl-page--narrow">
+                        <div class="rl-page">
 
                             <div class="rl-crumb">
                                 <a t-on-click="goBack">Instances</a>

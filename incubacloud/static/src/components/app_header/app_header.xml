@@ -66,7 +66,7 @@
                 </t>
             </div>
 
-            <!-- Global search (⌘K) -->
+            <!-- Global search (Ctrl+K) -->
             <div class="ic-header-search-wrap">
                 <i class="fa fa-search ic-header-search-icon" aria-hidden="true"/>
                 <input type="text" class="ic-header-search-input"
@@ -75,7 +75,7 @@
                        t-on-input="onGlobalSearch"
                        t-on-focus="onSearchFocus"
                        aria-label="Global search"/>
-                <span class="ic-header-search-kbd" aria-hidden="true">⌘K</span>
+                <span class="ic-header-search-kbd" aria-hidden="true">Ctrl K</span>
                 <t t-if="state.showSearch">
                     <div class="ic-header-search-dropdown">
                         <t t-if="state.searchLoading and !state.searchResults.length">

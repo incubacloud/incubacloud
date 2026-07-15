@@ -8,7 +8,7 @@
             </t>
 
             <t t-elif="state.backend">
-                <div class="rl-page rl-page--narrow">
+                <div class="rl-page">
 
                     <!-- Breadcrumb -->
                     <div class="rl-crumb">

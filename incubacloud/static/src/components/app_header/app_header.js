@@ -28,7 +28,7 @@ export class AppHeader extends Component {
             showProjectSwitcher: false,
             projects: [],
             projectSearch: "",
-            // Global search (header, ⌘K)
+            // Global search (header, Ctrl+K)
             globalSearch: "",
             searchResults: [],
             showSearch: false,
@@ -64,7 +64,7 @@ export class AppHeader extends Component {
             }
         };
 
-        // Ctrl+K (or ⌘K) focuses the global search box. Registered in the
+        // Ctrl+K focuses the global search box. Registered in the
         // capture phase with stopImmediatePropagation so Odoo's own
         // command-palette hotkey never fires inside the SPA.
         this._onKeydown = (ev) => {

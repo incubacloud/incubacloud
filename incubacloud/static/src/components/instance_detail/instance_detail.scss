@@ -855,8 +855,10 @@
 }
 
 .ic-bk-actions {
-    text-align: right;
-    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
 }
 
 .ic-bk-action-btn {
@@ -885,9 +887,6 @@
         border-color: rgba(239, 68, 68, 0.3);
     }
 
-    + .ic-bk-action-btn {
-        margin-left: 4px;
-    }
 }
 
 .ic-download-group {

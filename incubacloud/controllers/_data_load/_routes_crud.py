@@ -1221,6 +1221,12 @@ class CrudMixin:
             'default_backup_alert_threshold_pct': (
                 settings.default_backup_alert_threshold_pct or 0
             ),
+            'github_event_retention_days': (
+                settings.github_event_retention_days or 0
+            ),
+            'github_event_truncate_days': (
+                settings.github_event_truncate_days or 0
+            ),
         }
 
     @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
@@ -1228,6 +1234,7 @@ class CrudMixin:
         self, autoassign_enabled=False, default_backup_backend_id=None,
         audit_log_retention_days=90, job_log_retention_days=30,
         default_backup_alert_threshold_pct=80,
+        github_event_retention_days=90, github_event_truncate_days=7,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1268,6 +1275,12 @@ class CrudMixin:
                 0, _safe_int(job_log_retention_days, 30),
             ),
             'default_backup_alert_threshold_pct': threshold,
+            'github_event_retention_days': max(
+                0, _safe_int(github_event_retention_days, 90),
+            ),
+            'github_event_truncate_days': max(
+                0, _safe_int(github_event_truncate_days, 7),
+            ),
         })
         return {'ok': True}
 
