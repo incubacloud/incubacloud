@@ -103,6 +103,30 @@
                         </div>
                     </div>
 
+                    <!-- GitHub Event Retention -->
+                    <div class="rl-saas-fsec">GitHub Event Retention</div>
+                    <p class="rl-tabnote">
+                        Webhook payloads are large (100 KB+ for monorepo pushes).
+                        Two-stage retention: after the truncation period, the raw JSON
+                        payload is replaced by a compact stub; after the retention period,
+                        the row itself is deleted. Unprocessed/error events are never
+                        auto-deleted. Set either to 0 to disable.
+                    </p>
+                    <div class="rl-fgrid">
+                        <div class="rl-frow">
+                            <label>Payload truncation (days)</label>
+                            <input type="number" min="0" style="width:120px;"
+                                   t-att-value="state.form.github_event_truncate_days"
+                                   t-on-change="(ev) => this.onIntInput('github_event_truncate_days', ev)"/>
+                        </div>
+                        <div class="rl-frow">
+                            <label>Full row deletion (days)</label>
+                            <input type="number" min="0" style="width:120px;"
+                                   t-att-value="state.form.github_event_retention_days"
+                                   t-on-change="(ev) => this.onIntInput('github_event_retention_days', ev)"/>
+                        </div>
+                    </div>
+
                     <!-- Backup Usage Alerts -->
                     <div class="rl-saas-fsec">Backup Usage Alerts</div>
                     <p class="rl-tabnote">

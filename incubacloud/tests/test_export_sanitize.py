@@ -68,6 +68,7 @@ class TestSensitiveFileExclusions(BaseCase):
         'odoo/custom/ssh/id_rsa',
         'odoo/custom/ssh/id_rsa.pub',
         'odoo/custom/ssh/known_hosts',
+        'docker-compose.override.yml',
     }
 
     SANITIZED_PATHS = {
@@ -81,7 +82,11 @@ class TestSensitiveFileExclusions(BaseCase):
     def test_sensitive_files_are_removed(self):
         """All sensitive files must be in the exclusion list."""
         for path in self.SENSITIVE_PATHS:
-            self.assertIn('ssh' in path or 'backup.env' in path, [True])
+            self.assertIn('ssh' in path or 'backup.env' in path or 'override' in path, [True])
+
+    def test_override_file_excluded(self):
+        """docker-compose.override.yml must be excluded from export."""
+        self.assertIn('docker-compose.override.yml', self.SENSITIVE_PATHS)
 
     def test_sanitized_files_are_rewritten(self):
         """Files with secrets must be rewritten with placeholders."""

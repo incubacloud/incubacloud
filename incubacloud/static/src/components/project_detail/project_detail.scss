@@ -26,6 +26,7 @@
     cursor: pointer;
     text-align: center;
     align-items: center;
+    flex-direction: column;
 
     .rl-ghi { color: $text-secondary; transition: color 0.2s; }
 

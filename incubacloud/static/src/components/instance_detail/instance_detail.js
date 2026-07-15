@@ -582,14 +582,16 @@ export class InstanceDetail extends Component {
         const result = [];
         if (active.length <= MAX) {
             result.push(...[...active].reverse());
+            result.unshift(...recent);
         } else {
+            const visibleCount = MAX - 2;
             result.push({
                 _overflow: true,
-                count: active.length - (MAX - 1),
+                count: active.length - visibleCount - 1,
             });
-            result.push(...[...active].reverse().slice(-(MAX - 1)));
+            result.push(...active.slice(1, visibleCount + 1).reverse());
+            result.push(active[0]);
         }
-        result.unshift(...[...recent].reverse());
         return result;
     }
 
