@@ -102,6 +102,12 @@
                                         Migrating from <t t-esc="state.inst.move_origin_host"/>…
                                     </span>
                                 </t>
+                                <t t-if="isRollingBack">
+                                    <span class="rl-pill building">
+                                        <i class="fa fa-undo fa-spin"/>
+                                        Rolling back to <t t-esc="state.inst.move_origin_host"/>…
+                                    </span>
+                                </t>
                             </h1>
                             <t t-if="state.inst.domain or state.inst.host">
                                 <p class="rl-psub">
@@ -233,11 +239,17 @@
                             </t>
                             <t t-if="isMoving and env.permissions?.can_manage_hosts">
                                 <span class="rl-asep"/>
-                                <button class="rl-iconbtn danger" title="Roll back move"
+                                <button class="rl-btn rl-btn-danger" title="Roll back move"
                                         aria-label="Roll back move"
                                         t-on-click="() => this.rollbackMove()">
                                     <i class="fa fa-undo"/> Roll back move
                                 </button>
+                            </t>
+                            <t t-if="isRollingBack">
+                                <span class="rl-asep"/>
+                                <span class="rl-btn rl-btn-ghost" style="cursor:default;opacity:0.7;" title="Rollback in progress">
+                                    <i class="fa fa-spinner fa-spin"/> Rolling back…
+                                </span>
                             </t>
                             <span class="rl-asep"/>
                         </t>

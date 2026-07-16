@@ -1384,6 +1384,15 @@ class CrudMixin:
                 inst.move_origin_host_id.name
                 if inst.move_origin_host_id else ''
             ),
+            'move_target_host_id': (
+                inst.move_target_host_id.id
+                if inst.move_target_host_id else None
+            ),
+            'move_target_host': (
+                inst.move_target_host_id.name
+                if inst.move_target_host_id else ''
+            ),
+            'move_rollback_in_progress': inst.move_rollback_in_progress,
             'odoo_version': inst.odoo_version,
             'odoo_commit_sha': inst.odoo_commit_sha or '',
             'last_deploy_date': last_deploy.create_date if last_deploy else None,
