@@ -7,9 +7,9 @@
 --   invoke restart
 
 -- 1. Nullify all EncryptedChar fields (prevents decrypt crashes with wrong key)
-UPDATE cloud_host SET password = NULL, key_file = NULL, traefik_panel_password = NULL;
+UPDATE cloud_host SET password = '', key_file = NULL, traefik_panel_password = '';
 UPDATE cloud_backup_backend SET s3_secret_access_key = NULL, passphrase = NULL;
-UPDATE cloud_github_app SET webhook_secret = NULL, private_key = NULL;
+UPDATE cloud_github_app SET webhook_secret = NULL, private_key = '';
 UPDATE cloud_instance SET odoo_admin_password = NULL, odoo_admin_user_password = NULL,
     postgres_password = NULL, smtp_relay_password = NULL;
 UPDATE cloud_settings SET github_pat = NULL;
@@ -21,7 +21,6 @@ UPDATE cloud_host SET known_hosts_key = NULL;
 -- 3. Deactivate infra records to prevent accidental SSH/provisioning
 UPDATE cloud_host SET active = false;
 UPDATE cloud_instance SET active = false;
-UPDATE cloud_backup_backend SET active = false;
 
 -- 4. Delete ephemeral session data
 DELETE FROM cloud_terminal_route;
