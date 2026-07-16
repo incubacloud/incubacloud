@@ -272,7 +272,7 @@ class TestInstanceMove(TransactionCase):
         ]
         ids = [j.id for j in jobs_created]
         self.inst.move_chain_job_ids = ','.join(
-            str(ids[i]) for i in [1, 0, 2]  # middle, first, last
+            str(ids[i]) for i in (1, 0, 2)  # middle, first, last
         )
         jobs = self.inst._get_move_chain_jobs()
         self.assertEqual([j.id for j in jobs], [ids[1], ids[0], ids[2]])
