@@ -581,8 +581,7 @@ export class InstanceDetail extends Component {
         const recent = this.state.recentJobs || [];
         const result = [];
         if (active.length <= MAX) {
-            result.push(...[...active].reverse());
-            result.unshift(...recent);
+            result.push(...[...active, ...recent].sort((a, b) => b.id - a.id));
         } else {
             const visibleCount = MAX - 2;
             result.push({
@@ -1043,13 +1042,24 @@ export class InstanceDetail extends Component {
     }
 
     /**
-     * Whether a move is in progress or stuck mid-move. Truthy when the
-     * backend recorded an origin host for an ongoing/failed migration.
+     * Whether a rollback is actively running. Truthy when cleanup or
+     * start jobs are in-flight after the user clicked "Roll back move".
+     *
+     * @returns {boolean}
+     */
+    get isRollingBack() {
+        return !!this.state.inst?.move_rollback_in_progress;
+    }
+
+    /**
+     * Whether a move is in progress or stuck mid-move. Only truthy when
+     * the backend has a marker set AND no rollback is running.
      *
      * @returns {boolean}
      */
     get isMoving() {
-        return !!this.state.inst?.move_origin_host_id;
+        return !!this.state.inst?.move_origin_host_id
+            && !this.state.inst?.move_rollback_in_progress;
     }
 
     /**
@@ -1166,7 +1176,7 @@ export class InstanceDetail extends Component {
     async rollbackMove() {
         const ok = await this._confirm({
             title: _t("Roll back move"),
-            message: _t("Bring the instance back up on its source host (%s) and cancel the move.")
+            message: _t("Cancel the in-progress move, clean up the target host, and bring the instance back up on its source host (%s). This may take several minutes.")
                 .replace('%s', this.state.inst.move_origin_host || _t("source")),
             confirmLabel: _t("Roll back"),
             isDanger: true,

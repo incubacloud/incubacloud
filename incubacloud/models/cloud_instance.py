@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import re
+from contextlib import suppress
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
@@ -131,6 +132,22 @@ class CloudInstance(models.Model):
         help='Destination host while a cross-host move is in flight; '
              'cleared on cutover. Lets stuck-move recovery identify the '
              'half-built destination copy for cleanup.',
+    )
+    move_chain_job_ids = fields.Char(
+        string='Move Chain Job IDs',
+        copy=False,
+        help='Comma-separated cloud.job IDs of the current move chain. '
+             'Set by move_to_host(), cleared on cutover success or '
+             'rollback completion. Lets rollback inspect each step\'s '
+             'state to decide what to undo.',
+    )
+    move_rollback_in_progress = fields.Boolean(
+        string='Move Rollback In Progress',
+        copy=False,
+        default=False,
+        help='True while a rollback is running. Distinguishes '
+             '"migrating" from "rolling back" in the UI and prevents '
+             'duplicate rollbacks.',
     )
     status = fields.Selection(
         selection=[
@@ -892,47 +909,130 @@ class CloudInstance(models.Model):
              'job_type_code': 'move_cleanup_source'},
         ]
         job_ids = self.env['cloud.job'].enqueue_chain(steps)
+        self.move_chain_job_ids = ','.join(str(jid) for jid in job_ids)
         return {'ok': True, 'job_id': job_ids[0]}
 
     def rollback_move(self):
         """Recover a move that failed before cutover (user entrypoint).
 
-        Gates on the host-management ACL and then runs the shared
-        recovery. ``host_id`` never flips before cutover, so it still
-        points at the source; the helper clears the marker and brings
-        the source back up. A retry of ``move_to_host`` re-deploys over
-        any half-built destination copy.
+        Cancels all in-flight move-chain jobs, cleans up the
+        half-built destination copy, and brings the source back up.
+        The markers stay set until the cleanup executor succeeds so
+        the UI reports "rolling back" rather than falsely claiming
+        the instance has recovered.
         """
         self.ensure_one()
         self.env['cloud.security.mixin']._check_can_manage_hosts()
         if not self.move_origin_host_id:
             raise UserError(_("No move in progress to roll back."))
-        job_id = self._do_rollback_move()
-        return {'ok': True, 'job_id': job_id}
+        if self.move_rollback_in_progress:
+            raise UserError(_("A rollback is already in progress."))
+        origin = self.move_origin_host_id
+        if self.host_id != origin:
+            raise UserError(_(
+                "Cannot roll back: the move already completed "
+                "(cutover succeeded). The instance is now live on "
+                "the target host. Use 'Move to host' to move it "
+                "back if needed."
+            ))
+        result = self._do_rollback_move()
+        if result is False:
+            return {'ok': False, 'error': _("Nothing to roll back.")}
+        return {'ok': True, 'job_id': result}
 
     def _do_rollback_move(self):
         """Core stuck-move recovery, WITHOUT the ACL check.
 
-        Clears the in-flight markers and brings the source back up.
+        Cancels every active move-chain job (cooperatively for started
+        ones, via queue_job for queued ones), then enqueues cleanup
+        (target) and start (source) in parallel. Returns the
+        ``move_rollback_cleanup`` job id (the head of the recovery),
+        or ``False`` when there is nothing to recover.
+
         Shared by ``rollback_move`` (gated on ACL) and the unattended
         ``cron_recover_stuck_moves`` watchdog (runs via sudo).
-
-        ``host_id`` never flips before cutover, so it still points at the
-        source. Returns the ``start_instance`` cloud.job id, or ``False``
-        when there is nothing to recover / the source is not startable.
         """
         self.ensure_one()
         origin = self.move_origin_host_id
         if not origin:
             return False
-        self.write({
-            'move_origin_host_id': False,
-            'move_target_host_id': False,
-        })
         if self.host_id != origin:
             return False
+        self._cancel_move_chain()
+        return self._enqueue_rollback_jobs()
+
+    # ── Private helpers for rollback ───────────────────────────────────
+
+    def _get_move_chain_jobs(self):
+        """Return ``cloud.job`` records of the current move chain, ordered
+        by step (same order as ``move_chain_job_ids``)."""
+        self.ensure_one()
+        if not self.move_chain_job_ids:
+            return self.env['cloud.job']
+        ids = []
+        for part in (self.move_chain_job_ids or '').split(','):
+            part = part.strip()
+            if part.isdigit():
+                ids.append(int(part))
+        if not ids:
+            return self.env['cloud.job']
+        jobs = self.env['cloud.job'].browse(ids).exists()
+        # Preserve original step order.
+        id_to_pos = {jid: i for i, jid in enumerate(ids)}
+        return jobs.sorted(key=lambda j: id_to_pos.get(j.id, 9999))
+
+    def _cancel_move_chain(self):
+        """Cancel every active job in the current move chain.
+
+        Cancellation is best-effort and tolerant of missing records
+        (a crashed worker may have left queue.job rows without a
+        matching cloud.job, and that's fine — the chain stops when
+        its head fails). Head-to-tail order ensures queue_job cascades
+        ``button_cancelled`` to downstream children in
+        ``wait_dependencies``, reducing the number of jobs that need
+        individual cancellation.
+
+        Active-state detection uses SQL because ``state`` is a stored
+        related of ``queue_job_id.state`` and the ORM cache may serve
+        the computed value instead of the raw DB column (relevant when
+        tests force-persist a state without a queue.job).
+        """
+        chain_jobs = self._get_move_chain_jobs()
+        if not chain_jobs:
+            return
+        active_states = tuple(self.env['cloud.job']._active_states)
+        self.env.cr.execute(
+            "SELECT id FROM cloud_job WHERE id IN %s AND state IN %s",
+            (tuple(chain_jobs.ids), active_states),
+        )
+        active_ids = {row[0] for row in self.env.cr.fetchall()}
+        active = chain_jobs.filtered(lambda j: j.id in active_ids)
+        for job in active:
+            with suppress(UserError):
+                job.cancel_job()
+
+    def _enqueue_rollback_jobs(self):
+        """Enqueue the two recovery jobs after a cancelled move.
+
+        Runs cleanup on the TARGET host (idempotent: docker compose
+        down -v + rm -rf) and start on the SOURCE host, both with
+        ``bypass_running_check`` so the stale active chain does not
+        block them. The cleanup executor clears the move markers on
+        success; until then ``move_rollback_in_progress`` is True.
+
+        Returns the ``move_rollback_cleanup`` job id.
+        """
+        target = self.move_target_host_id
+        origin = self.move_origin_host_id
+        self.move_rollback_in_progress = True
+        # Start source in parallel — independent of cleanup.
+        self.env['cloud.job'].enqueue(
+            origin.id, self.id, 'start_instance',
+            bypass_running_check=True,
+        )
         return self.env['cloud.job'].enqueue(
-            origin.id, self.id, 'start_instance', bypass_running_check=True,
+            target.id, self.id, 'move_rollback_cleanup',
+            bypass_running_check=True,
         )
 
     def _post_or_update_pr_comment(self, body):
@@ -1056,19 +1156,26 @@ class CloudInstance(models.Model):
 
         A move stamps ``move_origin_host_id`` before enqueuing its job
         chain (atomically, same transaction) and clears it only on a
-        successful cutover. If the chain dies before cutover, the marker
-        stays set and the source was left with ``odoo`` stopped — the
-        instance is down with no automatic recovery.
+        successful cutover or a successful rollback cleanup. If the
+        chain dies before cutover, the marker stays set and the source
+        was left with ``odoo`` stopped — the instance is down with no
+        automatic recovery.
 
-        For every instance whose marker is set AND has no in-flight job
-        (every non-hidden job reached a terminal state), the move is
-        dead: clear the markers, restart the source, and raise one
-        critical alert. Instances that still have an active job are a
-        move in progress and are left alone.
+        Two states are handled:
 
-        No grace period is needed: ``move_to_host`` commits the marker
-        and the chain jobs in the same transaction, so a set marker with
-        no active job always means a fully-terminated (failed) chain.
+        * **Move failed, rollback not started** (``move_rollback_in_progress``
+          False). The move chain is dead; cancel what remains and
+          enqueue cleanup (target) + start (source). Raise a critical
+          ``move_stuck`` alert.
+
+        * **Rollback started but cleanup failed** (``move_rollback_in_progress``
+          True, no active jobs left). The target could not be reached;
+          the source should already be running. Clear the markers and
+          raise a warning ``move_rollback_failed`` alert so an operator
+          can manually reclaim the target later.
+
+        Instances with active jobs are left alone (move or rollback in
+        progress).
         """
         Job = self.env['cloud.job']
         hidden = Job._get_hidden_job_types()
@@ -1084,19 +1191,51 @@ class CloudInstance(models.Model):
             if in_flight:
                 continue
             origin = inst.move_origin_host_id
+            if inst.move_rollback_in_progress:
+                inst.write({
+                    'move_origin_host_id': False,
+                    'move_target_host_id': False,
+                    'move_chain_job_ids': False,
+                    'move_rollback_in_progress': False,
+                })
+                if not Alert.search_count([
+                    ('instance_id', '=', inst.id),
+                    ('code', '=', 'move_rollback_failed'),
+                    ('state', '=', 'active'),
+                ]):
+                    Alert.create({
+                        'code': 'move_rollback_failed',
+                        'level': 'warning',
+                        'message': _(
+                            "Rollback cleanup of '%(name)s' failed on "
+                            "target host '%(target)s'; source host "
+                            "'%(origin)s' was restarted. Manual cleanup "
+                            "of the target may be needed.",
+                            name=inst.name,
+                            origin=origin.name or '?',
+                            target=inst.move_target_host_id.name or '?',
+                        ),
+                        'instance_id': inst.id,
+                        'project_id': (
+                            inst.project_id.id
+                            if inst.project_id else False
+                        ),
+                        'host_id': origin.id,
+                    })
+                continue
             try:
                 inst._do_rollback_move()
             except Exception:  # noqa: BLE001
                 _logger.exception(
-                    "Stuck-move recovery failed for instance %s", inst.id,
+                    "Stuck-move recovery failed for instance %s",
+                    inst.id,
                 )
                 continue
-            already = Alert.search_count([
+            if not Alert.search_count([
                 ('instance_id', '=', inst.id),
                 ('code', '=', 'move_stuck'),
                 ('state', '=', 'active'),
-            ])
-            if not already:
+            ]):
                 Alert.create({
                     'code': 'move_stuck',
                     'level': 'critical',

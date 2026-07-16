@@ -300,6 +300,12 @@ msgid "A project can only have one production instance."
 msgstr "Un proyecto solo puede tener una instancia de producción."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "A rollback is already in progress."
+msgstr "Ya hay una reversión en curso."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_access_key_id
@@ -998,15 +1004,6 @@ msgstr "Rama a usar para despliegues."
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
-msgid ""
-"Bring the instance back up on its source host (%s) and cancel the move."
-msgstr ""
-"Vuelve a levantar la instancia en su host de origen (%s) y cancela la "
-"migración."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_bucket
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__bucket
@@ -1098,6 +1095,17 @@ msgstr "Cancelar tarea"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid ""
+"Cancel the in-progress move, clean up the target host, and bring the "
+"instance back up on its source host (%s). This may take several minutes."
+msgstr ""
+"Cancelar la migración en curso, limpiar el host de destino y volver a "
+"levantar la instancia en su host de origen (%s). Esto puede tomar varios "
+"minutos."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Cancelled"
 msgstr "Cancelado"
@@ -1150,6 +1158,18 @@ msgid ""
 msgstr ""
 "No se puede eliminar: este backend está siendo usado por %d instancia(s): "
 "%s. Elimina la asignación del backend de esas instancias primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Cannot roll back: the move already completed (cutover succeeded). The "
+"instance is now live on the target host. Use 'Move to host' to move it back "
+"if needed."
+msgstr ""
+"No se puede revertir: la migración ya se completó (el corte fue exitoso). La"
+" instancia ahora está activa en el host de destino. Use 'Mover a host' para "
+"moverla de vuelta si lo necesita."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1424,6 +1444,14 @@ msgstr "Índice de color"
 #: model:ir.model.fields,help:incubacloud.field_cloud_tag__color
 msgid "Color palette index (0–9) for the tag chip display."
 msgstr "Índice de paleta de colores (0–9) para la visualización de etiquetas."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_chain_job_ids
+msgid ""
+"Comma-separated cloud.job IDs of the current move chain. Set by "
+"move_to_host(), cleared on cutover success or rollback completion. Lets "
+"rollback inspect each step's state to decide what to undo."
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__compose_services
@@ -1943,6 +1971,12 @@ msgstr "Creando…"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__level__critical
 msgid "Critical"
 msgstr "Crítico"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Ctrl K"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__custom_backup_dst
@@ -4713,9 +4747,19 @@ msgid "Move"
 msgstr "Mover"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_chain_job_ids
+msgid "Move Chain Job IDs"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_origin_host_id
 msgid "Move Origin Host"
 msgstr "Host de origen de la migración"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_rollback_in_progress
+msgid "Move Rollback In Progress"
+msgstr ""
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_target_host_id
@@ -5246,6 +5290,12 @@ msgstr "No establecido"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Not trusted"
 msgstr "No de confianza"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "Nothing to roll back."
+msgstr "Nada que revertir."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6538,6 +6588,35 @@ msgid "Roll back move"
 msgstr "Revertir migración"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Rollback cleanup of '%(name)s' failed on target host '%(target)s'; source "
+"host '%(origin)s' was restarted. Manual cleanup of the target may be needed."
+msgstr ""
+"La limpieza de reversión de '%(name)s' falló en el host de destino "
+"'%(target)s'; el host de origen '%(origin)s' se reinició. Puede ser "
+"necesaria una limpieza manual del destino."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Rollback in progress"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Rolling back to"
+msgstr ""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Rolling back…"
+msgstr ""
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_rotate_encrypted_secrets_ir_actions_server
 msgid "Rotate Encrypted Secrets (MultiFernet)"
 msgstr "Rotar secretos cifrados (MultiFernet)"
@@ -7599,6 +7678,13 @@ msgstr ""
 "Lanza un backup de duplicity a S3. La cadena es incremental: una completa "
 "por semana e incrementales en el medio. Después se ejecuta un job "
 "backup_list para refrescar la tabla siguiente."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_rollback_in_progress
+msgid ""
+"True while a rollback is running. Distinguishes \"migrating\" from \"rolling"
+" back\" in the UI and prevents duplicate rollbacks."
+msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8838,9 +8924,3 @@ msgstr "↻ Verificar instalación"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "↻ Re-detect installation"
 msgstr "↻ Re-detectar instalación"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "⌘K"
-msgstr "⌘K"

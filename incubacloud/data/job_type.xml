@@ -102,6 +102,13 @@
             <field name="description">Removes the old host copy after a successful move, without archiving the instance record.</field>
         </record>
 
+        <record id="move_rollback_cleanup" model="cloud.job.type">
+            <field name="name">Move Rollback Cleanup</field>
+            <field name="code">move_rollback_cleanup</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Cleans up the half-built destination after a rolled-back move (docker compose down -v + rm -rf, non-fatal).</field>
+        </record>
+
         <record id="export_instance" model="cloud.job.type">
             <field name="name">Export for Development</field>
             <field name="code">export_instance</field>

@@ -541,8 +541,13 @@ class CloudJob(models.Model):
 
         Active jobs (running/waiting chains) are returned in execution order
         (id asc = running first). Recent terminal jobs fill the remaining
-        slots above the chain. The caller composes the final timeline by
-        reversing active jobs so the running job renders at the bottom.
+        slots. The caller merges both sets and sorts by id descending so the
+        newest job renders at the top and the running job keeps its natural
+        position without jumping when it finishes.
+
+        When active jobs exceed *max_visible* (overflow), the caller forces
+        the running job to the bottom and shows only the next-in-queue jobs
+        above it, with an overflow slot at the top.
 
         Returns ``{active, recent, total}`` where *active* and *recent* are
         lists of ``_format()`` dicts.

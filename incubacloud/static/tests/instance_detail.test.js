@@ -597,3 +597,146 @@ describe("InstanceDetail — applyPipResolutions", () => {
         expect(applyPipResolutions(null, {})).toBe("");
     });
 });
+
+// ── timelineJobs (mirrored from source) ─────────────────────────────────────
+
+/**
+ * Pure mirror of the InstanceDetail.timelineJobs getter for testing.
+ * @param {Array} active  active jobs (id asc, oldest first)
+ * @param {Array} recent  recent terminal jobs (id desc, newest first)
+ * @param {number} max    visible slots (default 5)
+ * @returns {Array}       ordered job list (top-to-bottom)
+ */
+function buildTimelineJobs(active, recent, max = 5) {
+    if (!active) active = [];
+    if (!recent) recent = [];
+    const result = [];
+    if (active.length <= max) {
+        result.push(...[...active, ...recent].sort((a, b) => b.id - a.id));
+    } else {
+        const visibleCount = max - 2;
+        result.push({
+            _overflow: true,
+            count: active.length - visibleCount - 1,
+        });
+        result.push(...active.slice(1, visibleCount + 1).reverse());
+        result.push(active[0]);
+    }
+    return result;
+}
+
+function j(id, state, name = "job") {
+    return { id, state, name: `${name} ${id}` };
+}
+
+describe("InstanceDetail — timelineJobs (no overflow)", () => {
+    test("one running + four recent → running at top (highest id)", () => {
+        const active = [j(5, "started")];          // id asc
+        const recent = [j(4, "done"), j(3, "done"), j(2, "done"), j(1, "done")]; // id desc
+        const tl = buildTimelineJobs(active, recent);
+        expect(tl.length).toBe(5);
+        expect(tl[0].id).toBe(5);
+        expect(tl[0].state).toBe("started");
+        expect(tl[1].id).toBe(4);
+        expect(tl[2].id).toBe(3);
+        expect(tl[3].id).toBe(2);
+        expect(tl[4].id).toBe(1);
+    });
+
+    test("running job moves to recent → same position, no jump", () => {
+        const activeRunning = [j(5, "started")];
+        const recentRunning = [j(4, "done"), j(3, "done"), j(2, "done"), j(1, "done")];
+        const tlBefore = buildTimelineJobs(activeRunning, recentRunning);
+
+        // Job 5 finishes → now in recent (terminal)
+        const activeDone = [];
+        const recentDone = [j(5, "done"), j(4, "done"), j(3, "done"), j(2, "done"), j(1, "done")];
+        const tlAfter = buildTimelineJobs(activeDone, recentDone);
+
+        expect(tlBefore[0].id).toBe(5);
+        expect(tlAfter[0].id).toBe(5);
+        // Order should be identical for visible items
+        for (let i = 0; i < tlBefore.length; i++) {
+            expect(tlBefore[i].id).toBe(tlAfter[i].id);
+        }
+    });
+
+    test("multiple active → interleaved with recent by id", () => {
+        const active = [j(3, "pending"), j(5, "started")]; // id asc: 3 pending, 5 running
+        const recent = [j(4, "done"), j(2, "done"), j(1, "done")]; // id desc: 4, 2, 1
+        const tl = buildTimelineJobs(active, recent);
+        expect(tl[0].id).toBe(5);  // running
+        expect(tl[1].id).toBe(4);  // recent, higher than 3
+        expect(tl[2].id).toBe(3);  // pending
+        expect(tl[3].id).toBe(2);
+        expect(tl[4].id).toBe(1);
+    });
+
+    test("five active, zero recent → all active in desc id", () => {
+        const active = [j(1, "started"), j(2, "pending"), j(3, "pending"), j(4, "pending"), j(5, "pending")];
+        const recent = [];
+        const tl = buildTimelineJobs(active, recent);
+        expect(tl.length).toBe(5);
+        expect(tl[0].id).toBe(5);
+        expect(tl[1].id).toBe(4);
+        expect(tl[2].id).toBe(3);
+        expect(tl[3].id).toBe(2);
+        expect(tl[4].id).toBe(1);
+    });
+
+    test("zero active, three recent → recent in desc id", () => {
+        const active = [];
+        const recent = [j(3, "done"), j(2, "done"), j(1, "done")];
+        const tl = buildTimelineJobs(active, recent);
+        expect(tl.length).toBe(3);
+        expect(tl[0].id).toBe(3);
+        expect(tl[1].id).toBe(2);
+        expect(tl[2].id).toBe(1);
+    });
+
+    test("empty inputs → empty result", () => {
+        expect(buildTimelineJobs([], []).length).toBe(0);
+    });
+});
+
+describe("InstanceDetail — timelineJobs (overflow)", () => {
+    test("eight active → overflow slot + next 3 + running bottom", () => {
+        const active = [
+            j(1, "started"),
+            j(2, "pending"),
+            j(3, "pending"),
+            j(4, "pending"),
+            j(5, "pending"),
+            j(6, "pending"),
+            j(7, "pending"),
+            j(8, "pending"),
+        ];
+        const tl = buildTimelineJobs(active, []);
+        expect(tl.length).toBe(5);
+        // Overflow first
+        expect(tl[0]._overflow).toBe(true);
+        expect(tl[0].count).toBe(8 - 3 - 1); // 4 pending
+        // Next 3 in queue (ascending from running, displayed desc)
+        expect(tl[1].id).toBe(4);
+        expect(tl[2].id).toBe(3);
+        expect(tl[3].id).toBe(2);
+        // Running at bottom
+        expect(tl[4].id).toBe(1);
+        expect(tl[4].state).toBe("started");
+    });
+
+    test("six active → overflow shows correct count", () => {
+        const active = [
+            j(10, "started"),
+            j(11, "pending"),
+            j(12, "pending"),
+            j(13, "pending"),
+            j(14, "pending"),
+            j(15, "pending"),
+        ];
+        const tl = buildTimelineJobs(active, []);
+        expect(tl[0]._overflow).toBe(true);
+        expect(tl[0].count).toBe(6 - 3 - 1); // 2 pending
+        expect(tl[4].id).toBe(10);  // running bottom
+    });
+});
