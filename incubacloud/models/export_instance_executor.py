@@ -44,50 +44,18 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
         self._sys(f"Creating export archive for '{inst.name}'…")
 
         # Strategy: copy the project to a temp dir, sanitize secrets,
-        # then tar the clean copy.
+        # then tar the clean copy. The sanitizer runs here rather than
+        # through ``get_commands`` because everything after it needs the
+        # archive to already exist, so the scripts are uploaded by hand
+        # (``_async_entry``'s own upload happens later and then no-ops).
         staging = f"{_TMP_PREFIX}-export-staging-{inst.name}"
-        sanitize_script = (
-            f"set -euo pipefail && "
-            # 1. Copy project (respecting .gitignore via rsync --filter)
-            f"rm -rf {staging} && mkdir -p {staging} && "
-            f"cd {d} && "
-            f"rsync -a "
-            f"  --exclude='.git' "
-            f"  --exclude='odoo/auto' "
-            f"  --exclude='dumps' "
-            f"  --exclude='postgres' "
-            f"  --exclude='secrets' "
-            f"  --exclude='docker-compose.override.yml' "
-            f"  . {staging}/ && "
-            # 2. Strip tokens from repos.yaml URLs
-            f"if [ -f {staging}/odoo/custom/src/repos.yaml ]; then "
-            f"  sed -i 's|://x-access-token:[^@]*@|://|g' "
-            f"    {staging}/odoo/custom/src/repos.yaml; "
-            f"fi && "
-            # 3. Remove SSH keys
-            f"rm -f {staging}/odoo/custom/ssh/id_rsa "
-            f"  {staging}/odoo/custom/ssh/id_rsa.pub "
-            f"  {staging}/odoo/custom/ssh/known_hosts && "
-            # 4. Sanitize .docker env files — replace secrets with placeholders
-            f"if [ -d {staging}/.docker ]; then "
-            f"  echo 'ADMIN_PASSWORD=changeme' > {staging}/.docker/odoo.env; "
-            f"  echo 'PGPASSWORD=changeme' > {staging}/.docker/db-access.env; "
-            f"  echo 'POSTGRES_PASSWORD=changeme' > {staging}/.docker/db-creation.env; "
-            f"  rm -f {staging}/.docker/backup.env; "
-            f"fi && "
-            # 5. Remove backup_dst from copier answers
-            f"if [ -f {staging}/.copier-answers.yml ]; then "
-            f"  sed -i '/^backup_dst:/d' {staging}/.copier-answers.yml; "
-            f"fi && "
-            # 6. Create tarball from sanitized copy
-            f"cd {staging} && "
-            f"tar -czf {remote_tmp} . && "
-            f"rm -rf {staging} && "
-            f"echo \"SIZE:$(du -sh {remote_tmp} | cut -f1)\""
+        sanitize_command = self.run_script(
+            "export_sanitize.sh", [d, staging, remote_tmp],
         )
+        await self._upload_scripts(transport)
 
         try:
-            result = await transport.run(sanitize_script)
+            result = await transport.run(sanitize_command)
             if result.exit_status != 0:
                 raise RuntimeError(
                     "Failed to create export archive: "

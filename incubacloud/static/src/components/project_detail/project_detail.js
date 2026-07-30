@@ -559,14 +559,9 @@ export class ProjectDetail extends Component {
 
     // ── Confirm dialog ────────────────────────────────────────────────────────
 
-    _confirm({ title, message, confirmLabel = _t("Confirm"), isDanger = false }) {
-        return new Promise((resolve) => {
-            this.state.confirmDialog = {
-                title, message, confirmLabel, isDanger,
-                onConfirm: () => { this.state.confirmDialog = null; resolve(true); },
-                onCancel:  () => { this.state.confirmDialog = null; resolve(false); },
-            };
-        });
+    /** Open the shared confirmation dialog. See utils/use_confirm.js. */
+    _confirm(opts) {
+        return confirmVia(this.state, opts);
     }
 
     async deleteProject() {

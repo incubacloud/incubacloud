@@ -3,10 +3,14 @@ import contextlib
 import errno
 import logging
 import re
+import shlex
 import socket
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import asyncssh
+
+from odoo.tools import file_path
 
 from .registry import executor_registry
 from ._repo_requirements import has_pip_conflicts
@@ -94,6 +98,12 @@ def _looks_like_error(line):
 #     rest is silently dropped (the job continues running).
 MAX_LOG_LINE_LEN = 8192
 MAX_CHUNKS_PER_JOB = 20_000
+
+# Remote directory (suffixed with the job id) where an executor uploads
+# the versioned scripts it runs. Recreated from scratch for every job
+# and removed once the command loop ends, so nothing lingers on the host
+# between runs and two concurrent jobs never share a payload.
+SCRIPT_REMOTE_ROOT = "/tmp/.incubacloud-scripts"
 
 
 def _redact_tokens(text):
@@ -185,6 +195,13 @@ class AbstractExecutor(ABC):
         # cheap (no per-flush COUNT(*) round-trip).
         self._chunks_persisted = 0
         self._cap_marker_emitted = False
+        # Versioned-script plumbing. ``run_script()`` flips
+        # ``_scripts_requested`` while ``get_commands()`` builds its
+        # tuples; the overlay is then uploaded once, before the first
+        # command runs. See the VERSIONED SCRIPT HELPERS section.
+        self._scripts_requested = False
+        self._scripts_uploaded = False
+        self._script_overlay_cache = None
 
     # ===============================
     # PUBLIC ENTRYPOINT
@@ -272,79 +289,92 @@ class AbstractExecutor(ABC):
                 self._sys("Connection established.")
                 await self.before_execute(transport)
 
-                results = {}
-                for item in self.get_commands():
-                    label, command = item[0], item[1]
-                    opts = item[2] if len(item) == 3 else {}
-                    logger.debug("[_async_entry] Executing: %s", command)
-                    self._sys(f"Running: {label}")
-                    result = await transport.execute(
-                        command, self.on_stdout, self.on_stderr,
-                    )
-                    results[label] = {
-                        'stdout': result.stdout,
-                        'exit_status': result.exit_status,
-                    }
-                    if result.exit_status != 0:
-                        if opts.get('stop_on_failure'):
-                            self._sys(
-                                f"✗ '{label}' failed"
-                                f" (exit {result.exit_status})"
-                                f" — aborting remaining steps."
-                            )
-                            break
-                        self._sys(
-                            f"✗ '{label}' exited with status"
-                            f" {result.exit_status}."
-                        )
+                # Materialise the commands before running any of them:
+                # ``run_script()`` queues its uploads while
+                # ``get_commands()`` builds the tuples, so the scripts
+                # have to reach the host before the first command fires.
+                commands = list(self.get_commands())
+                await self._upload_scripts(transport)
 
-                errors = self.parse_results(results)
-                if not errors:
-                    await self.after_commands(transport, results)
-                    logger.debug(
-                        "[_async_entry] on_success START job_id=%s",
-                        self.job.id,
-                    )
-                    with self.job.env.registry.cursor() as cr:
-                        _orig_job, _orig_env = self.job, self.env
-                        self.job = self.job.env(cr=cr)[
-                            'cloud.job'
-                        ].browse(self.job.id)
-                        self.env = self.job.env
-                        try:
-                            await self.on_success(results)
-                        finally:
-                            self.job, self.env = _orig_job, _orig_env
-                    logger.debug(
-                        "[_async_entry] on_success END job_id=%s",
-                        self.job.id,
-                    )
-                else:
-                    logger.debug(
-                        "[_async_entry] on_failure START job_id=%s errors=%s",
-                        self.job.id, errors,
-                    )
-                    with self.job.env.registry.cursor() as cr:
-                        _orig_job, _orig_env = self.job, self.env
-                        self.job = self.job.env(cr=cr)[
-                            'cloud.job'
-                        ].browse(self.job.id)
-                        self.env = self.job.env
-                        try:
-                            await self.on_failure(results, errors)
-                        finally:
-                            self.job, self.env = _orig_job, _orig_env
-                    logger.debug(
-                        "[_async_entry] on_failure END job_id=%s",
-                        self.job.id,
-                    )
-                    raise RuntimeError("; ".join(errors))
+                results = {}
+                try:
+                    for item in commands:
+                        label, command = item[0], item[1]
+                        opts = item[2] if len(item) == 3 else {}
+                        logger.debug("[_async_entry] Executing: %s", command)
+                        self._sys(f"Running: {label}")
+                        result = await transport.execute(
+                            command, self.on_stdout, self.on_stderr,
+                        )
+                        results[label] = {
+                            'stdout': result.stdout,
+                            'exit_status': result.exit_status,
+                        }
+                        if result.exit_status != 0:
+                            if opts.get('stop_on_failure'):
+                                self._sys(
+                                    f"✗ '{label}' failed"
+                                    f" (exit {result.exit_status})"
+                                    f" — aborting remaining steps."
+                                )
+                                break
+                            self._sys(
+                                f"✗ '{label}' exited with status"
+                                f" {result.exit_status}."
+                            )
+                    # Inside the try so ``after_commands`` can still run
+                    # a script, and in a finally so a failed job cleans
+                    # up after itself too.
+                    await self._dispatch_outcome(results, transport)
+                finally:
+                    await self._cleanup_scripts(transport)
 
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
             logger.exception("[_async_entry] Exception: %s", e)
             self._sys(f"✗ {type(e).__name__}: {e}")
             raise
+
+    async def _dispatch_outcome(self, results, transport=None):
+        """Run ``parse_results`` and fire the matching terminal hook.
+
+        Both callbacks run on their own cursor so what they write is
+        committed independently of the job's transaction, and the
+        executor's ``job``/``env`` are restored afterwards.
+
+        Raises ``RuntimeError`` after ``on_failure`` so the caller (and
+        queue_job) sees the job as failed.
+
+        :param dict results: ``{label: {'stdout': str, 'exit_status': int}}``
+        :param transport: open transport, when the executor has one.
+            ``after_commands`` needs it, so it is skipped when there is
+            none (an Ansible-backed job opens no transport of its own).
+        """
+        logger = logging.getLogger("AbstractExecutor")
+        errors = self.parse_results(results)
+        hook, args = (
+            (self.on_success, (results,)) if not errors
+            else (self.on_failure, (results, errors))
+        )
+        if not errors and transport is not None:
+            await self.after_commands(transport, results)
+        logger.debug(
+            "[_dispatch_outcome] %s START job_id=%s errors=%s",
+            hook.__name__, self.job.id, errors,
+        )
+        with self.job.env.registry.cursor() as cr:
+            _orig_job, _orig_env = self.job, self.env
+            self.job = self.job.env(cr=cr)['cloud.job'].browse(self.job.id)
+            self.env = self.job.env
+            try:
+                await hook(*args)
+            finally:
+                self.job, self.env = _orig_job, _orig_env
+        logger.debug(
+            "[_dispatch_outcome] %s END job_id=%s", hook.__name__, self.job.id,
+        )
+        if errors:
+            raise RuntimeError("; ".join(errors))
 
     # ===============================
     # DB + BUS INFRASTRUCTURE
@@ -479,29 +509,21 @@ class AbstractExecutor(ABC):
     # ===============================
 
     def _alert(self, code, message, level='warning'):
-        """Create or refresh an active alert for this job's host."""
+        """Create or refresh an active alert for this job's host.
+
+        The dedup rule itself lives in ``cloud.alert.raise_alert`` (one
+        implementation, shared with the job-less producers such as the
+        metric-rule cron). What stays here is the private cursor: an
+        alert about a failure must survive the rollback of the very
+        transaction that failed.
+        """
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            Alert = env['cloud.alert']
-            existing = Alert.search([
-                ('host_id', '=', self.job.host_id.id),
-                ('code', '=', code),
-                ('state', '=', 'active'),
-            ], limit=1)
-            if existing:
-                existing.write({
-                    'message': message,
-                    'level': level,
-                    'job_id': self.job.id,
-                })
-            else:
-                Alert.create({
-                    'host_id': self.job.host_id.id,
-                    'code': code,
-                    'message': message,
-                    'level': level,
-                    'job_id': self.job.id,
-                })
+            env['cloud.alert'].raise_alert(
+                code, message, level=level,
+                host=env['cloud.host'].browse(self.job.host_id.id),
+                job=env['cloud.job'].browse(self.job.id),
+            )
 
     def notify_host_unreachable(self, exc, attempts):
         """Raise a host-scoped alert after connection retries are exhausted.
@@ -526,11 +548,9 @@ class AbstractExecutor(ABC):
         """Dismiss any active alert with the given code for this job's host."""
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            env['cloud.alert'].search([
-                ('host_id', '=', self.job.host_id.id),
-                ('code', '=', code),
-                ('state', '=', 'active'),
-            ]).write({'state': 'dismissed'})
+            env['cloud.alert'].resolve_alert(
+                code, host=env['cloud.host'].browse(self.job.host_id.id),
+            )
 
     # ===============================
     # PATH HELPERS
@@ -539,6 +559,136 @@ class AbstractExecutor(ABC):
     def _inst_dir(self, inst):
         """Return the remote directory for an instance."""
         return inst.get_remote_dir()
+
+    # ===============================
+    # VERSIONED SCRIPT HELPERS
+    # ===============================
+
+    def _script_root(self):
+        """Return the remote directory this job uploads its scripts to."""
+        return f"{SCRIPT_REMOTE_ROOT}-{self.job.id}"
+
+    @classmethod
+    def _addon_chain(cls):
+        """Return the addon of every class in the MRO, most derived first.
+
+        Both the ``scripts/`` overlay and the ``ansible/`` tree resolve
+        through this chain: an executor sees the assets of its own addon
+        *and* those of the addons its base classes come from, which is
+        how a saas subclass reuses (or shadows) a core script.
+        """
+        addons = []
+        for klass in cls.__mro__:
+            parts = (klass.__module__ or "").split(".")
+            if parts[:2] == ["odoo", "addons"] and len(parts) > 2:
+                if parts[2] not in addons:
+                    addons.append(parts[2])
+        return addons
+
+    def _addon_overlay(self, subdir, pattern="*"):
+        """Return ``{relative path: absolute local path}`` for ``<addon>/<subdir>``.
+
+        Merges that directory across every addon in ``_addon_chain()``,
+        most derived first, so a subclass shadows a base-class file of
+        the same relative name. Addons that don't ship the directory are
+        skipped.
+        """
+        overlay = {}
+        for addon in self._addon_chain():
+            try:
+                base = file_path(f"{addon}/{subdir}")
+            except FileNotFoundError:
+                continue
+            for local in sorted(Path(base).rglob(pattern)):
+                if local.is_file():
+                    overlay.setdefault(
+                        local.relative_to(base).as_posix(), str(local),
+                    )
+        return overlay
+
+    def _script_overlay(self):
+        """Return the merged ``scripts/`` overlay, cached per instance."""
+        if self._script_overlay_cache is None:
+            self._script_overlay_cache = self._addon_overlay("scripts", "*.sh")
+        return self._script_overlay_cache
+
+    def run_script(self, name, args=()):
+        """Return the shell command that runs the versioned script *name*.
+
+        Queues this executor's whole ``scripts/`` overlay for upload (so
+        a script can ``source lib/common.sh``) and returns
+        ``bash <remote>/<name> <args...>`` with every argument
+        shell-quoted. Use it as the command of a ``get_commands()``
+        tuple::
+
+            ("Deploy", self.run_script("deploy.sh", [d, inst.name]))
+
+        Passing values as *arguments* — never as text interpolated into
+        the script — is what keeps remote execution injection-safe and
+        the script itself reviewable and lintable in git.
+
+        :param str name: path of the script relative to ``scripts/``
+        :param args: positional arguments passed to the script
+        :return: the command string to hand to ``transport.execute()``
+        :raises FileNotFoundError: if no addon in the MRO ships *name*
+        """
+        if name not in self._script_overlay():
+            raise FileNotFoundError(
+                f"No versioned script named {name!r} under scripts/ of: "
+                f"{', '.join(self._addon_chain())}."
+            )
+        self._scripts_requested = True
+        command = f"bash {self._script_root()}/{name}"
+        quoted = shlex.join(str(a) for a in args)
+        return f"{command} {quoted}" if quoted else command
+
+    async def _upload_scripts(self, transport):
+        """Upload the queued ``scripts/`` overlay to this job's remote dir.
+
+        No-op unless ``run_script()`` was called, and no-op again once
+        the upload has happened. The directory is wiped first so a
+        leftover from an interrupted run can never shadow the scripts of
+        this one, and created 0700 so the payload is unreadable by other
+        accounts on the host.
+
+        ``_async_entry`` calls this between ``get_commands()`` and the
+        command loop. An executor that runs a script from
+        ``before_execute`` — where the upload has not happened yet —
+        calls ``run_script()`` and then awaits this itself; the second
+        call from ``_async_entry`` is then a no-op.
+        """
+        if not self._scripts_requested or self._scripts_uploaded:
+            return
+        root = self._script_root()
+        files = {}
+        dirs = {root}
+        for rel, local in self._script_overlay().items():
+            remote = f"{root}/{rel}"
+            files[remote] = Path(local).read_text(encoding="utf-8")
+            dirs.add(remote.rsplit("/", 1)[0])
+        mkdir = " ".join(sorted(dirs))
+        result = await transport.run(f"rm -rf {root} && mkdir -p -m 700 {mkdir}")
+        if result.exit_status != 0:
+            raise RuntimeError(
+                f"Could not create the remote script directory {root} "
+                f"(exit {result.exit_status})."
+            )
+        await transport.upload_text_files(files)
+        self._scripts_uploaded = True
+        self._sys(f"Uploaded {len(files)} script file(s) to {root}.")
+
+    async def _cleanup_scripts(self, transport):
+        """Remove this job's remote script directory (best effort).
+
+        Runs in the ``finally`` of the command loop, so a failed job
+        cleans up too. Suppresses its own errors: the connection may
+        already be gone, and a cleanup failure must never mask the real
+        error that is on its way up.
+        """
+        if not self._scripts_requested:
+            return
+        with contextlib.suppress(Exception):
+            await transport.run(f"rm -rf {self._script_root()}")
 
     # ===============================
     # ABSTRACT METHODS

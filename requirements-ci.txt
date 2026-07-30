@@ -15,8 +15,9 @@ asyncssh==2.22.0
 boto3==1.42.91
 hcloud==2.17.1
 bcrypt==5.0.0
+ansible-core==2.21.2
+ansible-runner==2.4.3
 
 # Test-only pins (matched by the CI ``test`` job)
-freezegun==1.5.5
 PyYAML==6.0.3
 cryptography==48.0.1

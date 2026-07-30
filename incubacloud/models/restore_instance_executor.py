@@ -101,58 +101,29 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
         return [
             (
                 "Verify backup file",
-                # 600 + chown to the odoo container's UID — the SSH user
-                # and the container's odoo user are not the same UID, so a
-                # plain ``chmod 600`` would leave the bind-
-                # mounted zip unreadable from inside the container
-                # (click-odoo-restoredb prints "Path '/mnt/restore.zip'
-                # is not readable."). We discover the UID dynamically so
-                # the fix survives doodba image upgrades that ever change
-                # it. ``--entrypoint=''`` skips doodba's addon-linking
-                # init so ``id -u`` returns immediately.
-                f'test -f {remote}'
-                f' || (echo "Backup file not found at {remote}" >&2'
-                f' && exit 1)'
-                f' && cd {d}'
-                f' && ODOO_UID="$(docker compose run --rm --entrypoint=""'
-                f' odoo id -u 2>/dev/null | tr -d "\\r\\n")"'
-                f' && [ -n "$ODOO_UID" ]'
-                f' || (echo "Could not discover odoo container UID" >&2'
-                f' && exit 1)'
-                # ``sudo`` so this works when the SSH user is a non-root
-                # sudoer (some VPS providers, and every hardened host runs
-                # as ``incubacloud``): chowning to another UID needs
-                # CAP_CHOWN. A no-op when the SSH user is already root.
-                f' && sudo chown "$ODOO_UID":"$ODOO_UID" {remote}'
-                f' && sudo chmod 600 {remote}',
+                self.run_script("restore.sh", ["verify-file", d, remote]),
                 {"stop_on_failure": True},
             ),
             (
                 "Stop Odoo service",
-                f"cd {d} && docker compose stop odoo",
+                self.run_script("compose_op.sh", [d, "stop", "odoo"]),
                 {"stop_on_failure": True},
             ),
             (
                 "Restore database",
-                (
-                    f'cd {d} && docker compose run --rm'
-                    f' -v "{remote}:/mnt/restore.zip:ro"'
-                    f' odoo click-odoo-restoredb'
-                    f' --copy --force {dbname} /mnt/restore.zip'
-                ),
+                self.run_script("restore.sh", ["restore-db", d, dbname, remote]),
                 {"stop_on_failure": True},
             ),
             (
                 "Ensure incubacloud_connect",
-                f"cd {d} && docker compose run --rm odoo"
-                f" odoo -d {dbname}"
-                f" -i incubacloud_connect"
-                f" --stop-after-init --no-http",
+                self.run_script("restore.sh", ["ensure-connect", d, dbname]),
             ),
             (
                 "Start Odoo service",
-                f"cd {d} && docker compose start odoo",
+                self.run_script("compose_op.sh", [d, "start", "odoo"]),
             ),
+            # Left inline: a lone ``rm -f`` is not worth a versioned
+            # script, and unquoted the remote shell expands any ``~``.
             (
                 "Remove remote backup file",
                 f"rm -f {remote}",

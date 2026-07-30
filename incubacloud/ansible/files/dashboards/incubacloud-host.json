@@ -1,0 +1,128 @@
+{
+  "title": "IncubaCloud \u2014 Host",
+  "uid": "ic-host",
+  "tags": [
+    "incubacloud"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": "label_values(up, host)",
+        "refresh": 1,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "CPU load per core",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "node_load15{host=\"$host\"} / count without (cpu, mode) (node_cpu_seconds_total{host=\"$host\",mode=\"idle\"})",
+          "legendFormat": "load15/core"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory used %",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "100 - (node_memory_MemAvailable_bytes{host=\"$host\"} / node_memory_MemTotal_bytes{host=\"$host\"} * 100)",
+          "legendFormat": "used %"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Root filesystem used %",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "100 - (node_filesystem_avail_bytes{host=\"$host\",mountpoint=\"/\"} / node_filesystem_size_bytes{host=\"$host\",mountpoint=\"/\"} * 100)",
+          "legendFormat": "used %"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk used per instance",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "ic_instance_disk_bytes{host=\"$host\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP requests by Traefik service",
+      "description": "Host-wide, grouped by Traefik service. Traefik reports per service and its service names come from each customer's own prod.yaml, so these cannot be attributed to a cloud.instance; per-instance HTTP arrives with the blackbox probes of observability v2.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(traefik_service_requests_total{host=\"$host\"}[5m]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request duration p95 by Traefik service",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (service, le) (rate(traefik_service_request_duration_seconds_bucket{host=\"$host\"}[5m])))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    }
+  ]
+}

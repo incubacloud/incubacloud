@@ -1,0 +1,29 @@
+---
+# Smoke test for the Ansible pipeline.
+#
+# Proves, without changing anything on the host, that the panel can
+# reach it, authenticate with the key the panel already trusts
+# (cloud.host.known_hosts_key) and escalate to root. Run this first when
+# wiring a new host-state playbook: if it fails, the problem is the
+# connection, not your playbook.
+- name: Verify Ansible connectivity to a cloud host
+  hosts: all
+  gather_facts: true
+
+  tasks:
+    - name: Ping the host
+      ansible.builtin.ping:
+
+    - name: Report the distribution Ansible detected
+      ansible.builtin.debug:
+        msg: >-
+          {{ ansible_facts['distribution'] }}
+          {{ ansible_facts['distribution_version'] }}
+
+    - name: Check that privilege escalation reaches root
+      ansible.builtin.command:
+        cmd: id -u
+      become: true
+      changed_when: false
+      register: ic_escalated_uid
+      failed_when: ic_escalated_uid.stdout != '0'

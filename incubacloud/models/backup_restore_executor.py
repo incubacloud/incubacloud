@@ -51,13 +51,11 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         return [
             (
                 "Stop Odoo",
-                f"cd {d} && docker compose stop odoo",
+                self.run_script("compose_op.sh", [d, "stop", "odoo"]),
             ),
             (
                 "Restore from backup",
-                f"cd {d} && docker compose exec -T backup"
-                f" sh -c 'dup restore --time \"{time}\" --force"
-                f" \"$DST\" \"$SRC\"'",
+                self.run_script("backup_restore.sh", ["restore", d, time]),
                 # Abort before dropdb/createdb: a failed restore must never
                 # fall through to destroying the production database and
                 # then importing a stale/absent SQL dump.
@@ -65,26 +63,22 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
             ),
             (
                 "Drop database",
-                f"cd {d} && docker compose exec -T backup"
-                f" dropdb --if-exists {dbname}",
+                self.run_script("backup_restore.sh", ["dropdb", d, dbname]),
                 {"stop_on_failure": True},
             ),
             (
                 "Create database",
-                f"cd {d} && docker compose exec -T backup"
-                f" createdb {dbname}",
+                self.run_script("backup_restore.sh", ["createdb", d, dbname]),
                 {"stop_on_failure": True},
             ),
             (
                 "Import SQL",
-                f"cd {d} && docker compose exec -T backup"
-                f" sh -c 'psql -v ON_ERROR_STOP=1 -d {dbname}"
-                f" -f $SRC/{dbname}.sql'",
+                self.run_script("backup_restore.sh", ["import-sql", d, dbname]),
                 {"stop_on_failure": True},
             ),
             (
                 "Start instance",
-                f"cd {d} && docker compose up -d",
+                self.run_script("compose_op.sh", [d, "up"]),
             ),
         ]
 

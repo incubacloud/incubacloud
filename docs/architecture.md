@@ -213,8 +213,14 @@ class MyExecutor(AbstractSSHExecutor):
 
     async def on_success(self, results):
         # runs in a fresh DB cursor after all commands succeed
-        instance = self.instance  # cloud.instance record
-        instance.write({'deployed': True})
+        instance = self.job.instance_id  # cloud.instance record
+        # ``deployed`` is DERIVED from the lifecycle state and cannot be
+        # written: cloud.instance.write() rejects both 'deployed' and
+        # 'state'. Move the instance with _transition(), which validates
+        # the move against the transition map, and write only the plain
+        # fields alongside it.
+        instance.write({'running': True})
+        instance._transition('deployed')
 
 # Commands can include a third element for options:
 def get_commands(self):

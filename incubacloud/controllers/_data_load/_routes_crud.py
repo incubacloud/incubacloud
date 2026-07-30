@@ -37,6 +37,32 @@ from ._helpers import (
 
 _logger = logging.getLogger(__name__)
 
+# Mirrors the Selection on ``cloud.instance.domain.cert_resolver``.
+_CERT_RESOLVERS = frozenset({'letsencrypt', 'custom', 'none'})
+
+
+def _domain_vals(payload):
+    """Normalise one domain entry from the SPA into ORM values.
+
+    ``cert_resolver`` is clamped to the model's Selection rather than
+    passed through: the field used to be a free Char, so a cached SPA
+    bundle or a hand-made RPC call can still send a value outside the
+    domain. Clamping degrades it to the default instead of raising a 500
+    on what is, from the caller's side, a stale client.
+
+    :param dict payload: one entry of the request's ``domains`` list
+    :returns: dict of values for ``cloud.instance.domain``
+    """
+    resolver = (payload.get('cert_resolver') or '').strip()
+    return {
+        'hostname': (payload.get('hostname') or '').strip(),
+        'redirect_to': (payload.get('redirect_to') or '').strip(),
+        'cert_resolver': (
+            resolver if resolver in _CERT_RESOLVERS else 'letsencrypt'
+        ),
+        'redirect_permanent': bool(payload.get('redirect_permanent')),
+    }
+
 
 class CrudMixin:
     """Projects, hosts, instances, tags, users, secrets, dashboard,
@@ -669,6 +695,7 @@ class CrudMixin:
             'last_probed': host.last_probed,
             'instance_count': len(host.instance_ids),
             'traefik_deployed': host.traefik_deployed,
+            'config_dirty': host.config_dirty,
             'wildcard_domain': host.wildcard_domain or '',
             'has_traefik_panel_password':
                 _has_encrypted(host, 'traefik_panel_password'),
@@ -1007,6 +1034,7 @@ class CrudMixin:
                     'name': i.name,
                     'environment': i.environment,
                     'status': i.status,
+                    'state': i.state,
                     'deployed': i.deployed,
                     'running': i.running,
                     'host': i.host_id.name if i.host_id else '',
@@ -1042,6 +1070,7 @@ class CrudMixin:
                 'name': i.name,
                 'environment': i.environment,
                 'status': i.status,
+                'state': i.state,
                 'deployed': i.deployed,
                 'running': i.running,
                 'host': i.host_id.name if i.host_id else '',
@@ -1094,13 +1123,7 @@ class CrudMixin:
             safe['domain_ids'] = [(0, 0, {'hostname': domain_str})]
         elif domains:
             safe['domain_ids'] = [
-                (0, 0, {
-                    'hostname': (d.get('hostname') or '').strip(),
-                    'redirect_to': (d.get('redirect_to') or '').strip(),
-                    'cert_resolver': (
-                        d.get('cert_resolver') or 'letsencrypt'
-                    ).strip(),
-                })
+                (0, 0, _domain_vals(d))
                 for d in domains if (d.get('hostname') or '').strip()
             ]
         # ── Normalize odoo_version to string (frontend may send a number) ──
@@ -1218,6 +1241,7 @@ class CrudMixin:
                 ICP.get_param('incubacloud.audit_log_retention_days', '90') or 90
             ),
             'job_log_retention_days': settings.job_log_retention_days or 0,
+            'job_retention_days': settings.job_retention_days or 0,
             'default_backup_alert_threshold_pct': (
                 settings.default_backup_alert_threshold_pct or 0
             ),
@@ -1227,14 +1251,30 @@ class CrudMixin:
             'github_event_truncate_days': (
                 settings.github_event_truncate_days or 0
             ),
+            # ── Observability ──────────────────────────────────────────
+            # The remote-write token is write-only, like the GitHub PAT:
+            # it is a fleet-wide write credential, so the browser only
+            # learns whether one is set, never its value.
+            'metrics_enabled': bool(settings.metrics_enabled),
+            'metrics_central_url': settings.metrics_central_url or '',
+            'metrics_remote_write_url': settings.metrics_remote_write_url or '',
+            'has_metrics_remote_write_token': bool(
+                settings.metrics_remote_write_token
+            ),
+            'metrics_retention_days': settings.metrics_retention_days or 0,
+            'grafana_base_url': settings.grafana_base_url or '',
         }
 
     @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
     def cloud_save_general_settings(
         self, autoassign_enabled=False, default_backup_backend_id=None,
         audit_log_retention_days=90, job_log_retention_days=30,
+        job_retention_days=180,
         default_backup_alert_threshold_pct=80,
         github_event_retention_days=90, github_event_truncate_days=7,
+        metrics_enabled=None, metrics_central_url=None,
+        metrics_remote_write_url=None, metrics_remote_write_token=None,
+        metrics_retention_days=None, grafana_base_url=None,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1274,6 +1314,9 @@ class CrudMixin:
             'job_log_retention_days': max(
                 0, _safe_int(job_log_retention_days, 30),
             ),
+            'job_retention_days': max(
+                0, _safe_int(job_retention_days, 180),
+            ),
             'default_backup_alert_threshold_pct': threshold,
             'github_event_retention_days': max(
                 0, _safe_int(github_event_retention_days, 90),
@@ -1282,7 +1325,57 @@ class CrudMixin:
                 0, _safe_int(github_event_truncate_days, 7),
             ),
         })
+
+        # ── Observability ─────────────────────────────────────────────
+        # Each field is written only when the client actually sent it, so
+        # a caller that predates these settings cannot blank them out.
+        metrics_vals = {}
+        if metrics_enabled is not None:
+            metrics_vals['metrics_enabled'] = bool(metrics_enabled)
+        for field, value in (
+            ('metrics_central_url', metrics_central_url),
+            ('metrics_remote_write_url', metrics_remote_write_url),
+            ('grafana_base_url', grafana_base_url),
+        ):
+            if value is not None:
+                metrics_vals[field] = (value or '').strip()
+        if metrics_retention_days is not None:
+            metrics_vals['metrics_retention_days'] = max(
+                1, _safe_int(metrics_retention_days, 90),
+            )
+        # Write-only secret: an empty string means "leave it alone", which
+        # is what the form sends back when the operator did not retype it.
+        if (metrics_remote_write_token or '').strip():
+            metrics_vals['metrics_remote_write_token'] = (
+                metrics_remote_write_token.strip()
+            )
+        if metrics_vals:
+            request.env['cloud.settings'].sudo()._get().write(metrics_vals)
+
         return {'ok': True}
+
+    @http.route(['/cloud/monitoring/deploy_central'], type='jsonrpc',
+                auth='user')
+    def cloud_monitoring_deploy_central(self, host_id):
+        """Queue the metrics central deployment against *host_id*.
+
+        Lives in Settings rather than on every host page on purpose: the
+        central is one per platform, and an action offered from each host
+        invites deploying several by accident.
+        """
+        self._sec()._check_can_manage_hosts()
+        host = request.env['cloud.host'].browse(int(host_id or 0))
+        if not host.exists():
+            return {'ok': False, 'error': _('Host not found')}
+        try:
+            job_id = request.env['cloud.job'].sudo().enqueue(
+                host.id, False, 'deploy_metrics_central',
+            )
+        except Exception as exc:
+            return safe_error_response(
+                exc, _("Failed to queue the central deployment"),
+            )
+        return {'ok': True, 'job_id': job_id}
 
     # ── Core rate-limit settings ──────────────────────────────────────────
 
@@ -1300,6 +1393,10 @@ class CrudMixin:
             'rate_limit_terminal_user_per_min': (
                 s.rate_limit_terminal_user_per_min or 0
             ),
+            'rate_limit_connect_per_min': s.rate_limit_connect_per_min or 0,
+            'rate_limit_connect_user_per_min': (
+                s.rate_limit_connect_user_per_min or 0
+            ),
         }
 
     @http.route(['/cloud/save_core_rate_limits'], type='jsonrpc', auth='user')
@@ -1313,6 +1410,8 @@ class CrudMixin:
             'rate_limit_webhook_per_min',
             'rate_limit_terminal_per_min',
             'rate_limit_terminal_user_per_min',
+            'rate_limit_connect_per_min',
+            'rate_limit_connect_user_per_min',
         }
         safe = {
             k: max(0, int(v or 0))
@@ -1344,6 +1443,7 @@ class CrudMixin:
             'name': inst.name,
             'environment': inst.environment,
             'status': inst.status,
+            'state': inst.state,
             'deployed': inst.deployed,
             'running': inst.running,
             'auto_rebuild': inst.auto_rebuild,
@@ -1397,6 +1497,7 @@ class CrudMixin:
             'odoo_commit_sha': inst.odoo_commit_sha or '',
             'last_deploy_date': last_deploy.create_date if last_deploy else None,
             'last_deploy_state': last_deploy.state if last_deploy else None,
+            'config_dirty': inst.config_dirty,
             'odoo_initial_lang': inst.odoo_initial_lang.id if inst.odoo_initial_lang else None,
             'has_odoo_admin_password':
                 _has_encrypted(inst, 'odoo_admin_password'),
@@ -1442,6 +1543,7 @@ class CrudMixin:
                     'hostname': d.hostname or '',
                     'redirect_to': d.redirect_to or '',
                     'cert_resolver': d.cert_resolver or 'letsencrypt',
+                    'redirect_permanent': d.redirect_permanent,
                 }
                 for d in inst.domain_ids
             ],
@@ -1567,13 +1669,7 @@ class CrudMixin:
                 hostname = (d.get('hostname') or '').strip()
                 if not hostname:
                     continue
-                dvals = {
-                    'hostname': hostname,
-                    'redirect_to': (d.get('redirect_to') or '').strip(),
-                    'cert_resolver': (
-                        d.get('cert_resolver') or 'letsencrypt'
-                    ).strip(),
-                }
+                dvals = _domain_vals(d)
                 if did and did in existing_ids:
                     Domain.browse(did).write(dvals)
                     kept_ids.add(did)

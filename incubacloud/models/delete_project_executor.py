@@ -43,29 +43,12 @@ class DeleteProjectExecutor(AbstractSSHExecutor):
         return [
             (
                 "Check no running containers in project dir",
-                # If the directory does not exist, nothing to do.
-                f"if [ ! -d {d} ]; then"
-                f"  echo 'Project dir {d} not found — nothing to check.';"
-                f"  exit 0;"
-                f"fi;"
-                # Look for any docker compose project under {d} that still
-                # has containers (running OR stopped). We use `docker ps -a`
-                # filtered by the compose working-dir label to catch stray
-                # containers even if compose.yaml was removed manually.
-                f" running=$(docker ps -a --filter"
-                f' "label=com.docker.compose.project.working_dir"'
-                f" --format '{{{{.Label \"com.docker.compose.project"
-                f".working_dir\"}}}}'"
-                f" | awk -v d=\"$(readlink -f {d})\""
-                f" 'index($0, d)==1' | head -n1);"
-                f" if [ -n \"$running\" ]; then"
-                f"   echo \"Refusing to delete: containers still exist under"
-                f" $running\";"
-                f"   exit 1;"
-                f" fi;"
-                f" echo 'No containers found under {d}.'",
+                self.run_script("project_containers_check.sh", [d]),
                 {"stop_on_failure": True},
             ),
+            # Left inline: a lone ``rm -rf`` is not an operation worth a
+            # versioned script, and unquoted the remote shell expands
+            # the ``~``.
             (
                 "Remove project directory",
                 f"rm -rf {d}",

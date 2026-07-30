@@ -43,6 +43,14 @@
                                 <span t-att-class="'rl-sb ' + hostSbClass(state.host.status)">
                                     <span class="rl-d"/><t t-esc="statusLabel(state.host.status)"/>
                                 </span>
+                                <t t-if="state.host.config_dirty">
+                                    <span
+                      class="rl-pill pending"
+                      title="Saved host configuration differs from what the last full setup shipped. Re-run full setup to apply it."
+                    >
+                                        Changes not applied
+                                    </span>
+                                </t>
                             </t>
                         </h1>
                         <t t-if="!isNew">
@@ -288,34 +296,43 @@
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('name') ? 'has-error' : ''">
                                     <label>Name <span class="rl-req">*</span></label>
-                                    <input type="text"
+                                    <input
+                    t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('name') ? 'hd-err-name' : undefined"
                                            t-att-value="state.form.name"
                                            t-on-input="(ev) => this.onInput('name', ev)"
                                            t-on-blur="() => validator.touch('name')"/>
                                     <t t-if="validator.fieldError('name')">
-                                        <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                                        <span class="ic-field-error"
+                      t-att-id="'hd-err-name'" t-esc="validator.fieldError('name')"/>
                                     </t>
                                 </div>
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('ip_address') ? 'has-error' : ''">
                                     <label>IP Address <span class="rl-req">*</span></label>
-                                    <input type="text" placeholder="192.168.1.1"
+                                    <input
+                    t-att-aria-invalid="validator.fieldError('ip_address') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('ip_address') ? 'hd-err-ip_address' : undefined"
                                            t-att-value="state.form.ip_address"
                                            t-on-input="(ev) => this.onInput('ip_address', ev)"
                                            t-on-blur="() => validator.touch('ip_address')"/>
                                     <t t-if="validator.fieldError('ip_address')">
-                                        <span class="ic-field-error" t-esc="validator.fieldError('ip_address')"/>
+                                        <span class="ic-field-error"
+                      t-att-id="'hd-err-ip_address'" t-esc="validator.fieldError('ip_address')"/>
                                     </t>
                                 </div>
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('port') ? 'has-error' : ''">
                                     <label>Port <span class="rl-req">*</span></label>
-                                    <input type="number"
+                                    <input
+                    t-att-aria-invalid="validator.fieldError('port') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('port') ? 'hd-err-port' : undefined" type="number"
                                            t-att-value="state.form.port"
                                            t-on-input="(ev) => this.onInput('port', ev)"
                                            t-on-blur="() => validator.touch('port')"/>
                                     <t t-if="validator.fieldError('port')">
-                                        <span class="ic-field-error" t-esc="validator.fieldError('port')"/>
+                                        <span class="ic-field-error"
+                      t-att-id="'hd-err-port'" t-esc="validator.fieldError('port')"/>
                                     </t>
                                 </div>
                                 <div class="rl-frow rl-full">
@@ -337,7 +354,7 @@
                                 <div class="rl-frow rl-full">
                                     <label>Auto-assignment</label>
                                     <div style="display: flex; align-items: center; gap: 8px;">
-                                        <input type="checkbox"
+                                        <input
                                                t-att-checked="state.form.exclude_from_autoassign"
                                                t-on-change="(ev) => { this.state.form.exclude_from_autoassign = ev.target.checked; }"/>
                                         <span>Exclude from auto-assignment</span>
@@ -355,12 +372,15 @@
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('user') ? 'has-error' : ''">
                                     <label>User <span class="rl-req">*</span></label>
-                                    <input type="text" placeholder="ubuntu"
+                                    <input
+                    t-att-aria-invalid="validator.fieldError('user') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('user') ? 'hd-err-user' : undefined" type="text" placeholder="ubuntu"
                                            t-att-value="state.form.user"
                                            t-on-input="(ev) => this.onInput('user', ev)"
                                            t-on-blur="() => validator.touch('user')"/>
                                     <t t-if="validator.fieldError('user')">
-                                        <span class="ic-field-error" t-esc="validator.fieldError('user')"/>
+                                        <span class="ic-field-error"
+                      t-att-id="'hd-err-user'" t-esc="validator.fieldError('user')"/>
                                     </t>
                                 </div>
                                 <div class="rl-frow">
@@ -382,7 +402,7 @@
                                 <t t-else="">
                                     <div class="rl-frow rl-full">
                                         <label>SSH Private Key <span class="rl-req">*</span></label>
-                                        <input type="file" accept=".pem,.key,.txt"
+                                        <input
                                                t-on-change="onKeyFileChange"/>
                                         <t t-if="!isNew and state.has_key_file and !state.form.key_file">
                                             <span class="ic-form-note ic-form-note--set">
@@ -402,12 +422,15 @@
                                 <div class="rl-frow"
                                      t-att-class="validator.fieldError('wildcard_domain') ? 'has-error' : ''">
                                     <label>Wildcard Domain <span class="rl-req">*</span></label>
-                                    <input type="text" placeholder="example.com"
+                                    <input
+                    t-att-aria-invalid="validator.fieldError('wildcard_domain') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('wildcard_domain') ? 'hd-err-wildcard_domain' : undefined" type="text" placeholder="example.com"
                                            t-att-value="state.form.wildcard_domain"
                                            t-on-input="(ev) => this.onInput('wildcard_domain', ev)"
                                            t-on-blur="() => validator.touch('wildcard_domain')"/>
                                     <t t-if="validator.fieldError('wildcard_domain')">
-                                        <span class="ic-field-error" t-esc="validator.fieldError('wildcard_domain')"/>
+                                        <span class="ic-field-error"
+                      t-att-id="'hd-err-wildcard_domain'" t-esc="validator.fieldError('wildcard_domain')"/>
                                     </t>
                                 </div>
                                 <div class="rl-frow">

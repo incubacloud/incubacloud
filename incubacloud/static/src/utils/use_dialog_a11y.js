@@ -1,7 +1,7 @@
 /**
  * useDialogA11y — add a11y behavior to bespoke modals that can't adopt
  * <IcModal> wholesale (because they have structured header/body/footer
- * markup of their own, e.g. create_project_modal, import_odoojs_modal,
+ * markup of their own, e.g. import_odoojs_modal,
  * remote_file_browser).
  *
  * What it adds:

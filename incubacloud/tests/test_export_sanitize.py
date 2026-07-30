@@ -1,11 +1,13 @@
 """
-Tier 1 — Pure-Python unit tests for export sanitization logic.
+Tier 1 — the token-stripping contract of the instance export.
 
-Tests the sed/shell patterns used in export_instance_executor to strip
-tokens, passwords, and secrets from exported archives.
+Since Phase 3 the sanitization itself lives in
+``scripts/export_sanitize.sh`` and is tested end to end (real rsync,
+real sed, real tar) in ``tests/shell/export_sanitize.bats``. What stays
+here is the regex contract: which repository URLs must lose their
+credentials and which must be left untouched.
 """
 import re
-import unittest
 
 from odoo.tests.common import BaseCase
 
@@ -58,68 +60,3 @@ class TestStripTokensFromReposYaml(BaseCase):
         line = "  defaults:\n    depth: $DEPTH_DEFAULT"
         result = _strip_tokens_from_repos_yaml(line)
         self.assertEqual(result, line)
-
-
-class TestSensitiveFileExclusions(BaseCase):
-    """Verify the list of files that should be excluded or sanitized."""
-
-    SENSITIVE_PATHS = {
-        '.docker/backup.env',
-        'odoo/custom/ssh/id_rsa',
-        'odoo/custom/ssh/id_rsa.pub',
-        'odoo/custom/ssh/known_hosts',
-        'docker-compose.override.yml',
-    }
-
-    SANITIZED_PATHS = {
-        '.docker/odoo.env',
-        '.docker/db-access.env',
-        '.docker/db-creation.env',
-        'odoo/custom/src/repos.yaml',
-        '.copier-answers.yml',
-    }
-
-    def test_sensitive_files_are_removed(self):
-        """All sensitive files must be in the exclusion list."""
-        for path in self.SENSITIVE_PATHS:
-            self.assertIn('ssh' in path or 'backup.env' in path or 'override' in path, [True])
-
-    def test_override_file_excluded(self):
-        """docker-compose.override.yml must be excluded from export."""
-        self.assertIn('docker-compose.override.yml', self.SENSITIVE_PATHS)
-
-    def test_sanitized_files_are_rewritten(self):
-        """Files with secrets must be rewritten with placeholders."""
-        for path in self.SANITIZED_PATHS:
-            self.assertIn(
-                path.endswith(('.env', '.yaml', '.yml')),
-                [True],
-                f"{path} should be sanitized",
-            )
-
-    def test_placeholder_passwords_correct(self):
-        """Verify the placeholders used in sanitized env files."""
-        placeholders = {
-            'odoo.env': 'ADMIN_PASSWORD=changeme',
-            'db-access.env': 'PGPASSWORD=changeme',
-            'db-creation.env': 'POSTGRES_PASSWORD=changeme',
-        }
-        for filename, expected in placeholders.items():
-            self.assertIn('changeme', expected)
-
-    def test_backup_dst_stripped_from_copier_answers(self):
-        """The sed removes the backup_dst line from copier answers."""
-        content = (
-            "_commit: v9.3.0\n"
-            "backup_deletion: true\n"
-            "backup_dst: boto3+s3://bucket/path\n"
-            "backup_email_from: ''\n"
-        )
-        # Simulate: sed -i '/^backup_dst:/d'
-        result = '\n'.join(
-            line for line in content.splitlines()
-            if not line.startswith('backup_dst:')
-        )
-        self.assertNotIn('backup_dst', result)
-        self.assertIn('backup_deletion', result)
-        self.assertIn('backup_email_from', result)

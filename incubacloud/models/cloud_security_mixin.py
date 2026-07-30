@@ -94,10 +94,30 @@ class CloudSecurityMixin(models.AbstractModel):
     def _check_can_clone_to_staging(self):
         self._check_cloud_group('group_cloud_developer')
 
-    def _check_can_connect_as_user(self):
-        # Stakeholder+: any user with a cloud role. Per-instance scoping is
-        # enforced separately by record rules on cloud.instance — controllers
-        # must browse without sudo so the rule applies.
+    def _check_can_connect_as_user(self, instance=None, target_is_admin=False):
+        """Gate connect-as by environment and by the target user's power.
+
+        Staging (and runbot) keeps the historical floor: Stakeholder+,
+        so a client watching their own staging can still impersonate.
+        Production is stricter, mirroring Odoo.sh: a normal target user
+        requires Developer, and the tenant's own admin requires Manager.
+
+        :param instance: the ``cloud.instance`` being connected to.
+            ``None`` keeps the legacy Stakeholder+ behaviour so callers
+            that do not resolve an instance are unaffected.
+        :param target_is_admin: True when the impersonated user is an
+            administrator of the tenant database.
+        :raises AccessError: when the caller lacks the required role.
+        """
+        # Per-instance scoping is enforced separately by record rules on
+        # cloud.instance — controllers must browse without sudo so the
+        # rule applies.
+        if instance is not None and instance.environment == 'production':
+            if target_is_admin:
+                self._check_cloud_group('group_cloud_manager')
+            else:
+                self._check_cloud_group('group_cloud_developer')
+            return
         self._check_cloud_group('group_cloud_user')
 
     # ── Role introspection (for /cloud/get_config) ──────────────────────
@@ -127,6 +147,9 @@ class CloudSecurityMixin(models.AbstractModel):
             'can_export': is_at_least['developer'],
             'can_clone_to_staging': is_at_least['developer'],
             'can_delete_production': is_at_least['manager'],
+            'can_connect_as': is_at_least['user'],
+            'can_connect_production': is_at_least['developer'],
+            'can_connect_production_admin': is_at_least['manager'],
             'can_deploy': is_at_least['consultant'],
             'can_create_instance': is_at_least['consultant'],
             'can_edit_instance': is_at_least['consultant'],

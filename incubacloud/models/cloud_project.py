@@ -23,7 +23,7 @@ _REMOTE_FOLDER_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
 
 class CloudProject(models.Model):
     _name = 'cloud.project'
-    _inherit = ['cloud.security.mixin']
+    _inherit = ['cloud.security.mixin', 'cloud.audit.tracked.mixin']
     _description = 'Cloud Project'
 
     name = fields.Char(
@@ -175,63 +175,34 @@ class CloudProject(models.Model):
 
     def unlink(self):
         self._check_can_delete_project()
-        # Collect (host, remote_folder) pairs to clean up on remote hosts
-        # AFTER the DB-level delete succeeds.  The instance link is gone
-        # by then, so we snapshot hosts now (only those that ever hosted
-        # an instance for this project).
-        cleanup = []
-        for project in self:
-            folder = project.remote_folder
-            if not folder:
-                continue
-            hosts = project.with_context(
-                active_test=False,
-            ).instance_ids.mapped('host_id')
-            for host in hosts:
-                cleanup.append((host.id, folder))
-
-        result = super().unlink()
-
-        for host_id, folder in cleanup:
-            self.env['cloud.job'].sudo().enqueue(
-                host_id, False, 'delete_project',
-                payload={'remote_folder': folder},
+        # A project can only be dropped once none of its instances still
+        # live on a host: a deployed (or in-flight) instance must be
+        # taken off its host first, or deleting the project would orphan
+        # the remote stack. The instance-level unlink guard enforces the
+        # same rule on the cascade; checking here gives a clearer message
+        # and covers archived-but-deployed instances too.
+        on_host = self.with_context(active_test=False).instance_ids.filtered(
+            lambda i: i.state != 'draft'
+        )
+        if on_host:
+            raise UserError(
+                _(
+                    "Cannot delete a project whose instance(s) are still on "
+                    "a host: %(names)s. Remove them from their hosts first.",
+                    names=", ".join(on_host.mapped("name")),
+                )
             )
-        return result
+        return super().unlink()
+
+    def _audit_target_vals(self):
+        """Point 'Config changed' audit rows at this project."""
+        self.ensure_one()
+        return {'project_id': self.id}
 
     def write(self, vals):
-        # Snapshot tracked fields before write
-        changed = self._AUDIT_TRACKED_FIELDS & set(vals)
-        old_snap = {}
-        if changed:
-            old_snap = {f: {r.id: r[f] for r in self} for f in changed}
+        changed, old_snap = self._audit_snapshot(vals)
         result = super().write(vals)
-        if changed:
-            for rec in self:
-                parts = []
-                for field in changed:
-                    old = old_snap[field][rec.id]
-                    new = rec[field]
-                    if old == new:
-                        continue
-                    field_def = rec._fields[field]
-                    old_d = (
-                        old.display_name
-                        if hasattr(old, 'display_name') and old
-                        else str(old)
-                    )
-                    new_d = (
-                        new.display_name
-                        if hasattr(new, 'display_name') and new
-                        else str(new)
-                    )
-                    parts.append(f"{field_def.string}: {old_d}→{new_d}")
-                if parts:
-                    self.env['cloud.audit.log'].sudo().create({
-                        'action': 'Config changed',
-                        'project_id': rec.id,
-                        'details': '; '.join(parts)[:255],
-                    })
+        self._audit_log_changes(changed, old_snap)
         return result
 
     @api.depends('instance_ids.status')

@@ -24,6 +24,7 @@ inline below so there's only one codepath for inheriting modules to
 wrap.
 """
 
+import logging
 import re
 
 import bcrypt as _bcrypt
@@ -34,89 +35,20 @@ from .setup_whitelist_executor import (
     _WL_TMP, _WL_DIR, _WL_FILE, _WL_PROJECT,
 )
 
+_logger = logging.getLogger(__name__)
+
 MIN_DISK_GB = 10
 _TMP = "/tmp/.incubacloud-traefik"
 _BIN = 'PATH="$HOME/.local/bin:$PATH"'
 
 
-# ── SSH command catalog (Phase 2) ─────────────────────────────────────
-# Each tuple: (label shown in logs, shell command). Every step is
-# idempotent so re-running the job only installs what's missing.
-SETUP_COMMANDS = [
-    # ── System update ──────────────────────────────────────────────────
-    (
-        "Update package index",
-        "sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq",
-    ),
-    # ── Git ────────────────────────────────────────────────────────────
-    (
-        "Install git",
-        "command -v git >/dev/null 2>&1 "
-        "|| sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git",
-    ),
-    # Seed init.defaultBranch=master once per host so concurrent deploys
-    # don't race for the ~/.gitconfig lock. Idempotent: only writes when
-    # the setting is absent. Setup is serialized (single full_setup job
-    # per host), so no contention here.
-    (
-        "Set git default branch",
-        "git config --global --get init.defaultBranch >/dev/null 2>&1"
-        " || git config --global init.defaultBranch master",
-    ),
-    # ── Docker CE ──────────────────────────────────────────────────────
-    (
-        "Install Docker",
-        "command -v docker >/dev/null 2>&1 "
-        "|| (curl -fsSL https://get.docker.com | sudo sh)",
-    ),
-    (
-        "Add user to docker group",
-        "groups | grep -q docker "
-        "|| (sudo usermod -aG docker \"$USER\" && echo 'Added to docker group')",
-    ),
-    # ── Docker Compose V2 ──────────────────────────────────────────────
-    (
-        "Install Docker Compose plugin",
-        "docker compose version >/dev/null 2>&1 "
-        "|| sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-compose-plugin",
-    ),
-    # ── Python toolchain ───────────────────────────────────────────────
-    (
-        "Install python3-pip and python3-venv",
-        "dpkg -s python3-pip python3-venv >/dev/null 2>&1 "
-        "|| sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "
-        "python3-pip python3-venv",
-    ),
-    (
-        "Install pipx",
-        "command -v pipx >/dev/null 2>&1 "
-        "|| python3 -m pip install --break-system-packages --user pipx 2>/dev/null "
-        "|| python3 -m pip install --user pipx",
-    ),
-    (
-        "Add ~/.local/bin to PATH",
-        "grep -q '.local/bin' ~/.bashrc "
-        "|| echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.bashrc",
-    ),
-    # ── Deployment tools ───────────────────────────────────────────────
-    (
-        "Install copier",
-        f"{_BIN} pipx install copier 2>/dev/null || {_BIN} pipx upgrade copier",
-    ),
-    (
-        "Install invoke",
-        f"{_BIN} pipx install invoke 2>/dev/null || {_BIN} pipx upgrade invoke",
-    ),
-    (
-        "Install pre-commit",
-        f"{_BIN} pipx install pre-commit 2>/dev/null || {_BIN} pipx upgrade pre-commit",
-    ),
-    # ── Zip ────────────────────────────────────────────────────────────
-    (
-        "Install zip",
-        "command -v zip >/dev/null 2>&1 || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq zip",
-    ),
-    # ── Verification ───────────────────────────────────────────────────
+# ── Tool verification (Phase 2) ───────────────────────────────────────
+# The idempotent install catalog moved to the versioned script
+# ``scripts/full_setup_install.sh`` (run as one "Install host tools" step
+# in get_commands). These per-tool checks stay here — as individual
+# labelled commands — so the panel reports each tool separately and
+# ``parse_results`` can judge them one by one.
+VERIFY_COMMANDS = [
     ("Verify git",        "git --version 2>&1 || echo FAILED"),
     ("Verify docker",     "docker --version 2>&1 || echo FAILED"),
     ("Verify compose",    "docker compose version 2>&1 || echo FAILED"),
@@ -126,15 +58,7 @@ SETUP_COMMANDS = [
     ("Verify zip",        "zip --version 2>&1 || echo FAILED"),
 ]
 
-_VERIFY_LABELS = (
-    "Verify git",
-    "Verify docker",
-    "Verify compose",
-    "Verify copier",
-    "Verify invoke",
-    "Verify pre-commit",
-    "Verify zip",
-)
+_VERIFY_LABELS = tuple(label for label, _cmd in VERIFY_COMMANDS)
 
 
 # ── Traefik template helpers (Phase 3) ────────────────────────────────
@@ -232,7 +156,9 @@ class FullSetupExecutor(AbstractSSHExecutor):
             # ── Phase 1: compatibility ────────────────────────────────
             ("check:os",   "uname -s"),
             ("check:disk", "df -B1 --output=avail / | tail -n 1"),
-        ] + SETUP_COMMANDS + [
+            # ── Phase 2: tools (versioned script) + per-tool verify ────
+            ("Install host tools", self.run_script("full_setup_install.sh")),
+        ] + VERIFY_COMMANDS + [
             # ── Phase 3: Traefik ──────────────────────────────────────
             (
                 "Create traefik directory",
@@ -358,7 +284,54 @@ class FullSetupExecutor(AbstractSSHExecutor):
         ):
             self._resolve_alert(code)
         self._sys("✓ Host is fully configured and ready for deployments.")
-        self._host().write({'status': 'compatible', 'traefik_deployed': True})
+        host = self._host()
+        host.write({
+            'status': 'compatible',
+            'traefik_deployed': True,
+            # Config-drift anchor: this setup just shipped exactly the
+            # current snapshot, so the saved host config is applied.
+            'applied_config_hash': host._config_snapshot_hash(),
+        })
+        self._chain_observability()
+
+    def _chain_observability(self):
+        """Queue the metrics agents for a freshly prepared host.
+
+        Without this a new host silently reports nothing until somebody
+        remembers to press the button — the fleet grows and monitoring
+        quietly falls behind it.
+
+        Deliberately non-fatal and best-effort: the host IS set up, and a
+        problem installing monitoring must never turn a successful
+        preparation into a failure. The agent job raises its own alert if
+        it fails, so nothing is swallowed silently either.
+        """
+        settings = self.env['cloud.settings'].sudo()._get_system()
+        if not settings.metrics_enabled:
+            return
+        if not (settings.metrics_remote_write_url or '').strip():
+            self._sys(
+                "ℹ Observability is enabled but has no remote-write URL; "
+                "skipping the agent install."
+            )
+            return
+        try:
+            self.env['cloud.job'].sudo().enqueue(
+                self._host().id, False, 'install_observability',
+                # We are inside full_setup's own on_success, so full_setup
+                # is still 'started' and is itself a host-scoped, visible
+                # job: the active-job guard would match it and refuse to
+                # queue its own descendant. Same case as the rollback
+                # chain in cloud_instance._enqueue_rollback_jobs.
+                bypass_running_check=True,
+            )
+            self._sys("Queued the observability agents for this host.")
+        except Exception as exc:  # noqa: BLE001 — never fail the setup
+            _logger.warning(
+                "full_setup: could not queue observability agents for "
+                "host %s: %s", self._host().name, exc,
+            )
+            self._sys(f"⚠ Could not queue the observability agents: {exc}")
 
     async def on_failure(self, results, errors):
         self._sys(f"Setup failed with {len(errors)} error(s):")

@@ -46,7 +46,7 @@
                 </button>
 
                 <!-- Remove repository -->
-                <button class="rl-repo-rm" t-on-click="props.onRemove" title="Quitar repositorio">
+                <button class="rl-repo-rm" t-on-click="props.onRemove" title="Remove repository">
                     <t t-out="env.icon('x', 13)"/>
                 </button>
             </div>

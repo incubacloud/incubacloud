@@ -96,7 +96,7 @@ class _GitHubEventBase(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
             'auto_rebuild': True,
-            'deployed': True,
+            'state': 'deployed',
         })
         self.repo = self.env['cloud.instance.repo'].create({
             'instance_id': self.instance.id,
@@ -230,7 +230,9 @@ class TestProcessPushEventGuards(_GitHubEventBase):
         self.assertTrue(ev.processed)
 
     def test_not_deployed_no_enqueue(self):
-        self.instance.write({'deployed': False})
+        # Same path a real teardown takes to leave the instance a draft.
+        self.instance._transition('deleting')
+        self.instance._transition('draft')
         calls, mock = self._enqueue_calls()
         with mock:
             ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
@@ -477,7 +479,7 @@ class TestProcessPushEventHappyPath(_GitHubEventBase):
             'host_id': self.host.id,
             'environment': 'staging',
             'auto_rebuild': True,
-            'deployed': True,
+            'state': 'deployed',
         })
         self.env['cloud.instance.repo'].create({
             'instance_id': instance2.id,
@@ -573,7 +575,7 @@ class TestProcessPREventGuards(_GitHubEventBase):
             'project_id': self.project.id,
             'host_id': self.host.id,
             'environment': 'staging',
-            'deployed': True,
+            'state': 'deployed',
             'pr_number': 7,
             'pr_repo': 'owner/repo',
         })
@@ -608,7 +610,7 @@ class TestProcessPREventGuards(_GitHubEventBase):
             'name': 'pr-closed',
             'project_id': self.project.id,
             'environment': 'staging',
-            'deployed': False,
+            'state': 'draft',
             'pr_number': 55,
             'pr_repo': 'owner/repo',
         })

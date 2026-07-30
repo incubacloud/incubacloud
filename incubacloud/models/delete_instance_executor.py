@@ -6,6 +6,12 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
 
     _job_type = "delete_instance"
 
+    # Whether tearing down the remote copy also ends the instance's
+    # lifecycle. The move cleanups reuse these teardown commands on a
+    # host the instance no longer lives on, so they set this to False:
+    # for them the record must stay untouched.
+    _owns_instance_lifecycle = True
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _inst(self):
@@ -13,20 +19,36 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
+    async def before_execute(self, transport):
+        """Enter 'deleting' now that the host answered.
+
+        Written on its own cursor so the state is visible to everything
+        else (a second Delete, a deploy) while the teardown runs;
+        ``on_failure`` puts it back to 'deployed' if the teardown fails.
+        Skipped when the instance is already 'deleting', so re-running a
+        job that died mid-teardown is not rejected by the transition map.
+        """
+        inst = self._inst()
+        if not self._owns_instance_lifecycle or not inst:
+            return
+        with self.job.env.registry.cursor() as cr:
+            fresh = self.job.env(cr=cr)["cloud.instance"].browse(inst.id)
+            if fresh.exists() and fresh.state == "deployed":
+                fresh._transition("deleting")
+
     def get_commands(self):
         inst = self._inst()
         d = self._inst_dir(inst)
         return [
-            # 1. Shut down containers (skip gracefully if dir is absent)
+            # 1. Shut down containers (the script skips a missing dir)
             (
                 "Stop and remove containers",
-                f"if [ -d {d} ]; then"
-                f"  cd {d} && docker compose down --rmi all -v --remove-orphans;"
-                f"else"
-                f"  echo 'Directory {d} not found, nothing to shut down.';"
-                f"fi",
+                self.run_script("compose_op.sh", [d, "down"]),
             ),
-            # 2. Remove the instance directory (idempotent)
+            # 2. Remove the instance directory (idempotent). Left inline
+            #    on purpose: a lone ``rm -rf`` is not an operation worth
+            #    a versioned script, and unquoted it lets the remote
+            #    shell expand the ``~`` in the path.
             (
                 "Remove instance directory",
                 f"rm -rf {d}",
@@ -37,8 +59,14 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         name = inst.name if inst else "?"
         self._sys(f"✓ Instance '{name}' removed from host.")
+        # Read the host before _finalize_removal, which may unlink the
+        # instance and take the link with it.
+        host = inst.host_id if inst else self._host()
         if inst:
-            inst.write({'active': False})
+            keep_in_panel = bool((self.job.payload or {}).get("keep_in_panel"))
+            inst._finalize_removal(keep_in_panel)
+        if host:
+            host.refresh_observability_labels(reason="instance removed")
 
     async def on_failure(self, results, errors):
         for err in errors:
@@ -46,3 +74,7 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         if inst:
             inst.write({"status": "error"})
+            # The teardown failed, so the instance is still on the host:
+            # back to 'deployed' rather than stuck in 'deleting'.
+            if inst.state == "deleting":
+                inst._transition("deployed")

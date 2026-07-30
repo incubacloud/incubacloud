@@ -1,0 +1,22 @@
+---
+# Reclaim disk on a host by pruning unused Docker resources. Driven by
+# DockerPruneExecutor (a recurring cron job).
+#
+# The reclaimed-space line is exported back to the panel so the job log
+# shows how much was freed.
+- name: Prune unused Docker resources
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Run docker system prune
+      ansible.builtin.command:
+        cmd: docker system prune -af
+      register: ic_prune
+      changed_when: true
+
+    - name: Export the reclaimed-space summary
+      ansible.builtin.set_stats:
+        aggregate: false
+        data:
+          ic_prune_stdout: "{{ ic_prune.stdout | default('') }}"

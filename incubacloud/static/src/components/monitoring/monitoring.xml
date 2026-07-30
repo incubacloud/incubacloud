@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.Monitoring">
+        <div class="rl-page">
+            <div class="rl-phead">
+                <div>
+                    <h1 class="rl-ptitle">Monitoring</h1>
+                    <p class="rl-psub">Fleet metrics collected from your hosts.</p>
+                </div>
+            </div>
+
+            <!-- Loading -->
+            <t t-if="state.loading">
+                <div class="rl-card rl-card-pad ic-skeleton-card" aria-hidden="true">
+                    <div class="ic-skeleton-line ic-skeleton-title"/>
+                    <div class="ic-skeleton-line"/>
+                </div>
+                <span class="ic-visually-hidden" role="status">Loading monitoring…</span>
+            </t>
+
+            <!-- Could not read the configuration -->
+            <t t-elif="state.error">
+                <div class="rl-stub" role="alert">
+                    <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+                    <h3>Could not load monitoring</h3>
+                    <p t-esc="state.error"/>
+                    <button class="rl-btn rl-btn-primary" style="margin-top:14px;"
+                            t-on-click="() => this.loadConfig()">Retry</button>
+                </div>
+            </t>
+
+            <!-- Not configured yet: say what is missing, do not fake a chart -->
+            <t t-elif="!state.enabled or !state.baseUrl">
+                <div class="rl-stub">
+                    <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                    <h3>Monitoring is not set up yet</h3>
+                    <p t-if="!state.enabled">
+                        Enable observability in Settings, then install the agents
+                        on each host from its detail page.
+                    </p>
+                    <p t-else="">
+                        Set the Grafana base URL in Settings to embed the dashboards here.
+                    </p>
+                </div>
+            </t>
+
+            <!-- Embedded dashboards -->
+            <t t-else="">
+                <div class="rl-tabs" role="tablist" aria-label="Dashboards">
+                    <t t-foreach="dashboards" t-as="dash" t-key="dash.uid">
+                        <button class="rl-tab" role="tab"
+                                t-att-class="{ active: state.current === dash.uid }"
+                                t-att-aria-selected="state.current === dash.uid ? 'true' : 'false'"
+                                t-on-click="() => this.select(dash.uid)">
+                            <t t-esc="dash.label"/>
+                        </button>
+                    </t>
+                </div>
+                <div class="rl-card ic-monitoring-frame">
+                    <iframe t-att-src="currentUrl"
+                            t-att-title="'Monitoring dashboard: ' + state.current"
+                            loading="lazy"/>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

@@ -7,17 +7,19 @@ import re
 import urllib.request
 from datetime import timedelta
 
-from odoo import models, fields, api, _
+from odoo import _, api, fields, models
+from odoo.exceptions import AccessError, UserError
+from odoo.tools import config as odoo_config
+
 from odoo.addons.queue_job.delay import chain as delay_chain
 from odoo.addons.queue_job.exception import JobError, RetryableJobError
-from odoo.exceptions import AccessError, UserError
 
-from ._repo_requirements import detect_pip_conflicts, create_pip_conflict_alert
-from .registry import executor_registry
+from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .abstract_executor import (
     CONNECTION_RETRY_SECONDS,
     is_transient_connection_error,
 )
+from .registry import executor_registry
 
 _logger = logging.getLogger(__name__)
 
@@ -44,66 +46,51 @@ def _webhook_fields(payload):
     HEAD shown by the primary push_* fields.
     """
     p = payload or {}
-    trigger = p.get('trigger')
-    if trigger not in ('webhook', 'coalesced'):
-        return {'trigger': ''}
+    trigger = p.get("trigger")
+    if trigger not in ("webhook", "coalesced"):
+        return {"trigger": ""}
     fields = {
-        'trigger': trigger,
-        'push_repo': p.get('push_repo', ''),
-        'push_branch': p.get('push_branch', ''),
-        'push_sha': p.get('push_sha', ''),
-        'push_message': p.get('push_message', ''),
-        'push_by': p.get('push_by', ''),
+        "trigger": trigger,
+        "push_repo": p.get("push_repo", ""),
+        "push_branch": p.get("push_branch", ""),
+        "push_sha": p.get("push_sha", ""),
+        "push_message": p.get("push_message", ""),
+        "push_by": p.get("push_by", ""),
     }
-    if trigger == 'coalesced':
-        fields['coalesced_pushes'] = p.get('coalesced_pushes') or []
+    if trigger == "coalesced":
+        fields["coalesced_pushes"] = p.get("coalesced_pushes") or []
     return fields
 
 
 class CloudJob(models.Model):
     _name = "cloud.job"
     _inherit = ["bus.listener.mixin"]
-    _description = "Job para ejecución remota"
+    _description = "Job executed remotely on a host"
 
-    name = fields.Char(
-        string="Job Name"
-    )
-    host_id = fields.Many2one(
-        "cloud.host",
-        required=True,
-        string="Cloud Host"
-    )
+    name = fields.Char(string="Job Name")
+    host_id = fields.Many2one("cloud.host", required=True, string="Cloud Host")
     job_type_id = fields.Many2one(
         "cloud.job.type",
         required=True,
     )
     state = fields.Selection(
-        related='queue_job_id.state',
+        related="queue_job_id.state",
         store=True,
     )
     date_done = fields.Datetime(
-        related='queue_job_id.date_done',
+        related="queue_job_id.date_done",
         store=True,
         # Stored so ``load_history`` does not need ``queue.job`` ACL —
         # non-Job-Queue-Manager users were tripping ``Access Error`` on
         # ``View all activity`` because reading ``queue_job_id.date_done``
         # required group ``queue_job.group_queue_job_manager``.
     )
-    message_ids = fields.One2many(
-        "cloud.job.log.message", "job_id",
-        string="Progress Messages"
-    )
     log_chunk_ids = fields.One2many(
-        "cloud.job.log.chunk", "job_id",
-        string="Log Chunks"
+        "cloud.job.log.chunk", "job_id", string="Log Chunks"
     )
     result = fields.Serialized()
     payload = fields.Serialized(string="Job Payload")
-    queue_job_uuid = fields.Char(
-        string="Queue Job UUID",
-        copy=False,
-        index=True
-    )
+    queue_job_uuid = fields.Char(string="Queue Job UUID", copy=False, index=True)
     queue_job_id = fields.Many2one(
         "queue.job",
         string="Queue Job",
@@ -116,27 +103,27 @@ class CloudJob(models.Model):
         ondelete="set null",
     )
     blocked_alert_id = fields.Many2one(
-        'cloud.alert',
-        string='Blocking Alert',
-        ondelete='set null',
+        "cloud.alert",
+        string="Blocking Alert",
+        ondelete="set null",
         index=True,
-        help='When set, this job is blocked waiting for the alert to be resolved.',
+        help="When set, this job is blocked waiting for the alert to be resolved.",
     )
     retry_of_id = fields.Many2one(
-        'cloud.job',
-        string='Retry of',
-        ondelete='set null',
+        "cloud.job",
+        string="Retry of",
+        ondelete="set null",
         index=True,
-        help='When set, this job is a retry of the referenced failed job.',
+        help="When set, this job is a retry of the referenced failed job.",
     )
 
     @api.depends("queue_job_uuid")
     def _compute_queue_job_id(self):
         for job in self:
             if job.queue_job_uuid:
-                queue_job = self.env["queue.job"].search([
-                    ("uuid", "=", job.queue_job_uuid)
-                ], limit=1)
+                queue_job = self.env["queue.job"].search(
+                    [("uuid", "=", job.queue_job_uuid)], limit=1
+                )
                 job.queue_job_id = queue_job or None
             else:
                 job.queue_job_id = None
@@ -156,7 +143,7 @@ class CloudJob(models.Model):
 
         Returns: list of cloud.job IDs (in execution order)
         """
-        _REF_RE = re.compile(r'^__chain_job_(\d+)__$')
+        _REF_RE = re.compile(r"^__chain_job_(\d+)__$")
 
         # Advisory lock on every instance touched by the chain. Two
         # concurrent enqueue_chain()/enqueue() calls targeting the same
@@ -170,70 +157,85 @@ class CloudJob(models.Model):
             # Same server-side role gate as ``enqueue`` — an arbitrary
             # chain of steps must not let a low-privilege caller smuggle a
             # manager-only job type through ``call_kw``.
-            self._check_job_type_allowed(step['job_type_code'])
-            inst_id = step.get('instance_id')
+            self._check_job_type_allowed(step["job_type_code"])
+            inst_id = step.get("instance_id")
             if inst_id and inst_id not in seen_instance_ids:
                 self.env.cr.execute(
                     "SELECT pg_advisory_xact_lock(%s, %s)",
                     (_JOB_LOCK_NAMESPACE, inst_id),
                 )
                 seen_instance_ids.add(inst_id)
-                running = self.search([
-                    ('instance_id', '=', inst_id),
-                    ('state', 'in', self._active_states),
-                    ('job_type_id.code', 'not in', hidden),
-                ], limit=1)
+                running = self.search(
+                    [
+                        ("instance_id", "=", inst_id),
+                        ("state", "in", self._active_states),
+                        ("job_type_id.code", "not in", hidden),
+                    ],
+                    limit=1,
+                )
                 if running:
-                    raise UserError(_(
-                        "A job is already running for this instance: "
-                        "%(name)s. Wait for it to complete or cancel "
-                        "it first.",
-                        name=running.name,
-                    ))
+                    raise UserError(
+                        _(
+                            "A job is already running for this instance: "
+                            "%(name)s. Wait for it to complete or cancel "
+                            "it first.",
+                            name=running.name,
+                        )
+                    )
             elif not inst_id:
                 # Host-only step (provisioning, hardening, full setup…):
                 # serialise per host so two chains can't run concurrently
                 # on the same machine.
-                host_id = step.get('host_id')
+                host_id = step.get("host_id")
                 if host_id and host_id not in seen_host_ids:
                     self.env.cr.execute(
                         "SELECT pg_advisory_xact_lock(%s, %s)",
                         (_HOST_JOB_LOCK_NAMESPACE, host_id),
                     )
                     seen_host_ids.add(host_id)
-                    running = self.search([
-                        ('host_id', '=', host_id),
-                        ('instance_id', '=', False),
-                        ('state', 'in', self._active_states),
-                        ('job_type_id.code', 'not in', hidden),
-                    ], limit=1)
+                    running = self.search(
+                        [
+                            ("host_id", "=", host_id),
+                            ("instance_id", "=", False),
+                            ("state", "in", self._active_states),
+                            ("job_type_id.code", "not in", hidden),
+                        ],
+                        limit=1,
+                    )
                     if running:
-                        raise UserError(_(
-                            "A job is already running for this host: "
-                            "%(name)s. Wait for it to complete or cancel "
-                            "it first.",
-                            name=running.name,
-                        ))
+                        raise UserError(
+                            _(
+                                "A job is already running for this host: "
+                                "%(name)s. Wait for it to complete or cancel "
+                                "it first.",
+                                name=running.name,
+                            )
+                        )
 
         # 1. Create all cloud.job records (without payloads that need resolving)
         records = []
         for step in steps:
-            job_type = self.env['cloud.job.type'].search([
-                ('code', '=', step['job_type_code']),
-            ], limit=1)
+            job_type = self.env["cloud.job.type"].search(
+                [
+                    ("code", "=", step["job_type_code"]),
+                ],
+                limit=1,
+            )
             if not job_type:
                 raise UserError(
                     _("Job type '{code}' not found.").format(
-                        code=step['job_type_code'],
+                        code=step["job_type_code"],
                     )
                 )
-            job_record = self.create({
-                'host_id': step['host_id'],
-                'job_type_id': job_type.id,
-                'name': _(job_type.name),
-                'instance_id': step.get('instance_id'),
-                'payload': step.get('payload'),
-            })
+            job_record = self.create(
+                {
+                    "host_id": step["host_id"],
+                    "job_type_id": job_type.id,
+                    "name": _(job_type.name),
+                    "instance_id": step.get("instance_id"),
+                    "payload": step.get("payload"),
+                }
+            )
             records.append(job_record)
 
         # 2. Resolve __chain_job_N__ references in payloads
@@ -251,16 +253,25 @@ class CloudJob(models.Model):
                         payload[key] = job_ids[idx]
                         changed = True
             if changed:
-                record.write({'payload': payload})
+                record.write({"payload": payload})
 
-        # 2b. Create audit log entries for each step
+        # 2b. Create audit log entries for each step, skipping the
+        # cron-driven background types for the same reason as ``enqueue``:
+        # they are machine noise, not operator actions, and they dominate
+        # the table. ``hidden`` is the predicate computed above.
         for record in records:
-            self.env['cloud.audit.log'].sudo().create({
-                'action': record.job_type_id.name,
-                'instance_id': record.instance_id.id if record.instance_id else False,
-                'host_id': record.host_id.id,
-                'job_id': record.id,
-            })
+            if record.job_type_id.code in hidden:
+                continue
+            self.env["cloud.audit.log"].sudo().create(
+                {
+                    "action": record.job_type_id.name,
+                    "instance_id": record.instance_id.id
+                    if record.instance_id
+                    else False,
+                    "host_id": record.host_id.id,
+                    "job_id": record.id,
+                }
+            )
 
         # 3. Build delayable chain
         nodes = []
@@ -271,11 +282,13 @@ class CloudJob(models.Model):
         delay_chain(*nodes).delay()
 
         # 4. Store the generated queue_job UUIDs
-        for node, record in zip(nodes, records):
+        for node, record in zip(nodes, records, strict=False):
             if node._generated_job:
-                record.write({
-                    'queue_job_uuid': node._generated_job.uuid,
-                })
+                record.write(
+                    {
+                        "queue_job_uuid": node._generated_job.uuid,
+                    }
+                )
 
         return [r.id for r in records]
 
@@ -296,24 +309,97 @@ class CloudJob(models.Model):
     # See README for details.
 
     _TIER_TO_ROUTING = {
-        'high':   ('root.user', 5),
-        'normal': ('root.user', 10),
-        'low':    ('root.bg',   10),
+        "high": ("root.user", 5),
+        "normal": ("root.user", 10),
+        "low": ("root.bg", 10),
     }
 
     def _resolve_channel_priority(self, job_type, instance_id):
         """Return ``(channel, priority)`` for a job, promoting ``normal``
         → ``high`` when the target instance is in production."""
-        tier = job_type.priority_tier or 'normal'
-        if tier == 'normal' and instance_id:
-            inst = self.env['cloud.instance'].browse(instance_id)
-            if inst.exists() and inst.environment == 'production':
-                tier = 'high'
-        return self._TIER_TO_ROUTING.get(tier, self._TIER_TO_ROUTING['normal'])
+        tier = job_type.priority_tier or "normal"
+        if tier == "normal" and instance_id:
+            inst = self.env["cloud.instance"].browse(instance_id)
+            if inst.exists() and inst.environment == "production":
+                tier = "high"
+        return self._TIER_TO_ROUTING.get(tier, self._TIER_TO_ROUTING["normal"])
+
+    def _guard_no_active_job(self, host_id, instance_id):
+        """Serialise against other jobs for the same target; raise if busy.
+
+        Takes an advisory lock *before* looking, so two concurrent callers
+        cannot both find the target idle: the second blocks until the first
+        commits, then sees the freshly-created job and raises. Postgres
+        releases the lock on COMMIT or ROLLBACK of this transaction.
+
+        Instance-scoped jobs serialise per instance, host-scoped jobs
+        (falsy ``instance_id``) per host, in separate lock namespaces so a
+        host id can never collide with an instance id. Hidden background
+        types (metrics, health probes) never block anything.
+
+        Every path that puts work on the queue must come through here.
+        ``retry_job`` and ``unblock_and_enqueue`` used to dispatch straight
+        to ``with_delay``, which let a retry race a deploy already running
+        on the same instance — two SSH sessions mutating one host.
+
+        :param int host_id: target host
+        :param int instance_id: target instance, or falsy for host-scoped
+        :raises UserError: when an active user job already holds the target
+        """
+        hidden = self._get_hidden_job_types()
+        if instance_id:
+            self.env.cr.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (_JOB_LOCK_NAMESPACE, instance_id),
+            )
+            running = self.search(
+                [
+                    ("instance_id", "=", instance_id),
+                    ("state", "in", self._active_states),
+                    ("job_type_id.code", "not in", hidden),
+                ],
+                limit=1,
+            )
+            if running:
+                raise UserError(
+                    _(
+                        "A job is already running for this instance: %(name)s. "
+                        "Wait for it to complete or cancel it first.",
+                        name=running.name,
+                    )
+                )
+        elif host_id:
+            self.env.cr.execute(
+                "SELECT pg_advisory_xact_lock(%s, %s)",
+                (_HOST_JOB_LOCK_NAMESPACE, host_id),
+            )
+            running = self.search(
+                [
+                    ("host_id", "=", host_id),
+                    ("instance_id", "=", False),
+                    ("state", "in", self._active_states),
+                    ("job_type_id.code", "not in", hidden),
+                ],
+                limit=1,
+            )
+            if running:
+                raise UserError(
+                    _(
+                        "A job is already running for this host: %(name)s. "
+                        "Wait for it to complete or cancel it first.",
+                        name=running.name,
+                    )
+                )
 
     @api.model
-    def enqueue(self, host_id, instance_id, job_type_code, payload=None,
-                bypass_running_check=False):
+    def enqueue(
+        self,
+        host_id,
+        instance_id,
+        job_type_code,
+        payload=None,
+        bypass_running_check=False,
+    ):
         """
         Queue a job of given type for the given host/instance
         and return the job record ID.
@@ -337,55 +423,19 @@ class CloudJob(models.Model):
         # independent — an instance deploy does not block a host probe and
         # vice versa.
         if not bypass_running_check:
-            if instance_id:
-                # Advisory lock: serialise concurrent enqueue() calls for
-                # the same instance. The second caller blocks until the
-                # first commits; when it wakes up the running-job check
-                # below sees the freshly-created job and raises. Released
-                # automatically on COMMIT or ROLLBACK of this tx.
-                self.env.cr.execute(
-                    "SELECT pg_advisory_xact_lock(%s, %s)",
-                    (_JOB_LOCK_NAMESPACE, instance_id),
-                )
-                running = self.search([
-                    ('instance_id', '=', instance_id),
-                    ('state', 'in', self._active_states),
-                    ('job_type_id.code', 'not in', self._get_hidden_job_types()),
-                ], limit=1)
-                if running:
-                    raise UserError(_(
-                        "A job is already running for this instance: %(name)s. "
-                        "Wait for it to complete or cancel it first.",
-                        name=running.name,
-                    ))
-            elif host_id:
-                # Same serialisation, scoped to the host for host-only jobs
-                # (probe, full setup, hardening, provisioning…). Separate
-                # lock namespace so a host.id never collides with an
-                # instance.id.
-                self.env.cr.execute(
-                    "SELECT pg_advisory_xact_lock(%s, %s)",
-                    (_HOST_JOB_LOCK_NAMESPACE, host_id),
-                )
-                running = self.search([
-                    ('host_id', '=', host_id),
-                    ('instance_id', '=', False),
-                    ('state', 'in', self._active_states),
-                    ('job_type_id.code', 'not in', self._get_hidden_job_types()),
-                ], limit=1)
-                if running:
-                    raise UserError(_(
-                        "A job is already running for this host: %(name)s. "
-                        "Wait for it to complete or cancel it first.",
-                        name=running.name,
-                    ))
-        job_type_id = self.env["cloud.job.type"].search([
-            ("code", "=", job_type_code),
-        ], limit=1)
+            self._guard_no_active_job(host_id, instance_id)
+        job_type_id = self.env["cloud.job.type"].search(
+            [
+                ("code", "=", job_type_code),
+            ],
+            limit=1,
+        )
         if not job_type_id:
-            raise UserError(_("Job type with code {job_type_name} not found.").format(
-                job_type_name=job_type_code
-            ))
+            raise UserError(
+                _("Job type with code {job_type_name} not found.").format(
+                    job_type_name=job_type_code
+                )
+            )
         vals = {
             "host_id": host_id,
             "job_type_id": job_type_id.id,
@@ -397,37 +447,54 @@ class CloudJob(models.Model):
             vals["payload"] = payload
         job_record = self.create(vals)
         # Check pip_dependencies for conflict markers before queuing.
-        _pip_blocked_types = ('deploy_instance', 'rebuild_instance')
+        _pip_blocked_types = ("deploy_instance", "rebuild_instance")
         if instance_id and job_type_code in _pip_blocked_types:
-            inst = self.env['cloud.instance'].browse(instance_id)
+            inst = self.env["cloud.instance"].browse(instance_id)
             conflicts = detect_pip_conflicts(inst.pip_dependencies)
             if conflicts:
                 alert = create_pip_conflict_alert(
-                    self.env, conflicts, instance_id=instance_id,
+                    self.env,
+                    conflicts,
+                    instance_id=instance_id,
                 )
-                job_record.write({'blocked_alert_id': alert.id})
+                job_record.write({"blocked_alert_id": alert.id})
                 return job_record.id
             # No conflicts — dismiss any stale active pip_conflict alerts
-            self.env['cloud.alert'].search([
-                ('instance_id', '=', instance_id),
-                ('code', '=', 'pip_conflict'),
-                ('state', '=', 'active'),
-            ]).write({'state': 'dismissed'})
+            self.env["cloud.alert"].search(
+                [
+                    ("instance_id", "=", instance_id),
+                    ("code", "=", "pip_conflict"),
+                    ("state", "=", "active"),
+                ]
+            ).write({"state": "dismissed"})
             # Block if there is an active addon_conflict alert
-            addon_alert = self.env['cloud.alert'].search([
-                ('instance_id', '=', instance_id),
-                ('code', '=', 'addon_conflict'),
-                ('state', '=', 'active'),
-            ], limit=1)
+            addon_alert = self.env["cloud.alert"].search(
+                [
+                    ("instance_id", "=", instance_id),
+                    ("code", "=", "addon_conflict"),
+                    ("state", "=", "active"),
+                ],
+                limit=1,
+            )
             if addon_alert:
-                job_record.write({'blocked_alert_id': addon_alert.id})
+                job_record.write({"blocked_alert_id": addon_alert.id})
                 return job_record.id
-        self.env['cloud.audit.log'].sudo().create({
-            'action': job_type_id.name,
-            'instance_id': instance_id or False,
-            'host_id': host_id,
-            'job_id': job_record.id,
-        })
+        # Background job types (host_metrics, instance_health, docker_prune)
+        # are enqueued by cron for every host and every instance on every
+        # tick. Auditing them buries the handful of real operator actions
+        # under machine noise and grows the table without bound. The same
+        # predicate that keeps them out of the job drawer keeps them out of
+        # the audit trail — they are cron-only (see cloud.host.cron_*), so
+        # no user-initiated action is lost here.
+        if job_type_code not in self._get_hidden_job_types():
+            self.env["cloud.audit.log"].sudo().create(
+                {
+                    "action": job_type_id.name,
+                    "instance_id": instance_id or False,
+                    "host_id": host_id,
+                    "job_id": job_record.id,
+                }
+            )
         # max_retries=1 by default: allow one automatic retry for transient
         # DB errors, then fail permanently. The execution guard prevents
         # double SSH runs. Executors that opt into connection retries
@@ -438,11 +505,14 @@ class CloudJob(models.Model):
         executor_cls = executor_registry.get(job_type_id.code)
         max_retries = 1
         if executor_cls and getattr(
-            executor_cls, '_retry_on_connection_loss', False,
+            executor_cls,
+            "_retry_on_connection_loss",
+            False,
         ):
             max_retries = executor_cls._connection_retry_attempts
         channel, priority = self._resolve_channel_priority(
-            job_type_id, instance_id,
+            job_type_id,
+            instance_id,
         )
         delayed = job_record.with_delay(
             max_retries=max_retries,
@@ -490,8 +560,9 @@ class CloudJob(models.Model):
             # first blip. queue_job stored the pre-increment retry count in
             # set_started, so inside execute() ``queue_job_id.retry`` is the
             # number of *prior* attempts → this attempt is ``retry + 1``.
-            if (getattr(ssh_executor, '_retry_on_connection_loss', False)
-                    and is_transient_connection_error(e)):
+            if getattr(
+                ssh_executor, "_retry_on_connection_loss", False
+            ) and is_transient_connection_error(e):
                 qj = self.queue_job_id
                 attempt = (qj.retry or 0) + 1
                 max_retries = qj.max_retries or 0
@@ -554,25 +625,26 @@ class CloudJob(models.Model):
         """
         hidden = self._get_hidden_job_types()
         base = [
-            ('instance_id', '=', instance_id),
-            ('job_type_id.code', 'not in', hidden),
+            ("instance_id", "=", instance_id),
+            ("job_type_id.code", "not in", hidden),
         ]
         active = self.search(
-            base + [('state', 'in', self._active_states)],
-            order='id asc',
+            base + [("state", "in", self._active_states)],
+            order="id asc",
         )
         recent_limit = max(0, max_visible - min(len(active), max_visible))
-        recent = self.env['cloud.job']
+        recent = self.env["cloud.job"]
         if recent_limit > 0:
             recent = self.search(
-                base + [('state', 'in', self._terminal_states)],
-                order='id desc', limit=recent_limit,
+                base + [("state", "in", self._terminal_states)],
+                order="id desc",
+                limit=recent_limit,
             )
         total = self.search_count(base)
         return {
-            'active': active._format(),
-            'recent': recent._format(),
-            'total': total,
+            "active": active._format(),
+            "recent": recent._format(),
+            "total": total,
         }
 
     @api.model
@@ -580,9 +652,9 @@ class CloudJob(models.Model):
         """Return jobs for a specific instance (for the instance overview)."""
         data = self._get_instance_timeline(instance_id, max_visible=limit)
         return {
-            'activeJobs': data['active'],
-            'recentJobs': data['recent'],
-            'total': data['total'],
+            "activeJobs": data["active"],
+            "recentJobs": data["recent"],
+            "total": data["total"],
         }
 
     @api.model
@@ -590,14 +662,13 @@ class CloudJob(models.Model):
         """Return jobs for a specific host (for the host overview)."""
         hidden = self._get_hidden_job_types()
         domain = [
-            ('host_id', '=', host_id),
-            ('job_type_id.apply_to', '=', 'host'),
-            ('job_type_id.code', 'not in', hidden),
+            ("host_id", "=", host_id),
+            ("job_type_id.apply_to", "=", "host"),
+            ("job_type_id.code", "not in", hidden),
         ]
         total = self.search_count(domain)
-        jobs = self.search(domain, order='id desc',
-                           limit=limit, offset=offset)
-        return {'jobs': jobs._format(), 'total': total}
+        jobs = self.search(domain, order="id desc", limit=limit, offset=offset)
+        return {"jobs": jobs._format(), "total": total}
 
     _active_states = ["pending", "enqueued", "wait_dependencies", "started"]
     _terminal_states = ["done", "failed", "cancelled"]
@@ -613,10 +684,12 @@ class CloudJob(models.Model):
     # by overriding ``_get_severe_job_types()`` in child modules.
     # Generic, self-hosted-only job types that warrant a critical alert
     # on failure.
-    _severe_job_types = frozenset({
-        "deploy_instance",
-        "rebuild_instance",
-    })
+    _severe_job_types = frozenset(
+        {
+            "deploy_instance",
+            "rebuild_instance",
+        }
+    )
 
     # Job types whose enqueue requires the manager role. ``enqueue`` and
     # ``enqueue_chain`` are public @api.model methods reachable via the
@@ -626,14 +699,23 @@ class CloudJob(models.Model):
     # the host-level, destructive/administrative types whose only
     # legitimate origin is a manager-gated controller/SPA page or a cron
     # (which enqueues with sudo). Extend via _get_manager_job_types().
-    _manager_job_types = frozenset({
-        "delete_host",
-        "setup_whitelist",
-        "full_setup",
-        "host_probe",
-        "docker_prune",
-        "delete_project",
-    })
+    _manager_job_types = frozenset(
+        {
+            "delete_host",
+            "setup_whitelist",
+            "full_setup",
+            "host_probe",
+            "docker_prune",
+            "delete_project",
+            # Both deploy containers on the host — cAdvisor runs
+            # privileged with the root filesystem mounted, and the central
+            # brings up a whole metrics stack. The panel endpoints already
+            # gate on manager, but ``enqueue`` is reachable over RPC, and
+            # this set is the backstop that makes that route safe too.
+            "install_observability",
+            "deploy_metrics_central",
+        }
+    )
 
     def _get_hidden_job_types(self):
         """Return job type codes that should not appear in the UI job drawer.
@@ -644,6 +726,120 @@ class CloudJob(models.Model):
                 return super()._get_hidden_job_types() + ['my_background_job']
         """
         return self._hidden_job_types.copy()
+
+    #: Warn at 45 running minutes: the dedicated runner kills jobs at
+    #: ``limit_time_real`` = 60, so the alert fires while there is still
+    #: time to look before the hard kill (decision log P12.5).
+    _LONG_RUNNING_MINUTES = 45
+    _LONG_RUNNING_ALERT_CODE = "job_running_too_long"
+
+    @api.model
+    def _cron_watch_long_running(self):
+        """Alert on jobs running past the duration ceiling; self-resolve.
+
+        One warning per (host, instance) target while at least one of
+        its jobs has been ``started`` for over ``_LONG_RUNNING_MINUTES``;
+        the alert resolves on the pass where no long runner remains for
+        that target. The point is to surface jobs about to hit the
+        runner's ``limit_time_real`` **with real data**, so the limit is
+        tuned from evidence instead of guessed.
+        """
+        cutoff = fields.Datetime.now() - timedelta(
+            minutes=self._LONG_RUNNING_MINUTES,
+        )
+        alerts = self.env["cloud.alert"].sudo()
+
+        def _started_at(job):
+            return job.queue_job_id.date_started or job.create_date
+
+        long_jobs = (
+            self.sudo()
+            .search([("state", "=", "started")])
+            .filtered(lambda j: _started_at(j) and _started_at(j) < cutoff)
+        )
+        long_targets = set()
+        for job in long_jobs:
+            long_targets.add((job.host_id.id, job.instance_id.id or False))
+            minutes = int(
+                (fields.Datetime.now() - _started_at(job)).total_seconds()
+                // 60
+            )
+            alerts.raise_alert(
+                self._LONG_RUNNING_ALERT_CODE,
+                _(
+                    "Job %(name)s (#%(id)d) has been running for "
+                    "%(minutes)d minutes; the job runner kills it at 60.",
+                    name=job.display_name or job.job_type_id.code,
+                    id=job.id,
+                    minutes=minutes,
+                ),
+                level="warning",
+                host=job.host_id or None,
+                instance=job.instance_id or None,
+                job=job,
+            )
+        for alert in alerts.search(
+            [
+                ("code", "=", self._LONG_RUNNING_ALERT_CODE),
+                ("state", "=", "active"),
+            ]
+        ):
+            key = (alert.host_id.id or False, alert.instance_id.id or False)
+            if key not in long_targets:
+                alerts.resolve_alert(
+                    self._LONG_RUNNING_ALERT_CODE,
+                    host=alert.host_id or None,
+                    instance=alert.instance_id or None,
+                )
+
+    #: Terminal-job retention. Jobs feed the instance timeline, so the
+    #: window is deliberately long (settings default: 180 days). The
+    #: batched loop mirrors the chunk purge: a purge that cannot drain
+    #: its backlog is indistinguishable from no retention at all.
+    _PURGE_BATCH = 5000
+    _PURGE_MAX_BATCHES = 40
+
+    @api.model
+    def _cron_purge_old(self):
+        """Delete terminal jobs older than the configured retention.
+
+        Only ``done``/``failed``/``cancelled`` jobs are purged — active
+        jobs (pending/enqueued/started/waiting) are never touched
+        regardless of age. Unlinking a job cascades its remaining log
+        chunks and nulls the FKs on alerts and retries
+        (``ondelete='set null'``), so nothing dangles. Deletes in
+        batches until the backlog drains or ``_PURGE_MAX_BATCHES`` is
+        reached; the leftover is picked up by the next daily run.
+
+        Returns the number of rows deleted in this run.
+        """
+        days = self.env["cloud.settings"].sudo()._get().job_retention_days
+        if not days or days <= 0:
+            return 0
+        cutoff = fields.Datetime.now() - timedelta(days=days)
+        domain = [
+            ("create_date", "<", cutoff),
+            ("state", "in", ("done", "failed", "cancelled")),
+        ]
+        total = 0
+        for _pass in range(self._PURGE_MAX_BATCHES):
+            jobs = self.sudo().search(
+                domain, order="id", limit=self._PURGE_BATCH,
+            )
+            if not jobs:
+                return total
+            total += len(jobs)
+            jobs.unlink()
+        # Ceiling reached with matching rows still on the table. Say so:
+        # silence here would read exactly like "retention is keeping up"
+        # while the backlog quietly outlives every run.
+        _logger.warning(
+            "cloud.job: purge stopped at the %d-batch ceiling after "
+            "deleting %d row(s); terminal jobs older than %d day(s) "
+            "remain and will be picked up by the next run.",
+            self._PURGE_MAX_BATCHES, total, days,
+        )
+        return total
 
     @api.model
     def _get_severe_job_types(self):
@@ -676,8 +872,8 @@ class CloudJob(models.Model):
         if self.env.su:
             return
         if job_type_code in self._get_manager_job_types():
-            self.env['cloud.security.mixin']._check_cloud_group(
-                'group_cloud_manager',
+            self.env["cloud.security.mixin"]._check_cloud_group(
+                "group_cloud_manager",
             )
 
     # Alert codes that block (re-)enqueueing a job until the operator
@@ -685,7 +881,7 @@ class CloudJob(models.Model):
     # ``blocked_alert_id``). Only these warrant an "Action required"
     # badge in the UI; any other alert linked to a job is informational
     # — a plain failure only needs a Retry.
-    _actionable_alert_codes = frozenset({'pip_conflict', 'addon_conflict'})
+    _actionable_alert_codes = frozenset({"pip_conflict", "addon_conflict"})
 
     @api.model
     def _get_actionable_alert_codes(self):
@@ -719,45 +915,40 @@ class CloudJob(models.Model):
         # modules that might add more exotic job rows.
         if not (cjob.host_id or cjob.instance_id):
             _logger.warning(
-                "job_failed alert skipped: cjob id=%s has no host/"
-                "instance target",
+                "job_failed alert skipped: cjob id=%s has no host/instance target",
                 cjob.id,
             )
             return None
 
         level = (
-            'critical'
+            "critical"
             if cjob.job_type_id.code in self._get_severe_job_types()
-            else 'warning'
+            else "warning"
         )
-        target_name = (
-            cjob.instance_id.name
-            or cjob.host_id.name
-            or ''
-        )
+        target_name = cjob.instance_id.name or cjob.host_id.name or ""
         # Include a snippet of the exception for at-a-glance triage.
         # Cap at 100 chars so the panel doesn't wrap into a wall of
         # text; the job log has the full traceback.
         msg = f"{cjob.name or 'Job'} on {target_name} failed"
         if exc_message:
-            excerpt = exc_message.strip().split('\n', 1)[0][:100]
+            excerpt = exc_message.strip().split("\n", 1)[0][:100]
             if excerpt:
                 msg = f"{msg}: {excerpt}"
 
         vals = {
-            'code': 'job_failed',
-            'level': level,
-            'message': msg,
-            'job_id': cjob.id,
+            "code": "job_failed",
+            "level": level,
+            "message": msg,
+            "job_id": cjob.id,
         }
         if cjob.instance_id:
-            vals['instance_id'] = cjob.instance_id.id
+            vals["instance_id"] = cjob.instance_id.id
             if cjob.instance_id.project_id:
-                vals['project_id'] = cjob.instance_id.project_id.id
+                vals["project_id"] = cjob.instance_id.project_id.id
         if cjob.host_id:
-            vals['host_id'] = cjob.host_id.id
+            vals["host_id"] = cjob.host_id.id
 
-        return self.env['cloud.alert'].sudo().create(vals)
+        return self.env["cloud.alert"].sudo().create(vals)
 
     @api.model
     def _dismiss_job_failed_alerts(self, cjob):
@@ -774,47 +965,54 @@ class CloudJob(models.Model):
         stacked.
         """
         domain = [
-            ('code', '=', 'job_failed'),
-            ('state', '=', 'active'),
-            ('job_id.job_type_id', '=', cjob.job_type_id.id),
+            ("code", "=", "job_failed"),
+            ("state", "=", "active"),
+            ("job_id.job_type_id", "=", cjob.job_type_id.id),
         ]
         if cjob.instance_id:
-            domain.append(('instance_id', '=', cjob.instance_id.id))
+            domain.append(("instance_id", "=", cjob.instance_id.id))
         else:
             # Host-scoped job: never touch instance-scoped alerts that
             # happen to live on the same host.
             domain += [
-                ('host_id', '=', cjob.host_id.id),
-                ('instance_id', '=', False),
+                ("host_id", "=", cjob.host_id.id),
+                ("instance_id", "=", False),
             ]
-        stale = self.env['cloud.alert'].sudo().search(domain)
+        stale = self.env["cloud.alert"].sudo().search(domain)
         if stale:
-            stale.write({'state': 'dismissed'})
+            stale.write({"state": "dismissed"})
         return stale
 
     def _get_active_jobs(self):
         domain = [
-            ('job_type_id.code', 'not in', self._get_hidden_job_types()),
-            '|',
-            ('blocked_alert_id', '!=', False),
-            ('state', 'in', self._active_states),
+            ("job_type_id.code", "not in", self._get_hidden_job_types()),
+            "|",
+            ("blocked_alert_id", "!=", False),
+            ("state", "in", self._active_states),
         ]
         return self.search(domain, order="id desc")._format()
 
     def _get_recent_jobs(self, limit=10):
-        return self.search([
-            ("state", "in", self._terminal_states),
-            ("job_type_id.code", "not in", self._get_hidden_job_types()),
-        ], order="id desc", limit=limit)._format()
+        return self.search(
+            [
+                ("state", "in", self._terminal_states),
+                ("job_type_id.code", "not in", self._get_hidden_job_types()),
+            ],
+            order="id desc",
+            limit=limit,
+        )._format()
 
     def _format(self):
         # Build a map of job_id → attachment_id for jobs that have a
         # downloadable file (e.g. export_instance).  Uses a single query
         # instead of per-job lookups.
-        attachments = self.env['ir.attachment'].search([
-            ('res_model', '=', 'cloud.job'),
-            ('res_id', 'in', self.ids),
-        ], order='id desc')
+        attachments = self.env["ir.attachment"].search(
+            [
+                ("res_model", "=", "cloud.job"),
+                ("res_id", "in", self.ids),
+            ],
+            order="id desc",
+        )
         att_map = {}
         for att in attachments:
             att_map.setdefault(att.res_id, att.id)
@@ -824,13 +1022,21 @@ class CloudJob(models.Model):
         # (``job_failed``, …) don't count — a failed job only needs a
         # Retry, so flagging it "Action required" would be misleading.
         actionable_codes = list(self._get_actionable_alert_codes())
-        action_job_ids = set(
-            self.env['cloud.alert'].search([
-                ('job_id', 'in', self.ids),
-                ('state', '=', 'active'),
-                ('code', 'in', actionable_codes),
-            ]).mapped('job_id.id')
-        ) if self.ids else set()
+        action_job_ids = (
+            set(
+                self.env["cloud.alert"]
+                .search(
+                    [
+                        ("job_id", "in", self.ids),
+                        ("state", "=", "active"),
+                        ("code", "in", actionable_codes),
+                    ]
+                )
+                .mapped("job_id.id")
+            )
+            if self.ids
+            else set()
+        )
 
         return [
             {
@@ -841,7 +1047,7 @@ class CloudJob(models.Model):
                 "job_type": job.job_type_id.name,
                 "job_type_code": job.job_type_id.code,
                 "instance_id": job.instance_id.id if job.instance_id else None,
-                "state": 'blocked' if job.blocked_alert_id else job.state,
+                "state": "blocked" if job.blocked_alert_id else job.state,
                 "requires_action": (
                     bool(job.blocked_alert_id) or job.id in action_job_ids
                 ),
@@ -861,8 +1067,8 @@ class CloudJob(models.Model):
         ]
 
     def _get_last_system_message(self):
-        system_chunks = self.log_chunk_ids.filtered(lambda c: c.source == 'system')
-        return system_chunks[-1].content if system_chunks else ''
+        system_chunks = self.log_chunk_ids.filtered(lambda c: c.source == "system")
+        return system_chunks[-1].content if system_chunks else ""
 
     @api.model
     def load_chunks(self, job_id, after_id=0):
@@ -874,14 +1080,16 @@ class CloudJob(models.Model):
         project membership). The search below honours those rules
         automatically.
         """
-        chunks = self.env['cloud.job.log.chunk'].search([
-            ('job_id', '=', job_id),
-            ('id', '>', after_id),
-        ])
+        chunks = self.env["cloud.job.log.chunk"].search(
+            [
+                ("job_id", "=", job_id),
+                ("id", ">", after_id),
+            ]
+        )
         job = self.browse(job_id)
         return {
-            'chunks': chunks._format(),
-            'state': job.state,
+            "chunks": chunks._format(),
+            "state": job.state,
         }
 
     @api.model
@@ -894,52 +1102,53 @@ class CloudJob(models.Model):
           - ``"all"`` — no category restriction
         """
         domain = []
-        job_id = (filters or {}).get('job_id')
+        job_id = (filters or {}).get("job_id")
         if job_id:
             # Direct job lookup — bypass all other filters
-            domain.append(('id', '=', int(job_id)))
+            domain.append(("id", "=", int(job_id)))
         else:
             if filters:
-                if filters.get('states'):
-                    domain.append(('state', 'in', filters['states']))
-                if filters.get('host_id'):
-                    domain.append(('host_id', '=', int(filters['host_id'])))
-                if filters.get('date_from'):
-                    domain.append(('create_date', '>=', filters['date_from']))
-                if filters.get('date_to'):
-                    domain.append(('create_date', '<=', filters['date_to']))
-                if filters.get('instance_id'):
-                    domain.append(('instance_id', '=', int(filters['instance_id'])))
-                if filters.get('user_id'):
-                    domain.append(('create_uid', '=', int(filters['user_id'])))
-                if filters.get('apply_to'):
-                    domain.append(('job_type_id.apply_to', '=', filters['apply_to']))
+                if filters.get("states"):
+                    domain.append(("state", "in", filters["states"]))
+                if filters.get("host_id"):
+                    domain.append(("host_id", "=", int(filters["host_id"])))
+                if filters.get("date_from"):
+                    domain.append(("create_date", ">=", filters["date_from"]))
+                if filters.get("date_to"):
+                    domain.append(("create_date", "<=", filters["date_to"]))
+                if filters.get("instance_id"):
+                    domain.append(("instance_id", "=", int(filters["instance_id"])))
+                if filters.get("user_id"):
+                    domain.append(("create_uid", "=", int(filters["user_id"])))
+                if filters.get("apply_to"):
+                    domain.append(("job_type_id.apply_to", "=", filters["apply_to"]))
 
-            category = (filters or {}).get('job_category', 'operational')
+            category = (filters or {}).get("job_category", "operational")
             admin_types = self._get_hidden_job_types()
-            if category == 'operational':
+            if category == "operational":
                 domain.append(("job_type_id.code", "not in", admin_types))
-            elif category == 'admin':
+            elif category == "admin":
                 domain.append(("job_type_id.code", "in", admin_types))
             # "all" → no category filter
 
-        jobs = self.search(domain, order='id desc', limit=200)
-        hosts = self.env['cloud.host'].search([], order='name asc')
-        instances = self.env['cloud.instance'].search(
-            [], order='project_id, name asc',
+        jobs = self.search(domain, order="id desc", limit=200)
+        hosts = self.env["cloud.host"].search([], order="name asc")
+        instances = self.env["cloud.instance"].search(
+            [],
+            order="project_id, name asc",
         )
-        user_ids = jobs.mapped('create_uid').sorted('name')
+        user_ids = jobs.mapped("create_uid").sorted("name")
         return {
-            'jobs': jobs._format_history(),
-            'hosts': [{'id': h.id, 'name': h.name} for h in hosts],
-            'instances': [
+            "jobs": jobs._format_history(),
+            "hosts": [{"id": h.id, "name": h.name} for h in hosts],
+            "instances": [
                 {
-                    'id': i.id,
-                    'name': f"{i.project_id.name}/{i.name}" if i.project_id else i.name,
+                    "id": i.id,
+                    "name": f"{i.project_id.name}/{i.name}" if i.project_id else i.name,
                 }
                 for i in instances
             ],
-            'users': [{'id': u.id, 'name': u.name} for u in user_ids],
+            "users": [{"id": u.id, "name": u.name} for u in user_ids],
         }
 
     def _format_history(self):
@@ -954,33 +1163,32 @@ class CloudJob(models.Model):
             # writing date_done (cancel paths, legacy rows), and to
             # ``now`` for jobs still running.
             terminal = job.state in self._terminal_states
-            end = (
-                job.date_done or job.write_date if terminal else now
-            )
+            end = job.date_done or job.write_date if terminal else now
             duration_s = int((end - start).total_seconds()) if start and end else 0
-            result.append({
-                'id': job.id,
-                'name': job.name,
-                'host': job.host_id.name,
-                'host_id': job.host_id.id,
-                'instance_name': (
-                    f"{job.instance_id.project_id.name}/{job.instance_id.name}"
-                    if job.instance_id else ''
-                ),
-                'instance_id': (
-                    job.instance_id.id if job.instance_id else None
-                ),
-                'job_type': job.job_type_id.name,
-                'state': job.state,
-                'create_date': job.create_date,
-                'write_date': job.write_date,
-                'duration_s': max(0, duration_s),
-                'log_lines': len(job.log_chunk_ids),
-                'last_system_message': job._get_last_system_message(),
-                'user_id': job.create_uid.id,
-                'user_name': job.create_uid.name or "",
-                **_webhook_fields(job.payload),
-            })
+            result.append(
+                {
+                    "id": job.id,
+                    "name": job.name,
+                    "host": job.host_id.name,
+                    "host_id": job.host_id.id,
+                    "instance_name": (
+                        f"{job.instance_id.project_id.name}/{job.instance_id.name}"
+                        if job.instance_id
+                        else ""
+                    ),
+                    "instance_id": (job.instance_id.id if job.instance_id else None),
+                    "job_type": job.job_type_id.name,
+                    "state": job.state,
+                    "create_date": job.create_date,
+                    "write_date": job.write_date,
+                    "duration_s": max(0, duration_s),
+                    "log_lines": len(job.log_chunk_ids),
+                    "last_system_message": job._get_last_system_message(),
+                    "user_id": job.create_uid.id,
+                    "user_name": job.create_uid.name or "",
+                    **_webhook_fields(job.payload),
+                }
+            )
         return result
 
     def cancel_job(self):
@@ -998,35 +1206,49 @@ class CloudJob(models.Model):
         """
         self.ensure_one()
         if self.blocked_alert_id:
-            raise UserError(_(
-                "Blocked jobs cannot be cancelled. "
-                "Resolve the pip dependency conflict first, then cancel if needed."
-            ))
+            raise UserError(
+                _(
+                    "Blocked jobs cannot be cancelled. "
+                    "Resolve the pip dependency conflict first, then cancel if needed."
+                )
+            )
         if self.state not in self._active_states:
             raise UserError(_("Only active jobs can be cancelled."))
-        if self.state == 'started' or not self.queue_job_id:
-            self.write({'state': 'cancelled'})
+        if self.state == "started" or not self.queue_job_id:
+            self.write({"state": "cancelled"})
         else:
             self.queue_job_id.button_cancelled()
 
     def retry_job(self):
         self.ensure_one()
         if self.blocked_alert_id:
-            raise UserError(_(
-                "Blocked jobs cannot be retried. "
-                "Resolve the pip dependency conflict first."
-            ))
+            raise UserError(
+                _(
+                    "Blocked jobs cannot be retried. "
+                    "Resolve the pip dependency conflict first."
+                )
+            )
         if self.state != "failed":
             raise UserError(_("Only failed jobs can be retried."))
+        # Same guard as ``enqueue``: a retry is a user-initiated job like
+        # any other, and firing one while a deploy is already running on
+        # the target means two SSH sessions mutating the same host. This
+        # job is ``failed``, so it never blocks its own retry.
+        self._guard_no_active_job(
+            self.host_id.id,
+            self.instance_id.id if self.instance_id else False,
+        )
         # Create a fresh job as a retry — keeps the original's logs intact.
-        new_job = self.create({
-            'name': self.name,
-            'host_id': self.host_id.id,
-            'job_type_id': self.job_type_id.id,
-            'instance_id': self.instance_id.id if self.instance_id else False,
-            'payload': self.payload,
-            'retry_of_id': self.id,
-        })
+        new_job = self.create(
+            {
+                "name": self.name,
+                "host_id": self.host_id.id,
+                "job_type_id": self.job_type_id.id,
+                "instance_id": self.instance_id.id if self.instance_id else False,
+                "payload": self.payload,
+                "retry_of_id": self.id,
+            }
+        )
         channel, priority = self._resolve_channel_priority(
             new_job.job_type_id,
             new_job.instance_id.id if new_job.instance_id else False,
@@ -1037,7 +1259,7 @@ class CloudJob(models.Model):
             priority=priority,
             description=new_job.job_type_id.name,
         ).execute()
-        new_job.write({'queue_job_uuid': delayed.uuid})
+        new_job.write({"queue_job_uuid": delayed.uuid})
         return new_job.id
 
     @api.model
@@ -1064,13 +1286,15 @@ class CloudJob(models.Model):
         cutoff = fields.Datetime.now() - timedelta(hours=2)
 
         # Pass A — rows + their attachments.
-        Backup = self.env['cloud.instance.backup'].sudo()
-        expired_rows = Backup.search([
-            ('attachment_id', '!=', False),
-            ('backup_time', '<', cutoff),
-        ])
+        Backup = self.env["cloud.instance.backup"].sudo()
+        expired_rows = Backup.search(
+            [
+                ("attachment_id", "!=", False),
+                ("backup_time", "<", cutoff),
+            ]
+        )
         if expired_rows:
-            attachments = expired_rows.mapped('attachment_id')
+            attachments = expired_rows.mapped("attachment_id")
             _logger.info(
                 "Cleaning up %d expired backup row(s) + attachment(s)",
                 len(expired_rows),
@@ -1081,21 +1305,25 @@ class CloudJob(models.Model):
             attachments.exists().unlink()
 
         # Pass B — orphan attachments from one-shot download jobs.
-        orphan = self.env['ir.attachment'].search([
-            ('res_model', '=', 'cloud.job'),
-            ('create_date', '<', cutoff),
-            '|',
-            ('name', 'like', '%-backup-%'),
-            ('name', 'like', '%-neutralized-%'),
-        ])
+        orphan = self.env["ir.attachment"].search(
+            [
+                ("res_model", "=", "cloud.job"),
+                ("create_date", "<", cutoff),
+                "|",
+                ("name", "like", "%-backup-%"),
+                ("name", "like", "%-neutralized-%"),
+            ]
+        )
         # ``cloud.instance.backup.attachment_id`` is the only legit
         # consumer of ``-backup-`` named attachments on cloud.job;
         # exclude any that are still referenced so pass B never
         # races pass A on an in-flight backup.
         if orphan:
-            referenced = Backup.search([
-                ('attachment_id', 'in', orphan.ids),
-            ]).mapped('attachment_id.id')
+            referenced = Backup.search(
+                [
+                    ("attachment_id", "in", orphan.ids),
+                ]
+            ).mapped("attachment_id.id")
             orphan = orphan.filtered(lambda a: a.id not in referenced)
         if orphan:
             _logger.info(
@@ -1105,8 +1333,19 @@ class CloudJob(models.Model):
             orphan.unlink()
 
     def unblock_and_enqueue(self):
-        """Called by the resolve endpoint after a pip conflict is resolved."""
+        """Called by the resolve endpoint after a pip conflict is resolved.
+
+        Guarded like ``enqueue``: the job has been sitting blocked, possibly
+        for a long time, and the operator may well have started something
+        else on the same target meanwhile. This job was never dispatched —
+        it has no ``queue_job_id`` and therefore no active state — so it
+        cannot block itself.
+        """
         self.ensure_one()
+        self._guard_no_active_job(
+            self.host_id.id,
+            self.instance_id.id if self.instance_id else False,
+        )
         self.blocked_alert_id = False
         channel, priority = self._resolve_channel_priority(
             self.job_type_id,
@@ -1118,7 +1357,7 @@ class CloudJob(models.Model):
             priority=priority,
             description=self.job_type_id.name,
         ).execute()
-        self.write({'queue_job_uuid': delayed.uuid})
+        self.write({"queue_job_uuid": delayed.uuid})
 
     # ── Multi-user notifications ───────────────────────────────────────────
 
@@ -1159,10 +1398,12 @@ class CloudJob(models.Model):
             return
         if job.job_type_id.code in self._get_hidden_job_types():
             return
-        users = self.env['res.users'].search([
-            ('share', '=', False),
-            ('active', '=', True),
-        ])
+        users = self.env["res.users"].search(
+            [
+                ("share", "=", False),
+                ("active", "=", True),
+            ]
+        )
         # ``state`` lets the client toast terminal transitions without
         # polling: it is only present when the caller knows it
         # (queue_job_ext passes the terminal state it just wrote);
@@ -1174,11 +1415,11 @@ class CloudJob(models.Model):
         # id + state travel on the bus — the bus ignores record rules,
         # so anything richer (name, target) must be fetched back
         # through the ACL path (``/cloud/get_job_brief``).
-        payload = {'id': job_id}
+        payload = {"id": job_id}
         if state:
-            payload['state'] = state
+            payload["state"] = state
         for user in users:
-            user._bus_send('cloud_jobs', payload)
+            user._bus_send("cloud_jobs", payload)
 
     @api.model
     def _notify_by_email(self, job, state):
@@ -1192,7 +1433,7 @@ class CloudJob(models.Model):
             would email every subscriber per tick. The bus and alert
             channels already filter them for the same reason.
         """
-        if state == 'cancelled':
+        if state == "cancelled":
             return
         if job.job_type_id.code in self._get_hidden_job_types():
             return
@@ -1201,46 +1442,48 @@ class CloudJob(models.Model):
         # single source of truth, not a duplicated membership domain)
         # and hasn't muted. A user who cannot see the job in the UI
         # must not learn about it by email.
-        users = self.env['res.users'].search([
-            ('share', '=', False),
-            ('active', '=', True),
-            ('cloud_notification_level', '!=', 'none'),
-            ('cloud_email_enabled', '=', True),
-        ]).filtered(
-            lambda u: self._job_visible_to(job, u)
-            and not self._job_muted_for(job, u)
+        users = (
+            self.env["res.users"]
+            .search(
+                [
+                    ("share", "=", False),
+                    ("active", "=", True),
+                    ("cloud_notification_level", "!=", "none"),
+                    ("cloud_email_enabled", "=", True),
+                ]
+            )
+            .filtered(
+                lambda u: self._job_visible_to(job, u)
+                and not self._job_muted_for(job, u)
+            )
         )
         # Digest users only get instant mail for severe failures
         # (production deploys/rebuilds); everything else reaches them
         # in the daily digest instead.
         severe = (
-            state == 'failed'
-            and job.job_type_id.code in self._get_severe_job_types()
+            state == "failed" and job.job_type_id.code in self._get_severe_job_types()
         )
         if not severe:
             users = users.filtered(
-                lambda u: u.cloud_notification_mode != 'daily_digest',
+                lambda u: u.cloud_notification_mode != "daily_digest",
             )
         for user in users:
-            if (
-                user.cloud_notification_level == 'failures'
-                and state != 'failed'
-            ):
+            if user.cloud_notification_level == "failures" and state != "failed":
                 continue
             email = user.partner_id.email
             if not email:
                 continue
-            state_label = 'completed' if state == 'done' else state
-            subject = (
-                f"[IncubaCloud] Job '{job.name}' {state_label}"
-            )
+            state_label = "completed" if state == "done" else state
+            subject = f"[IncubaCloud] Job '{job.name}' {state_label}"
             body = self._build_email_body(job, state)
-            self.env['mail.mail'].sudo().create({
-                'subject': subject,
-                'body_html': body,
-                'email_to': email,
-                'auto_delete': True,
-            }).send()
+            self.env["mail.mail"].sudo().create(
+                {
+                    "subject": subject,
+                    "body_html": body,
+                    "email_to": email,
+                    "auto_delete": True,
+                }
+            ).send()
 
     @api.model
     def _job_visible_to(self, job, user):
@@ -1248,7 +1491,7 @@ class CloudJob(models.Model):
         *job* — used to scope job emails to what the UI would show.
         """
         try:
-            job.with_user(user).check_access('read')
+            job.with_user(user).check_access("read")
         except AccessError:
             return False
         return True
@@ -1265,12 +1508,12 @@ class CloudJob(models.Model):
     @api.model
     def _build_email_body(self, job, state):
         instance_line = (
-            f"<tr><td><b>Instance</b></td>"
-            f"<td>{job.instance_id.name}</td></tr>"
-            if job.instance_id else ""
+            f"<tr><td><b>Instance</b></td><td>{job.instance_id.name}</td></tr>"
+            if job.instance_id
+            else ""
         )
         log_url = f"/cloud/log/{job.id}"
-        state_label = 'completed' if state == 'done' else state
+        state_label = "completed" if state == "done" else state
         return (
             f"<table>"
             f"<tr><td><b>Job</b></td><td>{job.name}</td></tr>"
@@ -1293,46 +1536,59 @@ class CloudJob(models.Model):
 
         Telegram and webhook sends each run inside a try/except so one
         broken endpoint can never starve another user's notification.
+
+        In test mode the pipeline is disabled by default — real
+        HTTP calls would spill credentials to external APIs.  Tests
+        that intentionally exercise the pipeline pass
+        ``with_context(test_external_notify=True)`` on the recordset.
         """
-        if state == 'cancelled':
+        if odoo_config.get("test_enable") and not self.env.context.get(
+            "test_external_notify"
+        ):
+            return
+        if state == "cancelled":
             return
         if job.job_type_id.code in self._get_hidden_job_types():
             return
-        users = self.env['res.users'].search([
-            ('share', '=', False),
-            ('active', '=', True),
-            ('cloud_notification_level', '!=', 'none'),
-        ]).filtered(
-            lambda u: self._job_visible_to(job, u)
-            and not self._job_muted_for(job, u)
+        users = (
+            self.env["res.users"]
+            .search(
+                [
+                    ("share", "=", False),
+                    ("active", "=", True),
+                    ("cloud_notification_level", "!=", "none"),
+                ]
+            )
+            .filtered(
+                lambda u: self._job_visible_to(job, u)
+                and not self._job_muted_for(job, u)
+            )
         )
         severe = (
-            state == 'failed'
-            and job.job_type_id.code in self._get_severe_job_types()
+            state == "failed" and job.job_type_id.code in self._get_severe_job_types()
         )
         if not severe:
             users = users.filtered(
-                lambda u: u.cloud_notification_mode != 'daily_digest',
+                lambda u: u.cloud_notification_mode != "daily_digest",
             )
         for user in users:
-            if (
-                user.cloud_notification_level == 'failures'
-                and state != 'failed'
-            ):
+            if user.cloud_notification_level == "failures" and state != "failed":
                 continue
             if user.cloud_telegram_bot_token and user.cloud_telegram_chat_id:
                 try:
                     self._send_telegram(user, job, state, severe)
                 except Exception:
                     _logger.warning(
-                        'telegram send failed for user %s', user.id,
+                        "telegram send failed for user %s",
+                        user.id,
                     )
             if user.cloud_webhook_url:
                 try:
                     self._send_webhook(user, job, state, severe)
                 except Exception:
                     _logger.warning(
-                        'webhook send failed for user %s', user.id,
+                        "webhook send failed for user %s",
+                        user.id,
                     )
 
     @api.model
@@ -1343,11 +1599,16 @@ class CloudJob(models.Model):
         but never propagated — a bad token or connectivity blip must
         not abort the notification pipeline for other users.
         """
-        base_url = self.env['ir.config_parameter'].sudo().get_param(
-            'web.base.url', '',
+        base_url = (
+            self.env["ir.config_parameter"]
+            .sudo()
+            .get_param(
+                "web.base.url",
+                "",
+            )
         )
-        emoji = '\U0001F534' if state == 'failed' else '\U0001F7E2'
-        severity_tag = ' \u26A0\uFE0F SEVERE' if severe else ''
+        emoji = "\U0001f534" if state == "failed" else "\U0001f7e2"
+        severity_tag = " \u26a0\ufe0f SEVERE" if severe else ""
         lines = [
             f"{emoji} *{job.name}* {state}{severity_tag}",
             f"Host: {job.host_id.name}",
@@ -1355,20 +1616,20 @@ class CloudJob(models.Model):
         if job.instance_id:
             lines.append(f"Instance: {job.instance_id.name}")
         lines.append(f"Logs: {base_url}/cloud/log/{job.id}")
-        text = '\n'.join(lines)
-        url = (
-            f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}"
-            f"/sendMessage"
-        )
-        payload = json.dumps({
-            'chat_id': user.cloud_telegram_chat_id,
-            'text': text,
-            'parse_mode': 'Markdown',
-            'disable_web_page_preview': True,
-        }).encode()
+        text = "\n".join(lines)
+        url = f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}/sendMessage"
+        payload = json.dumps(
+            {
+                "chat_id": user.cloud_telegram_chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": True,
+            }
+        ).encode()
         req = urllib.request.Request(
-            url, data=payload,
-            headers={'Content-Type': 'application/json'},
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
         )
         urllib.request.urlopen(req, timeout=10)  # nosec B310 — only Telegram API (HTTPS)
 
@@ -1381,29 +1642,40 @@ class CloudJob(models.Model):
         When *user* has no signing secret the header is omitted — basic
         HTTPS alone serves as the authenticity channel.
         """
-        base_url = self.env['ir.config_parameter'].sudo().get_param(
-            'web.base.url', '',
+        base_url = (
+            self.env["ir.config_parameter"]
+            .sudo()
+            .get_param(
+                "web.base.url",
+                "",
+            )
         )
-        payload = json.dumps({
-            'event': 'job_state_change',
-            'job_id': job.id,
-            'job_name': job.name,
-            'state': state,
-            'severe': severe,
-            'host': job.host_id.name,
-            'instance': job.instance_id.name if job.instance_id else None,
-            'log_url': f'{base_url}/cloud/log/{job.id}',
-            'timestamp': fields.Datetime.to_string(fields.Datetime.now()),
-        }).encode()
-        headers = {'Content-Type': 'application/json'}
-        secret = user.cloud_webhook_secret or ''
+        payload = json.dumps(
+            {
+                "event": "job_state_change",
+                "job_id": job.id,
+                "job_name": job.name,
+                "state": state,
+                "severe": severe,
+                "host": job.host_id.name,
+                "instance": job.instance_id.name if job.instance_id else None,
+                "log_url": f"{base_url}/cloud/log/{job.id}",
+                "timestamp": fields.Datetime.to_string(fields.Datetime.now()),
+            }
+        ).encode()
+        headers = {"Content-Type": "application/json"}
+        secret = user.cloud_webhook_secret or ""
         if secret:
             sig = hmac.new(
-                secret.encode(), payload, hashlib.sha256,
+                secret.encode(),
+                payload,
+                hashlib.sha256,
             ).hexdigest()
-            headers['X-IncubaCloud-Signature'] = 'sha256=' + sig
+            headers["X-IncubaCloud-Signature"] = "sha256=" + sig
         req = urllib.request.Request(
-            user.cloud_webhook_url, data=payload, headers=headers,
+            user.cloud_webhook_url,
+            data=payload,
+            headers=headers,
         )
         urllib.request.urlopen(req, timeout=10)  # nosec B310 — only user-provided HTTPS URL
 
@@ -1411,8 +1683,15 @@ class CloudJob(models.Model):
 
     @api.model
     def get_audit_log(
-        self, instance_id=None, host_id=None, limit=100, offset=0,
-        q=None, action_filter=None, date_from=None, date_to=None,
+        self,
+        instance_id=None,
+        host_id=None,
+        limit=100,
+        offset=0,
+        q=None,
+        action_filter=None,
+        date_from=None,
+        date_to=None,
     ):
         """Return a page of audit log entries for an instance or host.
 
@@ -1421,31 +1700,35 @@ class CloudJob(models.Model):
         for the target (ignoring the current filters) so the filter
         dropdown stays complete across pages.
         """
-        empty = {'entries': [], 'total': 0, 'actions': []}
-        if not self.env.user.has_group('incubacloud.group_cloud_manager'):
+        empty = {"entries": [], "total": 0, "actions": []}
+        if not self.env.user.has_group("incubacloud.group_cloud_manager"):
             return empty
         if instance_id:
-            base = [('instance_id', '=', int(instance_id))]
+            base = [("instance_id", "=", int(instance_id))]
         elif host_id:
-            base = [('host_id', '=', int(host_id))]
+            base = [("host_id", "=", int(host_id))]
         else:
             return empty
         domain = list(base)
         if q:
-            domain += ['|',
-                ('user_id.name', 'ilike', q),
-                ('action', 'ilike', q),
+            domain += [
+                "|",
+                ("user_id.name", "ilike", q),
+                ("action", "ilike", q),
             ]
         if action_filter:
-            domain.append(('action', '=', action_filter))
+            domain.append(("action", "=", action_filter))
         if date_from:
-            domain.append(('create_date', '>=', date_from))
+            domain.append(("create_date", ">=", date_from))
         if date_to:
-            domain.append(('create_date', '<=', date_to))
-        Log = self.env['cloud.audit.log']
+            domain.append(("create_date", "<=", date_to))
+        Log = self.env["cloud.audit.log"]
         total = Log.search_count(domain)
         entries = Log.search(
-            domain, order='id desc', limit=limit, offset=offset,
+            domain,
+            order="id desc",
+            limit=limit,
+            offset=offset,
         )._format()
-        actions = [a for (a,) in Log._read_group(base, groupby=['action']) if a]
-        return {'entries': entries, 'total': total, 'actions': actions}
+        actions = [a for (a,) in Log._read_group(base, groupby=["action"]) if a]
+        return {"entries": entries, "total": total, "actions": actions}

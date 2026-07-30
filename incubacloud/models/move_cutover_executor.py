@@ -26,17 +26,12 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
 
     def get_commands(self):
         inst = self._inst()
-        d = self._inst_dir(inst)
         # Poll the in-container health endpoint for up to ~90s so a
         # freshly restored stack has time to come up before cutover.
         return [
             (
                 "health_wait",
-                f"cd {d} && for i in $(seq 1 30); do "
-                f"if docker compose exec -T odoo curl -sf --max-time 10 "
-                f"http://localhost:8069/web/health >/dev/null 2>&1; then "
-                f"echo 'health:ok'; exit 0; fi; sleep 3; done; "
-                f"echo 'health:timeout'; exit 1",
+                self.run_script("move_health_wait.sh", [self._inst_dir(inst)]),
             ),
         ]
 
@@ -63,6 +58,21 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         # Hook: SaaS re-points DNS at the new host IP and finalizes the
         # tenant. Core is a no-op.
         inst._on_move_cutover(origin)
+        # Nothing re-pointed DNS: say so loudly. The move succeeded but
+        # the instance answers on a new IP, so it is unreachable until a
+        # human updates the record — silence here reads as a broken move.
+        if not inst._move_dns_is_managed():
+            self._sys(
+                f"⚠ DNS is not managed by this panel — re-point "
+                f"{inst.domain or 'the instance domain'} to "
+                f"{target.ip_address or 'the new host IP'} or the "
+                f"instance stays unreachable."
+            )
+            inst._notify_move_dns_repoint(target)
+        # The instance now belongs to the target host: its label map must
+        # learn about it, and the source's must forget it (done by the
+        # cleanup step that closes the chain).
+        target.refresh_observability_labels(reason="move cutover")
 
     async def on_failure(self, results, errors):
         for err in errors:
@@ -88,8 +98,16 @@ class MoveCleanupSourceExecutor(DeleteInstanceExecutor):
 
     _job_type = "move_cleanup_source"
 
+    # The instance lives on the destination host by now: this teardown
+    # touches the abandoned copy only, so it must not move the record's
+    # lifecycle state.
+    _owns_instance_lifecycle = False
+
     async def on_success(self, results):
         self._sys("✓ Old host copy removed after move.")
+        # This job runs on the SOURCE host, which no longer hosts the
+        # instance: drop it from that host's label map.
+        self._host().refresh_observability_labels(reason="move cleanup")
 
     async def on_failure(self, results, errors):
         # A cleanup failure must NOT flip the instance to error: the move

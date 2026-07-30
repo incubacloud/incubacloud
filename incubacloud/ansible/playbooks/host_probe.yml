@@ -1,0 +1,67 @@
+---
+# Probe a host for deployment readiness. Driven by HostProbeExecutor,
+# which reads the exported facts and decides whether the host is
+# compatible, degraded (missing tools) or unsupported (wrong OS / no
+# disk).
+#
+# Gathering only: every check is read-only and non-failing, so the play
+# always converges and the *judgement* stays in Python. ``check_mode:
+# false`` on the read-only commands keeps the probe working under
+# ``--check`` too, so the same playbook can back a future "audit the
+# fleet" button without changing anything on the host.
+- name: Probe a host for deployment readiness
+  hosts: all
+  gather_facts: true
+
+  vars:
+    # pipx-installed tools land in ~/.local/bin, absent from the default
+    # non-interactive SSH PATH.
+    tool_checks:
+      - {key: git, cmd: "git --version"}
+      - {key: python3, cmd: "python3 --version"}
+      - {key: docker, cmd: "docker --version"}
+      - {key: compose_v2, cmd: "docker compose version"}
+      - {key: venv, cmd: "python3 -c 'import venv; print(\"OK\")'"}
+      - {key: copier, cmd: "copier --version"}
+      - {key: invoke, cmd: "invoke --version"}
+      - {key: precommit, cmd: "pre-commit --version"}
+
+  environment:
+    PATH: "{{ ansible_env.HOME }}/.local/bin:{{ ansible_env.PATH }}"
+
+  tasks:
+    - name: Measure free disk on /
+      # ``command`` rather than ``shell`` so there is no pipe to guard;
+      # the value we want is the last line of df's two-line output.
+      ansible.builtin.command: "df -B1 --output=avail /"
+      register: ic_disk
+      changed_when: false
+      check_mode: false
+
+    - name: Probe deployment tools
+      ansible.builtin.command: "{{ item.cmd }}"
+      loop: "{{ tool_checks }}"
+      loop_control:
+        label: "{{ item.key }}"
+      register: ic_tools
+      failed_when: false
+      changed_when: false
+      check_mode: false
+
+    - name: Collapse the tool probe into a name → version map
+      ansible.builtin.set_fact:
+        ic_tool_versions: >-
+          {{ ic_tool_versions | default({}) | combine({
+               item.item.key: (item.stdout if item.rc == 0 else 'MISSING')
+             }) }}
+      loop: "{{ ic_tools.results }}"
+      loop_control:
+        label: "{{ item.item.key }}"
+
+    - name: Export the probe results
+      ansible.builtin.set_stats:
+        aggregate: false
+        data:
+          ic_os: "{{ ansible_facts['system'] | default('') }}"
+          ic_disk_free_bytes: "{{ ic_disk.stdout_lines | last | trim }}"
+          ic_tools: "{{ ic_tool_versions | default({}) }}"

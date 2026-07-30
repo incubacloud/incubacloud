@@ -9,7 +9,9 @@
 
         <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
         <meta http-equiv="content-type" content="text/html, charset=utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no"/>
+        <!-- No ``user-scalable=no``: blocking pinch-zoom fails WCAG 1.4.4
+             (Resize text). Users must be able to zoom the panel. -->
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
         <!-- Relay fonts: Space Grotesk (display) + Hanken Grotesk (UI) + JetBrains Mono (data) -->
         <link rel="preconnect" href="https://fonts.googleapis.com"/>

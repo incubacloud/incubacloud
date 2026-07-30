@@ -22,6 +22,8 @@ path that is no longer used for failures in production.
 from datetime import timedelta
 from unittest.mock import patch
 
+from psycopg2 import sql as psql
+
 from odoo import fields
 from odoo.tests.common import TransactionCase, tagged
 
@@ -35,19 +37,23 @@ class TestAlertNotifyEmail(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.host = self.env["cloud.host"].create({
-            "name": "alert-email-host",
-            "ip_address": "10.0.0.60",
-            "user": "ubuntu",
-            "wildcard_domain": "alert-email.example.com",
-        })
+        self.host = self.env["cloud.host"].create(
+            {
+                "name": "alert-email-host",
+                "ip_address": "10.0.0.60",
+                "user": "ubuntu",
+                "wildcard_domain": "alert-email.example.com",
+            }
+        )
         # Neutralise admin's Telegram / webhook config so
         # _notify_alert_external never makes real HTTP calls.
-        self.env["res.users"].sudo().browse(2).write({
-            "cloud_telegram_bot_token": "",
-            "cloud_telegram_chat_id": "",
-            "cloud_webhook_url": "",
-        })
+        self.env["res.users"].sudo().browse(2).write(
+            {
+                "cloud_telegram_bot_token": "",
+                "cloud_telegram_chat_id": "",
+                "cloud_webhook_url": "",
+            }
+        )
 
     def _user(self, login, **overrides):
         vals = {
@@ -56,8 +62,7 @@ class TestAlertNotifyEmail(TransactionCase):
             "email": f"{login}@example.com",
             "group_ids": [
                 (4, self.env.ref("base.group_user").id),
-                (4, self.env.ref(
-                    "incubacloud.group_cloud_project_manager").id),
+                (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
             "cloud_notification_level": "all",
         }
@@ -90,7 +95,8 @@ class TestAlertNotifyEmail(TransactionCase):
         before = len(self._alert_mails("ane-fail@example.com"))
         self._alert(code="job_failed", level="warning")
         self.assertGreater(
-            len(self._alert_mails("ane-fail@example.com")), before,
+            len(self._alert_mails("ane-fail@example.com")),
+            before,
         )
 
     def test_job_failed_critical_email_to_failures_user(self):
@@ -100,7 +106,8 @@ class TestAlertNotifyEmail(TransactionCase):
         before = len(self._alert_mails("ane-crit@example.com"))
         self._alert(code="job_failed", level="critical")
         self.assertGreater(
-            len(self._alert_mails("ane-crit@example.com")), before,
+            len(self._alert_mails("ane-crit@example.com")),
+            before,
         )
 
     def test_non_job_warning_alert_no_email_to_failures_user(self):
@@ -110,7 +117,8 @@ class TestAlertNotifyEmail(TransactionCase):
         before = len(self._alert_mails("ane-no-warn@example.com"))
         self._alert(code="pip_conflict", level="warning")
         self.assertEqual(
-            len(self._alert_mails("ane-no-warn@example.com")), before,
+            len(self._alert_mails("ane-no-warn@example.com")),
+            before,
         )
 
     def test_non_job_critical_alert_email_to_failures_user(self):
@@ -120,7 +128,8 @@ class TestAlertNotifyEmail(TransactionCase):
         before = len(self._alert_mails("ane-crit-ok@example.com"))
         self._alert(code="disk_critical", level="critical")
         self.assertGreater(
-            len(self._alert_mails("ane-crit-ok@example.com")), before,
+            len(self._alert_mails("ane-crit-ok@example.com")),
+            before,
         )
 
     # ── all-level user ────────────────────────────────────────────
@@ -132,7 +141,8 @@ class TestAlertNotifyEmail(TransactionCase):
         before = len(self._alert_mails("ane-all@example.com"))
         self._alert(code="pip_conflict", level="warning")
         self.assertGreater(
-            len(self._alert_mails("ane-all@example.com")), before,
+            len(self._alert_mails("ane-all@example.com")),
+            before,
         )
 
     # ── cloud_email_enabled toggle (C1 fix) ───────────────────────
@@ -141,13 +151,15 @@ class TestAlertNotifyEmail(TransactionCase):
         """cloud_email_enabled=False must suppress alert emails —
         the old alert path missed this check entirely."""
         self._user(
-            "ane-no-email", cloud_notification_level="all",
+            "ane-no-email",
+            cloud_notification_level="all",
             cloud_email_enabled=False,
         )
         before = len(self._alert_mails("ane-no-email@example.com"))
         self._alert(code="disk_critical", level="critical")
         self.assertEqual(
-            len(self._alert_mails("ane-no-email@example.com")), before,
+            len(self._alert_mails("ane-no-email@example.com")),
+            before,
         )
 
     def test_email_enabled_sends_alert_email(self):
@@ -157,7 +169,8 @@ class TestAlertNotifyEmail(TransactionCase):
         before = len(self._alert_mails("ane-email@example.com"))
         self._alert(code="disk_critical", level="critical")
         self.assertGreater(
-            len(self._alert_mails("ane-email@example.com")), before,
+            len(self._alert_mails("ane-email@example.com")),
+            before,
         )
 
 
@@ -170,17 +183,21 @@ class TestAlertNotifyExternal(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.host = self.env["cloud.host"].create({
-            "name": "alert-ext-host",
-            "ip_address": "10.0.0.61",
-            "user": "ubuntu",
-            "wildcard_domain": "alert-ext.example.com",
-        })
-        self.env["res.users"].sudo().browse(2).write({
-            "cloud_telegram_bot_token": "",
-            "cloud_telegram_chat_id": "",
-            "cloud_webhook_url": "",
-        })
+        self.host = self.env["cloud.host"].create(
+            {
+                "name": "alert-ext-host",
+                "ip_address": "10.0.0.61",
+                "user": "ubuntu",
+                "wildcard_domain": "alert-ext.example.com",
+            }
+        )
+        self.env["res.users"].sudo().browse(2).write(
+            {
+                "cloud_telegram_bot_token": "",
+                "cloud_telegram_chat_id": "",
+                "cloud_webhook_url": "",
+            }
+        )
 
     def _user(self, login, **overrides):
         vals = {
@@ -189,8 +206,7 @@ class TestAlertNotifyExternal(TransactionCase):
             "email": f"{login}@example.com",
             "group_ids": [
                 (4, self.env.ref("base.group_user").id),
-                (4, self.env.ref(
-                    "incubacloud.group_cloud_project_manager").id),
+                (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
             "cloud_notification_level": "all",
             "cloud_telegram_bot_token": "test-bot-token",
@@ -207,7 +223,14 @@ class TestAlertNotifyExternal(TransactionCase):
             "host_id": self.host.id,
         }
         vals.update(extra)
-        return self.env["cloud.alert"].sudo().create(vals)
+        return (
+            self.env["cloud.alert"]
+            .sudo()
+            .with_context(
+                test_external_notify=True,
+            )
+            .create(vals)
+        )
 
     @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
     def test_job_failed_warning_telegram_to_failures_user(self, mock_open):
@@ -222,14 +245,31 @@ class TestAlertNotifyExternal(TransactionCase):
         """cloud_email_enabled is an email-only toggle — Telegram and
         other external channels must still deliver."""
         self._user(
-            "aext-no-email-tg", cloud_notification_level="all",
+            "aext-no-email-tg",
+            cloud_notification_level="all",
             cloud_email_enabled=False,
         )
         self._alert(code="disk_critical", level="critical")
         mock_open.assert_called()
 
+    @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
+    def test_external_notify_gated_in_test_mode(self, mock_open):
+        """Without context flag, alert creation must not call Telegram."""
+        self._user(
+            "aext-gated",
+            cloud_notification_level="all",
+        )
+        self.env["cloud.alert"].sudo().create(
+            {
+                "code": "disk_critical",
+                "level": "critical",
+                "message": "Test alert ext gated",
+                "host_id": self.host.id,
+            }
+        )
+        mock_open.assert_not_called()
 
-@tagged("post_install", "-at_install")
+
 class TestAlertNotifyDigest(TransactionCase):
     """Daily digest: job_failed alerts are excluded (the job section
     already covers them), alert level filtering matches the immediate
@@ -237,32 +277,82 @@ class TestAlertNotifyDigest(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.host = self.env["cloud.host"].create({
-            "name": "digest-alert-host",
-            "ip_address": "10.0.0.62",
-            "user": "ubuntu",
-            "wildcard_domain": "digest-alert.example.com",
-        })
-        self.env["res.users"].sudo().browse(2).write({
-            "cloud_telegram_bot_token": "",
-            "cloud_telegram_chat_id": "",
-            "cloud_webhook_url": "",
-        })
+        self.host = self.env["cloud.host"].create(
+            {
+                "name": "digest-alert-host",
+                "ip_address": "10.0.0.62",
+                "user": "ubuntu",
+                "wildcard_domain": "digest-alert.example.com",
+            }
+        )
+        self.env["res.users"].sudo().browse(2).write(
+            {
+                "cloud_telegram_bot_token": "",
+                "cloud_telegram_chat_id": "",
+                "cloud_webhook_url": "",
+            }
+        )
 
     def _user(self, login, **overrides):
+        # TestAlertNotifyDigest sorts alphabetically first among
+        # incubacloud's test classes, so these are the very first
+        # res.users.create() calls in the whole module's test run —
+        # before account's autopost_bills default (required, contributed
+        # to res.partner via _inherit) is resolvable by the ORM. Same gap
+        # _incubacloud_ensure_cron_bot works around in res_users_ext.py:
+        # pre-create the partner via raw SQL with that column filled,
+        # then create res.users directly against it.
+        self.env.cr.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'res_partner'"
+        )
+        partner_cols = {row[0] for row in self.env.cr.fetchall()}
+        now = fields.Datetime.now()
+        cols = [
+            "name",
+            "email",
+            "active",
+            "is_company",
+            "type",
+            "create_date",
+            "write_date",
+            "create_uid",
+            "write_uid",
+        ]
+        partner_vals = [
+            login,
+            f"{login}@example.com",
+            True,
+            False,
+            "contact",
+            now,
+            now,
+            self.env.uid,
+            self.env.uid,
+        ]
+        if "autopost_bills" in partner_cols:
+            cols.append("autopost_bills")
+            partner_vals.append("ask")
+        query = psql.SQL(
+            "INSERT INTO res_partner ({cols}) VALUES ({placeholders}) RETURNING id"
+        ).format(
+            cols=psql.SQL(", ").join(map(psql.Identifier, cols)),
+            placeholders=psql.SQL(", ").join([psql.Placeholder()] * len(partner_vals)),
+        )
+        self.env.cr.execute(query, partner_vals)
+        partner_id = self.env.cr.fetchone()[0]
+        self.env["res.partner"].invalidate_model()
+
         vals = {
-            "name": login,
             "login": login,
-            "email": f"{login}@example.com",
+            "partner_id": partner_id,
             "group_ids": [
                 (4, self.env.ref("base.group_user").id),
-                (4, self.env.ref(
-                    "incubacloud.group_cloud_project_manager").id),
+                (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
             "cloud_notification_level": "all",
             "cloud_notification_mode": "daily_digest",
-            "cloud_last_digest_at": (
-                fields.Datetime.now() - timedelta(seconds=60)),
+            "cloud_last_digest_at": (fields.Datetime.now() - timedelta(seconds=60)),
         }
         vals.update(overrides)
         return self.env["res.users"].create(vals)
@@ -281,35 +371,58 @@ class TestAlertNotifyDigest(TransactionCase):
         """Create a cloud.job + queue.job pair and drive it to failed
         so the digest's job section has content."""
         jt = self.env["cloud.job.type"].search(
-            [("code", "=", code)], limit=1,
+            [("code", "=", code)],
+            limit=1,
         )
         if not jt:
-            jt = self.env["cloud.job.type"].create({
-                "name": code, "code": code, "apply_to": "host",
-            })
-        cjob = self.env["cloud.job"].sudo().create({
-            "host_id": self.host.id,
-            "job_type_id": jt.id,
-            "name": f"Digest {code}",
-        })
-        qjob = self.env["queue.job"].sudo().create({
-            "uuid": uuid,
-            "name": f"qj-{uuid}",
-            "state": "pending",
-            "method_name": "noop",
-            "model_name": "cloud.job",
-            "func_string": "noop()",
-        })
+            jt = self.env["cloud.job.type"].create(
+                {
+                    "name": code,
+                    "code": code,
+                    "apply_to": "host",
+                }
+            )
+        cjob = (
+            self.env["cloud.job"]
+            .sudo()
+            .create(
+                {
+                    "host_id": self.host.id,
+                    "job_type_id": jt.id,
+                    "name": f"Digest {code}",
+                }
+            )
+        )
+        qjob = (
+            self.env["queue.job"]
+            .sudo()
+            .create(
+                {
+                    "uuid": uuid,
+                    "name": f"qj-{uuid}",
+                    "state": "pending",
+                    "method_name": "noop",
+                    "model_name": "cloud.job",
+                    "func_string": "noop()",
+                }
+            )
+        )
         cjob.write({"queue_job_uuid": uuid})
         qjob.write({"state": "failed", "exc_message": "digest boom"})
         return cjob
 
     def _digest_mails(self, login):
         email = f"{login}@example.com"
-        return self.env["mail.mail"].sudo().search([
-            ("subject", "like", "[IncubaCloud] Daily digest%"),
-            ("email_to", "=", email),
-        ])
+        return (
+            self.env["mail.mail"]
+            .sudo()
+            .search(
+                [
+                    ("subject", "like", "[IncubaCloud] Daily digest%"),
+                    ("email_to", "=", email),
+                ]
+            )
+        )
 
     def test_digest_excludes_job_failed_alerts(self):
         """M2 fix: job_failed alerts must NOT appear in the digest's
@@ -340,7 +453,8 @@ class TestAlertNotifyDigest(TransactionCase):
         """C2 fix: cloud_email_enabled=False must suppress the digest
         email entirely — the old cron search missed this filter."""
         self._user(
-            "adg-c2", cloud_notification_level="all",
+            "adg-c2",
+            cloud_notification_level="all",
             cloud_email_enabled=False,
         )
         self._alert(code="disk_critical", level="critical")

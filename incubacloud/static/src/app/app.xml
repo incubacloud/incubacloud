@@ -26,6 +26,7 @@
                                 <li class="ic-nav-section-label" aria-hidden="true">Infrastructure</li>
                                 <li t-att-class="{ active: ['projects','new_project'].includes(state.route) }"
                                     t-att-aria-current="['projects','new_project'].includes(state.route) ? 'page' : undefined"
+                                    tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
                                     t-on-click="() => env.navigate('projects')">
                                     <t t-out="env.icon('projects', 17)"/>
                                     <span class="ic-nav-label">Projects</span>
@@ -34,6 +35,7 @@
                                 <t t-if="env.permissions?.can_manage_hosts">
                                     <li t-att-class="{ active: ['hosts','host_detail','new_host'].includes(state.route) }"
                                         t-att-aria-current="['hosts','host_detail','new_host'].includes(state.route) ? 'page' : undefined"
+                                        tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
                                         t-on-click="() => env.navigate('hosts')">
                                         <t t-out="env.icon('hosts', 17)"/>
                                         <span class="ic-nav-label">Hosts</span>
@@ -44,6 +46,7 @@
                                 <t t-if="env.permissions?.can_manage_settings">
                                     <li t-att-class="{ active: ['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) }"
                                         t-att-aria-current="['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) ? 'page' : undefined"
+                                        tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
                                         t-on-click="() => env.navigate('backup_backends')">
                                         <t t-out="env.icon('backups', 17)"/>
                                         <span class="ic-nav-label">Backups</span>
@@ -52,9 +55,20 @@
 
                                     <li t-att-class="{ active: state.route === 'settings' }"
                                         t-att-aria-current="state.route === 'settings' ? 'page' : undefined"
+                                        tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
                                         t-on-click="() => env.navigate('settings')">
                                         <t t-out="env.icon('settings', 17)"/>
                                         <span class="ic-nav-label">Settings</span>
+                                    </li>
+                                </t>
+
+                                <t t-if="env.permissions?.can_manage_hosts">
+                                    <li t-att-class="{ active: state.route === 'monitoring' }"
+                                        t-att-aria-current="state.route === 'monitoring' ? 'page' : undefined"
+                                        tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
+                                        t-on-click="() => env.navigate('monitoring')">
+                                        <t t-out="env.icon('heartbeat', 17)"/>
+                                        <span class="ic-nav-label">Monitoring</span>
                                     </li>
                                 </t>
                             </ul>
@@ -98,7 +112,10 @@
                             project_id="state.params.project_id"
                             embedded="true"/>
                     </t>
-<t t-if="state.route === 'settings' and env.permissions?.can_manage_settings">
+<t t-if="state.route === 'monitoring' and env.permissions?.can_manage_hosts">
+                        <Monitoring/>
+                    </t>
+                    <t t-if="state.route === 'settings' and env.permissions?.can_manage_settings">
                         <Settings initialTab="state.params.tab"/>
                     </t>
                     <t t-if="state.route === 'backup_backends' and env.permissions?.can_manage_settings">

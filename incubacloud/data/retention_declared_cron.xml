@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="cron_check_retention_declared" model="ir.cron">
+        <field name="name">Check Backup Retention Owner Declared</field>
+        <field name="model_id" ref="model_cloud_backup_backend" />
+        <field name="state">code</field>
+        <field name="code">model._cron_check_retention_declared()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

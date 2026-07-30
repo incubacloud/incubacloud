@@ -130,6 +130,7 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                 })
                 env['cloud.instance.backup'].create({
                     'instance_id': inst.id,
+                    'kind': 'archive',
                     'backup_type': 'Full',
                     'backup_time': fields.Datetime.now(),
                     'attachment_id': att.id,

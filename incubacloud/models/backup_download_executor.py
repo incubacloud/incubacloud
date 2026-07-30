@@ -75,51 +75,38 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         # binary writes a ZIP that already matches the layout expected
         # by ``_download_zip``.
         if inst.environment != 'production':
-            filestore_flag = (
-                '--filestore' if mode == 'all' else '--no-filestore'
-            )
             return [
                 (
                     "Create live backup",
-                    f"cd {d} && docker compose run --rm"
-                    f" -v /tmp:/host-tmp"
-                    f" odoo click-odoo-backupdb"
-                    f" {filestore_flag} {dbname}"
-                    f" /host-tmp/{os.path.basename(archive)}",
+                    self.run_script(
+                        "backup_download.sh",
+                        [
+                            "live-dump", d, dbname, archive,
+                            "all" if mode == 'all' else "db",
+                        ],
+                    ),
                     {"stop_on_failure": True},
                 ),
             ]
 
-        time_flag = (
-            '' if raw_time == 'latest'
-            else f" --time \"{raw_time}\""
-        )
         tmp_dir = self._tmp_dir()
 
         # Production: restore inside the backup container, then copy out.
-        ctr_tmp = '/tmp/bkdl'
         if mode == 'dump':
             return [
                 (
                     "Restore SQL from backup",
-                    f"cd {d} && docker compose exec -T backup"
-                    f" sh -c 'rm -rf {ctr_tmp} && mkdir -p {ctr_tmp}"
-                    f" && dup restore --force"
-                    f" {time_flag}"
-                    f" --path-to-restore {dbname}.sql"
-                    f" \"$DST\" {ctr_tmp}/{dbname}.sql'",
+                    self.run_script(
+                        "backup_download.sh",
+                        ["restore-sql", d, dbname, raw_time],
+                    ),
                 ),
                 (
                     "Extract and package",
-                    f"cd {d}"
-                    f" && mkdir -p {tmp_dir}"
-                    f" && docker compose cp"
-                    f" backup:{ctr_tmp}/{dbname}.sql"
-                    f" {tmp_dir}/dump.sql"
-                    f" && docker compose exec -T backup"
-                    f" rm -rf {ctr_tmp}"
-                    f" && cd {tmp_dir} && zip -r {archive} dump.sql"
-                    f" && rm -rf {tmp_dir}",
+                    self.run_script(
+                        "backup_download.sh",
+                        ["package-sql", d, dbname, tmp_dir, archive],
+                    ),
                 ),
             ]
 
@@ -127,27 +114,16 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         return [
             (
                 "Restore full from backup",
-                f"cd {d} && docker compose exec -T backup"
-                f" sh -c 'rm -rf {ctr_tmp} && mkdir -p {ctr_tmp}"
-                f" && dup restore --force"
-                f" {time_flag}"
-                f" \"$DST\" {ctr_tmp}/'",
+                self.run_script(
+                    "backup_download.sh", ["restore-full", d, raw_time],
+                ),
             ),
             (
                 "Extract and package",
-                f"cd {d}"
-                f" && mkdir -p {tmp_dir}"
-                f" && docker compose cp"
-                f" backup:{ctr_tmp}/."
-                f" {tmp_dir}/"
-                f" && docker compose exec -T backup"
-                f" rm -rf {ctr_tmp}"
-                f" && cd {tmp_dir}"
-                f" && mv {dbname}.sql dump.sql"
-                f" && (cp -R odoo/filestore/{dbname} filestore"
-                f" 2>/dev/null || true)"
-                f" && zip -r {archive} dump.sql filestore"
-                f" && rm -rf {tmp_dir}",
+                self.run_script(
+                    "backup_download.sh",
+                    ["package-full", d, dbname, tmp_dir, archive],
+                ),
             ),
         ]
 

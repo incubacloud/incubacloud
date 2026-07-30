@@ -76,6 +76,13 @@ and infrastructure alerts:
 }
 ```
 
+When an alert clears **automatically** (the monitor that raised it
+observes recovery), the same payload shape is sent again with
+`"event": "alert_resolved"` — consumers can close the incident they
+opened on the `alert` event. Dismissing an alert by hand in the panel
+does *not* send this event: the operator silencing it is already
+looking at it.
+
 If you set a **secret**, every request carries an
 `X-IncubaCloud-Signature: sha256=<hex>` header — the HMAC-SHA256 of the raw
 body. Verify it with a constant-time comparison before trusting the payload.

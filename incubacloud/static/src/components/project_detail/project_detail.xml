@@ -116,17 +116,20 @@
                                     <div class="rl-frow"
                                          t-att-class="validator.fieldError('name') ? 'has-error' : ''">
                                         <label>Name <span class="rl-req">*</span></label>
-                                        <input type="text"
+                                        <input
+                    t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
+                    t-att-aria-describedby="validator.fieldError('name') ? 'pd-err-name' : undefined"
                                                t-att-value="state.form.name"
                                                t-on-input="(ev) => this.onInput('name', ev)"
                                                t-on-blur="() => validator.touch('name')"/>
                                         <t t-if="validator.fieldError('name')">
-                                            <span class="ic-field-error" t-esc="validator.fieldError('name')"/>
+                                            <span class="ic-field-error"
+                      t-att-id="'pd-err-name'" t-esc="validator.fieldError('name')"/>
                                         </t>
                                     </div>
                                     <div class="rl-frow">
                                         <label>Author</label>
-                                        <input type="text"
+                                        <input
                                                placeholder="IncubaCloud"
                                                t-att-value="state.form.project_author"
                                                t-on-input="(ev) => this.onInput('project_author', ev)"/>
@@ -135,11 +138,14 @@
                                          t-att-class="validator.fieldError('odoo_version') ? 'has-error' : ''">
                                         <label>Odoo Version <span class="rl-req">*</span></label>
                                         <RlSelect options="odooVersions"
+                    ariaInvalid="validator.fieldError('odoo_version') ? true : false"
+                    ariaDescribedby="validator.fieldError('odoo_version') ? 'pd-err-odoo_version' : undefined"
                                                   value="state.form.odoo_version"
                                                   onChange="(value) => this.onInput('odoo_version', { target: { value: value } })"
                                                   ariaLabel="'Odoo version'"/>
                                         <t t-if="validator.fieldError('odoo_version')">
-                                            <span class="ic-field-error" t-esc="validator.fieldError('odoo_version')"/>
+                                            <span class="ic-field-error"
+                      t-att-id="'pd-err-odoo_version'" t-esc="validator.fieldError('odoo_version')"/>
                                         </t>
                                     </div>
                                     <div class="rl-frow">

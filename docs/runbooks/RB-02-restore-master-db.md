@@ -48,6 +48,57 @@ You need to see a "chain end time" within the last 24h. If the last
 backup is older, call this out in the incident channel — data loss
 window is larger than usual.
 
+## Knowing the backup ran at all
+
+The backup container emails on failure, which covers *"it ran and it
+broke"*. It cannot cover *"it never ran"* — a stopped container, a
+misconfigured schedule or a powered-off host produce no email precisely
+because nothing executed. That silence is indistinguishable from success.
+
+Close it with an external dead-man's switch. The doodba backup image
+(`docker-duplicity-postgres-s3`) already speaks the healthchecks.io
+protocol: give any job a ping URL and its runner pings `/start` before
+the job, the plain URL on success, and `/fail` on failure — and, because
+the runner carries a failure flag forward, a job that failed earlier in
+the same run marks the later ones as failed too.
+
+Two schedules need watching, because they fail independently:
+
+| Job | What it does | Runs |
+|---|---|---|
+| `JOB_200` | `pg_dump` of the databases into `$SRC` | daily **and** weekly |
+| `JOB_300` | uploads the incremental to `$DST` | daily |
+| `JOB_500` | writes a fresh full chain | weekly |
+| `JOB_800` | prunes chains older than the retention | weekly |
+
+Watching only the daily job leaves the **weekly full unmonitored**, and
+that is the one holding the chain up: if fulls stop running, incrementals
+keep stacking on an ever-older base and the restore quietly degrades
+while every daily ping stays green.
+
+Create two checks and add their URLs to the backup service's env file
+(`.docker/backup.env`, never committed):
+
+```
+JOB_300_HEALTHCHECKS_URL=https://hc-ping.com/<uuid>   # period 1 day,  grace ~6h
+JOB_500_HEALTHCHECKS_URL=https://hc-ping.com/<uuid>   # period 7 days, grace ~1 day
+```
+
+Each check covers its whole chain, not just its own step: `JOB_200` runs
+first in both batches, and the runner carries a failure forward — so a
+failed dump sends the later job's ping to `/fail` too.
+
+Leave a variable out entirely to disable its pinging; setting it to an
+empty string instead makes the runner attempt a request to an empty URL.
+
+Now no ping within the grace window raises an alert from outside the
+infrastructure, which is the only place that can notice the whole host
+is gone. Verify it once by pinging the URL by hand and watching the
+check go green, then by stopping the container for a cycle.
+
+Related: the restore procedure itself should be rehearsed, not assumed —
+see the restore drill in the deployment repo (`drill-restore/`).
+
 ## Resolution
 
 1. **Put the stack in maintenance mode** (so no new writes land

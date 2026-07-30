@@ -1,0 +1,32 @@
+---
+# Tear a host down: stop the shared Traefik reverse proxy and remove its
+# directory. Driven by DeleteHostExecutor; the executor archives the
+# cloud.host record afterwards.
+#
+# Idempotent: a host whose Traefik was never deployed (or already
+# removed) converges without error, so a half-finished teardown can be
+# re-run safely.
+- name: Tear down a cloud host
+  hosts: all
+  gather_facts: true
+
+  vars:
+    traefik_dir: "{{ ansible_env.HOME }}/traefik"
+
+  tasks:
+    - name: Check whether Traefik is deployed
+      ansible.builtin.stat:
+        path: "{{ traefik_dir }}/inverseproxy.yaml"
+      register: ic_traefik_compose
+
+    - name: Stop the Traefik stack
+      ansible.builtin.command:
+        cmd: docker compose -p inverseproxy -f inverseproxy.yaml down
+        chdir: "{{ traefik_dir }}"
+      when: ic_traefik_compose.stat.exists
+      changed_when: true
+
+    - name: Remove the Traefik directory
+      ansible.builtin.file:
+        path: "{{ traefik_dir }}"
+        state: absent

@@ -10,6 +10,7 @@ from . import (
     test_safe_error,
     test_cloud_terminal_route,
     test_cron_bot,
+    test_chained_enqueue_invariant,
     test_cloud_backup,
     test_backup_backend_conn,
     test_general_settings,
@@ -45,4 +46,31 @@ from . import (
     test_rotation_tolerance,
     test_pending_push_coalesce,
     test_github_setup,
+    test_restore_backup_guard,
+    test_connect_as_guard,
+    test_run_script,
+    test_ansible_executor,
+    test_instance_state,
+    test_host_state_executors,
+    test_terminal_session,
+    test_host_hardening,
+    test_metric_rules,
+    test_host_metrics_handover,
+    test_observability_wiring,
+    test_form_error_accessibility,
+    test_observability_executors,
+    test_traefik_metrics_retrofit,
+    test_instance_liveness_metrics,
+    test_host_metrics_retirement,
+    test_growth_leaks,
 )
+from . import test_encrypted_char_alert
+from . import test_audit_tracked_mixin
+from . import test_session_reconcile
+from . import test_backup_kind
+from . import test_alert_resolution_notify
+from . import test_job_duration_watch
+from . import test_job_purge
+from . import test_rate_limit_gate
+from . import test_config_drift
+from . import test_placement_veto

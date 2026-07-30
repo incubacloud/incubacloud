@@ -1,12 +1,14 @@
-"""Tests for cloud.project.unlink cleanup and DeleteProjectExecutor."""
+"""Tests for cloud.project.unlink guard and DeleteProjectExecutor."""
 from unittest.mock import MagicMock, patch
 
+from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
 
-class TestCloudProjectUnlinkEnqueuesCleanup(TransactionCase):
-    """unlink() must schedule delete_project jobs on every host where the
-    project had instances, carrying the remote_folder in the payload."""
+class TestCloudProjectUnlinkGuard(TransactionCase):
+    """A project can only be deleted once none of its instances are still
+    on a host — a deployed instance must be removed from its host first,
+    or the project delete would orphan the remote stack."""
 
     def setUp(self):
         super().setUp()
@@ -18,52 +20,44 @@ class TestCloudProjectUnlinkEnqueuesCleanup(TransactionCase):
             'port': 22, 'user': 'root', 'login_type': 'ssh_key',
             'wildcard_domain': 'a.example.com',
         })
-        self.host_b = self.env['cloud.host'].create({
-            'name': 'host-b', 'ip_address': '10.0.0.2',
-            'port': 22, 'user': 'root', 'login_type': 'ssh_key',
-            'wildcard_domain': 'b.example.com',
-        })
 
-    def _instance(self, host, environment):
+    def _instance(self, environment, state='draft'):
         return self.env['cloud.instance'].create({
-            'name': f'inst-{host.name}-{environment}',
+            'name': f'inst-{environment}-{state}',
             'project_id': self.project.id,
             'environment': environment,
-            'host_id': host.id,
+            'host_id': self.host_a.id,
+            'state': state,
         })
 
-    def test_unlink_without_instances_enqueues_nothing(self):
+    def test_unlink_without_instances_is_allowed(self):
+        self.project.unlink()
+        self.assertFalse(self.project.exists())
+
+    def test_unlink_with_only_draft_instances_is_allowed(self):
+        # Draft instances carry no remote footprint, so they cascade
+        # cleanly with the project.
+        self._instance('staging', state='draft')
+        self.project.unlink()
+        self.assertFalse(self.project.exists())
+
+    def test_unlink_blocked_by_a_deployed_instance(self):
+        inst = self._instance('production', state='deployed')
+        with self.assertRaises(UserError) as caught:
+            self.project.unlink()
+        self.assertIn(inst.name, str(caught.exception))
+        self.assertTrue(self.project.exists())
+
+    def test_unlink_no_longer_enqueues_remote_cleanup(self):
+        # The old dead cleanup block is gone: deleting a project with
+        # draft instances enqueues nothing (their host dirs, if any, are
+        # already cleaned by the per-instance teardown).
+        self._instance('staging', state='draft')
         with patch.object(
             type(self.env['cloud.job']), 'enqueue',
         ) as mock_enqueue:
             self.project.unlink()
             mock_enqueue.assert_not_called()
-
-    def test_unlink_enqueues_delete_project_per_host(self):
-        self._instance(self.host_a, 'production')
-        self._instance(self.host_b, 'staging')
-        folder = self.project.remote_folder
-        self.assertTrue(folder)
-        expected_hosts = {self.host_a.id, self.host_b.id}
-
-        with patch.object(
-            type(self.env['cloud.job']), 'enqueue',
-            return_value=self.env['cloud.job'],
-        ) as mock_enqueue:
-            self.project.unlink()
-
-        self.assertEqual(mock_enqueue.call_count, 2)
-        seen_hosts = set()
-        for call in mock_enqueue.call_args_list:
-            args, kwargs = call
-            host_id, instance_id, code = args[0], args[1], args[2]
-            self.assertEqual(code, 'delete_project')
-            self.assertFalse(instance_id)
-            self.assertEqual(
-                kwargs.get('payload'), {'remote_folder': folder},
-            )
-            seen_hosts.add(host_id)
-        self.assertEqual(seen_hosts, expected_hosts)
 
 
 class TestDeleteProjectExecutorRemoteFolder(TransactionCase):

@@ -1,32 +1,25 @@
-from .abstract_executor import AbstractSSHExecutor
+from .ansible_executor import AnsibleExecutor
 
 
-class DockerPruneExecutor(AbstractSSHExecutor):
-    """Runs ``docker system prune -af`` on the host to reclaim disk space.
+class DockerPruneExecutor(AnsibleExecutor):
+    """Reclaim disk on a host by pruning unused Docker resources.
 
-    Removes all unused containers, images, networks and build cache.
-    Stdout is forwarded to the job log so the reclaimed space summary is visible.
+    Runs ``ansible/playbooks/host_maintenance.yml`` (``docker system
+    prune -af``). The playbook exports the reclaimed-space line so the
+    job log keeps showing how much was freed; a failure of the prune
+    command fails the play, which the default ``parse_results`` turns
+    into a job failure.
     """
 
     _job_type = "docker_prune"
-
-    def get_commands(self):
-        return [
-            ("prune", "docker system prune -af 2>&1"),
-        ]
+    _playbook = "playbooks/host_maintenance.yml"
 
     async def before_execute(self, transport):
         self._sys("Starting Docker cleanup...")
 
-    def parse_results(self, results):
-        prune = results.get("prune", {})
-        if prune.get("exit_status", 0) != 0:
-            return [f"docker system prune failed (exit {prune['exit_status']})"]
-        return []
-
     async def on_success(self, results):
-        stdout = results.get("prune", {}).get("stdout", "")
-        # Extract "Total reclaimed space" line for the summary message
+        stdout = self.playbook_facts().get("ic_prune_stdout", "")
+        # Surface the "Total reclaimed space" line if the prune printed one.
         for line in reversed(stdout.splitlines()):
             if "reclaimed" in line.lower():
                 self._sys(f"✓ {line.strip()}")

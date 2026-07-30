@@ -5,59 +5,60 @@ Tier 1 & 2 — Tests for deploy_instance_executor helpers:
   - _build_answers domain format (Tier 2)
   - _repos_yaml_content (Tier 2)
 """
-import unittest
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from odoo.tests.common import TransactionCase, BaseCase
-
+from odoo.tests.common import BaseCase, TransactionCase
 
 # ── Tier 1: _github_authed_url ───────────────────────────────────────────────
 
-class TestGithubAuthedUrl(BaseCase):
 
+class TestGithubAuthedUrl(BaseCase):
     def setUp(self):
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
             _github_authed_url,
         )
+
         self.fn = _github_authed_url
 
     def test_ssh_converted_to_https(self):
-        url = self.fn('git@github.com:OCA/web.git', None)
-        self.assertEqual(url, 'https://github.com/OCA/web.git')
+        url = self.fn("git@github.com:OCA/web.git", None)
+        self.assertEqual(url, "https://github.com/OCA/web.git")
 
     def test_ssh_with_token(self):
-        url = self.fn('git@github.com:OCA/web.git', 'tok123')
+        url = self.fn("git@github.com:OCA/web.git", "tok123")
         self.assertEqual(
-            url, 'https://x-access-token:tok123@github.com/OCA/web.git',
+            url,
+            "https://x-access-token:tok123@github.com/OCA/web.git",
         )
 
     def test_bare_domain_gets_https(self):
-        url = self.fn('github.com/org/repo.git', None)
-        self.assertEqual(url, 'https://github.com/org/repo.git')
+        url = self.fn("github.com/org/repo.git", None)
+        self.assertEqual(url, "https://github.com/org/repo.git")
 
     def test_https_url_unchanged_without_token(self):
-        url = self.fn('https://github.com/org/repo.git', None)
-        self.assertEqual(url, 'https://github.com/org/repo.git')
+        url = self.fn("https://github.com/org/repo.git", None)
+        self.assertEqual(url, "https://github.com/org/repo.git")
 
     def test_https_url_with_token(self):
-        url = self.fn('https://github.com/org/repo.git', 'mytoken')
-        self.assertIn('x-access-token:mytoken@', url)
+        url = self.fn("https://github.com/org/repo.git", "mytoken")
+        self.assertIn("x-access-token:mytoken@", url)
 
     def test_empty_url_returns_empty(self):
-        self.assertFalse(self.fn('', 'tok'))
-        self.assertFalse(self.fn(None, 'tok'))
+        self.assertFalse(self.fn("", "tok"))
+        self.assertFalse(self.fn(None, "tok"))
 
     def test_non_github_url_no_token_injection(self):
-        url = self.fn('https://gitlab.com/org/repo.git', 'tok')
-        self.assertNotIn('x-access-token', url)
+        url = self.fn("https://gitlab.com/org/repo.git", "tok")
+        self.assertNotIn("x-access-token", url)
 
     def test_strips_whitespace(self):
-        url = self.fn('  git@github.com:OCA/web.git  ', 'tok')
-        self.assertIn('github.com', url)
+        url = self.fn("  git@github.com:OCA/web.git  ", "tok")
+        self.assertIn("github.com", url)
 
 
 # ── Tier 1: _get_token_for_repo (mocked HTTP) ───────────────────────────────
+
 
 class TestGetTokenForRepo(BaseCase):
     """Test token resolution per-repo with mocked GitHub API."""
@@ -67,6 +68,7 @@ class TestGetTokenForRepo(BaseCase):
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
             DeployInstanceExecutor,
         )
+
         executor = DeployInstanceExecutor.__new__(DeployInstanceExecutor)
         return executor
 
@@ -74,10 +76,7 @@ class TestGetTokenForRepo(BaseCase):
     # opener defined in ``incubacloud.github.http_utils``), not directly
     # via ``urllib.request.urlopen``. Patching the latter is a no-op
     # here, so we patch the helper at its import site in the executor.
-    _PATCH_PATH = (
-        'odoo.addons.incubacloud.models.deploy_instance_executor'
-        '.safe_urlopen'
-    )
+    _PATCH_PATH = "odoo.addons.incubacloud.models.deploy_instance_executor.safe_urlopen"
 
     @patch(_PATCH_PATH)
     def test_app_token_preferred_when_both_work(self, mock_urlopen):
@@ -86,35 +85,42 @@ class TestGetTokenForRepo(BaseCase):
         executor = self._make_executor()
         cache = {}
         result = executor._get_token_for_repo(
-            'https://github.com/OCA/web.git',
-            'app_tok', 'pat_tok', cache,
+            "https://github.com/OCA/web.git",
+            "app_tok",
+            "pat_tok",
+            cache,
         )
-        self.assertEqual(result, 'app_tok')
+        self.assertEqual(result, "app_tok")
 
     @patch(_PATCH_PATH)
     def test_pat_fallback_when_app_fails(self, mock_urlopen):
         import urllib.error
+
         # First call (app_tok) raises 404, second (pat_tok) succeeds
         mock_urlopen.side_effect = [
-            urllib.error.HTTPError(None, 404, 'Not Found', {}, None),
+            urllib.error.HTTPError(None, 404, "Not Found", {}, None),
             MagicMock(__enter__=lambda s: s, __exit__=MagicMock(return_value=False)),
         ]
         executor = self._make_executor()
         cache = {}
         result = executor._get_token_for_repo(
-            'https://github.com/OCA/web.git',
-            'app_tok', 'pat_tok', cache,
+            "https://github.com/OCA/web.git",
+            "app_tok",
+            "pat_tok",
+            cache,
         )
-        self.assertEqual(result, 'pat_tok')
+        self.assertEqual(result, "pat_tok")
 
     def test_cache_hit_avoids_api_call(self):
         executor = self._make_executor()
-        cache = {'OCA': 'cached_tok'}
+        cache = {"OCA": "cached_tok"}
         result = executor._get_token_for_repo(
-            'https://github.com/OCA/web.git',
-            'app_tok', 'pat_tok', cache,
+            "https://github.com/OCA/web.git",
+            "app_tok",
+            "pat_tok",
+            cache,
         )
-        self.assertEqual(result, 'cached_tok')
+        self.assertEqual(result, "cached_tok")
 
     def test_only_pat_when_no_app_token(self):
         executor = self._make_executor()
@@ -123,15 +129,17 @@ class TestGetTokenForRepo(BaseCase):
             mock_urlopen.return_value.__enter__ = lambda s: s
             mock_urlopen.return_value.__exit__ = MagicMock(return_value=False)
             result = executor._get_token_for_repo(
-                'https://github.com/OCA/web.git',
-                None, 'pat_tok', cache,
+                "https://github.com/OCA/web.git",
+                None,
+                "pat_tok",
+                cache,
             )
-        self.assertEqual(result, 'pat_tok')
+        self.assertEqual(result, "pat_tok")
 
     def test_empty_url_returns_none(self):
         executor = self._make_executor()
         cache = {}
-        result = executor._get_token_for_repo('', 'a', 'b', cache)
+        result = executor._get_token_for_repo("", "a", "b", cache)
         self.assertIsNone(result)
 
     def test_non_github_url_returns_best_effort(self):
@@ -139,27 +147,31 @@ class TestGetTokenForRepo(BaseCase):
         executor = self._make_executor()
         cache = {}
         result = executor._get_token_for_repo(
-            'https://gitlab.com/group/repo.git',
-            'app_tok', 'pat_tok', cache,
+            "https://gitlab.com/group/repo.git",
+            "app_tok",
+            "pat_tok",
+            cache,
         )
-        self.assertEqual(result, 'app_tok')
+        self.assertEqual(result, "app_tok")
 
 
 # ── Tier 2: _build_answers domain format ─────────────────────────────────────
 
-class TestBuildAnswersDomains(TransactionCase):
 
+class TestBuildAnswersDomains(TransactionCase):
     def setUp(self):
         super().setUp()
-        self.project = self.env['cloud.project'].create({'name': 'DomTest'})
+        self.project = self.env["cloud.project"].create({"name": "DomTest"})
 
-    def _create_instance(self, env='production', domains=None):
-        inst = self.env['cloud.instance'].create({
-            'name': 'dom-test',
-            'project_id': self.project.id,
-            'environment': env,
-            'domain_ids': domains or [],
-        })
+    def _create_instance(self, env="production", domains=None):
+        inst = self.env["cloud.instance"].create(
+            {
+                "name": "dom-test",
+                "project_id": self.project.id,
+                "environment": env,
+                "domain_ids": domains or [],
+            }
+        )
         return inst
 
     def _make_executor(self, inst):
@@ -167,6 +179,7 @@ class TestBuildAnswersDomains(TransactionCase):
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
             DeployInstanceExecutor,
         )
+
         executor = DeployInstanceExecutor.__new__(DeployInstanceExecutor)
         executor.env = self.env
         job = MagicMock()
@@ -175,36 +188,48 @@ class TestBuildAnswersDomains(TransactionCase):
         return executor
 
     def test_production_domains_in_domains_prod(self):
-        inst = self._create_instance(env='production', domains=[
-            (0, 0, {'hostname': 'app.example.com'}),
-            (0, 0, {'hostname': 'www.example.com'}),
-        ])
+        inst = self._create_instance(
+            env="production",
+            domains=[
+                (0, 0, {"hostname": "app.example.com"}),
+                (0, 0, {"hostname": "www.example.com"}),
+            ],
+        )
         answers = self._make_executor(inst)._build_answers()
-        self.assertEqual(len(answers['domains_prod']), 2)
-        self.assertEqual(answers['domains_test'], [])
+        self.assertEqual(len(answers["domains_prod"]), 2)
+        self.assertEqual(answers["domains_test"], [])
         self.assertEqual(
-            answers['domains_prod'][0],
-            {'hosts': ['app.example.com']},
+            answers["domains_prod"][0],
+            {"hosts": ["app.example.com"], "cert_resolver": "letsencrypt"},
         )
 
     def test_staging_domains_in_domains_test(self):
-        inst = self._create_instance(env='staging', domains=[
-            (0, 0, {'hostname': 'staging.example.com'}),
-        ])
+        inst = self._create_instance(
+            env="staging",
+            domains=[
+                (0, 0, {"hostname": "staging.example.com"}),
+            ],
+        )
         answers = self._make_executor(inst)._build_answers()
-        self.assertEqual(len(answers['domains_test']), 1)
-        self.assertEqual(answers['domains_prod'], [])
+        self.assertEqual(len(answers["domains_test"]), 1)
+        self.assertEqual(answers["domains_prod"], [])
 
     def test_redirect_to_included(self):
-        inst = self._create_instance(domains=[
-            (0, 0, {
-                'hostname': 'example.com',
-                'redirect_to': 'www.example.com',
-            }),
-        ])
+        inst = self._create_instance(
+            domains=[
+                (
+                    0,
+                    0,
+                    {
+                        "hostname": "example.com",
+                        "redirect_to": "www.example.com",
+                    },
+                ),
+            ]
+        )
         answers = self._make_executor(inst)._build_answers()
-        entry = answers['domains_prod'][0]
-        self.assertEqual(entry['redirect_to'], 'www.example.com')
+        entry = answers["domains_prod"][0]
+        self.assertEqual(entry["redirect_to"], "www.example.com")
 
     def test_hostname_with_protocol_is_rejected_by_model(self):
         """The hostname format check on cloud.instance.domain rejects URL
@@ -212,19 +237,77 @@ class TestBuildAnswersDomains(TransactionCase):
         ``_build_answers`` strip helper only has to defend against
         whitespace. Pin that contract here."""
         from odoo.exceptions import ValidationError
+
         with self.assertRaises(ValidationError):
-            self._create_instance(domains=[
-                (0, 0, {'hostname': 'https://app.example.com/'}),
-            ])
+            self._create_instance(
+                domains=[
+                    (0, 0, {"hostname": "https://app.example.com/"}),
+                ]
+            )
 
     def test_empty_domains_produces_empty_lists(self):
         inst = self._create_instance(domains=[])
         answers = self._make_executor(inst)._build_answers()
-        self.assertEqual(answers['domains_prod'], [])
-        self.assertEqual(answers['domains_test'], [])
+        self.assertEqual(answers["domains_prod"], [])
+        self.assertEqual(answers["domains_test"], [])
+
+    # ── cert_resolver / redirect_permanent ───────────────────────────────
+    #
+    # The three options map onto the three shapes doodba's Traefik macro
+    # accepts, and the mapping is the whole point of the feature: a wrong
+    # value here silently changes a tenant's TLS on the next rebuild.
+
+    def _entry_for(self, **domain_vals):
+        """Return the single copier entry produced for one domain."""
+        inst = self._create_instance(
+            domains=[(0, 0, {"hostname": "c.example.com", **domain_vals})],
+        )
+        return self._make_executor(inst)._build_answers()["domains_prod"][0]
+
+    def test_letsencrypt_emits_the_resolver_name(self):
+        """A string makes the macro emit tls.certResolver — ACME issuance."""
+        entry = self._entry_for(cert_resolver="letsencrypt")
+        self.assertEqual(entry["cert_resolver"], "letsencrypt")
+
+    def test_custom_emits_boolean_true(self):
+        """``true`` means TLS on, no resolver: serve the host's own cert."""
+        entry = self._entry_for(cert_resolver="custom")
+        self.assertIs(entry["cert_resolver"], True)
+
+    def test_none_emits_boolean_false(self):
+        """``false`` leaves the router without any TLS configuration."""
+        entry = self._entry_for(cert_resolver="none")
+        self.assertIs(entry["cert_resolver"], False)
+
+    def test_cert_resolver_is_always_emitted(self):
+        """Never rely on the template default.
+
+        The copier copy runs against a moving upstream ref, so a default
+        that changes between template releases would rewrite every
+        tenant's TLS on their next rebuild with nothing to show for it.
+        """
+        self.assertIn("cert_resolver", self._entry_for())
+
+    def test_redirect_permanent_only_when_redirecting(self):
+        """301 is meaningless without a redirect target — don't emit it."""
+        self.assertNotIn(
+            "redirect_permanent", self._entry_for(redirect_permanent=True),
+        )
+
+    def test_redirect_permanent_emitted_with_a_target(self):
+        entry = self._entry_for(
+            redirect_to="www.example.com", redirect_permanent=True,
+        )
+        self.assertIs(entry["redirect_permanent"], True)
+
+    def test_temporary_redirect_omits_the_flag(self):
+        """Absent means 302, the template default — no need to say it."""
+        entry = self._entry_for(redirect_to="www.example.com")
+        self.assertNotIn("redirect_permanent", entry)
 
 
 # ── Tier 2: Backup policy hooks (_backup_enabled, _backup_retention) ─────────
+
 
 class TestBackupHooksDefault(TransactionCase):
     """Default behaviour on the core deploy executor with no overrides."""
@@ -232,16 +315,18 @@ class TestBackupHooksDefault(TransactionCase):
     def setUp(self):
         super().setUp()
         # Clear the global backup backend so tests run in isolation.
-        self.env['ir.config_parameter'].sudo().set_param(
-            'incubacloud.backup_backend_id', '0',
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.backup_backend_id",
+            "0",
         )
-        self.project = self.env['cloud.project'].create({'name': 'BackupHooks'})
-        self.Backend = self.env['cloud.backup.backend']
+        self.project = self.env["cloud.project"].create({"name": "BackupHooks"})
+        self.Backend = self.env["cloud.backup.backend"]
 
     def _make_executor(self, inst):
         from odoo.addons.incubacloud.models.deploy_instance_executor import (
             DeployInstanceExecutor,
         )
+
         executor = DeployInstanceExecutor.__new__(DeployInstanceExecutor)
         executor.env = self.env
         job = MagicMock()
@@ -250,18 +335,23 @@ class TestBackupHooksDefault(TransactionCase):
         return executor
 
     def _instance(self, backend=None):
-        return self.env['cloud.instance'].create({
-            'name': 'bk-test',
-            'project_id': self.project.id,
-            'environment': 'production',
-            'backup_backend_id': backend.id if backend else False,
-        })
+        return self.env["cloud.instance"].create(
+            {
+                "name": "bk-test",
+                "project_id": self.project.id,
+                "environment": "production",
+                "backup_backend_id": backend.id if backend else False,
+            }
+        )
 
     def test_backup_enabled_true_when_backend_with_dst(self):
-        bb = self.Backend.create({
-            'name': 'Full', 'backend_type': 's3',
-            's3_bucket': 'my-bucket',
-        })
+        bb = self.Backend.create(
+            {
+                "name": "Full",
+                "backend_type": "s3",
+                "s3_bucket": "my-bucket",
+            }
+        )
         self.assertTrue(bb.backup_dst)  # sanity
         inst = self._instance(backend=bb)
         self.assertTrue(self._make_executor(inst)._backup_enabled())
@@ -271,27 +361,36 @@ class TestBackupHooksDefault(TransactionCase):
         self.assertFalse(self._make_executor(inst)._backup_enabled())
 
     def test_backup_enabled_false_when_backend_without_dst(self):
-        bb = self.Backend.create({
-            'name': 'NoBucket', 'backend_type': 's3',
-        })
+        bb = self.Backend.create(
+            {
+                "name": "NoBucket",
+                "backend_type": "s3",
+            }
+        )
         self.assertFalse(bb.backup_dst)  # no bucket → no dst
         inst = self._instance(backend=bb)
         self.assertFalse(self._make_executor(inst)._backup_enabled())
 
     def test_backup_retention_from_backend(self):
-        bb = self.Backend.create({
-            'name': 'Ret', 'backend_type': 's3',
-            's3_bucket': 'b', 'backup_retention': '14D',
-        })
+        bb = self.Backend.create(
+            {
+                "name": "Ret",
+                "backend_type": "s3",
+                "s3_bucket": "b",
+                "backup_retention": "14D",
+            }
+        )
         inst = self._instance(backend=bb)
         self.assertEqual(
-            self._make_executor(inst)._backup_retention(), '14D',
+            self._make_executor(inst)._backup_retention(),
+            "14D",
         )
 
     def test_backup_retention_fallback_3m_when_no_backend(self):
         inst = self._instance(backend=None)
         self.assertEqual(
-            self._make_executor(inst)._backup_retention(), '3M',
+            self._make_executor(inst)._backup_retention(),
+            "3M",
         )
 
     def test_backup_env_content_none_when_disabled(self):
@@ -299,22 +398,57 @@ class TestBackupHooksDefault(TransactionCase):
         self.assertIsNone(self._make_executor(inst)._backup_env_content())
 
     def test_backup_env_content_includes_retention_override(self):
-        bb = self.Backend.create({
-            'name': 'E', 'backend_type': 's3',
-            's3_bucket': 'b', 'backup_retention': '7D',
-            's3_access_key_id': 'AK', 's3_secret_access_key': 'SK',
-        })
+        bb = self.Backend.create(
+            {
+                "name": "E",
+                "backend_type": "s3",
+                "s3_bucket": "b",
+                "backup_retention": "7D",
+                "s3_access_key_id": "AK",
+                "s3_secret_access_key": "SK",
+            }
+        )
         inst = self._instance(backend=bb)
         content = self._make_executor(inst)._backup_env_content()
-        self.assertIn('JOB_800_WHAT', content)
-        self.assertIn('7D', content)
+        self.assertIn("JOB_800_WHAT", content)
+        self.assertIn("7D", content)
+
+    def test_build_answers_backup_deletion_true_when_retention_owner_cron(self):
+        bb = self.Backend.create(
+            {
+                "name": "Cron",
+                "backend_type": "s3",
+                "s3_bucket": "b",
+                "retention_owner": "cron",
+            }
+        )
+        inst = self._instance(backend=bb)
+        answers = self._make_executor(inst)._build_answers()
+        self.assertTrue(answers["backup_deletion"])
+
+    def test_build_answers_backup_deletion_false_when_retention_owner_lifecycle(self):
+        bb = self.Backend.create(
+            {
+                "name": "Lifecycle",
+                "backend_type": "s3",
+                "s3_bucket": "b",
+                "retention_owner": "lifecycle",
+            }
+        )
+        inst = self._instance(backend=bb)
+        answers = self._make_executor(inst)._build_answers()
+        self.assertFalse(answers["backup_deletion"])
 
     def test_backup_env_content_skips_retention_when_default_3m(self):
-        bb = self.Backend.create({
-            'name': 'D', 'backend_type': 's3',
-            's3_bucket': 'b', 'backup_retention': '3M',
-        })
+        bb = self.Backend.create(
+            {
+                "name": "D",
+                "backend_type": "s3",
+                "s3_bucket": "b",
+                "backup_retention": "3M",
+            }
+        )
         inst = self._instance(backend=bb)
         content = self._make_executor(inst)._backup_env_content()
         # Default 3M matches copier default → no override line
-        self.assertNotIn('JOB_800_WHAT', content)
+        self.assertNotIn("JOB_800_WHAT", content)

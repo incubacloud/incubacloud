@@ -15,11 +15,12 @@ class RestartInstanceExecutor(AbstractSSHExecutor):
 
     def get_commands(self):
         inst = self._inst()
-        d = self._inst_dir(inst)
         return [
             (
                 "Restart containers",
-                f"cd {d} && docker compose restart",
+                self.run_script(
+                    "compose_op.sh", [self._inst_dir(inst), "restart"],
+                ),
             ),
         ]
 

@@ -1,22 +1,28 @@
 """
 Setup Whitelist Executor
 ------------------------
-Creates or updates ~/globalwhitelist/docker-compose.yaml on the remote host
-using the host's whitelist entries, then brings the services up (or recreates
-changed ones) via docker compose up -d --remove-orphans.
+Creates or updates ~/globalwhitelist/docker-compose.yaml on the remote
+host from the host's whitelist entries, then converges the services, via
+``ansible/playbooks/host_whitelist.yml``.
 
-The generated file follows the doodba docker-whitelist pattern: one service
-per hostname, each proxying traffic through ghcr.io/tecnativa/docker-whitelist
-so that test instances (which have no direct internet access) can still reach
-the listed hosts on the shared internal network.
+The generated file follows the doodba docker-whitelist pattern: one
+service per hostname, each proxying traffic through
+ghcr.io/tecnativa/docker-whitelist so that test instances (which have no
+direct internet access) can still reach the listed hosts on the shared
+internal network.
 
-This executor is idempotent: running it again after adding or removing entries
-updates the file and restarts only the affected containers.
+Idempotent: ``docker compose up -d --remove-orphans`` recreates only the
+services whose definition changed and drops the ones removed from the
+list.
+
+The compose builder and the ``_WL_*`` constants are the module's public
+surface — ``full_setup_executor`` imports them to deploy the same stack
+inline as part of a full host setup.
 """
 
 import re
 
-from .abstract_executor import AbstractSSHExecutor
+from .ansible_executor import AnsibleExecutor
 
 _WL_TMP = "/tmp/.incubacloud-whitelist.yaml"
 _WL_DIR = "~/globalwhitelist"
@@ -72,8 +78,9 @@ def build_whitelist_compose(hostnames):
     return content
 
 
-class SetupWhitelistExecutor(AbstractSSHExecutor):
+class SetupWhitelistExecutor(AnsibleExecutor):
     _job_type = "setup_whitelist"
+    _playbook = "playbooks/host_whitelist.yml"
 
     def _host(self):
         return self.job.host_id
@@ -81,45 +88,18 @@ class SetupWhitelistExecutor(AbstractSSHExecutor):
     def _hostnames(self):
         return self._host().whitelist_ids.mapped("hostname")
 
-    async def before_execute(self, transport):
+    def get_extra_vars(self):
+        """Hand the generated compose file to the playbook.
+
+        The file is built here, from the host's whitelist entries, so the
+        playbook stays a pure "write it and converge" step.
+        """
         hostnames = self._hostnames()
         self._sys(
             f"Preparing whitelist compose file"
             f" ({len(hostnames)} entr{'y' if len(hostnames) == 1 else 'ies'})…"
         )
-        content = build_whitelist_compose(hostnames)
-        await transport.upload_text_files({_WL_TMP: content})
-        self._sys("✓ Whitelist compose file uploaded.")
-
-    def get_commands(self):
-        return [
-            (
-                "Create globalwhitelist directory",
-                f"mkdir -p {_WL_DIR}",
-            ),
-            (
-                "Install whitelist compose file",
-                f"mv {_WL_TMP} {_WL_FILE}",
-            ),
-            (
-                "Start whitelist services",
-                f"cd {_WL_DIR}"
-                f" && docker compose -p {_WL_PROJECT}"
-                f" -f docker-compose.yaml up -d --remove-orphans",
-            ),
-        ]
-
-    def parse_results(self, results):
-        errors = []
-        for label, data in results.items():
-            if data.get("exit_status", 1) != 0:
-                stderr = (data.get("stderr") or "").strip()
-                errors.append(
-                    f"'{label}' failed"
-                    + (f": {stderr}" if stderr else
-                       f" (exit {data.get('exit_status')})")
-                )
-        return errors
+        return {"ic_whitelist_compose": build_whitelist_compose(hostnames)}
 
     async def on_success(self, results):
         count = len(self._hostnames())

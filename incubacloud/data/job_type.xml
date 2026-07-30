@@ -123,6 +123,35 @@
             <field name="description">Creates or updates ~/globalwhitelist/docker-compose.yaml and brings whitelist proxy services up.</field>
         </record>
 
+        <record id="install_observability" model="cloud.job.type">
+            <field name="name">Install Observability</field>
+            <field name="code">install_observability</field>
+            <field name="apply_to">host</field>
+            <field name="description">Installs the metrics agents (node_exporter, cAdvisor, vmagent) on the host and labels every container with its instance/project so the panel can attribute metrics. Push-only: no inbound port is opened.</field>
+            <field name="priority_tier">low</field>
+            <!-- Surfaces as a button on the host page through the
+                 existing pluggable-action mechanism: no bespoke endpoint
+                 and no template change. Re-runnable — it is how an
+                 operator refreshes the labels after adding instances. -->
+            <field name="show_as_action">True</field>
+            <field name="action_icon">fa-heartbeat</field>
+            <field name="action_order">40</field>
+        </record>
+
+        <record id="deploy_metrics_central" model="cloud.job.type">
+            <field name="name">Deploy Metrics Central</field>
+            <field name="code">deploy_metrics_central</field>
+            <field name="apply_to">host</field>
+            <field name="description">Deploys the central metrics stack (VictoriaMetrics + Grafana with provisioned dashboards) on the target host. Run it against the panel host to co-locate, or against a dedicated VPS to move it.</field>
+        </record>
+
+        <record id="host_hardening" model="cloud.job.type">
+            <field name="name">Harden Host</field>
+            <field name="code">host_hardening</field>
+            <field name="apply_to">host</field>
+            <field name="description">Applies the in-host security recipe (non-root operator user, hardened sshd on a rotated port, nftables allowlist, fail2ban, sysctl, unattended-upgrades, docker daemon, journald, auditd) and disables root SSH only after proving the new login works.</field>
+        </record>
+
         <record id="delete_host" model="cloud.job.type">
             <field name="name">Delete Host</field>
             <field name="code">delete_host</field>

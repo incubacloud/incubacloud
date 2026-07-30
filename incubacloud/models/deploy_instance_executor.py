@@ -13,12 +13,16 @@ import yaml
 from ..controllers._data_load._helpers import _parse_github_repo_path
 from ..github.client import GitHubAppClient
 from ..github.http_utils import safe_urlopen
-from .abstract_executor import AbstractSSHExecutor, sql_escape_literal
 from ._repo_requirements import (
-    _apply_excludes, _parse_repo_addons, _repo_alias,
-    detect_addon_conflicts, detect_pip_conflicts, create_pip_conflict_alert,
+    _apply_excludes,
+    _parse_repo_addons,
+    _repo_alias,
+    create_pip_conflict_alert,
+    detect_addon_conflicts,
+    detect_pip_conflicts,
     fetch_repo_addons,
 )
+from .abstract_executor import AbstractSSHExecutor, sql_escape_literal
 
 _logger = logging.getLogger(__name__)
 
@@ -26,16 +30,22 @@ _logger = logging.getLogger(__name__)
 # abspath (stays in auto/addons/) then realpath the result to resolve
 # the doodba symlink into the actual directory with real files — sftp.put
 # cannot copy symlinks.
-_IC_CONNECT_MODULE = os.path.realpath(os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                 '..', '..', 'incubacloud_connect')
-))
+_IC_CONNECT_MODULE = os.path.realpath(
+    os.path.normpath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..",
+            "..",
+            "incubacloud_connect",
+        )
+    )
+)
 
 # Prefix for all temp files uploaded to the remote host
 _TMP_PREFIX = "/tmp/.incubacloud"
 
 
-_SSH_RE = re.compile(r'^git@github\.com:(.+?)(?:\.git)?$')
+_SSH_RE = re.compile(r"^git@github\.com:(.+?)(?:\.git)?$")
 
 _ADDONS_CONFLICT_RE = re.compile(
     r"AddonsConfigError: Addon (\w+) defined in several repos \{([^}]+)\}"
@@ -57,32 +67,16 @@ def _github_authed_url(url, token):
     if m:
         url = f"https://github.com/{m.group(1)}.git"
     # Ensure HTTPS scheme
-    if not url.startswith(('https://', 'http://')):
+    if not url.startswith(("https://", "http://")):
         url = f"https://{url}"
     # Inject token into HTTPS URLs
     if token and "github.com" in url:
         url = url.replace(
-            "https://", f"https://x-access-token:{token}@", 1,
+            "https://",
+            f"https://x-access-token:{token}@",
+            1,
         )
     return url
-
-
-def _smtp_canonical_domain(inst):
-    """Derive the SMTP canonical domain for SRS and the mailserver hostname.
-
-    Priority:
-      1. Domain part of smtp_relay_user email (e.g. user@example.com → example.com)
-      2. Strip first label from smtp_relay_host (e.g. mail.example.com → example.com)
-      3. Empty string (copier will skip SMTP service)
-    """
-    user = inst.smtp_relay_user or ""
-    if "@" in user:
-        return user.split("@")[-1]
-    host = inst.smtp_relay_host or ""
-    parts = host.split(".")
-    if len(parts) > 2:
-        return ".".join(parts[1:])
-    return host
 
 
 class DeployInstanceExecutor(AbstractSSHExecutor):
@@ -128,10 +122,13 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         for token in (app_token, pat):
             if not token:
                 continue
-            req = urllib.request.Request(api, headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-            })
+            req = urllib.request.Request(
+                api,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
             try:
                 with safe_urlopen(req, timeout=5):  # nosec B310 — hardcoded https://api.github.com
                     cache[owner] = token
@@ -169,7 +166,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         """
         inst = self._inst()
         bb = inst.effective_backup_backend
-        return (bb.backup_retention or '3M').strip() if bb else '3M'
+        return (bb.backup_retention or "3M").strip() if bb else "3M"
 
     def _backup_env_content(self):
         """Generate .docker/backup.env content, or None if no backup backend."""
@@ -188,97 +185,35 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         lines.append(f"PASSPHRASE={bb.passphrase or ''}")
         # Override retention if different from copier default (3M)
         retention = self._backup_retention()
-        if retention != '3M':
-            lines.append(
-                f"JOB_800_WHAT=dup --force remove-older-than"
-                f" {retention} $DST"
-            )
+        if retention != "3M":
+            lines.append(f"JOB_800_WHAT=dup --force remove-older-than {retention} $DST")
         return "\n".join(lines) + "\n"
 
+    def _copier_template(self):
+        """Return ``(template_url, vcs_ref)`` for the copier run.
+
+        An empty ref keeps the historical behaviour — track the
+        template's default branch — and ``deploy.sh`` logs whichever one
+        is in effect, so the built tree is always traceable to a
+        revision. Split out of ``get_commands`` so the command list can
+        be built without a database, the way the executor's other
+        environment reads already are.
+        """
+        settings = self.env["cloud.settings"].sudo()._get()
+        return (
+            settings.copier_template_url
+            or "gh:Tecnativa/doodba-copier-template",
+            settings.copier_template_ref or "",
+        )
+
     def _build_answers(self):
-        """Return a dict with all copier template answers."""
-        # sudo: executor is trusted; secret fields have group restrictions.
-        inst = self._inst().sudo()
+        """Return a dict with all copier template answers.
 
-        # Build domain entries from domain_ids
-        entries = []
-        for d in inst.domain_ids:
-            hostname = (
-                (d.hostname or "")
-                .replace("https://", "")
-                .replace("http://", "")
-                .strip("/")
-            )
-            if not hostname:
-                continue
-            entry = {"hosts": [hostname]}
-            if d.redirect_to:
-                entry["redirect_to"] = d.redirect_to
-            entries.append(entry)
-
-        if inst.environment == "production":
-            domains_prod = entries
-            domains_test = []
-        else:
-            domains_prod = []
-            domains_test = entries
-
-        bb = inst.effective_backup_backend
-        if bb:
-            bb = bb.sudo()
-        has_backup = self._backup_enabled()
-
-        answers = {
-            "project_author": inst.project_id.project_author or "IncubaCloud",
-            "project_license": inst.project_id.project_license or "BSL-1.0",
-            "project_name": inst.doodba_project_name,
-            "odoo_version": float(inst.odoo_version),
-            "odoo_initial_lang": inst.odoo_initial_lang.code or "en_US",
-            "odoo_admin_password": inst.odoo_admin_password or "",
-            "odoo_proxy": inst.odoo_proxy or "traefik",
-            "postgres_version": str(inst.postgres_version or "17"),
-            "postgres_dbname": inst.postgres_dbname or "prod",
-            "postgres_username": inst.postgres_username or "odoo",
-            "postgres_password": inst.postgres_password or "",
-            "domains_prod": domains_prod,
-            "domains_test": domains_test,
-            "smtp_relay_host": inst.smtp_relay_host or "",
-            "smtp_relay_port": inst.smtp_relay_port or 587,
-            "smtp_relay_version": "latest",
-            "smtp_relay_user": inst.smtp_relay_user or "",
-            "smtp_relay_password": inst.smtp_relay_password or "",
-            "smtp_default_from": inst.smtp_relay_user or inst.odoo_admin_email or "",
-            # canonical_default = sending domain (from relay user email if set,
-            # else strip first subdomain off relay host, e.g. mail.x.com → x.com)
-            "smtp_canonical_default": _smtp_canonical_domain(inst),
-            "smtp_canonical_domains": [],
-            # Backup defaults (always empty/disabled; overridden below when
-            # a backup backend is configured and enabled).
-            "backup_dst": "",
-            "backup_image_version": "",
-            "backup_email_from": "",
-            "backup_email_to": "",
-            "backup_smtp_report_success": False,
-            "backup_deletion": False,
-            "backup_tz": "UTC",
-            "backup_aws_access_key_id": "",
-            "backup_aws_secret_access_key": "",
-            "backup_passphrase": "",
-        }
-        if has_backup and bb:
-            answers.update({
-                "backup_dst": inst.instance_backup_dst or "",
-                "backup_image_version": bb.backup_image_version or "latest",
-                "backup_email_from": bb.email_from or "",
-                "backup_email_to": bb.email_to or "",
-                "backup_smtp_report_success": bb.smtp_report_success,
-                "backup_deletion": bb.deletion_via_cron,
-                "backup_tz": bb.backup_tz or "UTC",
-                "backup_aws_access_key_id": bb.s3_access_key_id or "",
-                "backup_aws_secret_access_key": bb.s3_secret_access_key or "",
-                "backup_passphrase": bb.passphrase or "",
-            })
-        return answers
+        The render lives on ``cloud.instance._render_copier_answers``
+        (single source of truth shared with the config-drift hash);
+        this executor only dumps it into the remote answers file.
+        """
+        return self._inst()._render_copier_answers()
 
     def _repos_yaml_content(self):
         """Build repos.yaml: odoo first, then the instance's git repos.
@@ -308,7 +243,10 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             if not alias or not raw_url:
                 continue
             token = self._get_token_for_repo(
-                raw_url, app_token, pat, token_cache,
+                raw_url,
+                app_token,
+                pat,
+                token_cache,
             )
             url = _github_authed_url(raw_url, token)
             merge_ref = repo.commit_sha or branch
@@ -374,17 +312,21 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 else:
                     data[alias] = _apply_excludes(modules, excludes_str)
 
-        return yaml.dump(
-            data,
-            default_flow_style=False,
-            sort_keys=False,
-            allow_unicode=True,
-        ) if data else ""
+        return (
+            yaml.dump(
+                data,
+                default_flow_style=False,
+                sort_keys=False,
+                allow_unicode=True,
+            )
+            if data
+            else ""
+        )
 
     # Services present per environment. backup and smtp only exist in
     # production doodba deployments; including them in the override for
     # test/staging would cause a Docker Compose validation error.
-    _TEST_SERVICES = ('odoo', 'db')
+    _TEST_SERVICES = ("odoo", "db")
 
     def _prod_services(self):
         """Return the services present in a production compose file.
@@ -406,32 +348,34 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         allowed = (
             self._prod_services()
-            if inst.environment == 'production'
+            if inst.environment == "production"
             else self._TEST_SERVICES
         )
         field_map = {
-            'odoo':   ('odoo_memory_limit',   'odoo_cpus'),
-            'db':     ('db_memory_limit',     'db_cpus'),
-            'backup': ('backup_memory_limit', 'backup_cpus'),
-            'smtp':   ('smtp_memory_limit',   'smtp_cpus'),
+            "odoo": ("odoo_memory_limit", "odoo_cpus"),
+            "db": ("db_memory_limit", "db_cpus"),
+            "backup": ("backup_memory_limit", "backup_cpus"),
+            "smtp": ("smtp_memory_limit", "smtp_cpus"),
         }
         services = {}
         for svc in allowed:
             mem_field, cpu_field = field_map[svc]
-            mem = getattr(inst, mem_field, '') or ''
+            mem = getattr(inst, mem_field, "") or ""
             cpus = getattr(inst, cpu_field, 0) or 0
             if mem or cpus:
                 entry = {}
                 if mem:
-                    entry['mem_limit'] = mem
+                    entry["mem_limit"] = mem
                 if cpus:
-                    entry['cpus'] = cpus
+                    entry["cpus"] = cpus
                 services[svc] = entry
         if not services:
             return None
-        data = {'services': services}
+        data = {"services": services}
         return yaml.dump(
-            data, default_flow_style=False, allow_unicode=True,
+            data,
+            default_flow_style=False,
+            allow_unicode=True,
         )
 
     def _conf_content(self):
@@ -446,15 +390,13 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         ``odoo_conf`` value cannot silently disable it.
         """
         raw = self._inst().odoo_conf or (
-            f"# Generated by IncubaCloud for instance"
-            f" {self._inst().name}\n"
-            "[options]\n"
+            f"# Generated by IncubaCloud for instance {self._inst().name}\n[options]\n"
         )
         cp = configparser.ConfigParser()
         cp.read_string(raw)
-        if not cp.has_section('options'):
-            cp.add_section('options')
-        cp.set('options', 'proxy_mode', 'True')
+        if not cp.has_section("options"):
+            cp.add_section("options")
+        cp.set("options", "proxy_mode", "True")
         out = io.StringIO()
         cp.write(out)
         return out.getvalue()
@@ -502,9 +444,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             f"rm -rf {tmp_ic_parent} && mkdir -p {tmp_ic_parent}",
         )
         if result.exit_status != 0:
-            raise RuntimeError(
-                f"Failed to prepare staging directory: {result.stdout}"
-            )
+            raise RuntimeError(f"Failed to prepare staging directory: {result.stdout}")
         await transport.upload_dir(_IC_CONNECT_MODULE, tmp_ic_parent)
 
         self._sys("✓ Configuration files uploaded.")
@@ -516,56 +456,57 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             return
         self._sys("Checking for addon conflicts across repos…")
         conflicts = await detect_addon_conflicts(
-            self.job.env, inst.repo_ids,
+            self.job.env,
+            inst.repo_ids,
         )
         if not conflicts:
             self._sys("✓ No addon conflicts found.")
             return
-        names = ', '.join(c['addon'] for c in conflicts[:5])
+        names = ", ".join(c["addon"] for c in conflicts[:5])
         if len(conflicts) > 5:
-            names += f' (+{len(conflicts) - 5} more)'
-        self._sys(
-            f"✗ Found {len(conflicts)} addon conflict(s): "
-            f"{names}"
-        )
+            names += f" (+{len(conflicts) - 5} more)"
+        self._sys(f"✗ Found {len(conflicts)} addon conflict(s): {names}")
         self._sys("Resolve all conflicts before deploying.")
         self._create_preflight_addon_alert(conflicts)
-        raise RuntimeError(
-            f"Pre-flight: {len(conflicts)} addon conflict(s)"
-        )
+        raise RuntimeError(f"Pre-flight: {len(conflicts)} addon conflict(s)")
 
     def _create_preflight_addon_alert(self, conflicts):
         """Create a single addon_conflict alert with ALL conflicts."""
         inst = self._inst()
-        names = ', '.join(c['addon'] for c in conflicts[:3])
+        names = ", ".join(c["addon"] for c in conflicts[:3])
         if len(conflicts) > 3:
-            names += f' (+{len(conflicts) - 3} more)'
+            names += f" (+{len(conflicts) - 3} more)"
         message = (
             f"Addon conflict: {names} defined in multiple"
             " repos — resolve all conflicts and redeploy"
         )
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            Alert = env['cloud.alert']
-            existing = Alert.search([
-                ('instance_id', '=', inst.id),
-                ('code', '=', 'addon_conflict'),
-                ('state', '=', 'active'),
-            ], limit=1)
+            Alert = env["cloud.alert"]
+            existing = Alert.search(
+                [
+                    ("instance_id", "=", inst.id),
+                    ("code", "=", "addon_conflict"),
+                    ("state", "=", "active"),
+                ],
+                limit=1,
+            )
             vals = {
-                'message': message,
-                'conflict_data': conflicts,
-                'job_id': self.job.id,
+                "message": message,
+                "conflict_data": conflicts,
+                "job_id": self.job.id,
             }
             if existing:
                 existing.write(vals)
             else:
-                Alert.create({
-                    'instance_id': inst.id,
-                    'code': 'addon_conflict',
-                    'level': 'critical',
-                    **vals,
-                })
+                Alert.create(
+                    {
+                        "instance_id": inst.id,
+                        "code": "addon_conflict",
+                        "level": "critical",
+                        **vals,
+                    }
+                )
 
     async def before_execute(self, transport):
         inst = self._inst()
@@ -589,67 +530,40 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         tmp_pip = self._tmp("pip.txt")
         tmp_apt = self._tmp("apt.txt")
 
-        # SSH sessions don't load .bashrc, so ~/.local/bin (pipx tools) is
-        # absent from PATH.  Export it so copier AND every subprocess it
-        # spawns (invoke, pre-commit, …) can find the tools they need.
-        #
-        # Read-first guard on init.defaultBranch: full_setup seeds this
-        # once per host, but legacy hosts (set up before that change) may
-        # still need it.  Writing unconditionally takes the ~/.gitconfig
-        # lock and races with sibling deploys on the same host (warm pool
-        # cron enqueues N builds against one host in one tick).
-        path_prefix = (
-            'export PATH="$HOME/.local/bin:$PATH"'
-            ' && (git config --global --get init.defaultBranch >/dev/null 2>&1'
-            ' || git config --global init.defaultBranch master)'
-        )
-        copier_bin = "$HOME/.local/bin/copier"
-
         # Copier creates docker-compose.yml as a symlink to devel.yaml.
         # Replace it with the correct target for the environment.
         compose_target = (
-            "prod.yaml"
-            if inst.environment == "production"
-            else "test.yaml"
+            "prod.yaml" if inst.environment == "production" else "test.yaml"
         )
 
         lang = (
-            inst.odoo_initial_lang.code
-            if inst.odoo_initial_lang
-            else "en_US"
+            inst.odoo_initial_lang.code if inst.odoo_initial_lang else "en_US"
         ) or "en_US"
 
         has_smtp = bool(inst.smtp_relay_host)
 
+        template_url, template_ref = self._copier_template()
+
         cmds = [
             # 0. Clean up any leftover directory from a previous failed deploy.
-            #    Full teardown: stop containers, remove volumes + images so the
-            #    new deploy starts from a completely clean slate and does not
-            #    conflict with orphaned containers, networks, or stale DB data.
             (
                 "Remove previous deploy if present",
-                f"if [ -d {d} ]; then"
-                f"  echo 'Tearing down previous deploy...';"
-                f"  cd {d} && docker compose down --volumes --rmi all --remove-orphans 2>/dev/null || true;"
-                f"  echo 'Removing directory {d}...';"
-                f"  rm -rf {d};"
-                f"else"
-                f"  echo 'No previous deploy found, clean slate.';"
-                f"fi",
+                self.run_script("deploy.sh", ["teardown-previous", d]),
             ),
             # 1. Let copier create the full project structure first.
-            #    PATH is exported so child processes inherit it.
             (
                 "Deploy with copier",
-                (
-                    f"{path_prefix} && "
-                    f"{copier_bin} copy --defaults --overwrite --trust "
-                    f"--data-file {tmp_answers} "
-                    f"gh:Tecnativa/doodba-copier-template {d}"
+                self.run_script(
+                    "deploy.sh",
+                    [
+                        "copier-deploy", d, tmp_answers,
+                        template_url, template_ref,
+                    ],
                 ),
             ),
             # 2. Fix docker-compose.yml symlink: copier points to devel.yaml;
             #    use prod.yaml (production) or test.yaml (staging).
+            #    Left inline: a trivial rm + ln, with the shell expanding ~.
             (
                 "Fix docker-compose symlink",
                 f"rm -f {d}/docker-compose.yml && "
@@ -664,79 +578,59 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 f'echo "COMPOSE_PROJECT_NAME={name}" >> {d}/.env',
             ),
             # 2b. Ensure .docker/incubacloud.env exists with a Fernet key.
-            #     If the file already exists (previous deploy), leave it.
             (
                 "Ensure incubacloud.env",
-                f'[ -f {d}/.docker/incubacloud.env ] || '
-                f'python3 -c "'
-                f"from cryptography.fernet import Fernet; "
-                f"print(f'INCUBACLOUD_SECRET_KEY={{Fernet.generate_key().decode()}}')"
-                f'" > {d}/.docker/incubacloud.env',
+                self.run_script("deploy.sh", ["ensure-secret-key", d]),
             ),
             # 2c. Inject incubacloud.env into prod.yaml and test.yaml.
-            #     The env_file block lives in those files (not common.yaml).
             (
                 "Inject incubacloud.env in prod.yaml and test.yaml",
-                f"cd {d} && "
-                f"for f in prod.yaml test.yaml; do "
-                f"  [ -f \"$f\" ] || continue; "
-                f"  grep -q 'incubacloud.env' \"$f\" || "
-                f"  sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env'"
-                f" \"$f\"; "
-                f"done",
+                self.run_script("deploy.sh", ["inject-secret-env", d]),
             ),
         ]
 
-        # 2d. Strip the smtp service from prod.yaml when no SMTP relay
-        #     is configured.  The copier template always generates the
-        #     block, but without an image it causes a compose error.
-        if not has_smtp and inst.environment == 'production':
-            cmds.append((
-                "Strip smtp service (not configured)",
-                # Use awk to remove the smtp service block from prod.yaml.
-                # Matches "  smtp:" and all following lines with deeper indent
-                # (or blank lines) until the next top-level service key.
-                f"awk '/^  smtp:/ {{skip=1; next}}"
-                f" skip && /^  [a-z]/ {{skip=0}}"
-                f" skip && /^[^ ]/ {{skip=0}}"
-                f" !skip' {d}/prod.yaml > {d}/prod.yaml.tmp"
-                f" && mv {d}/prod.yaml.tmp {d}/prod.yaml",
-            ))
+        # 2d. Strip the smtp service from prod.yaml when no SMTP relay is
+        #     configured — copier renders an imageless block that breaks
+        #     ``docker compose``.
+        if not has_smtp and inst.environment == "production":
+            cmds.append(
+                (
+                    "Strip smtp service (not configured)",
+                    self.run_script(
+                        "strip_compose_service.sh", [d, "smtp", "prod.yaml"],
+                    ),
+                )
+            )
 
-        # 2e. Strip the backup service when no backup backend is active.
-        #     Same pattern as smtp: copier leaves an imageless block that
-        #     breaks `docker compose`.
-        if not self._backup_enabled() and inst.environment == 'production':
-            # Strip the backup service from every compose file that may
-            # contain it (copier emits it in prod.yaml, some templates
-            # also place shared defs in common.yaml).
-            cmds.append((
-                "Strip backup service (not configured)",
-                f"cd {d} && for f in prod.yaml common.yaml; do"
-                f" [ -f \"$f\" ] || continue;"
-                f" awk '/^  backup:/ {{skip=1; next}}"
-                f" skip && /^  [a-z]/ {{skip=0}}"
-                f" skip && /^[^ ]/ {{skip=0}}"
-                f" !skip' \"$f\" > \"$f.tmp\""
-                f" && mv \"$f.tmp\" \"$f\";"
-                f" done",
-            ))
+        # 2e. Strip the backup service when no backup backend is active
+        #     (same imageless-block problem). copier emits it in prod.yaml;
+        #     some templates also place shared defs in common.yaml.
+        if not self._backup_enabled() and inst.environment == "production":
+            cmds.append(
+                (
+                    "Strip backup service (not configured)",
+                    self.run_script(
+                        "strip_compose_service.sh",
+                        [d, "backup", "prod.yaml", "common.yaml"],
+                    ),
+                )
+            )
 
         # 2f. Cap the backup container hostname at 64 bytes.
         #     doodba renders "hostname: backup.<first_main_domain>" in
         #     common.yaml (inherited by prod.yaml via `extends`). A long
         #     production domain pushes it past the kernel limit
         #     (__NEW_UTS_LEN = 64) and the backup container dies on start
-        #     with "sethostname: invalid argument". Only rewrite when the
-        #     rendered value exceeds 64 — otherwise keep doodba's
-        #     domain-based name. Fallback mirrors doodba's own short form
-        #     ("backup.<project_name>"), capped and stripped of any
-        #     trailing "." / "-".
-        if self._backup_enabled() and inst.environment == 'production':
-            cmds.append((
-                "Cap backup hostname",
-                f"""cd {d} && short="backup.{name}" && short=$(printf '%s' "$short" | cut -c1-64 | sed 's/[.-]*$//') && for f in common.yaml prod.yaml; do [ -f "$f" ] || continue; cur=$(awk '/hostname: backup/{{print $2; exit}}' "$f"); [ -n "$cur" ] || continue; if [ ${{#cur}} -gt 64 ]; then sed -i "s|hostname:[[:space:]]*backup[^[:space:]]*|hostname: $short|" "$f"; echo "Capped backup hostname: $cur (${{#cur}}) -> $short"; else echo "Backup hostname OK: $cur (${{#cur}})"; fi; done""",
-            ))
+        #     with "sethostname: invalid argument".
+        if self._backup_enabled() and inst.environment == "production":
+            cmds.append(
+                (
+                    "Cap backup hostname",
+                    self.run_script(
+                        "deploy.sh", ["cap-backup-hostname", d, name],
+                    ),
+                )
+            )
 
         cmds += [
             # 3. Overwrite backup.env with ours (adds AWS_ENDPOINT_URL if set;
@@ -744,16 +638,16 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             (
                 "Write backup.env",
                 f"f={self._tmp('backup.env')};"
-                f" [ -f \"$f\" ] &&"
-                f" mv \"$f\" {d}/.docker/backup.env || true",
+                f' [ -f "$f" ] &&'
+                f' mv "$f" {d}/.docker/backup.env || true',
             ),
             # 3b. Write docker-compose.override.yml with resource limits.
             #     No-op if no resource limits are configured.
             (
                 "Write resource limits",
                 f"f={self._tmp('override.yml')};"
-                f" [ -f \"$f\" ] &&"
-                f" mv \"$f\" {d}/docker-compose.override.yml || true",
+                f' [ -f "$f" ] &&'
+                f' mv "$f" {d}/docker-compose.override.yml || true',
             ),
             # 4. Overwrite repos.yaml and addons.yaml in the copier tree
             (
@@ -824,27 +718,23 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 f" --database {inst.postgres_dbname or 'prod'}",
             ),
             # 13. Set web.base.url and report.url before the stack starts so
-            #     any post-init steps and Odoo
-            #     itself see the correct public URL on first boot.
-            #     Wrapped in a DO block so it's a no-op if the DB was not
-            #     initialised yet (should not happen at this point, but safe).
-            #     ``base_url`` is sql-escaped as a defense-in-depth layer
-            #     on top of the @api.constrains regex on
-            #     cloud.instance.domain.hostname.
+            #     any post-init steps and Odoo itself see the correct public
+            #     URL on first boot. ``base_url`` is sql-escaped as a
+            #     defense-in-depth layer on top of the @api.constrains regex
+            #     on cloud.instance.domain.hostname before it reaches the DO
+            #     block inside the script.
             (
                 "Set system parameters",
-                f"cd {d} && docker compose exec -T db"
-                f" psql -U {inst.postgres_username or 'odoo'}"
-                f" -d {inst.postgres_dbname or 'prod'}"
-                f" -c \"DO \\$\\$ BEGIN"
-                f" IF EXISTS (SELECT FROM information_schema.tables"
-                f" WHERE table_schema='public'"
-                f" AND table_name='ir_config_parameter') THEN"
-                f" INSERT INTO ir_config_parameter (key,value) VALUES"
-                f" ('web.base.url','{sql_escape_literal(self._base_url())}'),"
-                f" ('report.url','http://localhost:8069')"
-                f" ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value;"
-                f" END IF; END \\$\\$;\"",
+                self.run_script(
+                    "deploy.sh",
+                    [
+                        "set-system-params", d,
+                        inst.postgres_username or "odoo",
+                        inst.postgres_dbname or "prod",
+                        sql_escape_literal(self._base_url()),
+                        "http://localhost:8069",
+                    ],
+                ),
             ),
             # 13. Capture service list for on_success.
             ("List services", f"cd {d} && docker compose config --services"),
@@ -870,50 +760,59 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         if not inst:
             return
-        chunks = self.env['cloud.job.log.chunk'].search([
-            ('job_id', '=', self.job.id),
-            ('source', '=', 'stderr'),
-            ('content', 'ilike', 'AddonsConfigError'),
-        ])
+        chunks = self.env["cloud.job.log.chunk"].search(
+            [
+                ("job_id", "=", self.job.id),
+                ("source", "=", "stderr"),
+                ("content", "ilike", "AddonsConfigError"),
+            ]
+        )
         conflicts = []
         for chunk in chunks:
             m = _ADDONS_CONFLICT_RE.search(chunk.content)
             if m:
                 addon = m.group(1)
-                repos = [r.strip().strip("'\"") for r in m.group(2).split(',')]
-                conflicts.append({'addon': addon, 'repos': repos})
+                repos = [r.strip().strip("'\"") for r in m.group(2).split(",")]
+                conflicts.append({"addon": addon, "repos": repos})
         if not conflicts:
             return
-        names = ', '.join(c['addon'] for c in conflicts[:3])
+        names = ", ".join(c["addon"] for c in conflicts[:3])
         if len(conflicts) > 3:
-            names += f' (+{len(conflicts) - 3} more)'
+            names += f" (+{len(conflicts) - 3} more)"
         message = (
             f"Addon conflict: {names} defined in multiple repos"
             " — add excludes to the offending repo and redeploy"
         )
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            Alert = env['cloud.alert']
-            existing = Alert.search([
-                ('instance_id', '=', inst.id),
-                ('code', '=', 'addon_conflict'),
-                ('state', '=', 'active'),
-            ], limit=1)
+            Alert = env["cloud.alert"]
+            existing = Alert.search(
+                [
+                    ("instance_id", "=", inst.id),
+                    ("code", "=", "addon_conflict"),
+                    ("state", "=", "active"),
+                ],
+                limit=1,
+            )
             if existing:
-                existing.write({
-                    'message': message,
-                    'conflict_data': conflicts,
-                    'job_id': self.job.id,
-                })
+                existing.write(
+                    {
+                        "message": message,
+                        "conflict_data": conflicts,
+                        "job_id": self.job.id,
+                    }
+                )
             else:
-                Alert.create({
-                    'instance_id': inst.id,
-                    'code': 'addon_conflict',
-                    'level': 'critical',
-                    'message': message,
-                    'conflict_data': conflicts,
-                    'job_id': self.job.id,
-                })
+                Alert.create(
+                    {
+                        "instance_id": inst.id,
+                        "code": "addon_conflict",
+                        "level": "critical",
+                        "message": message,
+                        "conflict_data": conflicts,
+                        "job_id": self.job.id,
+                    }
+                )
 
     def _dismiss_addon_conflict_alerts(self):
         """Dismiss any active addon_conflict alerts for this instance."""
@@ -922,11 +821,13 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             return
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            env['cloud.alert'].search([
-                ('instance_id', '=', inst.id),
-                ('code', '=', 'addon_conflict'),
-                ('state', '=', 'active'),
-            ]).write({'state': 'dismissed'})
+            env["cloud.alert"].search(
+                [
+                    ("instance_id", "=", inst.id),
+                    ("code", "=", "addon_conflict"),
+                    ("state", "=", "active"),
+                ]
+            ).write({"state": "dismissed"})
 
     def _dismiss_pip_conflict_alerts(self):
         inst = self._inst()
@@ -934,11 +835,13 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             return
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            env['cloud.alert'].search([
-                ('instance_id', '=', inst.id),
-                ('code', '=', 'pip_conflict'),
-                ('state', '=', 'active'),
-            ]).write({'state': 'dismissed'})
+            env["cloud.alert"].search(
+                [
+                    ("instance_id", "=", inst.id),
+                    ("code", "=", "pip_conflict"),
+                    ("state", "=", "active"),
+                ]
+            ).write({"state": "dismissed"})
 
     async def on_success(self, results):
         self._sys("✓ Instance deployed successfully.")
@@ -947,11 +850,21 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         services_out = results.get("List services", {}).get("stdout") or ""
         services = [s.strip() for s in services_out.splitlines() if s.strip()]
-        inst.write({
-            "status": "ok", "deployed": True, "running": True,
-            "compose_services": ",".join(services) if services else "odoo,db",
-            "last_rebuild_fingerprint": inst.rebuild_fingerprint,
-        })
+        inst.write(
+            {
+                "status": "ok",
+                "running": True,
+                "compose_services": ",".join(services) if services else "odoo,db",
+                "last_rebuild_fingerprint": inst.rebuild_fingerprint,
+                # Config-drift anchor: this deploy just shipped exactly
+                # the current snapshot, so the saved config is applied.
+                "applied_config_hash": inst._config_snapshot_hash(),
+            }
+        )
+        inst._transition("deployed")
+        # The host's metric label map is a snapshot of its instance list;
+        # without this the new instance's containers report unattributed.
+        inst.host_id.refresh_observability_labels(reason="deploy")
 
     def _detect_pip_conflicts(self):
         """If pip_dependencies has conflict markers, create/update a pip_conflict alert."""
@@ -970,4 +883,9 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             self._sys(f"✗ {err}")
         self._detect_pip_conflicts()
         self._detect_addon_conflicts()
-        self._inst().write({"status": "error"})
+        inst = self._inst()
+        inst.write({"status": "error"})
+        # Back to 'draft': nothing usable was left on the host, and
+        # 'status' carries why. Re-running deploy() is then legal again.
+        if inst.state == "deploying":
+            inst._transition("draft")

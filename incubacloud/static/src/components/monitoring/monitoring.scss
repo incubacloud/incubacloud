@@ -1,0 +1,16 @@
+// The embed needs an explicit height: an iframe has no intrinsic size,
+// so without this it collapses to a few pixels and looks broken.
+.ic-monitoring-frame {
+  padding: 0;
+  overflow: hidden;
+
+  iframe {
+    display: block;
+    inline-size: 100%;
+    // Interpolated so Sass emits the CSS function verbatim instead of
+    // trying to evaluate it: it cannot compare vh with px at compile
+    // time and fails the whole bundle with "Incompatible units".
+    block-size: #{"min(72vh, 900px)"};
+    border: 0;
+  }
+}

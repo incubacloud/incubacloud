@@ -21,6 +21,12 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
     _job_type = "move_rollback_cleanup"
     _retry_on_connection_loss = False
 
+    # Tears down the half-built copy on the TARGET host while the
+    # instance keeps living on the source: the record's lifecycle state
+    # must not move. (This class also replaces ``before_execute``
+    # entirely, but the flag states the intent for whoever edits it.)
+    _owns_instance_lifecycle = False
+
     MOVE_CHAIN_TERMINAL_TIMEOUT = 600  # 10 minutes
 
     async def before_execute(self, transport):

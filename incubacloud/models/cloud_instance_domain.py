@@ -29,8 +29,48 @@ class CloudInstanceDomain(models.Model):
     redirect_to = fields.Char(
         help='Redirect this hostname to another (e.g. example.com → www.example.com)',
     )
-    cert_resolver = fields.Char(default='letsencrypt')
+    # The three options map onto the three shapes doodba's Traefik macro
+    # accepts (see macros/_traefik2_labels.yml.jinja): a resolver *name*
+    # emits ACME, boolean true serves whatever certificate the host's
+    # Traefik already holds, false leaves the router without TLS config.
+    # A closed Selection rather than a free Char: the only ACME resolver
+    # our hosts define is ``letsencrypt``, and this value flows into the
+    # tenant's copier answers file, so an open domain would be both a way
+    # to break the tenant's routing and a needless injection surface.
+    cert_resolver = fields.Selection(
+        selection=[
+            ('letsencrypt', "Let's Encrypt"),
+            ('custom', "Existing certificate (Traefik store)"),
+            ('none', "No TLS"),
+        ],
+        default='letsencrypt',
+        required=True,
+    )
+    redirect_permanent = fields.Boolean(
+        default=False,
+        help="Use a permanent (301) redirect instead of a temporary (302). "
+             "Only relevant when Redirect To is set.",
+    )
     sequence = fields.Integer(default=10)
+
+    # Value emitted to copier for each Selection option. Kept next to the
+    # field so the mapping and the domain can never drift apart.
+    _CERT_RESOLVER_ANSWERS = {
+        'letsencrypt': 'letsencrypt',
+        'custom': True,
+        'none': False,
+    }
+
+    def _cert_resolver_answer(self):
+        """Return the ``cert_resolver`` value for this domain's copier entry.
+
+        Falls back to Let's Encrypt for a missing value so a row written
+        before the Selection existed still deploys the way it used to.
+        """
+        self.ensure_one()
+        return self._CERT_RESOLVER_ANSWERS.get(
+            self.cert_resolver or 'letsencrypt', 'letsencrypt',
+        )
 
     @api.constrains('hostname', 'redirect_to')
     def _check_hostname_format(self):

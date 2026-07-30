@@ -1,8 +1,24 @@
-"""Tests for BackupDownloadNeutralizedExecutor.get_commands()."""
+"""Tests for BackupDownloadNeutralizedExecutor.get_commands().
 
+Since Phase 3 the executor no longer composes bash: it calls
+``scripts/backup_neutralized.sh`` with arguments. So what is worth
+testing here is the *wiring* — which operation each step invokes, with
+which arguments, in which order, and which steps abort the chain. The
+behaviour of the shell itself (dup restore, click-odoo-restoredb, the
+pg_dump branch, the root cleanup) is covered by
+``tests/shell/backup_neutralized.bats``.
+"""
+
+import shlex
 from types import SimpleNamespace
 
 from odoo.tests.common import BaseCase
+
+SCRIPT = "backup_neutralized.sh"
+JOB_ID = 99
+INSTANCE_DIR = "~/projects/demo-inst"
+NEUTRAL_DB = f"__ic_neutral_{JOB_ID}"
+HOST_TMP = f"/tmp/.incubacloud-bkneu-{JOB_ID}"
 
 
 def _make_executor(environment='production', time='latest',
@@ -18,14 +34,16 @@ def _make_executor(environment='production', time='latest',
         deployed=deployed,
     )
     job = SimpleNamespace(
-        id=99,
+        id=JOB_ID,
         instance_id=inst,
         payload={'time': time, 'with_filestore': with_filestore},
     )
 
     ex = object.__new__(BackupDownloadNeutralizedExecutor)
     ex.job = job
-    ex._inst_dir = lambda i: f"~/projects/{i.name}"
+    ex._inst_dir = lambda i: INSTANCE_DIR
+    ex._scripts_requested = False
+    ex._script_overlay_cache = None
     return ex
 
 
@@ -33,7 +51,28 @@ def _find(cmds, label_substring):
     return next((c for c in cmds if label_substring in c[0]), None)
 
 
-class TestNeutralizedProd(BaseCase):
+def _argv(step):
+    """Return the script invocation of *step* as an argv list.
+
+    ``['bash', '<remote path>', '<operation>', '<arg>', ...]``
+    """
+    return shlex.split(step[1])
+
+
+class NeutralizedCase(BaseCase):
+
+    def assertScriptCall(self, step, operation, args):
+        """Assert *step* runs ``SCRIPT`` with *operation* and *args*."""
+        argv = _argv(step)
+        self.assertEqual(argv[0], "bash")
+        self.assertTrue(argv[1].endswith(f"/{SCRIPT}"), argv[1])
+        self.assertEqual(argv[2], operation)
+        # Every operation takes <dir> <job_id> before its own arguments.
+        self.assertEqual(argv[3:5], [INSTANCE_DIR, str(JOB_ID)])
+        self.assertEqual(argv[5:], args)
+
+
+class TestNeutralizedProd(NeutralizedCase):
 
     @classmethod
     def setUpClass(cls):
@@ -43,40 +82,44 @@ class TestNeutralizedProd(BaseCase):
     def test_step_count(self):
         self.assertEqual(len(self.cmds), 4)
 
-    def test_prod_uses_dup_restore(self):
-        step = _find(self.cmds, "Restore source dump from S3")
-        self.assertIsNotNone(step)
-        self.assertIn("dup restore", step[1])
-        self.assertIn("prod.sql", step[1])
+    def test_steps_run_in_order(self):
+        self.assertEqual(
+            [c[0] for c in self.cmds],
+            [
+                "Restore source dump from S3",
+                "Restore and neutralize in temp DB",
+                "Create neutralized backup (SQL only)",
+                "Drop temp DB and cleanup",
+            ],
+        )
+
+    def test_prod_restores_from_the_backup_store(self):
+        self.assertScriptCall(
+            _find(self.cmds, "Restore source dump from S3"),
+            "prepare-src-prod",
+            ["prod", "latest", HOST_TMP],
+        )
 
     def test_prod_does_not_dump_live(self):
-        step = _find(self.cmds, "Dump live database")
-        self.assertIsNone(step)
+        self.assertIsNone(_find(self.cmds, "Dump live database"))
 
-    def test_restore_neutralize_uses_click_odoo_restoredb(self):
-        step = _find(self.cmds, "Restore and neutralize in temp DB")
-        self.assertIsNotNone(step)
-        self.assertIn("click-odoo-restoredb", step[1])
-        self.assertIn("--neutralize", step[1])
-        self.assertIn("--force", step[1])
+    def test_neutralize_step_targets_the_throwaway_db(self):
+        self.assertScriptCall(
+            _find(self.cmds, "Restore and neutralize in temp DB"),
+            "restore-neutralize",
+            [NEUTRAL_DB],
+        )
 
     def test_temp_db_name_isolated_per_job(self):
-        step = _find(self.cmds, "Restore and neutralize in temp DB")
-        self.assertIn("__ic_neutral_99", step[1])
+        argv = _argv(_find(self.cmds, "Restore and neutralize in temp DB"))
+        self.assertIn(f"__ic_neutral_{JOB_ID}", argv)
 
-    def test_cleanup_step_drops_temp_db(self):
-        step = _find(self.cmds, "Drop temp DB and cleanup")
-        self.assertIsNotNone(step)
-        self.assertIn("dropdb --if-exists __ic_neutral_99", step[1])
-        self.assertIn("rm -rf /var/lib/odoo/filestore/__ic_neutral_99",
-                      step[1])
-
-    def test_cleanup_runs_as_root(self):
-        # `docker compose cp` lands the source ZIP into the odoo
-        # container owned by root, so the cleanup `rm` must run with
-        # `--user root` or it fails with "Operation not permitted".
-        step = _find(self.cmds, "Drop temp DB and cleanup")
-        self.assertIn("docker compose exec --user root -T odoo", step[1])
+    def test_cleanup_step_drops_the_temp_db(self):
+        self.assertScriptCall(
+            _find(self.cmds, "Drop temp DB and cleanup"),
+            "cleanup",
+            [NEUTRAL_DB, HOST_TMP],
+        )
 
     def test_critical_steps_have_stop_on_failure(self):
         for label in (
@@ -88,29 +131,22 @@ class TestNeutralizedProd(BaseCase):
             self.assertTrue(step[2].get("stop_on_failure"))
 
     def test_cleanup_has_no_stop_on_failure(self):
-        step = _find(self.cmds, "Drop temp DB and cleanup")
-        # Cleanup is best-effort — runs whether or not earlier steps fail
-        # AND must not abort the chain itself.
-        self.assertEqual(len(step), 2)
+        # Cleanup is best-effort — it runs whether or not earlier steps
+        # failed AND must not abort the chain itself.
+        self.assertEqual(len(_find(self.cmds, "Drop temp DB and cleanup")), 2)
 
-    def test_prod_packages_dup_output_as_zip(self):
-        # odoo.service.db.restore_db only accepts ZIP (with dump.sql) or
-        # pg_dump custom-format. A plain .sql falls into the pg_restore
-        # branch and dies with "Couldn't restore database", so the
-        # duplicity output must be repackaged as a zip before reaching
-        # click-odoo-restoredb.
-        step = _find(self.cmds, "Restore source dump from S3")
-        self.assertIn("zip", step[1])
-        self.assertIn("dump.sql", step[1])
-        self.assertIn("/tmp/bkneu-src-99.zip", step[1])
-
-    def test_prod_source_file_is_zip(self):
-        step = _find(self.cmds, "Restore and neutralize in temp DB")
-        self.assertIn("/tmp/bkneu-src-99.zip", step[1])
-        self.assertNotIn("/tmp/bkneu-src-99.sql", step[1])
+    def test_a_requested_time_reaches_the_script(self):
+        cmds = _make_executor(
+            environment='production', time='12h_ago',
+        ).get_commands()
+        self.assertScriptCall(
+            _find(cmds, "Restore source dump from S3"),
+            "prepare-src-prod",
+            ["prod", "12h_ago", HOST_TMP],
+        )
 
 
-class TestNeutralizedProdWithoutFilestore(BaseCase):
+class TestNeutralizedProdWithoutFilestore(NeutralizedCase):
 
     @classmethod
     def setUpClass(cls):
@@ -119,23 +155,20 @@ class TestNeutralizedProdWithoutFilestore(BaseCase):
             environment='production', with_filestore=False,
         ).get_commands()
 
-    def test_redump_uses_pg_dump(self):
-        step = _find(self.cmds, "Create neutralized backup (SQL only)")
-        self.assertIsNotNone(step)
-        self.assertIn("pg_dump", step[1])
-        self.assertIn("--dbname=__ic_neutral_99", step[1])
+    def test_redump_is_sql_only(self):
+        self.assertScriptCall(
+            _find(self.cmds, "Create neutralized backup (SQL only)"),
+            "redump-sql",
+            [NEUTRAL_DB, HOST_TMP, f"{HOST_TMP}.zip"],
+        )
 
-    def test_redump_zips_to_archive(self):
-        step = _find(self.cmds, "Create neutralized backup (SQL only)")
-        self.assertIn("zip -r", step[1])
-        self.assertIn("dump.sql", step[1])
-
-    def test_redump_does_not_include_filestore_archive(self):
-        step = _find(self.cmds, "Create neutralized backup (SQL only)")
-        self.assertNotIn("click-odoo-backupdb", step[1])
+    def test_no_filestore_branch(self):
+        self.assertIsNone(
+            _find(self.cmds, "Create neutralized backup (DB + filestore)"),
+        )
 
 
-class TestNeutralizedProdWithFilestore(BaseCase):
+class TestNeutralizedProdWithFilestore(NeutralizedCase):
 
     @classmethod
     def setUpClass(cls):
@@ -144,18 +177,20 @@ class TestNeutralizedProdWithFilestore(BaseCase):
             environment='production', with_filestore=True,
         ).get_commands()
 
-    def test_redump_uses_click_odoo_backupdb(self):
-        step = _find(self.cmds, "Create neutralized backup (DB + filestore)")
-        self.assertIsNotNone(step)
-        self.assertIn("click-odoo-backupdb", step[1])
-        self.assertIn("__ic_neutral_99", step[1])
+    def test_redump_includes_the_filestore(self):
+        self.assertScriptCall(
+            _find(self.cmds, "Create neutralized backup (DB + filestore)"),
+            "redump-full",
+            [NEUTRAL_DB, f"{HOST_TMP}.zip"],
+        )
 
-    def test_no_pg_dump_branch(self):
-        step = _find(self.cmds, "Create neutralized backup (SQL only)")
-        self.assertIsNone(step)
+    def test_no_sql_only_branch(self):
+        self.assertIsNone(
+            _find(self.cmds, "Create neutralized backup (SQL only)"),
+        )
 
 
-class TestNeutralizedStaging(BaseCase):
+class TestNeutralizedStaging(NeutralizedCase):
 
     @classmethod
     def setUpClass(cls):
@@ -164,25 +199,22 @@ class TestNeutralizedStaging(BaseCase):
             environment='staging', time='live',
         ).get_commands()
 
-    def test_non_prod_dumps_live_db(self):
-        step = _find(self.cmds, "Dump live database")
-        self.assertIsNotNone(step)
-        self.assertIn("click-odoo-backupdb prod", step[1])
+    def test_non_prod_dumps_the_live_db(self):
+        self.assertScriptCall(
+            _find(self.cmds, "Dump live database"),
+            "prepare-src-live",
+            ["prod", HOST_TMP],
+        )
 
-    def test_non_prod_skips_dup_restore(self):
-        step = _find(self.cmds, "Restore source dump from S3")
-        self.assertIsNone(step)
+    def test_non_prod_skips_the_backup_store(self):
+        self.assertIsNone(_find(self.cmds, "Restore source dump from S3"))
 
     def test_non_prod_still_neutralizes(self):
-        step = _find(self.cmds, "Restore and neutralize in temp DB")
-        self.assertIsNotNone(step)
-        self.assertIn("--neutralize", step[1])
-
-    def test_non_prod_source_file_is_zip(self):
-        # Live dump via click-odoo-backupdb produces a .zip (with
-        # filestore) so restoredb must consume the zip, not a .sql.
-        step = _find(self.cmds, "Restore and neutralize in temp DB")
-        self.assertIn("/tmp/bkneu-src-99.zip", step[1])
+        self.assertScriptCall(
+            _find(self.cmds, "Restore and neutralize in temp DB"),
+            "restore-neutralize",
+            [NEUTRAL_DB],
+        )
 
 
 class TestTempDbIsolation(BaseCase):

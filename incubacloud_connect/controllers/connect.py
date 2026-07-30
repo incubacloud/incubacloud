@@ -100,6 +100,16 @@ class IncubaCloudConnectController(http.Controller):
             )
             return Response('Internal error.', status=500)
 
+        # Forensic marker: the tenant's own log is the only place where an
+        # IncubaCloud-brokered session is distinguishable from a normal
+        # login. One line, invisible to the end user, evidence for the
+        # operator if the impersonation is ever questioned.
+        _logger.info(
+            'IncubaCloud connect-as: session opened for uid=%s (%s) '
+            'by panel user %s',
+            uid, login, data.get('by') or 'unknown',
+        )
+
         # Populate session — Odoo saves it automatically at response end
         request.session['uid'] = uid
         request.session['login'] = login
