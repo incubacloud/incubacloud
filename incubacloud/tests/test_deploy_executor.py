@@ -260,7 +260,9 @@ class TestBuildAnswersDomains(TransactionCase):
     def _entry_for(self, **domain_vals):
         """Return the single copier entry produced for one domain."""
         inst = self._create_instance(
-            domains=[(0, 0, {"hostname": "c.example.com", **domain_vals})],
+            domains=[
+                (0, 0, {"hostname": "c.example.com"} | domain_vals),
+            ],
         )
         return self._make_executor(inst)._build_answers()["domains_prod"][0]
 

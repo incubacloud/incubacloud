@@ -154,7 +154,7 @@ def spawn_subprocess(session_id, auth_token, config, *,
         '--auth-token', auth_token,
         '--config-file', tmp.name,
     ]
-    env = {**os.environ, 'INCUBACLOUD_CORE_DIR': core_dir}
+    env = os.environ | {'INCUBACLOUD_CORE_DIR': core_dir}
     # ``start_new_session=True`` detaches from the Odoo worker's process
     # group so the subprocess survives worker restarts — the entire point
     # of this design. stdin is closed so any accidental ``input()`` inside
