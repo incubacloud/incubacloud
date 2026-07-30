@@ -124,7 +124,6 @@ class _Handler(BaseHTTPRequestHandler):
     # module logger below.
     def log_message(self, format, *args):  # noqa: A002
         """Suppress the stdlib per-request access log."""
-        return
 
     # ── Helpers ─────────────────────────────────────────────────────
 

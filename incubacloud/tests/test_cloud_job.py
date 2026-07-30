@@ -654,7 +654,7 @@ class TestRetryAndUnblockRespectTheGuard(TransactionCase):
     def test_retry_works_when_the_target_is_idle(self):
         """The guard must not block the ordinary retry path."""
         failed = self._job('failed')
-        new_id = failed.retry_job()
+        new_id = failed.retry_job()  # noqa: FURB184
         self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
 
     def test_a_failed_job_does_not_block_its_own_retry(self):

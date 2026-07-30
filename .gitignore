@@ -15,6 +15,9 @@ downloads/
 eggs/
 .eggs/
 lib/
+# The Python-packaging ``lib/`` pattern above must not swallow the
+# executor shell library (its absence only shows up on a fresh clone).
+!incubacloud/scripts/lib/
 lib64/
 parts/
 sdist/

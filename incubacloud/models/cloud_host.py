@@ -944,19 +944,19 @@ class CloudHost(models.Model):
 
         if not traefik_yml:
             return traefik_yml
-        if re.search(r"^metrics:", traefik_yml, re.M):
+        if re.search(r"^metrics:", traefik_yml, re.MULTILINE):
             return traefik_yml
         out = traefik_yml
         # Add the entryPoint the metrics block refers to, unless present.
-        if re.search(r"^entryPoints:", out, re.M) and not re.search(
-            r"^\s+metrics:\s*$", out, re.M,
+        if re.search(r"^entryPoints:", out, re.MULTILINE) and not re.search(
+            r"^\s+metrics:\s*$", out, re.MULTILINE,
         ):
             out = re.sub(
                 r"^(entryPoints:[ \t]*\n)",
                 lambda m: m.group(1) + CloudHost._TRAEFIK_METRICS_ENTRYPOINT,
                 out,
                 count=1,
-                flags=re.M,
+                flags=re.MULTILINE,
             )
         return out.rstrip("\n") + "\n" + CloudHost._TRAEFIK_METRICS_BLOCK
 
@@ -971,7 +971,7 @@ class CloudHost(models.Model):
 
         if not inverseproxy_yaml or "8082:8082" in inverseproxy_yaml:
             return inverseproxy_yaml
-        if not re.search(r'^\s+-\s+"443:443"\s*$', inverseproxy_yaml, re.M):
+        if not re.search(r'^\s+-\s+"443:443"\s*$', inverseproxy_yaml, re.MULTILINE):
             # Unrecognisable ports block — leave it rather than guess.
             return inverseproxy_yaml
         return re.sub(
@@ -979,7 +979,7 @@ class CloudHost(models.Model):
             lambda m: m.group(1) + CloudHost._TRAEFIK_METRICS_PORT,
             inverseproxy_yaml,
             count=1,
-            flags=re.M,
+            flags=re.MULTILINE,
         )
 
     @api.model

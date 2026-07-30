@@ -23,7 +23,7 @@ class TestRateLimitGate(TransactionCase):
         unless the ``force_rate_limit`` context flag opts back in.
         """
         env = self.env(
-            context=dict(self.env.context, force_rate_limit=True),
+            context=self.env.context | {'force_rate_limit': True},
         )
         return patch.object(
             _rate_limit, 'request', SimpleNamespace(env=env),

@@ -27,6 +27,7 @@ import json
 import os
 import sys
 import threading
+from pathlib import Path
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -76,8 +77,7 @@ class TestTerminalCapabilityIsolation(BaseCase):
 
     def test_base_module_has_no_create_process(self):
         """The shared base never opens a PTY — no ``create_process`` call."""
-        with open(session_base.__file__, encoding='utf-8') as fh:
-            src = fh.read()
+        src = Path(session_base.__file__).read_text(encoding='utf-8')
         self.assertEqual(_create_process_calls(src), [])
 
     def test_base_open_process_is_abstract(self):
@@ -96,8 +96,7 @@ class TestTerminalCapabilityIsolation(BaseCase):
         """
         offenders = []
         for path in _py_files(_CORE_DIR):
-            with open(path, encoding='utf-8') as fh:
-                src = fh.read()
+            src = Path(path).read_text(encoding='utf-8')
             if any(not call.args for call in _create_process_calls(src)):
                 offenders.append(path)
         self.assertEqual(
