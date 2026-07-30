@@ -267,7 +267,7 @@ class TestParseGitHubRepoPath(BaseCase):
 class TestSmtpCanonicalDomain(BaseCase):
 
     def setUp(self):
-        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+        from odoo.addons.incubacloud.models.cloud_instance import (
             _smtp_canonical_domain,
         )
         self._fn = _smtp_canonical_domain

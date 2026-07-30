@@ -92,9 +92,30 @@ All new code must be covered by tests. We use three tiers:
 
 | Tier | Base class | When to use |
 |---|---|---|
-| 1 | `unittest.TestCase` | Pure Python logic (no DB) |
+| 1 | `odoo.tests.common.BaseCase` | Pure Python logic (no DB) |
 | 2 | `TransactionCase` | ORM behaviour, model methods |
 | 3 | `HttpCase` | Controllers, HTTP routes |
+
+### Test rules
+
+These are enforced habits, born from real incidents in this codebase:
+
+- **Every mock is spec'd against the real class**:
+  `MagicMock(spec=RealClass)`, never a bare `MagicMock()` and never a
+  hand-rolled `_FakeXxx` class. A bare mock answers yes to everything —
+  one once confirmed a method the real API did not have, the test
+  passed, and production crashed. CI enforces this as a ratchet (the
+  bare-mock count may only go down; see the *Mock-spec ratchet* step).
+  When mocking an Odoo model, spec against the model class:
+  `MagicMock(spec=type(env['cloud.job']))`.
+- **Pure-Python tests inherit `BaseCase`**, not `unittest.TestCase` —
+  they integrate with Odoo's runner, tags and logging.
+- **Never assert against SQL `NOW()`** or freshly-written timestamps
+  via raw SQL — the transaction clock and the write clock differ and
+  the test goes flaky. Assert through the ORM.
+- **`incubacloud_tenant` tests run against their own database**
+  (`-d tenant_test`), and that database needs `-u incubacloud` too
+  whenever the core schema changed.
 
 ---
 
@@ -128,6 +149,10 @@ All new code must be covered by tests. We use three tiers:
 
 ---
 
-## License
+## License and Contributor License Agreement
 
-By contributing, you agree that your contributions will be licensed under the [Elastic License 2.0](LICENSE).
+IncubaCloud Core is licensed under the [Elastic License 2.0](LICENSE).
+
+All contributions require agreeing to the [Contributor License Agreement](CLA.md). Signing is automatic: the first time you open a pull request, a bot will ask you to sign by posting a comment. You only need to sign once, and you keep the copyright to your contribution.
+
+Why a CLA? The Elastic License 2.0 restricts offering the software as a hosted or managed service. Without a CLA, contributed code would carry that restriction for everyone — including the project itself. The CLA lets the project keep operating its hosted service while your contribution remains available to the whole community under ELv2.

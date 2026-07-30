@@ -1,0 +1,558 @@
+---
+# Harden a freshly-provisioned host. Driven by HostHardeningExecutor.
+#
+# Machine-state convergence: create the unprivileged operator user, install
+# and configure the security stack (sshd, nftables, fail2ban, sysctl,
+# unattended-upgrades, docker daemon hardening, journald, auditd, banner)
+# and hand back the facts the executor needs to finish the job.
+#
+# Lock-out safety (differs on purpose from the old bash, and is *safer*):
+# this playbook leaves ``PermitRootLogin prohibit-password`` — key-based
+# root still works — so it can never lock the operator out. Disabling root
+# entirely is the executor's final step, run only AFTER it has proven the
+# hardened user can log in on the new port (see the executor's
+# after_commands). All values (port, allowlist, user, reboot policy) come
+# from the executor via extra-vars.
+- name: Harden a cloud host
+  hosts: all
+  # Facts are gathered in pre_tasks WITHOUT privilege escalation (see
+  # below) so the preflight can reject an unsupported host before this
+  # play's ``become: true`` touches anything.
+  gather_facts: false
+  become: true
+
+  vars:
+    hardened_user: "{{ ic_hardened_user }}"
+    ssh_port: "{{ ic_ssh_port }}"
+    ssh_allowlist: "{{ ic_ssh_allowlist }}"
+    auto_reboot: "{{ ic_auto_reboot | bool }}"
+    # OS support matrix. Kept as a var so the gate below and any future
+    # caller read the same list.
+    supported_ubuntu: ["22.04", "24.04"]
+    debian_min_major: 12
+
+  # ── Phase 0: preflight ────────────────────────────────────────────────
+  # Ported from the pre-Ansible executor, which ran this as its first
+  # command with stop_on_failure. It exists because hardening is
+  # destructive and irreversible-ish: on an unsupported OS (different
+  # sshd/systemd/nftables conventions) the recipe would half-converge and
+  # fail late with a generic message, leaving a partially hardened host.
+  # Failing here means the host was never touched. Every task runs with
+  # ``become: false`` so a missing NOPASSWD sudo is reported as a clean
+  # message instead of an escalation error from an unrelated task.
+  pre_tasks:
+    - name: "Preflight: gather facts without privilege escalation"
+      ansible.builtin.setup:
+      become: false
+
+    - name: "Preflight: require a supported OS"
+      ansible.builtin.assert:
+        that:
+          - >-
+            (ansible_distribution == 'Ubuntu'
+             and ansible_distribution_version in supported_ubuntu)
+            or (ansible_distribution == 'Debian'
+                and ansible_distribution_major_version | int >= debian_min_major)
+        fail_msg: >-
+          Hardening only supports Ubuntu {{ supported_ubuntu | join('/') }} and
+          Debian {{ debian_min_major }}+. Detected:
+          {{ ansible_distribution }} {{ ansible_distribution_version }}.
+          Open a request to add support for your OS.
+        success_msg: >-
+          OS supported: {{ ansible_distribution }}
+          {{ ansible_distribution_version }}
+      become: false
+
+    - name: "Preflight: probe passwordless sudo (non-root connection)"
+      ansible.builtin.command: sudo -n true
+      changed_when: false
+      become: false
+      when: ansible_user | default('root') != 'root'
+      register: ic_sudo_probe
+      ignore_errors: true
+
+    - name: "Preflight: require passwordless sudo (non-root connection)"
+      ansible.builtin.assert:
+        that:
+          - ic_sudo_probe.rc | default(0) == 0
+        fail_msg: >-
+          Connecting as '{{ ansible_user | default('root') }}' but sudo
+          requires a password or is not configured. Re-add this host with
+          NOPASSWD sudo or root login.
+        success_msg: "Privilege escalation available."
+      become: false
+
+  tasks:
+    # ── Phase 1: user and access ──────────────────────────────────────
+    - name: Update the apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the unprivileged operator user
+      ansible.builtin.user:
+        name: "{{ hardened_user }}"
+        shell: /bin/bash
+        create_home: true
+
+    - name: Ensure the docker group exists
+      # Pre-created before Docker is installed so the installer (run later
+      # by full_setup) reuses it; the operator user must already be a
+      # member or its login session can't reach docker.sock.
+      ansible.builtin.group:
+        name: docker
+        state: present
+
+    - name: Add the operator user to the docker group
+      ansible.builtin.user:
+        name: "{{ hardened_user }}"
+        groups: docker
+        append: true
+
+    - name: Ensure the operator user's ~/.ssh exists
+      ansible.builtin.file:
+        path: "/home/{{ hardened_user }}/.ssh"
+        state: directory
+        owner: "{{ hardened_user }}"
+        group: "{{ hardened_user }}"
+        mode: "0700"
+
+    - name: Copy root's authorized_keys to the operator user
+      # Reads the file on the *target* host (remote_src), mirroring the
+      # old ``cp /root/.ssh/authorized_keys …`` — the keys that got the
+      # host provisioned are the ones that should reach the new user.
+      ansible.builtin.copy:
+        src: /root/.ssh/authorized_keys
+        dest: "/home/{{ hardened_user }}/.ssh/authorized_keys"
+        remote_src: true
+        owner: "{{ hardened_user }}"
+        group: "{{ hardened_user }}"
+        mode: "0600"
+
+    - name: Grant passwordless sudo to the operator user
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/incubacloud-system
+        content: "{{ hardened_user }} ALL=(ALL) NOPASSWD: ALL\n"
+        mode: "0440"
+        validate: "visudo -cf %s"
+
+    - name: Create /etc/incubacloud
+      ansible.builtin.file:
+        path: /etc/incubacloud
+        state: directory
+        owner: root
+        group: "{{ hardened_user }}"
+        mode: "0750"
+
+    # ── Phase 2: packages ─────────────────────────────────────────────
+    - name: Install the hardening packages
+      # python3-systemd is a Recommends of fail2ban's systemd backend;
+      # list it explicitly so --no-install-recommends images still get it.
+      ansible.builtin.apt:
+        name:
+          - fail2ban
+          - unattended-upgrades
+          - auditd
+          - nftables
+          - python3-systemd
+        state: present
+
+    - name: Enable Docker on boot when it is installed
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+      loop:
+        - docker.service
+        - containerd.service
+      # full_setup installs Docker later; skip cleanly when absent.
+      failed_when: false
+
+    # ── Phase 3: SSH hardening (root stays key-accessible; see header) ─
+    - name: Write the sshd hardening drop-in
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-incubacloud-hardening.conf
+        mode: "0644"
+        content: |
+          # Auto-generated by IncubaCloud host hardening.
+          # Do not edit by hand — re-run hardening to regenerate.
+          Port {{ ssh_port }}
+          PermitRootLogin prohibit-password
+          PasswordAuthentication no
+          PubkeyAuthentication yes
+          PermitEmptyPasswords no
+          ChallengeResponseAuthentication no
+          KbdInteractiveAuthentication no
+          UsePAM yes
+          X11Forwarding no
+          AllowAgentForwarding no
+          AllowTcpForwarding yes
+          MaxAuthTries 3
+          MaxSessions 10
+          LoginGraceTime 30
+          ClientAliveInterval 300
+          ClientAliveCountMax 2
+          Banner /etc/issue.net
+          AllowUsers {{ hardened_user }} root
+          KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256
+          Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+          MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+      register: ic_sshd
+
+    - name: Validate the sshd configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+    # Ubuntu 22.10+ ships sshd SOCKET-ACTIVATED: systemd's ssh.socket owns
+    # the listening port and sshd_config's ``Port`` is ignored entirely.
+    # Two ways to reconcile that with a rotated port; only one is durable:
+    #
+    #   * disable ssh.socket and run the classic ssh.service (it reads
+    #     ``Port``). Works — until an openssh-server upgrade or a
+    #     ``systemctl preset`` re-enables the socket. On the NEXT REBOOT it
+    #     binds 22 again while nothing serves the rotated port that our
+    #     nftables allowlist permits: a lock-out nobody triggered.
+    #     Reproduced live: after a reboot the hardened port was dead.
+    #   * keep socket activation and OWN the port through our own drop-in.
+    #     Survives upgrades and presets because the port lives in a file we
+    #     control. This is what runs below.
+    #
+    # (``masked: true`` on ssh.socket is NOT an alternative: validated live,
+    # it leaves the host with no sshd at all.)
+    - name: Detect whether this distro ships sshd socket activation
+      # The systemd module cannot *inspect* a unit ("cat" has no module
+      # equivalent); this is a read-only probe, not state management.
+      ansible.builtin.command: systemctl cat ssh.socket  # noqa: command-instead-of-module
+      register: ic_ssh_socket_unit
+      changed_when: false
+      failed_when: false
+
+    - name: Create the ssh.socket drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/ssh.socket.d
+        state: directory
+        mode: "0755"
+      when: ic_ssh_socket_unit.rc == 0
+
+    - name: Pin the ssh socket to the rotated port
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ssh.socket.d/10-incubacloud-port.conf
+        mode: "0644"
+        content: |
+          # Auto-generated by IncubaCloud host hardening.
+          # Do not edit by hand — re-run hardening to regenerate.
+          [Socket]
+          # The empty assignment clears the distro default (22); without it
+          # systemd would ADD our port and keep listening on 22 too.
+          ListenStream=
+          ListenStream={{ ssh_port }}
+      when: ic_ssh_socket_unit.rc == 0
+
+    - name: Stop the standalone sshd before the socket takes the port
+      # A host hardened by the earlier revision runs ssh.service standalone
+      # bound to the rotated port; the socket could not bind the same port
+      # and this play would fail. Established sessions (this one included)
+      # are separate accepted sockets and survive.
+      ansible.builtin.systemd_service:
+        name: ssh.service
+        state: stopped
+      when: ic_ssh_socket_unit.rc == 0
+      failed_when: false
+
+    - name: Enable and (re)start the ssh socket on the rotated port
+      ansible.builtin.systemd_service:
+        name: ssh.socket
+        state: restarted
+        enabled: true
+        daemon_reload: true
+      when: ic_ssh_socket_unit.rc == 0
+
+    - name: Enable and (re)start ssh.service when sshd is not socket-activated
+      # Classic layout (no ssh.socket unit): sshd binds ``Port`` itself.
+      ansible.builtin.systemd_service:
+        name: ssh.service
+        enabled: true
+        state: restarted
+      when: ic_ssh_socket_unit.rc != 0
+
+    - name: Wait for sshd to listen on the new port
+      # Confirm the new port is up BEFORE nftables locks the old one, so
+      # there is never a window where neither port is reachable.
+      ansible.builtin.wait_for:
+        port: "{{ ssh_port }}"
+        host: 127.0.0.1
+        timeout: 15
+      register: ic_port_check
+
+    # ── Phase 4: nftables ─────────────────────────────────────────────
+    - name: Determine the address this play is connecting from
+      # The host is the only trustworthy source for this. A configured
+      # allowlist goes stale silently — an operator's residential IP
+      # rotates, a NAT egress changes — and since nftables is applied
+      # BEFORE the new-port login is proven, a stale allowlist locks
+      # everyone out even though sshd still permits root: "root
+      # preserved" is worthless when the firewall drops the packet.
+      # Reproduced live. Whoever is driving this play must never be able
+      # to fence themselves off, so their real source address always
+      # goes into the allowlist.
+      ansible.builtin.command: printenv SSH_CONNECTION
+      register: ic_ssh_connection
+      changed_when: false
+      failed_when: false
+      become: false
+
+    - name: Build the effective SSH allowlist
+      ansible.builtin.set_fact:
+        ic_effective_allowlist: >-
+          {{ ((ssh_allowlist | default('')).split(',')
+              | map('trim') | reject('equalto', '') | list
+              + ic_control_ip) | unique | join(', ') }}
+      vars:
+        ic_control_ip: >-
+          {{ [(ic_ssh_connection.stdout | default('')).split(' ') | first]
+             if (ic_ssh_connection.stdout | default('') | trim) else [] }}
+
+    - name: Report the effective allowlist
+      ansible.builtin.debug:
+        msg: >-
+          SSH allowlist for port {{ ssh_port }}:
+          {{ ic_effective_allowlist }}
+          (configured: {{ ssh_allowlist }})
+
+    - name: Write the nftables ruleset
+      ansible.builtin.copy:
+        dest: /etc/nftables.conf
+        mode: "0755"
+        content: |
+          #!/usr/sbin/nft -f
+          # Auto-generated by IncubaCloud host hardening.
+          flush ruleset
+
+          table inet filter {
+              chain input {
+                  type filter hook input priority filter; policy drop;
+                  iif "lo" accept
+                  ct state established,related accept
+                  ct state invalid drop
+                  meta l4proto icmp limit rate 10/second accept
+                  meta l4proto ipv6-icmp limit rate 10/second accept
+                  tcp dport {{ ssh_port }} ip saddr { {{ ic_effective_allowlist }} } accept
+                  tcp dport { 80, 443 } accept
+              }
+              chain forward {
+                  type filter hook forward priority filter; policy accept;
+              }
+              chain output {
+                  type filter hook output priority filter; policy accept;
+              }
+          }
+
+    - name: Apply the nftables ruleset
+      ansible.builtin.command: nft -f /etc/nftables.conf
+      changed_when: true
+
+    - name: Enable the nftables service
+      ansible.builtin.systemd_service:
+        name: nftables
+        enabled: true
+        state: started
+
+    # ── Phase 5: fail2ban ─────────────────────────────────────────────
+    - name: Write the fail2ban sshd jail
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/sshd-incubacloud.local
+        mode: "0644"
+        content: |
+          # Auto-generated by IncubaCloud host hardening.
+          [sshd]
+          enabled = true
+          port    = {{ ssh_port }}
+          backend = systemd
+          maxretry = 3
+          findtime = 600
+          bantime  = 3600
+
+    - name: Enable and (re)start fail2ban
+      # Non-fatal: the network-edge firewall + sshd hardening still protect
+      # the host even if fail2ban fails to come up.
+      ansible.builtin.systemd_service:
+        name: fail2ban
+        enabled: true
+        state: restarted
+      failed_when: false
+
+    # ── Phase 6: sysctl ───────────────────────────────────────────────
+    - name: Write the sysctl hardening drop-in
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-incubacloud-hardening.conf
+        mode: "0644"
+        content: |
+          # Auto-generated by IncubaCloud host hardening.
+          net.ipv4.conf.all.rp_filter = 1
+          net.ipv4.conf.default.rp_filter = 1
+          net.ipv4.conf.all.accept_source_route = 0
+          net.ipv4.conf.default.accept_source_route = 0
+          net.ipv4.conf.all.send_redirects = 0
+          net.ipv4.conf.default.send_redirects = 0
+          net.ipv4.conf.all.log_martians = 1
+          net.ipv4.icmp_echo_ignore_broadcasts = 1
+          net.ipv4.icmp_ignore_bogus_error_responses = 1
+          net.ipv4.tcp_syncookies = 1
+          kernel.kptr_restrict = 2
+          kernel.dmesg_restrict = 1
+          kernel.unprivileged_bpf_disabled = 1
+          fs.protected_hardlinks = 1
+          fs.protected_symlinks = 1
+          fs.protected_fifos = 2
+          fs.protected_regular = 2
+      register: ic_sysctl
+
+    - name: Apply the sysctl drop-in
+      # Reload only our file; ``--system`` replays legacy drop-ins the
+      # kernel may reject, so tolerate a non-zero exit.
+      ansible.builtin.command: sysctl -p /etc/sysctl.d/99-incubacloud-hardening.conf
+      changed_when: ic_sysctl.changed
+      failed_when: false
+
+    # ── Phase 7: unattended-upgrades ──────────────────────────────────
+    - name: Write the unattended-upgrades policy
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/52incubacloud-unattended
+        mode: "0644"
+        content: |
+          // Auto-generated by IncubaCloud host hardening.
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::AutocleanInterval "7";
+
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+              "${distro_id}ESMApps:${distro_codename}-apps-security";
+              "${distro_id}ESM:${distro_codename}-infra-security";
+          };
+          Unattended-Upgrade::Automatic-Reboot "{{ 'true' if auto_reboot else 'false' }}";
+          {% if auto_reboot %}
+          Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+          {% endif %}
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+    - name: Enable unattended-upgrades
+      ansible.builtin.systemd_service:
+        name: unattended-upgrades
+        enabled: true
+        state: started
+
+    # ── Phase 8: Docker daemon hardening ──────────────────────────────
+    - name: Ensure /etc/docker exists
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: "0755"
+
+    - name: Write the Docker daemon hardening
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        mode: "0644"
+        content: |
+          {
+            "live-restore": true,
+            "userland-proxy": false,
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "10m",
+              "max-file": "3"
+            },
+            "no-new-privileges": true
+          }
+      notify: Restart Docker
+
+    # ── Phase 9: journald ─────────────────────────────────────────────
+    - name: Create the journald drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        mode: "0755"
+
+    - name: Write the journald limits
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/limits.conf
+        mode: "0644"
+        content: |
+          # Auto-generated by IncubaCloud host hardening.
+          [Journal]
+          SystemMaxUse=2G
+          SystemKeepFree=1G
+          SystemMaxFileSize=200M
+          MaxRetentionSec=30day
+      notify: Restart journald
+
+    # ── Phase 10: auditd ──────────────────────────────────────────────
+    - name: Write the auditd rules
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/99-incubacloud.rules
+        mode: "0644"
+        content: |
+          # Auto-generated by IncubaCloud host hardening.
+          -w /etc/passwd -p wa -k passwd_changes
+          -w /etc/shadow -p wa -k shadow_changes
+          -w /etc/sudoers -p wa -k sudoers_changes
+          -w /etc/sudoers.d/ -p wa -k sudoers_changes
+          -w /etc/ssh/ -p wa -k ssh_config_changes
+          -w /var/log/auth.log -p wa -k auth_log
+          -a always,exit -F arch=b64 -S execve -F path=/usr/bin/sudo -k sudo_use
+
+    - name: Enable auditd and load the rules
+      ansible.builtin.systemd_service:
+        name: auditd
+        enabled: true
+        state: started
+      failed_when: false
+
+    - name: Load the auditd rules
+      ansible.builtin.command: augenrules --load
+      changed_when: true
+      failed_when: false
+
+    # ── Phase 11: banner ──────────────────────────────────────────────
+    - name: Write the /etc/issue.net banner
+      ansible.builtin.copy:
+        dest: /etc/issue.net
+        mode: "0644"
+        content: |
+          **********************************************************************
+                            AUTHORIZED ACCESS ONLY
+          This system is restricted to authorized users for legitimate business
+          purposes. Unauthorized access is prohibited and may be subject to
+          criminal and/or civil prosecution.
+          All activity is logged and monitored.
+          **********************************************************************
+
+    # ── Phase 12: hand the outcome back to the executor ───────────────
+    - name: Export the hardening facts
+      # ``ic_port_check`` was registered in phase 3, before nftables — the
+      # executor reads this to confirm the new port came up.
+      ansible.builtin.set_stats:
+        aggregate: false
+        data:
+          ic_port_listening: "{{ ic_port_check is succeeded }}"
+          ic_new_ssh_port: "{{ ssh_port }}"
+          # What the firewall actually allows — includes the address this
+          # play connected from, which may differ from the configured
+          # allowlist. The panel logs it so a stale ``allowed_ssh_ips`` is
+          # visible instead of silently locking someone out later.
+          ic_effective_allowlist: "{{ ic_effective_allowlist }}"
+
+  handlers:
+    # Bounce services only when their config changed. Handlers run at the
+    # end of the play, which is fine — nothing later depends on them.
+    - name: Restart Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        state: restarted
+      # full_setup installs Docker later; a config write before that must
+      # not fail the play trying to restart an absent unit.
+      failed_when: false
+
+    - name: Restart journald
+      ansible.builtin.systemd_service:
+        name: systemd-journald
+        state: restarted

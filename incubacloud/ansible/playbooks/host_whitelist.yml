@@ -1,0 +1,41 @@
+---
+# Deploy (or update) the shared docker-whitelist proxy stack on a host.
+# Driven by SetupWhitelistExecutor.
+#
+# The stack lets test instances — which have no direct internet access —
+# reach an allow-list of hosts over the shared internal network. The
+# compose file is generated panel-side from the host's whitelist entries
+# and handed in as ``ic_whitelist_compose``; this playbook only writes it
+# and converges the containers.
+#
+# Idempotent: ``docker compose up -d --remove-orphans`` recreates only
+# the services whose definition changed and drops the ones removed from
+# the list.
+- name: Deploy the host whitelist proxy stack
+  hosts: all
+  gather_facts: true
+
+  vars:
+    whitelist_dir: "{{ ansible_env.HOME }}/globalwhitelist"
+    whitelist_project: globalwhitelist
+
+  tasks:
+    - name: Ensure the whitelist directory exists
+      ansible.builtin.file:
+        path: "{{ whitelist_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the whitelist compose file
+      ansible.builtin.copy:
+        content: "{{ ic_whitelist_compose }}"
+        dest: "{{ whitelist_dir }}/docker-compose.yaml"
+        mode: "0644"
+
+    - name: Bring the whitelist services up
+      ansible.builtin.command:
+        cmd: >-
+          docker compose -p {{ whitelist_project }}
+          -f docker-compose.yaml up -d --remove-orphans
+        chdir: "{{ whitelist_dir }}"
+      changed_when: true

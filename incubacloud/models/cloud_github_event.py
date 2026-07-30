@@ -2,13 +2,18 @@ import json
 import logging
 from datetime import timedelta
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 
 from ._repo_requirements import _normalize_url, is_safe_git_ref
 
 _logger = logging.getLogger(__name__)
 
 _AUTO_REBUILD_COOLDOWN = timedelta(seconds=60)
+
+# Alert raised when the GitHub App installation is removed or suspended.
+# Module-level so the webhook handler and any future health check dedup
+# on the same code.
+GITHUB_APP_REVOKED_CODE = 'github_app_revoked'
 
 
 class CloudGitHubEvent(models.Model):
@@ -225,6 +230,71 @@ class CloudGitHubEvent(models.Model):
         so a push can never race a tenant-rebuild already in flight.
         """
         return ('deploy_instance', 'rebuild_instance')
+
+    def _dispatch(self, payload):
+        """Route a freshly-persisted webhook event to its handler.
+
+        Every path must leave the event ``processed=True``. Both stages of
+        ``_purge_old`` filter on that flag, so a row left False is exempt
+        from a retention policy that reads as covering it — payload and
+        all, forever. The individual handlers set the flag themselves; the
+        fallthrough covers the event types the App manifest subscribes to
+        but which we take no action on (``create``, ``delete``, …).
+
+        :param dict payload: the decoded webhook body
+        """
+        self.ensure_one()
+        if self.event_type == 'installation':
+            self._process_installation_lifecycle(payload)
+        elif self.event_type == 'push':
+            self._process_push_event()
+        elif self.event_type == 'pull_request':
+            self._process_pull_request_event()
+        else:
+            self.write({'processed': True})
+
+    def _process_installation_lifecycle(self, payload):
+        """Handle an ``installation`` webhook and mark the event processed.
+
+        ``created`` auto-detects the installation id (the original reason
+        this event type was subscribed).
+
+        ``deleted`` and ``suspend`` are the ones that used to pass
+        unnoticed: from that moment every GitHub API call 401s, the client
+        invalidates its token cache and returns empty-handed, and
+        auto-rebuild plus PR previews simply stop happening with nothing
+        anywhere in the panel to explain why. Raise a critical alert so the
+        silence becomes visible. ``unsuspend`` clears it, as does a fresh
+        ``created`` after a reinstall.
+
+        :param dict payload: the decoded webhook body
+        """
+        self.ensure_one()
+        action = self.action or payload.get('action', '')
+        Alert = self.env['cloud.alert'].sudo()
+        if action == 'created':
+            self.env['cloud.github.app'].sudo()._process_installation_event(
+                payload,
+            )
+            Alert.resolve_alert(GITHUB_APP_REVOKED_CODE)
+        elif action in ('deleted', 'suspend'):
+            Alert.raise_alert(
+                GITHUB_APP_REVOKED_CODE,
+                _(
+                    "The GitHub App installation was %(action)s. Auto-rebuild "
+                    "on push and PR preview environments are disabled until "
+                    "it is reinstalled.",
+                    action=action,
+                ),
+                level='critical',
+            )
+            _logger.warning(
+                "GitHub App installation %s — auto-rebuild is now inert.",
+                action,
+            )
+        elif action == 'unsuspend':
+            Alert.resolve_alert(GITHUB_APP_REVOKED_CODE)
+        self.write({'processed': True})
 
     def _process_push_event(self):
         """Process a push webhook — trigger auto-rebuild for matching instances."""

@@ -50,6 +50,20 @@ class CloudSettings(models.Model):
              'to disable purging entirely (table will grow unbounded).',
     )
 
+    # cloud.job rows themselves also grow monotonically (the fourth leak
+    # of the retention family). They feed the instance timeline in the
+    # UI, so the window is much longer than the chunk one: purging a job
+    # trims visible history to this many days.
+    job_retention_days = fields.Integer(
+        string='Job retention (days)',
+        default=180,
+        help='Number of days to keep terminal cloud.job rows (done, '
+             'failed, cancelled). Active jobs are never purged. Purging '
+             'a job also removes its remaining log chunks and trims the '
+             'instance timeline to this window. Set to 0 to disable '
+             'purging entirely (table will grow unbounded).',
+    )
+
     # ── GitHub event retention ────────────────────────────────────────────
     # cloud.github.event stores the raw webhook JSON. Push payloads for
     # large monorepos are 100 KB+. Keeping them forever bloats backups
@@ -75,6 +89,35 @@ class CloudSettings(models.Model):
         help='After this many days, the raw JSON payload of a processed '
              'cloud.github.event is replaced by a compact stub (event '
              'type, ref, sha, action). Set to 0 to disable truncation.',
+    )
+
+    # ── Doodba template used to scaffold instances ────────────────────────
+    # Every deploy runs ``copier copy`` against this template. Left
+    # unpinned, each deploy silently picks up whatever is on the
+    # template's default branch at that moment, so two instances created
+    # a week apart can be built from different upstream revisions and a
+    # breaking change upstream lands on the next tenant deploy with no
+    # signal here. Pinning a tag makes template upgrades a decision.
+
+    copier_template_url = fields.Char(
+        string='Doodba template',
+        default='gh:Tecnativa/doodba-copier-template',
+        help='Copier source for new instances. Change it to deploy from a '
+             'fork of the doodba template.',
+    )
+    # Default pin: v9.6.1, validated 2026-07-30 by rendering the template
+    # in a sandbox with the exact answers the deploy executor emits
+    # (domains/redirects in Traefik labels, backup DST, secrets excluded
+    # from the answers file by the template's own secret marking). Bump
+    # via the runbook (RB-15): sandbox render first, then staging canary.
+    copier_template_ref = fields.Char(
+        string='Doodba template version',
+        default='v9.6.1',
+        help='Git tag/branch/commit to pin the template to (copier '
+             "--vcs-ref), e.g. 'v9.6.1'. Empty means the template's "
+             'default branch: deploys then track upstream automatically '
+             'and an upstream change can alter the next deploy without '
+             'warning. The effective ref is recorded in the job log.',
     )
 
     # ── Rate limiting caps ────────────────────────────────────────────────
@@ -109,6 +152,20 @@ class CloudSettings(models.Model):
              'session holds an SSH connection + PTY buffer until '
              'SESSION_TIMEOUT.',
     )
+    rate_limit_connect_per_min = fields.Integer(
+        string='Connect as user (per instance, per minute)',
+        default=20,
+        help='Max connect-as calls/min targeting the same cloud.instance, '
+             'across all users. Each call opens an SSH connection and runs '
+             'a script inside the tenant container.',
+    )
+    rate_limit_connect_user_per_min = fields.Integer(
+        string='Connect as user (per user, per minute)',
+        default=10,
+        help='Max connect-as calls/min from a single panel user. Caps a '
+             'compromised account from enumerating tenant users or minting '
+             'impersonation tokens in bulk.',
+    )
 
     # ── Backup usage alert default ────────────────────────────────────────
     # Per-backend ``alert_threshold_pct`` can opt in (1–100), opt out
@@ -124,6 +181,58 @@ class CloudSettings(models.Model):
              "overrides win — set the backend's own threshold to 0 to "
              'inherit this value, -1 to disable, or 1–100 for an explicit '
              'value.',
+    )
+
+    # ── Observability ──────────────────────────────────────────────────────
+    # Agents push metrics outbound to a central VictoriaMetrics; the panel
+    # reads it back over PromQL to evaluate ``cloud.metric.rule``. All of
+    # it is inert until ``metrics_enabled`` is set, so the feature can ship
+    # and be deployed before anyone turns it on.
+
+    metrics_enabled = fields.Boolean(
+        string='Enable observability',
+        default=False,
+        help='Master switch. When off, no agent is installed, the metric '
+             'rules are not evaluated and no metrics alert is raised.',
+    )
+    metrics_central_url = fields.Char(
+        string='Metrics backend URL',
+        help='Base URL the PANEL uses to query metrics (PromQL). It must '
+             'resolve from inside the panel container — e.g. '
+             'http://host.docker.internal:8428 for a co-located backend, '
+             'or its public URL when it lives on another server.',
+    )
+    metrics_remote_write_url = fields.Char(
+        string='Remote-write URL',
+        help='Endpoint each host AGENT pushes to. It must resolve from '
+             'inside the agent container on every host — so 127.0.0.1 is '
+             'almost never right: that is the agent itself. Use '
+             'http://host.docker.internal:8428/api/v1/write only for '
+             'agents on the same server as the backend, and a public '
+             'HTTPS URL for every other host. Outbound only: no inbound '
+             'port is opened, which is what keeps BYOH and NAT hosts '
+             'working.',
+    )
+    metrics_remote_write_token = EncryptedChar(
+        string='Remote-write token',
+        help='Shared secret protecting the central. The agents present '
+             'it as HTTP basic auth when pushing, and the panel presents '
+             'it when querying; the central rejects anonymous access '
+             'while it is set. Stored encrypted and written to each host '
+             'as root-only 0600. Changing it means redeploying the '
+             'central AND re-running Install Observability everywhere — '
+             'until both sides match, pushes are refused.',
+    )
+    metrics_retention_days = fields.Integer(
+        string='Metrics retention (days)',
+        default=90,
+        help='How long the central keeps series. Passed to the central '
+             'deployment playbook.',
+    )
+    grafana_base_url = fields.Char(
+        string='Grafana base URL',
+        help='Base URL of the Grafana embedded in the panel, e.g. '
+             'https://grafana.example.com. Empty hides the Monitoring tab.',
     )
 
     # ── Singleton constraint ───────────────────────────────────────────────
@@ -238,6 +347,12 @@ class CloudSettings(models.Model):
         """
         stats = {}
         for Model in self.env.registry.values():
+            # Abstract mixins (e.g. cloud.terminal.route.mixin) can carry
+            # an EncryptedChar field but have no table of their own — the
+            # concrete models that inherit them are rotated instead. Skip
+            # them so we never query a non-existent relation.
+            if Model._abstract or Model._transient:
+                continue
             enc_fields = [
                 name for name, f in Model._fields.items()
                 if isinstance(f, EncryptedChar) and f.store

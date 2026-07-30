@@ -72,55 +72,33 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         neutral_db = self._tmp_neutral_db()
         host_tmp = self._host_tmp_dir()
         archive = self._host_tmp_archive()
-        ctr_tmp = f'/tmp/bkneu-{self.job.id}'
         is_prod = inst.environment == 'production'
 
         # Step 1: produce a source dump on the host, landing at
         # {host_tmp}/src.zip (non-prod live, or prod packaged from S3).
-        # click-odoo-restoredb → odoo.service.db.restore_db only accepts a
-        # ZIP (with `dump.sql` inside) or a pg_dump custom-format file. A
-        # plain .sql triggers the pg_restore branch and dies with
-        # "Couldn't restore database", so prod's duplicity output is
-        # repackaged as a ZIP before handing it to the odoo container.
         if is_prod:
-            time_flag = (
-                '' if raw_time == 'latest'
-                else f" --time \"{raw_time}\""
-            )
             step_prepare_src = (
                 "Restore source dump from S3",
-                (
-                    f"cd {d} && docker compose exec -T backup"
-                    f" sh -c 'rm -rf {ctr_tmp} && mkdir -p {ctr_tmp}"
-                    f" && dup restore --force"
-                    f"{time_flag}"
-                    f" --path-to-restore {source_dbname}.sql"
-                    f" \"$DST\" {ctr_tmp}/src.sql'"
-                    f" && rm -rf {host_tmp} && mkdir -p {host_tmp}"
-                    f" && docker compose cp"
-                    f" backup:{ctr_tmp}/src.sql {host_tmp}/dump.sql"
-                    f" && docker compose exec -T backup rm -rf {ctr_tmp}"
-                    f" && (cd {host_tmp} && zip -q -r src.zip dump.sql"
-                    f" && rm -f dump.sql)"
-                    f" && docker compose cp"
-                    f" {host_tmp}/src.zip odoo:/tmp/bkneu-src-{self.job.id}.zip"
+                self.run_script(
+                    "backup_neutralized.sh",
+                    [
+                        "prepare-src-prod", d, self.job.id,
+                        source_dbname, raw_time, host_tmp,
+                    ],
                 ),
                 {"stop_on_failure": True},
             )
-            source_inside_odoo = f"/tmp/bkneu-src-{self.job.id}.zip"
         else:
             # Non-prod: dump the live DB inside the odoo container.
             step_prepare_src = (
                 "Dump live database",
-                (
-                    f"cd {d} && docker compose exec -T odoo"
-                    f" click-odoo-backupdb {source_dbname}"
-                    f" /tmp/bkneu-src-{self.job.id}.zip"
-                    f" && rm -rf {host_tmp} && mkdir -p {host_tmp}"
+                self.run_script(
+                    "backup_neutralized.sh",
+                    ["prepare-src-live", d, self.job.id,
+                     source_dbname, host_tmp],
                 ),
                 {"stop_on_failure": True},
             )
-            source_inside_odoo = f"/tmp/bkneu-src-{self.job.id}.zip"
 
         # Step 2: restore into a throwaway DB with --neutralize.
         # click-odoo-restoredb runs `odoo neutralize` which executes every
@@ -129,10 +107,9 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         # invalidated, database.is_neutralized=true → red banner).
         step_restore_neutralize = (
             "Restore and neutralize in temp DB",
-            (
-                f"cd {d} && docker compose exec -T odoo"
-                f" click-odoo-restoredb --neutralize --force"
-                f" {neutral_db} {source_inside_odoo}"
+            self.run_script(
+                "backup_neutralized.sh",
+                ["restore-neutralize", d, self.job.id, neutral_db],
             ),
             {"stop_on_failure": True},
         )
@@ -141,35 +118,19 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         if with_filestore:
             step_redump = (
                 "Create neutralized backup (DB + filestore)",
-                (
-                    f"cd {d} && docker compose exec -T odoo"
-                    f" click-odoo-backupdb {neutral_db}"
-                    f" /tmp/bkneu-out-{self.job.id}.zip"
-                    f" && docker compose cp"
-                    f" odoo:/tmp/bkneu-out-{self.job.id}.zip"
-                    f" {archive}"
-                    f" && docker compose exec -T odoo"
-                    f" rm -f /tmp/bkneu-out-{self.job.id}.zip"
+                self.run_script(
+                    "backup_neutralized.sh",
+                    ["redump-full", d, self.job.id, neutral_db, archive],
                 ),
                 {"stop_on_failure": True},
             )
         else:
-            # SQL only: plain pg_dump piped into a bare dump.sql, zipped
-            # on the host to mirror the layout of BackupDownloadExecutor's
-            # ``dump`` mode (zip contains a single ``dump.sql``).
             step_redump = (
                 "Create neutralized backup (SQL only)",
-                (
-                    f"cd {d} && docker compose exec -T odoo"
-                    f" sh -c 'pg_dump --no-owner --no-privileges"
-                    f" --dbname={neutral_db}"
-                    f" > /tmp/bkneu-out-{self.job.id}.sql'"
-                    f" && docker compose cp"
-                    f" odoo:/tmp/bkneu-out-{self.job.id}.sql"
-                    f" {host_tmp}/dump.sql"
-                    f" && docker compose exec -T odoo"
-                    f" rm -f /tmp/bkneu-out-{self.job.id}.sql"
-                    f" && cd {host_tmp} && zip -r {archive} dump.sql"
+                self.run_script(
+                    "backup_neutralized.sh",
+                    ["redump-sql", d, self.job.id, neutral_db,
+                     host_tmp, archive],
                 ),
                 {"stop_on_failure": True},
             )
@@ -177,18 +138,11 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         # Step 4: drop the throwaway DB + cleanup source files.
         # Runs unconditionally via parse_results (non-stop_on_failure)
         # so cleanup still happens on the happy path.
-        # `--user root` is required because `docker compose cp` lands the
-        # source ZIP into the container owned by root, and the default
-        # `odoo` user cannot remove it.
         step_cleanup = (
             "Drop temp DB and cleanup",
-            (
-                f"cd {d}"
-                f" && docker compose exec --user root -T odoo"
-                f" sh -c 'dropdb --if-exists {neutral_db}"
-                f" && rm -rf /var/lib/odoo/filestore/{neutral_db}"
-                f" && rm -f {source_inside_odoo}'"
-                f" && rm -rf {host_tmp}"
+            self.run_script(
+                "backup_neutralized.sh",
+                ["cleanup", d, self.job.id, neutral_db, host_tmp],
             ),
         )
 

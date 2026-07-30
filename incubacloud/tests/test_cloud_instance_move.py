@@ -9,6 +9,7 @@ the SSH executors themselves are mocked away.
 Updated 2026-07 to cover the robust rollback that cancels the chain and
 enqueues cleanup+start instead of silently ignoring the in-flight jobs.
 """
+import asyncio
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
@@ -40,7 +41,7 @@ class TestInstanceMove(TransactionCase):
         self.inst = self.env['cloud.instance'].create({
             'name': 'movable', 'project_id': self.project.id,
             'environment': 'production', 'host_id': self.source.id,
-            'deployed': True, 'backup_backend_id': self.bb.id,
+            'state': 'deployed', 'backup_backend_id': self.bb.id,
         })
 
     def _patch_chain(self):
@@ -97,10 +98,13 @@ class TestInstanceMove(TransactionCase):
         with self._patch_chain():
             with self.assertRaises(UserError):
                 self.inst.move_to_host(self.source)
-            self.inst.deployed = False
+            # A move needs a deployed instance: walk the teardown path to
+            # make it a draft, then bring it back.
+            self.inst._transition('deleting')
+            self.inst._transition('draft')
             with self.assertRaises(UserError):
                 self.inst.move_to_host(self.target)
-            self.inst.deployed = True
+            self.inst._transition('deployed')
             self.target.traefik_deployed = False
             with self.assertRaises(UserError):
                 self.inst.move_to_host(self.target)
@@ -470,3 +474,106 @@ class TestInstanceMove(TransactionCase):
             ]),
             1,
         )
+
+
+class TestMoveDnsRepointNotice(TransactionCase):
+    """The cutover must tell the operator to re-point DNS.
+
+    On a bare core install nothing updates the A-record, so a successful
+    move leaves the instance answering on a different IP and unreachable
+    until a human acts. Silence there reads as a broken move.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.project = self.env['cloud.project'].create({'name': 'dns-proj'})
+        self.source = self.env['cloud.host'].create({
+            'name': 'dns-src', 'ip_address': '10.0.0.1', 'port': 22,
+            'user': 'root', 'login_type': 'ssh_key',
+            'wildcard_domain': 'src.example.com',
+            'status': 'compatible', 'traefik_deployed': True,
+        })
+        self.target = self.env['cloud.host'].create({
+            'name': 'dns-tgt', 'ip_address': '10.0.0.2', 'port': 22,
+            'user': 'root', 'login_type': 'ssh_key',
+            'wildcard_domain': 'tgt.example.com',
+            'status': 'compatible', 'traefik_deployed': True,
+        })
+        self.inst = self.env['cloud.instance'].create({
+            'name': 'dns-movable', 'project_id': self.project.id,
+            'environment': 'production', 'host_id': self.source.id,
+            'state': 'deployed',
+        })
+
+    def _alerts(self):
+        return self.env['cloud.alert'].sudo().search([
+            ('instance_id', '=', self.inst.id),
+            ('code', '=', 'move_dns_repoint'),
+            ('state', '=', 'active'),
+        ])
+
+    def test_core_dns_is_not_managed(self):
+        """A bare core install never re-points DNS by itself."""
+        self.assertFalse(self.inst._move_dns_is_managed())
+
+    def test_notice_names_the_domain_and_the_new_ip(self):
+        """The operator must not have to look the IP up elsewhere."""
+        self.inst.domain = 'shop.example.com'
+        alert = self.inst._notify_move_dns_repoint(self.target)
+        self.assertEqual(alert.level, 'warning')
+        self.assertIn('shop.example.com', alert.message)
+        self.assertIn('10.0.0.2', alert.message)
+        self.assertEqual(alert.host_id, self.target)
+        self.assertEqual(alert.project_id, self.project)
+
+    def test_notice_is_skipped_when_dns_is_managed(self):
+        """The SaaS layer re-points DNS itself — no false alarm."""
+        with patch.object(
+            type(self.inst), '_move_dns_is_managed', return_value=True,
+        ):
+            self.assertIsNone(self.inst._notify_move_dns_repoint(self.target))
+        self.assertFalse(self._alerts())
+
+    def test_second_move_updates_the_existing_notice(self):
+        """A repeated move refreshes the alert instead of stacking."""
+        self.inst.domain = 'shop.example.com'
+        first = self.inst._notify_move_dns_repoint(self.source)
+        second = self.inst._notify_move_dns_repoint(self.target)
+        self.assertEqual(first, second)
+        self.assertEqual(len(self._alerts()), 1)
+        self.assertIn('10.0.0.2', second.message)
+
+    def test_dismissed_notice_does_not_block_a_new_one(self):
+        """Once dismissed, the next move raises a fresh alert."""
+        self.inst._notify_move_dns_repoint(self.target).state = 'dismissed'
+        self.inst._notify_move_dns_repoint(self.target)
+        self.assertEqual(len(self._alerts()), 1)
+
+    def test_cutover_raises_the_notice_on_success(self):
+        """The executor wires the notice into the successful cutover."""
+        from odoo.addons.incubacloud.models.move_cutover_executor import (
+            MoveCutoverExecutor,
+        )
+
+        jt = self.env['cloud.job.type'].search(
+            [('code', '=', 'move_cutover')], limit=1,
+        )
+        self.inst.write({'move_origin_host_id': self.source.id})
+        job = self.env['cloud.job'].create({
+            'host_id': self.target.id,
+            'instance_id': self.inst.id,
+            'job_type_id': jt.id,
+            'name': 'Cutover',
+        })
+        executor = MoveCutoverExecutor(job, self.target)
+        # A dedicated loop, left unregistered: ``asyncio.run`` clears the
+        # thread's current loop on exit and later tests in the same run
+        # call ``get_event_loop()``.
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(executor.on_success({}))
+        finally:
+            loop.close()
+
+        self.assertEqual(self.inst.host_id, self.target)
+        self.assertEqual(len(self._alerts()), 1)

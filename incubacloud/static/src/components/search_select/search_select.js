@@ -1,5 +1,7 @@
 import { Component, useState, useRef } from "@odoo/owl";
 
+import { useAnchoredMenu } from "../../utils/use_anchored_menu";
+
 /**
  * SearchSelect — generic searchable single-select widget.
  *
@@ -42,6 +44,13 @@ export class SearchSelect extends Component {
     setup() {
         this.state = useState({ input: "", open: false, dropdownStyle: "" });
         this.wrapRef = useRef("wrap");
+        // The menu is position:fixed, so it must follow the trigger when
+        // anything scrolls or the window resizes.
+        useAnchoredMenu(() => {
+            if (this.state.open) {
+                this.state.dropdownStyle = this._computeDropdownStyle();
+            }
+        });
     }
 
     // ── Option normalisation ───────────────────────────────────────────────

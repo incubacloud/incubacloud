@@ -7,10 +7,18 @@ Responsibilities:
 - Read raw body bytes before any parsing
 - Delegate signature validation to the credential service
 - Persist the event in ``cloud.github.event``
+- Route it through ``cloud.github.event._dispatch()`` (inline, see below)
 - Return 200 OK or 401 Unauthorized
 
-Business logic is intentionally absent — events are processed asynchronously
-by other parts of the system that observe ``cloud.github.event``.
+``_dispatch()`` runs *inside* the request on purpose: it only does DB
+work — mark the event processed, create/patch records, **enqueue**
+follow-up ``cloud.job`` rows — and the heavy lifting (rebuilds,
+provisioning) happens later in those queued jobs. Keeping the routing
+inline preserves the "every path ends processed" retention invariant
+without a second async layer; if routing ever grows real work, move it
+behind ``queue_job`` instead of letting the request slow down (GitHub
+retries after ~10s, and the HMAC anti-replay guard would reject the
+retry as a duplicate).
 """
 
 import json
@@ -20,6 +28,8 @@ from psycopg2 import errors as pg_errors
 
 from odoo import http
 from odoo.http import request
+
+from ._rate_limit import Rule, first_tripped
 
 _logger = logging.getLogger(__name__)
 
@@ -60,10 +70,11 @@ class GitHubWebhookController(http.Controller):
         # tolerates the 429 by backing off and re-delivering, so
         # legitimate traffic is not lost.
         ip = _client_ip()
-        rl = request.env['cloud.rate.limit'].sudo()
-        if not rl.hit(f'webhook_ip:{ip}',
-                      cap_key='rate_limit_webhook_per_min'):
-            _logger.warning("webhook_rate_limit_hit ip=%s", ip)
+        if first_tripped(Rule(
+            f'webhook_ip:{ip}',
+            cap_key='rate_limit_webhook_per_min',
+            log_tag=f'webhook ip={ip}',
+        )):
             return request.make_response(
                 "Rate limit exceeded. Retry after 60s.\n",
                 status=429,
@@ -159,19 +170,9 @@ class GitHubWebhookController(http.Controller):
             event_type, action, delivery_id,
         )
 
-        # Auto-detect installation_id on first installation.created event
-        if event_type == "installation" and action == "created":
-            request.env["cloud.github.app"].sudo()._process_installation_event(
-                payload_data
-            )
-
-        # Auto-rebuild on push
-        if event_type == "push":
-            event._process_push_event()
-
-        # PR preview environments
-        if event_type == "pull_request":
-            event._process_pull_request_event()
+        # Routing (and the "every path ends processed" invariant behind
+        # retention) lives on the model, next to the handlers themselves.
+        event._dispatch(payload_data)
 
         return request.make_response(
             "OK\n",

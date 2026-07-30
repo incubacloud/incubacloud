@@ -52,7 +52,7 @@
                                     <span class="ic-pr-badge">PR #<t t-esc="inst.pr_number"/></span>
                                 </t>
                                 <span class="rl-ctx-ver" t-esc="inst.odoo_version || ''"/>
-                                <t t-if="env.permissions?.can_clone_to_staging and inst.deployed and inst.environment === 'production' and inst.status !== 'provisioning'">
+                                <t t-if="env.permissions?.can_clone_to_staging and inst.state === 'deployed' and inst.environment === 'production'">
                                     <span class="rl-ctx-clone" title="Clone to Staging"
                                           t-on-click.stop="() => this.cloneToStaging(inst)">
                                         <t t-out="env.icon('arrowdown', 13)"/>

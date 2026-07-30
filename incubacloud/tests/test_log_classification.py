@@ -19,7 +19,10 @@ from odoo.addons.incubacloud.models.abstract_executor import (
 
 
 def _drain(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    # ``asyncio.run`` rather than the deprecated ``get_event_loop()``:
+    # under Python 3.12 the latter raises once any other test has cleared
+    # the current loop (which ``asyncio.run`` does on exit).
+    return asyncio.run(coro)
 
 
 def _make_executor():

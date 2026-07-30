@@ -200,7 +200,7 @@ class TestBackupRecordSync(TransactionCase):
             'res_model': 'cloud.job',
             'res_id': 0,
         })
-        bk = self._create_backup(attachment_id=att.id)
+        bk = self._create_backup(kind='archive', attachment_id=att.id)
         self.assertEqual(bk.attachment_id, att)
 
     def test_attachment_id_set_null_on_attachment_delete(self):
@@ -212,7 +212,7 @@ class TestBackupRecordSync(TransactionCase):
             'res_model': 'cloud.job',
             'res_id': 0,
         })
-        bk = self._create_backup(attachment_id=att.id)
+        bk = self._create_backup(kind='archive', attachment_id=att.id)
         att.unlink()
         bk.invalidate_recordset()
         self.assertFalse(bk.attachment_id)
@@ -235,7 +235,7 @@ class TestNonProdCreateBackupChain(TransactionCase):
             'project_id': self.project.id,
             'host_id': self.host.id,
             'environment': 'staging',
-            'deployed': True,
+            'state': 'deployed',
         })
 
     def test_create_backup_enqueues_two_jobs(self):

@@ -24,8 +24,35 @@
                               limit="state.limit"
                               label="'hosts'"/>
 
+            <!-- Loading: a skeleton, so a slow fetch never looks like "empty". -->
+            <t t-if="state.loading">
+                <div class="rl-grid rl-grid-2 ic-hosts-grid">
+                    <t t-foreach="[1, 2]" t-as="i" t-key="i">
+                        <div class="rl-card rl-card-pad ic-skeleton-card" aria-hidden="true">
+                            <div class="ic-skeleton-line ic-skeleton-title"/>
+                            <div class="ic-skeleton-line"/>
+                            <div class="ic-skeleton-line ic-skeleton-short"/>
+                        </div>
+                    </t>
+                </div>
+                <span class="ic-visually-hidden" role="status">Loading hosts…</span>
+            </t>
+
+            <!-- Error: say so and offer a way out, never a silent empty list. -->
+            <t t-elif="state.error">
+                <div class="rl-stub" role="alert">
+                    <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+                    <h3>Could not load hosts</h3>
+                    <p t-esc="state.error"/>
+                    <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
+                            t-on-click="() => this.loadHosts()">
+                        Retry
+                    </button>
+                </div>
+            </t>
+
             <!-- Empty state -->
-            <t t-if="state.visible_hosts.length === 0">
+            <t t-elif="state.visible_hosts.length === 0">
                 <div class="rl-stub">
                     <span class="rl-si"><t t-out="env.icon('hosts', 46)"/></span>
                     <h3>No hosts configured</h3>

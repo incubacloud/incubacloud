@@ -10,6 +10,7 @@ from odoo import http, _
 from odoo.exceptions import AccessError
 from odoo.http import request
 
+from ._rate_limit import Rule, rate_gate_json
 from .async_utils import run_async
 
 _CONTAINER_ID_RE = re.compile(r'^[a-f0-9]{12,64}$')
@@ -18,6 +19,21 @@ _logger = logging.getLogger(__name__)
 
 # ── Python scripts executed inside the Odoo container via docker exec ─────────
 
+# Flags a target user as an administrator of the tenant database: uid 2
+# (Odoo's built-in admin) or explicit membership of base.group_system /
+# base.group_erp_manager. The relation table and the ir_model_data rows
+# are stable across Odoo 7 → 19, so the same SQL works on every tenant
+# version we support. Over-flagging is harmless: it only raises the
+# required panel role to Manager.
+# It is kept on a single line because it is interpolated inside a
+# double-quoted string literal of the generated script.
+_IS_ADMIN_SQL = (
+    "(u.id = 2 OR EXISTS (SELECT 1 FROM res_groups_users_rel r "
+    "JOIN ir_model_data d ON d.model = 'res.groups' AND d.res_id = r.gid "
+    "WHERE r.uid = u.id AND d.module = 'base' "
+    "AND d.name IN ('group_system', 'group_erp_manager')))"
+)
+
 _GET_USERS_SCRIPT = """\
 import json
 try:
@@ -25,12 +41,13 @@ try:
     conn = psycopg2.connect(host='db', dbname={db!r}, user={user!r}, password={password!r})
     cur = conn.cursor()
     cur.execute(
-        "SELECT u.id, p.name, u.login FROM res_users u "
+        "SELECT u.id, p.name, u.login, {is_admin_sql} FROM res_users u "
         "JOIN res_partner p ON p.id = u.partner_id "
         "WHERE u.active = true AND u.share = false ORDER BY p.name"
     )
     print(json.dumps({{'ok': True, 'users': [
-        {{'id': r[0], 'name': r[1], 'login': r[2]}} for r in cur.fetchall()
+        {{'id': r[0], 'name': r[1], 'login': r[2], 'is_admin': bool(r[3])}}
+        for r in cur.fetchall()
     ]}}))
     conn.close()
 except Exception as e:
@@ -44,13 +61,18 @@ try:
     conn = psycopg2.connect(host='db', dbname={db!r}, user={user!r}, password={password!r})
     cur = conn.cursor()
     cur.execute(
-        "SELECT id FROM res_users WHERE id = %s AND active = true",
+        "SELECT u.id, {is_admin_sql} FROM res_users u "
+        "WHERE u.id = %s AND u.active = true",
         ({uid},)
     )
     row = cur.fetchone()
     conn.close()
     if not row:
         print(json.dumps({{'ok': False, 'error': 'User not found or inactive'}}))
+    elif row[1] and not {allow_admin!r}:
+        print(json.dumps({{'ok': False, 'is_admin': True, 'error':
+            'Connecting as an administrator of a production instance '
+            'requires the Manager role.'}}))
     else:
         token_dir = '/tmp/ic_tokens'
         os.makedirs(token_dir, mode=0o700, exist_ok=True)
@@ -59,7 +81,8 @@ try:
         token_path = os.path.join(token_dir, ic_token)
         fd = os.open(token_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as tf:
-            json.dump({{'uid': {uid}, 'db': {db!r}, 'ts': time.time()}}, tf)
+            json.dump({{'uid': {uid}, 'db': {db!r}, 'ts': time.time(),
+                        'by': {by!r}}}, tf)
         print(json.dumps({{'ok': True, 'token': ic_token}}))
 except Exception as e:
     print(json.dumps({{'ok': False, 'error': str(e)}}))
@@ -108,24 +131,82 @@ class InstanceConnectController(http.Controller):
     def _yaml_file(self, inst):
         return 'prod.yaml' if inst.environment == 'production' else 'test.yaml'
 
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    # Shared gate (decision log P13): the hit/log/deny block lives in
+    # ``_rate_limit``; this wrapper only declares connect's two windows.
+
+    def _connect_rate_limited(self, instance_id):
+        """Return an error dict when the caller is over a connect-as cap.
+
+        Two tumbling windows: one per panel user (a compromised account
+        minting tokens in bulk) and one per instance (several operators
+        hammering the same tenant). Returns ``None`` when allowed.
+        """
+        uid = request.env.user.id
+        return rate_gate_json(
+            Rule(
+                f'connect_user:{uid}',
+                _(
+                    'Too many connect-as requests recently. '
+                    'Try again in a minute.'
+                ),
+                cap_key='rate_limit_connect_user_per_min',
+                log_tag=f'connect user={uid}',
+            ),
+            Rule(
+                f'connect_instance:{instance_id}',
+                _(
+                    'Too many connect-as requests against this instance. '
+                    'Try again in a minute.'
+                ),
+                cap_key='rate_limit_connect_per_min',
+                log_tag=f'connect instance={instance_id}',
+            ),
+        )
+
+    def _resolve_instance(self, instance_id):
+        """Browse *instance_id* as the caller and return it, or an error dict.
+
+        Browsing without sudo first is deliberate: the record rules on
+        ``cloud.instance`` scope visibility per project, and a user who
+        cannot read the instance must not learn it exists.
+        """
+        inst = request.env['cloud.instance'].browse(instance_id)
+        if not inst.exists():
+            return None, {'ok': False, 'error': _('Instance not found')}
+        try:
+            inst.check_access('read')
+        except AccessError:
+            return None, {'ok': False, 'error': _('Instance not found')}
+        inst = inst.sudo()
+        if not inst.host_id:
+            return None, {
+                'ok': False,
+                'error': _('Instance not found or has no host'),
+            }
+        if not inst.deployed or not inst.running:
+            return None, {'ok': False, 'error': _('Instance is not running')}
+        return inst, None
+
     # ── Get users ─────────────────────────────────────────────────────────────
 
     @http.route(['/cloud/get_instance_users'], type='jsonrpc', auth='user')
     def get_instance_users(self, instance_id):
-        request.env['cloud.security.mixin']._check_can_connect_as_user()
+        """List the tenant's internal users, flagging its administrators.
 
-        inst = request.env['cloud.instance'].browse(instance_id)
-        if not inst.exists():
-            return {'ok': False, 'error': _('Instance not found')}
-        try:
-            inst.check_access('read')
-        except AccessError:
-            return {'ok': False, 'error': _('Instance not found')}
-        inst = inst.sudo()
-        if not inst.host_id:
-            return {'ok': False, 'error': _('Instance not found or has no host')}
-        if not inst.deployed or not inst.running:
-            return {'ok': False, 'error': _('Instance is not running')}
+        The instance is resolved before the permission check because the
+        required role depends on its environment: listing the users of a
+        production instance is already a Developer-level action.
+        """
+        inst, err = self._resolve_instance(instance_id)
+        if err:
+            return err
+        request.env['cloud.security.mixin']._check_can_connect_as_user(
+            instance=inst,
+        )
+        limited = self._connect_rate_limited(instance_id)
+        if limited:
+            return limited
 
         host = inst.host_id
         inst_dir = self._inst_dir(inst)
@@ -135,6 +216,7 @@ class InstanceConnectController(http.Controller):
             db=inst.postgres_dbname or 'prod',
             user=inst.postgres_username or 'odoo',
             password=inst.postgres_password or '',
+            is_admin_sql=_IS_ADMIN_SQL,
         )
 
         async def _run():
@@ -178,26 +260,35 @@ class InstanceConnectController(http.Controller):
         It provides /ic/login which reads the token file written here and
         sets the session cookie from the instance's own domain, avoiding
         cross-domain cookie restrictions entirely.
+
+        Whether the target user is an administrator of the tenant is
+        decided inside the tenant database, not by the caller: the panel
+        passes ``allow_admin`` and the script refuses to mint a token for
+        an admin when it is False. A client that lies about ``user_name``
+        (a display label only) therefore cannot widen its own access.
         """
-        request.env['cloud.security.mixin']._check_can_connect_as_user()
+        sec = request.env['cloud.security.mixin']
 
         if not isinstance(user_id, int) or user_id <= 0:
             return {'ok': False, 'error': _('Invalid user_id')}
 
-        inst = request.env['cloud.instance'].browse(instance_id)
-        if not inst.exists():
-            return {'ok': False, 'error': _('Instance not found')}
-        try:
-            inst.check_access('read')
-        except AccessError:
-            return {'ok': False, 'error': _('Instance not found')}
-        inst = inst.sudo()
-        if not inst.host_id:
-            return {'ok': False, 'error': _('Instance not found')}
-        if not inst.deployed or not inst.running:
-            return {'ok': False, 'error': _('Instance is not running')}
+        inst, err = self._resolve_instance(instance_id)
+        if err:
+            return err
+        # Floor check for this environment: connecting as a *normal* user.
+        # The admin case is enforced below, once the tenant tells us
+        # whether the target is one.
+        sec._check_can_connect_as_user(instance=inst)
+        limited = self._connect_rate_limited(instance_id)
+        if limited:
+            return limited
         if not inst.domain:
             return {'ok': False, 'error': _('Instance has no domain configured')}
+
+        allow_admin = (
+            inst.environment != 'production'
+            or sec._has_cloud_group('group_cloud_manager')
+        )
 
         host = inst.host_id
         inst_dir = self._inst_dir(inst)
@@ -208,6 +299,9 @@ class InstanceConnectController(http.Controller):
             user=inst.postgres_username or 'odoo',
             password=inst.postgres_password or '',
             uid=user_id,
+            is_admin_sql=_IS_ADMIN_SQL,
+            allow_admin=allow_admin,
+            by=request.env.user.login,
         )
 
         async def _run():
@@ -231,6 +325,11 @@ class InstanceConnectController(http.Controller):
             return {'ok': False, 'error': _('An internal error occurred. Check server logs.')}
 
         if not result.get('ok'):
+            if result.get('is_admin'):
+                _logger.warning(
+                    "connect_as_admin_denied user=%s instance=%s target_uid=%s",
+                    request.env.user.login, inst.id, user_id,
+                )
             return result
 
         domain = inst.domain.strip()
@@ -243,7 +342,7 @@ class InstanceConnectController(http.Controller):
         request.env['cloud.audit.log'].sudo().create({
             'action': 'Connect as user',
             'instance_id': inst.id,
-            'details': label,
+            'details': f'{label} [{inst.environment}]',
         })
 
         return {

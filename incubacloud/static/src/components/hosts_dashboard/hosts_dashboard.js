@@ -20,6 +20,10 @@ export class HostsDashboard extends Component {
             truncated: false,
             total: 0,
             limit: 200,
+            // See project_dashboard: a failed fetch must not render as an
+            // empty fleet.
+            loading: true,
+            error: "",
         });
         this.search = useDebounced((query) => {
             const q = query.toLowerCase();
@@ -70,15 +74,26 @@ export class HostsDashboard extends Component {
 
     async loadHosts() {
         const prevFilter = this.state.visible_hosts.map(h => h.id);
-        const resp = await rpc('/cloud/get_hosts', {});
-        this.state.hosts = resp.hosts || resp || [];
-        this.state.truncated = !!resp.truncated;
-        this.state.total = resp.total || this.state.hosts.length;
-        this.state.limit = resp.limit || 200;
-        if (prevFilter.length && prevFilter.length < this.state.hosts.length) {
-            this.state.visible_hosts = this.state.hosts.filter(h => prevFilter.includes(h.id));
-        } else {
-            this.state.visible_hosts = this.state.hosts;
+        this.state.error = "";
+        this.state.loading = true;
+        try {
+            const resp = await rpc('/cloud/get_hosts', {});
+            this.state.hosts = resp.hosts || resp || [];
+            this.state.truncated = !!resp.truncated;
+            this.state.total = resp.total || this.state.hosts.length;
+            this.state.limit = resp.limit || 200;
+            if (prevFilter.length && prevFilter.length < this.state.hosts.length) {
+                this.state.visible_hosts = this.state.hosts.filter(h => prevFilter.includes(h.id));
+            } else {
+                this.state.visible_hosts = this.state.hosts;
+            }
+        } catch (err) {
+            const msg = err?.data?.message ?? err?.message;
+            this.state.error = (typeof msg === "string" && msg)
+                ? msg
+                : "Could not load hosts. Check your connection and retry.";
+        } finally {
+            this.state.loading = false;
         }
     }
 

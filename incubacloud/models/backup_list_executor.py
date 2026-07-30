@@ -220,7 +220,13 @@ class BackupListExecutor(AbstractSSHExecutor):
         """Sync parsed duplicity data to cloud.instance.backup records."""
         inst = self._inst()
         Backup = self.env['cloud.instance.backup'].sudo()
-        existing = Backup.search([('instance_id', '=', inst.id)])
+        # Chain rows only: this sync mirrors the duplicity listing, and
+        # its stale-pruning below must never touch archive rows (one-shot
+        # ZIP dumps), which by definition are absent from that listing.
+        existing = Backup.search([
+            ('instance_id', '=', inst.id),
+            ('kind', '=', 'chain'),
+        ])
 
         seen_times = set()
         for chain in parsed.get('chains', []):
@@ -246,6 +252,7 @@ class BackupListExecutor(AbstractSSHExecutor):
                     Backup.create({
                         **vals,
                         'instance_id': inst.id,
+                        'kind': 'chain',
                         'backup_time': dt,
                     })
 

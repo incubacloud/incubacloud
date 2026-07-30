@@ -10,6 +10,8 @@
             <button type="button" class="rl-sel__trigger"
                     t-att-disabled="props.disabled || null"
                     t-att-aria-label="props.ariaLabel"
+                    t-att-aria-invalid="props.ariaInvalid ? 'true' : undefined"
+                    t-att-aria-describedby="props.ariaDescribedby"
                     aria-haspopup="listbox"
                     t-att-aria-expanded="state.open"
                     t-on-click="toggle">

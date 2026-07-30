@@ -1,3 +1,4 @@
+import { Monitoring } from "../components/monitoring/monitoring";
 import { Component, useState, onMounted, onWillUnmount, onWillStart, useSubEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
@@ -74,6 +75,8 @@ export function _parseRoute(pathname) {
             }
             return { route: "hosts", params: {} };
         }
+        case "monitoring":
+            return { route: "monitoring", params: {} };
         case "settings": {
             const tab = new URLSearchParams(window.location.search).get("tab") || undefined;
             return { route: "settings", params: tab ? { tab } : {} };
@@ -111,6 +114,7 @@ export function _buildUrl(route, params = {}) {
         case "new_host":          return `${_BASE}/hosts/new`;
         case "host_detail":       return `${_BASE}/hosts/${params.host_id}`;
 
+        case "monitoring":            return `${_BASE}/monitoring`;
         case "settings":              return params.tab ? `${_BASE}/settings?tab=${params.tab}` : `${_BASE}/settings`;
         case "backup_backends":       return `${_BASE}/backup-backends`;
         case "new_backup_backend":    return `${_BASE}/backup-backends/new`;
@@ -125,7 +129,7 @@ export function _buildUrl(route, params = {}) {
 }
 
 export class Chrome extends Component {
-    static components = { AppHeader, ProjectSidebar, ProjectDashboard, ProjectDetail, HostsDashboard, HostDetail, InstanceDetail, Settings, BackupBackendsList, BackupBackendDetail, SlideOver, MainComponentsContainer, ToastContainer };
+    static components = { AppHeader, ProjectSidebar, ProjectDashboard, ProjectDetail, HostsDashboard, HostDetail, InstanceDetail, Settings, BackupBackendsList, BackupBackendDetail, Monitoring, SlideOver, MainComponentsContainer, ToastContainer };
 
     get isInsideProject() {
         const r = this.state.route;
@@ -133,6 +137,19 @@ export class Chrome extends Component {
             && !!this.state.params.project_id;
     }
     static props = { disableLoader: Function };
+
+    /**
+     * Keyboard activation for sidebar nav items: Enter and Space fire
+     * the same handler as a click. This is what makes the
+     * tabindex="0" list items actually operable without a mouse —
+     * before it, the global nav was click-only (audit item 7).
+     */
+    onNavItemKeydown(ev) {
+        if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            ev.currentTarget.click();
+        }
+    }
 
     setup() {
         const initial = _parseRoute(window.location.pathname);

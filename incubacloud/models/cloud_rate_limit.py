@@ -11,6 +11,8 @@ Settings → Rates without redeploying:
   * ``rate_limit_webhook_per_min``        (default 300)
   * ``rate_limit_terminal_per_min``       (default 30)
   * ``rate_limit_terminal_user_per_min``  (default 10)
+  * ``rate_limit_connect_per_min``        (default 20)
+  * ``rate_limit_connect_user_per_min``   (default 10)
 
 Inheriting modules can ship their own rate-limit model (with their
 own caps, buckets and GC cadence) as a sibling rather than reusing
@@ -36,6 +38,8 @@ RATE_LIMIT_DEFAULTS = {
     'rate_limit_webhook_per_min': 300,
     'rate_limit_terminal_per_min': 30,
     'rate_limit_terminal_user_per_min': 10,
+    'rate_limit_connect_per_min': 20,
+    'rate_limit_connect_user_per_min': 10,
 }
 
 

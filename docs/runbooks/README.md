@@ -21,6 +21,11 @@ All commands assume you run them from the doodba checkout root
 | [RB-08](RB-08-rotate-cron-bot.md) | Rotate the cron bot user | critical | Bot credentials compromised |
 | [RB-09](RB-09-docker-prune-failed.md) | `docker_prune` failed for a host | warning | Disk alert on host, failing prune cron |
 | [RB-10](RB-10-github-app-rate-limited.md) | GitHub App / PAT rate-limited or revoked | critical | Webhooks silent, `403`/`401` in logs |
+| [RB-11](RB-11-metrics-backend-unreachable.md) | Metrics backend unreachable — alerting is blind | critical | `metrics_backend_unreachable` alert, empty dashboards |
+| [RB-12](RB-12-custom-domain-certificate.md) | Serve a domain with an existing certificate | planned | Wildcard or customer-supplied cert instead of Let's Encrypt |
+| [RB-13](RB-13-rollback-panel-deploy.md) | Roll back a bad panel deploy | critical | Panel broken after `deploy-update`, failed migration mid-window |
+| [RB-14](RB-14-restore-mailserver.md) | Restore the mail server | critical | Mail host lost or mail data corrupted; DKIM keys at risk |
+| [RB-15](RB-15-bump-copier-template-pin.md) | Bump the doodba template pin | planned | Adopting a newer doodba-copier-template release |
 
 ## Conventions
 

@@ -21,7 +21,41 @@ class HostMetricsExecutor(AbstractSSHExecutor):
     # unreachable after the last attempt. See AbstractExecutor.
     _retry_on_connection_loss = True
 
+    # Seconds after which a metrics-derived reading is considered stale
+    # and the SSH fallback runs anyway. Comfortably above the 5-minute
+    # cron so one skipped tick does not resurrect the SSH job.
+    _METRICS_FRESH_SECONDS = 900
+
+    def _metrics_cover_this_host(self):
+        """True when node_exporter already supplies these figures.
+
+        Retirement of the SSH telemetry (Fase 4 / A9), done the safe way:
+        instead of deleting the job, it becomes a no-op while metrics are
+        actually flowing — which is what frees the ``root.bg`` channel
+        that would not survive ~100 targets. If the metrics stack is off,
+        or its readings go stale, the SSH path resumes on its own. No
+        window exists where nobody is collecting.
+        """
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if not settings.metrics_enabled:
+            return False
+        host = self.job.host_id
+        if not host.last_probed:
+            return False
+        age = (fields.Datetime.now() - host.last_probed).total_seconds()
+        return age <= self._METRICS_FRESH_SECONDS
+
     def get_commands(self):
+        if self._metrics_cover_this_host():
+            self._sys(
+                "Host specs are being collected from metrics; skipping the "
+                "SSH probe."
+            )
+            # Consumed by parse_results/on_success: with no commands the
+            # readings would all parse as 0 and overwrite the good values
+            # the metrics cron just wrote.
+            self._skipped = True
+            return []
         return [
             ("cpu_cores",    "nproc"),
             ("ram_total_gb", "free -b | awk '/^Mem:/ {printf \"%.1f\", $2/1073741824}'"),
@@ -40,6 +74,8 @@ class HostMetricsExecutor(AbstractSSHExecutor):
         pass
 
     def parse_results(self, results):
+        if getattr(self, "_skipped", False):
+            return []
         self._cpu_cores    = int(self._safe_float(results.get("cpu_cores",    {}).get("stdout", "")))
         self._ram_total_gb =     self._safe_float(results.get("ram_total_gb", {}).get("stdout", ""))
         self._disk_usage   =     self._safe_float(results.get("disk_usage",   {}).get("stdout", ""))
@@ -48,6 +84,12 @@ class HostMetricsExecutor(AbstractSSHExecutor):
 
     async def on_success(self, results):
         host = self.job.host_id
+        if getattr(self, "_skipped", False):
+            # Nothing was probed: the metrics cron owns these fields right
+            # now. Writing here would overwrite good readings with zeros,
+            # and the disk-critical branch below would then "resolve" a
+            # real alert because it saw 0% used.
+            return
         # We just ran commands over SSH, so the host is reachable: clear any
         # stale host-unreachable alert left by a previous outage.
         self._resolve_alert('host_unreachable')

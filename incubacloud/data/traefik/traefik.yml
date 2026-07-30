@@ -17,6 +17,10 @@ providers:
 #   level: DEBUG
 
 entryPoints:
+  # Prometheus metrics, published on loopback only (see inverseproxy.yaml)
+  # so the local vmagent can scrape it and nothing else can.
+  metrics:
+    address: ":8082"
   http:
     address: ":80"
     http:
@@ -31,6 +35,16 @@ entryPoints:
 
 api:
   dashboard: true
+
+# HTTP metrics per router/service — this is what gives per-instance
+# request rates, status codes and latencies without installing anything
+# inside the instances themselves.
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
 
 certificatesResolvers:
   letsencrypt:

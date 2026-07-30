@@ -2,6 +2,7 @@
 Tests for executor features: stop_on_failure, _prod_services,
 SMTP stripping, safe boot test, and click-odoo-update integration.
 """
+import shlex
 import unittest
 
 from odoo.tests.common import BaseCase
@@ -39,6 +40,14 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
     ex._inst_dir = lambda i: f"~/projects/{i.name}"
     ex._tmp = lambda suffix: f"/tmp/.incubacloud-test_proj-{suffix}"
     ex._base_url = lambda: "https://test.example.com"
+    ex._backup_enabled = bool
+    # Reads cloud.settings in production; stubbed here like the other
+    # environment reads so get_commands() works without a database.
+    ex._copier_template = lambda: ("gh:Tecnativa/doodba-copier-template", "")
+    ex.job = SimpleNamespace(id=42)
+    ex._scripts_requested = False
+    ex._scripts_uploaded = False
+    ex._script_overlay_cache = None
     return ex
 
 
@@ -76,6 +85,11 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
     ex._sys = lambda *_a, **_k: None
     ex._backup_enabled = bool
     ex._backup_retention = lambda: '3M'
+    ex._copier_template = lambda: ("gh:Tecnativa/doodba-copier-template", "")
+    ex.job = SimpleNamespace(id=42)
+    ex._scripts_requested = False
+    ex._scripts_uploaded = False
+    ex._script_overlay_cache = None
     return ex
 
 
@@ -141,189 +155,46 @@ class TestProdServices(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestRebuildCommandsBootTest(BaseCase):
-    """The safe-boot step runs as a single shell pipeline; getting the
-    pipeline subtly wrong (capability we lack on the host, ``;`` that
-    splits the ``&&`` chain in two) silently rolls past failures and
-    starts an ephemeral postgres against bad data.
-
-    The class subclasses ``BaseCase`` because Odoo's test-tag selector
-    silently skips ``unittest.TestCase`` under ``--test-tags``: the
-    older incarnation of this class was running on no CI tier despite
-    appearing healthy."""
+    """The safe-boot step runs ``rebuild.sh boot-test``. Its pipeline —
+    containerised chown, in-container backup_label removal, pre-cleanup on
+    both sides of the boundary, exit-code propagation — is safety-critical
+    and covered end to end in ``tests/shell/rebuild.bats``. Here we pin
+    the wiring: the step invokes the right operation, with the instance id
+    and postgres parameters, and stops the chain on failure so a bad boot
+    never reaches ``up -d``."""
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         ex = _make_rebuild_executor()
         cls.cmds = ex.get_commands()
-        cmd = _find_cmd(cls.cmds, "Test new image (safe boot check)")
-        cls.cmd = cmd
-        cls.body = cmd[1] if cmd else ""
+        cls.cmd = _find_cmd(cls.cmds, "Test new image (safe boot check)")
+        cls.argv = shlex.split(cls.cmd[1]) if cls.cmd else []
 
     def test_boot_test_command_present(self):
         self.assertIsNotNone(self.cmd, "Boot test command not found")
 
-    def test_boot_test_uses_click_odoo_update(self):
-        self.assertIn("click-odoo-update", self.body)
+    def test_boot_test_invokes_the_rebuild_boot_test_op(self):
+        self.assertTrue(self.argv[1].endswith("/rebuild.sh"), self.argv[1])
+        self.assertEqual(self.argv[2], "boot-test")
 
-    def test_boot_test_uses_pg_basebackup(self):
-        """Live boot against a basebackup, not a logical clone — the
-        whole point is to exercise the same physical layout the real
-        instance will run on."""
-        self.assertIn("pg_basebackup", self.body)
+    def test_boot_test_passes_the_instance_and_pg_parameters(self):
+        # argv: bash <path> boot-test <dir> <inst_id> <project> <user> <pgver> <db>
+        _, _, _op, _dir, inst_id, project, pg_user, pg_ver, dbname = self.argv
+        self.assertEqual(inst_id, "42")
+        self.assertEqual(project, "test_proj")
+        self.assertEqual(pg_user, "odoo")
+        self.assertEqual(pg_ver, "17")
+        self.assertEqual(dbname, "prod")
 
     def test_boot_test_has_stop_on_failure(self):
+        # A failed boot must abort before ``up -d`` so the instance keeps
+        # running on the old image.
         self.assertEqual(len(self.cmd), 3)
         self.assertTrue(self.cmd[2].get("stop_on_failure"))
 
-    def test_chown_runs_inside_container_not_on_host(self):
-        """The host user lacks CAP_CHOWN, so chowning the basebackup
-        on the host fails per-file with 'Operation not permitted',
-        leaves files foreign-owned, and postgres refuses to start.
-        Doing the chown inside an ephemeral root container avoids
-        the missing capability without granting the host user new
-        privileges."""
-        # Containerised chown must be present.
-        self.assertRegex(
-            self.body,
-            r"docker run --rm[^\n]*alpine chown -R 70:70",
-            "Boot test must run chown inside a container — running it "
-            "on the host fails when the SSH user lacks CAP_CHOWN.",
-        )
-        # The bare ``chown -R 70:70 /tmp/...`` form (host-side) must
-        # NOT appear — that's the regression we just fixed.
-        self.assertNotRegex(
-            self.body,
-            r"&&\s*chown -R 70:70 /tmp/",
-            "Host-side chown is forbidden; use the containerised form.",
-        )
-
-    def test_backup_label_removed_inside_db_container(self):
-        """Once the bind mount is chowned to UID 70 the host user can
-        no longer write inside ``/tmp/ic_boot_NNN/`` — including
-        ``rm -f backup_label``. The removal has to happen inside the
-        db container (where exec runs as root) before ``docker
-        compose cp`` extracts the basebackup to the host."""
-        # The in-container removal is present.
-        self.assertRegex(
-            self.body,
-            r"docker compose exec -T db\s+rm -f /tmp/ic_boot_backup_\d+/backup_label",
-            "backup_label must be removed inside the db container, "
-            "before docker compose cp brings the files to the host.",
-        )
-        # The host-side variant must NOT reappear.
-        self.assertNotRegex(
-            self.body,
-            r"&&\s*rm -f /tmp/ic_boot_\d+/backup_label",
-            "Host-side rm of backup_label fails after the chown — "
-            "use the in-container form.",
-        )
-
-    def test_in_container_path_is_namespaced_by_instance(self):
-        """The in-container basebackup path must carry the instance
-        id, just like the host bind mount does. Without the suffix,
-        two retries against the same db container collide on a fixed
-        ``/tmp/ic_boot_backup`` path and pg_basebackup refuses the
-        non-empty target on every retry. Different tenants are
-        isolated by separate compose projects, but symmetric naming
-        keeps the contract readable and rules out a class of future
-        regressions."""
-        # The instance id we pass through the helper is 42.
-        self.assertIn("/tmp/ic_boot_backup_42", self.body)
-        # The bare un-namespaced form must not survive.
-        self.assertNotRegex(
-            self.body,
-            r"/tmp/ic_boot_backup\b",
-            "Drop the unsuffixed /tmp/ic_boot_backup — every reference "
-            "must carry the instance id.",
-        )
-
-    def test_pre_cleanup_handles_both_sides(self):
-        """``pg_basebackup`` refuses a non-empty target, and the host
-        bind mount may carry a UID-70 dir from a previous interrupted
-        run. The pre-cleanup must scrub BOTH sides before basebackup
-        runs — otherwise a single failed retry leaves the next attempt
-        permanently broken."""
-        first_basebackup = self.body.index("pg_basebackup")
-        # In-container scrub (via docker compose exec).
-        ic_clean = self.body.index(
-            "docker compose exec -T db rm -rf /tmp/ic_boot_backup",
-        )
-        self.assertLess(
-            ic_clean, first_basebackup,
-            "In-container basebackup target must be wiped before "
-            "pg_basebackup so a retry after an interrupted run "
-            "actually starts from a clean slate.",
-        )
-        # Host scrub (via alpine container — host user lacks
-        # CAP_CHOWN if a previous chown left UID-70 files behind).
-        host_clean = self.body.index(
-            "docker run --rm -v /tmp:/host_tmp alpine"
-            " rm -rf /host_tmp/ic_boot_",
-        )
-        self.assertLess(
-            host_clean, first_basebackup,
-            "Host bind mount must be wiped before pg_basebackup — "
-            "leftovers from a previous chown step are owned by UID 70 "
-            "and break ``docker compose cp`` on the next attempt.",
-        )
-
-    def test_final_cleanup_uses_container(self):
-        """Same problem in reverse: the host user can't ``rm -rf`` a
-        directory it just chowned to UID 70 via the ephemeral
-        container. Final cleanup of ``/tmp/ic_boot_NNN`` must run
-        through another root container."""
-        self.assertRegex(
-            self.body,
-            r"docker run --rm -v /tmp:/host_tmp alpine\s+rm -rf /host_tmp/ic_boot_\d+",
-            "Final cleanup of the bind mount must go through an "
-            "ephemeral container — the host user lacks the ownership "
-            "to remove files chowned to UID 70.",
-        )
-        # Bare host-side ``rm -rf /tmp/ic_boot_NNN`` is the previous
-        # broken form; it must be gone.
-        self.assertNotRegex(
-            self.body,
-            r";\s*rm -rf /tmp/ic_boot_\d+",
-            "Host-side rm -rf of the bind mount fails after chown — "
-            "use the containerised form.",
-        )
-
-    def test_leftover_container_cleanup_does_not_break_chain(self):
-        """The ``;`` at command level binds looser than ``&&``: writing
-        ``a && b 2>/dev/null; true && c`` makes ``c`` execute even when
-        ``a`` failed, because ``;`` splits the line into two groups
-        and the second one always runs. The cleanup of any stale
-        ``ic_boot_pg`` container must be wrapped in parens with
-        ``|| true`` so the failure stays scoped."""
-        # The buggy form must not reappear.
-        self.assertNotIn(
-            "2>/dev/null; true",
-            self.body,
-            "'; true' splits the && chain — wrap optional cleanup in "
-            "parens with '|| true' instead.",
-        )
-        # The safe form is present.
-        self.assertRegex(
-            self.body,
-            r"\(docker rm -f ic_boot_pg_\d+ 2>/dev/null \|\| true\)",
-            "Stale-container cleanup must be parenthesised so its "
-            "failure does not leak into the surrounding && chain.",
-        )
-
-    def test_temporary_resources_cleaned_up_on_any_exit(self):
-        """The cleanup steps must run via ``;`` after the test, before
-        the explicit ``exit $IC_TEST_EXIT`` — otherwise a failed boot
-        leaves gigabytes of basebackup data on disk and a stale
-        postgres container hogging the compose network."""
-        self.assertIn("IC_TEST_EXIT=$?", self.body)
-        # The actual rm goes through an alpine container (see
-        # ``test_final_cleanup_uses_container``); we only assert the
-        # exit-code propagation pattern here.
-        self.assertIn("rm -rf /host_tmp/ic_boot_", self.body)
-        self.assertIn("exit $IC_TEST_EXIT", self.body)
-
     def test_update_command_uses_click_odoo_update(self):
+        # This step stayed inline (a one-liner docker compose run).
         cmd = _find_cmd(self.cmds, "Update changed modules")
         self.assertIsNotNone(cmd, "Update command not found")
         self.assertIn("click-odoo-update", cmd[1])
@@ -443,11 +314,11 @@ class TestSmartRebuildCommands(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestIncubaclouEnvInjection(unittest.TestCase):
-    """The env_file injection must target prod.yaml and test.yaml, not common.yaml.
-
-    common.yaml has no env_file block; the .docker/odoo.env reference lives
-    in prod.yaml and test.yaml.  A sed targeting common.yaml never matches
-    and silently leaves INCUBACLOUD_SECRET_KEY out of the compose stack.
+    """The env_file injection runs ``deploy.sh inject-secret-env`` on both
+    deploy and rebuild. Here we pin the wiring — the step is present and
+    invokes that operation; the behaviour it guarantees (targets prod.yaml
+    and test.yaml, not common.yaml; idempotent) is covered by
+    ``tests/shell/deploy.bats``.
     """
 
     def _deploy_inject_cmd(self, **kwargs):
@@ -458,50 +329,17 @@ class TestIncubaclouEnvInjection(unittest.TestCase):
         cmds = _make_rebuild_executor(**kwargs).get_commands()
         return _find_cmd(cmds, "Inject incubacloud.env in prod.yaml and test.yaml")
 
-    def test_deploy_inject_step_present(self):
-        cmd = self._deploy_inject_cmd(environment='production')
-        self.assertIsNotNone(cmd, "Inject step must be present in deploy commands")
+    def _assert_inject_op(self, cmd):
+        self.assertIsNotNone(cmd, "Inject step must be present")
+        argv = shlex.split(cmd[1])
+        self.assertTrue(argv[1].endswith("/deploy.sh"), argv[1])
+        self.assertEqual(argv[2], "inject-secret-env")
 
-    def test_rebuild_inject_step_present(self):
-        cmd = self._rebuild_inject_cmd()
-        self.assertIsNotNone(cmd, "Inject step must be present in rebuild commands")
+    def test_deploy_inject_step_invokes_the_script(self):
+        self._assert_inject_op(self._deploy_inject_cmd(environment='production'))
 
-    def test_deploy_inject_targets_prod_and_test(self):
-        cmd = self._deploy_inject_cmd(environment='production')
-        self.assertIn('prod.yaml', cmd[1])
-        self.assertIn('test.yaml', cmd[1])
-
-    def test_rebuild_inject_targets_prod_and_test(self):
-        cmd = self._rebuild_inject_cmd()
-        self.assertIn('prod.yaml', cmd[1])
-        self.assertIn('test.yaml', cmd[1])
-
-    def test_deploy_inject_does_not_target_common(self):
-        """Regression: must NOT inject into common.yaml (has no env_file)."""
-        cmd = self._deploy_inject_cmd(environment='production')
-        # The sed/grep should not mention common.yaml as the target
-        self.assertNotIn(
-            "sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
-            cmd[1],
-        )
-
-    def test_rebuild_inject_does_not_target_common(self):
-        """Regression: must NOT inject into common.yaml (has no env_file)."""
-        cmd = self._rebuild_inject_cmd()
-        self.assertNotIn(
-            "sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env' common.yaml",
-            cmd[1],
-        )
-
-    def test_deploy_inject_is_idempotent(self):
-        """Command must use grep -q guard so it does not double-inject."""
-        cmd = self._deploy_inject_cmd(environment='production')
-        self.assertIn('grep -q', cmd[1])
-
-    def test_rebuild_inject_is_idempotent(self):
-        """Command must use grep -q guard so it does not double-inject."""
-        cmd = self._rebuild_inject_cmd()
-        self.assertIn('grep -q', cmd[1])
+    def test_rebuild_inject_step_invokes_the_script(self):
+        self._assert_inject_op(self._rebuild_inject_cmd())
 
 
 # ---------------------------------------------------------------------------
@@ -612,72 +450,61 @@ class TestGitConfigIdempotentGuard(BaseCase):
         self.assertIsNotNone(cmd, f"Step '{label}' missing from get_commands()")
         return cmd
 
-    def test_deploy_path_prefix_reads_before_writing(self):
-        """Deploy 'Deploy with copier' must guard the gitconfig write."""
+    def test_deploy_copier_step_invokes_the_script(self):
+        """The gitconfig read-first guard now lives inside ``deploy.sh
+        copier-deploy`` (asserted in tests/shell/deploy.bats); here we
+        pin that the deploy step routes through it."""
         cmd = self._path_prefix_step(_make_deploy_executor, "Deploy with copier")
-        self.assertIn(self._READ_FIRST_TOKEN, cmd[1])
+        argv = shlex.split(cmd[1])
+        self.assertTrue(argv[1].endswith("/deploy.sh"), argv[1])
+        self.assertEqual(argv[2], "copier-deploy")
 
-    def test_deploy_path_prefix_has_no_unconditional_write(self):
-        """Regression: the unconditional write would race on warm builds.
+    def test_rebuild_copier_step_invokes_the_script(self):
+        """Same guard, inside ``rebuild.sh copier-update`` (asserted in
+        tests/shell/rebuild.bats)."""
+        cmd = self._path_prefix_step(_make_rebuild_executor, "Update with copier")
+        argv = shlex.split(cmd[1])
+        self.assertTrue(argv[1].endswith("/rebuild.sh"), argv[1])
+        self.assertEqual(argv[2], "copier-update")
 
-        The expected shell is::
+    def _install_script_text(self):
+        """Return the text of ``scripts/full_setup_install.sh``.
 
-            ... && (git config --get ... || git config ... master)
-
-        so ``&& git config --global init.defaultBranch master`` (the
-        old form, write outside an ``||`` branch) must NOT appear.
+        The Phase-2 install catalog moved from the ``SETUP_COMMANDS``
+        Python list to this versioned script; these guards now assert on
+        the script itself.
         """
-        cmd = self._path_prefix_step(_make_deploy_executor, "Deploy with copier")
-        self.assertNotIn(
-            '&& git config --global init.defaultBranch master',
-            cmd[1],
-        )
+        import os
 
-    def test_rebuild_path_prefix_reads_before_writing(self):
-        """Rebuild 'Update with copier' must guard the gitconfig write."""
-        cmd = self._path_prefix_step(_make_rebuild_executor, "Update with copier")
-        self.assertIn(self._READ_FIRST_TOKEN, cmd[1])
+        from odoo.modules.module import get_module_path
 
-    def test_rebuild_path_prefix_has_no_unconditional_write(self):
-        cmd = self._path_prefix_step(_make_rebuild_executor, "Update with copier")
-        self.assertNotIn(
-            '&& git config --global init.defaultBranch master',
-            cmd[1],
+        path = os.path.join(
+            get_module_path("incubacloud"),
+            "scripts", "full_setup_install.sh",
         )
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
 
     def test_full_setup_has_seed_step(self):
         """full_setup must seed init.defaultBranch once per host."""
-        from odoo.addons.incubacloud.models.full_setup_executor import (
-            SETUP_COMMANDS,
-        )
-        cmd = _find_cmd(SETUP_COMMANDS, "Set git default branch")
-        self.assertIsNotNone(
-            cmd, "SETUP_COMMANDS must include the gitconfig seed step"
-        )
+        self.assertIn("init.defaultBranch", self._install_script_text())
 
     def test_full_setup_seed_step_is_idempotent(self):
-        """The seed step must read before writing — re-running Setup Host
-        on an already-configured host must not rewrite (and not take the
-        lock unnecessarily).
+        """The seed reads before writing — re-running Setup Host on an
+        already-configured host must not rewrite (no ~/.gitconfig lock).
         """
-        from odoo.addons.incubacloud.models.full_setup_executor import (
-            SETUP_COMMANDS,
-        )
-        cmd = _find_cmd(SETUP_COMMANDS, "Set git default branch")
-        self.assertIn(self._READ_FIRST_TOKEN, cmd[1])
+        self.assertIn(self._READ_FIRST_TOKEN, self._install_script_text())
 
     def test_full_setup_seed_runs_after_install_git(self):
-        """Seed must come after 'Install git' — otherwise the very first
-        Setup Host run would call ``git config`` before the binary exists.
+        """Git must be installed before ``git config`` runs — otherwise the
+        first Setup Host run would call it before the binary exists.
         """
-        from odoo.addons.incubacloud.models.full_setup_executor import (
-            SETUP_COMMANDS,
-        )
-        labels = [c[0] for c in SETUP_COMMANDS]
-        self.assertIn("Install git", labels)
-        self.assertIn("Set git default branch", labels)
+        text = self._install_script_text()
+        git_install = text.find("command -v git")
+        git_seed = text.find("git config --global --get init.defaultBranch")
+        self.assertGreater(git_install, -1, "install-git step missing")
+        self.assertGreater(git_seed, -1, "gitconfig seed step missing")
         self.assertLess(
-            labels.index("Install git"),
-            labels.index("Set git default branch"),
-            "Seed step must come after 'Install git'",
+            git_install, git_seed,
+            "git must be installed before the gitconfig seed",
         )

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Seed rules for observability v1.
+
+        NOT ``noupdate``: these are tuning knobs, not user data. Shipping
+        them updatable means a better threshold reaches existing installs
+        on upgrade instead of only new ones — the trap that made the
+        Free-plan sleep timeout stale in production.
+
+        Every expression carries ``host_id`` because that is how a sample
+        is mapped back to a cloud.host (see cloud_metric_rule.host_label).
+    -->
+
+    <record id="metric_rule_host_down" model="cloud.metric.rule">
+        <field name="name">Host stopped reporting</field>
+        <field name="sequence">1</field>
+        <field name="code">metrics_host_absent</field>
+        <!-- Age, per host, of the last sample that arrived.
+             Two earlier attempts were wrong, both verified against a
+             live VictoriaMetrics rather than by reading:
+
+             ``absent(up{job="node"})`` returns a series carrying only
+             the equality matchers of its selector, so it has no
+             ``host_id`` and the evaluator drops the sample — nothing
+             could ever be raised. It also only turns 1 when EVERY host
+             is silent, the opposite of a per-host watchdog.
+
+             ``timestamp(last_over_time(up[1h]))`` returns an EMPTY
+             result in VictoriaMetrics v1.102 even with a live host, so
+             it would never have fired either.
+
+             The subquery below is what actually works: it samples
+             ``timestamp(up)`` every minute for an hour and keeps the
+             last one that existed, which survives the series going
+             stale. Measured on a host silenced for six minutes: the
+             plain form returned nothing, this returned 341 s with
+             ``host_id`` and ``host`` intact. -->
+        <field name="expression">time() - max by (host_id, host) (last_over_time(timestamp(up{job="node"})[1h:1m]))</field>
+        <field name="comparator">gt</field>
+        <!-- ~10 missed pushes at the 30 s scrape interval. -->
+        <field name="threshold">300</field>
+        <field name="level">critical</field>
+        <field name="message">Host %(host)s has stopped reporting metrics.</field>
+    </record>
+
+    <record id="metric_rule_disk_critical" model="cloud.metric.rule">
+        <field name="name">Disk almost full</field>
+        <field name="sequence">10</field>
+        <field name="code">metrics_disk_critical</field>
+        <field name="expression">100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100)</field>
+        <field name="comparator">gt</field>
+        <field name="threshold">90</field>
+        <field name="level">critical</field>
+        <field name="message">Disk on %(host)s is %(value)s%% full.</field>
+    </record>
+
+    <record id="metric_rule_memory_high" model="cloud.metric.rule">
+        <field name="name">Memory nearly exhausted</field>
+        <field name="sequence">20</field>
+        <field name="code">metrics_memory_high</field>
+        <field name="expression">100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100)</field>
+        <field name="comparator">gt</field>
+        <field name="threshold">92</field>
+        <field name="level">warning</field>
+        <field name="message">Memory on %(host)s is %(value)s%% used.</field>
+    </record>
+
+    <record id="metric_rule_load_high" model="cloud.metric.rule">
+        <field name="name">Sustained CPU saturation</field>
+        <field name="sequence">30</field>
+        <field name="code">metrics_cpu_saturated</field>
+        <!-- Load per core over 15 min: survives a burst, catches a stuck host. -->
+        <field name="expression">node_load15 / count without (cpu, mode) (node_cpu_seconds_total{mode="idle"})</field>
+        <field name="comparator">gt</field>
+        <field name="threshold">2</field>
+        <field name="level">warning</field>
+        <field name="message">CPU on %(host)s has been saturated (load/core %(value)s).</field>
+    </record>
+
+    <record id="cron_cloud_metric_rule_evaluate" model="ir.cron">
+        <field name="name">Evaluate metric rules</field>
+        <field name="model_id" ref="model_cloud_metric_rule"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_evaluate()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

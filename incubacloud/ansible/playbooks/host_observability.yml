@@ -1,0 +1,315 @@
+---
+# Install the per-host observability agents. Driven by
+# ObservabilityAgentsExecutor.
+#
+# Three containers, deployed as one compose stack — the same shape the
+# host already runs for Traefik and the global whitelist, so nothing new
+# has to be learned or maintained per distro:
+#
+#   node_exporter  system metrics (CPU/RAM/disk/net) + textfile collector
+#   cAdvisor       per-container metrics
+#   vmagent        scrapes both locals and PUSHES outbound (remote-write)
+#
+# Push, not scrape, is the whole point (P9): no inbound port is opened on
+# the host, so BYOH boxes behind NAT work exactly like ours.
+#
+# Labels are attached HERE, at ingest, not bolted on later: every sample
+# carries host/instance/project (and tenant, when the SaaS layer supplies
+# it). Retrofitting labels onto historical series is not possible, which
+# is why this is done from the first deploy.
+- name: Install observability agents
+  hosts: all
+  gather_facts: true
+
+  vars:
+    ic_obs_dir: "{{ ansible_env.HOME }}/observability"
+    ic_remote_write_url: ""
+    ic_remote_write_token: ""
+    ic_host_id: ""
+    ic_host_name: ""
+    # [{compose_project, instance_id, instance, project, tenant}, ...]
+    ic_instances: []
+    ic_node_exporter_image: "quay.io/prometheus/node-exporter:v1.8.2"
+    # v0.54.0+ is REQUIRED, not merely preferred: Docker 28/29 default to
+    # the containerd image store, and older cAdvisor (v0.52 and below)
+    # cannot resolve container metadata under it — it silently registers
+    # zero containers, so per-instance metrics simply never appear.
+    # Measured on Docker 29.6: v0.52.1 → 0 labelled series, v0.54.1 and
+    # v0.55.1 → 54. Do not pin this back down.
+    ic_cadvisor_image: "gcr.io/cadvisor/cadvisor:v0.55.1"
+    ic_vmagent_image: "victoriametrics/vmagent:v1.102.0"
+
+  tasks:
+    - name: Detect whether Traefik runs on this host
+      # Traefik's metrics port is deliberately NOT published to the host:
+      # publishing on 127.0.0.1 would be unreachable from vmagent's
+      # container (a container's loopback is its own), and publishing on
+      # 0.0.0.0 would expose instance names and domains to the internet
+      # on any host that is not hardened. Joining Traefik's own docker
+      # network and scraping it by service name avoids both.
+      ansible.builtin.command: docker network inspect inverseproxy_shared
+      register: ic_traefik_net
+      changed_when: false
+      failed_when: false
+
+    - name: Note whether the Traefik scrape applies
+      ansible.builtin.set_fact:
+        ic_has_traefik: "{{ ic_traefik_net.rc == 0 }}"
+
+    - name: Create the observability directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ ic_obs_dir }}"
+        - "{{ ic_obs_dir }}/textfile"
+
+    - name: Write the remote-write credentials
+      # 0600: this secret authorises writes into the central. It is
+      # passed in as an extra-var (never committed) and never echoed into
+      # the job log.
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/.remote_write_token"
+        content: "{{ ic_remote_write_token }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Write the vmagent scrape configuration
+      # Relabelling maps each container back to the instance that owns it.
+      # cAdvisor exposes the compose project as
+      # ``container_label_com_docker_compose_project``; the panel sets that
+      # to ``doodba_project_name`` at deploy time, so it is a stable join
+      # key that survives renames of anything else.
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/scrape.yml"
+        mode: "0644"
+        content: |
+          global:
+            scrape_interval: 30s
+            external_labels:
+              host: "{{ ic_host_name }}"
+              host_id: "{{ ic_host_id }}"
+
+          scrape_configs:
+            - job_name: node
+              static_configs:
+                - targets: ["node-exporter:9100"]
+
+          {% if ic_has_traefik %}
+            # Scraped over Traefik's own docker network, by service name.
+            # This is where per-instance HTTP rates/latencies come from,
+            # with no agent inside the instances. Only emitted when
+            # Traefik is actually on this host: a job pointing at nothing
+            # would sit at up=0 forever and look like a real outage.
+            - job_name: traefik
+              static_configs:
+                - targets: ["proxy:8082"]
+              # NOTE — these samples are host-scoped, not instance-scoped.
+              # Traefik reports per *service*, and the service name is a
+              # copier-time literal baked into the customer's own
+              # prod.yaml ("<their project_name>-19-0-prod-main@docker").
+              # It bears no relation to COMPOSE_PROJECT_NAME, which the
+              # deploy forces to "<remote_folder>-<instance>" — surveyed
+              # across eight real doodba projects, the two strings differ
+              # arbitrarily ("proddddd-16-0-prod-main" for a project whose
+              # compose name is something else entirely). So there is no
+              # sound join key here and no relabelling is attempted:
+              # guessing one would silently attribute another tenant's
+              # traffic to the wrong instance, which is worse than having
+              # no panel. Per-instance HTTP belongs to observability v2,
+              # where blackbox probes give it directly.
+          {% endif %}
+
+            - job_name: cadvisor
+              static_configs:
+                - targets: ["cadvisor:8080"]
+              metric_relabel_configs:
+          {% for inst in ic_instances %}
+                - source_labels: [container_label_com_docker_compose_project]
+                  regex: "{{ inst.compose_project }}"
+                  target_label: instance_id
+                  replacement: "{{ inst.instance_id }}"
+                - source_labels: [container_label_com_docker_compose_project]
+                  regex: "{{ inst.compose_project }}"
+                  target_label: instance
+                  replacement: "{{ inst.instance }}"
+                - source_labels: [container_label_com_docker_compose_project]
+                  regex: "{{ inst.compose_project }}"
+                  target_label: project
+                  replacement: "{{ inst.project }}"
+          {% if inst.tenant %}
+                - source_labels: [container_label_com_docker_compose_project]
+                  regex: "{{ inst.compose_project }}"
+                  target_label: tenant
+                  replacement: "{{ inst.tenant }}"
+          {% endif %}
+          {% if inst.tenant_id %}
+                # The id, not just the slug: it survives a tenant rename,
+                # so it is what per-tenant isolation can safely key on.
+                - source_labels: [container_label_com_docker_compose_project]
+                  regex: "{{ inst.compose_project }}"
+                  target_label: tenant_id
+                  replacement: "{{ inst.tenant_id }}"
+          {% endif %}
+          {% endfor %}
+      register: ic_scrape_cfg
+
+    - name: Write the agents compose file
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/docker-compose.yaml"
+        mode: "0644"
+        content: |
+          services:
+            node-exporter:
+              image: {{ ic_node_exporter_image }}
+              restart: unless-stopped
+              pid: host
+              command:
+                - '--path.rootfs=/host'
+                - '--collector.textfile.directory=/textfile'
+              volumes:
+                - /:/host:ro,rslave
+                - {{ ic_obs_dir }}/textfile:/textfile:ro
+
+            cadvisor:
+              image: {{ ic_cadvisor_image }}
+              restart: unless-stopped
+              privileged: true
+              command:
+                # cAdvisor does NOT expose container labels by default, so
+                # without this the relabelling below matches nothing and
+                # every container metric is unattributable — metrics arrive,
+                # but no instance can ever be identified. Verified live: the
+                # rules were correct and still produced zero series.
+                #
+                # Whitelist rather than --store_container_labels=true: the
+                # latter turns every Docker label into a metric label, which
+                # is the classic cAdvisor cardinality blow-up.
+                - '--store_container_labels=false'
+                - '--whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service'
+                # Skip the host's own cgroups (/init.scope and friends).
+                - '--docker_only=true'
+              volumes:
+                - /:/rootfs:ro
+                - /var/run:/var/run:ro
+                - /sys:/sys:ro
+                - /var/lib/docker/:/var/lib/docker:ro
+                - /dev/disk/:/dev/disk:ro
+
+            vmagent:
+              image: {{ ic_vmagent_image }}
+              restart: unless-stopped
+              # host-gateway is how the agent reaches a co-located central
+              # (the remote-write URL); Traefik is reached over its own
+              # network instead — see the networks block below.
+              extra_hosts:
+                - "host.docker.internal:host-gateway"
+              networks:
+                - default
+          {% if ic_has_traefik %}
+                - traefik
+          {% endif %}
+              command:
+                - '-promscrape.config=/etc/scrape.yml'
+                - '-remoteWrite.url={{ ic_remote_write_url }}'
+                # Basic auth, not bearer: single-node VictoriaMetrics
+                # only knows how to check -httpAuth.*, so a bearer token
+                # was accepted-and-ignored by the central and authorised
+                # nothing at all. Same secret, a scheme that is enforced.
+                - '-remoteWrite.basicAuth.username=incubacloud'
+                - '-remoteWrite.basicAuth.passwordFile=/etc/remote_write_token'
+                # Survive a central outage instead of dropping samples.
+                - '-remoteWrite.maxDiskUsagePerURL=512MB'
+              volumes:
+                - {{ ic_obs_dir }}/scrape.yml:/etc/scrape.yml:ro
+                - {{ ic_obs_dir }}/.remote_write_token:/etc/remote_write_token:ro
+                - vmagent-data:/vmagentdata
+              depends_on:
+                - node-exporter
+                - cadvisor
+
+          volumes:
+            vmagent-data:
+
+          networks:
+            default:
+          {% if ic_has_traefik %}
+            traefik:
+              external: true
+              name: inverseproxy_shared
+          {% endif %}
+      register: ic_agents_compose
+
+    - name: Install the per-instance disk usage collector
+      # node_exporter's textfile collector turns a plain script into
+      # metrics. Disk per instance is the one number cAdvisor cannot give
+      # (it measures containers, not the deploy directory).
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/collect_disk.sh"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          # Auto-generated by IncubaCloud. Emits per-instance disk usage
+          # for node_exporter's textfile collector. Written atomically:
+          # node_exporter must never read a half-written file.
+          set -euo pipefail
+          out="{{ ic_obs_dir }}/textfile/ic_instance_disk.prom"
+          tmp="${out}.$$"
+          {
+            echo "# HELP ic_instance_disk_bytes Disk used by an instance directory."
+            echo "# TYPE ic_instance_disk_bytes gauge"
+          {% for inst in ic_instances %}
+            if [ -d "{{ inst.dir }}" ]; then
+              size=$(du -sb "{{ inst.dir }}" 2>/dev/null | awk '{print $1}')
+              [ -n "${size:-}" ] && printf 'ic_instance_disk_bytes{instance_id="%s",instance="%s"} %s\n' \
+                '{{ inst.instance_id }}' '{{ inst.instance }}' "$size"
+            fi
+          {% endfor %}
+          } > "$tmp"
+          mv "$tmp" "$out"
+
+    - name: Schedule the disk collector
+      ansible.builtin.cron:
+        name: "incubacloud instance disk usage"
+        minute: "*/10"
+        job: "{{ ic_obs_dir }}/collect_disk.sh >/dev/null 2>&1"
+
+    - name: Bring the agents up
+      # Retried on purpose. Compose pulls the three images concurrently,
+      # and a freshly installed Docker occasionally fails one of them with
+      # "lease does not exist: not found" — a containerd race, not a
+      # configuration problem. Observed on a real first-boot host; the
+      # pull succeeds on the next attempt.
+      ansible.builtin.command:
+        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml up -d --remove-orphans
+        chdir: "{{ ic_obs_dir }}"
+      register: ic_agents_up
+      retries: 3
+      delay: 10
+      until: ic_agents_up.rc == 0
+      changed_when: true
+
+    - name: Restart vmagent when its configuration changed
+      # ``up -d`` does not restart a container whose image and compose
+      # definition are unchanged, so a new scrape config alone would not
+      # be picked up.
+      ansible.builtin.command:
+        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml restart vmagent
+        chdir: "{{ ic_obs_dir }}"
+      when: ic_scrape_cfg is changed and ic_agents_compose is not changed
+      changed_when: true
+
+    - name: Wait for the agents to report healthy
+      ansible.builtin.command:
+        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml ps --format '{% raw %}{{.Service}} {{.State}}{% endraw %}'
+        chdir: "{{ ic_obs_dir }}"
+      register: ic_agents_ps
+      changed_when: false
+
+    - name: Export the agent facts
+      ansible.builtin.set_stats:
+        aggregate: false
+        data:
+          ic_agents_running: "{{ ic_agents_ps.stdout_lines | select('search', 'running') | list | length }}"
+          ic_instances_labelled: "{{ ic_instances | length }}"

@@ -979,6 +979,52 @@
     }
 }
 
+// 301 toggle. Only meaningful when a redirect target is set, so it dims
+// itself rather than disappearing — a control that comes and goes as you
+// type in the neighbouring field makes the row jump.
+.ic-domain-permanent {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 0 6px;
+    color: $text-secondary;
+    font-size: 0.6875rem;
+    cursor: pointer;
+    user-select: none;
+
+    input {
+        margin: 0;
+        cursor: pointer;
+    }
+
+    &--off {
+        opacity: 0.35;
+        cursor: default;
+
+        input {
+            cursor: default;
+        }
+    }
+}
+
+.ic-domain-cert {
+    flex-shrink: 0;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: $text-secondary;
+    font-size: 0.75rem;
+    cursor: pointer;
+
+    &:focus {
+        outline: none;
+        border-color: rgba(var(--rl-green-rgb), 0.5);
+        color: $text-primary;
+    }
+}
+
 .ic-domain-remove {
     width: 28px;
     height: 28px;

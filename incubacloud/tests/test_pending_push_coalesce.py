@@ -55,7 +55,7 @@ class _PendingPushBase(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
             'auto_rebuild': True,
-            'deployed': True,
+            'state': 'deployed',
         })
         # Make sure the job type exists so any real enqueue would resolve it;
         # the executor tests below patch enqueue, but the model tests need a
@@ -162,12 +162,14 @@ class TestCoalescedRebuildEnqueue(_PendingPushBase):
 
         calls = []
 
-        def _capture(host_id, instance_id, job_type_code, payload=None):
+        def _capture(host_id, instance_id, job_type_code, payload=None,
+                     **kwargs):
             calls.append({
                 'host_id': host_id,
                 'instance_id': instance_id,
                 'job_type_code': job_type_code,
                 'payload': payload or {},
+                'kwargs': kwargs,
             })
             return 12345
 
@@ -184,6 +186,15 @@ class TestCoalescedRebuildEnqueue(_PendingPushBase):
         self.assertEqual(c['host_id'], self.host.id)
         self.assertEqual(c['instance_id'], self.instance.id)
         self.assertEqual(c['job_type_code'], 'rebuild_instance')
+        # This runs from on_success, while the rebuild that triggered it is
+        # still 'started' on this very instance. Without the bypass the
+        # active-job guard matches that parent job and refuses to queue the
+        # follow-up — and the UserError is swallowed by the caller, so the
+        # coalesced pushes are simply lost with a warning in the log.
+        self.assertTrue(
+            c['kwargs'].get('bypass_running_check'),
+            "the coalesced rebuild must bypass the active-job guard",
+        )
         # Trigger marks the job as coalesced so the SPA / log terminal can
         # render the multi-push trigger bar.
         self.assertEqual(c['payload']['trigger'], 'coalesced')

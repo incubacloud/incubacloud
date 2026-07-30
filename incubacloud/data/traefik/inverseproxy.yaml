@@ -10,6 +10,9 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # Prometheus metrics: loopback only. The local vmagent scrapes it
+      # through the host gateway; nothing off-box can reach it.
+      - "127.0.0.1:8082:8082"
     depends_on:
       - dockersocket
     restart: unless-stopped

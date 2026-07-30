@@ -53,19 +53,6 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
         tmp_pip = self._tmp("pip.txt")
         tmp_apt = self._tmp("apt.txt")
 
-        # Read-first guard: full_setup seeds init.defaultBranch once per
-        # host; the fallback write here covers legacy hosts only and
-        # avoids racing siblings for the ~/.gitconfig lock.
-        git_cfg = (
-            '(git config --global --get init.defaultBranch >/dev/null 2>&1'
-            ' || git config --global init.defaultBranch master)'
-        )
-        path_prefix = (
-            'export PATH="$HOME/.local/bin:$PATH"'
-            f' && {git_cfg}'
-        )
-        copier_bin = "$HOME/.local/bin/copier"
-
         compose_target = (
             "prod.yaml" if inst.environment == "production" else "test.yaml"
         )
@@ -86,34 +73,26 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
 
         cmds = [
             # 1. Commit any dirty files so copier update finds a clean repo.
-            #    Pass user config inline — the server may not have git configured.
             (
                 "Commit dirty files",
-                f"cd {d}"
-                f" && git add -A"
-                f" ; git diff --cached --quiet"
-                f" || git"
-                f" -c user.email='system@incubacloud'"
-                f" -c user.name='IncubaCloud'"
-                f" commit -m 'IncubaCloud rebuild {ts}' --no-verify"
-                f" || true",
+                self.run_script("rebuild.sh", ["commit-dirty", d, ts]),
             ),
             # 2. Run copier update — regenerates all config files.
             (
                 "Update with copier",
-                f"{path_prefix} && "
-                f"{copier_bin} update --defaults --trust "
-                f"--data-file {tmp_answers} {d}",
+                self.run_script(
+                    "rebuild.sh",
+                    ["copier-update", d, tmp_answers,
+                     self._copier_template()[1]],
+                ),
             ),
             # 2b. Resolve copier merge conflicts: keep new version (after =======)
             (
                 "Resolve merge conflicts",
-                f"cd {d} && for f in prod.yaml test.yaml common.yaml;"
-                f" do if grep -q '<<<<<<' \"$f\" 2>/dev/null; then"
-                f" sed -i '/^<<<<<<< /,/^=======/d;/^>>>>>>> /d' \"$f\";"
-                f" fi; done || true",
+                self.run_script("rebuild.sh", ["resolve-conflicts", d]),
             ),
             # 3. Fix docker-compose.yml symlink (copier points to devel.yaml).
+            #    Left inline: a trivial rm + ln, with the shell expanding ~.
             (
                 "Fix docker-compose symlink",
                 f"rm -f {d}/docker-compose.yml"
@@ -122,41 +101,31 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
         ]
 
         # 3b. Strip the smtp service from prod.yaml when no SMTP relay
-        #     is configured (same as deploy executor).
+        #     is configured (shared with deploy via the same script).
         if not has_smtp and inst.environment == 'production':
             cmds.append((
                 "Strip smtp service (not configured)",
-                f"awk '/^  smtp:/ {{skip=1; next}}"
-                f" skip && /^  [a-z]/ {{skip=0}}"
-                f" skip && /^[^ ]/ {{skip=0}}"
-                f" !skip' {d}/prod.yaml > {d}/prod.yaml.tmp"
-                f" && mv {d}/prod.yaml.tmp {d}/prod.yaml",
+                self.run_script(
+                    "strip_compose_service.sh", [d, "smtp", "prod.yaml"],
+                ),
             ))
 
         if not self._backup_enabled() and inst.environment == 'production':
             cmds.append((
                 "Strip backup service (not configured)",
-                f"cd {d} && for f in prod.yaml common.yaml; do"
-                f" [ -f \"$f\" ] || continue;"
-                f" awk '/^  backup:/ {{skip=1; next}}"
-                f" skip && /^  [a-z]/ {{skip=0}}"
-                f" skip && /^[^ ]/ {{skip=0}}"
-                f" !skip' \"$f\" > \"$f.tmp\""
-                f" && mv \"$f.tmp\" \"$f\";"
-                f" done",
+                self.run_script(
+                    "strip_compose_service.sh",
+                    [d, "backup", "prod.yaml", "common.yaml"],
+                ),
             ))
 
-        # 3c. Cap the backup container hostname at 64 bytes. `copier update`
-        #     regenerates common.yaml with "hostname: backup.<first_main_domain>"
-        #     (inherited by prod.yaml via `extends`); a long production domain
-        #     pushes it past the kernel limit (__NEW_UTS_LEN = 64) and the
-        #     backup container dies on start with "sethostname: invalid
-        #     argument". Only rewrite when the rendered value exceeds 64,
-        #     falling back to doodba's own short form ("backup.<project_name>").
+        # 3c. Cap the backup container hostname at 64 bytes (see the deploy
+        #     executor for the full rationale). ``copier update`` regenerates
+        #     common.yaml, so this runs on every rebuild too.
         if self._backup_enabled() and inst.environment == 'production':
             cmds.append((
                 "Cap backup hostname",
-                f"""cd {d} && short="backup.{name}" && short=$(printf '%s' "$short" | cut -c1-64 | sed 's/[.-]*$//') && for f in common.yaml prod.yaml; do [ -f "$f" ] || continue; cur=$(awk '/hostname: backup/{{print $2; exit}}' "$f"); [ -n "$cur" ] || continue; if [ ${{#cur}} -gt 64 ]; then sed -i "s|hostname:[[:space:]]*backup[^[:space:]]*|hostname: $short|" "$f"; echo "Capped backup hostname: $cur (${{#cur}}) -> $short"; else echo "Backup hostname OK: $cur (${{#cur}})"; fi; done""",
+                self.run_script("deploy.sh", ["cap-backup-hostname", d, name]),
             ))
 
         cmds += [
@@ -170,24 +139,13 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             #     never overwrite — survives rebuilds).
             (
                 "Ensure incubacloud.env",
-                f'[ -f {d}/.docker/incubacloud.env ] || '
-                f'python3 -c "'
-                f"from cryptography.fernet import Fernet; "
-                f"print(f'INCUBACLOUD_SECRET_KEY={{Fernet.generate_key().decode()}}')"
-                f'" > {d}/.docker/incubacloud.env',
+                self.run_script("deploy.sh", ["ensure-secret-key", d]),
             ),
-            # 4c. Re-inject incubacloud.env in prod.yaml and test.yaml.
-            #     The env_file block lives in those files (not common.yaml).
-            #     Copier update regenerates them, stripping our addition.
+            # 4c. Re-inject incubacloud.env in prod.yaml and test.yaml —
+            #     copier update regenerates them, stripping our addition.
             (
                 "Inject incubacloud.env in prod.yaml and test.yaml",
-                f"cd {d} && "
-                f"for f in prod.yaml test.yaml; do "
-                f"  [ -f \"$f\" ] || continue; "
-                f"  grep -q 'incubacloud.env' \"$f\" || "
-                f"  sed -i '/\\.docker\\/odoo\\.env/a\\      - .docker/incubacloud.env'"
-                f" \"$f\"; "
-                f"done",
+                self.run_script("deploy.sh", ["inject-secret-env", d]),
             ),
             # 4d. Write docker-compose.override.yml with resource limits.
             (
@@ -253,110 +211,14 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             #     so the instance keeps running with the old image.
             (
                 "Test new image (safe boot check)",
-                (
-                    # Per-instance suffix on every path we touch on
-                    # both sides of the boundary so the safe-boot step
-                    # is fully scoped: the in-container basebackup dir,
-                    # the host bind mount and the temporary postgres
-                    # container all share the same instance id. Two
-                    # rebuilds for different tenants on the same host
-                    # never overlap (already true via separate compose
-                    # projects, but the symmetry makes the contract
-                    # readable); two retries against the same instance
-                    # share the path *by design* — pre-cleanup steps
-                    # below take care of leftovers from interrupted
-                    # earlier runs.
-                    f"cd {d}"
-                    # Defensive pre-cleanup. ``pg_basebackup`` refuses
-                    # to write into a non-empty target, and the host
-                    # bind mount may carry a UID-70 directory left by
-                    # a chown step from an interrupted previous run.
-                    # Both rms are idempotent — they are no-ops when
-                    # the paths are absent — and both go through the
-                    # right privilege boundary: the in-container path
-                    # via ``docker compose exec`` (root in the db
-                    # container), the host path via an ephemeral
-                    # ``alpine`` container (root over the bind mount).
-                    f" && docker compose exec -T db"
-                    f" rm -rf /tmp/ic_boot_backup_{inst.id}"
-                    f" && docker run --rm -v /tmp:/host_tmp alpine"
-                    f" rm -rf /host_tmp/ic_boot_{inst.id}"
-                    # pg_basebackup: physical copy of the PG cluster
-                    # without exclusive lock — zero downtime.
-                    f" && docker compose exec -T db"
-                    f" pg_basebackup"
-                    f" -U {inst.postgres_username or 'odoo'}"
-                    f" -D /tmp/ic_boot_backup_{inst.id}"
-                    f" --checkpoint=fast --no-sync -X fetch"
-                    # Drop ``backup_label`` *inside* the db container,
-                    # before the host ever sees the files. Postgres
-                    # treats its presence as "starting from a backup,
-                    # replay WAL"; we already fetched WAL in-band so we
-                    # want a direct startup. Doing this inside the
-                    # container avoids a host-side rm later — once the
-                    # bind mount is chowned to UID 70 the host user
-                    # cannot remove anything in there anymore.
-                    f" && docker compose exec -T db"
-                    f" rm -f /tmp/ic_boot_backup_{inst.id}/backup_label"
-                    # Copy to host and clean up inside container.
-                    f" && docker compose cp"
-                    f" db:/tmp/ic_boot_backup_{inst.id}"
-                    f" /tmp/ic_boot_{inst.id}"
-                    f" && docker compose exec -T db"
-                    f" rm -rf /tmp/ic_boot_backup_{inst.id}"
-                    # Flip ownership to alpine's postgres UID via an
-                    # ephemeral root container. The host user lacks
-                    # CAP_CHOWN, so a host-side ``chown 70:70`` would
-                    # fail per file with "Operation not permitted".
-                    f" && docker run --rm"
-                    f" -v /tmp/ic_boot_{inst.id}:/data"
-                    f" alpine chown -R 70:70 /data"
-                    # Best-effort cleanup of any leftover container from
-                    # a previously interrupted run. Wrap in parens so a
-                    # failure here doesn't escape — the bare ``; true``
-                    # we used before split the entire ``&&`` chain in
-                    # two and let ``docker run`` proceed even when the
-                    # earlier chown step had failed.
-                    f" && (docker rm -f ic_boot_pg_{inst.id} 2>/dev/null || true)"
-                    # Start a temporary PG on the compose network
-                    f" && docker run -d"
-                    f" --name ic_boot_pg_{inst.id}"
-                    f" --network {name}_default"
-                    f" -v /tmp/ic_boot_{inst.id}:"
-                    f"/var/lib/postgresql/data"
-                    f" --user postgres"
-                    f" --entrypoint postgres"
-                    # postgres-autoconf (not vanilla postgres:*-alpine): it
-                    # bundles pgvector, which the cloned cluster needs to open
-                    # the Odoo 19 ``ai`` embedding index. The plain image lacks
-                    # ``$libdir/vector`` and the boot test would abort on it.
-                    # The tag stays pinned to postgres_version so the temp PG
-                    # major matches the pg_basebackup source cluster.
-                    f" ghcr.io/tecnativa/postgres-autoconf:"
-                    f"{inst.postgres_version or '17'}-alpine"
-                    f" -D /var/lib/postgresql/data"
-                    f" && sleep 5"
-                    # Boot test: click-odoo-update against the
-                    # temporary PG to verify the new image works.
-                    f" && docker compose run --rm"
-                    f" -e PGHOST=ic_boot_pg_{inst.id}"
-                    f" odoo click-odoo-update"
-                    f" --database {inst.postgres_dbname or 'prod'}"
-                    # Always clean up, then propagate the test exit
-                    # code. The host bind mount is owned by UID 70
-                    # after the chown above, so the final unlink runs
-                    # through another ephemeral container — same
-                    # CAP_CHOWN gap in reverse. The in-container
-                    # basebackup dir is wiped here too in case any
-                    # earlier step short-circuited the &&-chain
-                    # before the mid-chain in-container rm ran.
-                    f" ; IC_TEST_EXIT=$?"
-                    f" ; docker rm -f ic_boot_pg_{inst.id} 2>/dev/null"
-                    f" ; docker compose exec -T db"
-                    f" rm -rf /tmp/ic_boot_backup_{inst.id} 2>/dev/null"
-                    f" ; docker run --rm -v /tmp:/host_tmp alpine"
-                    f" rm -rf /host_tmp/ic_boot_{inst.id}"
-                    f" ; exit $IC_TEST_EXIT"
+                self.run_script(
+                    "rebuild.sh",
+                    [
+                        "boot-test", d, inst.id, name,
+                        inst.postgres_username or "odoo",
+                        inst.postgres_version or "17",
+                        inst.postgres_dbname or "prod",
+                    ],
                 ),
                 {"stop_on_failure": True},
             ),
@@ -391,26 +253,21 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 "Restart instance",
                 f"cd {d} && docker compose up -d --remove-orphans",
             ),
-            # 13. Set web.base.url and report.url in ir.config_parameter.
-            #     Wrapped in a DO block: succeeds silently if the table does
-            #     not exist yet (e.g. DB not yet initialised).
-            #     ``base_url`` is sql-escaped as a defense-in-depth layer
-            #     on top of the @api.constrains regex on
-            #     cloud.instance.domain.hostname.
+            # 13. Set web.base.url and report.url in ir.config_parameter
+            #     (shared with deploy via the same script; base_url arrives
+            #     already sql-escaped).
             (
                 "Set system parameters",
-                f"cd {d} && docker compose exec -T db"
-                f" psql -U {inst.postgres_username or 'odoo'}"
-                f" -d {inst.postgres_dbname or 'prod'}"
-                f" -c \"DO \\$\\$ BEGIN"
-                f" IF EXISTS (SELECT FROM information_schema.tables"
-                f" WHERE table_schema='public'"
-                f" AND table_name='ir_config_parameter') THEN"
-                f" INSERT INTO ir_config_parameter (key,value) VALUES"
-                f" ('web.base.url','{sql_escape_literal(self._base_url())}'),"
-                f" ('report.url','http://localhost:8069')"
-                f" ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value;"
-                f" END IF; END \\$\\$;\"",
+                self.run_script(
+                    "deploy.sh",
+                    [
+                        "set-system-params", d,
+                        inst.postgres_username or "odoo",
+                        inst.postgres_dbname or "prod",
+                        sql_escape_literal(self._base_url()),
+                        "http://localhost:8069",
+                    ],
+                ),
             ),
         ]
         return cmds
@@ -475,6 +332,11 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             self.env['cloud.job'].enqueue(
                 inst.host_id.id, inst.id, 'rebuild_instance',
                 payload=payload,
+                # This runs from on_success, so THIS rebuild is still
+                # 'started' on the very same instance: the active-job
+                # guard would match it and refuse to queue the follow-up,
+                # leaving the coalesced pushes stranded forever.
+                bypass_running_check=True,
             )
             inst.write({'last_auto_rebuild': fields.Datetime.now()})
             pending.unlink()

@@ -14,8 +14,17 @@ describe("Settings — class structure", () => {
         expect(Settings.template).toBe("incubacloud.Settings");
     });
 
-    test("has empty props (no required props)", () => {
-        expect(Settings.props).toEqual({});
+    test("has no required props", () => {
+        // The component is routed to without arguments, so every prop it
+        // declares must stay optional.
+        for (const def of Object.values(Settings.props)) {
+            expect(def.optional).toBe(true);
+        }
+    });
+
+    test("initialTab is an optional String", () => {
+        expect(Settings.props.initialTab.type).toBe(String);
+        expect(Settings.props.initialTab.optional).toBe(true);
     });
 
     test("is a Component subclass", () => {

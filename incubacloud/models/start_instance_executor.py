@@ -15,11 +15,12 @@ class StartInstanceExecutor(AbstractSSHExecutor):
 
     def get_commands(self):
         inst = self._inst()
-        d = self._inst_dir(inst)
         return [
             (
                 "Start containers",
-                f"cd {d} && docker compose up -d",
+                self.run_script(
+                    "compose_op.sh", [self._inst_dir(inst), "up"],
+                ),
             ),
         ]
 

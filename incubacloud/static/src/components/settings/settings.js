@@ -29,12 +29,19 @@ export class Settings extends Component {
             installUrl: "",
             showManual: false,
             backupBackends: [],
+            // Observability: the token is write-only, so only its
+            // presence is tracked client-side.
+            hasMetricsToken: false,
+            deployingCentral: false,
+            centralHostId: null,
+            hosts: [],
             form: {
                 // General
                 autoassign_enabled: false,
                 default_backup_backend_id: null,
                 audit_log_retention_days: 90,
                 job_log_retention_days: 30,
+                job_retention_days: 180,
                 default_backup_alert_threshold_pct: 80,
                 github_event_retention_days: 90,
                 github_event_truncate_days: 7,
@@ -73,6 +80,9 @@ export class Settings extends Component {
                 nonNegativeInt(_t("Must be a positive integer")),
             ],
             job_log_retention_days: [
+                nonNegativeInt(_t("Must be a positive integer")),
+            ],
+            job_retention_days: [
                 nonNegativeInt(_t("Must be a positive integer")),
             ],
             github_event_retention_days: [
@@ -137,6 +147,21 @@ export class Settings extends Component {
             this.state.form.private_key = "";
             this.state.form.github_pat = "";
             this.state.hasPrivateKey = data.has_private_key || false;
+            this.state.form.metrics_enabled = !!general.metrics_enabled;
+            this.state.form.metrics_central_url = general.metrics_central_url || "";
+            this.state.form.metrics_remote_write_url = general.metrics_remote_write_url || "";
+            this.state.form.metrics_remote_write_token = "";
+            this.state.form.metrics_retention_days = general.metrics_retention_days || 90;
+            this.state.form.grafana_base_url = general.grafana_base_url || "";
+            this.state.hasMetricsToken = !!general.has_metrics_remote_write_token;
+            // Hosts for the central's destination picker. Non-fatal: the
+            // rest of Settings must still work if this one call fails.
+            try {
+                const hres = await rpc("/cloud/get_hosts", {});
+                this.state.hosts = hres.hosts || hres || [];
+            } catch {
+                this.state.hosts = [];
+            }
             this.state.hasWebhookSecret = data.has_webhook_secret || false;
             this.state.hasPat = data.has_pat || false;
             this.state.slug = data.slug || "";
@@ -145,6 +170,7 @@ export class Settings extends Component {
             this.state.form.default_backup_backend_id = general.default_backup_backend_id || null;
             this.state.form.audit_log_retention_days = general.audit_log_retention_days ?? 90;
             this.state.form.job_log_retention_days = general.job_log_retention_days ?? 30;
+            this.state.form.job_retention_days = general.job_retention_days ?? 180;
             this.state.form.default_backup_alert_threshold_pct = general.default_backup_alert_threshold_pct ?? 80;
             this.state.form.github_event_retention_days = general.github_event_retention_days ?? 90;
             this.state.form.github_event_truncate_days = general.github_event_truncate_days ?? 7;
@@ -191,6 +217,44 @@ export class Settings extends Component {
 
     // ── Unified save ────────────────────────────────────────────────────
 
+    /** Options for the central's destination host picker. */
+    get centralHostOptions() {
+        return this.state.hosts.map((h) => ({ value: h.id, label: h.name }));
+    }
+
+    /**
+     * Queue the metrics central deployment on the chosen host.
+     *
+     * The destination is a parameter rather than a fixed host, which is
+     * what makes "co-locate now, move to its own VPS later" a re-run
+     * instead of a migration.
+     */
+    async deployCentral() {
+        if (this.state.deployingCentral) return;
+        const hostId = this.state.centralHostId;
+        if (!hostId) {
+            this.env.toast?.error(_t("Pick the host that should run it."));
+            return;
+        }
+        this.state.deployingCentral = true;
+        try {
+            const res = await rpc("/cloud/monitoring/deploy_central", {
+                host_id: hostId,
+            });
+            if (res?.ok) {
+                this.env.toast?.success(_t("Deployment queued."));
+            } else {
+                this.env.toast?.error(res?.error || _t("Could not queue it."));
+            }
+        } catch (e) {
+            this.env.toast?.error(
+                e.data?.message || e.message || _t("Could not queue it."),
+            );
+        } finally {
+            this.state.deployingCentral = false;
+        }
+    }
+
     async save() {
         if (this.state.saving) return;
         const { isValid, firstError } = this.validator.validate(this.state.form);
@@ -208,9 +272,16 @@ export class Settings extends Component {
                 default_backup_backend_id: this.state.form.default_backup_backend_id,
                 audit_log_retention_days: this.state.form.audit_log_retention_days,
                 job_log_retention_days: this.state.form.job_log_retention_days,
+                job_retention_days: this.state.form.job_retention_days,
                 default_backup_alert_threshold_pct: this.state.form.default_backup_alert_threshold_pct,
                 github_event_retention_days: this.state.form.github_event_retention_days,
                 github_event_truncate_days: this.state.form.github_event_truncate_days,
+                metrics_enabled: this.state.form.metrics_enabled,
+                metrics_central_url: this.state.form.metrics_central_url,
+                metrics_remote_write_url: this.state.form.metrics_remote_write_url,
+                metrics_remote_write_token: this.state.form.metrics_remote_write_token,
+                metrics_retention_days: this.state.form.metrics_retention_days,
+                grafana_base_url: this.state.form.grafana_base_url,
             });
         } catch {
             errors.push(_t("General settings"));
@@ -362,14 +433,9 @@ export class Settings extends Component {
         this.state.showManual = !this.state.showManual;
     }
 
-    _confirm({ title, message, confirmLabel = _t("Confirm"), isDanger = false }) {
-        return new Promise((resolve) => {
-            this.state.confirmDialog = {
-                title, message, confirmLabel, isDanger,
-                onConfirm: () => { this.state.confirmDialog = null; resolve(true); },
-                onCancel:  () => { this.state.confirmDialog = null; resolve(false); },
-            };
-        });
+    /** Open the shared confirmation dialog. See utils/use_confirm.js. */
+    _confirm(opts) {
+        return confirmVia(this.state, opts);
     }
 
     async purgeAuditLogs() {

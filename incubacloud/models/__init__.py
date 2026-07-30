@@ -1,6 +1,9 @@
 from . import cloud_security_mixin
+from . import cloud_audit_tracked_mixin
+from . import cloud_repo_mixin
 from . import cloud_settings
 from . import cloud_rate_limit
+from . import cloud_terminal_route_mixin
 from . import cloud_terminal_route
 from . import res_users_ext
 from . import cloud_audit_log
@@ -17,22 +20,26 @@ from . import cloud_github_credential_service
 from . import cloud_project_repo
 from . import cloud_instance_repo
 from . import cloud_alert
+from . import cloud_metric_rule
 from . import cloud_host
 from . import cloud_host_whitelist
 from . import cloud_instance
 from . import cloud_instance_pending_push
+from . import cloud_instance_metrics
+from . import cloud_host_metrics
+from . import cloud_host_observability
 from . import cloud_instance_backup
 from . import cloud_instance_domain
+from . import cloud_instance_move
 from . import cloud_job
 from . import cloud_job_log_chunk
-from . import cloud_job_log_message
 from . import cloud_job_type
 from . import cloud_instance_session
-from . import cloud_connect_token
 from . import queue_job_ext
 
 from . import registry
 from . import abstract_executor
+from . import ansible_executor
 from . import host_probe_executor
 from . import host_metrics_executor
 from . import deploy_instance_executor
@@ -56,4 +63,7 @@ from . import backup_download_neutralized_executor
 from . import backup_restore_executor
 from . import move_cutover_executor
 from . import move_rollback_cleanup_executor
+from . import host_hardening_executor
+from . import observability_agents_executor
+from . import observability_central_executor
 

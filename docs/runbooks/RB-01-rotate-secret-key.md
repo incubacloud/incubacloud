@@ -94,8 +94,44 @@ keys in the env var. The row stays decryptable under OLD and will
 be retried next tick. Do **not** remove OLD until the rotation cron
 has completed a full pass with zero errors.
 
+## Key custody
+
+The key is not recoverable. Lose it and every stored secret — host
+passwords, backup passphrases, GitHub credentials — is permanently
+unreadable, and a restore of the database alone will not bring the
+panel back. Treat it as a separate artifact from the backups.
+
+Rules:
+
+- **At least two copies, in different places.** A password manager
+  entry plus an offline copy kept somewhere physically different is
+  enough. One copy is not a copy.
+- **Never store the key alongside the database backup.** Whoever
+  obtains that bucket must not obtain the key with it — that is the
+  whole point of encrypting the columns.
+- **Write down *where* the copies are, never the value itself.** The
+  restore procedure needs to tell an operator where to look; it must
+  never be the thing that leaks the key.
+- **Verify the copies work.** A key you have never restored from is a
+  key you are assuming works. The panel restore drill exercises this
+  end to end.
+
+## When a secret will not decrypt
+
+If a value was written with a key that is no longer in the chain (or
+its ciphertext is corrupted), any read of it raises **and** opens a
+critical `cloud.alert` with code
+`encrypted_value_unreadable:<model>.<field>`, pointing at the record.
+
+The value cannot be recovered without the original key. Resolution:
+put the old key back in `INCUBACLOUD_SECRET_KEY` (as a trailing entry)
+if you still have it, or set the secret again from source — regenerate
+the host password, re-enter the backup passphrase, re-issue the token.
+Dismiss the alert once the value is readable again.
+
 ## References
 
 - [`models/password_utils.py`](../../incubacloud/models/password_utils.py) — MultiFernet loader & `rotate_value()`.
+- [`models/encrypted_char.py`](../../incubacloud/models/encrypted_char.py) — read path and the unreadable-secret alert.
 - [`data/rotate_secrets_cron.xml`](../../incubacloud/data/rotate_secrets_cron.xml) — the rotation cron definition.
 - `tests/test_password_utils.py::TestMultiFernetRotation` — integration tests of the mechanism.

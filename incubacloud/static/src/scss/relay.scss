@@ -28,6 +28,10 @@
   --rl-bg-rgb:10,12,13; --rl-surf-rgb:16,19,21; --rl-surf2-rgb:24,28,31; --rl-line-rgb:38,43,47;
   --rl-fg-rgb:238,241,243; --rl-muted-rgb:138,148,156; --rl-faint-rgb:115,125,133;
   --rl-green-rgb:47,199,140; --rl-amber-rgb:239,165,62; --rl-red-rgb:255,96,99;
+  // Log/terminal surface. A token pair (not a literal) so the light
+  // theme can invert it: the hardcoded #080b09 kept a near-black panel
+  // under light-theme ink and measured 1.82:1 — WCAG AA needs 4.5:1.
+  --rl-logs-bg:#080b09; --rl-logs-fg:#c3cad0;
   // Lifted state-text colours (used on pills/timeline/badges); were hardcoded literals.
   --rl-green-text:#9fe7c4; --rl-amber-text:#f0c987; --rl-red-text:#ff9b9d;
   // Card elevation: surface is now lighter than bg + a hairline top highlight.
@@ -51,6 +55,11 @@
   --rl-bg-rgb:243,247,244; --rl-surf-rgb:243,247,244; --rl-surf2-rgb:234,241,236; --rl-line-rgb:221,230,223;
   --rl-fg-rgb:14,21,18; --rl-muted-rgb:93,107,99; --rl-faint-rgb:125,138,130;
   --rl-green-rgb:20,160,110; --rl-amber-rgb:183,121,31; --rl-red-rgb:220,76,79;
+  // Light theme: ink on paper, like the rest of the theme (~16:1).
+  // Flagged for the visual-review session — it is item 1 of the human
+  // judgement list in AUDIT_UI.md ("is a light log panel right, or
+  // should the terminal stay dark on purpose?").
+  --rl-logs-bg:#eaf1ec; --rl-logs-fg:#0e1512;
   color-scheme: light;
 }
 [data-ic-theme="light"] body, [data-ic-theme="light"] .ic-app { color-scheme: light; }
@@ -290,8 +299,8 @@
     background:transparent; color:var(--rl-muted); display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
     &:hover:not(:disabled) { background:var(--rl-surf2); color:var(--rl-fg); }
     &:disabled { opacity:.4; cursor:not-allowed; } }
-  .rl-logs { background:#080b09; border:1px solid var(--rl-line); border-radius:var(--rl-r); padding-block:14px; padding-inline:16px;
-    font-family:var(--rl-fm); font-size:12px; line-height:1.75; max-block-size:340px; overflow-y:auto; color:var(--rl-fg2);
+  .rl-logs { background:var(--rl-logs-bg); border:1px solid var(--rl-line); border-radius:var(--rl-r); padding-block:14px; padding-inline:16px;
+    font-family:var(--rl-fm); font-size:12px; line-height:1.75; max-block-size:340px; overflow-y:auto; color:var(--rl-logs-fg);
     .rl-ts { color:var(--rl-faint); } .rl-ok { color:var(--rl-green); } .rl-dim { color:var(--rl-muted); } }
 
   // ── Forms ────────────────────────────────────────────────────────────────
@@ -448,6 +457,25 @@
     h3 { font-family:var(--rl-fd); font-size:18px; color:var(--rl-fg); margin-block-start:0; margin-inline:0; margin-block-end:6px; }
     p { max-inline-size:360px; font-size:13.5px; } }
   .rl-tag { font-family:var(--rl-fm); font-size:10px; padding-block:2px; padding-inline:8px; border-radius:5px; background:var(--rl-green-soft); color:var(--rl-green); }
+
+  // ── Loading skeletons ────────────────────────────────────────────────────
+  // Shown while a dashboard fetch is in flight so a slow request never
+  // renders as the empty state. Decorative (aria-hidden in the markup);
+  // the announcement rides on a .ic-visually-hidden role="status".
+  .ic-skeleton-card { pointer-events:none; }
+  .ic-skeleton-line { block-size:11px; border-radius:6px; margin-block-end:10px;
+    background:linear-gradient(90deg, rgba(var(--rl-muted-rgb),.13) 25%, rgba(var(--rl-muted-rgb),.22) 37%, rgba(var(--rl-muted-rgb),.13) 63%);
+    background-size:400% 100%; animation:ic-skeleton-shimmer 1.4s ease infinite;
+    &:last-child { margin-block-end:0; } }
+  .ic-skeleton-title { block-size:15px; inline-size:55%; }
+  .ic-skeleton-short { inline-size:35%; }
+  @keyframes ic-skeleton-shimmer { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+  // Respect users who ask the OS for less motion.
+  @media (prefers-reduced-motion: reduce) { .ic-skeleton-line { animation:none; } }
+
+  // Available to assistive tech, invisible on screen.
+  .ic-visually-hidden { position:absolute; inline-size:1px; block-size:1px; padding:0; margin:-1px;
+    overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
 
   // ── Env bar (project dashboard) ──────────────────────────────────────────
   .rl-envbar { display:flex; align-items:center; gap:10px; padding-block:8px; padding-inline:13px; border-radius:var(--rl-rsm); margin-block-end:16px; border:1px solid var(--rl-line2);

@@ -1,0 +1,22 @@
+---
+# Ansible collections the playbooks in this directory rely on.
+#
+# This file is the addon's own declaration — the equivalent of
+# ``external_dependencies`` in the manifest — so anyone installing
+# incubacloud outside our images knows what to provide:
+#
+#     ansible-galaxy collection install -r incubacloud/ansible/requirements.yml
+#
+# In our own image the same pins live in
+# ``odoo/custom/dependencies/ansible-collections.yml`` (installed at
+# build time by ``odoo/custom/build.d/250-ansible-collections``). Keep
+# the two in lockstep, the same way pip.txt and requirements-ci.txt are
+# kept in lockstep.
+#
+# Pinned on purpose: a collection upgrade changes what runs on a
+# customer host exactly like a code change, so it goes through review.
+collections:
+  - name: ansible.posix
+    version: "2.2.2"
+  - name: community.general
+    version: "13.2.0"

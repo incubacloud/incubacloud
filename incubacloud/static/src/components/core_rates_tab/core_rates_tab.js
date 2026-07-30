@@ -16,6 +16,8 @@ export class CoreRatesTab extends Component {
                 rate_limit_webhook_per_min: 300,
                 rate_limit_terminal_per_min: 30,
                 rate_limit_terminal_user_per_min: 10,
+                rate_limit_connect_per_min: 20,
+                rate_limit_connect_user_per_min: 10,
             },
         });
 
@@ -38,6 +40,12 @@ export class CoreRatesTab extends Component {
                 ),
                 rate_limit_terminal_user_per_min: Number(
                     d.rate_limit_terminal_user_per_min || 10,
+                ),
+                rate_limit_connect_per_min: Number(
+                    d.rate_limit_connect_per_min || 20,
+                ),
+                rate_limit_connect_user_per_min: Number(
+                    d.rate_limit_connect_user_per_min || 10,
                 ),
             });
         } catch {
@@ -65,6 +73,10 @@ export class CoreRatesTab extends Component {
                     this.state.form.rate_limit_terminal_per_min,
                 rate_limit_terminal_user_per_min:
                     this.state.form.rate_limit_terminal_user_per_min,
+                rate_limit_connect_per_min:
+                    this.state.form.rate_limit_connect_per_min,
+                rate_limit_connect_user_per_min:
+                    this.state.form.rate_limit_connect_user_per_min,
             },
         });
     }

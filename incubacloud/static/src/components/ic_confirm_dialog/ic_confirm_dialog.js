@@ -3,7 +3,7 @@
  *
  * Why this exists:
  *   The same ~15-line markup block lived in 8+ templates (host_detail,
- *   settings, instance_detail, backup_backend_detail, job_drawer,
+ *   settings, instance_detail, backup_backend_detail,
  *   project_sidebar, app_header, alert_history). Each copy shipped
  *   without role=dialog, aria-modal, focus trap, Esc handler or
  *   focus restoration — so screen readers couldn't announce the

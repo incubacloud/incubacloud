@@ -599,6 +599,81 @@ class TestHostScopedRacePrevention(TransactionCase):
         self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
 
 
+class TestRetryAndUnblockRespectTheGuard(TransactionCase):
+    """``retry_job`` and ``unblock_and_enqueue`` used to bypass the guard.
+
+    Both dispatched straight to ``with_delay`` without taking the advisory
+    lock or checking for an active job, so a retry (or a pip-conflict
+    resolution) fired while a deploy was already running on the target —
+    two SSH sessions mutating the same instance at once. ``enqueue`` was
+    the only guarded door, and neither of these came through it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'guard-host',
+            'ip_address': '10.0.0.31',
+            'user': 'root',
+            'wildcard_domain': 'guard.test.local',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'GP'})
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'guard-inst',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+            'environment': 'staging',
+        })
+        self.jt = _ensure_job_type(self.env, 'test_guard_jt')
+
+    def _job(self, state):
+        """Create an instance job forced into ``state``.
+
+        Raw SQL after an explicit flush: ``state`` is a stored related on
+        ``queue_job_id.state`` and would otherwise be recomputed to NULL.
+        """
+        job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'instance_id': self.instance.id,
+            'job_type_id': self.jt.id,
+            'name': 'guard job',
+        })
+        job.flush_recordset(['state'])
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = %s WHERE id = %s", (state, job.id),
+        )
+        self.env['cloud.job'].invalidate_model(['state'])
+        return job
+
+    def test_retry_is_blocked_while_another_job_runs(self):
+        failed = self._job('failed')
+        self._job('started')
+        with self.assertRaises(UserError):
+            failed.retry_job()
+
+    def test_retry_works_when_the_target_is_idle(self):
+        """The guard must not block the ordinary retry path."""
+        failed = self._job('failed')
+        new_id = failed.retry_job()
+        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+
+    def test_a_failed_job_does_not_block_its_own_retry(self):
+        """``failed`` is not an active state — retrying must not self-lock."""
+        failed = self._job('failed')
+        self.assertTrue(failed.retry_job())
+
+    def test_unblock_is_blocked_while_another_job_runs(self):
+        blocked = self._job(False)
+        self._job('started')
+        with self.assertRaises(UserError):
+            blocked.unblock_and_enqueue()
+
+    def test_unblock_works_when_the_target_is_idle(self):
+        blocked = self._job(False)
+        blocked.unblock_and_enqueue()
+        self.assertTrue(blocked.queue_job_uuid)
+
+
 class TestChainFailurePropagation(TransactionCase):
     """When a job fails, chained jobs in wait_dependencies are failed too."""
 
@@ -891,6 +966,7 @@ class TestCronCleanupBackupAttachments(TransactionCase):
     def _row(self, attachment, backup_time):
         return self.env['cloud.instance.backup'].create({
             'instance_id': self.instance.id,
+            'kind': 'archive',
             'backup_type': 'Full',
             'backup_time': backup_time,
             'attachment_id': attachment.id if attachment else False,
@@ -997,7 +1073,7 @@ class TestCreateBackupPayloadPropagation(TransactionCase):
             'project_id': self.project.id,
             'host_id': self.host.id,
             'environment': 'staging',
-            'deployed': True,
+            'state': 'deployed',
         })
         # Make sure both job types exist so enqueue_chain doesn't fail.
         _ensure_job_type(self.env, 'backup_create', apply_to='instance')
@@ -1080,6 +1156,7 @@ class TestBackupContentsLabel(TransactionCase):
         from odoo import fields
         return self.env['cloud.instance.backup'].create({
             'instance_id': self.instance.id,
+            'kind': 'archive',
             'backup_type': 'Full',
             'backup_time': fields.Datetime.now(),
             'attachment_id': attachment_id,

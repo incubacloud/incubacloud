@@ -1,4 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
+import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 
 /**
  * InstanceDetail pure-logic tests.
@@ -71,7 +72,8 @@ function envLabel(env) {
 
 function statusLabel(inst) {
     if (!inst) return "";
-    if (inst.status === "provisioning") return "Building...";
+    if (inst.state === "deploying") return "Building...";
+    if (inst.state === "deleting") return "Removing...";
     if (!inst.deployed) return "Not deployed";
     if (inst.running) return "Running";
     if (inst.status === "error") return "Error";
@@ -80,7 +82,9 @@ function statusLabel(inst) {
 
 function statusClass(inst) {
     if (!inst) return "";
-    if (inst.status === "provisioning") return "st-provisioning";
+    if (inst.state === "deploying" || inst.state === "deleting") {
+        return "st-provisioning";
+    }
     if (!inst.deployed) return "st-pending";
     if (inst.running) return "st-running";
     if (inst.status === "error") return "st-error";
@@ -403,24 +407,28 @@ describe("InstanceDetail — statusLabel getter logic", () => {
         expect(statusLabel(null)).toBe("");
     });
 
-    test("returns 'Building...' when status is provisioning", () => {
-        expect(statusLabel({ status: "provisioning", deployed: false, running: false })).toBe("Building...");
+    test("returns 'Building...' while the deploy job runs", () => {
+        expect(statusLabel({ state: "deploying", status: "ok", deployed: false, running: false })).toBe("Building...");
+    });
+
+    test("returns 'Removing...' while the teardown job runs", () => {
+        expect(statusLabel({ state: "deleting", status: "ok", deployed: true, running: true })).toBe("Removing...");
     });
 
     test("returns 'Not deployed' when deployed is false", () => {
-        expect(statusLabel({ status: "ok", deployed: false, running: false })).toBe("Not deployed");
+        expect(statusLabel({ state: "draft", status: "ok", deployed: false, running: false })).toBe("Not deployed");
     });
 
     test("returns 'Running' when running is true", () => {
-        expect(statusLabel({ status: "ok", deployed: true, running: true })).toBe("Running");
+        expect(statusLabel({ state: "deployed", status: "ok", deployed: true, running: true })).toBe("Running");
     });
 
     test("returns 'Error' when status is error", () => {
-        expect(statusLabel({ status: "error", deployed: true, running: false })).toBe("Error");
+        expect(statusLabel({ state: "deployed", status: "error", deployed: true, running: false })).toBe("Error");
     });
 
     test("returns 'Stopped' as fallback for deployed, non-running instance", () => {
-        expect(statusLabel({ status: "ok", deployed: true, running: false })).toBe("Stopped");
+        expect(statusLabel({ state: "deployed", status: "ok", deployed: true, running: false })).toBe("Stopped");
     });
 });
 
@@ -429,24 +437,25 @@ describe("InstanceDetail — statusClass getter logic", () => {
         expect(statusClass(null)).toBe("");
     });
 
-    test("returns st-provisioning when status is provisioning", () => {
-        expect(statusClass({ status: "provisioning", deployed: false, running: false })).toBe("st-provisioning");
+    test("returns st-provisioning for both in-flight states", () => {
+        expect(statusClass({ state: "deploying", status: "ok", deployed: false, running: false })).toBe("st-provisioning");
+        expect(statusClass({ state: "deleting", status: "ok", deployed: true, running: true })).toBe("st-provisioning");
     });
 
     test("returns st-pending when not deployed", () => {
-        expect(statusClass({ status: "ok", deployed: false, running: false })).toBe("st-pending");
+        expect(statusClass({ state: "draft", status: "ok", deployed: false, running: false })).toBe("st-pending");
     });
 
     test("returns st-running when running", () => {
-        expect(statusClass({ status: "ok", deployed: true, running: true })).toBe("st-running");
+        expect(statusClass({ state: "deployed", status: "ok", deployed: true, running: true })).toBe("st-running");
     });
 
     test("returns st-error when status is error", () => {
-        expect(statusClass({ status: "error", deployed: true, running: false })).toBe("st-error");
+        expect(statusClass({ state: "deployed", status: "error", deployed: true, running: false })).toBe("st-error");
     });
 
     test("returns st-stopped as fallback", () => {
-        expect(statusClass({ status: "ok", deployed: true, running: false })).toBe("st-stopped");
+        expect(statusClass({ state: "deployed", status: "ok", deployed: true, running: false })).toBe("st-stopped");
     });
 });
 
@@ -738,5 +747,80 @@ describe("InstanceDetail — timelineJobs (overflow)", () => {
         expect(tl[0]._overflow).toBe(true);
         expect(tl[0].count).toBe(6 - 3 - 1); // 2 pending
         expect(tl[4].id).toBe(10);  // running bottom
+    });
+});
+
+// ── Connect-as gate ─────────────────────────────────────────────────────────
+
+describe("InstanceDetail — connect-as gate", () => {
+    /**
+     * Build a bare component bound to the real prototype so the gate under
+     * test is the shipped one, not a copy. Mirroring it here would let the
+     * source drift while the tests stay green — unacceptable for a
+     * permission check.
+     *
+     * @param {string} environment instance environment
+     * @param {object} permissions env.permissions payload
+     * @returns {InstanceDetail} object exposing the real getters
+     */
+    function gate(environment, permissions) {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.env = { permissions };
+        comp.state = { inst: { environment } };
+        return comp;
+    }
+
+    const STAKEHOLDER = { can_connect_as: true };
+    const DEVELOPER = { can_connect_as: true, can_connect_production: true };
+    const MANAGER = {
+        can_connect_as: true,
+        can_connect_production: true,
+        can_connect_production_admin: true,
+    };
+
+    test("no cloud role at all cannot connect anywhere", () => {
+        expect(gate("staging", {}).canConnectAs).toBe(false);
+        expect(gate("production", {}).canConnectAs).toBe(false);
+    });
+
+    test("stakeholder keeps the staging floor", () => {
+        expect(gate("staging", STAKEHOLDER).canConnectAs).toBe(true);
+    });
+
+    test("stakeholder is locked out of production", () => {
+        expect(gate("production", STAKEHOLDER).canConnectAs).toBe(false);
+    });
+
+    test("developer may connect to production", () => {
+        expect(gate("production", DEVELOPER).canConnectAs).toBe(true);
+    });
+
+    test("normal target users are never restricted", () => {
+        const user = { id: 7, is_admin: false };
+        expect(gate("production", DEVELOPER).canConnectAsTarget(user)).toBe(true);
+        expect(gate("staging", STAKEHOLDER).canConnectAsTarget(user)).toBe(true);
+    });
+
+    test("tenant admin on staging stays open to stakeholders", () => {
+        const admin = { id: 2, is_admin: true };
+        expect(gate("staging", STAKEHOLDER).canConnectAsTarget(admin)).toBe(true);
+    });
+
+    test("tenant admin on production is denied to a developer", () => {
+        const admin = { id: 2, is_admin: true };
+        expect(gate("production", DEVELOPER).canConnectAsTarget(admin)).toBe(false);
+    });
+
+    test("tenant admin on production is allowed to a manager", () => {
+        const admin = { id: 2, is_admin: true };
+        expect(gate("production", MANAGER).canConnectAsTarget(admin)).toBe(true);
+    });
+
+    test("missing permissions payload denies instead of crashing", () => {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.env = {};
+        comp.state = { inst: { environment: "production" } };
+        expect(comp.canConnectAs).toBe(false);
+        expect(comp.canConnectAsTarget({ is_admin: true })).toBe(false);
     });
 });

@@ -33,13 +33,32 @@ jobs:
       - name: Run refurb
         # Exclude ``migrations/`` — refurb uses mypy internally and two
         # ``post-migrate.py`` files in sibling version dirs trigger a
-        # "Duplicate module named" error. Migration scripts are tiny
-        # and tested by the boot-install path, so skipping them from
-        # the style linter is safe.
+        # "Duplicate module named" error. Skipping them from the style
+        # linter is safe: their *behaviour* is exercised by the
+        # ``upgrade`` job below, which installs the base-ref version and
+        # runs ``-u`` with the new code so pre/post-migrate scripts
+        # actually execute.
         run: |
           find incubacloud incubacloud_connect \
             -name '*.py' -not -path '*/migrations/*' -print0 \
             | xargs -0 --no-run-if-empty refurb
+
+      - name: Mock-spec ratchet
+        # Decision log P18.3: test doubles stand in for real APIs, so
+        # they must be built as ``MagicMock(spec=RealClass)`` — a bare
+        # ``MagicMock()`` answers yes to everything and once shipped a
+        # fake method to production. Blanket-banning would flag the
+        # historical debt at once, so this is a RATCHET: the count may
+        # only go down. Fixed a few? Lower the baseline in this step.
+        run: |
+          count=$(grep -rEo 'MagicMock\(\)' --include='test_*.py' \
+            incubacloud incubacloud_connect | wc -l)
+          baseline=30
+          echo "bare MagicMock() in tests: $count (baseline: $baseline)"
+          if [ "$count" -gt "$baseline" ]; then
+            echo "::error::A new bare MagicMock() was added. Use MagicMock(spec=RealClass) — see CONTRIBUTING 'Test rules'."
+            exit 1
+          fi
 
   test:
     name: Tests
@@ -49,6 +68,12 @@ jobs:
     # CN-011: Pinned to digest to prevent silent image changes.
     # Update intentionally: docker pull ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
     #   then: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
+    #
+    # Known gap vs runtime: prod/devel run Python 3.12 (Doodba's
+    # 19.0-onbuild image). OCA does not publish a py3.12 variant for
+    # Odoo 19.0 — their build matrix (OCA/oca-ci/.github/workflows/ci.yaml)
+    # tops out at py3.10 for this Odoo version. This is outside our
+    # control; revisit once OCA adds a py3.12-odoo19.0 image.
     container: ghcr.io/oca/oca-ci/py3.10-odoo19.0@sha256:9147149654ace4f05a16a4b76772a9f5e4021932291fdffcc8918a13ae80446c
 
     services:
@@ -104,7 +129,7 @@ jobs:
         # ``oca_init_test_database`` fails to install queue_job. Not
         # pinned/audited — pip-audit excludes it (git URL in pip.txt)
         # and it never executes in our tests.
-        run: pip install --upgrade 'asyncssh==2.22.0' 'boto3==1.42.89' 'freezegun==1.5.5' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib'
+        run: pip install --upgrade 'asyncssh==2.22.0' 'boto3==1.42.89' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib'
 
       - name: Fetch OCA dependencies
         run: |
@@ -119,6 +144,164 @@ jobs:
 
       - name: Run tests
         run: oca_run_tests
+
+  upgrade:
+    name: Test (upgrade path)
+    # The test job installs CLEAN, so migration scripts never execute
+    # there — yet the module ships *mandatory* pre-migrates (1.0.13,
+    # 1.0.17…) without which existing databases fail to boot. This job
+    # installs the addons at the push/PR BASE revision, then switches
+    # the working tree to the new code and runs ``-u``, which is the
+    # exact path a real deployment takes.
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    container: ghcr.io/oca/oca-ci/py3.10-odoo19.0@sha256:9147149654ace4f05a16a4b76772a9f5e4021932291fdffcc8918a13ae80446c
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: test_odoo
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: postgres
+      PGUSER: odoo
+      PGPASSWORD: odoo
+      PGDATABASE: test_odoo
+      ADDONS_DIR: .
+      INCUBACLOUD_SECRET_KEY: ezzIy8RZ5rO9PBHSLpy4PdRW7nUCewcz7JTEDlzTWUI=
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          # Full history: this job needs to check out the BASE revision.
+          fetch-depth: 0
+
+      - name: Resolve base revision
+        id: base
+        # PR → the target branch tip; push → the previous tip. A branch
+        # creation push has no previous tip (all-zeros): skip honestly
+        # rather than pretend an upgrade was exercised.
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$base" 2>/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No usable base revision — skipping upgrade exercise."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "base=$base" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install extra dependencies
+        if: steps.base.outputs.skip != 'true'
+        # Same pins as the test job (see rationale there).
+        run: pip install --upgrade 'asyncssh==2.22.0' 'boto3==1.42.89' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib'
+
+      - name: Fetch OCA dependencies
+        if: steps.base.outputs.skip != 'true'
+        run: |
+          git clone --depth 1 --branch 19.0 https://github.com/OCA/queue.git /opt/odoo/addons-oca/queue
+          ln -s /opt/odoo/addons-oca/queue/queue_job /opt/odoo/addons/queue_job
+
+      - name: Install addons at the BASE revision
+        if: steps.base.outputs.skip != 'true'
+        run: |
+          git checkout -f "${{ steps.base.outputs.base }}"
+          oca_install_addons
+          oca_init_test_database
+
+      - name: Upgrade to the new code
+        if: steps.base.outputs.skip != 'true'
+        # ``-u`` against the database installed above runs every
+        # pre/post-migrate between the two revisions — red here means a
+        # real deployment would have failed to boot.
+        run: |
+          git checkout -f "$GITHUB_SHA"
+          odoo -d "$PGDATABASE" -u incubacloud,incubacloud_connect \
+            --stop-after-init --workers=0 --max-cron-threads=0
+
+  shellcheck:
+    name: Lint (shellcheck)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      # Pinned release tarball rather than the runner's preinstalled
+      # copy (whose version drifts) — same approach as gitleaks below.
+      - name: Install shellcheck
+        run: |
+          curl -fsSL \
+            https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz \
+            -o /tmp/shellcheck.tar.xz
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp shellcheck-v0.10.0/shellcheck
+          sudo install -m 0755 /tmp/shellcheck-v0.10.0/shellcheck /usr/local/bin/shellcheck
+
+      # The versioned scripts under ``incubacloud/scripts/`` are what
+      # executors upload and run on customer hosts (see
+      # AbstractExecutor.run_script) — they get linted like any other
+      # source file.
+      # ``-x`` follows the ``source=`` directives so the shared library
+      # is analysed together with the script that sources it.
+      - name: Run shellcheck
+        run: |
+          find incubacloud incubacloud_connect -name '*.sh' -print0 \
+            | xargs -0 --no-run-if-empty shellcheck -x
+
+  bats:
+    name: Shell tests (bats)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install bats
+        run: |
+          curl -fsSL \
+            https://github.com/bats-core/bats-core/archive/refs/tags/v1.11.1.tar.gz \
+            -o /tmp/bats.tar.gz
+          tar -xzf /tmp/bats.tar.gz -C /tmp
+          sudo /tmp/bats-core-1.11.1/install.sh /usr/local
+
+      - name: Run bats
+        run: bats incubacloud/tests/shell
+
+  ansible-lint:
+    name: Lint (ansible-lint)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.12"
+
+      # Pinned to the same ansible-core the panel image ships
+      # (dependencies/pip.txt) so the linter judges the playbooks
+      # against the version that will actually run them.
+      - name: Install ansible-lint
+        run: pip install 'ansible-core==2.21.2' 'ansible-lint==26.6.0'
+
+      - name: Run ansible-lint
+        run: ansible-lint incubacloud/ansible
 
   bandit:
     name: Security (bandit)

@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import re
 from contextlib import suppress
@@ -7,94 +8,113 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
+from ._odoo_versions import ODOO_VERSION_SELECTION
+from ._repo_requirements import _normalize_url
 from .cloud_host import parse_memory_to_gb
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
-from ._repo_requirements import _normalize_url
-from ._odoo_versions import ODOO_VERSION_SELECTION
 
 _logger = logging.getLogger(__name__)
-_GLOBAL_BACKUP_PARAM = 'incubacloud.backup_backend_id'
+_GLOBAL_BACKUP_PARAM = "incubacloud.backup_backend_id"
+
+
+def _smtp_canonical_domain(inst):
+    """Derive the SMTP canonical domain for SRS and the mailserver hostname.
+
+    Priority:
+      1. Domain part of smtp_relay_user email (user@example.com → example.com)
+      2. Strip first label from smtp_relay_host (mail.example.com → example.com)
+      3. Empty string (copier will skip SMTP service)
+
+    Module-level (not a method) so unit tests can exercise it with a
+    plain attribute namespace, no ORM record required.
+    """
+    user = inst.smtp_relay_user or ""
+    if "@" in user:
+        return user.split("@")[-1]
+    host = inst.smtp_relay_host or ""
+    parts = host.split(".")
+    if len(parts) > 2:
+        return ".".join(parts[1:])
+    return host
 
 # Docker compose project names / COMPOSE_PROJECT_NAME, DNS labels and the
 # path segment used by executors must be lowercase alnum + [_-], 1-63 chars.
 # Blocks every shell metachar (;|&$`"' space \) and path traversal (/ ..).
-_INSTANCE_NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
+_INSTANCE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
 
 # ~/..., /..., or relative path. Each segment is [A-Za-z0-9._-]+ and we
 # explicitly reject '..' segments. No shell metacharacters.
-_REMOTE_DIR_RE = re.compile(
-    r'^(~/|/)?[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$'
-)
+_REMOTE_DIR_RE = re.compile(r"^(~/|/)?[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$")
 
 # PostgreSQL identifier (database / role name). Used in psql -U/-d
 # arguments that flow through SSH shell to docker compose exec, so we
 # must keep them free of any character bash or psql could misinterpret.
 # 1-63 chars, lowercase letter or underscore start, then alnum + '_'.
-_PG_IDENT_RE = re.compile(r'^[a-z_][a-z0-9_]{0,62}$')
+_PG_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
 class CloudInstance(models.Model):
-    _name = 'cloud.instance'
-    _inherit = ['cloud.security.mixin']
-    _description = 'Cloud Instance'
+    _name = "cloud.instance"
+    _inherit = ["cloud.security.mixin", "cloud.audit.tracked.mixin"]
+    _description = "Cloud Instance"
 
     _name_project_uniq = models.Constraint(
-        'unique (project_id, name)',
-        'Instance name must be unique within a project.',
+        "unique (project_id, name)",
+        "Instance name must be unique within a project.",
     )
     _one_production_per_project = models.Constraint(
         "EXCLUDE (project_id WITH =) WHERE (environment = 'production' AND project_id IS NOT NULL)",
-        'A project can only have one production instance.',
+        "A project can only have one production instance.",
     )
 
     active = fields.Boolean(default=True)
     auto_rebuild = fields.Boolean(
-        string='Auto-Rebuild on Push',
+        string="Auto-Rebuild on Push",
         default=True,
-        help='Automatically trigger a rebuild when a push event is '
-             'received on a matching (unfrozen) repo branch.',
+        help="Automatically trigger a rebuild when a push event is "
+        "received on a matching (unfrozen) repo branch.",
     )
     last_auto_rebuild = fields.Datetime(
-        string='Last Auto-Rebuild',
+        string="Last Auto-Rebuild",
         readonly=True,
     )
     pending_push_ids = fields.One2many(
-        'cloud.instance.pending.push',
-        'instance_id',
-        string='Pending Pushes',
-        help='Pushes that arrived while a rebuild was running or within '
-             'the auto-rebuild cooldown. They are merged into the next '
-             'rebuild job triggered on completion of the current one.',
+        "cloud.instance.pending.push",
+        "instance_id",
+        string="Pending Pushes",
+        help="Pushes that arrived while a rebuild was running or within "
+        "the auto-rebuild cooldown. They are merged into the next "
+        "rebuild job triggered on completion of the current one.",
     )
     pending_push_count = fields.Integer(
-        string='Pending Push Count',
-        compute='_compute_pending_push_count',
+        string="Pending Push Count",
+        compute="_compute_pending_push_count",
     )
     auto_update = fields.Boolean(
-        string='Auto-Update Modules on Rebuild',
+        string="Auto-Update Modules on Rebuild",
         default=True,
-        help='Run click-odoo-update during rebuild to apply module '
-             'schema/data changes. Disable for instances that manage '
-             'module state manually or cannot accept automatic updates '
-             '(e.g. frozen production with a change-management policy). '
-             'Disabling also skips the safe boot test that relies on '
-             'click-odoo-update.',
+        help="Run click-odoo-update during rebuild to apply module "
+        "schema/data changes. Disable for instances that manage "
+        "module state manually or cannot accept automatic updates "
+        "(e.g. frozen production with a change-management policy). "
+        "Disabling also skips the safe boot test that relies on "
+        "click-odoo-update.",
     )
 
     # ── Smart rebuild fingerprint ─────────────────────────────────────────
     rebuild_fingerprint = fields.Char(
-        string='Rebuild Fingerprint',
-        compute='_compute_rebuild_fingerprint',
+        string="Rebuild Fingerprint",
+        compute="_compute_rebuild_fingerprint",
         store=True,
-        help='Hash of fields that affect the Docker image. When this '
-             'differs from last_rebuild_fingerprint, a full rebuild '
-             '(--pull --no-cache) is triggered instead of a cached one.',
+        help="Hash of fields that affect the Docker image. When this "
+        "differs from last_rebuild_fingerprint, a full rebuild "
+        "(--pull --no-cache) is triggered instead of a cached one.",
     )
     last_rebuild_fingerprint = fields.Char(
-        string='Last Rebuild Fingerprint',
+        string="Last Rebuild Fingerprint",
         readonly=True,
-        help='Fingerprint saved after the last successful rebuild/deploy.',
+        help="Fingerprint saved after the last successful rebuild/deploy.",
     )
 
     name = fields.Char(
@@ -102,169 +122,198 @@ class CloudInstance(models.Model):
         translate=True,
     )
     doodba_project_name = fields.Char(
-        compute='_compute_doodba_project_name',
-        string='Doodba Project Name',
-        help='Composite name used as copier project_name: '
-             '{remote_folder}-{name}. Ensures unique Docker '
-             'container names across projects on the same host.',
+        compute="_compute_doodba_project_name",
+        string="Doodba Project Name",
+        help="Composite name used as copier project_name: "
+        "{remote_folder}-{name}. Ensures unique Docker "
+        "container names across projects on the same host.",
     )
     project_id = fields.Many2one(
-        comodel_name='cloud.project',
-        string='Project',
+        comodel_name="cloud.project",
+        string="Project",
     )
     host_id = fields.Many2one(
-        comodel_name='cloud.host',
-        string='Host',
+        comodel_name="cloud.host",
+        string="Host",
     )
     move_origin_host_id = fields.Many2one(
-        comodel_name='cloud.host',
-        string='Move Origin Host',
+        comodel_name="cloud.host",
+        string="Move Origin Host",
         copy=False,
-        help='Set to the source host while a cross-host move is in '
-             'flight; cleared once the destination is cut over. A '
-             'non-empty value left after a failed move marks an instance '
-             'an operator can roll back.',
+        help="Set to the source host while a cross-host move is in "
+        "flight; cleared once the destination is cut over. A "
+        "non-empty value left after a failed move marks an instance "
+        "an operator can roll back.",
     )
     move_target_host_id = fields.Many2one(
-        comodel_name='cloud.host',
-        string='Move Target Host',
+        comodel_name="cloud.host",
+        string="Move Target Host",
         copy=False,
-        help='Destination host while a cross-host move is in flight; '
-             'cleared on cutover. Lets stuck-move recovery identify the '
-             'half-built destination copy for cleanup.',
+        help="Destination host while a cross-host move is in flight; "
+        "cleared on cutover. Lets stuck-move recovery identify the "
+        "half-built destination copy for cleanup.",
     )
     move_chain_job_ids = fields.Char(
-        string='Move Chain Job IDs',
+        string="Move Chain Job IDs",
         copy=False,
-        help='Comma-separated cloud.job IDs of the current move chain. '
-             'Set by move_to_host(), cleared on cutover success or '
-             'rollback completion. Lets rollback inspect each step\'s '
-             'state to decide what to undo.',
+        help="Comma-separated cloud.job IDs of the current move chain. "
+        "Set by move_to_host(), cleared on cutover success or "
+        "rollback completion. Lets rollback inspect each step's "
+        "state to decide what to undo.",
     )
     move_rollback_in_progress = fields.Boolean(
-        string='Move Rollback In Progress',
+        string="Move Rollback In Progress",
         copy=False,
         default=False,
-        help='True while a rollback is running. Distinguishes '
-             '"migrating" from "rolling back" in the UI and prevents '
-             'duplicate rollbacks.',
+        help="True while a rollback is running. Distinguishes "
+        '"migrating" from "rolling back" in the UI and prevents '
+        "duplicate rollbacks.",
     )
     status = fields.Selection(
         selection=[
-            ('ok', 'OK'),
-            ('warning', 'Warning'),
-            ('error', 'Error'),
-            ('provisioning', 'Provisioning'),
+            ("ok", "OK"),
+            ("warning", "Warning"),
+            ("error", "Error"),
         ],
-        string='Status',
+        string="Status",
         required=True,
-        default='ok',
+        default="ok",
+        help="Health of the instance, independent of where it is in its "
+        "lifecycle: 'ok' while it behaves, 'warning'/'error' when a "
+        "health check or a job says otherwise. Lifecycle lives in "
+        "``state``.",
     )
-    deployed = fields.Boolean(string='Deployed', default=False)
-    running = fields.Boolean(string='Running', default=False)
+    state = fields.Selection(
+        selection=[
+            ("draft", "Draft"),
+            ("deploying", "Deploying"),
+            ("deployed", "Deployed"),
+            ("deleting", "Deleting"),
+        ],
+        string="Lifecycle State",
+        required=True,
+        default="draft",
+        copy=False,
+        help="Where the instance is in its lifecycle. Written only by "
+        "``_transition()``, which rejects illegal jumps. Rebuild, "
+        "restore, move, start and stop all happen *inside* 'deployed' — "
+        "they are operations, not states.",
+    )
+    deployed = fields.Boolean(
+        string="Deployed",
+        compute="_compute_deployed",
+        store=True,
+        help="True while the instance exists on a host — that is, in "
+        "'deployed' and also in 'deleting', whose teardown has not "
+        "finished yet. Stored because search domains, the SPA and "
+        "cloud.tenant's related fields read it; derived from ``state`` "
+        "so there is a single source of truth.",
+    )
+    running = fields.Boolean(string="Running", default=False)
     custom_remote_dir = fields.Char(
-        string='Custom Remote Directory',
-        help='Override for the remote directory path. '
-             'When set, used instead of the computed ~/project/instance path. '
-             'Set automatically when importing existing instances.',
+        string="Custom Remote Directory",
+        help="Override for the remote directory path. "
+        "When set, used instead of the computed ~/project/instance path. "
+        "Set automatically when importing existing instances.",
     )
     environment = fields.Selection(
         selection=[
-            ('staging', 'Staging'),
-            ('production', 'Production'),
+            ("staging", "Staging"),
+            ("production", "Production"),
         ],
-        string='Environment',
+        string="Environment",
         required=True,
-        default='staging',
+        default="staging",
     )
     tag_ids = fields.Many2many(
-        comodel_name='cloud.instance.tag',
-        relation='cloud_instance_tag_rel',
-        column1='instance_id',
-        column2='tag_id',
-        string='Tags',
+        comodel_name="cloud.instance.tag",
+        relation="cloud_instance_tag_rel",
+        column1="instance_id",
+        column2="tag_id",
+        string="Tags",
     )
 
     # ── PR preview fields ────────────────────────────────────────────────────
     pr_number = fields.Integer(
-        string='PR Number',
+        string="PR Number",
         index=True,
-        help='GitHub PR number that created this instance. '
-             'When set, this instance is a PR preview — auto-destroyed on PR close.',
+        help="GitHub PR number that created this instance. "
+        "When set, this instance is a PR preview — auto-destroyed on PR close.",
     )
     pr_repo = fields.Char(
-        string='PR Repository',
-        help='Full repository name (owner/repo) of the PR.',
+        string="PR Repository",
+        help="Full repository name (owner/repo) of the PR.",
     )
     pr_head_branch = fields.Char(
-        string='PR Branch',
-        help='Head branch of the PR.',
+        string="PR Branch",
+        help="Head branch of the PR.",
     )
     pr_comment_id = fields.Integer(
-        string='GitHub Comment ID',
-        help='ID of the GitHub issue comment posted on the PR.',
+        string="GitHub Comment ID",
+        help="ID of the GitHub issue comment posted on the PR.",
     )
 
     # ── Copier template parameters ──────────────────────────────────────────
 
     odoo_version = fields.Selection(
         selection=ODOO_VERSION_SELECTION,
-        string='Odoo Version',
-        default='19.0',
+        string="Odoo Version",
+        default="19.0",
     )
     odoo_commit_sha = fields.Char(
-        string='Pinned Odoo Commit',
+        string="Pinned Odoo Commit",
         help=(
-            'When set, the Odoo core repository is frozen to this exact'
-            ' commit SHA instead of following the branch tip.'
+            "When set, the Odoo core repository is frozen to this exact"
+            " commit SHA instead of following the branch tip."
         ),
     )
     odoo_initial_lang = fields.Many2one(
-        'res.lang',
-        string='Initial Language',
-        context={'active_test': False},
-        help='Language installed via odoo -i base -l <code> on first deploy.',
+        "res.lang",
+        string="Initial Language",
+        context={"active_test": False},
+        help="Language installed via odoo -i base -l <code> on first deploy.",
     )
     odoo_admin_password = EncryptedChar(
-        string='Admin Password',
-        groups='incubacloud.group_cloud_developer',
+        string="Admin Password",
+        groups="incubacloud.group_cloud_developer",
     )
     odoo_admin_user_password = EncryptedChar(
-        string='Admin User Password',
-        groups='incubacloud.group_cloud_developer',
+        string="Admin User Password",
+        groups="incubacloud.group_cloud_developer",
     )
     odoo_proxy = fields.Selection(
-        [('traefik', 'Traefik'), ('none', 'None')],
-        string='Proxy', default='traefik',
+        [("traefik", "Traefik"), ("none", "None")],
+        string="Proxy",
+        default="traefik",
     )
 
     postgres_version = fields.Selection(
-        [('14', '14'), ('15', '15'), ('16', '16'), ('17', '17'), ('18', '18')],
-        string='PostgreSQL Version', default='17',
+        [("14", "14"), ("15", "15"), ("16", "16"), ("17", "17"), ("18", "18")],
+        string="PostgreSQL Version",
+        default="17",
     )
-    postgres_dbname = fields.Char(string='DB Name', default='prod')
-    postgres_username = fields.Char(string='DB User', default='odoo')
+    postgres_dbname = fields.Char(string="DB Name", default="prod")
+    postgres_username = fields.Char(string="DB User", default="odoo")
     postgres_password = EncryptedChar(
-        string='DB Password',
-        groups='incubacloud.group_cloud_developer',
+        string="DB Password",
+        groups="incubacloud.group_cloud_developer",
     )
 
     domain_ids = fields.One2many(
-        'cloud.instance.domain', 'instance_id', string='Domains',
+        "cloud.instance.domain",
+        "instance_id",
+        string="Domains",
     )
     domain = fields.Char(
-        string='Primary Domain',
-        compute='_compute_domain', store=True,
+        string="Primary Domain",
+        compute="_compute_domain",
+        store=True,
     )
 
-    @api.depends('name', 'project_id.remote_folder')
+    @api.depends("name", "project_id.remote_folder")
     def _compute_doodba_project_name(self):
         for inst in self:
-            folder = (
-                inst.project_id.remote_folder
-                if inst.project_id
-                else ''
-            )
+            folder = inst.project_id.remote_folder if inst.project_id else ""
             if folder:
                 inst.doodba_project_name = f"{folder}-{inst.name}"
             else:
@@ -280,17 +329,17 @@ class CloudInstance(models.Model):
         if self.custom_remote_dir:
             return self.custom_remote_dir
         project_folder = (
-            self.project_id.remote_folder if self.project_id else ''
-        ) or 'instances'
+            self.project_id.remote_folder if self.project_id else ""
+        ) or "instances"
         return f"~/{project_folder}/{self.name}"
 
-    @api.depends('pending_push_ids')
+    @api.depends("pending_push_ids")
     def _compute_pending_push_count(self):
         """Count of pushes queued for the next coalesced rebuild."""
         for inst in self:
             inst.pending_push_count = len(inst.pending_push_ids)
 
-    @api.depends('domain_ids.hostname', 'domain_ids.sequence')
+    @api.depends("domain_ids.hostname", "domain_ids.sequence")
     def _compute_domain(self):
         # Sort explicitly by (sequence, id) instead of relying on
         # cloud.instance.domain._order. The value of ``inst.domain``
@@ -304,145 +353,149 @@ class CloudInstance(models.Model):
                 key=lambda d: (d.sequence, d.id),
             )
             first = domains[:1]
-            inst.domain = first.hostname if first else ''
+            inst.domain = first.hostname if first else ""
 
-    odoo_admin_email = fields.Char(string='Admin Email')
+    odoo_admin_email = fields.Char(string="Admin Email")
 
-    smtp_relay_host = fields.Char(string='SMTP Host')
-    smtp_relay_port = fields.Integer(string='SMTP Port', default=587)
+    smtp_relay_host = fields.Char(string="SMTP Host")
+    smtp_relay_port = fields.Integer(string="SMTP Port", default=587)
     smtp_relay_security = fields.Selection(
         selection=[
-            ('none', 'None'),
-            ('starttls', 'STARTTLS'),
-            ('ssl', 'SSL/TLS'),
+            ("none", "None"),
+            ("starttls", "STARTTLS"),
+            ("ssl", "SSL/TLS"),
         ],
-        string='SMTP Security',
-        default='starttls',
+        string="SMTP Security",
+        default="starttls",
     )
-    smtp_relay_user = fields.Char(string='SMTP User')
+    smtp_relay_user = fields.Char(string="SMTP User")
     smtp_relay_password = EncryptedChar(
-        string='SMTP Password',
-        groups='incubacloud.group_cloud_developer',
+        string="SMTP Password",
+        groups="incubacloud.group_cloud_developer",
     )
 
     # ── Resource limits (docker-compose.override.yml) ─────────────────
     odoo_memory_limit = fields.Char(
-        string='Odoo Memory Limit', default='2g',
-        help='Docker mem_limit for odoo service (e.g. 2g, 512m)',
+        string="Odoo Memory Limit",
+        default="2g",
+        help="Docker mem_limit for odoo service (e.g. 2g, 512m)",
     )
-    odoo_cpus = fields.Float(string='Odoo CPUs', default=2.0)
+    odoo_cpus = fields.Float(string="Odoo CPUs", default=2.0)
     db_memory_limit = fields.Char(
-        string='DB Memory Limit', default='1g',
+        string="DB Memory Limit",
+        default="1g",
     )
-    db_cpus = fields.Float(string='DB CPUs', default=1.0)
+    db_cpus = fields.Float(string="DB CPUs", default=1.0)
     backup_memory_limit = fields.Char(
-        string='Backup Memory Limit', default='512m',
+        string="Backup Memory Limit",
+        default="512m",
     )
-    backup_cpus = fields.Float(string='Backup CPUs', default=0.5)
+    backup_cpus = fields.Float(string="Backup CPUs", default=0.5)
     smtp_memory_limit = fields.Char(
-        string='SMTP Memory Limit', default='256m',
+        string="SMTP Memory Limit",
+        default="256m",
     )
-    smtp_cpus = fields.Float(string='SMTP CPUs', default=0.25)
+    smtp_cpus = fields.Float(string="SMTP CPUs", default=0.25)
 
     odoo_conf = fields.Text(
-        string='Odoo Configuration',
+        string="Odoo Configuration",
         default=(
-            '[options]\n'
-            'workers = 2\n'
-            'server_wide_modules = web\n'
-            'limit_time_cpu = 600\n'
-            'limit_time_real = 1200\n'
-            'max_cron_threads = 1\n'
+            "[options]\n"
+            "workers = 2\n"
+            "server_wide_modules = web\n"
+            "limit_time_cpu = 600\n"
+            "limit_time_real = 1200\n"
+            "max_cron_threads = 1\n"
         ),
     )
 
     pip_dependencies = fields.Text(
-        string='Python Dependencies',
+        string="Python Dependencies",
         default=(
-            'git+https://github.com/OCA/openupgradelib.git@master\n'
-            'unicodecsv\n'
-            'unidecode\n'
+            "git+https://github.com/OCA/openupgradelib.git@master\n"
+            "unicodecsv\n"
+            "unidecode\n"
         ),
-        help='Contents written to odoo/custom/dependencies/pip.txt on deploy.',
+        help="Contents written to odoo/custom/dependencies/pip.txt on deploy.",
     )
     apt_dependencies = fields.Text(
-        string='System (APT) Dependencies',
-        help='Contents written to odoo/custom/dependencies/apt.txt on deploy.',
+        string="System (APT) Dependencies",
+        help="Contents written to odoo/custom/dependencies/apt.txt on deploy.",
     )
 
     repo_ids = fields.One2many(
-        comodel_name='cloud.instance.repo',
-        inverse_name='instance_id',
-        string='Repositories',
+        comodel_name="cloud.instance.repo",
+        inverse_name="instance_id",
+        string="Repositories",
     )
 
     alert_ids = fields.One2many(
-        comodel_name='cloud.alert',
-        inverse_name='instance_id',
-        string='Alerts',
+        comodel_name="cloud.alert",
+        inverse_name="instance_id",
+        string="Alerts",
     )
 
     last_health_check = fields.Datetime(
-        string='Last Health Check',
+        string="Last Health Check",
         readonly=True,
     )
     cpu_over_threshold_streak = fields.Integer(
         default=0,
         readonly=True,
         help=(
-            'Consecutive instance_health cycles with CPU above the '
-            'warning threshold. Reset to 0 the moment we read a value '
-            'below threshold. An alert is only raised once the streak '
-            'reaches the configured hysteresis depth.'
+            "Consecutive instance_health cycles with CPU above the "
+            "warning threshold. Reset to 0 the moment we read a value "
+            "below threshold. An alert is only raised once the streak "
+            "reaches the configured hysteresis depth."
         ),
     )
     mem_over_threshold_streak = fields.Integer(
         default=0,
         readonly=True,
         help=(
-            'Consecutive instance_health cycles with memory above the '
-            'warning threshold. Hysteresis counterpart of '
-            'cpu_over_threshold_streak.'
+            "Consecutive instance_health cycles with memory above the "
+            "warning threshold. Hysteresis counterpart of "
+            "cpu_over_threshold_streak."
         ),
     )
 
     compose_services = fields.Char(
-        string='Compose Services',
-        default='odoo,db',
+        string="Compose Services",
+        default="odoo,db",
         help=(
-            'Comma-separated list of Docker Compose service names'
-            ' detected from the YAML.'
+            "Comma-separated list of Docker Compose service names"
+            " detected from the YAML."
         ),
     )
 
     backup_backend_id = fields.Many2one(
-        comodel_name='cloud.backup.backend',
-        string='Backup Backend',
-        help='Backup backend for this instance. Overrides the project default.',  # noqa: E501
+        comodel_name="cloud.backup.backend",
+        string="Backup Backend",
+        help="Backup backend for this instance. Overrides the project default.",  # noqa: E501
     )
     effective_backup_backend = fields.Many2one(
-        comodel_name='cloud.backup.backend',
-        string='Effective Backup Backend',
-        compute='_compute_effective_backup_backend',
+        comodel_name="cloud.backup.backend",
+        string="Effective Backup Backend",
+        compute="_compute_effective_backup_backend",
     )
 
     instance_backup_dst = fields.Char(
-        string='Instance Backup Destination',
-        compute='_compute_instance_backup_dst',
-        help='Per-instance duplicity DST: {backend_dst}/{project}/{instance}',
+        string="Instance Backup Destination",
+        compute="_compute_instance_backup_dst",
+        help="Per-instance duplicity DST: {backend_dst}/{project}/{instance}",
     )
     custom_backup_dst = fields.Char(
-        string='Custom Backup Destination',
-        help='Override for the backup destination path. '
-             'When set, used instead of the computed path. '
-             'Set automatically when importing existing instances.',
+        string="Custom Backup Destination",
+        help="Override for the backup destination path. "
+        "When set, used instead of the computed path. "
+        "Set automatically when importing existing instances.",
     )
 
-    @api.depends('backup_backend_id', 'project_id.backup_backend_id')
+    @api.depends("backup_backend_id", "project_id.backup_backend_id")
     def _compute_effective_backup_backend(self):
-        ICP = self.env['ir.config_parameter'].sudo()
+        ICP = self.env["ir.config_parameter"].sudo()
         global_id = int(ICP.get_param(_GLOBAL_BACKUP_PARAM, 0) or 0)
-        Backend = self.env['cloud.backup.backend']
+        Backend = self.env["cloud.backup.backend"]
         global_backend = Backend.browse(global_id) if global_id else Backend
         for inst in self:
             inst.effective_backup_backend = (
@@ -452,8 +505,10 @@ class CloudInstance(models.Model):
             )
 
     @api.depends(
-        'custom_backup_dst',
-        'effective_backup_backend', 'name', 'project_id.remote_folder',
+        "custom_backup_dst",
+        "effective_backup_backend",
+        "name",
+        "project_id.remote_folder",
     )
     def _compute_instance_backup_dst(self):
         for inst in self:
@@ -463,57 +518,344 @@ class CloudInstance(models.Model):
             bb = inst.effective_backup_backend
             if bb and bb.backup_dst and inst.name:
                 project_folder = (
-                    inst.project_id.remote_folder
-                    if inst.project_id else ''
-                ) or 'default'
+                    inst.project_id.remote_folder if inst.project_id else ""
+                ) or "default"
                 inst.instance_backup_dst = (
                     f"{bb.backup_dst}/{project_folder}/{inst.name}"
                 )
             else:
-                inst.instance_backup_dst = ''
+                inst.instance_backup_dst = ""
 
     @api.depends(
-        'odoo_version', 'odoo_commit_sha', 'pip_dependencies',
-        'apt_dependencies', 'odoo_proxy',
-        'repo_ids.url', 'repo_ids.branch', 'repo_ids.commit_sha',
-        'repo_ids.addons', 'repo_ids.excludes',
+        "odoo_version",
+        "odoo_commit_sha",
+        "pip_dependencies",
+        "apt_dependencies",
+        "odoo_proxy",
+        "repo_ids.url",
+        "repo_ids.branch",
+        "repo_ids.commit_sha",
+        "repo_ids.addons",
+        "repo_ids.excludes",
     )
     def _compute_rebuild_fingerprint(self):
         for inst in self:
             parts = [
-                inst.odoo_version or '',
-                inst.odoo_commit_sha or '',
-                inst.pip_dependencies or '',
-                inst.apt_dependencies or '',
-                inst.odoo_proxy or '',
+                inst.odoo_version or "",
+                inst.odoo_commit_sha or "",
+                inst.pip_dependencies or "",
+                inst.apt_dependencies or "",
+                inst.odoo_proxy or "",
             ]
-            for repo in inst.repo_ids.sorted('id'):
-                parts.extend([
-                    repo.url or '',
-                    repo.branch or '',
-                    repo.commit_sha or '',
-                    repo.addons or '',
-                    repo.excludes or '',
-                ])
-            raw = '|'.join(parts)
-            inst.rebuild_fingerprint = (
-                hashlib.sha256(raw.encode()).hexdigest()[:16]
+            for repo in inst.repo_ids.sorted("id"):
+                parts.extend(
+                    [
+                        repo.url or "",
+                        repo.branch or "",
+                        repo.commit_sha or "",
+                        repo.addons or "",
+                        repo.excludes or "",
+                    ]
+                )
+            raw = "|".join(parts)
+            inst.rebuild_fingerprint = hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+    # ── Config drift: saved config vs what the last deploy shipped ────────
+    # The panel stores configuration; a deploy/rebuild applies it. Between
+    # the two, the UI used to say nothing — an edited domain (or SMTP
+    # relay, or backup backend, …) read as "saved" while the server kept
+    # serving the previous state. The snapshot below is everything a
+    # rebuild would ship, so ANY present or future field that feeds the
+    # copier answers counts automatically; only the extras tuple needs
+    # maintaining for inputs shipped outside the answers file.
+
+    applied_config_hash = fields.Char(
+        copy=False,
+        readonly=True,
+        help="Hash of the config snapshot the last successful deploy or "
+             "rebuild shipped. Compared against the current snapshot to "
+             "surface unapplied changes.",
+    )
+    config_dirty = fields.Boolean(
+        compute="_compute_config_dirty",
+        help="True when the saved configuration differs from what the "
+             "last deploy shipped; a rebuild applies it.",
+    )
+
+    #: Deploy inputs shipped OUTSIDE the copier answers file (compose
+    #: resource overrides, odoo.conf, dependency manifests, the pinned
+    #: odoo commit used in repos.yaml). Inheriting modules may extend.
+    _CONFIG_SNAPSHOT_EXTRA_FIELDS = (
+        "odoo_conf",
+        "odoo_memory_limit", "odoo_cpus",
+        "db_memory_limit", "db_cpus",
+        "backup_memory_limit", "backup_cpus",
+        "smtp_memory_limit", "smtp_cpus",
+        "pip_dependencies", "apt_dependencies",
+        "odoo_commit_sha",
+    )
+
+    def _render_copier_answers(self):
+        """Return the copier answers dict a deploy of this instance ships.
+
+        Single source of truth shared by the deploy executor (which dumps
+        it to the remote answers file) and the config-drift hash. Must
+        stay deterministic: values come from stored state only — never
+        tokens, timestamps or anything minted per run.
+        """
+        self.ensure_one()
+        # sudo: executor path is trusted; secret fields carry group
+        # restrictions that would otherwise hide them from the render.
+        inst = self.sudo()
+
+        entries = []
+        for d in inst.domain_ids:
+            hostname = (
+                (d.hostname or "")
+                .replace("https://", "")
+                .replace("http://", "")
+                .strip("/")
             )
+            if not hostname:
+                continue
+            entry = {"hosts": [hostname]}
+            if d.redirect_to:
+                entry["redirect_to"] = d.redirect_to
+                if d.redirect_permanent:
+                    entry["redirect_permanent"] = True
+            # Always emitted, never left to the template default: the
+            # copier copy runs against a moving upstream ref, and a
+            # default that changes between template releases would
+            # silently change every tenant's TLS on the next rebuild.
+            entry["cert_resolver"] = d._cert_resolver_answer()
+            entries.append(entry)
+
+        if inst.environment == "production":
+            domains_prod = entries
+            domains_test = []
+        else:
+            domains_prod = []
+            domains_test = entries
+
+        bb = inst.effective_backup_backend
+        if bb:
+            bb = bb.sudo()
+        has_backup = inst._backup_enabled()
+
+        answers = {
+            "project_author": inst.project_id.project_author or "IncubaCloud",
+            "project_license": inst.project_id.project_license or "BSL-1.0",
+            "project_name": inst.doodba_project_name,
+            "odoo_version": float(inst.odoo_version),
+            "odoo_initial_lang": inst.odoo_initial_lang.code or "en_US",
+            "odoo_admin_password": inst.odoo_admin_password or "",
+            "odoo_proxy": inst.odoo_proxy or "traefik",
+            "postgres_version": str(inst.postgres_version or "17"),
+            "postgres_dbname": inst.postgres_dbname or "prod",
+            "postgres_username": inst.postgres_username or "odoo",
+            "postgres_password": inst.postgres_password or "",
+            "domains_prod": domains_prod,
+            "domains_test": domains_test,
+            "smtp_relay_host": inst.smtp_relay_host or "",
+            "smtp_relay_port": inst.smtp_relay_port or 587,
+            "smtp_relay_version": "latest",
+            "smtp_relay_user": inst.smtp_relay_user or "",
+            "smtp_relay_password": inst.smtp_relay_password or "",
+            "smtp_default_from": (
+                inst.smtp_relay_user or inst.odoo_admin_email or ""
+            ),
+            # canonical_default = sending domain (from relay user email
+            # if set, else strip first subdomain off relay host, e.g.
+            # mail.x.com → x.com)
+            "smtp_canonical_default": _smtp_canonical_domain(inst),
+            "smtp_canonical_domains": [],
+            # Backup defaults (always empty/disabled; overridden below
+            # when a backup backend is configured and enabled).
+            "backup_dst": "",
+            "backup_image_version": "",
+            "backup_email_from": "",
+            "backup_email_to": "",
+            "backup_smtp_report_success": False,
+            "backup_deletion": False,
+            "backup_tz": "UTC",
+            "backup_aws_access_key_id": "",
+            "backup_aws_secret_access_key": "",
+            "backup_passphrase": "",
+        }
+        if has_backup and bb:
+            answers.update(
+                {
+                    "backup_dst": inst.instance_backup_dst or "",
+                    "backup_image_version": bb.backup_image_version or "latest",
+                    "backup_email_from": bb.email_from or "",
+                    "backup_email_to": bb.email_to or "",
+                    "backup_smtp_report_success": bb.smtp_report_success,
+                    "backup_deletion": bb.retention_owner == "cron",
+                    "backup_tz": bb.backup_tz or "UTC",
+                    "backup_aws_access_key_id": bb.s3_access_key_id or "",
+                    "backup_aws_secret_access_key": bb.s3_secret_access_key or "",
+                    "backup_passphrase": bb.passphrase or "",
+                }
+            )
+        return answers
+
+    def _render_config_snapshot(self):
+        """Return the full deterministic dict of what a rebuild ships.
+
+        Copier answers + the token-free repos description + the extras
+        tuple. Deliberately excluded: the GitHub tokens injected into
+        repos.yaml (they rotate hourly) and the template url/ref pin
+        (bumps are governed by their runbook, not per-instance drift).
+        """
+        self.ensure_one()
+        inst = self.sudo()
+        return {
+            "answers": inst._render_copier_answers(),
+            "repos": [
+                {
+                    "url": r.url or "",
+                    "branch": r.branch or "",
+                    "commit_sha": r.commit_sha or "",
+                    "addons": r.addons or "",
+                    "excludes": r.excludes or "",
+                }
+                for r in inst.repo_ids.sorted("id")
+            ],
+            "extras": {
+                f: inst[f] or "" for f in self._CONFIG_SNAPSHOT_EXTRA_FIELDS
+            },
+        }
+
+    def _config_snapshot_hash(self):
+        """SHA-256 hex digest of the canonical-JSON config snapshot."""
+        self.ensure_one()
+        raw = json.dumps(
+            self._render_config_snapshot(), sort_keys=True, default=str,
+        )
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    # Depends: only on the anchor. The snapshot side deliberately has NO
+    # field dependency list (its whole point is covering every deploy
+    # input automatically), so within one env cache the value can go
+    # stale after an edit; every HTTP request gets a fresh cache, which
+    # is the consumer that matters. Tests invalidate explicitly.
+    @api.depends("applied_config_hash")
+    def _compute_config_dirty(self):
+        """Dirty = a hash was recorded by a deploy and it no longer
+        matches. Records that never deployed (empty hash) are not dirty
+        — their whole config is pending by definition and the UI already
+        shows the deploy call-to-action."""
+        for inst in self:
+            applied = inst.applied_config_hash
+            if not applied:
+                inst.config_dirty = False
+                continue
+            try:
+                inst.config_dirty = applied != inst._config_snapshot_hash()
+            except Exception:
+                # A snapshot that cannot render (undecryptable secret,
+                # legacy row) must not break the detail page: treat the
+                # record as untracked, not as dirty.
+                _logger.warning(
+                    "config_dirty: snapshot render failed for instance %s",
+                    inst.id, exc_info=True,
+                )
+                inst.config_dirty = False
+
+    # ── Lifecycle state machine ────────────────────────────────────────────
+
+    # Legal moves between lifecycle states. Everything not listed here
+    # is a bug in the caller, not a case to tolerate: an instance that
+    # jumps straight from 'draft' to 'deleting' (or re-enters
+    # 'deploying' while a deploy is in flight) means two flows are
+    # fighting over the same record.
+    #
+    #   draft     → deploying   deploy() enqueues the job
+    #   draft     → deployed    ONLY importing an already-running instance
+    #   deploying → deployed    deploy/warm succeeded
+    #   deploying → draft       deploy failed; status carries the error
+    #   deployed  → deleting    teardown job enqueued
+    #   deleting  → draft       torn down; config kept in the panel
+    #   deleting  → deployed    teardown failed; it is still on the host
+    #
+    # Unlink is not a transition: a record can only be dropped from
+    # 'draft' (see :meth:`unlink`).
+    _STATE_TRANSITIONS = {
+        "draft": ("deploying", "deployed"),
+        "deploying": ("deployed", "draft"),
+        "deployed": ("deleting",),
+        "deleting": ("draft", "deployed"),
+    }
+
+    # States in which the instance still exists on its host. 'deleting'
+    # belongs here: until the teardown job succeeds the stack is still
+    # there, which is exactly what ``deployed`` meant before it became
+    # derived — so search domains, crons and the SPA keep behaving the
+    # same through a teardown.
+    _ON_HOST_STATES = ("deployed", "deleting")
+
+    @api.depends("state")
+    def _compute_deployed(self):
+        for inst in self:
+            inst.deployed = inst.state in self._ON_HOST_STATES
+
+    def _transition(self, to_state):
+        """Move this instance to *to_state*.
+
+        The only supported way to write ``state``: it validates the move
+        against :attr:`_STATE_TRANSITIONS` and refuses anything else, so
+        a wrong call fails where it happens instead of leaving a record
+        in a state no flow can explain.
+
+        :param str to_state: target lifecycle state
+        :raises UserError: if the move is not in the transition map
+        """
+        self.ensure_one()
+        if to_state not in self._STATE_TRANSITIONS.get(self.state, ()):
+            raise UserError(
+                _(
+                    "Cannot move instance '%(name)s' from '%(current)s' to "
+                    "'%(target)s'.",
+                    name=self.name,
+                    current=self.state,
+                    target=to_state,
+                )
+            )
+        return self.with_context(cloud_state_transition=True).write(
+            {"state": to_state},
+        )
 
     def write(self, vals):
+        # The lifecycle is a state machine, so ``state`` is written by
+        # _transition() alone. Refusing the direct write here is what
+        # keeps the map from being quietly bypassed later.
+        if "state" in vals and not self.env.context.get("cloud_state_transition"):
+            raise UserError(
+                _(
+                    "The lifecycle state of an instance is set by "
+                    "_transition(), not by writing 'state' directly."
+                )
+            )
+        # ``deployed`` is derived from ``state``. Odoo accepts a write to
+        # a stored computed field and then silently discards it on the
+        # next recompute, which would turn a stale caller into an
+        # invisible no-op; refuse it instead.
+        if "deployed" in vals:
+            raise UserError(
+                _(
+                    "'deployed' is derived from the lifecycle state. Use "
+                    "_transition() instead of writing it."
+                )
+            )
         # Drop empty password values so existing stored passwords are preserved
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
-        # Snapshot tracked fields before write
-        changed = self._AUDIT_TRACKED_FIELDS & set(vals)
-        old_snap = {}
-        if changed:
-            old_snap = {f: {r.id: r[f] for r in self} for f in changed}
+        changed, old_snap = self._audit_snapshot(vals)
         result = super().write(vals)
         # Auto-generate domain when a host is assigned to an instance
         # that doesn't have any domains yet (e.g. imported without host).
-        if 'host_id' in vals and vals['host_id']:
+        if "host_id" in vals and vals["host_id"]:
             for inst in self:
                 if inst.domain_ids:
                     continue
@@ -526,48 +868,33 @@ class CloudInstance(models.Model):
                 else:
                     subdomain = inst.name
                 hostname = f"{subdomain}.{host._subdomain_suffix()}"
-                self.env['cloud.instance.domain'].create({
-                    'instance_id': inst.id,
-                    'hostname': hostname,
-                })
-        # Write audit log entries for changed tracked fields
-        if changed:
-            for rec in self:
-                parts = []
-                for field in changed:
-                    old = old_snap[field][rec.id]
-                    new = rec[field]
-                    if old == new:
-                        continue
-                    field_def = rec._fields[field]
-                    old_d = (
-                        old.display_name
-                        if hasattr(old, 'display_name') and old
-                        else str(old)
-                    )
-                    new_d = (
-                        new.display_name
-                        if hasattr(new, 'display_name') and new
-                        else str(new)
-                    )
-                    parts.append(f"{field_def.string}: {old_d}→{new_d}")
-                if parts:
-                    self.env['cloud.audit.log'].sudo().create({
-                        'action': 'Config changed',
-                        'instance_id': rec.id,
-                        'host_id': rec.host_id.id if rec.host_id else False,
-                        'details': '; '.join(parts)[:255],
-                    })
+                self.env["cloud.instance.domain"].create(
+                    {
+                        "instance_id": inst.id,
+                        "hostname": hostname,
+                    }
+                )
+        self._audit_log_changes(changed, old_snap)
         return result
+
+    def _audit_target_vals(self):
+        """Point 'Config changed' audit rows at this instance and host."""
+        self.ensure_one()
+        return {
+            "instance_id": self.id,
+            "host_id": self.host_id.id if self.host_id else False,
+        }
 
     def _check_backup_backend(self):
         """Raise if this production instance has no effective backup backend."""
-        if self.environment == 'production' and not self.effective_backup_backend:
-            raise UserError(_(
-                "No backup backend configured for this instance. "
-                "Set one at instance level, project level, or globally "
-                "in Settings → General → Default Backup Backend."
-            ))
+        if self.environment == "production" and not self.effective_backup_backend:
+            raise UserError(
+                _(
+                    "No backup backend configured for this instance. "
+                    "Set one at instance level, project level, or globally "
+                    "in Settings → General → Default Backup Backend."
+                )
+            )
 
     def _backup_enabled(self):
         """Whether this instance should run the doodba ``backup`` service.
@@ -594,13 +921,13 @@ class CloudInstance(models.Model):
           host is configured.
         """
         self.ensure_one()
-        if self.environment != 'production':
-            return ('odoo', 'db')
-        svcs = ['odoo', 'db']
+        if self.environment != "production":
+            return ("odoo", "db")
+        svcs = ["odoo", "db"]
         if self._backup_enabled():
-            svcs.append('backup')
+            svcs.append("backup")
         if self.smtp_relay_host:
-            svcs.append('smtp')
+            svcs.append("smtp")
         return tuple(svcs)
 
     def deploy(self):
@@ -608,11 +935,16 @@ class CloudInstance(models.Model):
         self.ensure_one()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
+        if self.deployed:
+            raise UserError(_("Instance is already deployed. Use Rebuild instead."))
         self._check_backup_backend()
-        return self.env['cloud.job'].enqueue(
+        # Enter 'deploying' before enqueuing: the transition map is what
+        # rejects a second deploy while the first is still in flight.
+        self._transition("deploying")
+        return self.env["cloud.job"].enqueue(
             self.host_id.id,
             self.id,
-            'deploy_instance',
+            "deploy_instance",
         )
 
     def list_backups(self):
@@ -620,12 +952,12 @@ class CloudInstance(models.Model):
         self.ensure_one()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
-        if self.environment == 'production':
+        if self.environment == "production":
             self._check_backup_backend()
-        return self.env['cloud.job'].enqueue(
+        return self.env["cloud.job"].enqueue(
             self.host_id.id,
             self.id,
-            'backup_list',
+            "backup_list",
         )
 
     def create_backup(self, with_filestore=True):
@@ -645,21 +977,23 @@ class CloudInstance(models.Model):
             raise UserError(_("Instance has no host assigned."))
         if not self.deployed:
             raise UserError(_("Instance is not deployed."))
-        if self.environment == 'production':
+        if self.environment == "production":
             self._check_backup_backend()
-        step = {'host_id': self.host_id.id, 'instance_id': self.id}
+        step = {"host_id": self.host_id.id, "instance_id": self.id}
         # Bool coercion at the service-layer boundary so any truthy
         # input (a stray string from JSON-RPC, etc.) collapses to True
         # before reaching the shell command in the executor.
         create_step = {
             **step,
-            'job_type_code': 'backup_create',
-            'payload': {'with_filestore': bool(with_filestore)},
+            "job_type_code": "backup_create",
+            "payload": {"with_filestore": bool(with_filestore)},
         }
-        ids = self.env['cloud.job'].enqueue_chain([
-            create_step,
-            {**step, 'job_type_code': 'backup_list'},
-        ])
+        ids = self.env["cloud.job"].enqueue_chain(
+            [
+                create_step,
+                {**step, "job_type_code": "backup_list"},
+            ]
+        )
         return ids[-1]
 
     def download_backup(self, payload):
@@ -672,16 +1006,16 @@ class CloudInstance(models.Model):
         self.ensure_one()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
-        if self.environment != 'production' and not self.deployed:
+        if self.environment != "production" and not self.deployed:
             # Non-prod takes a live dump from inside the running odoo
             # container; without a deployed stack there is no
             # docker-compose project to ``run --rm`` against.
             raise UserError(_("Instance is not deployed."))
         self._check_backup_backend()
-        return self.env['cloud.job'].enqueue(
+        return self.env["cloud.job"].enqueue(
             self.host_id.id,
             self.id,
-            'backup_download',
+            "backup_download",
             payload=payload,
         )
 
@@ -697,30 +1031,47 @@ class CloudInstance(models.Model):
             raise UserError(_("Instance has no host assigned."))
         if not self.deployed:
             raise UserError(_("Instance is not deployed."))
-        if self.environment == 'production':
+        if self.environment == "production":
             self._check_backup_backend()
-        return self.env['cloud.job'].enqueue(
+        return self.env["cloud.job"].enqueue(
             self.host_id.id,
             self.id,
-            'backup_download_neutralized',
+            "backup_download_neutralized",
             payload=payload,
         )
 
     def restore_backup(self, payload):
-        """Enqueue a backup_restore job for this instance."""
+        """Enqueue a backup_restore job for this instance.
+
+        Always prepends a fresh ``backup_create`` — restoring an older
+        duplicity snapshot is destructive, so a safety snapshot of the
+        current state is taken first, unconditionally (no opt-out).
+        Same rationale as ``move_to_host``.
+        """
         self.ensure_one()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
         self._check_backup_backend()
-        return self.env['cloud.job'].enqueue(
-            self.host_id.id,
-            self.id,
-            'backup_restore',
-            payload=payload,
+        job_ids = self.env["cloud.job"].enqueue_chain(
+            [
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": self.id,
+                    "job_type_code": "backup_create",
+                },
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": self.id,
+                    "job_type_code": "backup_restore",
+                    "payload": payload,
+                },
+            ]
         )
+        return job_ids[0]
 
-    def clone_to_staging(self, staging_name,
-                         pr_number=0, pr_repo='', pr_head_branch=''):
+    def clone_to_staging(
+        self, staging_name, pr_number=0, pr_repo="", pr_head_branch=""
+    ):
         """Create a staging copy of this production instance with its data.
 
         When *pr_number* is provided the clone is a PR preview instance:
@@ -729,80 +1080,84 @@ class CloudInstance(models.Model):
         default branch.
         """
         self.ensure_one()
-        if self.environment != 'production':
+        if self.environment != "production":
             raise UserError(_("Only production instances can be cloned."))
         if not self.deployed:
             raise UserError(_("Instance must be deployed first."))
 
         vals = {
-            'name': staging_name,
-            'project_id': self.project_id.id,
-            'host_id': self.host_id.id,
-            'environment': 'staging',
-            'status': 'provisioning',
-            'odoo_version': self.odoo_version,
-            'odoo_commit_sha': self.odoo_commit_sha,
-            'odoo_initial_lang': (
-                self.odoo_initial_lang.id
-                if self.odoo_initial_lang else False
+            "name": staging_name,
+            "project_id": self.project_id.id,
+            "host_id": self.host_id.id,
+            "environment": "staging",
+            "odoo_version": self.odoo_version,
+            "odoo_commit_sha": self.odoo_commit_sha,
+            "odoo_initial_lang": (
+                self.odoo_initial_lang.id if self.odoo_initial_lang else False
             ),
-            'odoo_proxy': self.odoo_proxy,
-            'postgres_version': self.postgres_version,
-            'postgres_dbname': 'prod',
-            'postgres_username': self.postgres_username,
-            'smtp_relay_host': self.smtp_relay_host,
-            'smtp_relay_port': self.smtp_relay_port,
-            'smtp_relay_security': self.smtp_relay_security,
-            'smtp_relay_user': self.smtp_relay_user,
-            'odoo_conf': self.odoo_conf,
-            'pip_dependencies': self.pip_dependencies,
-            'apt_dependencies': self.apt_dependencies,
+            "odoo_proxy": self.odoo_proxy,
+            "postgres_version": self.postgres_version,
+            "postgres_dbname": "prod",
+            "postgres_username": self.postgres_username,
+            "smtp_relay_host": self.smtp_relay_host,
+            "smtp_relay_port": self.smtp_relay_port,
+            "smtp_relay_security": self.smtp_relay_security,
+            "smtp_relay_user": self.smtp_relay_user,
+            "odoo_conf": self.odoo_conf,
+            "pip_dependencies": self.pip_dependencies,
+            "apt_dependencies": self.apt_dependencies,
         }
         if pr_number:
             vals |= {
-                'pr_number': pr_number,
-                'pr_repo': pr_repo,
-                'pr_head_branch': pr_head_branch,
+                "pr_number": pr_number,
+                "pr_repo": pr_repo,
+                "pr_head_branch": pr_head_branch,
             }
         staging = self.with_context(
             skip_project_repos=True,
         ).create(vals)
 
         pr_repo_norm = _normalize_url(
-            f'https://github.com/{pr_repo}' if pr_repo else ''
+            f"https://github.com/{pr_repo}" if pr_repo else ""
         )
         for repo in self.repo_ids:
-            new_repo = repo.copy({'instance_id': staging.id})
+            new_repo = repo.copy({"instance_id": staging.id})
             if pr_head_branch and pr_repo_norm:
                 if _normalize_url(new_repo.url) == pr_repo_norm:
-                    new_repo.write({'branch': pr_head_branch, 'commit_sha': False})
+                    new_repo.write({"branch": pr_head_branch, "commit_sha": False})
 
-        job_ids = self.env['cloud.job'].enqueue_chain([
-            {
-                'host_id': self.host_id.id,
-                'instance_id': staging.id,
-                'job_type_code': 'deploy_instance',
-            },
-            {
-                'host_id': self.host_id.id,
-                'instance_id': self.id,  # prod
-                'job_type_code': 'backup_download',
-                'payload': {
-                    'time': 'latest',
-                    'download_type': 'all',
+        # The clone is deployed by the chain below rather than through
+        # deploy(), so it enters 'deploying' here.
+        staging._transition("deploying")
+
+        job_ids = self.env["cloud.job"].enqueue_chain(
+            [
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": staging.id,
+                    "job_type_code": "deploy_instance",
                 },
-            },
-            {
-                'host_id': self.host_id.id,
-                'instance_id': staging.id,
-                'job_type_code': 'restore_instance',
-                'payload': {
-                    'mode': 'from_job',
-                    'source_job_id': '__chain_job_1__',
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": self.id,  # prod
+                    "job_type_code": "backup_download",
+                    "payload": {
+                        "time": "latest",
+                        "download_type": "all",
+                    },
                 },
-            },
-        ])
-        return {'staging_id': staging.id, 'job_id': job_ids[0]}
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": staging.id,
+                    "job_type_code": "restore_instance",
+                    "payload": {
+                        "mode": "from_job",
+                        "source_job_id": "__chain_job_1__",
+                    },
+                },
+            ]
+        )
+        return {"staging_id": staging.id, "job_id": job_ids[0]}
 
     # ── Cross-host move ────────────────────────────────────────────────────
 
@@ -814,7 +1169,7 @@ class CloudInstance(models.Model):
         ``tenant_deploy_instance`` so the tenant module is staged on the
         new host (the restored DB references it).
         """
-        return 'deploy_instance'
+        return "deploy_instance"
 
     def _move_pre_steps(self, source_host):
         """Return extra chain steps to run BEFORE the move starts.
@@ -858,7 +1213,7 @@ class CloudInstance(models.Model):
         on success.
         """
         self.ensure_one()
-        self.env['cloud.security.mixin']._check_can_manage_hosts()
+        self.env["cloud.security.mixin"]._check_can_manage_hosts()
         source = self.host_id
         if not source:
             raise UserError(_("Instance has no host assigned."))
@@ -866,20 +1221,24 @@ class CloudInstance(models.Model):
             raise UserError(_("Instance must be deployed before it can move."))
         if not target_host or target_host == source:
             raise UserError(_("Pick a different target host."))
-        if (target_host.status != 'compatible'
-                or not target_host.traefik_deployed):
-            raise UserError(_(
-                "Target host '%(name)s' is not ready (must be compatible "
-                "and have Traefik deployed).", name=target_host.name or '?',
-            ))
+        if target_host.status != "compatible" or not target_host.traefik_deployed:
+            raise UserError(
+                _(
+                    "Target host '%(name)s' is not ready (must be compatible "
+                    "and have Traefik deployed).",
+                    name=target_host.name or "?",
+                )
+            )
         if self.move_origin_host_id:
-            raise UserError(_(
-                "A move is already in progress for this instance."))
+            raise UserError(_("A move is already in progress for this instance."))
         if not self.instance_backup_dst:
-            raise UserError(_(
-                "This instance has no resolvable backup backend, so a "
-                "move cannot transfer its data. Configure a backup "
-                "backend (instance, project or global) first."))
+            raise UserError(
+                _(
+                    "This instance has no resolvable backup backend, so a "
+                    "move cannot transfer its data. Configure a backup "
+                    "backend (instance, project or global) first."
+                )
+            )
 
         self.move_origin_host_id = source.id
         self.move_target_host_id = target_host.id
@@ -889,28 +1248,51 @@ class CloudInstance(models.Model):
         # restore references the download job by its 0-indexed position.
         download_idx = len(pre) + 3
         steps = pre + [
-            {'host_id': target_host.id, 'instance_id': self.id,
-             'job_type_code': self._move_deploy_job_type()},
-            {'host_id': source.id, 'instance_id': self.id,
-             'job_type_code': 'stop_instance',
-             'payload': {'services': ['odoo']}},
-            {'host_id': source.id, 'instance_id': self.id,
-             'job_type_code': 'backup_create'},
-            {'host_id': source.id, 'instance_id': self.id,
-             'job_type_code': 'backup_download',
-             'payload': {'time': 'latest', 'download_type': 'all'}},
-            {'host_id': target_host.id, 'instance_id': self.id,
-             'job_type_code': 'restore_instance',
-             'payload': {'mode': 'from_job',
-                         'source_job_id': f'__chain_job_{download_idx}__'}},
-            {'host_id': target_host.id, 'instance_id': self.id,
-             'job_type_code': 'move_cutover'},
-            {'host_id': source.id, 'instance_id': self.id,
-             'job_type_code': 'move_cleanup_source'},
+            {
+                "host_id": target_host.id,
+                "instance_id": self.id,
+                "job_type_code": self._move_deploy_job_type(),
+            },
+            {
+                "host_id": source.id,
+                "instance_id": self.id,
+                "job_type_code": "stop_instance",
+                "payload": {"services": ["odoo"]},
+            },
+            {
+                "host_id": source.id,
+                "instance_id": self.id,
+                "job_type_code": "backup_create",
+            },
+            {
+                "host_id": source.id,
+                "instance_id": self.id,
+                "job_type_code": "backup_download",
+                "payload": {"time": "latest", "download_type": "all"},
+            },
+            {
+                "host_id": target_host.id,
+                "instance_id": self.id,
+                "job_type_code": "restore_instance",
+                "payload": {
+                    "mode": "from_job",
+                    "source_job_id": f"__chain_job_{download_idx}__",
+                },
+            },
+            {
+                "host_id": target_host.id,
+                "instance_id": self.id,
+                "job_type_code": "move_cutover",
+            },
+            {
+                "host_id": source.id,
+                "instance_id": self.id,
+                "job_type_code": "move_cleanup_source",
+            },
         ]
-        job_ids = self.env['cloud.job'].enqueue_chain(steps)
-        self.move_chain_job_ids = ','.join(str(jid) for jid in job_ids)
-        return {'ok': True, 'job_id': job_ids[0]}
+        job_ids = self.env["cloud.job"].enqueue_chain(steps)
+        self.move_chain_job_ids = ",".join(str(jid) for jid in job_ids)
+        return {"ok": True, "job_id": job_ids[0]}
 
     def rollback_move(self):
         """Recover a move that failed before cutover (user entrypoint).
@@ -922,23 +1304,25 @@ class CloudInstance(models.Model):
         the instance has recovered.
         """
         self.ensure_one()
-        self.env['cloud.security.mixin']._check_can_manage_hosts()
+        self.env["cloud.security.mixin"]._check_can_manage_hosts()
         if not self.move_origin_host_id:
             raise UserError(_("No move in progress to roll back."))
         if self.move_rollback_in_progress:
             raise UserError(_("A rollback is already in progress."))
         origin = self.move_origin_host_id
         if self.host_id != origin:
-            raise UserError(_(
-                "Cannot roll back: the move already completed "
-                "(cutover succeeded). The instance is now live on "
-                "the target host. Use 'Move to host' to move it "
-                "back if needed."
-            ))
+            raise UserError(
+                _(
+                    "Cannot roll back: the move already completed "
+                    "(cutover succeeded). The instance is now live on "
+                    "the target host. Use 'Move to host' to move it "
+                    "back if needed."
+                )
+            )
         result = self._do_rollback_move()
         if result is False:
-            return {'ok': False, 'error': _("Nothing to roll back.")}
-        return {'ok': True, 'job_id': result}
+            return {"ok": False, "error": _("Nothing to roll back.")}
+        return {"ok": True, "job_id": result}
 
     def _do_rollback_move(self):
         """Core stuck-move recovery, WITHOUT the ACL check.
@@ -968,15 +1352,15 @@ class CloudInstance(models.Model):
         by step (same order as ``move_chain_job_ids``)."""
         self.ensure_one()
         if not self.move_chain_job_ids:
-            return self.env['cloud.job']
+            return self.env["cloud.job"]
         ids = []
-        for part in (self.move_chain_job_ids or '').split(','):
+        for part in (self.move_chain_job_ids or "").split(","):
             part = part.strip()
             if part.isdigit():
                 ids.append(int(part))
         if not ids:
-            return self.env['cloud.job']
-        jobs = self.env['cloud.job'].browse(ids).exists()
+            return self.env["cloud.job"]
+        jobs = self.env["cloud.job"].browse(ids).exists()
         # Preserve original step order.
         id_to_pos = {jid: i for i, jid in enumerate(ids)}
         return jobs.sorted(key=lambda j: id_to_pos.get(j.id, 9999))
@@ -1000,7 +1384,7 @@ class CloudInstance(models.Model):
         chain_jobs = self._get_move_chain_jobs()
         if not chain_jobs:
             return
-        active_states = tuple(self.env['cloud.job']._active_states)
+        active_states = tuple(self.env["cloud.job"]._active_states)
         self.env.cr.execute(
             "SELECT id FROM cloud_job WHERE id IN %s AND state IN %s",
             (tuple(chain_jobs.ids), active_states),
@@ -1026,12 +1410,16 @@ class CloudInstance(models.Model):
         origin = self.move_origin_host_id
         self.move_rollback_in_progress = True
         # Start source in parallel — independent of cleanup.
-        self.env['cloud.job'].enqueue(
-            origin.id, self.id, 'start_instance',
+        self.env["cloud.job"].enqueue(
+            origin.id,
+            self.id,
+            "start_instance",
             bypass_running_check=True,
         )
-        return self.env['cloud.job'].enqueue(
-            target.id, self.id, 'move_rollback_cleanup',
+        return self.env["cloud.job"].enqueue(
+            target.id,
+            self.id,
+            "move_rollback_cleanup",
             bypass_running_check=True,
         )
 
@@ -1039,8 +1427,8 @@ class CloudInstance(models.Model):
         """Post or update the GitHub PR comment for this PR preview instance."""
         if not self.pr_number or not self.pr_repo:
             return
-        owner, repo = self.pr_repo.split('/', 1)
-        creds = self.env['cloud.github.credential.service'].get_credentials()
+        owner, repo = self.pr_repo.split("/", 1)
+        creds = self.env["cloud.github.credential.service"].get_credentials()
         if not creds:
             return
         client = GitHubAppClient(creds)
@@ -1049,8 +1437,8 @@ class CloudInstance(models.Model):
                 client.patch_issue_comment(owner, repo, self.pr_comment_id, body)
             else:
                 result = client.post_issue_comment(owner, repo, self.pr_number, body)
-                if result.get('id'):
-                    self.write({'pr_comment_id': result['id']})
+                if result.get("id"):
+                    self.write({"pr_comment_id": result["id"]})
         except Exception:
             _logger.exception("PR comment update failed for %s", self.name)
 
@@ -1058,14 +1446,14 @@ class CloudInstance(models.Model):
         """Delete the GitHub PR comment for this PR preview instance."""
         if not self.pr_comment_id or not self.pr_repo:
             return
-        owner, repo = self.pr_repo.split('/', 1)
-        creds = self.env['cloud.github.credential.service'].get_credentials()
+        owner, repo = self.pr_repo.split("/", 1)
+        creds = self.env["cloud.github.credential.service"].get_credentials()
         if not creds:
             return
         client = GitHubAppClient(creds)
         try:
             client.delete_issue_comment(owner, repo, self.pr_comment_id)
-            self.write({'pr_comment_id': 0})
+            self.write({"pr_comment_id": 0})
         except Exception:
             _logger.exception("PR comment delete failed for %s", self.name)
 
@@ -1083,23 +1471,66 @@ class CloudInstance(models.Model):
         * ``rsync``    — the zip is already on the remote host at the path
                          the executor expects (operator uploaded it manually).
 
+        ``payload['backup_before_restore']`` requests a safety snapshot
+        (backup_create + backup_download) chained before the restore.
+        On production this is always forced regardless of the flag —
+        same "no opt-out" rule as ``restore_backup``/``move_to_host``.
+        On non-production it stays opt-in, default off.
+
         The method is exposed via JSON-RPC, so we gate it explicitly:
         only Developer+ can trigger a restore. The downstream executor
         also validates the ``local_path`` prefix as a defense-in-depth
         layer (see RestoreInstanceExecutor.before_execute).
         """
         self.ensure_one()
-        self.env['cloud.security.mixin']._check_can_manage_backups()
+        self.env["cloud.security.mixin"]._check_can_manage_backups()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
-        if (payload or {}).get('mode') not in ('browser', 'from_job', 'rsync'):
+        payload = payload or {}
+        if payload.get("mode") not in ("browser", "from_job", "rsync"):
             raise UserError(_("Invalid restore mode."))
-        return self.env['cloud.job'].enqueue(
-            self.host_id.id,
-            self.id,
-            'restore_instance',
-            payload=payload,
+
+        backup_first = self.environment == "production" or bool(
+            payload.get("backup_before_restore")
         )
+        if not backup_first:
+            return self.env["cloud.job"].enqueue(
+                self.host_id.id,
+                self.id,
+                "restore_instance",
+                payload=payload,
+            )
+
+        if not self.instance_backup_dst:
+            raise UserError(
+                _(
+                    "This instance has no resolvable backup backend, so a "
+                    "pre-restore safety backup cannot be taken. Configure a "
+                    "backup backend (instance, project or global) first."
+                )
+            )
+        job_ids = self.env["cloud.job"].enqueue_chain(
+            [
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": self.id,
+                    "job_type_code": "backup_create",
+                },
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": self.id,
+                    "job_type_code": "backup_download",
+                    "payload": {"time": "latest", "download_type": "all"},
+                },
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": self.id,
+                    "job_type_code": "restore_instance",
+                    "payload": payload,
+                },
+            ]
+        )
+        return job_ids[0]
 
     @api.model
     def cron_refresh_backup_list(self):
@@ -1110,44 +1541,99 @@ class CloudInstance(models.Model):
         container via ``docker compose exec -T backup`` and would fail
         with exit status 1 on every run otherwise.
         """
-        instances = self.search([
-            ('deployed', '=', True),
-            ('environment', '=', 'production'),
-            ('move_origin_host_id', '=', False),
-        ])
+        instances = self.search(
+            [
+                ("deployed", "=", True),
+                ("environment", "=", "production"),
+                ("move_origin_host_id", "=", False),
+            ]
+        )
         for inst in instances:
             if not inst.host_id or not inst.instance_backup_dst:
                 continue
             services = {
-                s.strip()
-                for s in (inst.compose_services or '').split(',')
-                if s.strip()
+                s.strip() for s in (inst.compose_services or "").split(",") if s.strip()
             }
-            if 'backup' not in services:
+            if "backup" not in services:
                 continue
             try:
                 inst.list_backups()
             except Exception:
                 _logger.warning(
                     "Could not enqueue backup_list for %s",
-                    inst.name, exc_info=True,
+                    inst.name,
+                    exc_info=True,
                 )
+
+    _NO_BACKUP_ALERT_CODE = "production_no_backup"
+
+    @api.model
+    def cron_check_production_backup(self):
+        """Daily cron: warn on deployed production instances with no
+        resolvable backup backend (instance/project/global all empty).
+
+        Unlike the backend-scoped alerts in cloud.backup.backend, this
+        one has a natural ``instance_id`` target so it's visible to
+        every member of the instance's project, not just managers.
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        instances = self.search(
+            [
+                ("deployed", "=", True),
+                ("environment", "=", "production"),
+            ]
+        )
+        flagged = 0
+        for inst in instances:
+            existing = Alert.search(
+                [
+                    ("code", "=", self._NO_BACKUP_ALERT_CODE),
+                    ("instance_id", "=", inst.id),
+                    ("state", "=", "active"),
+                ],
+                limit=1,
+            )
+            if inst.effective_backup_backend:
+                existing.write({"state": "dismissed"})
+                continue
+            flagged += 1
+            vals = {
+                "code": self._NO_BACKUP_ALERT_CODE,
+                "level": "warning",
+                "message": (
+                    f"Production instance '{inst.name}' has no backup "
+                    f"backend configured — it is not being backed up."
+                ),
+                "instance_id": inst.id,
+            }
+            if inst.project_id:
+                vals["project_id"] = inst.project_id.id
+            if inst.host_id:
+                vals["host_id"] = inst.host_id.id
+            if existing:
+                existing.write(vals)
+            else:
+                Alert.create(vals)
+        return {"flagged": flagged}
 
     @api.model
     def cron_instance_health(self):
         """Queue an instance_health job for every deployed instance."""
-        instances = self.search([('deployed', '=', True)])
+        instances = self.search([("deployed", "=", True)])
         for inst in instances:
             if not inst.host_id:
                 continue
             try:
-                self.env['cloud.job'].enqueue(
-                    inst.host_id.id, inst.id, 'instance_health',
+                self.env["cloud.job"].enqueue(
+                    inst.host_id.id,
+                    inst.id,
+                    "instance_health",
                 )
             except Exception as e:
                 _logger.warning(
                     "Could not enqueue instance_health for %s: %s",
-                    inst.name, e,
+                    inst.name,
+                    e,
                 )
 
     @api.model
@@ -1177,51 +1663,58 @@ class CloudInstance(models.Model):
         Instances with active jobs are left alone (move or rollback in
         progress).
         """
-        Job = self.env['cloud.job']
+        Job = self.env["cloud.job"]
         hidden = Job._get_hidden_job_types()
         active_states = Job._active_states
-        Alert = self.env['cloud.alert'].sudo()
-        stuck = self.search([('move_origin_host_id', '!=', False)])
+        Alert = self.env["cloud.alert"].sudo()
+        stuck = self.search([("move_origin_host_id", "!=", False)])
         for inst in stuck:
-            in_flight = Job.search_count([
-                ('instance_id', '=', inst.id),
-                ('state', 'in', active_states),
-                ('job_type_id.code', 'not in', hidden),
-            ])
+            in_flight = Job.search_count(
+                [
+                    ("instance_id", "=", inst.id),
+                    ("state", "in", active_states),
+                    ("job_type_id.code", "not in", hidden),
+                ]
+            )
             if in_flight:
                 continue
             origin = inst.move_origin_host_id
             if inst.move_rollback_in_progress:
-                inst.write({
-                    'move_origin_host_id': False,
-                    'move_target_host_id': False,
-                    'move_chain_job_ids': False,
-                    'move_rollback_in_progress': False,
-                })
-                if not Alert.search_count([
-                    ('instance_id', '=', inst.id),
-                    ('code', '=', 'move_rollback_failed'),
-                    ('state', '=', 'active'),
-                ]):
-                    Alert.create({
-                        'code': 'move_rollback_failed',
-                        'level': 'warning',
-                        'message': _(
-                            "Rollback cleanup of '%(name)s' failed on "
-                            "target host '%(target)s'; source host "
-                            "'%(origin)s' was restarted. Manual cleanup "
-                            "of the target may be needed.",
-                            name=inst.name,
-                            origin=origin.name or '?',
-                            target=inst.move_target_host_id.name or '?',
-                        ),
-                        'instance_id': inst.id,
-                        'project_id': (
-                            inst.project_id.id
-                            if inst.project_id else False
-                        ),
-                        'host_id': origin.id,
-                    })
+                inst.write(
+                    {
+                        "move_origin_host_id": False,
+                        "move_target_host_id": False,
+                        "move_chain_job_ids": False,
+                        "move_rollback_in_progress": False,
+                    }
+                )
+                if not Alert.search_count(
+                    [
+                        ("instance_id", "=", inst.id),
+                        ("code", "=", "move_rollback_failed"),
+                        ("state", "=", "active"),
+                    ]
+                ):
+                    Alert.create(
+                        {
+                            "code": "move_rollback_failed",
+                            "level": "warning",
+                            "message": _(
+                                "Rollback cleanup of '%(name)s' failed on "
+                                "target host '%(target)s'; source host "
+                                "'%(origin)s' was restarted. Manual cleanup "
+                                "of the target may be needed.",
+                                name=inst.name,
+                                origin=origin.name or "?",
+                                target=inst.move_target_host_id.name or "?",
+                            ),
+                            "instance_id": inst.id,
+                            "project_id": (
+                                inst.project_id.id if inst.project_id else False
+                            ),
+                            "host_id": origin.id,
+                        }
+                    )
                 continue
             try:
                 inst._do_rollback_move()
@@ -1231,33 +1724,42 @@ class CloudInstance(models.Model):
                     inst.id,
                 )
                 continue
-            if not Alert.search_count([
-                ('instance_id', '=', inst.id),
-                ('code', '=', 'move_stuck'),
-                ('state', '=', 'active'),
-            ]):
-                Alert.create({
-                    'code': 'move_stuck',
-                    'level': 'critical',
-                    'message': _(
-                        "Move of '%(name)s' failed before cutover; "
-                        "source host '%(host)s' was restarted "
-                        "automatically.",
-                        name=inst.name, host=origin.name or '?',
-                    ),
-                    'instance_id': inst.id,
-                    'project_id': (
-                        inst.project_id.id if inst.project_id else False
-                    ),
-                    'host_id': origin.id,
-                })
+            if not Alert.search_count(
+                [
+                    ("instance_id", "=", inst.id),
+                    ("code", "=", "move_stuck"),
+                    ("state", "=", "active"),
+                ]
+            ):
+                Alert.create(
+                    {
+                        "code": "move_stuck",
+                        "level": "critical",
+                        "message": _(
+                            "Move of '%(name)s' failed before cutover; "
+                            "source host '%(host)s' was restarted "
+                            "automatically.",
+                            name=inst.name,
+                            host=origin.name or "?",
+                        ),
+                        "instance_id": inst.id,
+                        "project_id": (
+                            inst.project_id.id if inst.project_id else False
+                        ),
+                        "host_id": origin.id,
+                    }
+                )
 
     # ── Resource estimation for auto-assign ───────────────────────────────
     _RESOURCE_DEFAULTS = {
-        'odoo_cpus': 2.0, 'db_cpus': 1.0,
-        'backup_cpus': 0.5, 'smtp_cpus': 0.25,
-        'odoo_memory_limit': '2g', 'db_memory_limit': '1g',
-        'backup_memory_limit': '512m', 'smtp_memory_limit': '256m',
+        "odoo_cpus": 2.0,
+        "db_cpus": 1.0,
+        "backup_cpus": 0.5,
+        "smtp_cpus": 0.25,
+        "odoo_memory_limit": "2g",
+        "db_memory_limit": "1g",
+        "backup_memory_limit": "512m",
+        "smtp_memory_limit": "256m",
     }
 
     @staticmethod
@@ -1266,33 +1768,50 @@ class CloudInstance(models.Model):
         d = CloudInstance._RESOURCE_DEFAULTS
         cpus = sum(
             float(vals.get(k, d[k]) or d[k])
-            for k in ('odoo_cpus', 'db_cpus', 'backup_cpus', 'smtp_cpus')
+            for k in ("odoo_cpus", "db_cpus", "backup_cpus", "smtp_cpus")
         )
         ram = sum(
             parse_memory_to_gb(vals.get(k, d[k]) or d[k])
             for k in (
-                'odoo_memory_limit', 'db_memory_limit',
-                'backup_memory_limit', 'smtp_memory_limit',
+                "odoo_memory_limit",
+                "db_memory_limit",
+                "backup_memory_limit",
+                "smtp_memory_limit",
             )
         )
         return cpus, ram
 
     # Fields tracked in the audit log when changed (never passwords)
-    _AUDIT_TRACKED_FIELDS = frozenset({
-        'name', 'host_id', 'project_id', 'environment', 'odoo_version',
-        'smtp_relay_host', 'smtp_relay_port', 'smtp_relay_security',
-        'odoo_proxy', 'postgres_version', 'postgres_dbname',
-        'backup_backend_id', 'active',
-    })
+    _AUDIT_TRACKED_FIELDS = frozenset(
+        {
+            "name",
+            "host_id",
+            "project_id",
+            "environment",
+            "odoo_version",
+            "smtp_relay_host",
+            "smtp_relay_port",
+            "smtp_relay_security",
+            "odoo_proxy",
+            "postgres_version",
+            "postgres_dbname",
+            "backup_backend_id",
+            "active",
+        }
+    )
 
     # Password fields: auto-generated if empty on create, preserved on write
     _PASSWORD_FIELDS = (
-        'odoo_admin_password', 'odoo_admin_user_password',
-        'postgres_password', 'smtp_relay_password',
+        "odoo_admin_password",
+        "odoo_admin_user_password",
+        "postgres_password",
+        "smtp_relay_password",
     )
     # Subset that must always have a value (auto-generated if not provided)
     _REQUIRED_PASSWORD_FIELDS = (
-        'odoo_admin_password', 'odoo_admin_user_password', 'postgres_password',
+        "odoo_admin_password",
+        "odoo_admin_user_password",
+        "postgres_password",
     )
 
     # ── Validation: name + custom_remote_dir fluye a shell en executors ───
@@ -1300,131 +1819,241 @@ class CloudInstance(models.Model):
     # command injection via SSH en el host remoto. El regex estricto es la
     # defensa principal; los executors pueden seguir usando f-strings.
 
-    @api.constrains('name')
+    @api.constrains("name")
     def _check_name_shell_safe(self):
         for inst in self:
-            if not _INSTANCE_NAME_RE.match(inst.name or ''):
-                raise ValidationError(_(
-                    "Instance name '%(name)s' is invalid. It must start with "
-                    "a lowercase letter or digit and contain only lowercase "
-                    "letters, digits, hyphens and underscores (max 63 chars).",
-                    name=inst.name,
-                ))
+            if not _INSTANCE_NAME_RE.match(inst.name or ""):
+                raise ValidationError(
+                    _(
+                        "Instance name '%(name)s' is invalid. It must start with "
+                        "a lowercase letter or digit and contain only lowercase "
+                        "letters, digits, hyphens and underscores (max 63 chars).",
+                        name=inst.name,
+                    )
+                )
 
-    @api.constrains('custom_remote_dir')
+    @api.constrains("custom_remote_dir")
     def _check_custom_remote_dir_shell_safe(self):
         for inst in self:
             v = inst.custom_remote_dir
             if not v:
                 continue
-            if not _REMOTE_DIR_RE.match(v) or '..' in v.split('/'):
-                raise ValidationError(_(
-                    "Custom remote directory '%(path)s' is invalid. Use only "
-                    "letters, digits, dots, hyphens and underscores in each "
-                    "path segment. No '..', spaces or shell metacharacters.",
-                    path=v,
-                ))
+            if not _REMOTE_DIR_RE.match(v) or ".." in v.split("/"):
+                raise ValidationError(
+                    _(
+                        "Custom remote directory '%(path)s' is invalid. Use only "
+                        "letters, digits, dots, hyphens and underscores in each "
+                        "path segment. No '..', spaces or shell metacharacters.",
+                        path=v,
+                    )
+                )
 
-    @api.constrains('postgres_dbname', 'postgres_username')
+    @api.constrains("postgres_dbname", "postgres_username")
     def _check_pg_identifiers_shell_safe(self):
         for inst in self:
             for fname, label in (
-                ('postgres_dbname', 'PostgreSQL database name'),
-                ('postgres_username', 'PostgreSQL user'),
+                ("postgres_dbname", "PostgreSQL database name"),
+                ("postgres_username", "PostgreSQL user"),
             ):
                 v = inst[fname]
                 if v and not _PG_IDENT_RE.match(v):
-                    raise ValidationError(_(
-                        "%(label)s '%(value)s' is invalid. Use a valid "
-                        "PostgreSQL identifier (1-63 chars, start with a "
-                        "lowercase letter or underscore, then letters, "
-                        "digits and underscores).",
-                        label=label,
-                        value=v,
-                    ))
+                    raise ValidationError(
+                        _(
+                            "%(label)s '%(value)s' is invalid. Use a valid "
+                            "PostgreSQL identifier (1-63 chars, start with a "
+                            "lowercase letter or underscore, then letters, "
+                            "digits and underscores).",
+                            label=label,
+                            value=v,
+                        )
+                    )
+
+    @api.constrains("host_id", "project_id", "name", "custom_remote_dir")
+    def _check_remote_dir_unique_per_host(self):
+        """Two instances landing on the same directory of the same host
+        would silently clobber each other's compose files, DB volume and
+        filestore. ``remote_folder`` is only unique within its own
+        project, so a collision is possible across different projects
+        sharing a host — catch it here instead of on the remote disk.
+        """
+        for inst in self:
+            if not inst.host_id:
+                continue
+            target = inst.get_remote_dir()
+            siblings = inst.sudo().search(
+                [
+                    ("host_id", "=", inst.host_id.id),
+                    ("id", "!=", inst.id),
+                ]
+            )
+            for sibling in siblings:
+                if sibling.get_remote_dir() == target:
+                    raise ValidationError(
+                        _(
+                            "Instance '%(name)s' would use remote directory "
+                            "'%(dir)s' on host '%(host)s', already used by "
+                            "instance '%(other)s'.",
+                            name=inst.name,
+                            dir=target,
+                            host=inst.host_id.name,
+                            other=sibling.name,
+                        )
+                    )
 
     def unlink(self):
         for inst in self:
             self._check_can_delete_instance(inst)
-            self.env['cloud.audit.log'].sudo().create({
-                'action': 'Instance deleted',
-                'host_id': inst.host_id.id if inst.host_id else False,
-                'project_id': inst.project_id.id if inst.project_id else False,
-                'details': inst.name,
-            })
+            if inst.state == "deployed":
+                raise UserError(
+                    _(
+                        "Instance '%(name)s' is still deployed. Remove it "
+                        "from the host first (use Delete on the instance "
+                        "page).",
+                        name=inst.name,
+                    )
+                )
+            if inst.state != "draft":
+                # 'deploying' / 'deleting': a job owns the record right
+                # now and will land it in a final state on its own.
+                raise UserError(
+                    _(
+                        "Instance '%(name)s' has a job in flight "
+                        "(state: %(state)s). Wait for it to finish before "
+                        "deleting the record.",
+                        name=inst.name,
+                        state=inst.state,
+                    )
+                )
+            self.env["cloud.audit.log"].sudo().create(
+                {
+                    "action": "Instance deleted",
+                    "host_id": inst.host_id.id if inst.host_id else False,
+                    "project_id": inst.project_id.id if inst.project_id else False,
+                    "details": inst.name,
+                }
+            )
         return super().unlink()
+
+    def _finalize_removal(self, keep_in_panel):
+        """Apply the outcome of a successful ``delete_instance`` job.
+
+        Called by the executor once the remote host has been torn
+        down. Back to 'draft' either way: with ``keep_in_panel=True``
+        the instance stays visible as a re-deployable draft, otherwise
+        the record is unlinked now that it is a draft again and the
+        :meth:`unlink` guard no longer applies.
+        """
+        self.ensure_one()
+        self.write({"running": False})
+        if self.state == "deployed":
+            # Normally the teardown job already marked 'deleting' in its
+            # before_execute; step through it here so a caller that
+            # finalises a still-'deployed' record (a rolled-back job
+            # transaction, a direct call) walks the same legal path
+            # instead of hitting the transition map.
+            self._transition("deleting")
+        if self.state != "draft":
+            # Already-'draft' records reach here on a legitimate path: a
+            # deploy that failed rolled the instance back to 'draft'
+            # (deploy_instance_executor.on_failure), and the teardown job
+            # that cleans it up skips its own 'deleting' step for the same
+            # reason. ``draft → draft`` is not in the transition map, so
+            # calling _transition unconditionally raised UserError inside
+            # the hook's cursor: the rollback dropped the unlink() below
+            # and the record was stranded, re-enqueued by the next cron
+            # tick forever. Finalising an already-draft record is a no-op.
+            self._transition("draft")
+        if not keep_in_panel:
+            self.unlink()
 
     @api.model_create_multi
     def create(self, vals_list):
         self._check_can_create_instance()
         for vals in vals_list:
+            # Seeding ``state`` on create is legal (that is how an
+            # already-running instance is imported), but ``deployed`` is
+            # derived: Odoo would accept it here and then quietly
+            # overwrite it from ``state``, so say so instead.
+            if "deployed" in vals:
+                raise UserError(
+                    _(
+                        "'deployed' is derived from the lifecycle state. "
+                        "Pass 'state' instead."
+                    )
+                )
             for field in self._REQUIRED_PASSWORD_FIELDS:
                 if not vals.get(field):
                     vals[field] = generate_password()
-            project_id = vals.get('project_id')
+            project_id = vals.get("project_id")
             if project_id:
-                project = self.env['cloud.project'].browse(project_id)
+                project = self.env["cloud.project"].browse(project_id)
                 # Copy project dependencies to instance if not set
-                if 'pip_dependencies' not in vals and project.pip_dependencies:
-                    vals['pip_dependencies'] = project.pip_dependencies
-                if 'apt_dependencies' not in vals and project.apt_dependencies:
-                    vals['apt_dependencies'] = project.apt_dependencies
+                if "pip_dependencies" not in vals and project.pip_dependencies:
+                    vals["pip_dependencies"] = project.pip_dependencies
+                if "apt_dependencies" not in vals and project.apt_dependencies:
+                    vals["apt_dependencies"] = project.apt_dependencies
                 # Auto-generate domain from wildcard
-                if (not vals.get('domain_ids')
-                        and vals.get('host_id') and vals.get('name')):
-                    host = self.env['cloud.host'].browse(vals['host_id'])
+                if (
+                    not vals.get("domain_ids")
+                    and vals.get("host_id")
+                    and vals.get("name")
+                ):
+                    host = self.env["cloud.host"].browse(vals["host_id"])
                     if host.wildcard_domain:
-                        project_folder = project.remote_folder or ''
+                        project_folder = project.remote_folder or ""
                         subdomain = (
                             f"{project_folder}-{vals['name']}"
                             if project_folder
-                            else vals['name']
+                            else vals["name"]
                         )
                         hostname = f"{subdomain}.{host._subdomain_suffix()}"
-                        vals['domain_ids'] = [
-                            (0, 0, {'hostname': hostname}),
+                        vals["domain_ids"] = [
+                            (0, 0, {"hostname": hostname}),
                         ]
-            elif (not vals.get('domain_ids')
-                    and vals.get('host_id') and vals.get('name')):
-                host = self.env['cloud.host'].browse(vals['host_id'])
+            elif (
+                not vals.get("domain_ids") and vals.get("host_id") and vals.get("name")
+            ):
+                host = self.env["cloud.host"].browse(vals["host_id"])
                 if host.wildcard_domain:
                     hostname = f"{vals['name']}.{host._subdomain_suffix()}"
-                    vals['domain_ids'] = [
-                        (0, 0, {'hostname': hostname}),
+                    vals["domain_ids"] = [
+                        (0, 0, {"hostname": hostname}),
                     ]
         # sudo on create: encrypted password fields are restricted to
         # group_cloud_developer but consultants (lower in the hierarchy)
         # are allowed to create instances. We auto-generate those passwords
         # above; writing them requires sudo. We drop back to the caller's
         # env so the returned recordset respects their normal permissions.
-        records = super(
-            CloudInstance, self.sudo()
-        ).create(vals_list).with_env(self.env)
+        records = super(CloudInstance, self.sudo()).create(vals_list).with_env(self.env)
         for inst in records:
-            self.env['cloud.audit.log'].sudo().create({
-                'action': 'Instance created',
-                'instance_id': inst.id,
-                'host_id': inst.host_id.id if inst.host_id else False,
-                'project_id': inst.project_id.id if inst.project_id else False,
-            })
+            self.env["cloud.audit.log"].sudo().create(
+                {
+                    "action": "Instance created",
+                    "instance_id": inst.id,
+                    "host_id": inst.host_id.id if inst.host_id else False,
+                    "project_id": inst.project_id.id if inst.project_id else False,
+                }
+            )
         # skip_apply_requirements: requirements were already merged into the
         # project's pip_dependencies (and inherited by the instance above).
         # Re-fetching from GitHub here would just duplicate the work and block
         # the request with N synchronous HTTP calls.
-        Repo = self.env['cloud.instance.repo'].with_context(
+        Repo = self.env["cloud.instance.repo"].with_context(
             skip_apply_requirements=True,
         )
         for inst in records:
-            if self.env.context.get('skip_project_repos'):
+            if self.env.context.get("skip_project_repos"):
                 continue  # caller will create repos explicitly
             for repo in inst.project_id.repo_ids:
-                Repo.create({
-                    'instance_id': inst.id,
-                    'sequence': repo.sequence,
-                    'url': repo.url,
-                    'branch': repo.branch or 'main',
-                    'addons': repo.addons or '',
-                    'excludes': repo.excludes or '',
-                    'commit_sha': repo.commit_sha or '',
-                })
+                Repo.create(
+                    {
+                        "instance_id": inst.id,
+                        "sequence": repo.sequence,
+                        "url": repo.url,
+                        "branch": repo.branch or "main",
+                        "addons": repo.addons or "",
+                        "excludes": repo.excludes or "",
+                        "commit_sha": repo.commit_sha or "",
+                    }
+                )
         return records

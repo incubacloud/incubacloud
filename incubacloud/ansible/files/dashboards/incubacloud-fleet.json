@@ -1,0 +1,151 @@
+{
+  "uid": "ic-fleet",
+  "title": "Incubacloud \u2014 Fleet",
+  "tags": [
+    "incubacloud"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Hosts reporting",
+      "description": "Hosts whose agents pushed a sample in the last five minutes. A drop here is the fleet-level signal that the staleness rule then attributes to specific hosts.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(count by (host_id) (last_over_time(up{job=\"node\"}[5m])))",
+          "legendFormat": "hosts"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Instances observed",
+      "description": "Distinct instances currently carrying a label in the fleet's container metrics.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(count by (instance_id) (container_last_seen))",
+          "legendFormat": "instances"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Hosts above 90% disk",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(100 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"} * 100) > 90) or vector(0)",
+          "legendFormat": "hosts"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Hosts above 92% memory",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) > 92) or vector(0)",
+          "legendFormat": "hosts"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Load per core, by host",
+      "description": "Ranked: the saturated hosts surface without picking one first.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "topk(10, node_load15 / count without (cpu, mode) (node_cpu_seconds_total{mode=\"idle\"}))",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Root filesystem used %, by host",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "targets": [
+        {
+          "expr": "topk(10, 100 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"} * 100))",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory used %, by host",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "topk(10, 100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100))",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Ingest age per host (seconds since last sample)",
+      "description": "The same expression the staleness rule alerts on, so the panel and the alert can never disagree.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "time() - max by (host_id, host) (last_over_time(timestamp(up{job=\"node\"})[1h:1m]))",
+          "legendFormat": "{{host}}"
+        }
+      ]
+    }
+  ]
+}

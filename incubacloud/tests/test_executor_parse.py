@@ -19,40 +19,6 @@ def _make_executor(executor_class):
     return executor
 
 
-# ── DockerPruneExecutor.parse_results ─────────────────────────────────────────
-
-class TestDockerPruneParseResults(BaseCase):
-
-    def setUp(self):
-        from odoo.addons.incubacloud.models.docker_prune_executor import DockerPruneExecutor
-        self.executor = _make_executor(DockerPruneExecutor)
-
-    def _results(self, exit_status=0, stdout=""):
-        return {"prune": {"exit_status": exit_status, "stdout": stdout}}
-
-    def test_success_returns_empty_errors(self):
-        errors = self.executor.parse_results(self._results(exit_status=0))
-        self.assertEqual(errors, [])
-
-    def test_nonzero_exit_returns_error_message(self):
-        errors = self.executor.parse_results(self._results(exit_status=1))
-        self.assertEqual(len(errors), 1)
-        self.assertIn("exit 1", errors[0])
-
-    def test_exit_status_2_in_error_message(self):
-        errors = self.executor.parse_results(self._results(exit_status=2))
-        self.assertIn("exit 2", errors[0])
-
-    def test_missing_prune_key_returns_empty(self):
-        """If the command result is missing, default exit_status is 0 → no error."""
-        errors = self.executor.parse_results({})
-        self.assertEqual(errors, [])
-
-    def test_prune_key_empty_dict_returns_empty(self):
-        errors = self.executor.parse_results({"prune": {}})
-        self.assertEqual(errors, [])
-
-
 # ── InstanceHealthExecutor.parse_results ──────────────────────────────────────
 
 class TestInstanceHealthParseResults(BaseCase):

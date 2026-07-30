@@ -2,6 +2,8 @@
 
 import { Component, useState, useRef, onWillUnmount } from "@odoo/owl";
 
+import { useAnchoredMenu } from "../../utils/use_anchored_menu";
+
 /**
  * RlSelect — custom single-select dropdown styled with the Relay design tokens.
  *
@@ -35,6 +37,11 @@ export class RlSelect extends Component {
         placeholder: { type: String, optional: true },
         disabled:    { type: Boolean, optional: true },
         ariaLabel:   { type: String, optional: true },
+        // Mirror what a plain <input> exposes when its row is in error,
+        // so a screen reader announces the failure on the control the
+        // user is standing on — not only in the caption below it.
+        ariaInvalid:      { type: Boolean, optional: true },
+        ariaDescribedby:  { type: String, optional: true },
     };
     static defaultProps = {
         disabled: false,
@@ -47,6 +54,13 @@ export class RlSelect extends Component {
         onWillUnmount(() =>
             document.removeEventListener("mousedown", this._onDocMouseDown, true)
         );
+        // The menu is position:fixed, so it must follow the trigger when
+        // anything scrolls or the window resizes.
+        useAnchoredMenu(() => {
+            if (this.state.open) {
+                this.state.dropdownStyle = this._computeDropdownStyle();
+            }
+        });
     }
 
     // ── Option normalisation ────────────────────────────────────────────────

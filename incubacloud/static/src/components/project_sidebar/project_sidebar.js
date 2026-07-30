@@ -150,7 +150,9 @@ export class ProjectSidebar extends Component {
     }
 
     statusDot(inst) {
-        if (inst.status === "provisioning") return "dot-provisioning";
+        if (inst.state === "deploying" || inst.state === "deleting") {
+            return "dot-provisioning";
+        }
         if (!inst.deployed) return "dot-neutral";
         if (inst.running) return "dot-ok";
         if (inst.status === "error") return "dot-error";
@@ -165,7 +167,9 @@ export class ProjectSidebar extends Component {
      * @returns {string} an ``rl-pill`` status modifier class
      */
     statusPill(inst) {
-        if (inst.status === "provisioning") return "provisioning";
+        if (inst.state === "deploying" || inst.state === "deleting") {
+            return "provisioning";
+        }
         if (!inst.deployed) return "draft";
         if (inst.running) return "running";
         if (inst.status === "error") return "crashed";

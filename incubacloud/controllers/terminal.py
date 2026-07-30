@@ -28,44 +28,32 @@ Trade-off:
     daemon.
 """
 import base64
-import contextlib
 import json
-import logging
 import os
 import re
 import secrets
-import subprocess
-import sys
-import tempfile
-import threading
-import urllib.error
-import urllib.request
 import uuid
 
 from odoo import fields, http, _
 from odoo.http import request
 
-from ..terminal_session import SESSION_TIMEOUT
-
-_logger = logging.getLogger(__name__)
+from ._rate_limit import Rule, rate_gate_json
+from .terminal_proxy_mixin import TerminalProxyMixin, spawn_subprocess
 
 # Valid docker-compose service name: alphanumeric start, then [a-zA-Z0-9_.-]
 _VALID_SERVICE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.\-]{0,62}$')
 
 _SID = '<string:session_id>'
 
-# Subprocess HTTP timeout: the subprocess only talks to in-memory
-# buffers and an SSH socket — 5 s is generous. A longer timeout
-# would let a hung subprocess wedge an Odoo worker on every poll.
-_PROXY_TIMEOUT = 5.0
-
-# How long we wait for the subprocess's first line of stdout (the
-# port number). The subprocess only needs to open a socket and print
-# a number; 10 s is plenty and we do not want to hang the UI.
-_SPAWN_TIMEOUT = 10.0
+# Absolute path to the per-session subprocess script and the core addon
+# dir it needs on ``sys.path`` (this IS the core addon, so they coincide).
+_ADDON_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SUBPROCESS_PATH = os.path.join(_ADDON_DIR, 'terminal_subprocess.py')
 
 
-class TerminalController(http.Controller):
+class TerminalController(TerminalProxyMixin, http.Controller):
+
+    _ROUTE_MODEL = 'cloud.terminal.route'
 
     # ── Open session ───────────────────────────────────────────────────────
 
@@ -83,30 +71,29 @@ class TerminalController(http.Controller):
 
         # Rate-limit (P1.22) — per-user and per-instance, unchanged
         # from before the subprocess refactor.
-        rl = request.env['cloud.rate.limit'].sudo()
         uid = request.env.user.id
-        if not rl.hit(f'terminal_user:{uid}',
-                      cap_key='rate_limit_terminal_user_per_min'):
-            _logger.warning("terminal_rate_limit_hit user=%s", uid)
-            return {
-                'ok': False,
-                'error': _(
+        limited = rate_gate_json(
+            Rule(
+                f'terminal_user:{uid}',
+                _(
                     'Too many terminal sessions opened recently. '
                     'Try again in a minute.'
                 ),
-            }
-        if not rl.hit(f'terminal_instance:{instance_id}',
-                      cap_key='rate_limit_terminal_per_min'):
-            _logger.warning(
-                "terminal_rate_limit_hit instance=%s", instance_id,
-            )
-            return {
-                'ok': False,
-                'error': _(
+                cap_key='rate_limit_terminal_user_per_min',
+                log_tag=f'terminal user={uid}',
+            ),
+            Rule(
+                f'terminal_instance:{instance_id}',
+                _(
                     'Too many terminal sessions open against this '
                     'instance. Try again in a minute.'
                 ),
-            }
+                cap_key='rate_limit_terminal_per_min',
+                log_tag=f'terminal instance={instance_id}',
+            ),
+        )
+        if limited:
+            return limited
 
         env = request.env
         inst = env['cloud.instance'].browse(instance_id)
@@ -147,7 +134,7 @@ class TerminalController(http.Controller):
             for k in (ssh_kwargs.pop('client_keys', None) or [])
             if isinstance(k, (bytes, bytearray))
         ]
-        port, pid = _spawn_terminal_subprocess(
+        port, pid = spawn_subprocess(
             session_id=sid,
             auth_token=auth_token,
             config={
@@ -161,6 +148,10 @@ class TerminalController(http.Controller):
                 'user_id': env.user.id,
                 'welcome_banner': _render_welcome_banner(inst, service),
             },
+            subprocess_path=_SUBPROCESS_PATH,
+            core_dir=_ADDON_DIR,
+            tmp_prefix=f'ic-terminal-{sid[:8]}-',
+            fail_label='terminal subprocess',
         )
 
         env['cloud.terminal.route'].sudo().create({
@@ -203,56 +194,6 @@ class TerminalController(http.Controller):
             'session_info': session_info,
             'json': json,
         })
-
-    # ── Proxy to subprocess ────────────────────────────────────────────────
-
-    def _proxy(self, session_id, method, sub_path, body=None, params=None):
-        """Proxy a request to the subprocess owning *session_id*.
-
-        Returns the parsed JSON dict from the subprocess, or a dict
-        shaped like the terminal API's "closed" state if the route
-        is gone (subprocess died or was never created).
-        """
-        route = request.env['cloud.terminal.route']._resolve(session_id)
-        if not route:
-            return {
-                'ok': True, 'chunks': [], 'connected': False,
-                'closed': True, 'close_reason': 'timeout', 'error': None,
-                'idle_seconds': SESSION_TIMEOUT,
-            }
-        # Ownership: the audit row carries the user binding; the
-        # route row carries the runtime binding. Both must match so
-        # a second user on the same Odoo cannot hijack a session by
-        # guessing the id.
-        if route.user_id.id != request.env.user.id:
-            return {'ok': False, 'error': _('Session not found')}
-
-        url = f"http://127.0.0.1:{route.port}{sub_path}"
-        if params:
-            url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
-        req = urllib.request.Request(
-            url,
-            method=method,
-            headers={
-                'Authorization': f"Bearer {route.auth_token}",
-                'Content-Type': 'application/json',
-            },
-            data=json.dumps(body).encode('utf-8') if body is not None else None,
-        )
-        try:
-            with urllib.request.urlopen(  # nosec B310 — 127.0.0.1 only
-                req, timeout=_PROXY_TIMEOUT,
-            ) as resp:
-                return json.loads(resp.read().decode('utf-8'))
-        except urllib.error.URLError:
-            # Subprocess just died between _resolve() and urlopen —
-            # clean the stale row so the next poll reports closed.
-            route.unlink()
-            return {
-                'ok': True, 'chunks': [], 'connected': False,
-                'closed': True, 'close_reason': 'timeout', 'error': None,
-                'idle_seconds': SESSION_TIMEOUT,
-            }
 
     # ── Output polling ─────────────────────────────────────────────────────
 
@@ -466,106 +407,3 @@ def _render_welcome_banner(instance, service):
         parts = ['\r\n']
 
     return header + ''.join(parts)
-
-
-# ── Subprocess launcher ────────────────────────────────────────────────────
-
-def _spawn_terminal_subprocess(session_id, auth_token, config):
-    """Spawn the terminal subprocess and return ``(port, pid)``.
-
-    The SSH private key is passed through a short-lived temp file
-    (mode 0600, in ``/tmp``) rather than a CLI argument — args are
-    visible in ``ps aux`` system-wide. The subprocess deletes the
-    file immediately after reading it so secrets do not linger on
-    disk past one event-loop tick.
-    """
-    # The config file lives only long enough for the subprocess to
-    # read it. ``delete=False`` because ``NamedTemporaryFile`` would
-    # otherwise try to close+unlink while we still need the path.
-    tmp = tempfile.NamedTemporaryFile(
-        mode='w', suffix='.json',
-        prefix=f'ic-terminal-{session_id[:8]}-',
-        delete=False,
-    )
-    try:
-        os.chmod(tmp.name, 0o600)
-        json.dump(config, tmp)
-        tmp.flush()
-    finally:
-        tmp.close()
-
-    # Invoke the subprocess as a plain script (not ``-m``). Using
-    # ``-m incubacloud.terminal_subprocess`` executes the addon's
-    # ``__init__.py``, which imports ``controllers``/``models`` and
-    # pulls ``odoo.http`` into a bare Python interpreter → circular
-    # ``ImportError``. Running the file directly skips the package
-    # init entirely; the script inserts its own dir on ``sys.path``
-    # to import the sibling ``terminal_session`` module.
-    #
-    # ``-u`` forces line-buffered stdout in the child so we can read
-    # the port line without plugging a TextIOWrapper on top of the
-    # binary pipe.
-    subprocess_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'terminal_subprocess.py',
-    )
-    argv = [
-        sys.executable, '-u', subprocess_path,
-        '--session-id', session_id,
-        '--auth-token', auth_token,
-        '--config-file', tmp.name,
-    ]
-    # ``start_new_session=True`` detaches from the Odoo worker's
-    # process group so the subprocess survives worker restarts
-    # — the entire point of this refactor. stdin is closed so any
-    # accidental ``input()`` inside the subprocess fails fast
-    # instead of hanging.
-    proc = subprocess.Popen(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=None,              # inherit Odoo's stderr for logs
-        start_new_session=True,
-        close_fds=True,
-    )
-
-    # The subprocess prints its port on the first line of stdout and
-    # then starts serving. If it dies before printing, readline
-    # returns b'' and we treat it as a spawn failure.
-    first_line = _readline_with_timeout(proc, _SPAWN_TIMEOUT)
-    if not first_line:
-        # Subprocess died or stalled before reporting. Kill it to
-        # avoid orphans and fail fast so the caller can show a
-        # normal error toast.
-        proc.kill()
-        raise RuntimeError("terminal subprocess failed to start")
-
-    try:
-        port = int(first_line.strip())
-    except ValueError:
-        proc.kill()
-        raise RuntimeError(
-            f"terminal subprocess printed invalid port: {first_line!r}"
-        )
-    return port, proc.pid
-
-
-def _readline_with_timeout(proc, timeout):
-    """Read one line from ``proc.stdout`` with a timeout.
-
-    ``subprocess.Popen.stdout`` is a regular binary file so there is
-    no native timeout. We wrap the read in a thread and give up if
-    the thread is still alive when the deadline hits.
-    """
-    result = {'line': b''}
-
-    def _read():
-        with contextlib.suppress(Exception):
-            result['line'] = proc.stdout.readline()
-
-    t = threading.Thread(target=_read, daemon=True)
-    t.start()
-    t.join(timeout)
-    if t.is_alive():
-        return b''
-    return result['line']

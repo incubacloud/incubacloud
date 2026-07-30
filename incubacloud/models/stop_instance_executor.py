@@ -23,16 +23,16 @@ class StopInstanceExecutor(AbstractSSHExecutor):
         ``backup_create``/``backup_download`` steps.
         """
         inst = self._inst()
-        d = self._inst_dir(inst)
         payload = self.job.payload or {}
-        services = payload.get('services')
-        if services:
-            service_args = ' '.join(s for s in services if s)
-            cmd = f"cd {d} && docker compose stop {service_args}"
-        else:
-            cmd = f"cd {d} && docker compose stop"
+        services = [s for s in (payload.get('services') or []) if s]
         return [
-            ("Stop containers", cmd),
+            (
+                "Stop containers",
+                self.run_script(
+                    "compose_op.sh",
+                    [self._inst_dir(inst), "stop", *services],
+                ),
+            ),
         ]
 
     async def on_success(self, results):
