@@ -197,7 +197,9 @@ class TestSubprocessHandler(BaseCase):
             url, method=method, headers=headers, data=data,
         )
         try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            # nosec B310 — the URL targets the loopback HTTP server this
+            # very test spawned; no external or file:// scheme possible.
+            with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310
                 return resp.status, json.loads(resp.read().decode())
         except urllib.error.HTTPError as exc:
             return exc.code, json.loads(exc.read().decode())
