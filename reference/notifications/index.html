@@ -18,6 +18,8 @@
         <link rel="prev" href="../">
       
       
+        <link rel="next" href="../monitoring/">
+      
       
       <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.45">
@@ -958,6 +960,8 @@
       
         
       
+        
+      
     
     
       
@@ -1138,6 +1142,27 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Monitoring
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1341,6 +1366,12 @@ and infrastructure alerts:</p>
 </span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-07-12 10:00:00&quot;</span>
 </span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="p">}</span>
 </span></code></pre></div>
+<p>When an alert clears <strong>automatically</strong> (the monitor that raised it
+observes recovery), the same payload shape is sent again with
+<code>"event": "alert_resolved"</code> — consumers can close the incident they
+opened on the <code>alert</code> event. Dismissing an alert by hand in the panel
+does <em>not</em> send this event: the operator silencing it is already
+looking at it.</p>
 <p>If you set a <strong>secret</strong>, every request carries an
 <code>X-IncubaCloud-Signature: sha256=&lt;hex&gt;</code> header — the HMAC-SHA256 of the raw
 body. Verify it with a constant-time comparison before trusting the payload.</p>
@@ -1398,6 +1429,22 @@ detail page.</p>
             </div>
           </a>
         
+        
+          
+          <a href="../monitoring/" class="md-footer__link md-footer__link--next" aria-label="Next: Monitoring">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Monitoring
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
         
       </nav>
     
