@@ -103,3 +103,44 @@ class TestConfigDrift(TransactionCase):
             }
         )
         self.assertTrue(self._dirty(self.host))
+
+
+class TestRebuildReanchorsDrift(TransactionCase):
+    """A successful rebuild must re-anchor ``applied_config_hash``.
+
+    Only the deploy executor anchored before; a drift-curing rebuild
+    left the pill lit forever."""
+
+    def test_rebuild_on_success_writes_the_anchor(self):
+        import asyncio
+
+        from odoo.addons.incubacloud.models.rebuild_instance_executor import (
+            RebuildInstanceExecutor,
+        )
+
+        env = self.env
+        jt = env["cloud.job.type"].search(
+            [("code", "=", "rebuild_instance")], limit=1,
+        ) or env["cloud.job.type"].create(
+            {"name": "rebuild", "code": "rebuild_instance",
+             "apply_to": "instance"},
+        )
+        host = env["cloud.host"].create(
+            {"name": "reanchor-host", "ip_address": "192.0.2.41",
+             "user": "ubuntu", "wildcard_domain": "ra.example.com"},
+        )
+        project = env["cloud.project"].create({"name": "Reanchor Proj"})
+        inst = env["cloud.instance"].create(
+            {"name": "reanchorinst", "project_id": project.id,
+             "environment": "production", "host_id": host.id},
+        )
+        job = env["cloud.job"].create(
+            {"host_id": host.id, "instance_id": inst.id,
+             "job_type_id": jt.id, "name": "Rebuild"},
+        )
+        executor = RebuildInstanceExecutor(job, host)
+        self.assertFalse(inst.applied_config_hash)
+        asyncio.run(executor.on_success({}))
+        self.assertEqual(
+            inst.applied_config_hash, inst._config_snapshot_hash(),
+        )
