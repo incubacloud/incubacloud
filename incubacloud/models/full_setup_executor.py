@@ -173,8 +173,16 @@ class FullSetupExecutor(AbstractSSHExecutor):
             ),
             (
                 "Start Traefik",
+                # --remove-orphans: a service dropped from the compose
+                # file keeps running otherwise, so full_setup could add
+                # services but never retire one. That made the run only
+                # half-convergent — the primary host kept serving a
+                # Sablier container long after the file stopped
+                # declaring it. Scoped to the ``inverseproxy`` project,
+                # so nothing else on the host is touched.
                 "cd ~/traefik && docker compose"
                 " -p inverseproxy -f inverseproxy.yaml up -d"
+                " --remove-orphans"
                 " && docker compose -p inverseproxy"
                 " -f inverseproxy.yaml restart proxy",
             ),
