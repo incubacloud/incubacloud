@@ -20,8 +20,15 @@ from datetime import datetime, timezone
 
 from odoo import fields
 
+from odoo.addons.queue_job.exception import RetryableJobError
+
 from .abstract_executor import sql_escape_literal
 from .deploy_instance_executor import DeployInstanceExecutor
+
+# ``cron_guard.sh`` exits with this when the instance still had crons
+# executing after its budget: nothing was updated, so the job is worth
+# retrying rather than failing.
+_EXIT_CRONS_BUSY = 75
 
 
 class RebuildInstanceExecutor(DeployInstanceExecutor):
@@ -225,12 +232,22 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
             # 12. Update changed modules in the real DB.
             #     click-odoo-update compares checksums stored in the DB
             #     against the code in the new image and updates only
-            #     modules that actually changed.
+            #     modules that actually changed. Wrapped by
+            #     ``cron_guard.sh``: Odoo refuses to modify an ir_cron
+            #     row whose job is running, so an update that ships a
+            #     cron record used to die on a ParseError whenever a
+            #     tick was in flight. The guard pauses the crons, waits
+            #     for the in-flight ones, and always restores them.
             (
                 "Update changed modules",
-                f"cd {d} && docker compose run --rm odoo"
-                f" click-odoo-update"
-                f" --database {inst.postgres_dbname or 'prod'}",
+                self.run_script(
+                    "cron_guard.sh",
+                    [
+                        "update", d,
+                        inst.postgres_dbname or "prod",
+                        inst.postgres_username or "odoo",
+                    ],
+                ),
                 {"stop_on_failure": True},
             ),
             ]
@@ -273,6 +290,17 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
         return cmds
 
     def parse_results(self, results):
+        # A rebuild blocked by a running cron is a transient collision,
+        # not a broken instance: nothing was updated and the live stack
+        # was never touched. Ask queue_job to come back later instead of
+        # failing the job — a failure here would raise an alert (and
+        # notify the customer) for something that fixes itself.
+        update = results.get("Update changed modules", {})
+        if update.get("exit_status") == _EXIT_CRONS_BUSY:
+            raise RetryableJobError(
+                "Instance crons were still running; rescheduling the "
+                "rebuild.",
+            )
         # "List services" exit_status != 0 only means compose isn't configured;
         # don't treat it as a fatal error — the rebuild itself may have worked.
         ignored = {"List services"}

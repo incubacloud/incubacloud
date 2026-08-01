@@ -193,11 +193,14 @@ class TestRebuildCommandsBootTest(BaseCase):
         self.assertEqual(len(self.cmd), 3)
         self.assertTrue(self.cmd[2].get("stop_on_failure"))
 
-    def test_update_command_uses_click_odoo_update(self):
-        # This step stayed inline (a one-liner docker compose run).
+    def test_update_command_runs_through_the_cron_guard(self):
+        # The step is wrapped by ``cron_guard.sh``, which pauses the
+        # instance's crons around click-odoo-update: Odoo refuses to
+        # modify an ir_cron row whose job is running, so an unguarded
+        # update died whenever a tick was in flight.
         cmd = _find_cmd(self.cmds, "Update changed modules")
         self.assertIsNotNone(cmd, "Update command not found")
-        self.assertIn("click-odoo-update", cmd[1])
+        self.assertIn("cron_guard.sh", cmd[1])
 
     def test_build_has_stop_on_failure(self):
         cmd = _find_cmd(self.cmds, "Rebuild Odoo image")
