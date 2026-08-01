@@ -49,9 +49,10 @@ services:
     networks:
       private:
     volumes:
-      # :ro — the proxy only exposes read-only endpoints
-      # (CONTAINERS/NETWORKS/SERVICES) for Traefik discovery, never
-      # writes back to the daemon.
+      # Read-only by default: the endpoints below only serve Traefik's
+      # discovery. Hosts that run Sablier get POST added by full_setup
+      # so it can stop and start idle instances — the primary host,
+      # which has no Sablier, keeps this surface read-only.
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       CONTAINERS: 1
