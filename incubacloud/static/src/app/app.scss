@@ -1162,43 +1162,7 @@ button:active:not(:disabled),
         }
     }
 
-    // 1. Users — who they are, what they may do, whether they are in.
-    .ic-app .rl-table--users tr,
-    .ic-slideover-panel .rl-table--users tr {
-        grid-template-columns: 1fr auto;
-        grid-template-areas:
-            "name  role"
-            "email role"
-            "state actions";
 
-        td:nth-child(1) { grid-area: name; font-weight: 600; font-size: 14px; }
-        td:nth-child(2) { grid-area: email; color: var(--rl-muted); font-size: 12px; }
-        td:nth-child(3) { grid-area: role; align-self: start; text-align: right; }
-        td:nth-child(4) { grid-area: state; padding-top: 6px; }
-        td:nth-child(5) { grid-area: actions; text-align: right; padding-top: 6px; }
-    }
-
-    // 2. Tenants — the URL is what you tap; plan and host are context.
-    .ic-app .rl-table--tenants tr,
-    .ic-slideover-panel .rl-table--tenants tr {
-        grid-template-columns: 1fr auto;
-        grid-template-areas:
-            "name state"
-            "url  url"
-            "meta meta";
-
-        td:nth-child(1) { grid-area: name; font-weight: 600; font-size: 14px; }
-        td:nth-child(2),
-        td:nth-child(3),
-        td:nth-child(5) {
-            grid-area: meta;
-            display: inline;
-            color: var(--rl-muted);
-            font-size: 12px;
-        }
-        td:nth-child(4) { grid-area: url; font-family: var(--rl-fm); font-size: 12px; }
-        td:nth-child(6) { grid-area: state; text-align: right; }
-    }
 
     // 3. Jobs — outcome and what ran, then where, then who and when.
     //    Seven columns would make a seven-line card; two metadata lines
