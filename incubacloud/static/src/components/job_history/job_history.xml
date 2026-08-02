@@ -214,7 +214,7 @@
                 </div>
             </t>
             <t t-else="">
-                <table class="rl-table jh-table">
+                <table class="rl-table jh-table rl-table--jobs">
                     <thead>
                         <tr>
                             <th>State</th>

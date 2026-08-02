@@ -62,12 +62,18 @@ class TestResponsiveCssMatchesTemplates(BaseCase):
             p.read_text()
             for p in (core / 'static/src').rglob('*.xml')
         )
-        # The saas layer renders into the same shell.
-        saas = get_module_path('incubacloud_saas_manager')
-        if saas:
+        # The saas layers render into the same shell: the manager adds
+        # views to the panel, and the tenant module adds its own (the
+        # user list among them) inside each tenant's console.
+        for addon in ('incubacloud_saas_manager', 'incubacloud_tenant'):
+            path = get_module_path(addon)
+            if not path:
+                continue
+            static = Path(path) / 'static/src'
+            if not static.is_dir():
+                continue
             cls.markup += '\n'.join(
-                p.read_text()
-                for p in (Path(saas) / 'static/src').rglob('*.xml')
+                p.read_text() for p in static.rglob('*.xml')
             )
 
     def test_every_styled_class_is_rendered_somewhere(self):
