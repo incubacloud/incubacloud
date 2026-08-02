@@ -550,7 +550,7 @@
                                     </div>
                                 </t>
                                 <t t-else="">
-                                    <table class="rl-table">
+                                    <table class="rl-table rl-table--audit">
                                         <thead>
                                             <tr>
                                                 <th>Date</th>

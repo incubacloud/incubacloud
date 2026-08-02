@@ -1114,16 +1114,190 @@ button:active:not(:disabled),
         grid-template-columns: 1fr;
     }
 
-    // Wide content (tables, code, logs) scrolls inside its own box
-    // instead of widening the page. Tables carry their columns'
-    // intrinsic width, so they need the block+scroll treatment: with
-    // ``width: 100%`` alone the row still forces the page wider than
-    // the screen and every cell wraps into a tower of words.
+    // The slide-over (job history, alerts) is sized for a desktop
+    // column: ``min-width: 480px`` leaves it hanging off both edges of
+    // a 390px screen. On a phone it takes the whole width instead.
+    .ic-slideover-panel {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    // ── Lists become cards ──────────────────────────────────────────
+    // A table cannot be read on a phone: its columns carry their own
+    // intrinsic width, so a row either widens the page or wraps every
+    // cell into a tower of words. Sideways scrolling is a workaround,
+    // not a design — so each row becomes a card, laid out per table
+    // (below) around what that particular list is for.
+    //
+    // Column headers are dropped rather than repeated per cell: each
+    // layout leads with the value that identifies the row and demotes
+    // the rest to metadata, so a "Name:" prefix in front of a name adds
+    // noise, not meaning. It also sidesteps ``data-label``, which is
+    // not among the attributes Odoo translates.
     .ic-app .rl-table,
-    .ic-backup-table {
+    .ic-slideover-panel .rl-table {
         display: block;
-        overflow-x: auto;
-        white-space: nowrap;
+
+        thead { display: none; }
+        tbody { display: block; }
+
+        tr {
+            display: grid;
+            gap: 2px 10px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            border: 1px solid var(--rl-line);
+            border-radius: var(--rl-r);
+            background: var(--rl-surf);
+        }
+
+        td {
+            display: block;
+            padding: 0;
+            border: 0;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    }
+
+    // 1. Users — who they are, what they may do, whether they are in.
+    .ic-app .rl-table--users tr,
+    .ic-slideover-panel .rl-table--users tr {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            "name  role"
+            "email role"
+            "state actions";
+
+        td:nth-child(1) { grid-area: name; font-weight: 600; font-size: 14px; }
+        td:nth-child(2) { grid-area: email; color: var(--rl-muted); font-size: 12px; }
+        td:nth-child(3) { grid-area: role; align-self: start; text-align: right; }
+        td:nth-child(4) { grid-area: state; padding-top: 6px; }
+        td:nth-child(5) { grid-area: actions; text-align: right; padding-top: 6px; }
+    }
+
+    // 2. Tenants — the URL is what you tap; plan and host are context.
+    .ic-app .rl-table--tenants tr,
+    .ic-slideover-panel .rl-table--tenants tr {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            "name state"
+            "url  url"
+            "meta meta";
+
+        td:nth-child(1) { grid-area: name; font-weight: 600; font-size: 14px; }
+        td:nth-child(2),
+        td:nth-child(3),
+        td:nth-child(5) {
+            grid-area: meta;
+            display: inline;
+            color: var(--rl-muted);
+            font-size: 12px;
+        }
+        td:nth-child(4) { grid-area: url; font-family: var(--rl-fm); font-size: 12px; }
+        td:nth-child(6) { grid-area: state; text-align: right; }
+    }
+
+    // 3. Jobs — outcome and what ran, then where, then who and when.
+    //    Seven columns would make a seven-line card; two metadata lines
+    //    keep the history scannable without dropping any of them.
+    .ic-app .rl-table--jobs tr,
+    .ic-slideover-panel .rl-table--jobs tr {
+        grid-template-columns: auto 1fr auto;
+        grid-template-areas:
+            "state job   duration"
+            "where where where"
+            "who   who   when";
+
+        td:nth-child(1) { grid-area: state; }
+        td:nth-child(2) { grid-area: job; font-weight: 600; font-size: 13.5px; }
+        td:nth-child(3),
+        td:nth-child(4) {
+            grid-area: where;
+            display: inline;
+            color: var(--rl-muted);
+            font-size: 12px;
+        }
+        td:nth-child(5) { grid-area: who; color: var(--rl-muted); font-size: 12px; }
+        td:nth-child(6) {
+            grid-area: when;
+            color: var(--rl-muted);
+            font-size: 12px;
+            text-align: right;
+        }
+        td:nth-child(7) {
+            grid-area: duration;
+            font-family: var(--rl-fm);
+            font-size: 12px;
+            text-align: right;
+        }
+    }
+
+    // 4. Audit trail — the action is the headline, the timestamp anchors
+    //    it, and the details wrap freely underneath.
+    .ic-app .rl-table--audit tr,
+    .ic-slideover-panel .rl-table--audit tr {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            "action date"
+            "user   user"
+            "notes  notes";
+
+        td:nth-child(1) {
+            grid-area: date;
+            color: var(--rl-muted);
+            font-size: 12px;
+            text-align: right;
+        }
+        td:nth-child(2) { grid-area: user; color: var(--rl-muted); font-size: 12px; }
+        td:nth-child(3) { grid-area: action; font-weight: 600; font-size: 13.5px; }
+        td:nth-child(4) {
+            grid-area: notes;
+            padding-top: 4px;
+            font-size: 12px;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            overflow: visible;
+            text-overflow: clip;
+        }
+    }
+
+    // 5. Backups — an operational list: restoring from a phone has to
+    //    work, so the actions get a full-width row with real tap size.
+    .ic-app .rl-table--backups tr,
+    .ic-slideover-panel .rl-table--backups tr {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+            "type     size"
+            "contents contents"
+            "actions  actions";
+
+        td:nth-child(1) { grid-area: type; font-weight: 600; font-size: 13.5px; }
+        td:nth-child(2),
+        td:nth-child(3) {
+            grid-area: contents;
+            display: inline;
+            color: var(--rl-muted);
+            font-size: 12px;
+        }
+        td:nth-child(4) {
+            grid-area: size;
+            font-family: var(--rl-fm);
+            font-size: 12px;
+            text-align: right;
+        }
+        td:nth-child(5) {
+            grid-area: actions;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding-top: 10px;
+
+            button,
+            a { flex: 1 1 auto; min-height: 36px; }
+        }
     }
 
     .ic-code-area,
