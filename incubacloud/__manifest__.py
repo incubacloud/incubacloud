@@ -1,7 +1,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     "name": "Incubacloud",
-    "version": "1.0.28",
+    "version": "1.0.29",
     "summary": "Deploy, manage and monitor doodba-based Odoo instances via SSH",
     "sequence": 10,
     "description": """
