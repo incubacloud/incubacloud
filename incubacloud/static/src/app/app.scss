@@ -997,16 +997,20 @@ button:active:not(:disabled),
 }
 
 @media (max-width: 768px) {
+    // Hidden by its own width, not by a hardcoded offset: the drawer
+    // used to be parked at -200px while the panel is 212px wide, so a
+    // 12px sliver stayed on screen over every page.
     .ic-sidebar {
         position: fixed;
-        left: -200px;
+        left: 0;
         top: 0;
         bottom: 0;
         z-index: 100;
-        transition: left 0.2s ease;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
 
         &.ic-sidebar-open {
-            left: 0;
+            transform: translateX(0);
             box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
         }
     }
@@ -1075,7 +1079,7 @@ button:active:not(:disabled),
     // Page headers: the title and its actions share one flex row. With
     // nowrap the title collapses to zero width and paints over the
     // buttons, which then run off-screen.
-    .rl-phead {
+    .ic-app .rl-phead {
         flex-wrap: wrap;
         gap: 10px;
     }
@@ -1083,32 +1087,45 @@ button:active:not(:disabled),
     // The flex child is the text block, not the heading; and the base
     // ``.rl-pactions { flex: none }`` has to be matched selector for
     // selector or it keeps the buttons glued to the title's line.
-    .rl-phead .rl-htext,
-    .rl-phead .rl-pactions {
+    .ic-app .rl-phead .rl-htext,
+    .ic-app .rl-phead .rl-pactions {
         flex: 1 1 100%;
         min-width: 0;
     }
 
-    .rl-phead .rl-pactions {
+    .ic-app .rl-phead .rl-pactions {
         flex-wrap: wrap;
         justify-content: flex-start;
     }
 
-    .rl-ptitle {
+    .ic-app .rl-ptitle {
         overflow-wrap: anywhere;
     }
 
     // Any grid drops to a single column: two columns at this width
-    // leave ~150px per card.
-    .rl-grid,
-    .rl-grid-2,
-    .rl-grid-3 {
+    // leave ~150px per card. ``rl-fgrid`` matters most — it lays forms
+    // out in two fixed columns, so half of every form (host, project,
+    // instance, settings) sat outside the screen.
+    .ic-app .rl-grid,
+    .ic-app .rl-grid-2,
+    .ic-app .rl-grid-3,
+    .ic-app .rl-fgrid,
+    .ic-app .rl-ovcards {
         grid-template-columns: 1fr;
     }
 
     // Wide content (tables, code, logs) scrolls inside its own box
-    // instead of widening the page.
-    .ic-backup-table,
+    // instead of widening the page. Tables carry their columns'
+    // intrinsic width, so they need the block+scroll treatment: with
+    // ``width: 100%`` alone the row still forces the page wider than
+    // the screen and every cell wraps into a tower of words.
+    .ic-app .rl-table,
+    .ic-backup-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+
     .ic-code-area,
     pre {
         overflow-x: auto;
