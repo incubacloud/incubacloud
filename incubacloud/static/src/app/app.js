@@ -151,6 +151,23 @@ export class Chrome extends Component {
         }
     }
 
+    /**
+     * Close the off-canvas navigation (backdrop tap / Escape).
+     */
+    closeSidebar() {
+        this.state.sidebarOpen = false;
+    }
+
+    /**
+     * Escape closes the off-canvas navigation, the way every overlay
+     * on the platform behaves.
+     */
+    onGlobalKeydown(ev) {
+        if (ev.key === "Escape" && this.state.sidebarOpen) {
+            this.state.sidebarOpen = false;
+        }
+    }
+
     setup() {
         const initial = _parseRoute(window.location.pathname);
         this.state = useState({
@@ -166,6 +183,10 @@ export class Chrome extends Component {
             navCounts: {},   // { projects, hosts, backups, ... } for sidebar badges
             projectName: "",
             slideOver: null,  // { panel: "jobs"|"alerts", instanceId }
+            // Off-canvas navigation. Only meaningful under the mobile
+            // breakpoint, where the sidebar leaves the flow; on desktop
+            // the sidebar is docked and this stays false.
+            sidebarOpen: false,
         });
 
         this._pollAlertCount = async () => {
@@ -265,9 +286,12 @@ export class Chrome extends Component {
             this._lastAcceptedRoute = parsed;
         };
 
+        this._onGlobalKeydown = (ev) => this.onGlobalKeydown(ev);
+
         onMounted(() => {
             this.props.disableLoader();
             window.addEventListener("popstate", this._onPopState);
+            window.addEventListener("keydown", this._onGlobalKeydown);
             this._pollAlertCount();
             this._busService.subscribe("cloud_overview", this._onOverviewUpdate);
             this._busService.subscribe("cloud_jobs", this._onJobEvent);
@@ -276,6 +300,7 @@ export class Chrome extends Component {
 
         onWillUnmount(() => {
             window.removeEventListener("popstate", this._onPopState);
+            window.removeEventListener("keydown", this._onGlobalKeydown);
             this._busService.unsubscribe("cloud_overview", this._onOverviewUpdate);
             this._busService.unsubscribe("cloud_jobs", this._onJobEvent);
         });
@@ -334,6 +359,11 @@ export class Chrome extends Component {
             closeSlideOver: () => {
                 appState.slideOver = null;
             },
+            // Read back as a prop (AppHeader) or off this.state (the
+            // shell), so only the setter belongs on env.
+            toggleSidebar: () => {
+                appState.sidebarOpen = !appState.sidebarOpen;
+            },
             navigate: async (route, params = {}) => {
                 if (route === "logout") {
                     // ``beforeunload`` (still registered by useNavGuard)
@@ -350,6 +380,9 @@ export class Chrome extends Component {
                 history.pushState(null, "", url);
                 appState.route = route;
                 appState.params = params;
+                // Picking a destination closes the off-canvas menu, so
+                // the target page is not left hidden behind it.
+                appState.sidebarOpen = false;
                 this._lastAcceptedRoute = { route, params };
                 // Drop project state when navigating away so the store
                 // doesn't keep refreshing in the background after we

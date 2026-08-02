@@ -46,6 +46,7 @@ from . import (
     test_rotation_tolerance,
     test_pending_push_coalesce,
     test_full_setup_commands,
+    test_responsive_css,
     test_github_setup,
     test_restore_backup_guard,
     test_connect_as_guard,

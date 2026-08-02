@@ -15,6 +15,9 @@ export class AppHeader extends Component {
         currentRoute: { type: String },
         projectName:  { type: String },
         projectId:    { type: Number },
+        // Passed down (rather than read off env) so the toggle's
+        // aria-expanded re-renders with the menu.
+        sidebarOpen:  { type: Boolean },
     };
 
     setup() {

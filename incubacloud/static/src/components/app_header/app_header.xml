@@ -4,6 +4,19 @@
     <t t-name="incubacloud.AppHeader">
         <header class="ic-header">
 
+            <!-- Menu toggle: hidden on desktop by CSS, the only way to
+                 reach the navigation on narrow viewports (the sidebar
+                 sits off-canvas there). -->
+            <button class="ic-sidebar-burger"
+                    type="button"
+                    aria-label="Toggle navigation"
+                    t-att-aria-expanded="props.sidebarOpen ? 'true' : 'false'"
+                    t-on-click="() => env.toggleSidebar()">
+                <span class="ic-burger-bar"/>
+                <span class="ic-burger-bar"/>
+                <span class="ic-burger-bar"/>
+            </button>
+
             <!-- Logo -->
             <div class="ic-header-logo" t-on-click="goHome">
                 <svg class="ic-header-logo-icon" viewBox="0 0 48 48" fill="none" width="26" height="26">

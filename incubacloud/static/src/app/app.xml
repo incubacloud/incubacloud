@@ -7,13 +7,23 @@
             <AppHeader alertCount="state.alertCount"
                        currentRoute="state.route"
                        projectName="state.projectName"
-                       projectId="state.params.project_id || 0"/>
+                       projectId="state.params.project_id || 0"
+                       sidebarOpen="state.sidebarOpen"/>
 
             <!-- Body: sidebar + main -->
             <div class="ic-body">
 
+                <!-- Backdrop for the off-canvas sidebar (mobile only:
+                     it is never rendered while the sidebar is docked). -->
+                <t t-if="state.sidebarOpen">
+                    <div class="ic-sidebar-backdrop"
+                         t-on-click="() => this.closeSidebar()"/>
+                </t>
+
                 <!-- Sidebar: global nav OR project sidebar -->
-                <aside class="ic-sidebar" role="navigation" aria-label="Main navigation">
+                <aside class="ic-sidebar"
+                       t-att-class="{ 'ic-sidebar-open': state.sidebarOpen }"
+                       role="navigation" aria-label="Main navigation">
                     <t t-if="isInsideProject">
                         <ProjectSidebar t-key="state.params.project_id"
                                         projectId="state.params.project_id"
