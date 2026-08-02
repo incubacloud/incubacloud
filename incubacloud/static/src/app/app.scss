@@ -988,6 +988,14 @@ button:active:not(:disabled),
 
 // ── Responsive ──────────────────────────────────────────────────────────────
 
+// The navigation toggle exists only under the mobile breakpoint, where
+// the sidebar leaves the flow. Hidden by default so the desktop shell
+// is untouched.
+.ic-sidebar-burger,
+.ic-sidebar-backdrop {
+    display: none;
+}
+
 @media (max-width: 768px) {
     .ic-sidebar {
         position: fixed;
@@ -1003,6 +1011,37 @@ button:active:not(:disabled),
         }
     }
 
+    // Dim + capture taps behind the open menu.
+    .ic-sidebar-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 99;
+        background: rgba(0, 0, 0, 0.45);
+    }
+
+    .ic-sidebar-burger {
+        display: inline-flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 4px;
+        flex: 0 0 auto;
+        width: 40px;
+        height: 40px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+
+        .ic-burger-bar {
+            display: block;
+            height: 2px;
+            border-radius: 1px;
+            background: currentColor;
+        }
+    }
+
     .ic-body {
         flex-direction: column;
     }
@@ -1011,26 +1050,68 @@ button:active:not(:disabled),
         padding: 0 12px;
     }
 
-    .ic-hero {
-        padding: 12px 14px;
-    }
-
-    .ic-hero-actions {
-        flex-wrap: wrap;
+    // The header is a single non-wrapping row: without shrinking its
+    // parts, the user block ends up ~100px past the viewport and drags
+    // a horizontal scrollbar onto every page.
+    .ic-header {
         gap: 4px;
     }
 
-    .ic-overview-cards {
-        grid-template-columns: 1fr !important;
-    }
-
-    .ic-header-user-name {
+    .ic-header-search-wrap,
+    .ic-header-user-name,
+    .ic-header-chevron,
+    .ic-header-breadcrumb {
         display: none;
     }
 
-    .ic-header-breadcrumb {
-        max-width: 40vw;
-        overflow: hidden;
+    .ic-header-logo-text {
+        display: none;
+    }
+
+    .ic-header-user-wrap {
+        margin-left: auto;
+    }
+
+    // Page headers: the title and its actions share one flex row. With
+    // nowrap the title collapses to zero width and paints over the
+    // buttons, which then run off-screen.
+    .rl-phead {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    // The flex child is the text block, not the heading; and the base
+    // ``.rl-pactions { flex: none }`` has to be matched selector for
+    // selector or it keeps the buttons glued to the title's line.
+    .rl-phead .rl-htext,
+    .rl-phead .rl-pactions {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .rl-phead .rl-pactions {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+
+    .rl-ptitle {
+        overflow-wrap: anywhere;
+    }
+
+    // Any grid drops to a single column: two columns at this width
+    // leave ~150px per card.
+    .rl-grid,
+    .rl-grid-2,
+    .rl-grid-3 {
+        grid-template-columns: 1fr;
+    }
+
+    // Wide content (tables, code, logs) scrolls inside its own box
+    // instead of widening the page.
+    .ic-backup-table,
+    .ic-code-area,
+    pre {
+        overflow-x: auto;
     }
 }
 
