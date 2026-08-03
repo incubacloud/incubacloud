@@ -76,3 +76,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Initial public release of IncubaCloud Core for Odoo 19.
 
 <!-- Rebuild routing check: two pushes in a row (1/2). -->
+
+<!-- Rebuild routing check: two pushes in a row (2/2). -->
