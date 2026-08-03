@@ -379,7 +379,7 @@ def _render_welcome_banner(instance, service):
         cmds = [
             (
                 'duplicity collection-status "$DST"',
-                _('List available backup chains on the remote backend'),
+                _('List available backup chains on the remote destination'),
             ),
             (
                 'duplicity list-current-files "$DST"',

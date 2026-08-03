@@ -12,10 +12,10 @@
 
                     <!-- Breadcrumb -->
                     <div class="rl-crumb">
-                        <a t-on-click="goBack">Backup Backends</a>
+                        <a t-on-click="goBack">Backup Destinations</a>
                         <span class="rl-sep">/</span>
                         <span class="rl-cur">
-                            <t t-if="isNew">New Backup Backend</t>
+                            <t t-if="isNew">New Backup Destination</t>
                             <t t-else="" t-esc="state.backend.name" />
                         </span>
                     </div>
@@ -24,7 +24,7 @@
                     <div class="rl-phead">
                         <div class="rl-htext ic-detail-title">
                             <h1 class="rl-ptitle">
-                                <t t-if="isNew">New Backup Backend</t>
+                                <t t-if="isNew">New Backup Destination</t>
                                 <t t-else="" t-esc="state.backend.name" />
                             </h1>
                         </div>
@@ -173,7 +173,7 @@
                                 </div>
                                 <t t-if="backupDst">
                                     <div class="rl-frow rl-full">
-                                        <label>Backup Destination (preview)</label>
+                                        <label>Backup Path (preview)</label>
                                         <code
                       class="rl-mono ic-backup-dst"
                       t-esc="backupDst"
@@ -238,7 +238,7 @@
                             <t t-else="">
                                 <div
                   class="rl-rmeta"
-                >Save the backend first to start measuring usage.</div>
+                >Save the destination first to start measuring usage.</div>
                             </t>
 
                             <div class="rl-fgrid" style="margin-top:14px">
@@ -447,7 +447,7 @@
                                 <t t-else="">Saving…</t>
                             </t>
                             <t t-else="">
-                                <t t-if="isNew">Create Backend</t>
+                                <t t-if="isNew">Create Destination</t>
                                 <t t-else="">Save changes</t>
                             </t>
                         </button>
@@ -460,7 +460,7 @@
             <t t-elif="state.error">
                 <div class="ic-detail-error-state" role="alert">
                     <p t-esc="state.error" />
-                    <button t-on-click="goBack">← Back to Backup Backends</button>
+                    <button t-on-click="goBack">← Back to Backup Destinations</button>
                 </div>
             </t>
 

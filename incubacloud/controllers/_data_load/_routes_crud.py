@@ -1291,7 +1291,7 @@ class CrudMixin:
         if backend_id and not request.env['cloud.backup.backend'].sudo().browse(
             backend_id,
         ).exists():
-            return {'ok': False, 'error': _('Unknown backup backend.')}
+            return {'ok': False, 'error': _('Unknown backup destination.')}
         ICP = request.env['ir.config_parameter'].sudo()
         ICP.set_param(
             'incubacloud.host_autoassign',

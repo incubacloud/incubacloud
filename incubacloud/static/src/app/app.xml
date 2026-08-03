@@ -59,7 +59,7 @@
                                         tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
                                         t-on-click="() => env.navigate('backup_backends')">
                                         <t t-out="env.icon('backups', 17)"/>
-                                        <span class="ic-nav-label">Backups</span>
+                                        <span class="ic-nav-label">Backup Destinations</span>
                                         <span class="ic-nav-count" t-if="env.navCounts?.backups" t-esc="env.navCounts.backups"/>
                                     </li>
 
