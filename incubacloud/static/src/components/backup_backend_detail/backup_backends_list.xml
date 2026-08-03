@@ -6,9 +6,9 @@
             <!-- Header -->
             <div class="rl-phead">
                 <div class="rl-htext">
-                    <h1 class="rl-ptitle">Backup Backends</h1>
+                    <h1 class="rl-ptitle">Backup Destinations</h1>
                     <p class="rl-psub">
-                        <t t-esc="state.total"/> backend<t t-if="state.total !== 1">s</t>
+                        <t t-esc="state.total"/> destination<t t-if="state.total !== 1">s</t>
                     </p>
                 </div>
                 <div class="rl-pactions">
@@ -33,8 +33,8 @@
             <t t-elif="state.visible_backends.length === 0">
                 <div class="rl-stub">
                     <span class="rl-si"><t t-out="env.icon('shield', 46)"/></span>
-                    <h3>No backup backends configured</h3>
-                    <p>Set up an S3-compatible backend to enable automated backups for your instances.</p>
+                    <h3>No backup destinations configured</h3>
+                    <p>Set up an S3-compatible destination to enable automated backups for your instances.</p>
                 </div>
             </t>
 

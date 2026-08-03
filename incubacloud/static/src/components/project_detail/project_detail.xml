@@ -193,7 +193,7 @@
                                                   onChange="(value) => this.onInput('project_license', { target: { value: value } })"/>
                                     </div>
                                     <div class="rl-frow">
-                                        <label>Backup Backend <span class="rl-opt">— only for production</span></label>
+                                        <label>Backup Destination <span class="rl-opt">— only for production</span></label>
                                         <RlSelect options="backupBackendOptions"
                                                   value="state.form.backup_backend_id"
                                                   emptyLabel="'— Use global default —'"

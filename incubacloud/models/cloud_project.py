@@ -122,7 +122,7 @@ class CloudProject(models.Model):
     )
     backup_backend_id = fields.Many2one(
         comodel_name='cloud.backup.backend',
-        string='Backup Backend',
+        string='Backup Destination',
         help='Default backup backend for all production instances in this project.',
     )
     pr_reviews_enabled = fields.Boolean(

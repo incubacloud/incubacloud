@@ -470,22 +470,22 @@ class CloudInstance(models.Model):
 
     backup_backend_id = fields.Many2one(
         comodel_name="cloud.backup.backend",
-        string="Backup Backend",
+        string="Backup Destination",
         help="Backup backend for this instance. Overrides the project default.",  # noqa: E501
     )
     effective_backup_backend = fields.Many2one(
         comodel_name="cloud.backup.backend",
-        string="Effective Backup Backend",
+        string="Effective Backup Destination",
         compute="_compute_effective_backup_backend",
     )
 
     instance_backup_dst = fields.Char(
-        string="Instance Backup Destination",
+        string="Instance Backup Path",
         compute="_compute_instance_backup_dst",
         help="Per-instance duplicity DST: {backend_dst}/{project}/{instance}",
     )
     custom_backup_dst = fields.Char(
-        string="Custom Backup Destination",
+        string="Custom Backup Path",
         help="Override for the backup destination path. "
         "When set, used instead of the computed path. "
         "Set automatically when importing existing instances.",

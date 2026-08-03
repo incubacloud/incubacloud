@@ -934,20 +934,9 @@ msgstr "Copia de seguridad"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model,name:incubacloud.model_cloud_backup_backend
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_backend_id
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_project__backup_backend_id
 msgid "Backup Backend"
 msgstr "Backend de backup"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
-msgid "Backup Backends"
-msgstr "Backends de backup"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_cpus
@@ -955,15 +944,21 @@ msgid "Backup CPUs"
 msgstr "CPUs Backup"
 
 #. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__backup_dst
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_backend_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_project__backup_backend_id
 msgid "Backup Destination"
-msgstr "Destino de backup"
+msgstr "Destino de copia"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "Backup Destination (preview)"
-msgstr "Destino de backup (vista previa)"
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
+msgid "Backup Destinations"
+msgstr "Destinos de copia"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__attachment_id
@@ -974,6 +969,17 @@ msgstr "Archivo de backup"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__backup_memory_limit
 msgid "Backup Memory Limit"
 msgstr "Límite de memoria Backup"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__backup_dst
+msgid "Backup Path"
+msgstr "Ruta de copia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Backup Path (preview)"
+msgstr "Ruta de copia (vista previa)"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__backup_time
@@ -1027,7 +1033,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Backups"
 msgstr "Copias de seguridad"
@@ -2078,12 +2083,6 @@ msgstr "Crear aplicación en GitHub →"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "Create Backend"
-msgstr "Crear backend"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Create Backup"
 msgstr "Crear backup"
@@ -2093,6 +2092,12 @@ msgstr "Crear backup"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__create_date
 msgid "Create Date"
 msgstr "Fecha de creación"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Create Destination"
+msgstr "Crear destino"
 
 #. module: incubacloud
 #. odoo-python
@@ -2246,8 +2251,8 @@ msgstr "Ctrl K"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__custom_backup_dst
-msgid "Custom Backup Destination"
-msgstr "Destino de backup personalizado"
+msgid "Custom Backup Path"
+msgstr "Ruta de copia personalizada"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__custom_remote_dir
@@ -2355,8 +2360,8 @@ msgstr "Fecha de finalización"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Default Backup Backend"
-msgstr "Backend de backup por defecto"
+msgid "Default Backup Destination"
+msgstr "Destino de copia por defecto"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__default_backup_alert_threshold_pct
@@ -2882,8 +2887,8 @@ msgstr "Editar manualmente"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__effective_backup_backend
-msgid "Effective Backup Backend"
-msgstr "Backend de backup efectivo"
+msgid "Effective Backup Destination"
+msgstr "Destino de copia efectivo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4494,8 +4499,8 @@ msgstr "Backup de instancia"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__instance_backup_dst
-msgid "Instance Backup Destination"
-msgstr "Destino de backup de instancia"
+msgid "Instance Backup Path"
+msgstr "Ruta de copia de la instancia"
 
 #. module: incubacloud
 #: model:ir.model,name:incubacloud.model_cloud_instance_domain
@@ -5087,8 +5092,8 @@ msgstr "Listar todas las bases de datos"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
-msgid "List available backup chains on the remote backend"
-msgstr "Listar cadenas de backup disponibles en el backend remoto"
+msgid "List available backup chains on the remote destination"
+msgstr "Lista las cadenas de copia disponibles en el destino remoto"
 
 #. module: incubacloud
 #. odoo-python
@@ -5614,9 +5619,14 @@ msgstr "Nuevo backend"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "New Backup Backend"
 msgstr "Nuevo backend de backup"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "New Backup Destination"
+msgstr "Nuevo destino de copia"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5746,8 +5756,8 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
-msgid "No backup backends configured"
-msgstr "No hay backends de backup configurados"
+msgid "No backup destinations configured"
+msgstr "No hay destinos de copia configurados"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7646,8 +7656,8 @@ msgstr "Guardar cambios"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "Save the backend first to start measuring usage."
-msgstr "Guarda primero el backend para empezar a medir el uso."
+msgid "Save the destination first to start measuring usage."
+msgstr "Guarda el destino primero para empezar a medir el consumo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7897,11 +7907,11 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 msgid ""
-"Set up an S3-compatible backend to enable automated backups for your "
+"Set up an S3-compatible destination to enable automated backups for your "
 "instances."
 msgstr ""
-"Configura un backend compatible con S3 para activar las copias automáticas "
-"de tus instancias."
+"Configura un destino compatible con S3 para habilitar copias automáticas en "
+"tus instancias."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8440,9 +8450,9 @@ msgstr "Esta instancia ya está importada."
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_backup_backend.py:0
-msgid "This managed backend cannot be deleted from this database."
+msgid "This managed destination cannot be deleted from this database."
 msgstr ""
-"Este backend gestionado no se puede eliminar desde esta base de datos."
+"Este destino gestionado no se puede eliminar desde esta base de datos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8562,6 +8572,12 @@ msgstr "Activar/desactivar la asignación automática de host"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Toggle email notifications"
 msgstr "Activar/desactivar las notificaciones por correo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Toggle navigation"
+msgstr "Mostrar u ocultar la navegación"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8802,8 +8818,8 @@ msgstr "Desconocido"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
-msgid "Unknown backup backend."
-msgstr "Backend de backup desconocido."
+msgid "Unknown backup destination."
+msgstr "Destino de copia desconocido."
 
 #. module: incubacloud
 #. odoo-python
@@ -9401,12 +9417,6 @@ msgstr "automáticamente."
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
-msgid "backend"
-msgstr "backend"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "backup"
 msgstr "copia"
@@ -9496,6 +9506,12 @@ msgid ""
 msgstr ""
 "núcleos\n"
 "                                    ·"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
+msgid "destination"
+msgstr "destino"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9986,8 +10002,8 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
-msgid "← Back to Backup Backends"
-msgstr "← Volver a backends de backup"
+msgid "← Back to Backup Destinations"
+msgstr "← Volver a Destinos de copia"
 
 #. module: incubacloud
 #. odoo-javascript

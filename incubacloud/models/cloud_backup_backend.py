@@ -111,7 +111,7 @@ class CloudBackupBackend(models.Model):
     # ── Computed destination URL ────────────────────────────────────────────
 
     backup_dst = fields.Char(
-        string="Backup Destination",
+        string="Backup Path",
         compute="_compute_backup_dst",
         store=True,
         help="Computed duplicity DST URL (e.g. boto3+s3://bucket/path).",
@@ -223,7 +223,7 @@ class CloudBackupBackend(models.Model):
         self.ensure_one()
         return {
             "ok": False,
-            "error": _("This managed backend cannot be deleted from this database."),
+            "error": _("This managed destination cannot be deleted from this database."),
         }
 
     @api.model_create_multi

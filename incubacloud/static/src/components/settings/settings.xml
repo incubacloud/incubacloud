@@ -51,14 +51,14 @@
                     </div>
 
                     <!-- Default Backup Backend -->
-                    <div class="rl-saas-fsec">Default Backup Backend</div>
+                    <div class="rl-saas-fsec">Default Backup Destination</div>
                     <p class="rl-tabnote">
                         The default backup backend used for production instances when
                         no specific backend is selected at the project or instance level.
                     </p>
                     <div class="rl-fgrid">
                         <div class="rl-frow">
-                            <label>Backup Backend</label>
+                            <label>Backup Destination</label>
                             <RlSelect options="backupBackendOptions"
                                       value="state.form.default_backup_backend_id"
                                       emptyLabel="'— None —'"
