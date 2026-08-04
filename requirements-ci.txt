@@ -20,4 +20,4 @@ ansible-runner==2.4.3
 
 # Test-only pins (matched by the CI ``test`` job)
 PyYAML==6.0.3
-cryptography==48.0.1
+cryptography==50.0.0
