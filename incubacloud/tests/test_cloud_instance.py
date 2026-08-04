@@ -781,7 +781,13 @@ class TestCloudInstanceUnlinkGuard(TransactionCase):
 
 
 class TestCronCheckProductionBackup(TransactionCase):
-    """Imprescindible #9b — production instance without backup alert."""
+    """Imprescindible #9b — production instance without backup alert.
+
+    The cron sweeps every instance in the database, so its ``flagged``
+    counter reflects whatever else already lives there. Assertions here
+    are scoped to the alert raised for *this* test's own instance; the
+    counter is only checked for a lower bound.
+    """
 
     def setUp(self):
         super().setUp()
@@ -819,17 +825,16 @@ class TestCronCheckProductionBackup(TransactionCase):
     def test_deployed_production_without_backend_flagged(self):
         inst = self._instance()
         result = self.env["cloud.instance"].cron_check_production_backup()
-        self.assertEqual(result["flagged"], 1)
+        self.assertGreaterEqual(result["flagged"], 1)
         self.assertTrue(self._alert(inst))
 
     def test_deployed_production_with_backend_not_flagged(self):
         inst = self._instance(backup_backend_id=self.bb.id)
-        result = self.env["cloud.instance"].cron_check_production_backup()
-        self.assertEqual(result["flagged"], 0)
+        self.env["cloud.instance"].cron_check_production_backup()
         self.assertFalse(self._alert(inst))
 
     def test_staging_instance_never_flagged(self):
-        self.env["cloud.instance"].create(
+        inst = self.env["cloud.instance"].create(
             {
                 "name": "nb-staging",
                 "project_id": self.project.id,
@@ -837,13 +842,13 @@ class TestCronCheckProductionBackup(TransactionCase):
                 "state": "deployed",
             }
         )
-        result = self.env["cloud.instance"].cron_check_production_backup()
-        self.assertEqual(result["flagged"], 0)
+        self.env["cloud.instance"].cron_check_production_backup()
+        self.assertFalse(self._alert(inst))
 
     def test_undeployed_production_never_flagged(self):
-        self._instance(state="draft")
-        result = self.env["cloud.instance"].cron_check_production_backup()
-        self.assertEqual(result["flagged"], 0)
+        inst = self._instance(state="draft")
+        self.env["cloud.instance"].cron_check_production_backup()
+        self.assertFalse(self._alert(inst))
 
     def test_assigning_backend_resolves_alert(self):
         inst = self._instance()

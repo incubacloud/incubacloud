@@ -20,6 +20,17 @@ from odoo.tests.common import TransactionCase
 class TestRestoreBackupGuard(TransactionCase):
     def setUp(self):
         super().setUp()
+        # ``effective_backup_backend`` resolves instance → project →
+        # the global ``incubacloud.backup_backend_id`` parameter, so the
+        # "no backend" cases below only mean anything while that global
+        # fallback is empty. Clear it explicitly instead of relying on
+        # the database not having one configured: on a database that
+        # does (any real deployment) the guard resolves a backend and
+        # never raises.
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.backup_backend_id",
+            "0",
+        )
         self.project = self.env["cloud.project"].create({"name": "restore-proj"})
         self.host = self.env["cloud.host"].create(
             {
