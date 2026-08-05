@@ -330,6 +330,18 @@
                                     </button>
                                 </t>
                             </t>
+                            <!-- Refresh from production -->
+                            <t t-if="canRefreshFromProd">
+                                <span class="rl-asep" />
+                                <button
+                  class="rl-btn rl-btn-ghost"
+                  title="Refresh from production"
+                  aria-label="Refresh this instance's data from production"
+                  t-on-click="() => this.openRefreshDialog()"
+                >
+                                    <i class="fa fa-refresh" /> Refresh from production
+                                </button>
+                            </t>
                             <!-- Move to host -->
                             <t t-if="canMoveHost">
                                 <span class="rl-asep" />
@@ -1109,6 +1121,135 @@
                                 <t t-else=""><t t-out="env.icon('db', 15)" /> Import</t>
                             </button>
                         </div>
+            </IcModal>
+
+            <!-- Refresh from production dialog -->
+            <IcModal
+        t-if="state.refreshDialog"
+        title="'Refresh from production'"
+        boxClass="'ic-restore-box'"
+        onClose="() => this.closeRefreshDialog()"
+      >
+                <div class="ic-restore-header">
+                    <h3 class="ic-confirm-title">Refresh from production</h3>
+                    <span
+            class="ic-restore-instance-name"
+            t-esc="state.inst.name"
+          />
+                </div>
+
+                <t t-if="state.refreshDialog.loading">
+                    <p class="ic-restore-rsync-hint">
+                        <i class="fa fa-spinner fa-spin" /> Loading production instances…
+                    </p>
+                </t>
+                <t t-elif="!state.refreshSources.length">
+                    <p class="ic-restore-rsync-hint">
+                        This project has no deployed production instance to copy from.
+                    </p>
+                </t>
+                <t t-else="">
+                    <t t-if="state.refreshSources.length > 1">
+                        <label class="ic-refresh-field">
+                            <span class="ic-refresh-field-label">Source instance</span>
+                            <RlSelect
+                options="refreshSourceOptions"
+                value="state.refreshDialog.sourceId"
+                onChange.bind="onRefreshSourceChange"
+                placeholder="'— pick a production instance —'"
+              />
+                        </label>
+                    </t>
+                    <t t-else="">
+                        <p class="ic-refresh-single-source">
+                            <span class="ic-refresh-field-label">Source instance</span>
+                            <strong t-esc="state.refreshSources[0].name" />
+                        </p>
+                    </t>
+
+                    <div class="ic-restore-modes">
+                        <label
+              t-att-class="'ic-restore-mode' + (state.refreshDialog.source === 'backup' ? ' active' : '') + (refreshCanUseBackup ? '' : ' disabled')"
+            >
+                            <input
+                type="radio"
+                name="refresh_source"
+                value="backup"
+                t-att-disabled="!refreshCanUseBackup"
+                t-att-checked="state.refreshDialog.source === 'backup'"
+                t-on-change="() => this.setRefreshSourceMode('backup')"
+              />
+                            <div class="ic-restore-mode-body">
+                                <span
+                  class="ic-restore-mode-title"
+                >Latest backup</span>
+                                <span class="ic-restore-mode-hint">
+                                    <t t-if="refreshCanUseBackup"
+                    >Recommended — no extra load on production</t>
+                                    <t t-else=""
+                    >Unavailable: this production has no backup destination</t>
+                                </span>
+                            </div>
+                        </label>
+                        <label
+              t-att-class="'ic-restore-mode' + (state.refreshDialog.source === 'live' ? ' active' : '')"
+            >
+                            <input
+                type="radio"
+                name="refresh_source"
+                value="live"
+                t-att-checked="state.refreshDialog.source === 'live'"
+                t-on-change="() => this.setRefreshSourceMode('live')"
+              />
+                            <div class="ic-restore-mode-body">
+                                <span
+                  class="ic-restore-mode-title"
+                >Live dump from production</span>
+                                <span
+                  class="ic-restore-mode-hint"
+                >Data as of right now; runs a dump on the live database</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <label class="ic-refresh-checkbox">
+                        <input
+              type="checkbox"
+              t-att-checked="state.refreshDialog.neutralize"
+              t-on-change="(ev) => { state.refreshDialog.neutralize = ev.target.checked; }"
+            />
+                        <span>Neutralize the database: disable scheduled actions and outgoing mail, and show the test banner</span>
+                    </label>
+
+                    <div class="ic-refresh-warning">
+                        <i class="fa fa-exclamation-triangle" />
+                        <span>This overwrites this instance's database and filestore. Its code (repositories and branches) is left untouched.</span>
+                    </div>
+                </t>
+
+                <t t-if="state.refreshDialog.error">
+                    <div
+            class="ic-restore-error"
+            t-esc="state.refreshDialog.error"
+          />
+                </t>
+
+                <div class="ic-confirm-actions">
+                    <button
+            class="ic-confirm-btn-cancel"
+            t-on-click="closeRefreshDialog"
+          >Cancel</button>
+                    <button
+            class="ic-confirm-btn-ok"
+            t-att-disabled="!state.refreshDialog.sourceId or state.refreshDialog.submitting"
+            t-on-click="doRefreshFromProduction"
+          >
+                        <t t-if="state.refreshDialog.submitting">
+                            <i class="fa fa-spinner fa-spin" /> Starting…
+                        </t>
+                        <t t-else=""><i class="fa fa-refresh" /> Refresh</t>
+                    </button>
+                </div>
             </IcModal>
 
             <!-- Connect as user dialog -->

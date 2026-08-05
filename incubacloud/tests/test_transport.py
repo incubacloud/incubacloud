@@ -567,7 +567,7 @@ class TestRestoreInstanceVerifyBackupFile(BaseCase):
         ex = object.__new__(RestoreInstanceExecutor)
         ex._inst = lambda: inst
         ex._inst_dir = lambda i: f"/home/{i.name}"
-        ex.job = SimpleNamespace(id=99)
+        ex.job = SimpleNamespace(id=99, instance_id=inst, payload={})
         ex._scripts_requested = False
         ex._scripts_uploaded = False
         ex._script_overlay_cache = None

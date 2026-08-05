@@ -1,4 +1,3 @@
-import base64
 import os
 import tempfile
 from contextlib import suppress
@@ -190,10 +189,11 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
 
             with self.job.env.registry.cursor() as cr:
                 env = self.job.env(cr=cr)
+                # ``raw`` skips the in-RAM base64 copy of the archive.
                 env['ir.attachment'].create({
                     'name': filename,
                     'type': 'binary',
-                    'datas': base64.b64encode(data).decode('ascii'),
+                    'raw': data,
                     'res_model': 'cloud.job',
                     'res_id': self.job.id,
                 })

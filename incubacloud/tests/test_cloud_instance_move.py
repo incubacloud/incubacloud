@@ -82,6 +82,11 @@ class TestInstanceMove(TransactionCase):
         self.assertEqual(
             steps[4]['payload']['source_job_id'], '__chain_job_3__',
         )
+        # The move transfers its data host-to-host: the archive is
+        # staged on the source (handoff) and streamed by the restore —
+        # it must never round-trip through an ir.attachment.
+        self.assertEqual(steps[3]['payload']['handoff'], 'host')
+        self.assertEqual(steps[4]['payload']['mode'], 'from_host')
         idx_stop = expected_codes.index('stop_instance')
         idx_create = expected_codes.index('backup_create')
         idx_download = expected_codes.index('backup_download')

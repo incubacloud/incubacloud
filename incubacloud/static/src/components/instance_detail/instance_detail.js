@@ -30,6 +30,7 @@ import {SyncMixin} from "./instance_detail_sync";
 import {BackupsMixin} from "./instance_detail_backups";
 import {AccessMixin} from "./instance_detail_access";
 import {RestoreUploadMixin} from "./instance_detail_restore";
+import {RefreshMixin} from "./instance_detail_refresh";
 import {AuditMixin} from "./instance_detail_audit";
 import { confirmVia } from "../../utils/use_confirm";
 
@@ -186,8 +187,9 @@ export class InstanceDetail extends JobsMixin(
   BackupsMixin(
   AccessMixin(
   RestoreUploadMixin(
+  RefreshMixin(
   AuditMixin(
-  Component))))))) {
+  Component)))))))) {
   static props = {
     instance_id: {type: Number, optional: true},
     project_id: {type: Number},
@@ -282,6 +284,9 @@ export class InstanceDetail extends JobsMixin(
       // move-to-host action
       movePicker: null, // { targetHostId, loading, loaded }
       moveHosts: [],
+      // { sourceId, source, neutralize, loading, loaded, error, submitting }
+      refreshDialog: null,
+      refreshSources: [],
       conflictBlocked: null,
       restoreDialog: null,
       connectDialog: null,

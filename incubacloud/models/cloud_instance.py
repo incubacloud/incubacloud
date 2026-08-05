@@ -1080,6 +1080,11 @@ class CloudInstance(models.Model):
         default branch.
         """
         self.ensure_one()
+        # Server-side backstop: the method is public and therefore
+        # reachable over RPC (call_kw), where the controller's Developer
+        # gate never runs. su callers — the GitHub webhook's sudo'd PR
+        # previews — bypass inside _check_cloud_group.
+        self.env["cloud.security.mixin"]._check_can_clone_to_staging()
         if self.environment != "production":
             raise UserError(_("Only production instances can be cloned."))
         if not self.deployed:
@@ -1142,8 +1147,15 @@ class CloudInstance(models.Model):
                     "instance_id": self.id,  # prod
                     "job_type_code": "backup_download",
                     "payload": {
-                        "time": "latest",
+                        # Without a backup backend there is no duplicity
+                        # store to restore 'latest' from — an on-demand
+                        # dump is the only workable source.
+                        "time": (
+                            "latest" if self.effective_backup_backend
+                            else "live"
+                        ),
                         "download_type": "all",
+                        "handoff": "host",
                     },
                 },
                 {
@@ -1151,13 +1163,111 @@ class CloudInstance(models.Model):
                     "instance_id": staging.id,
                     "job_type_code": "restore_instance",
                     "payload": {
-                        "mode": "from_job",
+                        "mode": "from_host",
                         "source_job_id": "__chain_job_1__",
+                        # A clone carries production's data, which means
+                        # production's cron jobs and outgoing mail
+                        # servers. Left live, a staging copy invoices,
+                        # duns and emails real customers. PR previews
+                        # included: the core posts the PR comment itself,
+                        # it never goes through the instance's mail.
+                        "neutralize": True,
+                        "reset_base_url": True,
                     },
                 },
             ]
         )
         return {"staging_id": staging.id, "job_id": job_ids[0]}
+
+    def refresh_from_production(
+        self, source_instance_id, source="backup", neutralize=True,
+    ):
+        """Overwrite this instance's data with a copy of a production's.
+
+        The staging keeps its own code (repos and branches are untouched)
+        and only its database and filestore are replaced — odoo.sh calls
+        this a staging rebuild, a name already taken here by the real
+        rebuild (``copier update`` + image rebuild).
+
+        No new executor: this is the tail of the ``clone_to_staging``
+        chain without the deploy step, so both jobs already tell their
+        story in the timeline and both instances are already covered by
+        ``enqueue_chain``'s per-instance advisory lock.
+
+        :param int source_instance_id: production instance to copy from
+        :param str source: ``'backup'`` (latest duplicity snapshot, the
+            default) or ``'live'`` (on-demand dump). ``'backup'``
+            degrades to ``'live'`` when the source has no backup backend
+            rather than failing, and the resolved value is returned.
+        :param bool neutralize: disable scheduled actions and outgoing
+            mail in the restored copy and show the test banner
+        :return: ``{'ok': True, 'job_ids': [...], 'source': <resolved>}``
+        :raises UserError: on any validation failure
+        :raises AccessError: below the Developer role (same gate as
+            cloning — this method is reachable over RPC)
+        """
+        self.ensure_one()
+        self.env["cloud.security.mixin"]._check_can_clone_to_staging()
+        if source not in ("backup", "live"):
+            raise UserError(_("Unknown data source: %s", source))
+        if self.environment == "production":
+            raise UserError(
+                _("Production instances cannot be refreshed from production.")
+            )
+        if not self.deployed:
+            raise UserError(_("Instance must be deployed first."))
+        if not self.host_id:
+            raise UserError(_("Instance has no host assigned."))
+
+        prod = self.browse(int(source_instance_id)).exists()
+        if not prod:
+            raise UserError(_("Source instance not found."))
+        if prod.environment != "production":
+            raise UserError(_("The source must be a production instance."))
+        if not prod.deployed:
+            raise UserError(_("The source instance is not deployed."))
+        if not prod.host_id:
+            raise UserError(_("The source instance has no host assigned."))
+        if prod.project_id != self.project_id:
+            raise UserError(
+                _("The source must belong to the same project.")
+            )
+
+        # No backup backend means no duplicity store to restore from; a
+        # live dump is the only thing that can work, so degrade instead
+        # of failing and let the caller tell the user what happened.
+        if source == "backup" and not prod.effective_backup_backend:
+            source = "live"
+
+        # Hosts are per step: production and staging may live on
+        # different machines. The archive travels through the control
+        # plane as an ir.attachment, so cross-host is free.
+        job_ids = self.env["cloud.job"].enqueue_chain(
+            [
+                {
+                    "host_id": prod.host_id.id,
+                    "instance_id": prod.id,
+                    "job_type_code": "backup_download",
+                    "payload": {
+                        "time": "latest" if source == "backup" else "live",
+                        "download_type": "all",
+                        "handoff": "host",
+                    },
+                },
+                {
+                    "host_id": self.host_id.id,
+                    "instance_id": self.id,
+                    "job_type_code": "restore_instance",
+                    "payload": {
+                        "mode": "from_host",
+                        "source_job_id": "__chain_job_0__",
+                        "neutralize": bool(neutralize),
+                        "reset_base_url": True,
+                    },
+                },
+            ]
+        )
+        return {"ok": True, "job_ids": job_ids, "source": source}
 
     # ── Cross-host move ────────────────────────────────────────────────────
 
@@ -1268,14 +1378,18 @@ class CloudInstance(models.Model):
                 "host_id": source.id,
                 "instance_id": self.id,
                 "job_type_code": "backup_download",
-                "payload": {"time": "latest", "download_type": "all"},
+                "payload": {
+                    "time": "latest",
+                    "download_type": "all",
+                    "handoff": "host",
+                },
             },
             {
                 "host_id": target_host.id,
                 "instance_id": self.id,
                 "job_type_code": "restore_instance",
                 "payload": {
-                    "mode": "from_job",
+                    "mode": "from_host",
                     "source_job_id": f"__chain_job_{download_idx}__",
                 },
             },
