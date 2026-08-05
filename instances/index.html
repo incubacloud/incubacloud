@@ -702,6 +702,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#refresh-from-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      Refresh from production
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auto-update" class="md-nav__link">
     <span class="md-ellipsis">
       Auto-update
@@ -1191,6 +1200,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#refresh-from-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      Refresh from production
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auto-update" class="md-nav__link">
     <span class="md-ellipsis">
       Auto-update
@@ -1256,8 +1274,35 @@ the configuration so you can re-deploy later.</p>
 <li>View live logs (Instance detail → Logs)</li>
 <li>Open a shell on the container (Instance detail → Shell)</li>
 <li><a href="../backups/restore/">Restore from a backup</a></li>
+<li><a href="#refresh-from-production">Refresh a staging with production data</a></li>
 <li>Add a custom domain (Instance detail → Networking → Domain)</li>
 </ul>
+<h2 id="refresh-from-production">Refresh from production<a class="headerlink" href="#refresh-from-production" title="Permanent link">&para;</a></h2>
+<p><strong>Instance detail → Refresh from production</strong> replaces a staging instance's
+database and filestore with a copy of its project's production, keeping the
+staging's own code (repositories and branches) untouched. It is the button you
+press when your test copy has drifted away from real data.</p>
+<p>Two data sources:</p>
+<ul>
+<li><strong>Latest backup</strong> (recommended) — restores the most recent snapshot from the
+  production's backup destination. No extra load on production.</li>
+<li><strong>Live dump from production</strong> — dumps the production database on the spot, so
+  you get the data as of right now. It costs a <code>pg_dump</code> on a live database, and
+  it is the only option when the production has no backup destination configured
+  (the dialog then picks it for you).</li>
+</ul>
+<p><strong>Neutralize the database</strong> is on by default: the restored copy comes up with
+scheduled actions and outgoing mail servers disabled and Odoo's test banner
+showing. Leave it on unless you are deliberately testing a cron or a mail flow —
+a staging carrying production's data will otherwise invoice, dun and email your
+real customers.</p>
+<p>The refresh runs as two jobs (a download on the production, a restore on the
+staging) that you can follow in the activity timeline. If the download fails the
+restore never starts and the staging is left untouched. Refreshing does <strong>not</strong>
+run a module update: if the staging's branch lacks a module the restored database
+has installed, use a rebuild afterwards.</p>
+<p>Cloning a production to a new staging (<strong>Project → Clone to staging</strong>) applies
+the same neutralization.</p>
 <h2 id="auto-update">Auto-update<a class="headerlink" href="#auto-update" title="Permanent link">&para;</a></h2>
 <p>If you push commits to a connected repo, two settings control what happens:</p>
 <ul>
