@@ -204,6 +204,29 @@ class OpsMixin:
         result = instance.clone_to_staging(staging_name.strip())
         return {"ok": True, **result}
 
+    @http.route(["/cloud/refresh_from_production"], type="jsonrpc", auth="user")
+    def cloud_refresh_from_production(
+        self, instance_id, source_instance_id, source="backup",
+        neutralize=True,
+    ):
+        """Replace a staging's data with a copy of its production's.
+
+        Gated on the same capability as cloning: moving production data
+        into a staging instance.
+        """
+        self._sec()._check_can_clone_to_staging()
+        instance = request.env["cloud.instance"].browse(instance_id)
+        if not instance.exists():
+            return {"ok": False, "error": _("Instance not found")}
+        try:
+            return instance.refresh_from_production(
+                source_instance_id,
+                source=source,
+                neutralize=bool(neutralize),
+            )
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+
     @http.route(["/cloud/move_instance"], type="jsonrpc", auth="user")
     def cloud_move_instance(self, instance_id, target_host_id):
         """Move a deployed instance to another host (manager-only)."""

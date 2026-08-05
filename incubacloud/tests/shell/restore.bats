@@ -73,6 +73,46 @@ STUB
     [[ "$(cat "$CALLS")" == *"docker compose run --rm -v $ZIP:/mnt/restore.zip:ro odoo click-odoo-restoredb --copy --force prod /mnt/restore.zip"* ]]
 }
 
+@test "restore-db does not neutralize unless asked" {
+    run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" != *"--neutralize"* ]]
+}
+
+@test "restore-db neutralizes when the 4th argument is 1" {
+    run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"click-odoo-restoredb --neutralize --copy --force prod /mnt/restore.zip"* ]]
+}
+
+@test "restore-db treats an explicit 0 as no neutralization" {
+    run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 0
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" != *"--neutralize"* ]]
+}
+
+@test "set-base-url upserts both parameters and drops the freeze" {
+    run bash "$SCRIPT" set-base-url "$DIR" odoo prod \
+        "https://staging.example.com" "http://localhost:8069"
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"docker compose exec -T db psql -U odoo -d prod -c"* ]]
+    [[ "$calls" == *"('web.base.url','https://staging.example.com'),('report.url','http://localhost:8069')"* ]]
+    [[ "$calls" == *"DELETE FROM ir_config_parameter WHERE key='web.base.url.freeze'"* ]]
+}
+
+@test "set-base-url is guarded against a database with no parameters table" {
+    run bash "$SCRIPT" set-base-url "$DIR" odoo prod "https://x.example.com" \
+        "http://localhost:8069"
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"table_name='ir_config_parameter'"* ]]
+}
+
+@test "set-base-url refuses to run with missing arguments" {
+    run bash "$SCRIPT" set-base-url "$DIR" odoo prod
+    [ "$status" -eq 1 ]
+}
+
 @test "ensure-connect reinstalls the connect module headless" {
     run bash "$SCRIPT" ensure-connect "$DIR" prod
     [ "$status" -eq 0 ]

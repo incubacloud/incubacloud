@@ -641,6 +641,74 @@ body,
     padding: 8px 12px;
 }
 
+// ── Refresh from production dialog ──────────────────────────────
+//
+// Reuses the restore dialog's box and mode cards; only the source
+// picker, the single-source line and the destructive notice are new.
+
+.ic-restore-mode.disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+
+    &:hover { background: none; }
+}
+
+.ic-refresh-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ic-refresh-field-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: $text-secondary;
+}
+
+.ic-refresh-single-source {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    font-size: 0.8125rem;
+    color: $text-secondary;
+    strong { color: $text-primary; }
+}
+
+.ic-refresh-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: $text-secondary;
+    cursor: pointer;
+
+    input[type="checkbox"] {
+        margin: 2px 0 0;
+        flex-shrink: 0;
+        accent-color: $primary-blue;
+    }
+}
+
+.ic-refresh-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: $text-secondary;
+    background: rgba(var(--rl-amber-rgb), 0.08);
+    border: 1px solid rgba(var(--rl-amber-rgb), 0.25);
+    border-radius: 6px;
+    padding: 8px 12px;
+
+    .fa { color: $state-warning; margin-top: 2px; flex-shrink: 0; }
+    strong { color: $text-primary; }
+}
+
 // ── Connect as user dialog ──────────────────────────────────────
 
 .ic-connect-box {

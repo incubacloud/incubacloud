@@ -111,6 +111,21 @@ def _redact_tokens(text):
     return _TOKEN_RE.sub(r'https://\1', text)
 
 
+def handoff_archive_path(job_id):
+    """Return the on-host path where a ``backup_download`` job with
+    ``handoff='host'`` leaves its ZIP for the next job in the chain.
+
+    Keyed by the *producing* job's id so the consumer (``restore_instance``
+    mode ``from_host``) can recompute it from ``source_job_id`` alone, and
+    so two chains touching the same instance name can never collide.
+    Defined at module level because both executors must agree on it.
+
+    :param int job_id: id of the ``cloud.job`` that produced the archive
+    :return: absolute path on the producing job's host
+    """
+    return f"/tmp/.incubacloud-handoff-{int(job_id)}.zip"
+
+
 def sql_escape_literal(s):
     """Escape a Python string for embedding in a PostgreSQL single-quoted
     SQL literal (``'...'``).
@@ -559,6 +574,27 @@ class AbstractExecutor(ABC):
     def _inst_dir(self, inst):
         """Return the remote directory for an instance."""
         return inst.get_remote_dir()
+
+    def _base_url(self):
+        """Return the full HTTPS URL for web.base.url (scheme always https).
+
+        Empty string when the job's instance has no domain — callers must
+        treat that as "leave ``web.base.url`` alone", never as "write an
+        empty parameter".
+
+        Lives here rather than on the deploy executor because three
+        different jobs need the same rule: deploy and rebuild set the
+        parameter on a fresh stack, and restore has to overwrite whatever
+        base URL travelled inside the restored dump.
+
+        :return: ``https://<domain>`` or ``''``
+        """
+        domain = (self.job.instance_id.domain or "").strip()
+        if not domain:
+            return ""
+        if domain.startswith(("http://", "https://")):
+            return domain.rstrip("/")
+        return f"https://{domain}"
 
     # ===============================
     # VERSIONED SCRIPT HELPERS

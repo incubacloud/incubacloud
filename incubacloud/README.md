@@ -28,7 +28,12 @@ Features
   inside each instance's backup container. Scheduled backup list refresh and
   attachment cleanup via cron.
 - **Clone to staging** — one-click clone of a production instance into a staging
-  environment, including database restore from the latest backup.
+  environment, including database restore from the latest backup. The copy is
+  neutralized (scheduled actions and outgoing mail off, test banner on).
+- **Refresh from production** — replace an existing staging's database and
+  filestore with a copy of its production's, keeping the staging's own code.
+  Source is the latest backup snapshot or an on-demand live dump, and the copy
+  is neutralized by default.
 - **Multi-domain support** — assign multiple domains per instance with optional
   redirects, automatically configured in Traefik.
 - **SMTP relay** — optional per-instance SMTP configuration. When not

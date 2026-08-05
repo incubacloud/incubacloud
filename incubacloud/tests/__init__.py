@@ -76,3 +76,5 @@ from . import test_job_purge
 from . import test_rate_limit_gate
 from . import test_config_drift
 from . import test_placement_veto
+from . import test_refresh_from_production
+from . import test_host_handoff

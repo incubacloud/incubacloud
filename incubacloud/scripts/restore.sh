@@ -3,8 +3,21 @@
 #
 # Usage:
 #   restore.sh verify-file    <dir> <remote_zip>
-#   restore.sh restore-db     <dir> <dbname> <remote_zip>
+#   restore.sh restore-db     <dir> <dbname> <remote_zip> [neutralize]
+#   restore.sh set-base-url   <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #   restore.sh ensure-connect <dir> <dbname>
+#
+# ``restore-db`` takes an optional 4th argument (0/1, default 0): with 1
+# it adds --neutralize, which runs every installed module's
+# data/neutralize.sql (scheduled actions off, outgoing mail servers
+# archived, external providers in test mode, database.is_neutralized=true
+# → red banner). Callers that copy a production database into a staging
+# instance MUST pass 1; a move between hosts must not, since that is the
+# same production instance changing machines.
+#
+# ``set-base-url`` overwrites the web.base.url/report.url that travelled
+# inside the restored dump. It also drops web.base.url.freeze: with the
+# freeze set, the copy would stay pinned to the source's domain forever.
 #
 # ``verify-file`` makes the bind-mounted zip readable from *inside* the
 # odoo container: the SSH user and the container's odoo user are
@@ -41,11 +54,38 @@ case "$op" in
         sudo chmod 600 "$remote"
         ;;
     restore-db)
-        ic_require_args 2 "$#" "restore.sh restore-db <dir> <dbname> <remote_zip>"
-        dbname="$1"; remote="$2"
-        ic_log "restoring $dbname from $remote"
+        ic_require_args 2 "$#" \
+            "restore.sh restore-db <dir> <dbname> <remote_zip> [neutralize]"
+        dbname="$1"; remote="$2"; neutralize="${3:-0}"
+        neutralize_flag=()
+        if [ "$neutralize" = "1" ]; then
+            neutralize_flag=(--neutralize)
+            ic_log "restoring $dbname from $remote (neutralized)"
+        else
+            ic_log "restoring $dbname from $remote"
+        fi
         docker compose run --rm -v "$remote:/mnt/restore.zip:ro" \
-            odoo click-odoo-restoredb --copy --force "$dbname" /mnt/restore.zip
+            odoo click-odoo-restoredb "${neutralize_flag[@]}" --copy --force \
+            "$dbname" /mnt/restore.zip
+        ;;
+
+    set-base-url)
+        ic_require_args 4 "$#" \
+            "restore.sh set-base-url <dir> <pg_user> <dbname> <base_url_sql> <report_url>"
+        pg_user="$1"; dbname="$2"; base_url_sql="$3"; report_url="$4"
+        ic_log "pointing $dbname at $base_url_sql"
+        # Guarded by a DO block so it is a no-op if the restore left no
+        # ir_config_parameter behind. ``base_url_sql`` arrives already
+        # SQL-escaped by the caller (defence in depth on top of the
+        # hostname regex constraint on cloud.instance.domain).
+        docker compose exec -T db psql -U "$pg_user" -d "$dbname" -c \
+"DO \$\$ BEGIN IF EXISTS (SELECT FROM information_schema.tables WHERE \
+table_schema='public' AND table_name='ir_config_parameter') THEN \
+INSERT INTO ir_config_parameter (key,value) VALUES \
+('web.base.url','$base_url_sql'),('report.url','$report_url') \
+ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; \
+DELETE FROM ir_config_parameter WHERE key='web.base.url.freeze'; \
+END IF; END \$\$;"
         ;;
     ensure-connect)
         ic_require_args 1 "$#" "restore.sh ensure-connect <dir> <dbname>"

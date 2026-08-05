@@ -401,15 +401,6 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         cp.write(out)
         return out.getvalue()
 
-    def _base_url(self):
-        """Return the full HTTPS URL for web.base.url (scheme always https)."""
-        domain = (self._inst().domain or "").strip()
-        if not domain:
-            return ""
-        if domain.startswith(("http://", "https://")):
-            return domain.rstrip("/")
-        return f"https://{domain}"
-
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
     async def _upload_copier_files(self, transport):

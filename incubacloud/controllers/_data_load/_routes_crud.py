@@ -1083,6 +1083,13 @@ class CrudMixin:
                 'compose_services': i.compose_services or 'odoo,db',
                 'latest_job_id': latest.id if latest else None,
                 'pr_number': i.pr_number or 0,
+                # Lets the refresh dialog tell "restore from the latest
+                # snapshot" apart from "there is no snapshot store, a
+                # live dump is the only option".
+                'effective_backup_backend_id': (
+                    i.effective_backup_backend.id
+                    if i.effective_backup_backend else None
+                ),
             })
         return {
             'project_name': project.name,
