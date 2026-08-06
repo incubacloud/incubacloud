@@ -210,6 +210,9 @@ class AbstractExecutor(ABC):
         # cheap (no per-flush COUNT(*) round-trip).
         self._chunks_persisted = 0
         self._cap_marker_emitted = False
+        # Bus recipients for this run, resolved lazily on the first
+        # publish and reused afterwards. See ``_publish_bus``.
+        self._bus_audience_ids = None
         # Versioned-script plumbing. ``run_script()`` flips
         # ``_scripts_requested`` while ``get_commands()`` builds its
         # tuples; the overlay is then uploaded once, before the first
@@ -255,11 +258,22 @@ class AbstractExecutor(ABC):
                             timeout=self.sleep_interval,
                         )
                     )
-                    self._flush_logs()
-                    self._publish_bus()
+                    # Only notify when the tick actually produced log
+                    # rows. The loop ticks every ``sleep_interval``
+                    # regardless of output, so an unconditional publish
+                    # turned a long silent step (a multi-minute
+                    # ``docker compose build``) into a steady 2 events/s
+                    # heartbeat to every watcher — each one costing the
+                    # SPA a full refetch. Watchers that need a floor on
+                    # latency (the standalone log page) keep their own
+                    # fallback poll.
+                    if self._flush_logs():
+                        self._publish_bus()
                     self._check_cancel()
                 # Drain anything written between the last tick and
-                # the final await inside _async_entry.
+                # the final await inside _async_entry. Published
+                # unconditionally: this is the last word on the job, so
+                # watchers must settle on it even if the tail was empty.
                 self._flush_logs()
                 self._publish_bus()
                 exc = main_task.exception()
@@ -400,15 +414,31 @@ class AbstractExecutor(ABC):
         self._log_buffer.append((msg, "system"))
 
     def _flush_logs(self):
+        """Persist the buffered lines; return how many chunks were written.
+
+        The count is what drives the bus: ``run()`` only notifies
+        watchers on a tick that actually produced rows. Counting real
+        ``create`` calls rather than ``bool(entries)`` matters for a
+        capped job — the branch below drains the buffer and writes
+        nothing, so a buffer-based signal would keep the notification
+        firing forever with no new content behind it.
+
+        Deliberately counted here and not flagged in ``_sys`` /
+        ``on_stdout`` / ``on_stderr``: several tests rebind those to
+        ``_log_buffer.append``, which would bypass a flag set there.
+
+        :returns: number of ``cloud.job.log.chunk`` rows created.
+        """
         if not self._log_buffer:
-            return
+            return 0
         entries = list(self._log_buffer)
         self._log_buffer.clear()
         # If we already emitted the cap marker, drop everything past
         # this point silently. The job keeps running but stops bloating
         # the logs table.
         if self._cap_marker_emitted:
-            return
+            return 0
+        written = 0
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
             Log = env['cloud.job.log.chunk'].sudo()
@@ -425,6 +455,7 @@ class AbstractExecutor(ABC):
                         'source': 'system',
                     })
                     self._cap_marker_emitted = True
+                    written += 1
                     break
                 Log.create({
                     'job_id': self.job.id,
@@ -432,6 +463,8 @@ class AbstractExecutor(ABC):
                     'source': source,
                 })
                 self._chunks_persisted += 1
+                written += 1
+        return written
 
     def _publish_bus(self):
         """Notify every watcher that new chunks are available.
@@ -444,15 +477,28 @@ class AbstractExecutor(ABC):
 
         We delegate to ``cloud.job._broadcast_job_update`` — the same
         helper used by create() and queue_job_ext state transitions —
-        so every active internal user receives the notification on
-        their own presence channel. Hidden job types (host_metrics,
+        so every user allowed to read the job receives the notification
+        on their own presence channel. Hidden job types (host_metrics,
         docker_prune, instance_health) stay filtered out inside that
         helper.
+
+        The audience is resolved once and reused for the rest of the
+        run: it costs an ACL check per candidate user, which is fine
+        for the one-shot broadcasts but not on a path that repeats for
+        every chunk flush of a long build. Project membership does not
+        meaningfully change mid-job.
         """
         logger = logging.getLogger("AbstractExecutor")
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            env['cloud.job']._broadcast_job_update(self.job.id)
+            Job = env['cloud.job']
+            if self._bus_audience_ids is None:
+                self._bus_audience_ids = Job._bus_audience(
+                    Job.browse(self.job.id),
+                ).ids
+            Job._broadcast_job_update(
+                self.job.id, audience_ids=self._bus_audience_ids,
+            )
             logger.debug(
                 "[_publish_bus] broadcast done for job_id=%s", self.job.id,
             )

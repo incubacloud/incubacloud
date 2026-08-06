@@ -5,6 +5,7 @@ from . import (
     test_github_utils,
     test_cloud_alert,
     test_alert_notify,
+    test_bus_notifications,
     test_cloud_audit_log,
     test_cloud_rate_limit,
     test_safe_error,

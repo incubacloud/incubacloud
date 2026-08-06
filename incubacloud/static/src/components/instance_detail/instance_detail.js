@@ -342,19 +342,24 @@ export class InstanceDetail extends JobsMixin(
     // ``refreshSidebar`` here: the store reacts to the same event
     // independently and the explicit hop would only duplicate the
     // /cloud/get_project_full RPC.
-    const triggerRefresh = useDebouncedBus(async (jobId) => {
-      if (this._destroyed || jobId == null) return;
-      try {
-        const [job] = await this.orm.call("cloud.job", "load_jobs", [jobId]);
-        if (this._destroyed) return;
-        if (job && job.instance_id === this.props.instance_id) {
-          this._silentRefresh();
-        }
-      } catch (_e) {
-        /* component torn down mid-flight */
-      }
+    const triggerRefresh = useDebouncedBus(() => {
+      if (!this._destroyed) this._silentRefresh();
     });
-    this._onJobUpdate = (payload) => triggerRefresh(payload.id);
+    // The instance filter runs HERE, before the debounce — never
+    // inside the callback. ``useDebouncedBus`` is last-write-wins on
+    // its argument, so a matching event arriving in the same 300 ms
+    // window as a non-matching one would be discarded if we branched
+    // downstream. Filtering at the subscription keeps every event we
+    // care about.
+    //
+    // The bus payload carries the target, so this used to cost an
+    // ``orm.call("cloud.job", "load_jobs")`` per event — for every
+    // job in the fleet, not just ours — purely to read
+    // ``job.instance_id``. Same predicate, no round-trip.
+    this._onJobUpdate = (payload) => {
+      if (payload?.instance_id !== this.props.instance_id) return;
+      triggerRefresh(payload.id);
+    };
 
     onWillStart(() => this.load());
     onMounted(() => {

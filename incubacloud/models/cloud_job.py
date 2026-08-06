@@ -1382,8 +1382,35 @@ class CloudJob(models.Model):
         return records
 
     @api.model
-    def _broadcast_job_update(self, job_id, state=None):
-        """Send bus notification for a job state change to all active users.
+    def _bus_audience(self, job):
+        """Return the internal users allowed to read *job*.
+
+        The bus does not apply record rules, so the audience is the
+        gate: we resolve who may read the job through ``_job_visible_to``
+        (the same helper the email and external notifiers use, so the
+        ``cloud.job`` ir.rule stays the single source of truth) and send
+        only to them. Two things follow from that. A stakeholder stops
+        receiving events for the six projects they are not a member of,
+        and the payload can safely name the job's target — every
+        recipient has already passed the ACL for it.
+
+        Resolving this costs one ``check_access`` per candidate user, so
+        callers on a repeating path (the executor tick) should compute
+        it once and pass the ids back in. See
+        ``AbstractExecutor._publish_bus``.
+
+        :param job: a single ``cloud.job`` record.
+        :returns: ``res.users`` recordset.
+        """
+        return (
+            self.env["res.users"]
+            .search([("share", "=", False), ("active", "=", True)])
+            .filtered(lambda u: self._job_visible_to(job, u))
+        )
+
+    @api.model
+    def _broadcast_job_update(self, job_id, state=None, audience_ids=None):
+        """Send bus notification for a job state change to its audience.
 
         Hidden job types (host_metrics, instance_health, docker_prune,
         …) are system/cron jobs the SPA never shows in the drawer.
@@ -1392,18 +1419,24 @@ class CloudJob(models.Model):
         skip them here. The frontend already filters these types out
         of the job list; skipping the bus hop saves a lot of work on
         the server, network and client.
+
+        :param audience_ids: precomputed ``res.users`` ids from
+            ``_bus_audience``. Pass it from repeating callers to avoid
+            re-running the per-user ACL check on every event; omit it
+            for one-shot broadcasts (create, terminal transition).
         """
         job = self.browse(job_id)
         if not job.exists():
             return
         if job.job_type_id.code in self._get_hidden_job_types():
             return
-        users = self.env["res.users"].search(
-            [
-                ("share", "=", False),
-                ("active", "=", True),
-            ]
+        users = (
+            self.env["res.users"].browse(audience_ids)
+            if audience_ids is not None
+            else self._bus_audience(job)
         )
+        if not users:
+            return
         # ``state`` lets the client toast terminal transitions without
         # polling: it is only present when the caller knows it
         # (queue_job_ext passes the terminal state it just wrote);
@@ -1411,11 +1444,27 @@ class CloudJob(models.Model):
         # them. Passing it explicitly instead of reading ``job.state``
         # here matters twice: no ORM read on the hot chunk-flush path,
         # and no premature materialisation of the stored related state
-        # at create() time (the queue.job may not exist yet). Only
-        # id + state travel on the bus — the bus ignores record rules,
-        # so anything richer (name, target) must be fetched back
-        # through the ACL path (``/cloud/get_job_brief``).
-        payload = {"id": job_id}
+        # at create() time (the queue.job may not exist yet).
+        #
+        # ``host_id`` / ``instance_id`` / ``project_id`` name the job's
+        # target so a watcher can drop an event that does not concern it
+        # without a round-trip — instance_detail used to spend one
+        # ``load_jobs`` call per event purely to learn this. Shipping
+        # them is safe precisely because the audience above is
+        # ACL-filtered; do not widen the payload without keeping that
+        # gate.
+        #
+        # ``project_id`` is a traversal, not a field: host-level jobs
+        # have no instance and therefore no project, and they report
+        # ``None``. Watchers must read that as "unknown, refresh
+        # anyway" rather than "not mine" — a host job still changes the
+        # host rows a project view renders.
+        payload = {
+            "id": job_id,
+            "host_id": job.host_id.id or None,
+            "instance_id": job.instance_id.id or None,
+            "project_id": job.instance_id.project_id.id or None,
+        }
         if state:
             payload["state"] = state
         for user in users:
