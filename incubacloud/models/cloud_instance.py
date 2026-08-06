@@ -681,6 +681,16 @@ class CloudInstance(models.Model):
             "backup_aws_access_key_id": "",
             "backup_aws_secret_access_key": "",
             "backup_passphrase": "",
+            # Answered explicitly even though we never use it. The
+            # template added this question in v9.7.0 with a literal
+            # placeholder as its default, and ``copier --defaults``
+            # takes defaults for questions we leave out — which would
+            # write ``BACKEND_PASSWORD=example-backup-backend-password``
+            # into every backup.env. Empty keeps the line out of the
+            # file entirely. Only password-capable duplicity backends
+            # (SFTP) read it; ours are S3/R2, which authenticate with
+            # the AWS keys above.
+            "backup_backend_password": "",
         }
         if has_backup and bb:
             answers.update(
