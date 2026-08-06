@@ -10,6 +10,7 @@ import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required } from "../../utils/validators";
 import { fetchOdooVersions } from "../../utils/odoo_versions";
+import { confirmVia } from "../../utils/use_confirm";
 
 let _nextKey = 1;
 const newRepoKey = () => `new_${_nextKey++}`;
