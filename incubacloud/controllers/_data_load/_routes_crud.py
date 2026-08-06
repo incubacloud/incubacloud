@@ -290,6 +290,8 @@ class CrudMixin:
                     'has_key_file': _has_encrypted(host, 'key_file'),
                     'has_known_hosts_key':
                         _has_encrypted(host, 'known_hosts_key'),
+                    'known_hosts_fingerprint':
+                        host.known_hosts_fingerprint if is_manager else '',
                     'cpu_cores': host.cpu_cores,
                     'ram_total_gb': host.ram_total_gb,
                     'disk': round(host.disk_usage),
@@ -677,6 +679,8 @@ class CrudMixin:
             'has_password': _has_encrypted(host, 'password'),
             'has_key_file': _has_encrypted(host, 'key_file'),
             'has_known_hosts_key': _has_encrypted(host, 'known_hosts_key'),
+            'known_hosts_fingerprint': host.known_hosts_fingerprint,
+            'revoked_key_fingerprint': host.revoked_key_fingerprint or '',
             'description': host.description,
             'tags': [
                 {'id': t.id, 'name': t.name, 'color': t.color}
@@ -804,14 +808,22 @@ class CrudMixin:
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
         try:
-            host._capture_known_host_key()
+            captured = host._capture_known_host_key()
         except asyncssh.Error:
             _logger.exception("trust_host_key SSH error for host %s", host_id)
             return {'ok': False, 'error': _('SSH connection failed. Check host credentials and network.')}
         except Exception:
             _logger.exception("trust_host_key failed for host %s", host_id)
             return {'ok': False, 'error': _('Connection failed. Check host credentials and network.')}
-        return {'ok': True}
+        # The verdict travels to the panel: whether this key matches the one
+        # revoked by the last endpoint change is the only machine-identity
+        # check available, so it has to reach the operator who just clicked.
+        return {
+            'ok': True,
+            'fingerprint': captured['fingerprint'],
+            'previous_fingerprint': captured['previous_fingerprint'],
+            'changed': captured['changed'],
+        }
 
     @http.route(['/cloud/save_host'], type='jsonrpc', auth='user')
     def cloud_save_host(self, host_id, vals):

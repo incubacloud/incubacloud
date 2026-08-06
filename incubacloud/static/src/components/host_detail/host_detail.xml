@@ -202,6 +202,20 @@
                                         <span class="rl-v warn"><t t-out="env.icon('alert', 13)"/> Not trusted</span>
                                     </t>
                                 </div>
+                                <!-- The fingerprint is the only thing an
+                                     operator can compare this host's identity
+                                     against, so it is readable here instead of
+                                     living solely in the server log. -->
+                                <div class="rl-ovrow" t-if="state.host.known_hosts_fingerprint">
+                                    <span class="rl-l">Key fingerprint</span>
+                                    <span class="rl-v rl-mono" t-esc="state.host.known_hosts_fingerprint"/>
+                                </div>
+                                <div class="rl-ovrow" t-if="state.host.revoked_key_fingerprint">
+                                    <span class="rl-l">Revoked key</span>
+                                    <span class="rl-v warn rl-mono"
+                                          title="Fingerprint the host was trusted with before its endpoint changed. Re-trust the key: an identical fingerprint means the machine did not change."
+                                          t-esc="state.host.revoked_key_fingerprint"/>
+                                </div>
                                 <t t-if="state.host.last_probed">
                                     <div class="rl-ovrow">
                                         <span class="rl-l">Last check</span>

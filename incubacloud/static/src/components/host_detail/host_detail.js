@@ -428,8 +428,28 @@ export class HostDetail extends Component {
             const res = await rpc("/cloud/trust_host_key", { host_id: this.props.host_id });
             if (res?.ok) {
                 this.state.has_known_hosts_key = true;
-                this.state.host = { ...this.state.host, has_known_hosts_key: true };
-                this.env.toast?.success(_t("SSH host key trusted successfully."));
+                this.state.host = {
+                    ...this.state.host,
+                    has_known_hosts_key: true,
+                    known_hosts_fingerprint: res.fingerprint || "",
+                    revoked_key_fingerprint: "",
+                };
+                // Whether this key matches the one revoked by the last
+                // endpoint change is the machine-identity check; saying only
+                // "trusted" would hide the answer the operator came for.
+                if (res.changed) {
+                    this.env.toast?.error(
+                        _t("Key trusted, but it DIFFERS from the previously trusted one (%(old)s → %(new)s). Confirm this machine was rebuilt or replaced — see the alert.", { old: res.previous_fingerprint, new: res.fingerprint })
+                    );
+                } else if (res.previous_fingerprint) {
+                    this.env.toast?.success(
+                        _t("SSH host key trusted: %s — unchanged, same machine as before.", res.fingerprint)
+                    );
+                } else {
+                    this.env.toast?.success(
+                        _t("SSH host key trusted: %s", res.fingerprint || _t("captured"))
+                    );
+                }
             } else {
                 this.env.toast?.error(res?.error || _t("Failed to trust SSH host key."));
             }

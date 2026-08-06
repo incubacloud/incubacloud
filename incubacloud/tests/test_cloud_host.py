@@ -5,11 +5,22 @@ Verifies Traefik template defaults, required fields, and the
 is archived or unlinked.
 """
 
-from unittest.mock import MagicMock, patch
+import asyncio
+import shutil
+import subprocess
+import tempfile
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import asyncssh
+from asyncssh.misc import _ACMWrapper
 
 from odoo import http
 from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase, new_test_user
+
+from odoo.addons.incubacloud.models.host_hardening_executor import (
+    HostHardeningExecutor,
+)
 
 
 class TestCloudHostTraefikDefaults(TransactionCase):
@@ -552,3 +563,507 @@ class TestBuildPortForwardCmd(TransactionCase):
         host.invalidate_recordset(["ip_address"])
         with self.assertRaises(UserError):
             host.build_port_forward_cmd(8080)
+
+
+class KnownHostsCase(TransactionCase):
+    """Shared fixture: a trusted host carrying real key material.
+
+    The key is generated rather than faked because one of the tests below
+    hands the stored line to ``ssh-keygen``, which parses the blob.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.key_body = (
+            asyncssh.generate_private_key("ssh-ed25519")
+            .export_public_key("openssh")
+            .decode()
+            .strip()
+        )
+
+    def _host(self, **kw):
+        return self.env["cloud.host"].create(
+            {
+                "name": "kh-host",
+                "ip_address": "10.0.0.7",
+                "user": "ubuntu",
+                "wildcard_domain": "example.com",
+                "password": "pw",
+                "login_type": "password",
+                "known_hosts_key": f"10.0.0.7 {self.key_body}",
+            }
+            | kw
+        )
+
+    def _capture(self, host, server_key=None):
+        """Run ``_capture_known_host_key`` against a stubbed SSH server.
+
+        Only the transport is stubbed: the key handed back is a real
+        asyncssh key object, so the entry and its fingerprint are built
+        by the same code path production uses. Pass *server_key* to make
+        two captures look like two different machines.
+        """
+        server_key = server_key or asyncssh.generate_private_key("ssh-ed25519")
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.get_server_host_key.return_value = server_key
+        # ``asyncssh.connect()`` hands back an _ACMWrapper, so the double is
+        # spec'd against that: a bare MagicMock would also answer to a
+        # protocol asyncssh does not implement.
+        connection = MagicMock(spec=_ACMWrapper)
+        connection.__aenter__.return_value = conn
+        connection.__aexit__.return_value = False
+        with patch.object(asyncssh, "connect", return_value=connection):
+            return host._capture_known_host_key()
+
+    def _audit_details(self, host, action):
+        return self.env["cloud.audit.log"].search(
+            [("host_id", "=", host.id), ("action", "=", action)],
+            order="id desc",
+        ).mapped("details")
+
+
+class TestKnownHostsFingerprint(KnownHostsCase):
+    """The fingerprint is the host's identity in a form a human can
+    compare. It has to match what ``ssh-keygen -lf`` prints, or it is
+    worthless for comparing against anything outside this panel."""
+
+    def test_fingerprint_matches_ssh_keygen(self):
+        """Ground truth: the same key, fingerprinted by OpenSSH's own tool."""
+        if not shutil.which("ssh-keygen"):
+            self.skipTest("ssh-keygen is not available in this image")
+        with tempfile.NamedTemporaryFile("w", suffix=".pub") as fh:
+            fh.write(self.key_body + "\n")
+            fh.flush()
+            printed = subprocess.run(
+                ["ssh-keygen", "-lf", fh.name],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        expected = next(
+            token for token in printed.split() if token.startswith("SHA256:")
+        )
+        self.assertEqual(self._host().known_hosts_fingerprint, expected)
+
+    def test_fingerprint_reads_the_key_blob_not_the_key_type(self):
+        """The regression this replaces: reading the wrong field yielded
+        something undecodable, so the fingerprint was silently dropped."""
+        host = self._host()
+        self.assertTrue(host.known_hosts_fingerprint.startswith("SHA256:"))
+        self.assertGreater(len(host.known_hosts_fingerprint), len("SHA256:"))
+
+    def test_fingerprint_is_empty_without_a_key(self):
+        self.assertFalse(self._host(known_hosts_key=False).known_hosts_fingerprint)
+
+    def test_fingerprint_ignores_comments_and_blank_lines(self):
+        host = self._host(
+            known_hosts_key=f"# a comment\n\n10.0.0.7 {self.key_body}",
+        )
+        self.assertEqual(
+            host.known_hosts_fingerprint, self._host().known_hosts_fingerprint,
+        )
+
+    def test_fingerprint_of_an_undecodable_entry_is_empty(self):
+        host = self._host(known_hosts_key="10.0.0.7 ssh-rsa not-base64!!")
+        self.assertFalse(host.known_hosts_fingerprint)
+
+    def test_fingerprint_survives_a_relabel(self):
+        """Relabelling must not disturb identity — same machine, same
+        fingerprint, whatever address the key is filed under."""
+        host = self._host(port=22626)
+        before = host.known_hosts_fingerprint
+        host._relabel_known_hosts_entry()
+        self.assertEqual(host.known_hosts_fingerprint, before)
+
+
+class TestKnownHostsLabel(KnownHostsCase):
+    """``known_hosts_key`` feeds two SSH stacks with different lookup
+    rules: asyncssh (executors, terminal) matches a bare ``ip`` entry on
+    any port, while OpenSSH (every Ansible-backed job) files a
+    non-default port under ``[ip]:port`` and reads the bare form as port
+    22 only. A label that drifts from the endpoint therefore keeps
+    working everywhere *except* under OpenSSH — which is how a trusted,
+    reachable host became unreachable for the recurring prune job."""
+
+    def test_prefix_is_bare_on_the_default_port(self):
+        self.assertEqual(
+            self.env["cloud.host"]._known_hosts_prefix("10.0.0.7", 22),
+            "10.0.0.7",
+        )
+
+    def test_prefix_is_bracketed_on_a_rotated_port(self):
+        self.assertEqual(
+            self.env["cloud.host"]._known_hosts_prefix("10.0.0.7", 22626),
+            "[10.0.0.7]:22626",
+        )
+
+    def test_relabel_refiles_a_bare_entry_under_the_rotated_port(self):
+        host = self._host(port=22626)
+        host._relabel_known_hosts_entry()
+        self.assertEqual(
+            host.known_hosts_key, f"[10.0.0.7]:22626 {self.key_body}",
+        )
+
+    def test_relabel_leaves_the_key_material_untouched(self):
+        """Relabelling must never alter trust, only the address the key is
+        filed under — otherwise it could hand a host a key nobody verified
+        for it."""
+        host = self._host(port=22626)
+        host._relabel_known_hosts_entry()
+        self.assertEqual(
+            host.known_hosts_key.split(None, 1)[1], self.key_body,
+        )
+
+    def test_relabel_is_idempotent(self):
+        host = self._host(
+            port=22626, known_hosts_key=f"[10.0.0.7]:22626 {self.key_body}",
+        )
+        host._relabel_known_hosts_entry()
+        host._relabel_known_hosts_entry()
+        self.assertEqual(
+            host.known_hosts_key, f"[10.0.0.7]:22626 {self.key_body}",
+        )
+
+    def test_relabel_restores_the_bare_form_on_the_default_port(self):
+        host = self._host(
+            port=22, known_hosts_key=f"[10.0.0.7]:22626 {self.key_body}",
+        )
+        host._relabel_known_hosts_entry()
+        self.assertEqual(host.known_hosts_key, f"10.0.0.7 {self.key_body}")
+
+    def test_relabel_follows_a_changed_ip(self):
+        host = self._host(port=22626)
+        host.known_hosts_key = f"[10.0.0.99]:22626 {self.key_body}"
+        host._relabel_known_hosts_entry()
+        self.assertEqual(
+            host.known_hosts_key, f"[10.0.0.7]:22626 {self.key_body}",
+        )
+
+    def test_relabel_without_a_stored_key_is_a_noop(self):
+        host = self._host(port=22626, known_hosts_key=False)
+        host._relabel_known_hosts_entry()
+        self.assertFalse(host.known_hosts_key)
+
+    def _openssh_finds(self, entry, lookup):
+        """Return True when ``ssh-keygen`` locates *lookup* in *entry*."""
+        with tempfile.NamedTemporaryFile("w", suffix="_known_hosts") as fh:
+            fh.write(entry + "\n")
+            fh.flush()
+            return subprocess.run(
+                ["ssh-keygen", "-F", lookup, "-f", fh.name],
+                capture_output=True,
+                check=False,
+            ).returncode == 0
+
+    def test_openssh_only_finds_the_entry_once_it_is_relabelled(self):
+        """Ground truth, asked of OpenSSH itself: its lookup rule — not
+        asyncssh's laxer one — is what the Ansible-backed jobs obey, and
+        it is the rule the stored label has to satisfy."""
+        if not shutil.which("ssh-keygen"):
+            self.skipTest("ssh-keygen is not available in this image")
+        host = self._host(port=22626)
+        self.assertFalse(
+            self._openssh_finds(host.known_hosts_key, "[10.0.0.7]:22626"),
+            "a bare label must not resolve on a rotated port — if it did, "
+            "the bug this guards against could not happen",
+        )
+        host._relabel_known_hosts_entry()
+        self.assertTrue(
+            self._openssh_finds(host.known_hosts_key, "[10.0.0.7]:22626"),
+        )
+
+    def test_asyncssh_accepts_both_labels_on_the_rotated_port(self):
+        """Pins *why* the stale label went unnoticed for months: the
+        asyncssh-based executors and terminal match either form, so they
+        kept connecting while OpenSSH refused."""
+        host = self._host(port=22626)
+        bare = asyncssh.import_known_hosts(host.known_hosts_key)
+        host._relabel_known_hosts_entry()
+        bracketed = asyncssh.import_known_hosts(host.known_hosts_key)
+        for known_hosts in (bare, bracketed):
+            self.assertTrue(
+                known_hosts.match("10.0.0.7", "10.0.0.7", 22626)[0],
+            )
+
+
+class TestEndpointChangeRevokesTrust(KnownHostsCase):
+    """An endpoint change drops the captured key: it was verified against
+    the old address, so it says nothing about whatever answers at the new
+    one. A host without a key is skipped by every cron and refuses to
+    build SSH kwargs, so the revocation is announced through the alert
+    channels instead of only an audit row nobody reads."""
+
+    def _active_alerts(self, host):
+        return self.env["cloud.alert"].search(
+            [
+                ("code", "=", "host_key_revoked"),
+                ("host_id", "=", host.id),
+                ("state", "=", "active"),
+            ]
+        )
+
+    def test_changing_the_port_revokes_and_alerts(self):
+        host = self._host()
+        host.write({"port": 22626})
+        self.assertFalse(host.known_hosts_key)
+        alert = self._active_alerts(host)
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, "critical")
+
+    def test_changing_the_ip_revokes_and_alerts(self):
+        host = self._host()
+        host.write({"ip_address": "10.0.0.8"})
+        self.assertFalse(host.known_hosts_key)
+        self.assertEqual(len(self._active_alerts(host)), 1)
+
+    def test_the_alert_is_deduped_across_repeated_changes(self):
+        host = self._host()
+        host.write({"port": 22626})
+        host.known_hosts_key = f"[10.0.0.7]:22626 {self.key_body}"
+        host.write({"port": 22627})
+        self.assertEqual(len(self._active_alerts(host)), 1)
+
+    def test_a_replacement_key_in_the_same_write_keeps_trust(self):
+        """A manager importing a known-good key for the new endpoint is
+        not a revocation."""
+        host = self._host()
+        host.write(
+            {
+                "port": 22626,
+                "known_hosts_key": f"[10.0.0.7]:22626 {self.key_body}",
+            }
+        )
+        self.assertTrue(host.known_hosts_key)
+        self.assertFalse(self._active_alerts(host))
+
+    def test_an_untrusted_host_has_nothing_to_revoke(self):
+        host = self._host(known_hosts_key=False)
+        host.write({"port": 22626})
+        self.assertFalse(self._active_alerts(host))
+
+    def test_a_non_endpoint_write_keeps_trust(self):
+        host = self._host()
+        host.write({"name": "Renamed"})
+        self.assertTrue(host.known_hosts_key)
+        self.assertFalse(self._active_alerts(host))
+
+    def test_rewriting_the_same_endpoint_is_not_a_change(self):
+        host = self._host()
+        host.write({"ip_address": host.ip_address, "port": host.port})
+        self.assertTrue(host.known_hosts_key)
+        self.assertFalse(self._active_alerts(host))
+
+    def test_recapturing_the_key_resolves_the_alert(self):
+        """Re-running TOFU is the operator action the alert asks for, so
+        it has to close the alert as well as restore the key — otherwise
+        the panel keeps showing a resolved incident forever."""
+        host = self._host()
+        host.write({"port": 22626})
+        self.assertTrue(self._active_alerts(host))
+
+        captured = self._capture(host)
+
+        self.assertTrue(captured["entry"].startswith("[10.0.0.7]:22626 "))
+        self.assertEqual(host.known_hosts_key, captured["entry"])
+        self.assertFalse(self._active_alerts(host))
+
+    def test_revoking_records_the_fingerprint_it_dropped(self):
+        """Without the old fingerprint there is nothing to compare the next
+        capture against, and the machine-identity question is unanswerable."""
+        host = self._host()
+        dropped = host.known_hosts_fingerprint
+        host.write({"port": 22626})
+        self.assertFalse(host.known_hosts_key)
+        self.assertEqual(host.revoked_key_fingerprint, dropped)
+
+    def test_the_alert_names_the_revoked_fingerprint(self):
+        host = self._host()
+        dropped = host.known_hosts_fingerprint
+        host.write({"port": 22626})
+        self.assertIn(dropped, self._active_alerts(host).message)
+
+    def test_the_revocation_audit_row_carries_the_fingerprint(self):
+        host = self._host()
+        dropped = host.known_hosts_fingerprint
+        host.write({"port": 22626})
+        self.assertIn(
+            dropped,
+            self._audit_details(
+                host, "SSH host key invalidated due to endpoint change",
+            ),
+        )
+
+
+class TestKeyIdentityOnRecapture(KnownHostsCase):
+    """Comparing the newly captured key against the one the endpoint change
+    revoked is the only machine-identity check that does not depend on an
+    external channel — and our provider offers none (no console output, no
+    metadata carrying host keys). So the comparison has to be made, recorded
+    and surfaced, not left implicit."""
+
+    def _changed_alerts(self, host):
+        return self.env["cloud.alert"].search(
+            [
+                ("code", "=", "host_key_changed"),
+                ("host_id", "=", host.id),
+                ("state", "=", "active"),
+            ]
+        )
+
+    def _revoke(self, host):
+        """Change the endpoint so the key is revoked, and return its key."""
+        key = asyncssh.generate_private_key("ssh-ed25519")
+        entry = f"10.0.0.7 {key.export_public_key('openssh').decode().strip()}"
+        host.known_hosts_key = entry
+        fingerprint = host.known_hosts_fingerprint
+        host.write({"port": 22626})
+        self.assertEqual(host.revoked_key_fingerprint, fingerprint)
+        return key, fingerprint
+
+    def test_the_same_machine_reports_an_unchanged_key(self):
+        host = self._host()
+        key, fingerprint = self._revoke(host)
+
+        captured = self._capture(host, server_key=key)
+
+        self.assertFalse(captured["changed"])
+        self.assertEqual(captured["fingerprint"], fingerprint)
+        self.assertEqual(captured["previous_fingerprint"], fingerprint)
+        self.assertFalse(self._changed_alerts(host))
+
+    def test_a_different_machine_raises_a_critical_alert(self):
+        host = self._host()
+        _key, old_fingerprint = self._revoke(host)
+
+        captured = self._capture(host)  # a freshly generated, different key
+
+        self.assertTrue(captured["changed"])
+        self.assertNotEqual(captured["fingerprint"], old_fingerprint)
+        alert = self._changed_alerts(host)
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, "critical")
+        # Both fingerprints, or the operator cannot tell what changed to what.
+        self.assertIn(old_fingerprint, alert.message)
+        self.assertIn(captured["fingerprint"], alert.message)
+
+    def test_the_new_key_is_still_trusted_after_a_change(self):
+        """The operator asked for a capture, so the key is stored; the alert
+        is what makes the change impossible to miss. Refusing instead would
+        strand every job on a legitimately rebuilt host."""
+        host = self._host()
+        self._revoke(host)
+        captured = self._capture(host)
+        self.assertEqual(host.known_hosts_key, captured["entry"])
+
+    def test_the_comparison_is_consumed_once(self):
+        """A stale fingerprint would make the *next* capture report a verdict
+        about a machine two endpoint changes ago."""
+        host = self._host()
+        key, _fingerprint = self._revoke(host)
+        self._capture(host, server_key=key)
+        self.assertFalse(host.revoked_key_fingerprint)
+
+        second = self._capture(host)
+        self.assertFalse(second["changed"])
+        self.assertFalse(second["previous_fingerprint"])
+
+    def test_a_first_capture_has_nothing_to_compare(self):
+        host = self._host(known_hosts_key=False)
+        captured = self._capture(host)
+        self.assertFalse(captured["changed"])
+        self.assertFalse(captured["previous_fingerprint"])
+        self.assertTrue(captured["fingerprint"].startswith("SHA256:"))
+        self.assertFalse(self._changed_alerts(host))
+
+    def test_each_capture_is_judged_against_the_last_trusted_key(self):
+        """The comparison is always against what was trusted immediately
+        before, so going back to an older key is itself a change — the alert
+        tracks continuity, not a whitelist of keys ever seen."""
+        host = self._host()
+        original, _fingerprint = self._revoke(host)
+        replacement = self._capture(host)["fingerprint"]  # rebuilt machine
+
+        host.write({"port": 22627})
+        back_to_original = self._capture(host, server_key=original)
+
+        self.assertTrue(back_to_original["changed"])
+        self.assertEqual(back_to_original["previous_fingerprint"], replacement)
+
+    def test_a_change_alert_waits_for_a_human_to_dismiss_it(self):
+        """Unlike the revocation alert, this one records that the machine's
+        identity changed once — a past event, not a live condition. A routine
+        re-trust must not retire it unread, or whoever caused the change could
+        erase the warning by triggering one."""
+        host = self._host()
+        self._revoke(host)
+        replacement = asyncssh.generate_private_key("ssh-ed25519")
+        self._capture(host, server_key=replacement)  # different machine → alert
+        self.assertTrue(self._changed_alerts(host))
+
+        # A later capture confirming continuity: the same machine that is
+        # trusted right now, so nothing is wrong any more…
+        host.write({"port": 22628})
+        confirmed = self._capture(host, server_key=replacement)
+        self.assertFalse(confirmed["changed"])
+
+        # …and the earlier identity change is still flagged for a human.
+        self.assertTrue(self._changed_alerts(host))
+
+    def test_the_capture_is_audited_with_its_verdict(self):
+        host = self._host()
+        key, _fingerprint = self._revoke(host)
+        self._capture(host, server_key=key)
+        details = self._audit_details(host, "SSH host key trusted")
+        self.assertTrue(details)
+        self.assertIn("unchanged", details[0])
+
+
+class TestHardeningKeepsTheKeyReachable(KnownHostsCase):
+    """Hardening rotates the SSH port of the *same* machine, so it opts
+    out of the revocation above (re-running TOFU would trade a verified
+    key for a blind capture) and re-files the key instead. Losing that
+    relabel is what left every hardened host unreachable for the
+    Ansible-backed jobs."""
+
+    def _run_on_success(self, host):
+        executor = object.__new__(HostHardeningExecutor)
+        executor.job = MagicMock(spec=type(self.env["cloud.job"]))
+        executor.job.host_id = host
+        executor.env = self.env
+        executor._log_buffer = []
+        with patch.object(HostHardeningExecutor, "_sys"), patch.object(
+            HostHardeningExecutor, "_resolve_alert",
+        ), patch.object(
+            HostHardeningExecutor,
+            "_open_edge_firewall_port",
+            new=AsyncMock(return_value=None),
+        ), patch.object(
+            HostHardeningExecutor,
+            "_finalize_disable_root",
+            new=AsyncMock(return_value=True),
+        ):
+            asyncio.run(executor.on_success({}))
+        return executor
+
+    def test_on_success_refiles_the_key_under_the_rotated_port(self):
+        host = self._host(port=22)
+        executor = self._run_on_success(host)
+        self.assertEqual(host.port, executor._new_port)
+        self.assertEqual(
+            host.known_hosts_key,
+            f"[10.0.0.7]:{executor._new_port} {self.key_body}",
+        )
+
+    def test_hardening_does_not_revoke_or_alert(self):
+        host = self._host(port=22)
+        self._run_on_success(host)
+        self.assertTrue(host.known_hosts_key)
+        self.assertFalse(
+            self.env["cloud.alert"].search(
+                [
+                    ("code", "=", "host_key_revoked"),
+                    ("host_id", "=", host.id),
+                ]
+            )
+        )
