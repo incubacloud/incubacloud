@@ -6,6 +6,7 @@ import { CoreRatesTab } from "../core_rates_tab/core_rates_tab";
 import { RlSelect } from "../rl_select/rl_select";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
+import { confirmVia } from "../../utils/use_confirm";
 
 export class Settings extends Component {
     static template = "incubacloud.Settings";

@@ -66,6 +66,7 @@ from . import (
     test_instance_liveness_metrics,
     test_host_metrics_retirement,
     test_growth_leaks,
+    test_spa_shared_helpers_imported,
 )
 from . import test_encrypted_char_alert
 from . import test_audit_tracked_mixin

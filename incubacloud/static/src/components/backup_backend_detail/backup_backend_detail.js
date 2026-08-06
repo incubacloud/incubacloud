@@ -7,6 +7,7 @@ import {RlSelect} from "../rl_select/rl_select";
 import {useNavGuard} from "../../utils/use_nav_guard";
 import {useFormValidation} from "../../utils/use_form_validation";
 import {required, email, retention} from "../../utils/validators";
+import {confirmVia} from "../../utils/use_confirm";
 
 const EMPTY_FORM = () => ({
   name: "",

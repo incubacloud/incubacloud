@@ -14,6 +14,7 @@ import { useDebouncedBus } from "../../utils/use_debounced_bus";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required, hostname, portRange, when } from "../../utils/validators";
+import { confirmVia } from "../../utils/use_confirm";
 
 const TRAEFIK_FILES = [
     { key: "traefik_config_yml",        label: "config.yml" },
