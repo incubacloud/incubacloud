@@ -42,19 +42,34 @@ function makeRpc(responses) {
     };
 }
 
-const SAMPLE = {
-    project: { id: 7, name: "Acme", odoo_version: "19.0" },
-    instances: {
-        10: { id: 10, name: "prod", environment: "production" },
-        11: { id: 11, name: "stg",  environment: "staging" },
-    },
-    hosts: [],
-    backup_backends: [],
-};
+/**
+ * Build a fresh ``/cloud/get_project_full`` payload.
+ *
+ * A factory rather than a shared constant: the store hands its
+ * ``instances`` map straight to callers, so ``updateInstance`` /
+ * ``removeInstance`` and the in-place merge all write through to
+ * whatever object they were given. A module-level literal would be
+ * mutated by one test and read as damaged by every test after it.
+ *
+ * @param {object} [overrides] top-level keys to replace wholesale.
+ * @returns {object} a payload no other test holds a reference to.
+ */
+function sample(overrides = {}) {
+    return {
+        project: { id: 7, name: "Acme", odoo_version: "19.0" },
+        instances: {
+            10: { id: 10, name: "prod", environment: "production" },
+            11: { id: 11, name: "stg", environment: "staging" },
+        },
+        hosts: [],
+        backup_backends: [],
+        ...overrides,
+    };
+}
 
 describe("project_store — load and reactive state", () => {
     test("load() populates state.data and clears loading", async () => {
-        const { rpcFn } = makeRpc([SAMPLE]);
+        const { rpcFn } = makeRpc([sample()]);
         const store = createProjectStore({
             busService: makeBus(), rpcFn, debounceMs: 5,
         });
@@ -65,7 +80,7 @@ describe("project_store — load and reactive state", () => {
     });
 
     test("concurrent load() for same project shares one RPC", async () => {
-        const counter = makeRpc([SAMPLE, SAMPLE]);
+        const counter = makeRpc([sample(), sample()]);
         const store = createProjectStore({
             busService: makeBus(), rpcFn: counter.rpcFn, debounceMs: 5,
         });
@@ -76,7 +91,7 @@ describe("project_store — load and reactive state", () => {
     });
 
     test("invalidate() clears state and stops bus refresh", async () => {
-        const counter = makeRpc([SAMPLE, SAMPLE, SAMPLE]);
+        const counter = makeRpc([sample(), sample(), sample()]);
         const bus = makeBus();
         const store = createProjectStore({
             busService: bus, rpcFn: counter.rpcFn, debounceMs: 5,
@@ -94,7 +109,7 @@ describe("project_store — load and reactive state", () => {
 
 describe("project_store — bus debouncing", () => {
     test("burst of bus events collapses to one RPC after the window", async () => {
-        const counter = makeRpc([SAMPLE, SAMPLE]);
+        const counter = makeRpc([sample(), sample()]);
         const bus = makeBus();
         const store = createProjectStore({
             busService: bus, rpcFn: counter.rpcFn, debounceMs: 10,
@@ -107,7 +122,7 @@ describe("project_store — bus debouncing", () => {
 
     test("event during inflight load queues exactly one trailing refresh", async () => {
         let firstResolve;
-        const responses = [SAMPLE, SAMPLE, SAMPLE];
+        const responses = [sample(), sample(), sample()];
         let calls = 0;
         const rpcFn = async () => {
             const r = responses[Math.min(calls, responses.length - 1)];
@@ -136,7 +151,7 @@ describe("project_store — bus debouncing", () => {
 
 describe("project_store — instance helpers", () => {
     test("getNextInstance prefers production over staging", async () => {
-        const { rpcFn } = makeRpc([SAMPLE]);
+        const { rpcFn } = makeRpc([sample()]);
         const store = createProjectStore({
             busService: makeBus(), rpcFn, debounceMs: 5,
         });
@@ -146,7 +161,7 @@ describe("project_store — instance helpers", () => {
     });
 
     test("getNextInstance excludes the given id", async () => {
-        const { rpcFn } = makeRpc([SAMPLE]);
+        const { rpcFn } = makeRpc([sample()]);
         const store = createProjectStore({
             busService: makeBus(), rpcFn, debounceMs: 5,
         });
@@ -156,11 +171,9 @@ describe("project_store — instance helpers", () => {
     });
 
     test("getNextInstance returns null when nothing matches", async () => {
-        const onlyExcluded = {
-            ...SAMPLE,
-            instances: { 10: SAMPLE.instances[10] },
-        };
-        const { rpcFn } = makeRpc([onlyExcluded]);
+        const { rpcFn } = makeRpc([
+            sample({ instances: { 10: { id: 10, name: "prod", environment: "production" } } }),
+        ]);
         const store = createProjectStore({
             busService: makeBus(), rpcFn, debounceMs: 5,
         });
@@ -169,7 +182,7 @@ describe("project_store — instance helpers", () => {
     });
 
     test("updateInstance patches in place", async () => {
-        const { rpcFn } = makeRpc([SAMPLE]);
+        const { rpcFn } = makeRpc([sample()]);
         const store = createProjectStore({
             busService: makeBus(), rpcFn, debounceMs: 5,
         });
@@ -179,12 +192,83 @@ describe("project_store — instance helpers", () => {
     });
 
     test("removeInstance drops the row", async () => {
-        const { rpcFn } = makeRpc([SAMPLE]);
+        const { rpcFn } = makeRpc([sample()]);
         const store = createProjectStore({
             busService: makeBus(), rpcFn, debounceMs: 5,
         });
         await store.load(7);
         store.removeInstance(10);
         expect(store.state.data.instances[10]).toBe(undefined);
+    });
+});
+
+describe("project_store — bus scoping", () => {
+    test("a job from another project does not trigger a refresh", async () => {
+        const counter = makeRpc([sample(), sample()]);
+        const bus = makeBus();
+        const store = createProjectStore({
+            busService: bus, rpcFn: counter.rpcFn, debounceMs: 10,
+        });
+        await store.load(7);                              // call 1
+        bus.emit({ id: 1, project_id: 99, instance_id: 42 });
+        await advanceTime(20);
+        expect(counter.callCount()).toBe(1);              // no call 2
+    });
+
+    test("a job from this project triggers a refresh", async () => {
+        const counter = makeRpc([sample(), sample()]);
+        const bus = makeBus();
+        const store = createProjectStore({
+            busService: bus, rpcFn: counter.rpcFn, debounceMs: 10,
+        });
+        await store.load(7);
+        bus.emit({ id: 1, project_id: 7, instance_id: 10 });
+        await advanceTime(20);
+        expect(counter.callCount()).toBe(2);
+    });
+
+    test("a host-level job (no project) still refreshes", async () => {
+        // get_project_full carries host rows, so a job with no project
+        // can still change what this view renders. Unknown means
+        // refresh, never "not mine".
+        const counter = makeRpc([sample(), sample()]);
+        const bus = makeBus();
+        const store = createProjectStore({
+            busService: bus, rpcFn: counter.rpcFn, debounceMs: 10,
+        });
+        await store.load(7);
+        bus.emit({ id: 1, project_id: null, host_id: 3, instance_id: null });
+        await advanceTime(20);
+        expect(counter.callCount()).toBe(2);
+    });
+});
+
+describe("project_store — instance identity across refreshes", () => {
+    test("refreshing the same project preserves instance object identity", async () => {
+        const counter = makeRpc([
+            sample(),
+            sample(),
+        ]);
+        const store = createProjectStore({
+            busService: makeBus(), rpcFn: counter.rpcFn, debounceMs: 5,
+        });
+        await store.load(7);
+        const before = store.state.data.instances[10];
+        await store.load(7);
+        expect(store.state.data.instances[10]).toBe(before);
+    });
+
+    test("an instance dropped server-side disappears from the map", async () => {
+        const counter = makeRpc([
+            sample(),
+            sample({ instances: { 11: { id: 11, name: "stg", environment: "staging" } } }),
+        ]);
+        const store = createProjectStore({
+            busService: makeBus(), rpcFn: counter.rpcFn, debounceMs: 5,
+        });
+        await store.load(7);
+        await store.load(7);
+        expect(store.state.data.instances[10]).toBe(undefined);
+        expect(store.state.data.instances[11].name).toBe("stg");
     });
 });

@@ -141,15 +141,22 @@ export class HostDetail extends Component {
         }
 
         this._busService = useService("bus_service");
-        // Debounced direct refresh: the old flow did a per-event
-        // ``load_jobs(id)`` just to check host_id before refreshing.
-        // ``_silentRefresh`` reloads the whole host recordset, so the
-        // filter was cosmetic — refreshing on any cloud_jobs event
-        // (debounced) costs one RPC instead of two per event.
         const triggerRefresh = useDebouncedBus(() => {
             if (!this._destroyed) this._silentRefresh();
         });
-        this._onJobUpdate = (payload) => triggerRefresh(payload.id);
+        // Only this host's jobs. The filter was dropped once because
+        // checking ``host_id`` meant a second RPC per event
+        // (``load_jobs`` just to read the target); the bus payload now
+        // carries it, so it is free again.
+        //
+        // It runs here rather than inside the debounced callback on
+        // purpose: ``useDebouncedBus`` is last-write-wins on its
+        // argument, so branching downstream would drop a matching
+        // event that shared a window with a non-matching one.
+        this._onJobUpdate = (payload) => {
+            if (payload?.host_id !== this.props.host_id) return;
+            triggerRefresh(payload.id);
+        };
 
         onMounted(() => {
             if (!this.isNew) {

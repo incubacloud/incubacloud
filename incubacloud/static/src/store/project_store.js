@@ -42,6 +42,7 @@
  */
 import { reactive } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
+import { mergeMapById } from "../utils/merge_by_id";
 
 const REFRESH_DEBOUNCE_MS = 300;
 
@@ -74,9 +75,21 @@ export function createProjectStore({
         state.loading = true;
         state.projectId = projectId;
         try {
-            state.data = await rpcFn("/cloud/get_project_full", {
+            const fresh = await rpcFn("/cloud/get_project_full", {
                 project_id: projectId,
             });
+            // Merge the instance map in place rather than swapping the
+            // whole payload: the sidebar and the detail view render one
+            // row per instance, and replacing every object made all of
+            // them re-render on any refresh. Only applies when we are
+            // refreshing the same project — switching projects is a
+            // clean slate.
+            if (state.data?.instances && fresh?.instances
+                && state.projectId === projectId) {
+                mergeMapById(state.data.instances, fresh.instances);
+                fresh.instances = state.data.instances;
+            }
+            state.data = fresh;
             state.error = null;
         } catch (e) {
             state.error = e;
@@ -176,7 +189,23 @@ export function createProjectStore({
         return null;
     }
 
-    busService.subscribe("cloud_jobs", () => scheduleRefresh());
+        // Only jobs belonging to the project currently loaded. This store
+    // lives for the whole SPA session and never unsubscribes, so
+    // without the filter every job anywhere in the fleet cost one
+    // ``/cloud/get_project_full`` — the single largest source of
+    // pointless refreshes in the app.
+    //
+    // A job with no ``project_id`` is a host-level job: it has no
+    // project to compare against, and it can still change the host
+    // rows this endpoint returns, so it always passes. Filtering on
+    // ``instance_id`` against the cached instances would be wrong
+    // here — an instance created by another user is not in the cache
+    // yet, and we would never learn about it.
+    busService.subscribe("cloud_jobs", (payload) => {
+        const projectId = payload?.project_id;
+        if (projectId != null && projectId !== state.projectId) return;
+        scheduleRefresh();
+    });
     busService.start();
 
     return {

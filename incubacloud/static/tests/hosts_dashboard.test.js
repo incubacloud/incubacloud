@@ -196,3 +196,54 @@ describe("HostsDashboard — class structure", () => {
         expect(HostsDashboard.template).toBe("incubacloud.HostsDashboard");
     });
 });
+
+/**
+ * Refresh split: the skeleton belongs to the first paint, never to a
+ * background refresh. Driving the prototype methods against a plain
+ * object keeps this free of the service/mount stack, matching the
+ * style of the helper tests above.
+ */
+describe("HostsDashboard — silent vs. visible refresh", () => {
+    function makeSelf({ fail = false } = {}) {
+        const self = {
+            state: {
+                hosts: [{ id: 1 }], visible_hosts: [{ id: 1 }],
+                loading: false, error: "",
+            },
+            seenLoading: [],
+        };
+        self._fetchHosts = async () => {
+            self.seenLoading.push(self.state.loading);
+            if (fail) throw new Error("boom");
+        };
+        return self;
+    }
+
+    test("_silentRefresh never raises the loading flag", async () => {
+        const self = makeSelf();
+        await HostsDashboard.prototype._silentRefresh.call(self);
+        expect(self.seenLoading).toEqual([false]);
+        expect(self.state.loading).toBe(false);
+    });
+
+    test("_silentRefresh swallows a failure and keeps the fleet", async () => {
+        const self = makeSelf({ fail: true });
+        await HostsDashboard.prototype._silentRefresh.call(self);
+        expect(self.state.error).toBe("");
+        expect(self.state.hosts.length).toBe(1);
+    });
+
+    test("loadHosts shows the skeleton while fetching", async () => {
+        const self = makeSelf();
+        await HostsDashboard.prototype.loadHosts.call(self);
+        expect(self.seenLoading).toEqual([true]);
+        expect(self.state.loading).toBe(false);
+    });
+
+    test("loadHosts surfaces a failure as an error", async () => {
+        const self = makeSelf({ fail: true });
+        await HostsDashboard.prototype.loadHosts.call(self);
+        expect(self.state.error).toBe("boom");
+        expect(self.state.loading).toBe(false);
+    });
+});

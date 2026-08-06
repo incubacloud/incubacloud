@@ -8,6 +8,7 @@ import { parseUTC } from "../../utils/dates";
 import { TruncationBanner } from "../truncation_banner/truncation_banner";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus } from "../../utils/use_debounced_bus";
+import { mergeById } from "../../utils/merge_by_id";
 
 export class HostsDashboard extends Component {
     static components = { TruncationBanner };
@@ -43,7 +44,7 @@ export class HostsDashboard extends Component {
         // transition, not just terminal ones. Refreshing on every
         // event (coalesced to 300 ms) is correct and cheaper.
         const triggerRefresh = useDebouncedBus(() => {
-            if (!this._destroyed) this.loadHosts();
+            if (!this._destroyed) this._silentRefresh();
         });
         this._onJobUpdate = (payload) => triggerRefresh(payload.id);
         this._busService.subscribe("cloud_jobs", this._onJobUpdate);
@@ -56,7 +57,7 @@ export class HostsDashboard extends Component {
         // Bus covers the happy path; ``visibilitychange`` refresh catches
         // events dropped while the tab was backgrounded.
         useVisibilityRefresh(() => {
-            if (!this._destroyed) this.loadHosts();
+            if (!this._destroyed) this._silentRefresh();
         });
     }
 
@@ -72,21 +73,41 @@ export class HostsDashboard extends Component {
         this.env.navigate("new_host");
     }
 
+    /**
+     * Fetch the fleet and write it into state. Owns no loading/error
+     * presentation — the two callers below decide how a failure is
+     * surfaced, which is the whole point of the split.
+     */
+    async _fetchHosts() {
+        const prevFilter = new Set(this.state.visible_hosts.map(h => h.id));
+        const filtered = prevFilter.size && prevFilter.size < this.state.hosts.length;
+        const resp = await rpc('/cloud/get_hosts', {});
+        // Merge instead of replace so a refresh only notifies the rows
+        // that actually moved, and the cards the user is looking at
+        // keep their identity.
+        this.state.hosts = mergeById(this.state.hosts, resp.hosts || resp || []);
+        this.state.truncated = !!resp.truncated;
+        this.state.total = resp.total || this.state.hosts.length;
+        this.state.limit = resp.limit || 200;
+        // A background refresh must not silently clear an active
+        // search. Whether a filter was in effect is decided from the
+        // pre-fetch state — comparing list lengths afterwards, as this
+        // used to, mistook "every host matches the query" for "no
+        // filter" and reset the box.
+        this.state.visible_hosts = filtered
+            ? this.state.hosts.filter(h => prevFilter.has(h.id))
+            : this.state.hosts;
+    }
+
+    /**
+     * First paint and explicit Retry: show the skeleton while the
+     * fetch is in flight, and render the error stub if it fails.
+     */
     async loadHosts() {
-        const prevFilter = this.state.visible_hosts.map(h => h.id);
         this.state.error = "";
         this.state.loading = true;
         try {
-            const resp = await rpc('/cloud/get_hosts', {});
-            this.state.hosts = resp.hosts || resp || [];
-            this.state.truncated = !!resp.truncated;
-            this.state.total = resp.total || this.state.hosts.length;
-            this.state.limit = resp.limit || 200;
-            if (prevFilter.length && prevFilter.length < this.state.hosts.length) {
-                this.state.visible_hosts = this.state.hosts.filter(h => prevFilter.includes(h.id));
-            } else {
-                this.state.visible_hosts = this.state.hosts;
-            }
+            await this._fetchHosts();
         } catch (err) {
             const msg = err?.data?.message ?? err?.message;
             this.state.error = (typeof msg === "string" && msg)
@@ -94,6 +115,22 @@ export class HostsDashboard extends Component {
                 : "Could not load hosts. Check your connection and retry.";
         } finally {
             this.state.loading = false;
+        }
+    }
+
+    /**
+     * Background refresh (bus event, tab refocus). Deliberately leaves
+     * ``loading`` and ``error`` alone: flipping ``loading`` swaps the
+     * rendered fleet for the skeleton on every event, which reads as a
+     * flicker, and a transient failure must not replace good cards
+     * with an error stub. Mirrors ``_silentRefresh`` in host_detail
+     * and instance_detail.
+     */
+    async _silentRefresh() {
+        try {
+            await this._fetchHosts();
+        } catch (_e) {
+            console.debug("Silent refresh failed:", _e);
         }
     }
 
