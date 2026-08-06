@@ -95,6 +95,23 @@ class CloudHost(models.Model):
             '"Trust SSH Key". All SSH connections verify against this key.'
         ),
     )
+    known_hosts_fingerprint = fields.Char(
+        string="Key Fingerprint",
+        compute="_compute_known_hosts_fingerprint",
+        help="SHA256 fingerprint of the trusted host key, in the same form "
+             "'ssh-keygen -lf' prints, so it can be compared against what "
+             "any other tool reports for this machine.",
+    )
+    revoked_key_fingerprint = fields.Char(
+        string="Revoked Key Fingerprint",
+        readonly=True,
+        copy=False,
+        help="Fingerprint of the key dropped by the last endpoint change. "
+             "Kept so the next capture can be compared against it: an "
+             "identical fingerprint proves the machine did not change, "
+             "which is the one check that does not depend on an external "
+             "channel. Cleared once that comparison has been made.",
+    )
     user = fields.Char(
         string="User",
         required=True,
@@ -523,7 +540,21 @@ class CloudHost(models.Model):
         right after a freshly contracted VPS boots — the latter has no
         human in the loop, so the capture has to happen automatically.
 
+        When the previous key was revoked by an endpoint change, its
+        fingerprint is still on the record, and comparing the two answers
+        the only question the operator actually has: an identical
+        fingerprint means the machine did not change and the endpoint
+        edit was administrative, while a different one means something
+        else is answering there. The captured key is stored either way
+        (the operator asked for a capture), but a change raises a
+        critical alert instead of overwriting trust silently.
+
         Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
+
+        :returns: dict with ``entry`` (the stored known_hosts line),
+            ``fingerprint``, ``previous_fingerprint`` (``''`` when there
+            was nothing to compare against) and ``changed`` (True only
+            when both exist and differ).
         """
         self.ensure_one()
         connect_kw = dict(
@@ -549,11 +580,7 @@ class CloudHost(models.Model):
                     .decode()
                     .strip()
                 )
-                prefix = (
-                    f"[{self.ip_address}]:{self.port}"
-                    if self.port != 22
-                    else self.ip_address
-                )
+                prefix = self._known_hosts_prefix(self.ip_address, self.port)
                 return f"{prefix} {key_data}"
 
         loop = asyncio.new_event_loop()
@@ -561,24 +588,195 @@ class CloudHost(models.Model):
             entry = loop.run_until_complete(_capture())
         finally:
             loop.close()
-        # Log a SHA256 fingerprint of the captured host key so an
-        # operator can verify it post-hoc against the provider's
-        # console / out-of-band channel. Pure TOFU otherwise blindly
-        # trusts whatever responds on first connect.
-        try:
-            key_b64 = entry.split(" ", 2)[-2]
-            digest = hashlib.sha256(base64.b64decode(key_b64)).digest()
-            fp = base64.b64encode(digest).rstrip(b"=").decode("ascii")
-            _logger.info(
-                "[host %s] captured SSH host key SHA256:%s "
-                "(verify out-of-band against provider console)",
-                self.name,
-                fp,
+        fingerprint = self._known_hosts_fingerprint(entry)
+        previous = self.revoked_key_fingerprint or ""
+        changed = bool(previous and fingerprint and fingerprint != previous)
+        _logger.info(
+            "[host %s] captured SSH host key %s%s",
+            self.name,
+            fingerprint or "(no decodable key in the captured entry)",
+            f" (previously trusted: {previous})" if previous else "",
+        )
+        self.sudo().write({
+            "known_hosts_key": entry,
+            # The comparison has been made; keeping the old fingerprint
+            # would make the next capture report a stale verdict.
+            "revoked_key_fingerprint": False,
+        })
+        # The host is trusted again: clear the revocation alert (if any).
+        self.env["cloud.alert"].sudo().resolve_alert(
+            "host_key_revoked", host=self,
+        )
+        self._audit_key_capture(fingerprint, previous, changed)
+        if changed:
+            self.env["cloud.alert"].sudo().raise_alert(
+                "host_key_changed",
+                _(
+                    "The machine at %(ip)s:%(port)s ('%(name)s') presents a "
+                    "different SSH host key than the one trusted before: "
+                    "%(new)s, was %(old)s. Expected after a rebuild or a "
+                    "replaced server — otherwise something else is answering "
+                    "at that address. The new key is now trusted; dismiss "
+                    "this alert once you have confirmed the change.",
+                    name=self.name,
+                    ip=self.ip_address,
+                    port=self.port,
+                    new=fingerprint,
+                    old=previous,
+                ),
+                level="critical",
+                host=self,
             )
-        except Exception:
-            _logger.info("[host %s] captured SSH host key", self.name)
-        self.sudo().write({"known_hosts_key": entry})
-        return entry
+        # Deliberately not auto-resolved by a later matching capture, unlike
+        # ``host_key_revoked``: that one tracks a live condition (the host is
+        # unreachable), while this one records that the machine's identity
+        # changed once. Clearing it on any routine re-trust would retire an
+        # unread security event — and would let whoever caused the change
+        # erase the warning by triggering one.
+        return {
+            "entry": entry,
+            "fingerprint": fingerprint,
+            "previous_fingerprint": previous,
+            "changed": changed,
+        }
+
+    def _audit_key_capture(self, fingerprint, previous, changed):
+        """Record the capture and its verdict in the audit log.
+
+        The alert is the thing that gets noticed; this is the thing that
+        is still readable months later when someone asks which key this
+        host was trusted with, and when.
+        """
+        self.ensure_one()
+        if changed:
+            details = f"{fingerprint} (differs from revoked {previous})"
+        elif previous:
+            details = f"{fingerprint} (unchanged — same machine)"
+        else:
+            details = fingerprint or "unparsable key"
+        self.env["cloud.audit.log"].sudo().create(
+            {
+                "action": "SSH host key trusted",
+                "host_id": self.id,
+                "details": details,
+            }
+        )
+
+    @staticmethod
+    def _known_hosts_fingerprint(entry):
+        """Return the ``SHA256:…`` fingerprint of a ``known_hosts`` line.
+
+        Same form ``ssh-keygen -lf`` prints, which is the point: the
+        fingerprint is only useful if the operator can hold it next to
+        what some other tool says about the same machine.
+
+        A ``known_hosts`` line is ``<pattern> <keytype> <base64> [comment]``,
+        so the key material is the *third* field — reading any other one
+        yields a value that cannot be decoded, which is how this
+        fingerprint silently never got logged before.
+
+        :returns: the fingerprint, or ``''`` when no line carries a
+            decodable key (a blank entry, a comment-only file, garbage).
+        """
+        for line in (entry or "").splitlines():
+            parts = line.split()
+            if len(parts) < 3 or line.lstrip().startswith("#"):
+                continue
+            try:
+                digest = hashlib.sha256(base64.b64decode(parts[2])).digest()
+            except Exception:
+                continue
+            fingerprint = base64.b64encode(digest).rstrip(b"=").decode("ascii")
+            return f"SHA256:{fingerprint}"
+        return ""
+
+    @api.depends("known_hosts_key")
+    def _compute_known_hosts_fingerprint(self):
+        for host in self:
+            host.known_hosts_fingerprint = self._known_hosts_fingerprint(
+                host.known_hosts_key,
+            )
+
+    @staticmethod
+    def _known_hosts_prefix(ip_address, port):
+        """Return the ``known_hosts`` host pattern for an (ip, port) endpoint.
+
+        OpenSSH files a non-default port under ``[host]:port``; the bare
+        ``host`` form matches port 22 and nothing else. asyncssh is laxer
+        and accepts the bare form on any port, which is precisely how a
+        stale label stays invisible until an OpenSSH-based consumer (any
+        Ansible-backed job) reaches the same host and reports it as
+        unknown.
+        """
+        port = int(port or 22)
+        return f"[{ip_address}]:{port}" if port != 22 else str(ip_address)
+
+    def _relabel_known_hosts_entry(self):
+        """Re-file the stored key under the current endpoint, key unchanged.
+
+        For an endpoint change that provably does not change the machine
+        — host hardening only rotates the SSH port — re-running TOFU
+        would trade verified trust for a blind first-contact capture.
+        Relabelling keeps the key material and fixes only the address it
+        is filed under.
+
+        Safe by construction: the key itself is never touched, so a
+        relabelled entry cannot come to trust a machine it did not trust
+        before. A genuinely different host answering at the new endpoint
+        fails the key check instead of being silently accepted.
+        """
+        for host in self:
+            prefix = self._known_hosts_prefix(host.ip_address, host.port)
+            lines = []
+            for line in (host.known_hosts_key or "").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split(None, 1)
+                if len(parts) != 2:
+                    continue
+                lines.append(f"{prefix} {parts[1]}")
+            entry = "\n".join(lines)
+            if entry and entry != (host.known_hosts_key or "").strip():
+                host.sudo().write({"known_hosts_key": entry})
+
+    def _alert_host_key_revoked(self):
+        """Alert that these hosts just lost their trusted SSH host key.
+
+        A revoked key is not a cosmetic state: ``ssh_connect_kwargs``
+        refuses to build connection kwargs without one and
+        ``_ssh_ready_domain`` drops the host from every cron, so all
+        automation against it stops until someone re-runs "Trust SSH
+        Key". The audit row this accompanies is passive — nobody reads
+        it — so the revocation also goes out through the alert channels.
+
+        The message names the revoked fingerprint and says what the panel
+        will do with it, rather than asking for an out-of-band check the
+        platform cannot actually support: our provider exposes no console
+        output or metadata carrying host keys, so the comparison against
+        the previously trusted key is the verification on offer.
+        """
+        for host in self:
+            self.env["cloud.alert"].sudo().raise_alert(
+                "host_key_revoked",
+                _(
+                    "SSH host key revoked for '%(name)s': its endpoint changed "
+                    "to %(ip)s:%(port)s, so the key trusted for the old "
+                    "address (%(fingerprint)s) no longer applies. Jobs on this "
+                    "host fail until you run 'Trust SSH Key'; the panel then "
+                    "reports whether the newly captured key matches that "
+                    "fingerprint, which is what tells you it is still the same "
+                    "machine.",
+                    name=host.name,
+                    ip=host.ip_address,
+                    port=host.port,
+                    fingerprint=(
+                        host.revoked_key_fingerprint or _("not recorded")
+                    ),
+                ),
+                level="critical",
+                host=host,
+            )
 
     def ssh_connect_kwargs(self):
         """Return kwargs dict for ``asyncssh.connect()``.
@@ -781,6 +979,13 @@ class CloudHost(models.Model):
         # the new endpoint.
         endpoint_changing = "ip_address" in vals or "port" in vals
         endpoint_invalidated = []
+        # ``{host_id: fingerprint}`` for the hosts that actually lose a key
+        # they had: a host still pending its first TOFU has nothing to
+        # revoke, and a write carrying a replacement key leaves the host
+        # trusted. Neither deserves the alert. The fingerprint is read
+        # here, while the old key is still on the record, because it is
+        # what lets the next capture prove the machine did not change.
+        trust_revoked = {}
         # Executors that legitimately rotate the endpoint from inside
         # their own running job (e.g. host hardening rotates the SSH
         # port as part of its workflow) opt out of the guard with this
@@ -824,10 +1029,16 @@ class CloudHost(models.Model):
                         % {"name": rec.name, "count": active}
                     )
                 endpoint_invalidated.append(rec.id)
+                if rec.known_hosts_key:
+                    trust_revoked[rec.id] = self._known_hosts_fingerprint(
+                        rec.known_hosts_key,
+                    )
             if endpoint_invalidated:
                 # Don't override an explicit caller-supplied key (manager
                 # may be importing a fresh known-good key on purpose).
                 vals.setdefault("known_hosts_key", False)
+                if vals.get("known_hosts_key"):
+                    trust_revoked = {}
         changed, old_snap = self._audit_snapshot(vals)
         result = super().write(vals)
         for host_id in endpoint_invalidated:
@@ -835,8 +1046,15 @@ class CloudHost(models.Model):
                 {
                     "action": "SSH host key invalidated due to endpoint change",
                     "host_id": host_id,
+                    "details": trust_revoked.get(host_id) or "",
                 }
             )
+        for host_id, fingerprint in trust_revoked.items():
+            host = self.browse(host_id)
+            host.sudo().write({"revoked_key_fingerprint": fingerprint})
+            # After super().write() and after stamping the fingerprint, so
+            # the message carries the new endpoint and the revoked key.
+            host._alert_host_key_revoked()
         self._audit_log_changes(changed, old_snap)
         return result
 

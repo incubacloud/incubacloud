@@ -191,6 +191,11 @@ class HostHardeningExecutor(AnsibleExecutor):
         # Hardening rotates the SSH port from inside its own running job;
         # the endpoint-change guard would self-block. Opt out.
         host.with_context(skip_endpoint_change_guard=True).write(vals)
+        # Same machine, new port — so the verified key stays and is simply
+        # re-filed under the rotated endpoint. Skipping this leaves the
+        # entry labelled for the old port, which asyncssh tolerates but
+        # OpenSSH (every Ansible-backed job) reads as "host unknown".
+        host._relabel_known_hosts_entry()
         self._resolve_alert("hardening_failed")
         self._sys(
             f"✓ Host hardened. Reachable as {self._hardened_user} on port "
