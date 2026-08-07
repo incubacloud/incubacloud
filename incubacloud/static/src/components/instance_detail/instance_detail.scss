@@ -763,10 +763,10 @@
 
 .ic-backups-error {
     padding: 12px 16px;
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: rgba(var(--rl-red-rgb), 0.1);
+    border: 1px solid rgba(var(--rl-red-rgb), 0.3);
     border-radius: 8px;
-    color: #ef4444;
+    color: var(--rl-red);
     font-size: 0.8125rem;
 }
 
@@ -795,13 +795,13 @@
         font-size: 0.6875rem;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid rgba(var(--rl-fg-rgb), 0.06);
     }
 
     td {
         padding: 6px 16px;
         color: $text-primary;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        border-bottom: 1px solid rgba(var(--rl-fg-rgb), 0.04);
     }
 
     tr:last-child td {
@@ -809,7 +809,7 @@
     }
 
     tr:hover td {
-        background: rgba(255, 255, 255, 0.02);
+        background: rgba(var(--rl-fg-rgb), 0.02);
     }
 }
 
@@ -826,8 +826,8 @@
     }
 
     &.ic-bk-incremental {
-        background: rgba(16, 185, 129, 0.15);
-        color: #34d399;
+        background: var(--rl-green-soft);
+        color: var(--rl-green-text);
     }
 }
 
@@ -843,9 +843,9 @@
     i { margin-right: 6px; }
 
     &.ic-backups-warning {
-        background: rgba(245, 158, 11, 0.08);
-        border-color: rgba(245, 158, 11, 0.2);
-        color: #fbbf24;
+        background: var(--rl-amber-soft);
+        border-color: rgba(var(--rl-amber-rgb), 0.2);
+        color: var(--rl-amber-text);
     }
 }
 
@@ -867,7 +867,7 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
     border-radius: 4px;
     background: transparent;
     color: $text-secondary;
@@ -877,14 +877,14 @@
     text-decoration: none;
 
     &:hover {
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(var(--rl-fg-rgb), 0.08);
         color: $text-primary;
     }
 
     &.ic-bk-restore-btn:hover {
-        background: rgba(239, 68, 68, 0.15);
-        color: #ef4444;
-        border-color: rgba(239, 68, 68, 0.3);
+        background: var(--rl-red-soft);
+        color: var(--rl-red);
+        border-color: rgba(var(--rl-red-rgb), 0.3);
     }
 
 }
@@ -910,13 +910,13 @@
     align-items: flex-start;
     gap: 10px;
     padding: 10px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
     border-radius: 6px;
     cursor: pointer;
     transition: background 0.15s;
 
     &:hover {
-        background: rgba(255, 255, 255, 0.04);
+        background: rgba(var(--rl-fg-rgb), 0.04);
     }
 
     input[type="radio"] {
@@ -951,8 +951,8 @@
 .ic-domain-hostname {
     flex: 2;
     padding: 6px 10px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(var(--rl-fg-rgb), 0.06);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.15);
     border-radius: 6px;
     color: $text-primary;
     font-size: 0.8125rem;
@@ -966,8 +966,8 @@
 .ic-domain-redirect {
     flex: 1;
     padding: 6px 10px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(var(--rl-fg-rgb), 0.04);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
     border-radius: 6px;
     color: $text-secondary;
     font-size: 0.75rem;
@@ -1011,8 +1011,8 @@
 .ic-domain-cert {
     flex-shrink: 0;
     padding: 6px 8px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(var(--rl-fg-rgb), 0.04);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
     border-radius: 6px;
     color: $text-secondary;
     font-size: 0.75rem;
@@ -1045,7 +1045,7 @@
 .ic-domain-add {
     align-self: flex-start;
     padding: 4px 12px;
-    border: 1px dashed rgba(255, 255, 255, 0.15);
+    border: 1px dashed rgba(var(--rl-fg-rgb), 0.15);
     border-radius: 6px;
     background: transparent;
     color: $text-secondary;
@@ -1077,8 +1077,8 @@
     input {
         width: 100%;
         padding: 8px 10px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(var(--rl-fg-rgb), 0.06);
+        border: 1px solid rgba(var(--rl-fg-rgb), 0.15);
         border-radius: 6px;
         color: $text-primary;
         font-size: 0.8125rem;
@@ -1091,7 +1091,7 @@
 }
 
 .ic-danger-title {
-    color: #ef4444;
+    color: var(--rl-red);
 
     i { margin-right: 6px; }
 }
@@ -1102,7 +1102,7 @@
     line-height: 1.5;
     margin: 6px 0;
 
-    strong { color: #ef4444; }
+    strong { color: var(--rl-red); }
 }
 
 .ic-restore-confirm-input {
@@ -1123,8 +1123,8 @@
     input {
         width: 100%;
         padding: 8px 10px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(var(--rl-fg-rgb), 0.06);
+        border: 1px solid rgba(var(--rl-fg-rgb), 0.15);
         border-radius: 6px;
         color: $text-primary;
         font-size: 0.8125rem;
@@ -1132,7 +1132,7 @@
 
         &:focus {
             outline: none;
-            border-color: rgba(239, 68, 68, 0.5);
+            border-color: rgba(var(--rl-red-rgb), 0.5);
         }
     }
 }
@@ -1158,13 +1158,13 @@
     flex-wrap: wrap;
     margin-bottom: 12px;
     padding: 10px 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(var(--rl-fg-rgb), 0.03);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.08);
     border-radius: 8px;
 
     input, select {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(var(--rl-fg-rgb), 0.06);
+        border: 1px solid rgba(var(--rl-fg-rgb), 0.12);
         border-radius: 6px;
         color: $text-primary;
         font-size: 0.8125rem;
@@ -1176,7 +1176,7 @@
             border-color: rgba(var(--rl-green-rgb), 0.5);
         }
 
-        option { background: #19201b; }
+        option { background: var(--rl-surf2); }
     }
 
     .ic-audit-search  { width: 180px; }
@@ -1197,7 +1197,7 @@
         font-size: 0.8125rem;
         border-radius: 6px;
         background: $primary-blue;
-        color: #fff;
+        color: var(--rl-green-fg);
         border: none;
         cursor: pointer;
         white-space: nowrap;
@@ -1210,13 +1210,13 @@
         padding: 0 12px;
         font-size: 0.8125rem;
         border-radius: 6px;
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(var(--rl-fg-rgb), 0.08);
         color: $text-secondary;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
         cursor: pointer;
         white-space: nowrap;
 
-        &:hover { background: rgba(255, 255, 255, 0.12); }
+        &:hover { background: rgba(var(--rl-fg-rgb), 0.12); }
     }
 
     .rl-pager { margin-block-start: 0; }
@@ -1250,14 +1250,14 @@
 }
 
 .ic-tl-pp-branch {
-    color: var(--text-muted, #9ca3af);
+    color: var(--rl-muted);
 }
 .ic-tl-pp-msg {
-    color: var(--text-primary, #e5e7eb);
+    color: var(--rl-fg);
     font-family: inherit;
 }
 .ic-tl-pp-by {
-    color: var(--text-muted, #9ca3af);
+    color: var(--rl-muted);
     font-family: inherit;
 }
 .ic-tl-pp-reason {
@@ -1269,8 +1269,8 @@
     letter-spacing: 0.04em;
 
     &.reason-cooldown {
-        background: rgba(234, 179, 8, 0.18);
-        color: #fde68a;
+        background: var(--rl-amber-soft);
+        color: var(--rl-amber-text);
     }
     &.reason-active_job {
         background: rgba(var(--rl-green-rgb), 0.18);
@@ -1281,7 +1281,7 @@
 .ic-tl-footer-hint {
     margin-top: 6px;
     font-size: 11px;
-    color: var(--text-muted, #9ca3af);
+    color: var(--rl-muted);
     font-style: italic;
 }
 

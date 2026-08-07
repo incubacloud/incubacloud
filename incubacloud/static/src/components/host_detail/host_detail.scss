@@ -159,7 +159,7 @@
 
 .ic-file-tab {
     background: $code-bg-alt;
-    border: 1px solid rgba(#fff, 0.08);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.08);
     border-bottom: none;
     border-radius: 6px 6px 0 0;
     padding: 6px 16px;
@@ -175,7 +175,7 @@
     &.active {
         background: $code-bg;
         color: $code-text;
-        border-color: rgba(#fff, 0.12);
+        border-color: rgba(var(--rl-fg-rgb), 0.12);
     }
 }
 
@@ -301,13 +301,13 @@
     flex-wrap: wrap;
     margin-bottom: 12px;
     padding: 10px 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(var(--rl-fg-rgb), 0.03);
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.08);
     border-radius: 8px;
 
     input, select {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(var(--rl-fg-rgb), 0.06);
+        border: 1px solid rgba(var(--rl-fg-rgb), 0.12);
         border-radius: 6px;
         color: $text-primary;
         font-size: 0.8125rem;
@@ -319,7 +319,7 @@
             border-color: rgba(var(--rl-green-rgb), 0.5);
         }
 
-        option { background: #19201b; }
+        option { background: var(--rl-surf2); }
     }
 
     .ic-audit-search  { width: 180px; }

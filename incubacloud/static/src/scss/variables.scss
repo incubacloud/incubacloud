@@ -30,33 +30,36 @@ $state-error: var(--rl-red);
 $state-neutral: var(--rl-faint);
 
 // ── Toast colors ──────────────────────────────────────────────────────────────
-$toast-success-bg:     #15281d;
-$toast-success-border: #2d6b48;
-$toast-success-text:   #7ee2a8;
+// Toasts float over content, so their tinted surfaces must stay OPAQUE — a
+// -soft rgba() token would let the page bleed through. color-mix() folds the
+// accent into the themed surface, so the tint follows dark/light at runtime.
+$toast-success-bg:     color-mix(in srgb, var(--rl-green) 14%, var(--rl-surf2));
+$toast-success-border: color-mix(in srgb, var(--rl-green) 45%, var(--rl-surf2));
+$toast-success-text:   var(--rl-green-text);
 
-$toast-error-bg:       #2e1718;
-$toast-error-border:   #6b2d2d;
-$toast-error-text:     #f0a0a0;
+$toast-error-bg:       color-mix(in srgb, var(--rl-red) 14%, var(--rl-surf2));
+$toast-error-border:   color-mix(in srgb, var(--rl-red) 40%, var(--rl-surf2));
+$toast-error-text:     var(--rl-red-text);
 
-$toast-warning-bg:     #2e2614;
-$toast-warning-border: #6b5a2d;
-$toast-warning-text:   #f0d080;
+$toast-warning-bg:     color-mix(in srgb, var(--rl-amber) 14%, var(--rl-surf2));
+$toast-warning-border: color-mix(in srgb, var(--rl-amber) 40%, var(--rl-surf2));
+$toast-warning-text:   var(--rl-amber-text);
 
 // Info toast: teal, NOT a SaaS blue.
-$toast-info-bg:        #16282e;
-$toast-info-border:    #2d5560;
-$toast-info-text:      #8fd0dc;
+$toast-info-bg:        color-mix(in srgb, var(--rl-cyan) 14%, var(--rl-surf2));
+$toast-info-border:    color-mix(in srgb, var(--rl-cyan) 40%, var(--rl-surf2));
+$toast-info-text:      var(--rl-cyan-text);
 
-// ── Code editor (dark GitHub-style theme) — left as-is, neutral ──────────────
-// Code editor / log panels — carbon-green theme (Relay), matching the
-// prototype `.logs` block (near-black carbon bg + warm-carbon ink/gutter).
-$code-bg: #080b09;
-$code-bg-alt: #0c100e;
-$code-text: #c4d1c9;
-$code-border: #243029;
-$code-line-highlight: #19201b;
-$code-gutter-bg: #0c100e;
-$code-gutter-text: #5f7068;
+// ── Code editor / log panels ─────────────────────────────────────────────────
+// Follow the themed log-surface pair (--rl-logs-bg/fg), same decision as the
+// relay `.rl-logs` block; gutter/zebra rows take a faint ink tint on top.
+$code-bg: var(--rl-logs-bg);
+$code-bg-alt: color-mix(in srgb, var(--rl-logs-fg) 4%, var(--rl-logs-bg));
+$code-text: var(--rl-logs-fg);
+$code-border: var(--rl-line);
+$code-line-highlight: var(--rl-surf2);
+$code-gutter-bg: color-mix(in srgb, var(--rl-logs-fg) 4%, var(--rl-logs-bg));
+$code-gutter-text: var(--rl-faint);
 
 // ── Typography ──────────────────────────────────────────────────────────────
 $font-display: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif; // NEW — titles/wordmark

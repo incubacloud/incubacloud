@@ -107,7 +107,7 @@
     padding: 11px 13px;
     border-radius: var(--rl-rsm);
     background: var(--rl-red-soft);
-    border: 1px solid rgba(229, 72, 77, 0.4);
+    border: 1px solid rgba(var(--rl-red-rgb), 0.4);
     color: var(--rl-fg);
     font-size: 12.5px;
     line-height: 1.45;
@@ -125,7 +125,7 @@
     margin-bottom: 14px;
     border-radius: var(--rl-rsm);
     background: var(--rl-green-soft);
-    border: 1px solid rgba(47, 199, 140, 0.3);
+    border: 1px solid rgba(var(--rl-green-rgb), 0.3);
     color: var(--rl-green);
     font-family: var(--rl-fm);
     font-size: 11.5px;
