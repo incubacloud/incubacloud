@@ -26,7 +26,7 @@
                         placeholder="'main'"
                         loading="state.loadingBranches"
                         allowFreeText="true"
-                        emptyLabel="'— select branch —'"
+                        emptyLabel.translate="— select branch —"
                     />
                 </div>
 
@@ -74,7 +74,7 @@
                             error="state.moduleError"
                             disabled="!props.repo.branch"
                             blockedSet="excludedSet"
-                            placeholder="'Add module…'"
+                            placeholder.translate="Add module…"
                             emptyLabel="'ALL'"
                             resetLabel="'ALL'"
                             showEmpty="true"
@@ -95,7 +95,7 @@
                             error="state.moduleError"
                             disabled="!props.repo.branch"
                             blockedSet="includedSet"
-                            placeholder="'Exclude module…'"
+                            placeholder.translate="Exclude module…"
                             emptyLabel="'NONE'"
                             resetLabel="'Clear'"
                             showEmpty="false"

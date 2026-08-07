@@ -72,18 +72,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "'e.g. 123456789 or @channelname'"
-msgstr "'p.ej. 123456789 o @canal'"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "'https://hooks.example.com/cloud'"
-msgstr "'https://hooks.ejemplo.com/cloud'"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "(Odoo"
 msgstr "(Odoo"
@@ -418,6 +406,12 @@ msgstr "Agrega un servidor para comenzar a desplegar instancias de Odoo."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Add module…"
+msgstr "Añadir módulo…"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Add repository"
@@ -582,9 +576,34 @@ msgid "All"
 msgstr "Todos"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "All actions"
+msgstr "Todas las acciones"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__all
 msgid "All events (success + failure)"
 msgstr "Todos los eventos (éxito + fallo)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "All hosts"
+msgstr "Todos los hosts"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "All instances"
+msgstr "Todas las instancias"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "All users"
+msgstr "Todos los usuarios"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__allocated_cpus
@@ -2602,6 +2621,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Destination host…"
+msgstr "Host de destino…"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__details
@@ -3077,6 +3102,12 @@ msgstr "Excluir de auto-asignación"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Exclude from auto-assignment"
 msgstr "Excluir de auto-asignación"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "Exclude module…"
+msgstr "Excluir módulo…"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5609,6 +5640,12 @@ msgid "Must be a positive integer"
 msgstr "Debe ser un entero positivo"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "Mute a project…"
+msgstr "Silenciar un proyecto…"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_muted_project_ids
 msgid "Muted Cloud Projects"
 msgstr "Proyectos de nube silenciados"
@@ -7914,6 +7951,12 @@ msgstr "Buscando…"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/search_select/search_select.js:0
+msgid "Search…"
+msgstr "Buscar…"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_secret_access_key
 msgid "Secret Access Key"
@@ -9006,6 +9049,12 @@ msgstr "Escribe el nombre de la instancia para confirmar:"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Type to search hosts…"
+msgstr "Escribe para buscar hosts…"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "UTC"
 msgstr "UTC"
@@ -9713,7 +9762,7 @@ msgstr "según su configuración general de arriba."
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "by"
-msgstr "by"
+msgstr "por"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9793,7 +9842,7 @@ msgstr "destino"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "differs"
-msgstr "differs"
+msgstr "difiere"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9824,6 +9873,12 @@ msgstr "CLI de addons doodba — listar, instalar, actualizar y probar addons"
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "duplicity list-current-files \"$DST\""
 msgstr "duplicity list-current-files \"$DST\""
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "e.g. 123456789 or @channelname"
+msgstr "p. ej. 123456789 o @nombrecanal"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9928,6 +9983,12 @@ msgstr "https://grafana.example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "https://hooks.example.com/cloud"
+msgstr "https://hooks.example.com/cloud"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "https://metrics.example.com/api/v1/write"
 msgstr "https://metrics.example.com/api/v1/write"
@@ -9942,7 +10003,7 @@ msgstr "https://s3.us-east-1.amazonaws.com"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "imported"
-msgstr "imported"
+msgstr "importado"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9960,7 +10021,7 @@ msgstr "en el contenedor de odoo. El ZIP se adjunta a esta lista y"
 #: code:addons/incubacloud/static/src/components/project_card/project_card.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "instance"
-msgstr "instance"
+msgstr "instancia"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10167,7 +10228,7 @@ msgstr "s"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "skip"
-msgstr "skip"
+msgstr "omitir"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10234,6 +10295,24 @@ msgstr "· SSH ✓"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "— None —"
+msgstr "— Ninguno —"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "— Use global default —"
+msgstr "— Usar valor global —"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "— Use project/global default —"
+msgstr "— Usar valor del proyecto/global —"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "— auto-generated if empty"
 msgstr "— auto-generado si está vacío"
@@ -10277,8 +10356,33 @@ msgstr "— solo para producción"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "— pick a host —"
+msgstr "— elige un host —"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "— pick a production instance —"
+msgstr "— elige una instancia de producción —"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "— production only"
 msgstr "— solo producción"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
+#: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
+msgid "— select branch —"
+msgstr "— selecciona rama —"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/search_select/search_select.js:0
+msgid "— select —"
+msgstr "— selecciona —"
 
 #. module: incubacloud
 #. odoo-javascript

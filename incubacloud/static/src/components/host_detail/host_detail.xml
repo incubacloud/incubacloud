@@ -533,7 +533,7 @@
                                            t-on-input="(ev) => { state.auditFilter.q = ev.target.value; }"/>
                                     <div class="ic-audit-select" style="max-width:240px">
                                         <RlSelect options="state.auditActions"
-                                                  emptyLabel="'All actions'"
+                                                  emptyLabel.translate="All actions"
                                                   value="state.auditFilter.action"
                                                   onChange="(value) => { state.auditFilter.action = value; }"
                                                   ariaLabel="'Filter by action'"/>

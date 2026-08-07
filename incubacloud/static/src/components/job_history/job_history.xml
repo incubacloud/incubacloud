@@ -65,8 +65,8 @@
                 <SearchSelect options="hostOptions"
                               value="state.filter.host_id"
                               onChange.bind="setHost"
-                              placeholder="'All hosts'"
-                              emptyLabel="'All hosts'"/>
+                              placeholder.translate="All hosts"
+                              emptyLabel.translate="All hosts"/>
             </div>
 
             <div class="jh-filter-group jh-filter-group-search">
@@ -74,8 +74,8 @@
                 <SearchSelect options="instanceOptions"
                               value="state.filter.instance_id"
                               onChange.bind="setInstance"
-                              placeholder="'All instances'"
-                              emptyLabel="'All instances'"/>
+                              placeholder.translate="All instances"
+                              emptyLabel.translate="All instances"/>
             </div>
 
             <div class="jh-filter-group jh-filter-group-search" t-if="state.users.length > 1">
@@ -83,8 +83,8 @@
                 <SearchSelect options="userOptions"
                               value="state.filter.user_id"
                               onChange.bind="setUser"
-                              placeholder="'All users'"
-                              emptyLabel="'All users'"/>
+                              placeholder.translate="All users"
+                              emptyLabel.translate="All users"/>
             </div>
         </div>
 

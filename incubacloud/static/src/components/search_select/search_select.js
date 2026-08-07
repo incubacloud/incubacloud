@@ -1,4 +1,5 @@
 import { Component, useState, useRef } from "@odoo/owl";
+import { _t } from "@web/core/l10n/translation";
 
 import { useAnchoredMenu } from "../../utils/use_anchored_menu";
 
@@ -34,11 +35,11 @@ export class SearchSelect extends Component {
         onOpen:        { type: Function, optional: true },
     };
     static defaultProps = {
-        placeholder:   "Search…",
+        placeholder:   _t("Search…"),
         loading:       false,
         disabled:      false,
         allowFreeText: false,
-        emptyLabel:    "— select —",
+        emptyLabel:    _t("— select —"),
     };
 
     setup() {

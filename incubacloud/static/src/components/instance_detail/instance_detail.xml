@@ -399,8 +399,8 @@
                 options="moveHostOptions"
                 value="state.movePicker.targetHostId"
                 onChange.bind="onMoveTargetChange"
-                placeholder="'Type to search hosts…'"
-                emptyLabel="'— pick a host —'"
+                placeholder.translate="Type to search hosts…"
+                emptyLabel.translate="— pick a host —"
                 loading="state.movePicker.loading"
                 onOpen="() => this._loadMoveHosts()"
               />
@@ -1156,7 +1156,7 @@
                 options="refreshSourceOptions"
                 value="state.refreshDialog.sourceId"
                 onChange.bind="onRefreshSourceChange"
-                placeholder="'— pick a production instance —'"
+                placeholder.translate="— pick a production instance —"
               />
                         </label>
                     </t>
@@ -2308,7 +2308,7 @@
                         <RlSelect
               value="state.form.backup_backend_id"
               options="backupBackendOptions"
-              emptyLabel="'— Use project/global default —'"
+              emptyLabel.translate="— Use project/global default —"
               onChange="(value) => this.onBackupBackendSelect({ target: { value: value } })"
             />
                     </div>
@@ -2654,7 +2654,7 @@
                     <div class="ic-audit-select" style="width:160px">
                         <RlSelect
               options="state.auditActions"
-              emptyLabel="'All actions'"
+              emptyLabel.translate="All actions"
               value="state.auditFilter.action"
               onChange="(value) => { state.auditFilter.action = value; }"
             />
