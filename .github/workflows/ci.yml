@@ -5,6 +5,11 @@ on:
     branches: ["19.0"]
   pull_request:
     branches: ["19.0"]
+  # A run lost to an Actions outage cannot be recovered: GitHub keeps
+  # reporting it queued while cancel, rerun and force-cancel all refuse
+  # it as already completed. Without a manual trigger the only way back
+  # to a green check for that commit is pushing another one.
+  workflow_dispatch:
 
 # CN-010: Deny all permissions by default; grant read-only per job.
 # This prevents a compromised step from using GITHUB_TOKEN to push code.
