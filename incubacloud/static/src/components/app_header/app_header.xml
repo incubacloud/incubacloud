@@ -227,7 +227,7 @@
                             </div>
                             <SearchSelect options="mutableProjects"
                                           value="null"
-                                          placeholder="'Mute a project…'"
+                                          placeholder.translate="Mute a project…"
                                           onChange="(value) => this.addMutedProject(value)"/>
                         </div>
                     </div>
@@ -297,7 +297,7 @@
                                        type="text"
                                        t-att-value="state.telegramChatId"
                                        t-on-input="(ev) => state.telegramChatId = ev.target.value"
-                                       placeholder="'e.g. 123456789 or @channelname'"/>
+                                       placeholder="e.g. 123456789 or @channelname"/>
                                 <button class="ic-notif-inline-btn"
                                         type="button"
                                         t-att-disabled="state.telegramDetecting"
@@ -347,7 +347,7 @@
                                    class="ic-notif-url-input"
                                    t-att-value="state.webhookUrl"
                                    t-on-input="(ev) => state.webhookUrl = ev.target.value"
-                                   placeholder="'https://hooks.example.com/cloud'"/>
+                                   placeholder="https://hooks.example.com/cloud"/>
                         </div>
                         <div class="ic-form-row">
                             <label>Signing secret</label>

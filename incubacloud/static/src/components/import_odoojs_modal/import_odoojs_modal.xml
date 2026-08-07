@@ -62,7 +62,7 @@
                                 placeholder="'main'"
                                 loading="state.loadingBranches"
                                 allowFreeText="true"
-                                emptyLabel="'— select branch —'"
+                                emptyLabel.translate="— select branch —"
                             />
                         </div>
                     </section>

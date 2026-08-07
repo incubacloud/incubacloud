@@ -196,7 +196,7 @@
                                         <label>Backup Destination <span class="rl-opt">— only for production</span></label>
                                         <RlSelect options="backupBackendOptions"
                                                   value="state.form.backup_backend_id"
-                                                  emptyLabel="'— Use global default —'"
+                                                  emptyLabel.translate="— Use global default —"
                                                   onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
                                     </div>
                                     <div class="rl-frow rl-full">

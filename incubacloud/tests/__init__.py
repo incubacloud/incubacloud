@@ -67,6 +67,7 @@ from . import (
     test_host_metrics_retirement,
     test_growth_leaks,
     test_spa_shared_helpers_imported,
+    test_spa_theme_i18n_guards,
 )
 from . import test_encrypted_char_alert
 from . import test_audit_tracked_mixin

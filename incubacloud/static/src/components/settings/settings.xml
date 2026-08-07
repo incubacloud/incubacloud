@@ -61,7 +61,7 @@
                             <label>Backup Destination</label>
                             <RlSelect options="backupBackendOptions"
                                       value="state.form.default_backup_backend_id"
-                                      emptyLabel="'— None —'"
+                                      emptyLabel.translate="— None —"
                                       onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
                         </div>
                     </div>
@@ -490,7 +490,7 @@
                         <div style="display:flex; align-items:center; gap:8px;">
                             <RlSelect options="centralHostOptions"
                                       value="state.centralHostId"
-                                      placeholder="'Destination host…'"
+                                      placeholder.translate="Destination host…"
                                       onChange="(v) => this.state.centralHostId = v"/>
                             <button class="rl-btn rl-btn-ghost rl-btn-sm"
                                     t-att-disabled="state.deployingCentral || null"
