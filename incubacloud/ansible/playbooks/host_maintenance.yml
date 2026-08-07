@@ -8,10 +8,19 @@
   hosts: all
   gather_facts: false
 
+  vars:
+    # Resources carrying this label are excluded from the prune: they are
+    # meant to stay around while stopped (a warm pool instance is a
+    # stopped container by design, and an unfiltered prune wipes the
+    # whole pool). DockerPruneExecutor.get_extra_vars() overrides this
+    # with the same constant; the default keeps the playbook runnable
+    # standalone with identical semantics.
+    ic_protect_label: "incubacloud.protect=1"
+
   tasks:
     - name: Run docker system prune
       ansible.builtin.command:
-        cmd: docker system prune -af
+        cmd: docker system prune -af --filter "label!={{ ic_protect_label }}"
       register: ic_prune
       changed_when: true
 
