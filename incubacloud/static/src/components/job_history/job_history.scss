@@ -174,7 +174,7 @@
     &.active {
         background: $primary-blue;
         border-color: transparent;
-        color: #06140d;
+        color: var(--rl-green-fg);
     }
 }
 
@@ -306,7 +306,7 @@ $gantt-row-h: 44px;
 
     &:hover {
         opacity: 1;
-        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+        box-shadow: 0 0 0 2px rgba(var(--rl-fg-rgb), 0.12);
     }
 
     &.jh-gantt-state-pending,

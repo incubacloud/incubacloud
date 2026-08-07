@@ -2,10 +2,12 @@
 //  Shared modal chrome — `.ic-modal-overlay`, `.ic-modal`, `.ic-frow`,
 //  `.ic-btn`, `.ic-alert`.
 //  Used by every Relay-styled standalone dialog (import modal, remote file
-//  browser). These dialogs open through the dialog service and mount OUTSIDE
-//  `.ic-app`, where the relay `--rl-*` custom properties do not resolve — hence
-//  the literal Relay palette hex values (the same numbers relay.scss defines),
-//  so the look matches regardless of mount point.
+//  browser, and the saas/tenant order dialogs). Styled with the `--rl-*`
+//  tokens: relay.scss defines them on :root precisely so they resolve in
+//  dialogs that mount OUTSIDE `.ic-app`, and both files ship in the same
+//  /cloud bundle — so the chrome follows the active light/dark theme at any
+//  mount point. The overlay scrim and drop shadows stay literal darks on
+//  purpose (same convention as the slide-over scrim: dark in both themes).
 //  Lived in create_project_modal.scss until that dead component was removed.
 // ============================================================================
 
@@ -25,14 +27,14 @@
 @keyframes ic-modal-fade { from { opacity: 0; } }
 
 .ic-modal {
-    background: #121613;
-    border: 1px solid #243029;
-    border-radius: 10px;
+    background: var(--rl-surf);
+    border: 1px solid var(--rl-line);
+    border-radius: var(--rl-r);
     width: 480px;
     display: flex;
     flex-direction: column;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.62);
-    font-family: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: var(--rl-fb);
 
     &--m { max-height: 85vh; }
 }
@@ -40,18 +42,18 @@
 // ── Header ──────────────────────────────────────────────────────────────────
 .ic-modal__header {
     padding: 15px 18px;
-    border-bottom: 1px solid #243029;
+    border-bottom: 1px solid var(--rl-line);
     display: flex;
     justify-content: space-between;
     align-items: center;
 
     h3 {
         margin: 0;
-        font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        font-family: var(--rl-fd);
         font-size: 15px;
         font-weight: 600;
         letter-spacing: -0.01em;
-        color: #e8efea;
+        color: var(--rl-fg);
     }
 }
 
@@ -63,13 +65,13 @@
     height: 28px;
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 7px;
-    color: #8ba095;
+    border-radius: var(--rl-rsm);
+    color: var(--rl-muted);
     cursor: pointer;
 
     svg { width: 16px; height: 16px; }
 
-    &:hover { background: #19201b; color: #e8efea; }
+    &:hover { background: var(--rl-surf2); color: var(--rl-fg); }
 }
 
 // ── Body ────────────────────────────────────────────────────────────────────
@@ -78,13 +80,13 @@
     overflow-y: auto;
 
     &::-webkit-scrollbar { width: 4px; }
-    &::-webkit-scrollbar-thumb { background: #243029; border-radius: 2px; }
+    &::-webkit-scrollbar-thumb { background: var(--rl-line); border-radius: 2px; }
 }
 
 // ── Footer ──────────────────────────────────────────────────────────────────
 .ic-modal__footer {
     padding: 13px 18px;
-    border-top: 1px solid #243029;
+    border-top: 1px solid var(--rl-line);
     display: flex;
     justify-content: flex-end;
     gap: 8px;
@@ -100,11 +102,11 @@
 
     label {
         display: block;
-        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-family: var(--rl-fm);
         font-size: 10.5px;
         letter-spacing: 0.05em;
         text-transform: uppercase;
-        color: #8ba095;
+        color: var(--rl-muted);
         margin-bottom: 6px;
     }
 
@@ -112,38 +114,38 @@
     textarea,
     select {
         width: 100%;
-        background: #0c100e;
-        border: 1px solid #2b382f;
-        border-radius: 7px;
+        background: var(--rl-bg);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
         padding: 9px 12px;
-        color: #e8efea;
-        font-family: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: var(--rl-fg);
+        font-family: var(--rl-fb);
         font-size: 13.5px;
         outline: none;
 
-        &::placeholder { color: #5f7068; }
+        &::placeholder { color: var(--rl-faint); }
 
         &:focus {
-            border-color: #2fc78c;
-            box-shadow: 0 0 0 3px rgba(47, 199, 140, 0.13);
+            border-color: var(--rl-green);
+            box-shadow: 0 0 0 3px var(--rl-green-soft);
         }
     }
 
     textarea {
-        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-family: var(--rl-fm);
         resize: vertical;
         min-height: 76px;
     }
 }
 
-.ic-req { color: #2fc78c; }
+.ic-req { color: var(--rl-green); }
 
 .ic-fhint {
     display: block;
     margin-top: 6px;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: var(--rl-fm);
     font-size: 11px;
-    color: #5f7068;
+    color: var(--rl-faint);
 }
 
 // ── Buttons (Relay rl-btn look) ─────────────────────────────────────────────
@@ -151,15 +153,15 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    font-family: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: var(--rl-fb);
     font-size: 13px;
     font-weight: 600;
     padding: 8px 14px;
-    border-radius: 7px;
+    border-radius: var(--rl-rsm);
     border: 1px solid transparent;
     white-space: nowrap;
     cursor: pointer;
-    color: #e8efea;
+    color: var(--rl-fg);
     background: transparent;
 
     svg { width: 15px; height: 15px; }
@@ -167,18 +169,18 @@
     &:disabled { opacity: 0.5; cursor: not-allowed; }
 
     &--primary {
-        background: #2fc78c;
-        color: #06140d;
+        background: var(--rl-green);
+        color: var(--rl-green-fg);
 
-        &:hover:not(:disabled) { background: #1e9e70; }
+        &:hover:not(:disabled) { background: var(--rl-green-dim); }
     }
 
     &--ghost {
         background: transparent;
-        color: #e8efea;
-        border-color: #2b382f;
+        color: var(--rl-fg);
+        border-color: var(--rl-line2);
 
-        &:hover:not(:disabled) { background: #19201b; }
+        &:hover:not(:disabled) { background: var(--rl-surf2); }
     }
 }
 
@@ -194,21 +196,21 @@
     line-height: 1.45;
 
     .ic-alert__icon { flex: none; margin-top: 1px; display: flex; }
-    .ic-alert__text { color: #e8efea; }
+    .ic-alert__text { color: var(--rl-fg); }
 
     svg { width: 15px; height: 15px; }
 
     &--error {
-        background: rgba(229, 72, 77, 0.15);
-        border: 1px solid rgba(229, 72, 77, 0.4);
+        background: var(--rl-red-soft);
+        border: 1px solid rgba(var(--rl-red-rgb), 0.4);
 
-        .ic-alert__icon { color: #ff6063; }
+        .ic-alert__icon { color: var(--rl-red); }
     }
 
     &--warning {
-        background: rgba(239, 165, 62, 0.14);
-        border: 1px solid rgba(239, 165, 62, 0.35);
+        background: var(--rl-amber-soft);
+        border: 1px solid rgba(var(--rl-amber-rgb), 0.35);
 
-        .ic-alert__icon { color: #efa53e; }
+        .ic-alert__icon { color: var(--rl-amber); }
     }
 }

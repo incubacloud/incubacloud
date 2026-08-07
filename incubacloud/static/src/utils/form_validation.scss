@@ -13,12 +13,12 @@
     textarea,
     .ic-password-input-wrap,
     .ic-select-wrap {
-        border-color: #EF4444 !important;
-        box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25) !important;
+        border-color: var(--rl-red) !important;
+        box-shadow: 0 0 0 1px rgba(var(--rl-red-rgb), 0.25) !important;
     }
 
     label {
-        color: #F87171;
+        color: var(--rl-red-text);
     }
 }
 
@@ -27,5 +27,5 @@
     margin-top: 4px;
     font-size: 12px;
     line-height: 1.3;
-    color: #F87171;
+    color: var(--rl-red-text);
 }

@@ -272,7 +272,7 @@ input.ic-module-input {
 
     &:hover:not(:disabled) {
         color: var(--rl-amber);
-        border-color: rgba(239, 165, 62, 0.5);
+        border-color: rgba(var(--rl-amber-rgb), 0.5);
     }
 
     &:disabled {

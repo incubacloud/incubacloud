@@ -65,6 +65,6 @@
         margin-top: 10px;
     }
 
-    .ic-ssh-ok        { color: #9fe7c4; }
-    .ic-ssh-untrusted { color: #f0c987; }
+    .ic-ssh-ok        { color: var(--rl-green-text); }
+    .ic-ssh-untrusted { color: var(--rl-amber-text); }
 }

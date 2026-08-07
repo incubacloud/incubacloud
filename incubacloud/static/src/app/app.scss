@@ -458,7 +458,7 @@ body,
     cursor: pointer;
     transition: opacity $duration-fast ease, background $duration-fast ease;
     background: $primary-blue;
-    color: #06140d;
+    color: var(--rl-green-fg);
 
     &:hover:not(:disabled) { opacity: 0.88; }
     &:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -904,7 +904,7 @@ body,
     .btn-primary, .btn-secondary {
         background: $primary-blue !important;
         border-color: $primary-blue !important;
-        color: #06140d !important;
+        color: var(--rl-green-fg) !important;
     }
 }
 

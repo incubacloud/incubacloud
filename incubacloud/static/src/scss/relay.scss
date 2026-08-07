@@ -23,11 +23,15 @@
   --rl-fg:#eef1f3; --rl-fg2:#c3cad0; --rl-muted:#8a949c; --rl-faint:#737d85;
   --rl-green:#2fc78c; --rl-green-soft:rgba(47,199,140,.15); --rl-green-fg:#06140d; --rl-green-dim:#1e9e70;
   --rl-amber:#efa53e; --rl-amber-soft:rgba(239,165,62,.14); --rl-amber-fg:#1c1408;
-  --rl-red:#ff6063; --rl-red-soft:rgba(255,96,99,.15);
+  --rl-red:#ff6063; --rl-red-soft:rgba(255,96,99,.15); --rl-red-fg:#2a0808;
+  // Info accent (cyan, NOT a SaaS blue — and dusty enough to never read as the
+  // brand green): toasts, announcement severity "info", password level "good".
+  --rl-cyan:#4fb6c6; --rl-cyan-dim:#43a3b2; --rl-cyan-soft:rgba(79,182,198,.14);
+  --rl-cyan-fg:#06222a; --rl-cyan-text:#9fd6e2;
   // RGB triplets so rgba(var(--x-rgb), a) translucent overlays follow the active theme.
   --rl-bg-rgb:10,12,13; --rl-surf-rgb:16,19,21; --rl-surf2-rgb:24,28,31; --rl-line-rgb:38,43,47;
   --rl-fg-rgb:238,241,243; --rl-muted-rgb:138,148,156; --rl-faint-rgb:115,125,133;
-  --rl-green-rgb:47,199,140; --rl-amber-rgb:239,165,62; --rl-red-rgb:255,96,99;
+  --rl-green-rgb:47,199,140; --rl-amber-rgb:239,165,62; --rl-red-rgb:255,96,99; --rl-cyan-rgb:79,182,198;
   // Log/terminal surface. A token pair (not a literal) so the light
   // theme can invert it: the hardcoded #080b09 kept a near-black panel
   // under light-theme ink and measured 1.82:1 — WCAG AA needs 4.5:1.
@@ -49,12 +53,14 @@
   --rl-fg:#0e1512; --rl-fg2:#33403a; --rl-muted:#5d6b63; --rl-faint:#7d8a82;
   --rl-green:#14a06e; --rl-green-soft:rgba(20,160,110,.12); --rl-green-fg:#ffffff; --rl-green-dim:#0c7a55;
   --rl-amber:#b7791f; --rl-amber-soft:rgba(183,121,31,.13); --rl-amber-fg:#ffffff;
-  --rl-red:#dc4c4f; --rl-red-soft:rgba(220,76,79,.12);
+  --rl-red:#dc4c4f; --rl-red-soft:rgba(220,76,79,.12); --rl-red-fg:#ffffff;
+  --rl-cyan:#0e7c8c; --rl-cyan-dim:#0a6270; --rl-cyan-soft:rgba(14,124,140,.12);
+  --rl-cyan-fg:#ffffff; --rl-cyan-text:#0a6270;
   --rl-green-text:#0c7a55; --rl-amber-text:#9a6614; --rl-red-text:#c0393c;
   --rl-card-shadow:0 2px 6px rgba(16,24,20,.10), 0 1px 2px rgba(16,24,20,.06);
   --rl-bg-rgb:243,247,244; --rl-surf-rgb:243,247,244; --rl-surf2-rgb:234,241,236; --rl-line-rgb:221,230,223;
   --rl-fg-rgb:14,21,18; --rl-muted-rgb:93,107,99; --rl-faint-rgb:125,138,130;
-  --rl-green-rgb:20,160,110; --rl-amber-rgb:183,121,31; --rl-red-rgb:220,76,79;
+  --rl-green-rgb:20,160,110; --rl-amber-rgb:183,121,31; --rl-red-rgb:220,76,79; --rl-cyan-rgb:14,124,140;
   // Light theme: ink on paper, like the rest of the theme (~16:1).
   // Flagged for the visual-review session — it is item 1 of the human
   // judgement list in AUDIT_UI.md ("is a light log panel right, or
