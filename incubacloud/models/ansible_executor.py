@@ -253,15 +253,21 @@ class AnsibleExecutor(AbstractExecutor):
 
     async def _async_entry(self):
         """Run the playbook, then dispatch the usual terminal hooks."""
+        # Both guards write the reason into the job log before raising:
+        # they fire before any other output, so a bare raise would be the
+        # one failure path in the pipeline that leaves a failed job with
+        # an empty log (the exception only reaches queue_job.exc_message).
         if ansible_runner is None:
-            raise RuntimeError(
+            msg = (
                 "ansible-runner is not installed in this image — rebuild it "
-                "before running Ansible-backed jobs.",
+                "before running Ansible-backed jobs."
             )
+            self._sys(f"✗ {msg}")
+            raise RuntimeError(msg)
         if not self._playbook:
-            raise RuntimeError(
-                f"{type(self).__name__} does not define a playbook.",
-            )
+            msg = f"{type(self).__name__} does not define a playbook."
+            self._sys(f"✗ {msg}")
+            raise RuntimeError(msg)
 
         mode = " (check mode)" if self._check_mode else ""
         self._sys(f"Running playbook {self._playbook}{mode} on {self.host}...")

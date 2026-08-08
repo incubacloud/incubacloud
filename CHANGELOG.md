@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.37] — 2026-08-08
+
+### Fixed
+
+- **Ansible-backed jobs no longer die with an empty log on images that lack ansible-runner.** A tenant ordering an on-demand VPS watched `host_hardening` fail with a blank log page: since the Phase 3 migration to Ansible, every host-state executor (hardening, probe, prune, delete, whitelist, observability) needs `ansible-core`/`ansible-runner` at runtime, but this repo's `requirements.txt` — the file whose contents deployments merge into their pip dependencies — never declared them, so any image built from it ran without them. The executor's early guard then raised before the first log line, the only failure path in the whole pipeline that leaves no trace in the job log (the reason surfaced only in `queue_job.exc_message` and the alert excerpt). Both halves are fixed: `requirements.txt` now pins `ansible-core==2.21.2` and `ansible-runner==2.4.3` (matching the panel image), and the two early guards — missing ansible-runner, undefined playbook — write their reason into the job log before raising, so a job that cannot even start still says why on its own log page
+
 ## [1.0.36] — 2026-08-07
 
 ### Fixed
