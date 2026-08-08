@@ -8,15 +8,17 @@ tests cover what we own, which is the inventory we hand to Ansible (it
 carries the credentials and the host-key pinning), the private data dir
 we build for it, and the way playbook output reaches the job log.
 """
+import asyncio
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import yaml
 
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models import ansible_executor as ansible_executor_module
 from odoo.addons.incubacloud.models.ansible_executor import AnsibleExecutor
 
 PING_PLAYBOOK = "playbooks/ping.yml"
@@ -198,3 +200,40 @@ class TestContract(AnsibleExecutorCase):
     def test_get_commands_is_empty(self):
         """This executor drives ansible-runner, not the SSH command loop."""
         self.assertEqual(self.executor.get_commands(), [])
+
+
+class TestEarlyGuardsLogBeforeRaising(AnsibleExecutorCase):
+    """A job that cannot even start must still leave a line in its log.
+
+    These two guards fire before any other output; a bare raise here was
+    the one failure path in the pipeline that produced a failed job with
+    an empty log page (seen live when a tenant image lacked
+    ansible-runner — the reason only reached ``queue_job.exc_message``).
+    """
+
+    def test_missing_ansible_runner_is_logged_before_raising(self):
+        """No ansible-runner → RuntimeError, with the reason in the log."""
+        with patch.object(ansible_executor_module, "ansible_runner", None):
+            with self.assertRaises(RuntimeError) as caught:
+                asyncio.run(self.executor._async_entry())
+        self.assertIn("ansible-runner is not installed", str(caught.exception))
+        self.assertTrue(self.executor._log_buffer)
+        line, source = self.executor._log_buffer[0]
+        self.assertIn("ansible-runner is not installed", line)
+        self.assertEqual(source, "system")
+
+    def test_missing_playbook_is_logged_before_raising(self):
+        """No ``_playbook`` → RuntimeError, with the reason in the log."""
+
+        class _NoPlaybook(_PingExecutor):
+            _playbook = None
+
+        executor = self._make_executor(_NoPlaybook)
+        # Presence sentinel only — the guard checks ``is None``, nothing
+        # calls into it before the playbook guard raises.
+        with patch.object(ansible_executor_module, "ansible_runner", object()):
+            with self.assertRaises(RuntimeError) as caught:
+                asyncio.run(executor._async_entry())
+        self.assertIn("does not define a playbook", str(caught.exception))
+        self.assertTrue(executor._log_buffer)
+        self.assertIn("does not define a playbook", executor._log_buffer[0][0])

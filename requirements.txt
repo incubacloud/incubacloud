@@ -1,4 +1,10 @@
 # CN-012/021: Pinned to exact versions. Update intentionally with pip-audit review.
+# Host-state automation: Ansible-backed jobs (hardening, probe, prune,
+# observability…) run their playbooks through ansible-runner. Both packages
+# must be present in any image that executes jobs — without them every
+# Ansible-backed executor fails at start.
+ansible-core==2.21.2
+ansible-runner==2.4.3
 # CN-012: >=2.20.0 required — fixes Terrapin (CVE-2023-46445/48795) and CVE-2025-22886.
 asyncssh==2.22.0
 boto3==1.42.89
