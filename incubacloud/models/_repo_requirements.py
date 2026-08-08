@@ -239,6 +239,7 @@ def _build_pkg_map(text):
 
 def merge_pip_requirements(
     existing_text, incoming_text, repo_url=None, repo_branch=None,
+    sources=None,
 ):
     """Merge *incoming_text* requirements into *existing_text*.
 
@@ -251,25 +252,73 @@ def merge_pip_requirements(
 
     Returns ``{'content': str, 'conflicts': list}`` where each conflict
     has ``{name, existing, existing_source, incoming, incoming_source}``.
+
+    **Provenance mode.** Pass *sources* (a provenance map, possibly empty)
+    to enable per-package authority. Repo lines float to the tip of their
+    branch on every rebuild, so upstream keeps editing its own
+    ``requirements.txt``; without authority every such edit would surface
+    as a conflict a human has to click through, even though nobody
+    disagrees. With a map:
+
+    - a package whose recorded owner is *this* repo is **updated in
+      place** (upstream maintaining its own dependency), and
+    - a package owned by the operator or by another repo still becomes a
+      conflict marker — that is a real disagreement.
+
+    Absence of an entry means "the operator owns this line", so an empty
+    map degrades to the historical behaviour and no migration is needed:
+    ownership is claimed lazily the first time a repo declares a spec
+    that already matches verbatim.
+
+    The map is keyed by lowercase package name; each entry is
+    ``{'repo': <normalized url>, 'spec': <raw line>, 'label': <source>}``.
+    In provenance mode the result also carries ``sources`` (the updated
+    map) plus ``added`` / ``updated`` / ``adopted`` / ``removed`` for the
+    caller's log — ``removed`` lists this repo's own packages that no
+    longer appear in its manifest; they are never deleted from the text,
+    only reported so the job log leaves a trace.
     """
+    track_sources = sources is not None
+    src_map = dict(sources or {})
+    repo_key = _normalize_url(repo_url) if repo_url else ''
     source_label = _format_source(repo_url, repo_branch)
     pkg_map = _build_pkg_map(existing_text)
     new_text = existing_text or ''
     added = []
+    updated = []
+    adopted = []
     conflicts = []
+    incoming_names = set()
+
+    def _claim(name, spec):
+        """Record *this* repo as the author of *name*'s current spec."""
+        src_map[name] = {
+            'repo': repo_key, 'spec': spec, 'label': source_label,
+        }
 
     for line in (incoming_text or '').split('\n'):
         parsed = _parse_req_line(line)
         if not parsed:
             continue
         name, raw = parsed
+        incoming_names.add(name)
 
         if name not in pkg_map:
             added.append(raw)
             pkg_map[name] = {'type': 'clean', 'spec': raw, 'block': None}
+            if track_sources and repo_key:
+                _claim(name, raw)
 
         elif pkg_map[name]['spec'] == raw:
-            pass  # exact match — skip
+            # Exact match. Claim it when nobody owns it yet so a later
+            # upstream bump reads as maintenance instead of a conflict.
+            # Only for clean lines: a package sitting in an unresolved
+            # conflict block has no settled owner to record.
+            if (track_sources and repo_key
+                    and pkg_map[name]['type'] == 'clean'
+                    and name not in src_map):
+                _claim(name, raw)
+                adopted.append(name)
 
         elif pkg_map[name]['type'] == 'conflict':
             # Update the incoming side of the existing conflict block
@@ -292,6 +341,16 @@ def merge_pip_requirements(
                 'incoming': raw,
                 'incoming_source': source_label,
             })
+
+        elif (track_sources and repo_key
+                and (src_map.get(name) or {}).get('repo') == repo_key):
+            # This repo wrote the line and is now changing it: upstream
+            # maintaining its own dependency, not a disagreement.
+            old_spec = pkg_map[name]['spec']
+            new_text = _replace_whole_line(new_text, old_spec, raw)
+            pkg_map[name] = {'type': 'clean', 'spec': raw, 'block': None}
+            _claim(name, raw)
+            updated.append({'name': name, 'old': old_spec, 'new': raw})
 
         else:
             # Clean line → introduce a new conflict marker
@@ -325,7 +384,74 @@ def merge_pip_requirements(
         sep = '\n' if base else ''
         new_text = base + sep + '\n'.join(added)
 
-    return {'content': new_text, 'conflicts': conflicts}
+    # A package this repo owns that vanished from its manifest is kept —
+    # dropping a line silently could break a build that still needs it —
+    # but reported, so the job log records that upstream let it go.
+    removed = []
+    if track_sources and repo_key:
+        removed = sorted(
+            name for name, entry in src_map.items()
+            if (entry or {}).get('repo') == repo_key
+            and name not in incoming_names
+        )
+
+    result = {
+        'content': new_text,
+        'conflicts': conflicts,
+        'added': added,
+        'updated': updated,
+        'adopted': adopted,
+        'removed': removed,
+    }
+    # ``sources`` only in provenance mode: a caller that did not pass a
+    # map must not be able to persist an empty one and silently wipe the
+    # provenance of every package.
+    if track_sources:
+        result['sources'] = src_map
+    return result
+
+
+def prune_pip_sources(text, sources):
+    """Return *sources* without entries that *text* no longer backs.
+
+    Provenance is only meaningful while the recorded spec is still in the
+    field verbatim. When someone edits ``pip_dependencies`` by hand —
+    changing a version, deleting a line, resolving a marker — that line
+    becomes theirs again, and the next re-sync must treat an upstream
+    change to it as a conflict rather than overwrite the edit.
+
+    :param text: the current ``pip_dependencies`` content
+    :param sources: the provenance map to filter
+    :returns: a new map holding only entries still backed by a clean line
+    """
+    if not sources:
+        return {}
+    pkg_map = _build_pkg_map(text)
+    return {
+        name: entry
+        for name, entry in sources.items()
+        if (pkg_map.get(name, {}).get('type') == 'clean'
+            and pkg_map[name]['spec'] == (entry or {}).get('spec'))
+    }
+
+
+def repo_key_for_source_label(repos, label):
+    """Return the provenance key of the repo line matching *label*.
+
+    Conflict markers carry the human label produced by
+    :func:`_format_source`, not a URL. When a user resolves a conflict in
+    favour of the incoming side, ownership has to go back to the repo
+    that proposed it — this maps the label to that repo's key.
+
+    :param repos: recordset of repo lines to search
+    :param label: source label as stored in the conflict marker
+    :returns: the normalized repo URL, or ``''`` when no line matches
+    """
+    wanted = (label or '').strip()
+    for repo in repos:
+        if _format_source(repo.url, repo.branch) == wanted:
+            return _normalize_url(repo.url)
+    return ''
 
 
 # ── Alert helper ───────────────────────────────────────────────────────────
@@ -503,6 +629,85 @@ def fetch_requirements_txt(env, url, branch):
     except Exception:
         _logger.debug(
             "Unexpected error fetching requirements.txt for %s@%s",
+            url, branch, exc_info=True,
+        )
+        return None
+
+
+def resolve_github_client(env):
+    """Return a GitHub API client, resolved on the CALLING thread.
+
+    Credential lookup touches the ORM, which is not thread-safe, so an
+    executor resolves the client first and hands it to the worker thread
+    that does the HTTP. Same split as ``detect_addon_conflicts``.
+
+    :returns: a client instance, or ``None`` when no credentials are
+        configured (callers then fall back to unauthenticated requests).
+    """
+    client = None
+    svc = env['cloud.github.credential.service'].sudo()
+    with suppress(Exception):
+        pat = svc.get_pat()
+        if pat:
+            client = GitHubPATClient(pat)
+    if client is None:
+        with suppress(Exception):
+            client = GitHubAppClient(svc.get_credentials())
+    return client
+
+
+def fetch_requirements_txt_with_client(client, url, branch):
+    """Fetch ``requirements.txt`` without touching the ORM.
+
+    Thread-safe counterpart of :func:`fetch_requirements_txt`: takes the
+    client resolved by :func:`resolve_github_client` instead of an env,
+    so it can run inside ``asyncio.to_thread``.
+
+    :param client: pre-resolved GitHub client, or None
+    :param url: repository URL
+    :param branch: branch to read the file from
+    :returns: file content as str, or ``None`` when it cannot be read
+        (missing file, private repo without credentials, network error)
+    """
+    try:
+        owner, repo_name = _parse_github_repo_path(url)
+    except ValueError:
+        return None
+    path = (
+        f'/repos/{owner}/{repo_name}'
+        f'/contents/requirements.txt?ref={branch}'
+    )
+
+    def _decode(payload):
+        raw = (payload.get('content') or '')
+        raw = raw.replace('\n', '').replace(' ', '')
+        return base64.b64decode(raw).decode('utf-8')
+
+    if client:
+        try:
+            return _decode(client.get(path))
+        except GitHubAPIError as exc:
+            if exc.status_code == 404:
+                return None
+        except Exception:
+            _logger.debug(
+                "requirements.txt fetch failed for %s@%s (client)",
+                url, branch, exc_info=True,
+            )
+
+    req = urllib.request.Request(
+        f'https://api.github.com{path}',
+        headers={
+            'User-Agent': 'incubacloud/1.0',
+            'Accept': 'application/vnd.github+json',
+        },
+    )
+    try:
+        with safe_urlopen(req, timeout=4) as resp:  # nosec B310 — hardcoded https://api.github.com
+            return _decode(json.loads(resp.read().decode()))
+    except Exception:
+        _logger.debug(
+            "requirements.txt fetch failed for %s@%s (anonymous)",
             url, branch, exc_info=True,
         )
         return None

@@ -24,6 +24,7 @@ from . import (
     test_cloud_job,
     test_repo_requirements,
     test_pip_conflict,
+    test_pip_provenance,
     test_backup_list_parser,
     test_backup_download_neutralized,
     test_backup_restore,

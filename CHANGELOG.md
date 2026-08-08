@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.38] — 2026-08-08
+
+### Changed
+
+- **Dependencies now travel with the code a rebuild ships.** A repo line without a pinned commit is aggregated at the tip of its branch, so every rebuild pulled whatever upstream had published since — while the pip list stayed frozen at whatever the repo's `requirements.txt` said the day the line was created (it was read on create, and never again). An OCA repo adding a module that needs a new library, or bumping the floor of one it already used, produced a build with the new code and without the library it imports. Deploy and rebuild now re-read the `requirements.txt` of every unpinned repo just before writing `pip.txt`, in the same job that pulls the code. Pinned repos are skipped — frozen code, frozen dependencies — and a failed fetch falls back to the stored list, because a blip at GitHub must not stop the fleet
+- **Merging those requirements knows who wrote each line.** Re-reading upstream on every rebuild would have turned each routine version bump into a conflict marker and a blocking alert per instance, for a decision nobody actually has to make. Each package now records the repo that authored its spec (`pip_dependency_sources`, on projects and instances): a repo changing a line it wrote is applied and reported in the job log, while a spec that contradicts the operator — or another repo — still becomes the usual conflict marker, files a `pip_conflict` alert and stops the job until a human picks a side. Absence of an entry means the operator owns the line, so existing records need no migration: ownership is claimed lazily the first time a repo declares a spec that already matches. Editing the field by hand takes those lines back, resolving a conflict in the repo's favour hands the line to it, and nothing upstream removes is ever deleted — the job log just notes the package is gone from the manifest. `incubacloud.requirements_resync_enabled=0` restores the old frozen behaviour
+
 ## [1.0.37] — 2026-08-08
 
 ### Fixed

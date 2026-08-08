@@ -24,6 +24,7 @@ from ...models._repo_requirements import (
     detect_pip_conflicts,
     fetch_requirements_txt,
     merge_pip_requirements,
+    repo_key_for_source_label,
 )
 from .._safe_error import safe_error_response
 from ._helpers import (
@@ -573,6 +574,7 @@ class CrudMixin:
         # Replace each conflict block with the user's chosen spec.
         # Track seen names to deduplicate if the same block appears twice.
         new_text = parent.pip_dependencies or ''
+        sources = dict(parent.pip_dependency_sources or {})
         for m in list(CONFLICT_RE.finditer(parent.pip_dependencies or '')):
             existing_line = m.group('existing_line').strip()
             parsed = _parse_req_line(existing_line)
@@ -580,8 +582,29 @@ class CrudMixin:
                 chosen = resolutions.get(parsed[0])
                 if chosen is not None:
                     new_text = new_text.replace(m.group(0), chosen, 1)
+                    # Siding with the repo hands the line back to it, so
+                    # its next bump applies on its own; any other answer
+                    # (the stored spec, or a third one typed here) makes
+                    # the line the operator's and freezes it against
+                    # upstream until they say otherwise.
+                    repo_key = ''
+                    if chosen.strip() == m.group('incoming_line').strip():
+                        repo_key = repo_key_for_source_label(
+                            parent.repo_ids, m.group('incoming_src'),
+                        )
+                    if repo_key:
+                        sources[parsed[0]] = {
+                            'repo': repo_key,
+                            'spec': chosen.strip(),
+                            'label': m.group('incoming_src').strip(),
+                        }
+                    else:
+                        sources.pop(parsed[0], None)
 
-        parent.pip_dependencies = new_text
+        parent.with_context(pip_provenance_managed=True).write({
+            'pip_dependencies': new_text,
+            'pip_dependency_sources': sources,
+        })
         alert.state = 'dismissed'
 
         # Unblock the linked job only if all conflicts are now resolved

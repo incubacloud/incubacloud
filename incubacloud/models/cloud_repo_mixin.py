@@ -132,12 +132,15 @@ class CloudRepoMixin(models.AbstractModel):
             if not content:
                 continue
             owner = repo._repo_owner()
+            old_sources = owner.pip_dependency_sources or {}
             result = merge_pip_requirements(
                 owner.pip_dependencies, content,
                 repo_url=repo.url, repo_branch=repo.branch,
+                sources=old_sources,
             )
+            vals = {}
             if result['content'] != (owner.pip_dependencies or ''):
-                owner.pip_dependencies = result['content']
+                vals['pip_dependencies'] = result['content']
                 # Auto-add APT build deps for pip packages that need them
                 needed = resolve_apt_dependencies(result['content'])
                 if needed:
@@ -146,10 +149,17 @@ class CloudRepoMixin(models.AbstractModel):
                     )
                     new_apt = needed - existing
                     if new_apt:
-                        owner.apt_dependencies = (
+                        vals['apt_dependencies'] = (
                             (owner.apt_dependencies or '').rstrip()
                             + '\n' + '\n'.join(sorted(new_apt))
                         ).strip()
+            if result['sources'] != old_sources:
+                vals['pip_dependency_sources'] = result['sources']
+            if vals:
+                # Managed write: the map we just computed is the authority,
+                # so the provenance mixin must not prune it as if a human
+                # had edited the field.
+                owner.with_context(pip_provenance_managed=True).write(vals)
 
     @api.model_create_multi
     def create(self, vals_list):

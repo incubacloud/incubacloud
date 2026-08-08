@@ -13,6 +13,7 @@ import yaml
 from ..controllers._data_load._helpers import _parse_github_repo_path
 from ..github.client import GitHubAppClient
 from ..github.http_utils import safe_urlopen
+from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
     _apply_excludes,
     _parse_repo_addons,
@@ -21,6 +22,9 @@ from ._repo_requirements import (
     detect_addon_conflicts,
     detect_pip_conflicts,
     fetch_repo_addons,
+    fetch_requirements_txt_with_client,
+    merge_pip_requirements,
+    resolve_github_client,
 )
 from .abstract_executor import AbstractSSHExecutor, sql_escape_literal
 
@@ -43,6 +47,12 @@ _IC_CONNECT_MODULE = os.path.realpath(
 
 # Prefix for all temp files uploaded to the remote host
 _TMP_PREFIX = "/tmp/.incubacloud"
+
+# Kill switch for the pre-build requirements re-sync. Absent ⇒ enabled:
+# keeping dependencies in step with the code a rebuild ships is the
+# desired steady state, and an operator who wants the old frozen
+# behaviour sets the parameter to '0' explicitly.
+_ICP_RESYNC = "incubacloud.requirements_resync_enabled"
 
 
 _SSH_RE = re.compile(r"^git@github\.com:(.+?)(?:\.git)?$")
@@ -403,8 +413,151 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
+    async def _resync_repo_requirements(self):
+        """Re-read each unpinned repo's ``requirements.txt`` before building.
+
+        A repo line without a pinned commit is aggregated at the tip of
+        its branch, so this job ships whatever code upstream published
+        since the last build — including modules that need libraries the
+        stored ``pip_dependencies`` never heard of. Reading the manifest
+        here, in the same job that pulls the code, is what keeps the two
+        in step; a line that ships a new dependency and a build that
+        installs it become one event instead of two.
+
+        Pinned repos are skipped: frozen code, frozen dependencies.
+
+        Additive changes and upstream maintaining its own lines are
+        applied and reported in the job log. A spec that contradicts the
+        operator (or another repo) raises after filing the usual
+        ``pip_conflict`` alert, which blocks the retry until a human
+        picks a side. A failed fetch is non-fatal — the stored list is
+        used, because a GitHub blip must not stop the fleet.
+        """
+        inst = self._inst()
+        icp = self.env["ir.config_parameter"].sudo()
+        if icp.get_param(_ICP_RESYNC, "1") != "1":
+            return
+        repos = [
+            repo
+            for repo in inst.repo_ids.sorted("sequence")
+            if repo.url and repo.branch and not (repo.commit_sha or "").strip()
+        ]
+        if not repos:
+            return
+
+        self._sys("Re-syncing dependencies from repo requirements…")
+        # Credentials are resolved here, on the main thread: the ORM is
+        # not thread-safe and the fetches below run in worker threads.
+        client = resolve_github_client(self.env)
+
+        text = inst.pip_dependencies or ""
+        sources = dict(inst.pip_dependency_sources or {})
+        added, updated, conflicts = [], [], []
+        for repo in repos:
+            label = f"{_repo_alias(repo.url)}@{repo.branch}"
+            content = await asyncio.to_thread(
+                fetch_requirements_txt_with_client,
+                client, repo.url, repo.branch,
+            )
+            if content is None:
+                # No requirements.txt, or GitHub unreachable. Both are
+                # indistinguishable from here and neither is worth
+                # failing a deploy over.
+                self._sys(
+                    f"· {label}: no requirements.txt read — keeping the "
+                    f"stored dependencies."
+                )
+                continue
+            result = merge_pip_requirements(
+                text, content,
+                repo_url=repo.url, repo_branch=repo.branch,
+                sources=sources,
+            )
+            text, sources = result["content"], result["sources"]
+            added.extend(result["added"])
+            updated.extend(result["updated"])
+            conflicts.extend(result["conflicts"])
+            if result["added"] or result["updated"] or result["adopted"]:
+                self._sys(
+                    f"· {label}: +{len(result['added'])} added, "
+                    f"{len(result['updated'])} updated, "
+                    f"{len(result['adopted'])} adopted."
+                )
+            for name in result["removed"]:
+                self._sys(
+                    f"· {label}: {name} is gone from upstream requirements "
+                    f"— kept, dependencies are never auto-removed."
+                )
+
+        self._persist_resynced_requirements(inst, text, sources)
+        for spec in added:
+            self._sys(f"  + {spec}")
+        for change in updated:
+            self._sys(f"  ~ {change['name']}: {change['old']} → {change['new']}")
+
+        if conflicts:
+            names = ", ".join(c["name"] for c in conflicts[:5])
+            if len(conflicts) > 5:
+                names += f" (+{len(conflicts) - 5} more)"
+            self._sys(
+                f"✗ {len(conflicts)} dependency conflict(s) between the "
+                f"repos and this instance's list: {names}"
+            )
+            self._sys(
+                "Resolve them in Alerts (the stored spec wins unless you "
+                "pick the repo's) and run this job again."
+            )
+            with self.job.env.registry.cursor() as cr:
+                create_pip_conflict_alert(
+                    self.job.env(cr=cr), conflicts, instance_id=inst.id,
+                )
+            raise RuntimeError(
+                f"Pre-flight: {len(conflicts)} pip dependency conflict(s)"
+            )
+        if not (added or updated):
+            self._sys("✓ Dependencies already in sync with the repos.")
+
+    def _persist_resynced_requirements(self, inst, text, sources):
+        """Store the merged dependency list on its own cursor.
+
+        Committed independently of the job so the merged list (and any
+        conflict markers) survive a later failure of this same job —
+        otherwise the retry would re-derive them from scratch and the
+        alert would point at a field that never changed.
+
+        The job's own cache is invalidated afterwards so the upload step
+        reads what was just written rather than the pre-merge value.
+
+        :param inst: the instance being deployed
+        :param text: merged ``pip_dependencies`` content
+        :param sources: updated provenance map
+        """
+        vals = {}
+        if text != (inst.pip_dependencies or ""):
+            vals["pip_dependencies"] = text
+            needed = resolve_apt_dependencies(text)
+            missing = needed - set((inst.apt_dependencies or "").split())
+            if missing:
+                vals["apt_dependencies"] = (
+                    (inst.apt_dependencies or "").rstrip()
+                    + "\n" + "\n".join(sorted(missing))
+                ).strip()
+        if sources != (inst.pip_dependency_sources or {}):
+            vals["pip_dependency_sources"] = sources
+        if not vals:
+            return
+        with self.job.env.registry.cursor() as cr:
+            env = self.job.env(cr=cr)
+            env["cloud.instance"].browse(inst.id).sudo().with_context(
+                pip_provenance_managed=True,
+            ).write(vals)
+        inst.invalidate_recordset(
+            ["pip_dependencies", "apt_dependencies", "pip_dependency_sources"],
+        )
+
     async def _upload_copier_files(self, transport):
         """Upload all files needed by copier copy/update to the remote host."""
+        await self._resync_repo_requirements()
         inst = self._inst()
         answers_yml = yaml.dump(
             self._build_answers(),
