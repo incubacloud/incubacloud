@@ -2792,6 +2792,7 @@ msgstr "Descarta esta alerta para todos los usuarios"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_pip_provenance_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__display_name
@@ -4237,6 +4238,7 @@ msgstr "Cómo se compara el valor devuelto con el umbral."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_pip_provenance_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__id
@@ -6720,6 +6722,18 @@ msgid ""
 msgstr ""
 "El commit fijado '%s' no es un SHA git válido (7-64 caracteres hexadecimales"
 " en minúscula)."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pip_dependency_sources
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_pip_provenance_mixin__pip_dependency_sources
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_project__pip_dependency_sources
+msgid "Pip Dependency Sources"
+msgstr "Orígenes de las dependencias pip"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_pip_provenance_mixin
+msgid "Pip dependency provenance (shared base)"
+msgstr "Procedencia de dependencias pip (base compartida)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9564,6 +9578,19 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__traefik_deployed
 msgid "Whether the Traefik reverse proxy has been deployed on this host."
 msgstr "Si el proxy inverso Traefik ha sido desplegado en este host."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pip_dependency_sources
+#: model:ir.model.fields,help:incubacloud.field_cloud_pip_provenance_mixin__pip_dependency_sources
+#: model:ir.model.fields,help:incubacloud.field_cloud_project__pip_dependency_sources
+msgid ""
+"Which repository authored each pip dependency line. Maintained "
+"automatically; packages absent from this map are treated as operator-owned "
+"and are never overwritten by an upstream change."
+msgstr ""
+"Qué repositorio escribió cada línea de dependencias pip. Se mantiene "
+"automáticamente; los paquetes ausentes de este mapa se consideran del "
+"operador y nunca se sobrescriben con un cambio del repositorio."
 
 #. module: incubacloud
 #. odoo-javascript

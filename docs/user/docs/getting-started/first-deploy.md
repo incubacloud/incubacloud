@@ -93,6 +93,13 @@ When the job ends in green, your instance is up.
     Check the build log; the failing line tells you which package. Add it
     to your repo's `requirements.txt` and redeploy.
 
+    Every deploy and rebuild re-reads the `requirements.txt` of each of
+    your repositories that is not pinned to a commit, so a package you
+    add there is installed on the next build without touching the
+    project's dependency list. If that list already has the same package
+    with a different version, the build stops and raises a dependency
+    conflict alert instead — open it and pick which version wins.
+
 ??? note "Boot test failed"
     A migration script in your custom modules raised an error. Check the
     boot test log section. Fix the migration, push, redeploy.

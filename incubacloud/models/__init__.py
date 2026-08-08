@@ -1,5 +1,6 @@
 from . import cloud_security_mixin
 from . import cloud_audit_tracked_mixin
+from . import cloud_pip_provenance_mixin
 from . import cloud_repo_mixin
 from . import cloud_settings
 from . import cloud_rate_limit

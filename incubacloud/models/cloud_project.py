@@ -23,7 +23,11 @@ _REMOTE_FOLDER_RE = re.compile(r'^[a-z0-9][a-z0-9_-]{0,62}$')
 
 class CloudProject(models.Model):
     _name = 'cloud.project'
-    _inherit = ['cloud.security.mixin', 'cloud.audit.tracked.mixin']
+    _inherit = [
+        'cloud.security.mixin',
+        'cloud.audit.tracked.mixin',
+        'cloud.pip.provenance.mixin',
+    ]
     _description = 'Cloud Project'
 
     name = fields.Char(

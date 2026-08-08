@@ -56,7 +56,11 @@ _PG_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 class CloudInstance(models.Model):
     _name = "cloud.instance"
-    _inherit = ["cloud.security.mixin", "cloud.audit.tracked.mixin"]
+    _inherit = [
+        "cloud.security.mixin",
+        "cloud.audit.tracked.mixin",
+        "cloud.pip.provenance.mixin",
+    ]
     _description = "Cloud Instance"
 
     _name_project_uniq = models.Constraint(
@@ -2114,6 +2118,14 @@ class CloudInstance(models.Model):
                 # Copy project dependencies to instance if not set
                 if "pip_dependencies" not in vals and project.pip_dependencies:
                     vals["pip_dependencies"] = project.pip_dependencies
+                    # Provenance travels with the text it describes:
+                    # inheriting the lines without their authors would
+                    # hand every upstream-owned package back to the
+                    # operator and turn the next bump into a conflict.
+                    if "pip_dependency_sources" not in vals:
+                        vals["pip_dependency_sources"] = (
+                            project.pip_dependency_sources or {}
+                        )
                 if "apt_dependencies" not in vals and project.apt_dependencies:
                     vals["apt_dependencies"] = project.apt_dependencies
                 # Auto-generate domain from wildcard
