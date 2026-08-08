@@ -1408,6 +1408,12 @@ for testing (on the hosted SaaS: <code>&lt;name&gt;.&lt;your-subdomain&gt;.incub
 <p>Usually a Python dependency missing for the Odoo version you picked.
 Check the build log; the failing line tells you which package. Add it
 to your repo's <code>requirements.txt</code> and redeploy.</p>
+<p>Every deploy and rebuild re-reads the <code>requirements.txt</code> of each of
+your repositories that is not pinned to a commit, so a package you
+add there is installed on the next build without touching the
+project's dependency list. If that list already has the same package
+with a different version, the build stops and raises a dependency
+conflict alert instead — open it and pick which version wins.</p>
 </details>
 <details class="note">
 <summary>Boot test failed</summary>
