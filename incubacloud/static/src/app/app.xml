@@ -53,6 +53,23 @@
                                     </li>
                                 </t>
 
+                                <!-- Fleet metrics belong with the other
+                                     operational views, not after Settings:
+                                     it is something you look at, not
+                                     something you configure. Hidden when
+                                     observability is off — a section whose
+                                     only possible message is "not
+                                     configured" is worse than no section. -->
+                                <t t-if="env.permissions?.can_view_metrics and env.features?.observability">
+                                    <li t-att-class="{ active: state.route === 'monitoring' }"
+                                        t-att-aria-current="state.route === 'monitoring' ? 'page' : undefined"
+                                        tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
+                                        t-on-click="() => env.navigate('monitoring')">
+                                        <t t-out="env.icon('heartbeat', 17)"/>
+                                        <span class="ic-nav-label">Monitoring</span>
+                                    </li>
+                                </t>
+
                                 <t t-if="env.permissions?.can_manage_settings">
                                     <li t-att-class="{ active: ['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) }"
                                         t-att-aria-current="['backup_backends','new_backup_backend','backup_backend_detail'].includes(state.route) ? 'page' : undefined"
@@ -72,15 +89,6 @@
                                     </li>
                                 </t>
 
-                                <t t-if="env.permissions?.can_manage_hosts">
-                                    <li t-att-class="{ active: state.route === 'monitoring' }"
-                                        t-att-aria-current="state.route === 'monitoring' ? 'page' : undefined"
-                                        tabindex="0" role="link" t-on-keydown="onNavItemKeydown"
-                                        t-on-click="() => env.navigate('monitoring')">
-                                        <t t-out="env.icon('heartbeat', 17)"/>
-                                        <span class="ic-nav-label">Monitoring</span>
-                                    </li>
-                                </t>
                             </ul>
                         </nav>
                     </t>
@@ -122,7 +130,7 @@
                             project_id="state.params.project_id"
                             embedded="true"/>
                     </t>
-<t t-if="state.route === 'monitoring' and env.permissions?.can_manage_hosts">
+<t t-if="state.route === 'monitoring' and env.permissions?.can_view_metrics">
                         <Monitoring/>
                     </t>
                     <t t-if="state.route === 'settings' and env.permissions?.can_manage_settings">

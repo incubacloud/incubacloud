@@ -94,8 +94,19 @@ class CrudMixin:
             nav_counts['hosts'] = request.env['cloud.host'].search_count([])
         if perms.get('can_manage_settings'):
             nav_counts['backups'] = request.env['cloud.backup.backend'].search_count([])
+        settings = request.env['cloud.settings'].sudo()._get_system()
         return {
-            'features': {},
+            'features': {
+                # Drives whether the fleet metrics entry is offered at
+                # all. Showing a section that can only say "not
+                # configured" is worse than not showing it.
+                'observability': bool(settings.metrics_enabled),
+                # Whether this deployment lets its operator configure
+                # observability at all. False in SaaS tenant panels,
+                # where the settings are injected and showing an
+                # editable copy would invite drift from what we pushed.
+                'can_configure_observability': True,
+            },
             'role': perms.pop('role', 'stakeholder'),
             'permissions': perms,
             'nav_counts': nav_counts,
@@ -293,6 +304,15 @@ class CrudMixin:
                         _has_encrypted(host, 'known_hosts_key'),
                     'known_hosts_fingerprint':
                         host.known_hosts_fingerprint if is_manager else '',
+                    # Whether this host is actually reporting metrics.
+                    # Without it on screen, an unmonitored host is
+                    # indistinguishable from a monitored one — which is
+                    # what made the old manual enrolment so confusing.
+                    'metrics_agents_state': host.metrics_agents_state,
+                    'metrics_last_seen': (
+                        host.metrics_last_seen.isoformat()
+                        if host.metrics_last_seen else ''
+                    ),
                     'cpu_cores': host.cpu_cores,
                     'ram_total_gb': host.ram_total_gb,
                     'disk': round(host.disk_usage),

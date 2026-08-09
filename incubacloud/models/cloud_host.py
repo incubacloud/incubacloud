@@ -214,6 +214,61 @@ class CloudHost(models.Model):
     disk_free_gb = fields.Float(string="Free Disk (GB)", default=0)
     last_probed = fields.Datetime(string="Last Specs Probe")
 
+    # ── Observability enrolment ───────────────────────────────────────────
+    # Two separate facts that used to be conflated into ``last_probed``,
+    # with two bugs as a result. ``last_probed`` means "somebody read this
+    # host's specs", and BOTH the SSH telemetry job and the metrics reader
+    # write it — so it could never answer either of the questions below:
+    #
+    #   * are the agents installed here?  -> metrics_agents_state
+    #   * are metrics actually arriving?  -> metrics_last_seen
+    #
+    # Inferring the first from ``last_probed`` made every host look
+    # enrolled (the SSH job sets it on all of them). Inferring the second
+    # from it made the SSH fallback disable itself on the strength of its
+    # own writes.
+    metrics_agents_state = fields.Selection(
+        [
+            ("never", "Never installed"),
+            ("installed", "Installed"),
+            ("failed", "Install failed"),
+        ],
+        string="Observability agents",
+        default="never",
+        copy=False,
+        readonly=True,
+        help="Whether the metrics agents are installed on this host. "
+             "Maintained by the install job and the reconciliation cron; "
+             "never inferred from readings, because a reading proves the "
+             "agents worked at some point, not that they are there now.",
+    )
+    metrics_agents_since = fields.Datetime(
+        string="Agents last changed",
+        copy=False,
+        readonly=True,
+        help="When metrics_agents_state last changed. Drives the "
+             "reconciliation back-off so a host that cannot be reached is "
+             "retried at a decreasing rate instead of every tick.",
+    )
+    metrics_agents_attempts = fields.Integer(
+        string="Failed install attempts",
+        default=0,
+        copy=False,
+        readonly=True,
+        help="Consecutive failed installs. Resets on success. Drives the "
+             "back-off and the alert that fires once retrying stops being "
+             "reasonable.",
+    )
+    metrics_last_seen = fields.Datetime(
+        string="Metrics last seen",
+        copy=False,
+        readonly=True,
+        help="Last time a sample for this host came back FROM the metrics "
+             "backend. Written only by the metrics reader — never by the "
+             "SSH fallback — so it is the one honest answer to 'are "
+             "metrics flowing?'.",
+    )
+
     # ── Auto-assign & resource tracking ─────────────────────────────────────
     exclude_from_autoassign = fields.Boolean(
         string="Exclude from auto-assign",

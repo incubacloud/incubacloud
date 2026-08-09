@@ -227,6 +227,43 @@ class OpsMixin:
         except UserError as exc:
             return {"ok": False, "error": str(exc)}
 
+
+    @http.route(["/cloud/instance/access_log"], type="jsonrpc", auth="user")
+    def cloud_instance_access_log(self, instance_id, tail=None):
+        """Return this instance's recent requests from the proxy log.
+
+        The question this answers is "who is hitting this instance right
+        now, with what, and how is it responding" — which the metrics
+        cannot answer, because they carry neither client IP nor path.
+
+        Read live over SSH and not stored: these lines contain the IP
+        addresses of somebody else's end users, so the fewer copies exist
+        the better. Gated on the same role as the metrics view.
+        """
+        self._sec()._check_can_view_metrics()
+        instance = request.env["cloud.instance"].browse(instance_id)
+        if not instance.exists():
+            return {"ok": False, "error": _("Instance not found")}
+        try:
+            host = instance._require_access_log_host()
+            command = instance._access_log_command(tail=tail)
+        except UserError as exc:
+            return {"ok": False, "error": str(exc)}
+        try:
+            stdout, stderr = self._ssh_run(host, command)
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            _logger.warning(
+                "[access-log] could not read the proxy log on host %s: %s",
+                host.name, exc,
+            )
+            return safe_error_response(exc, _("Could not read the proxy log"))
+        rows = instance._parse_access_log(stdout or stderr or "")
+        return {
+            "ok": True,
+            "entries": rows,
+            "summary": instance._access_log_summary(rows),
+        }
+
     @http.route(["/cloud/move_instance"], type="jsonrpc", auth="user")
     def cloud_move_instance(self, instance_id, target_host_id):
         """Move a deployed instance to another host (manager-only)."""
@@ -1079,7 +1116,7 @@ class OpsMixin:
         stay server-side — the browser has no business knowing either,
         and the token is a write credential for the whole fleet.
         """
-        self._sec()._check_can_manage_hosts()
+        self._sec()._check_can_view_metrics()
         settings = request.env["cloud.settings"].sudo()._get_system()
         return {
             "ok": True,

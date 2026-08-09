@@ -464,6 +464,12 @@
                 >Backups</button>
                             </t>
                         </t>
+                        <t t-if="env.permissions?.can_view_metrics">
+                            <button
+                t-att-class="state.tab === 'metrics' ? 'rl-tab active' : 'rl-tab'"
+                t-on-click="() => this.setTab('metrics')"
+              >Metrics</button>
+                        </t>
                         <t t-if="env.permissions?.can_manage_hosts">
                             <button
                 t-att-class="state.tab === 'activity' ? 'rl-tab active' : 'rl-tab'"
@@ -2634,6 +2640,128 @@
                             </tbody>
                         </table>
                     </t>
+                </t>
+            </div>
+        </t>
+
+        <!-- ── Metrics ──────────────────────────────────────────────────────── -->
+        <t t-if="state.tab === 'metrics'">
+            <div class="ic-metrics-panel">
+
+                <!-- Charts. Embedded rather than redrawn: rebuilding
+                     time-series charts here would be weeks of work to end
+                     up with something worse than the tool the dashboards
+                     are already provisioned for. -->
+                <t t-if="state.metricsCfg.loading">
+                    <div class="rl-card rl-card-pad ic-skeleton-card" aria-hidden="true">
+                        <div class="ic-skeleton-line ic-skeleton-title"/>
+                        <div class="ic-skeleton-line"/>
+                    </div>
+                </t>
+                <t t-elif="!state.metricsCfg.enabled">
+                    <div class="rl-stub">
+                        <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                        <h3>Observability is not enabled</h3>
+                        <p>Turn it on in Settings; every host is enrolled automatically.</p>
+                    </div>
+                </t>
+                <t t-elif="!state.metricsCfg.baseUrl">
+                    <div class="rl-stub">
+                        <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
+                        <h3>No dashboards configured</h3>
+                        <p>Set the Grafana base URL in Settings to show charts here.</p>
+                    </div>
+                </t>
+                <t t-else="">
+                    <div class="rl-card ic-monitoring-frame">
+                        <iframe t-att-src="instanceDashboardUrl"
+                                t-att-title="'Metrics for ' + (state.inst.name || '')"
+                                loading="lazy"/>
+                    </div>
+                </t>
+
+                <!-- Recent requests. This is the half the charts cannot
+                     give: the client IP and the path. Read live from the
+                     host and never stored — these lines carry the IP
+                     addresses of this instance's end users. -->
+                <div class="rl-phead" style="margin-block-start:18px;">
+                    <div>
+                        <h2 class="rl-ptitle" style="font-size:15px;">Recent requests</h2>
+                        <p class="rl-psub">Read from the proxy on this host. Nothing is stored.</p>
+                    </div>
+                    <button class="rl-btn rl-btn-ghost rl-btn-sm"
+                            t-att-disabled="state.accessLog.loading || null"
+                            t-on-click="loadAccessLog">
+                        <t t-if="state.accessLog.loading">Reading…</t>
+                        <t t-else="">Refresh</t>
+                    </button>
+                </div>
+
+                <t t-if="state.accessLog.error">
+                    <div class="rl-stub" role="alert">
+                        <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+                        <h3>Could not read the proxy log</h3>
+                        <p t-esc="state.accessLog.error"/>
+                    </div>
+                </t>
+                <t t-elif="state.accessLog.loaded and !state.accessLog.entries.length">
+                    <div class="rl-stub">
+                        <h3>No requests recorded</h3>
+                        <p>Either nothing has reached this instance recently, or the
+                           proxy on this host has not been redeployed since access
+                           logging was switched on.</p>
+                    </div>
+                </t>
+                <t t-elif="state.accessLog.entries.length">
+                    <div class="ic-metrics-summary">
+                        <div class="rl-card rl-card-pad">
+                            <div class="rl-ovtitle">Status codes</div>
+                            <t t-foreach="state.accessLog.summary.by_status" t-as="row" t-key="row.key">
+                                <div class="rl-ovrow">
+                                    <span class="rl-l" t-esc="row.key"/>
+                                    <span class="rl-v" t-esc="row.count"/>
+                                </div>
+                            </t>
+                        </div>
+                        <div class="rl-card rl-card-pad">
+                            <div class="rl-ovtitle">Top clients</div>
+                            <t t-foreach="state.accessLog.summary.top_clients" t-as="row" t-key="row.key">
+                                <div class="rl-ovrow">
+                                    <span class="rl-l" t-esc="row.key"/>
+                                    <span class="rl-v" t-esc="row.count"/>
+                                </div>
+                            </t>
+                        </div>
+                        <div class="rl-card rl-card-pad">
+                            <div class="rl-ovtitle">Top paths</div>
+                            <t t-foreach="state.accessLog.summary.top_paths" t-as="row" t-key="row.key">
+                                <div class="rl-ovrow">
+                                    <span class="rl-l ic-path" t-esc="row.key"/>
+                                    <span class="rl-v" t-esc="row.count"/>
+                                </div>
+                            </t>
+                        </div>
+                    </div>
+
+                    <table class="ic-audit-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th><th>Client</th><th>Method</th>
+                                <th>Path</th><th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="recentRequests" t-as="req" t-key="req_index">
+                                <tr>
+                                    <td t-esc="req.time"/>
+                                    <td t-esc="req.ClientHost"/>
+                                    <td t-esc="req.RequestMethod"/>
+                                    <td class="ic-path" t-esc="req.RequestPath"/>
+                                    <td t-esc="req.DownstreamStatus"/>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
                 </t>
             </div>
         </t>

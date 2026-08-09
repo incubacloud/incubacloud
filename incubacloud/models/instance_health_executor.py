@@ -299,13 +299,24 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             })
             return
 
+        # Who owns ``running``. Both this probe and the metrics cron can
+        # tell whether an instance is up, and with observability on they
+        # would otherwise both write the flag on their own schedules —
+        # agreeing most of the time and flapping whenever they briefly
+        # did not. Metrics win while their readings are fresh; this probe
+        # keeps doing everything else (HTTP, log scraping) and takes the
+        # flag back by itself the moment they go stale.
+        owns_running = not inst._liveness_covered_by_metrics()
+
         if not self._container_running:
-            inst.write({
-                'running': False,
+            vals = {
                 'status': 'error',
                 'cpu_over_threshold_streak': 0,
                 'mem_over_threshold_streak': 0,
-            })
+            }
+            if owns_running:
+                vals['running'] = False
+            inst.write(vals)
             self._inst_alert(
                 'instance_down',
                 f"Container 'odoo' is not running on '{inst.name}'.",
@@ -316,7 +327,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         # Container is up — resolve down alert if it existed
         self._resolve_inst_alert('instance_down')
-        inst.write({'running': True})
+        if owns_running:
+            inst.write({'running': True})
 
         issues = []
 

@@ -480,6 +480,12 @@ msgstr "Avanzado"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Advanced…"
+msgstr "Avanzado…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "After installing, come back here and click"
 msgstr "Después de instalar, vuelve aquí y haz clic en"
 
@@ -496,15 +502,27 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Agents installed, no data yet"
+msgstr "Agentes instalados, sin datos todavía"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_agents_since
+msgid "Agents last changed"
+msgstr "Últimos cambios en los agentes"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Agents on every host push metrics to a central stack; the\n"
 "                        panel reads it back to evaluate alert rules and embeds the\n"
-"                        dashboards. Nothing here is active while the switch is off."
+"                        dashboards. Every host is enrolled automatically — there is\n"
+"                        nothing to install by hand."
 msgstr ""
-"Los agentes de cada host envían métricas a un stack central; el\n"
-"                        panel las lee para evaluar las reglas de alerta y embebe los\n"
-"                        paneles. Con el interruptor apagado nada de esto está activo."
+"Los agentes de cada host empujan métricas a una pila central; el panel las "
+"consulta para evaluar las reglas de alerta y embebe los paneles. Todos los "
+"hosts se enrolan automáticamente — no hay nada que instalar a mano."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1485,6 +1503,12 @@ msgstr "Clic para ver el log"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Client"
+msgstr "Cliente"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "Clone"
 msgstr "Clonar"
@@ -1634,9 +1658,17 @@ msgstr "Recopilar métricas del host"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Collect metrics from hosts and instances"
-msgstr "Recoger métricas de hosts e instancias"
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Collecting, with charts available."
+msgstr "Recogiendo, con gráficas disponibles."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Collecting. Charts are hidden until a Grafana URL is set."
+msgstr ""
+"Recogiendo. Las gráficas están ocultas hasta que se indique una URL de "
+"Grafana."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__color
@@ -1926,6 +1958,16 @@ msgid "Connection successful — bucket is accessible."
 msgstr "Conexión exitosa — el bucket es accesible."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_agents_attempts
+msgid ""
+"Consecutive failed installs. Resets on success. Drives the back-off and the "
+"alert that fires once retrying stops being reasonable."
+msgstr ""
+"Instalaciones fallidas consecutivas. Se reinicia al tener éxito. Gobierna la"
+" espera creciente y la alerta que salta cuando reintentar deja de ser "
+"razonable."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__cpu_over_threshold_streak
 msgid ""
 "Consecutive instance_health cycles with CPU above the warning threshold. "
@@ -2071,6 +2113,20 @@ msgstr "No se pudieron cargar los proyectos"
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Could not queue it."
 msgstr "No se pudo encolar."
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Could not read the proxy log"
+msgstr "No se pudo leer el registro del proxy"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Could not read the proxy log."
+msgstr "No se pudo leer el registro del proxy."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__count
@@ -2253,6 +2309,12 @@ msgstr "Creado el"
 #: code:addons/incubacloud/static/src/components/tag_selector/tag_selector.xml:0
 msgid "Creating…"
 msgstr "Creando…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Credential"
+msgstr "Credencial"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2560,12 +2622,6 @@ msgstr "Desplegar"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Deploy blocked"
 msgstr "Despliegue bloqueado"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Deploy central"
-msgstr "Desplegar central"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2925,6 +2981,17 @@ msgstr "Destino de copia efectivo"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Either nothing has reached this instance recently, or the\n"
+"                           proxy on this host has not been redeployed since access\n"
+"                           logging was switched on."
+msgstr ""
+"O no ha llegado nada a esta instancia recientemente, o el proxy de este host"
+" no se ha vuelto a desplegar desde que se activó el registro de accesos."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Email"
 msgstr "Correo electrónico"
@@ -2943,8 +3010,12 @@ msgstr "Directorio vacío"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Empty hides the Monitoring section from the panel."
-msgstr "Si se deja vacía, la sección Monitorización no aparece en el panel."
+msgid ""
+"Empty hides the charts. The dashboards are served under /grafana/ on the "
+"gateway."
+msgstr ""
+"Vacío oculta las gráficas. Los paneles se sirven bajo /grafana/ en la "
+"pasarela."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2953,6 +3024,8 @@ msgid "Enable automatic host assignment"
 msgstr "Habilitar asignación automática de hosts"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_enabled
 msgid "Enable observability"
 msgstr "Activar la observabilidad"
@@ -2961,11 +3034,12 @@ msgstr "Activar la observabilidad"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 msgid ""
-"Enable observability in Settings, then install the agents\n"
-"                        on each host from its detail page."
+"Enable observability in Settings. Every host is then\n"
+"                        enrolled automatically — there is nothing to install\n"
+"                        by hand."
 msgstr ""
-"Activa la observabilidad en Ajustes y luego instala los agentes\n"
-"                        en cada host desde su página de detalle."
+"Active la observabilidad en Configuración. A partir de ahí todos los hosts "
+"se enrolan automáticamente — no hay nada que instalar a mano."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__auto_security_updates
@@ -3166,6 +3240,11 @@ msgstr "Webhook externo"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 msgid "Failed"
 msgstr "Fallido"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_agents_attempts
+msgid "Failed install attempts"
+msgstr "Intentos de instalación fallidos"
 
 #. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
@@ -3626,16 +3705,6 @@ msgid "Fleet metrics collected from your hosts."
 msgstr "Métricas de la flota recogidas de tus hosts."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid ""
-"Fleet-wide write credential: stored encrypted and never shown\n"
-"                            again. Leave it blank to keep the current one."
-msgstr ""
-"Credencial de escritura para toda la flota: se guarda cifrada y no se\n"
-"                            vuelve a mostrar. Déjala vacía para conservar la actual."
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__remote_folder
 msgid ""
 "Folder name used on remote hosts: ~/remote_folder/instance_name/. Auto-"
@@ -3649,6 +3718,16 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_type__action_icon
 msgid "FontAwesome class for the button (e.g. 'fa-magic', 'fa-cog')."
 msgstr "Clase de FontAwesome para el botón (p. ej. 'fa-magic', 'fa-cog')."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"For a central that lives elsewhere, agents on more than one\n"
+"                            host, or an existing Grafana."
+msgstr ""
+"Para un central alojado en otro sitio, agentes en más de un host, o un "
+"Grafana ya existente."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3803,6 +3882,18 @@ msgstr "General"
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "General settings"
 msgstr "Ajustes generales"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"Generated automatically. Replacing it means redeploying the\n"
+"                                central and re-enrolling every host — until both sides\n"
+"                                match, pushes are refused."
+msgstr ""
+"Se genera automáticamente. Reemplazarla obliga a redesplegar el central y a "
+"re-enrolar todos los hosts — hasta que ambos lados coincidan, los envíos se "
+"rechazan."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_alert__payload
@@ -3993,11 +4084,29 @@ msgid "Go to instance"
 msgstr "Ir a instancia"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__grafana_admin_password
+msgid "Grafana admin password"
+msgstr "Contraseña de administración de Grafana"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__grafana_base_url
 msgid "Grafana base URL"
 msgstr "URL base de Grafana"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__grafana_admin_password
+msgid ""
+"Grafana's own administrative credential. Never leaves the central: the "
+"gateway authenticates callers with the operator credential and swaps this "
+"one in before proxying, so rotating it is a redeploy rather than a change in"
+" every place that talks to Grafana."
+msgstr ""
+"Credencial de administración propia de Grafana. Nunca sale del central: la "
+"pasarela autentica al llamante con la credencial del operador y sustituye "
+"por ésta antes de reenviar, así que rotarla es un redespliegue y no un "
+"cambio en todo lo que habla con Grafana."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_res_users__cloud_webhook_secret
@@ -4083,6 +4192,12 @@ msgid "Hide"
 msgstr "Ocultar"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Hide advanced"
+msgstr "Ocultar avanzado"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__high
 msgid "High"
 msgstr "Alta"
@@ -4095,6 +4210,7 @@ msgstr "Alta"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__host_id
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_metric_rule__scope__host
 msgid "Host"
 msgstr "Host"
 
@@ -4283,6 +4399,21 @@ msgid "IP address or hostname is required"
 msgstr "La dirección IP o el hostname son obligatorios"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_account
+msgid ""
+"Identity this panel authenticates as against the central, and the label the "
+"central FORCES on every series it writes for us. It is what keeps one panel "
+"from reading or poisoning another's data, so it is never accepted from the "
+"agent: the central derives it from the authenticated user. A self-hosted "
+"panel generates its own; in SaaS mode the manager assigns it."
+msgstr ""
+"Identidad con la que este panel se autentica ante el central, y etiqueta que"
+" el central IMPONE a toda serie que escribe para nosotros. Es lo que impide "
+"que un panel lea o envenene los datos de otro, por eso nunca se acepta del "
+"agente: el central la deduce del usuario autenticado. Un panel self-hosted "
+"genera la suya; en modo SaaS la asigna el manager."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__exclude_from_autoassign
 msgid ""
 "If checked, this host will not be considered for automatic instance "
@@ -4454,6 +4585,17 @@ msgid "Initial Language"
 msgstr "Idioma inicial"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__metrics_agents_state__failed
+msgid "Install failed"
+msgstr "Instalación fallida"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Install failed — retrying automatically"
+msgstr "Instalación fallida — reintentando automáticamente"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Install on Org"
@@ -4502,6 +4644,11 @@ msgstr ""
 "GitHub e intenta de nuevo."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__metrics_agents_state__installed
+msgid "Installed"
+msgstr "Instalados"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__instance_id
@@ -4512,6 +4659,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__instance_id
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_metric_rule__scope__instance
 msgid "Instance"
 msgstr "Instancia"
 
@@ -4629,6 +4777,11 @@ msgstr "La instancia no está desplegada."
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Instance is not running"
 msgstr "La instancia no está en ejecución"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__instance_label
+msgid "Instance label"
+msgstr "Etiqueta de instancia"
 
 #. module: incubacloud
 #. odoo-python
@@ -4988,6 +5141,13 @@ msgid "Known Hosts Key"
 msgstr "Clave known_hosts"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__instance_label
+msgid "Label carrying the cloud.instance id, for instance-scoped rules."
+msgstr ""
+"Etiqueta que lleva el id de cloud.instance, para reglas de alcance de "
+"instancia."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__odoo_initial_lang
 msgid "Language installed via odoo -i base -l <code> on first deploy."
 msgstr "Idioma instalado via odoo -i base -l <code> en el primer despliegue."
@@ -5105,6 +5265,30 @@ msgstr "Último despliegue"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Last measured:"
 msgstr "Última medición:"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_last_seen
+msgid ""
+"Last time a sample for this host came back FROM the metrics backend. Written"
+" only by the metrics reader — never by the SSH fallback — so it is the one "
+"honest answer to 'are metrics flowing?'."
+msgstr ""
+"Última vez que llegó una muestra de este host DESDE el backend de métricas. "
+"Lo escribe solo el lector de métricas — nunca el respaldo por SSH — así que "
+"es la única respuesta honesta a '¿están llegando métricas?'."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__metrics_last_seen
+msgid ""
+"Last time the metrics backend reported on this instance. Written only by the"
+" cron below, and read by the SSH health probe to decide who owns "
+"``running``: two writers with no arbitration would fight over the flag every"
+" few minutes."
+msgstr ""
+"Última vez que el backend de métricas reportó sobre esta instancia. Lo "
+"escribe solo el cron de abajo, y lo lee el sondeo de salud por SSH para "
+"decidir quién manda sobre ``running``: dos escritores sin árbitro se "
+"pelearían por la bandera cada pocos minutos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5385,6 +5569,12 @@ msgid "Manual backups only (ZIP). Stored for 2 hours."
 msgstr "Solo backups manuales (ZIP). Almacenados durante 2 horas."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Master switch. Everything is inert while it is off."
+msgstr "Interruptor maestro. Todo queda inerte mientras esté apagado."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_enabled
 msgid ""
 "Master switch. When off, no agent is installed, the metric rules are not "
@@ -5483,6 +5673,12 @@ msgid "Message"
 msgstr "Mensaje"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Method"
+msgstr "Método"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__login_type
 msgid "Method used to authenticate to the cloud host."
 msgstr "Método de autenticación para el host cloud."
@@ -5504,16 +5700,30 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Metrics"
+msgstr "Métricas"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_account
+msgid "Metrics account"
+msgstr "Cuenta de métricas"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_url
 msgid "Metrics backend URL"
 msgstr "URL del backend de métricas"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Metrics central"
-msgstr "Central de métricas"
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_remote_write_token
+msgid "Metrics credential"
+msgstr "Credencial de métricas"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_last_seen
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__metrics_last_seen
+msgid "Metrics last seen"
+msgstr "Últimas métricas recibidas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5543,6 +5753,7 @@ msgstr "Módulos"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/app/app.xml:0
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Monitoring"
@@ -5729,6 +5940,11 @@ msgid "Neutralized database dump"
 msgstr "Dump neutralizado de la base de datos"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__metrics_agents_state__never
+msgid "Never installed"
+msgstr "Nunca instalados"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Never measured yet — the daily cron will catch this up."
@@ -5903,6 +6119,12 @@ msgstr "No hay hosts compatibles disponibles."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "No dashboards configured"
+msgstr "No hay paneles configurados"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "No entries found"
@@ -6052,6 +6274,12 @@ msgstr "No hay repositorios aún — haz clic en Agregar para vincular un repo."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "No requests recorded"
+msgstr "No se han registrado peticiones"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: code:addons/incubacloud/static/src/components/search_select/search_select.xml:0
 msgid "No results"
@@ -6130,6 +6358,12 @@ msgstr "No configurado"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Not deployed"
 msgstr "No desplegado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Not enrolled yet"
+msgstr "Sin enrolar todavía"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6247,6 +6481,11 @@ msgid "Observability"
 msgstr "Observabilidad"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_agents_state
+msgid "Observability agents"
+msgstr "Agentes de observabilidad"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/observability_agents_executor.py:0
 msgid ""
@@ -6255,6 +6494,12 @@ msgid ""
 msgstr ""
 "La observabilidad está desactivada. Actívala en Ajustes y configura la URL "
 "de remote-write antes de instalar los agentes."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Observability is not enabled"
+msgstr "La observabilidad no está activada"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6315,6 +6560,18 @@ msgstr "Contenedor Odoo no encontrado o no en ejecución"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 msgid "Odoo version is required"
 msgstr "La versión de Odoo es obligatoria"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Off. Pick a host above and enable it."
+msgstr "Apagada. Elija un host arriba y actívela."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "On, but no query endpoint is set — nothing can be read back."
+msgstr "Activada, pero sin URL de consulta — no se puede leer nada."
 
 #. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_rate_limit_bucket_uniq
@@ -6424,6 +6681,11 @@ msgstr "Operación fallida. Inténtelo de nuevo."
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Operational"
 msgstr "Operativo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_operator_token
+msgid "Operator read credential"
+msgstr "Credencial de lectura del operador"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__alert_email
@@ -6576,6 +6838,24 @@ msgid "Password for the Traefik dashboard."
 msgstr "Contraseña para el panel de Traefik."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_remote_write_token
+msgid ""
+"Password half of this panel's metrics account (the user half is "
+"``metrics_account``). Presented as HTTP basic auth both when the agents push"
+" and when the panel queries. Scoped: it can only write series labelled with "
+"this account and only read those same series, so a host that leaks it "
+"exposes nothing beyond what that panel could already see. Stored encrypted; "
+"written to each host as root-only 0600."
+msgstr ""
+"Mitad de contraseña de la cuenta de métricas de este panel (la mitad de "
+"usuario es ``metrics_account``). Se presenta como autenticación básica HTTP "
+"tanto cuando los agentes empujan como cuando el panel consulta. Acotada: "
+"solo puede escribir series etiquetadas con esta cuenta y solo leer esas "
+"mismas series, así que un host que la filtre no expone nada más allá de lo "
+"que ese panel ya podía ver. Se guarda cifrada; se escribe en cada host como "
+"0600 solo para root."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Password is required for password login"
@@ -6596,6 +6876,7 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_path
 msgid "Path"
@@ -7036,10 +7317,16 @@ msgstr "Shell Python con --rollback por defecto (seguro — no commitea nada)"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Queried by the panel, so it must resolve from inside the\n"
-"                            panel container — 127.0.0.1 there is the container itself."
+"                                panel container — 127.0.0.1 there is the container itself."
 msgstr ""
-"La consulta el panel, así que tiene que resolverse desde dentro del\n"
-"                            contenedor del panel: ahí 127.0.0.1 es el propio contenedor."
+"La consulta el panel, así que debe resolver desde dentro del contenedor del "
+"panel — ahí 127.0.0.1 es el propio contenedor."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Query URL"
+msgstr "URL de consulta"
 
 #. module: incubacloud
 #: model:ir.model,name:incubacloud.model_queue_job
@@ -7117,9 +7404,21 @@ msgstr "Volver a confiar en la clave"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Read from the proxy on this host. Nothing is stored."
+msgstr "Leído del proxy de este host. No se guarda nada."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.js:0
 msgid "Reading instance configuration..."
 msgstr "Leyendo configuración de la instancia..."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Reading…"
+msgstr "Leyendo…"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7181,6 +7480,12 @@ msgstr "Actividad reciente"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Recent requests"
+msgstr "Peticiones recientes"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Recipient email is invalid"
 msgstr "El email del destinatario no es válido"
@@ -7196,6 +7501,11 @@ msgstr "Recomendado para backups de hasta 2 GB"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Recommended — no extra load on production"
 msgstr "Recomendado — sin carga adicional sobre producción"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_reconcile_observability_ir_actions_server
+msgid "Reconcile observability enrolment"
+msgstr "Reconciliar el enrolamiento de observabilidad"
 
 #. module: incubacloud
 #. odoo-python
@@ -7325,13 +7635,6 @@ msgstr "URL de remote-write"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_remote_write_token
-msgid "Remote-write token"
-msgstr "Token de remote-write"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Remove"
@@ -7400,6 +7703,12 @@ msgstr "Reportar en éxito"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Report on success"
 msgstr "Reportar en éxito"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Reporting"
+msgstr "Reportando"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7927,6 +8236,11 @@ msgid "Scanning…"
 msgstr "Escaneando…"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__scope
+msgid "Scope"
+msgstr "Alcance"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Search instances, hosts, projects…"
@@ -7968,6 +8282,19 @@ msgstr "Buscando…"
 #: code:addons/incubacloud/static/src/components/search_select/search_select.js:0
 msgid "Search…"
 msgstr "Buscar…"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_operator_token
+msgid ""
+"Second credential, for the UNFILTERED read used by the operator's own "
+"Grafana organisation. Only meaningful on the panel that owns the central, "
+"and deliberately never written to any host — that is the whole point of "
+"keeping it apart from the account credential above."
+msgstr ""
+"Segunda credencial, para la lectura SIN FILTRAR que usa la organización de "
+"Grafana del operador. Solo tiene sentido en el panel dueño del central, y "
+"deliberadamente nunca se escribe en ningún host — que es justo el motivo de "
+"mantenerla separada de la credencial de cuenta de arriba."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8120,6 +8447,14 @@ msgstr ""
 "Configura la URL base de Grafana en Ajustes para embeber aquí los paneles."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Set the Grafana base URL in Settings to show charts here."
+msgstr ""
+"Indique la URL base de Grafana en Configuración para mostrar aquí las "
+"gráficas."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_event__processed
 msgid "Set to True once business logic has handled this event."
 msgstr ""
@@ -8156,23 +8491,6 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Settings"
 msgstr "Configuración"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_remote_write_token
-msgid ""
-"Shared secret protecting the central. The agents present it as HTTP basic "
-"auth when pushing, and the panel presents it when querying; the central "
-"rejects anonymous access while it is set. Stored encrypted and written to "
-"each host as root-only 0600. Changing it means redeploying the central AND "
-"re-running Install Observability everywhere — until both sides match, pushes"
-" are refused."
-msgstr ""
-"Secreto compartido que protege el central. Los agentes lo presentan como "
-"autenticación básica HTTP al enviar, y el panel lo presenta al consultar; "
-"mientras esté puesto, el central rechaza el acceso anónimo. Se guarda "
-"cifrado y se escribe en cada host como 0600 solo para root. Cambiarlo obliga"
-" a redesplegar el central Y a volver a ejecutar «Instalar observabilidad» en"
-" todos los hosts: hasta que ambos lados coincidan, los envíos se rechazan."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__auth_token
@@ -8348,11 +8666,19 @@ msgstr "Estado"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__status
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__status
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__status
 msgid "Status"
 msgstr "Estado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Status codes"
+msgstr "Códigos de estado"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8701,6 +9027,18 @@ msgstr "Esta acción requiere el rol '%s' o superior."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"This deploys the stack and, when it comes up, fills in the\n"
+"                            endpoints and switches observability on. Nothing below\n"
+"                            needs touching for a single-host setup."
+msgstr ""
+"Esto despliega la pila y, cuando levanta, rellena las URLs y enciende la "
+"observabilidad. Para un montaje de un solo host no hace falta tocar nada de "
+"lo de abajo."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "This dismisses every listed non-conflict alert"
 msgstr "Esto descarta todas las alertas listadas que no son de conflicto"
@@ -8733,6 +9071,15 @@ msgstr ""
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "This instance is already imported."
 msgstr "Esta instancia ya está importada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance_access_log.py:0
+msgid ""
+"This instance is not placed on a host yet, so there is no proxy log to read."
+msgstr ""
+"Esta instancia aún no está ubicada en un host, así que no hay registro del "
+"proxy que leer."
 
 #. module: incubacloud
 #. odoo-python
@@ -8846,6 +9193,12 @@ msgstr "A través de tu navegador"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Time"
+msgstr "Hora"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Timeline"
 msgstr "Línea de tiempo"
@@ -8943,6 +9296,18 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Top clients"
+msgstr "Clientes más activos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Top paths"
+msgstr "Rutas más solicitadas"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__odoo_proxy__traefik
 msgid "Traefik"
@@ -9035,6 +9400,13 @@ msgstr "Intentar de nuevo"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Try expanding the time range or adjusting filters."
 msgstr "Intenta ampliar el rango de tiempo o ajustar los filtros."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Turn it on in Settings; every host is enrolled automatically."
+msgstr ""
+"Actívela en Configuración; todos los hosts se enrolan automáticamente."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9332,13 +9704,13 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
-"VictoriaMetrics + Grafana, deployed as a job on the host you\n"
-"                            pick. Co-locating on the panel host is the usual start;\n"
-"                            re-run it against another host to move it."
+"VictoriaMetrics, Grafana and a gateway, deployed as a job\n"
+"                            on the host you pick. Co-locating on the panel host is the\n"
+"                            usual start; re-run it against another host to move it."
 msgstr ""
-"VictoriaMetrics + Grafana, desplegados como un trabajo en el host que\n"
-"                            elijas. Lo habitual es empezar en el mismo host del panel;\n"
-"                            para moverlo, vuelve a ejecutarlo contra otro host."
+"VictoriaMetrics, Grafana y una pasarela, desplegados como un trabajo en el "
+"host que elija. Lo habitual es empezar en el mismo host del panel; para "
+"moverlo, re-ejecútelo contra otro host."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9451,6 +9823,18 @@ msgstr ""
 "                        eliminan automáticamente. Ponga cualquiera de los dos en 0 para desactivarlo."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__scope
+msgid ""
+"What each sample of this rule describes. Instance-scoped rules resolve "
+"through the instance label the agents attach and raise their alert against "
+"that instance, so it shows up on its page rather than buried in its host's."
+msgstr ""
+"Qué describe cada muestra de esta regla. Las reglas de alcance de instancia "
+"resuelven por la etiqueta de instancia que ponen los agentes y levantan su "
+"alerta contra esa instancia, así que aparece en su propia página en vez de "
+"enterrada en la del host."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "What to receive"
@@ -9494,6 +9878,17 @@ msgstr ""
 "Cuando está activado, abrir un PR en un repo configurado en la instancia de "
 "producción crea automáticamente una instancia preview de staging con la rama"
 " del PR y un clon de los datos de producción."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_agents_since
+msgid ""
+"When metrics_agents_state last changed. Drives the reconciliation back-off "
+"so a host that cannot be reached is retried at a decreasing rate instead of "
+"every tick."
+msgstr ""
+"Cuándo cambió por última vez metrics_agents_state. Gobierna la espera "
+"creciente de la reconciliación, para que un host inalcanzable se reintente "
+"cada vez menos en lugar de en cada tic."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__odoo_commit_sha
@@ -9557,10 +9952,18 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "Where each host's agent pushes. It must resolve from inside\n"
-"                            the agent container on every host."
+"                                the agent container on every host, so agents on other hosts\n"
+"                                need a public HTTPS endpoint here."
 msgstr ""
-"Adónde envía el agente de cada host. Tiene que resolverse desde dentro\n"
-"                            del contenedor del agente en todos los hosts."
+"Adónde empuja el agente de cada host. Debe resolver desde dentro del "
+"contenedor del agente en todos los hosts, así que los agentes de otros hosts"
+" necesitan aquí una URL pública HTTPS."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Where the central runs"
+msgstr "Dónde corre el central"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__state
@@ -9578,6 +9981,19 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__traefik_deployed
 msgid "Whether the Traefik reverse proxy has been deployed on this host."
 msgstr "Si el proxy inverso Traefik ha sido desplegado en este host."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_agents_state
+msgid ""
+"Whether the metrics agents are installed on this host. Maintained by the "
+"install job and the reconciliation cron; never inferred from readings, "
+"because a reading proves the agents worked at some point, not that they are "
+"there now."
+msgstr ""
+"Si los agentes de métricas están instalados en este host. Lo mantienen el "
+"trabajo de instalación y el cron de reconciliación; nunca se deduce de las "
+"lecturas, porque una lectura prueba que los agentes funcionaron en algún "
+"momento, no que sigan ahí."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pip_dependency_sources
@@ -9987,8 +10403,8 @@ msgstr "host"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "http://172.17.0.1:8428"
-msgstr "http://172.17.0.1:8428"
+msgid "http://172.17.0.1:8428/r/"
+msgstr "http://172.17.0.1:8428/r/"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10004,12 +10420,6 @@ msgstr "https://github.com/your-org/your-project"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "https://grafana.example.com"
-msgstr "https://grafana.example.com"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "https://hooks.example.com/cloud"
 msgstr "https://hooks.example.com/cloud"
@@ -10017,8 +10427,14 @@ msgstr "https://hooks.example.com/cloud"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "https://metrics.example.com/api/v1/write"
-msgstr "https://metrics.example.com/api/v1/write"
+msgid "https://metrics.example.com/grafana/"
+msgstr "https://metrics.example.com/grafana/"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "https://metrics.example.com/w/"
+msgstr "https://metrics.example.com/w/"
 
 #. module: incubacloud
 #. odoo-javascript

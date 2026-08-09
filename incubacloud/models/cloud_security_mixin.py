@@ -76,6 +76,10 @@ class CloudSecurityMixin(models.AbstractModel):
     def _check_can_manage_hosts(self):
         self._check_cloud_group('group_cloud_manager')
 
+    def _check_can_view_metrics(self):
+        """Guard the metrics views and the proxy access log."""
+        self._check_cloud_group('group_cloud_developer')
+
     def _check_can_manage_settings(self):
         self._check_cloud_group('group_cloud_manager')
 
@@ -143,6 +147,11 @@ class CloudSecurityMixin(models.AbstractModel):
             'can_manage_settings': is_at_least['manager'],
             'can_use_terminal': is_at_least['developer'],
             'can_view_logs': is_at_least['developer'],
+            # Metrics and the proxy access log. From developer upwards
+            # rather than manager-only: whoever debugs a slow or attacked
+            # instance is the one who needs these, and requiring the
+            # manager role turned every incident into a relay race.
+            'can_view_metrics': is_at_least['developer'],
             'can_manage_backups': is_at_least['developer'],
             'can_export': is_at_least['developer'],
             'can_clone_to_staging': is_at_least['developer'],

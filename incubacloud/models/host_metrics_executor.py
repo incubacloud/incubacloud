@@ -40,9 +40,15 @@ class HostMetricsExecutor(AbstractSSHExecutor):
         if not settings.metrics_enabled:
             return False
         host = self.job.host_id
-        if not host.last_probed:
+        # ``metrics_last_seen``, not ``last_probed``: the latter is also
+        # written by THIS job, so reading it made the fallback look at its
+        # own footprint, conclude metrics were fresh and skip itself. With
+        # agents that were never really installed, that degraded the
+        # fallback from every 5 minutes to roughly every 15, oscillating —
+        # precisely when it was the only thing collecting.
+        if not host.metrics_last_seen:
             return False
-        age = (fields.Datetime.now() - host.last_probed).total_seconds()
+        age = (fields.Datetime.now() - host.metrics_last_seen).total_seconds()
         return age <= self._METRICS_FRESH_SECONDS
 
     def get_commands(self):

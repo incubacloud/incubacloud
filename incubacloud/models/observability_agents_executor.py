@@ -49,7 +49,35 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "tenant": "",
             "tenant_id": "",
             "dir": instance.get_remote_dir(),
+            # Prefix of the Traefik service/router names this instance
+            # answers under. The panel runs ``copier copy`` itself and
+            # feeds it ``project_name = doodba_project_name`` — the same
+            # string it forces into COMPOSE_PROJECT_NAME — so the names
+            # are derived, never guessed. Everything after the prefix
+            # varies (``-prod-main``, ``-prod-longpolling``,
+            # ``-test-…``), which is why only the prefix is pinned here.
+            "traefik_prefix": self._traefik_prefix(instance),
+            # Extra service names an upper layer put in front of this
+            # instance. Core never does; the SaaS manager adds its
+            # sleep-proxy router here, because only it knows one exists.
+            "traefik_extra": [],
         }
+
+    def _traefik_prefix(self, instance):
+        """Return the prefix Traefik names this instance's services with.
+
+        ``19.0`` becomes ``19-0`` because that is what the copier
+        template does when it builds the names.
+
+        :param instance: the ``cloud.instance`` to describe.
+        :return: e.g. ``acme-prod-19-0-``, or ``""`` when the version is
+            unknown and a prefix would match too much.
+        """
+        name = instance.doodba_project_name or instance.name or ""
+        version = (instance.odoo_version or "").replace(".", "-")
+        if not (name and version):
+            return ""
+        return f"{name}-{version}-"
 
     def _instances(self):
         """Return the instances whose metrics this host should label.
@@ -61,14 +89,39 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             lambda i: i.state != "draft",
         )
 
+    def _logs_write_url(self, settings):
+        """Return where access logs are pushed, or '' to skip collection.
+
+        Derived from the metrics endpoint rather than configured
+        separately: on our gateway the two live side by side (``/w/`` and
+        ``/lw/``), and one fewer field to fill in is one fewer field to
+        get wrong.
+
+        An endpoint that does not follow that shape — a self-hosted
+        operator pointing at their own VictoriaMetrics, say — yields ''
+        and the collector is simply not deployed. Guessing a URL there
+        would start a container that retries forever against something
+        that does not exist.
+
+        :param settings: the ``cloud.settings`` singleton.
+        :return: the push URL, or ''.
+        """
+        base = (settings.metrics_remote_write_url or "").strip()
+        if not base.rstrip("/").endswith("/w"):
+            return ""
+        root = base.rstrip("/")[: -len("/w")]
+        return f"{root}/lw/"
+
     def get_extra_vars(self):
         """Hand the agent configuration and the label map to the playbook."""
         host = self._host()
         settings = self.env["cloud.settings"].sudo()._get_system()
-        # The action is offered on every host page, so it can be pressed
-        # before observability is configured. Fail here with something
-        # actionable rather than deploying agents that push into the void
-        # and look healthy while reporting nowhere.
+        # The reconciliation cron already refuses to queue this job while
+        # observability is unconfigured, so reaching here that way should
+        # be impossible — but the job is still enqueueable directly, and
+        # deploying agents that push into the void leaves three
+        # containers that look healthy on the host and report nowhere.
+        # Cheap to assert, and the failure is otherwise invisible.
         if not settings.metrics_enabled:
             raise UserError(_(
                 "Observability is disabled. Enable it in Settings and set "
@@ -84,13 +137,21 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             f"Installing observability agents on {host.name} "
             f"({len(instances)} instance(s) to label)."
         )
+        account, token = settings._metrics_auth()
         return {
             "ic_host_id": str(host.id),
             "ic_host_name": host.name or "",
             "ic_remote_write_url": settings.metrics_remote_write_url or "",
-            "ic_remote_write_token": (
-                settings.metrics_remote_write_token or ""
-            ),
+            "ic_logs_write_url": self._logs_write_url(settings),
+            # User half of the credential. It is also the label the
+            # central forces on everything this agent writes, so the copy
+            # the agent sends is only a hint — the gateway overwrites it
+            # from whoever authenticated. Sending it anyway keeps local
+            # debugging honest: what you see in the agent config is what
+            # you will see in the series.
+            "ic_account": account,
+            "ic_remote_write_user": account,
+            "ic_remote_write_token": token,
             "ic_instances": [
                 self._instance_labels(inst) for inst in instances
             ],
@@ -115,21 +176,38 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         return errors
 
     async def on_success(self, results):
-        """Report the outcome and clear any previous failure alert."""
+        """Report the outcome, record enrolment and clear the alert."""
         facts = self.playbook_facts()
         self._sys(
             f"✓ Observability agents running. "
             f"{facts.get('ic_instances_labelled') or 0} instance(s) labelled."
         )
+        self._host()._mark_observability_installed()
         self._resolve_alert("observability_agents_failed")
 
     async def on_failure(self, results, errors):
-        """Alert so a silently unmonitored host does not go unnoticed."""
+        """Record the failure so the cron retries, and alert if it persists.
+
+        Deliberately quiet for the first couple of attempts: a failed
+        install is usually a transient network blip or the containerd
+        pull race the playbook documents, and the reconciliation cron
+        will retry on its own. Alerting on every one of those would
+        train operators to ignore the alert.
+        """
         for err in errors:
             self._sys(f"✗ {err}")
-        self._alert(
-            "observability_agents_failed",
-            "Observability agents could not be installed on this host, so "
-            "it reports no metrics. Re-run to retry.",
-            level="warning",
-        )
+        host = self._host()
+        attempts = host._mark_observability_failed()
+        if host._observability_alert_due(attempts):
+            self._alert(
+                "observability_agents_failed",
+                f"Observability agents have failed to install on "
+                f"{host.name} {attempts} times in a row, so it reports no "
+                f"metrics. Retries continue with a growing delay.",
+                level="warning",
+            )
+        else:
+            self._sys(
+                f"Attempt {attempts} failed; the reconciliation cron will "
+                f"retry automatically."
+            )

@@ -1,55 +1,71 @@
 # Monitoring
 
-The **Monitoring** section shows what your servers and instances are
-actually doing: how loaded they are, how much disk they have left, and
-how your instances are responding to traffic.
-
-It is read-only. Nothing here changes your instances.
+Every host you manage reports its own health and that of the instances on
+it. There is nothing to install: once observability is switched on, hosts
+enrol themselves, and any host that fails to is retried automatically
+until it succeeds.
 
 ## What is measured
 
-| What you see | What it means |
-|---|---|
-| **Load per core** | How busy the server's processor is. Sustained values above 2 mean work is queueing up. |
-| **Memory used** | Percentage of RAM in use. Above ~92% the server starts trading speed for space. |
-| **Disk used** | Percentage of the server's main disk in use. This is the one that eventually breaks things: a full disk stops backups, deploys and the database itself. |
-| **Disk per instance** | How much space each instance's folder takes. Useful to find which instance is growing. |
-| **CPU / memory per container** | The same, but broken down by the pieces of one instance (Odoo, database, backup). |
-| **HTTP requests** | Requests reaching each instance, grouped by response code. A rising count of 5xx means errors your users are seeing. |
-| **Response time (p95)** | 95% of requests finish faster than this. A good early warning: it climbs before anything actually breaks. |
+**Per host** — CPU, memory, disk usage and free space, load, and whether
+the host is reporting at all.
+
+**Per instance** — CPU and memory of each container, disk used by the
+instance's directory, and its HTTP traffic: requests per second, status
+codes and latency.
+
+**Per request** — the proxy also records who asked for what. That is what
+the *Recent requests* panel on an instance shows: client IP, method, path
+and response code. Metrics tell you an instance is under load; only these
+tell you what is being done to it.
+
+## Where to look
+
+**One instance in trouble** → open it and go to the **Metrics** tab. This
+is the right place during an incident: charts for that instance, and
+underneath, the requests hitting it right now, with a breakdown by status
+code and the client addresses sending the most.
+
+**The whole fleet** → the **Monitoring** entry in the sidebar, next to
+Hosts. It appears only when observability is enabled.
+
+**Is a host being monitored?** → its page states it plainly: reporting,
+agents installed but no data yet, install failed and retrying, or not
+enrolled yet.
+
+Both views need the `developer` role or above.
 
 ## Alerts
 
-You do not have to watch the dashboards. When something crosses a
-threshold, the panel raises an alert and notifies you through the
-channels you already use (in-panel, email, and any integrations you
-configured).
+Rules are data, not code: thresholds can be tuned without a release.
+Shipped rules cover a host that stopped reporting, a disk almost full,
+memory nearly exhausted, sustained CPU saturation, an instance that
+stopped reporting containers, and an instance returning server errors.
 
-Alerts resolve themselves when the situation recovers — you will not
-have to dismiss them one by one.
+Alerts arrive through the same channels as everything else — in-app,
+email, Telegram or webhook, as configured.
 
-Out of the box you are warned when:
-
-- a server **stops reporting** at all (it may be down or unreachable),
-- its **disk** goes above 90%,
-- its **memory** goes above 92%, or
-- its **processor** stays saturated.
-
-!!! note "If the metrics system itself goes down"
-    You get one alert saying so, and the existing alerts stay as they
-    are. They are never cleared just because data stopped arriving —
-    silence is not the same as "everything is fine".
+An instance whose plan puts it to sleep on idle does **not** raise a
+"stopped reporting" alert. Sleeping stops its containers on purpose, and
+alerting on it every night would train everyone to ignore the alert that
+matters.
 
 ## What you need for it to work
 
-1. Observability enabled in **Settings**.
-2. The metrics **agents installed on each host** (a one-click job from
-   the host's page, repeatable at any time).
+**On IncubaCloud's SaaS** — nothing. Metrics are configured for you when
+your panel is created, and hosts you add later are enrolled on their own.
 
-Until both are done, the section explains what is missing instead of
-showing empty charts.
+**Self-hosted** — one decision: which of your hosts runs the central
+stack. Settings → Monitoring, pick the host, press *Enable observability*.
+The endpoints and credentials are filled in for you.
+
+If you have hosts other than the one running the central, they need a
+public HTTPS address to push to; set it under *Advanced*. The local
+address the button fills in is only reachable from the central's own
+host.
 
 ## What is not here yet
 
-Database-level metrics, log search, and per-instance monitoring shown to
-your own end customers are planned but not part of this version.
+Database metrics per instance (connections, cache hit ratio, locks) and
+synthetic probes from outside. Both are designed and deferred; nothing
+already collected changes when they land.

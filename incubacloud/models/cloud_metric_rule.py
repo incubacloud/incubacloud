@@ -27,16 +27,13 @@ _logger = logging.getLogger(__name__)
 # a slow backend must not pile cron workers up.
 _QUERY_TIMEOUT = 10
 
-#: The central enforces the shared secret as HTTP basic auth, because
-#: single-node VictoriaMetrics has no bearer-token check. The username is
-#: fixed; the password is ``cloud.settings.metrics_remote_write_token``.
-_METRICS_AUTH_USER = "incubacloud"
-
 # Alert raised when the metrics backend itself cannot be reached.
 BACKEND_UNREACHABLE_CODE = "metrics_backend_unreachable"
 
 
-def promql_query(base_url, expression, timeout=_QUERY_TIMEOUT, token=None):
+def promql_query(
+    base_url, expression, timeout=_QUERY_TIMEOUT, token=None, user=None,
+):
     """Run a PromQL instant query and return ``[(labels, value), ...]``.
 
     Shared by every consumer of the metrics backend (the rule cron and the
@@ -44,15 +41,20 @@ def promql_query(base_url, expression, timeout=_QUERY_TIMEOUT, token=None):
     format. Raises on transport or protocol failure — callers must treat
     an exception as "unknown", never as "healthy".
 
-    :param token: the shared secret the central enforces as HTTP basic
-        auth. Optional: a central deployed without one accepts anonymous
-        reads, and passing credentials it does not ask for is harmless.
+    :param token: password half of this panel's metrics credential.
+    :param user: user half — the panel's metrics account. It is not
+        cosmetic: the central derives the label filter it forces on the
+        query from whoever authenticated, so querying as the wrong user
+        silently returns another account's series or none at all. It was
+        a fixed literal before per-account credentials existed; callers
+        that omit it send no credentials at all rather than guessing, so
+        a misconfiguration fails loudly instead of reading nothing.
     """
     response = requests.get(
         f"{base_url.rstrip('/')}/api/v1/query",
         params={"query": expression},
         timeout=timeout,
-        auth=(_METRICS_AUTH_USER, token) if token else None,
+        auth=(user, token) if (token and user) else None,
     )
     response.raise_for_status()
     payload = response.json()
@@ -111,6 +113,22 @@ class CloudMetricRule(models.Model):
         help="Text shown in the alert. '%(host)s' and '%(value)s' are "
              "substituted.",
     )
+    scope = fields.Selection(
+        [("host", "Host"), ("instance", "Instance")],
+        string="Scope",
+        default="host",
+        required=True,
+        help="What each sample of this rule describes. Instance-scoped "
+             "rules resolve through the instance label the agents attach "
+             "and raise their alert against that instance, so it shows up "
+             "on its page rather than buried in its host's.",
+    )
+    instance_label = fields.Char(
+        string="Instance label",
+        default="instance_id",
+        help="Label carrying the cloud.instance id, for instance-scoped "
+             "rules.",
+    )
     host_label = fields.Char(
         default="host_id",
         help="Metric label carrying the cloud.host id. A sample whose "
@@ -147,7 +165,7 @@ class CloudMetricRule(models.Model):
             )
             return
 
-        token = settings.metrics_remote_write_token or ""
+        user, token = settings._metrics_auth()
         Alert = self.env["cloud.alert"].sudo()
         rules = self.sudo().search([])
         if not rules:
@@ -155,7 +173,8 @@ class CloudMetricRule(models.Model):
 
         try:
             results = {
-                rule.id: rule._query(base, token=token) for rule in rules
+                rule.id: rule._query(base, token=token, user=user)
+                for rule in rules
             }
         except Exception as exc:  # noqa: BLE001 - reported, not swallowed
             _logger.warning("[metrics] backend unreachable: %s", exc)
@@ -172,14 +191,19 @@ class CloudMetricRule(models.Model):
         for rule in rules:
             rule._sync_alerts(results[rule.id])
 
-    def _query(self, base_url, token=None):
+    def _query(self, base_url, token=None, user=None):
         """Run this rule's PromQL and return ``[(labels, value), ...]``.
 
         Raises on transport/HTTP problems so the caller can treat a dead
         backend as "unknown", never as "healthy".
+
+        :param token: password half of this panel's metrics credential.
+        :param user: its account — the central filters the result by it.
         """
         self.ensure_one()
-        return promql_query(base_url, self.expression, token=token)
+        return promql_query(
+            base_url, self.expression, token=token, user=user,
+        )
 
     def _breached(self, value):
         """Return True when *value* violates this rule's threshold."""
@@ -198,7 +222,32 @@ class CloudMetricRule(models.Model):
         self.ensure_one()
         Alert = self.env["cloud.alert"].sudo()
         Host = self.env["cloud.host"].sudo()
+        Instance = self.env["cloud.instance"].sudo()
         for labels, value in samples:
+            if self.scope == "instance":
+                target = self._resolve_instance(Instance, labels)
+                if not target:
+                    continue
+                # An instance can be legitimately silent — a plan that
+                # sleeps it on idle stops every container, so cAdvisor
+                # stops reporting and "down" is exactly what a naive
+                # rule would conclude. Core has no notion of sleeping,
+                # so it asks the instance and the SaaS layer answers.
+                if target._metric_alerts_suppressed():
+                    Alert.resolve_alert(self.code, instance=target)
+                    continue
+                text = self.message % {
+                    "host": target.name,
+                    "value": ("%g" % value),
+                }
+                if self._breached(value):
+                    Alert.raise_alert(
+                        self.code, text, level=self.level, instance=target,
+                    )
+                else:
+                    Alert.resolve_alert(self.code, instance=target)
+                continue
+
             host = self._resolve_host(Host, labels)
             if not host:
                 continue
@@ -212,6 +261,18 @@ class CloudMetricRule(models.Model):
                 )
             else:
                 Alert.resolve_alert(self.code, host=host)
+
+    def _resolve_instance(self, Instance, labels):
+        """Map a sample's labels back to a ``cloud.instance``, or False."""
+        self.ensure_one()
+        raw = (labels or {}).get(self.instance_label or "instance_id")
+        if not raw:
+            return False
+        try:
+            instance = Instance.browse(int(raw))
+        except (TypeError, ValueError):
+            return False
+        return instance if instance.exists() else False
 
     def _resolve_host(self, Host, labels):
         """Map a sample's labels back to a ``cloud.host``, or False."""

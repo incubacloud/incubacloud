@@ -1,20 +1,41 @@
 ---
-# Deploy the central metrics stack (VictoriaMetrics + Grafana). Driven by
-# ObservabilityCentralExecutor.
+# Deploy the central metrics stack (VictoriaMetrics + Grafana + nginx).
+# Driven by ObservabilityCentralExecutor.
 #
-# Co-located on the panel host at first (P9-5): VM + Grafana sit around
-# 1-1.5 GB, which the panel box absorbs. The destination is a plain
-# parameter, so moving the central to its own VPS later is "point the job
-# at another host and re-run", not a rewrite.
+# Co-located on the panel host at first: VM + Grafana sit around 1-1.5 GB,
+# which the panel box absorbs. The destination is a plain parameter, so
+# moving the central to its own VPS later is "point the job at another
+# host and re-run", not a rewrite.
 #
 # Grafana is provisioned as CODE (datasource + dashboards from files), not
 # clicked: a hand-built dashboard is invisible to review and lost on the
 # next redeploy.
 #
-# Auth: Grafana runs anonymous BEHIND the panel's proxy, which is what
-# gates access. A second login would duplicate the operator's session for
-# no isolation gain — per-tenant isolation is the deferred tenant-facing
-# view, and needs a different mechanism anyway.
+# ── Why nginx sits in front ────────────────────────────────────────────
+# The central is shared: several panels (in SaaS, every tenant) write to
+# and read from the same VictoriaMetrics. Single-node VM has no notion of
+# accounts, so the boundary has to be imposed by something in front:
+#
+#   * on WRITE, the agent's query string is DISCARDED and rebuilt, so the
+#     account label is whatever the authenticated user is. An agent runs
+#     on a machine its owner has root on, so its claim about who it is
+#     can never be trusted.
+#   * on READ, any request carrying extra_filters/extra_label is REJECTED
+#     rather than sanitised, and the account filter is then appended.
+#
+# Both rules come from measurement, not caution (lab, 2026-08-09):
+# VictoriaMetrics ORs repeated ``extra_filters[]`` and lets the LAST
+# ``extra_label`` win. A proxy that merely *appends* its own filter is
+# therefore bypassable in both directions by a client that sends its own.
+# Rejecting is deliberate: it is auditable at a glance, where sanitising
+# means parsing and eventually getting it wrong.
+#
+# Grafana is no longer anonymous. It authenticates through the panel's
+# identity provider when there is one (SaaS), or through a header set by
+# the panel's own reverse proxy when there is not (self-hosted), and each
+# account lands in its own organisation with a datasource it cannot
+# change. Operators get a second, unfiltered credential that is never
+# written to any host.
 - name: Deploy the central metrics stack
   hosts: all
   gather_facts: true
@@ -22,9 +43,21 @@
   vars:
     ic_central_dir: "{{ ansible_env.HOME }}/observability-central"
     ic_retention_days: 90
-    ic_remote_write_token: ""
+    ic_accounts_htpasswd: ""
+    # [{user, password}, ...] — the plaintext is needed to build each
+    # organisation's datasource. Every task that touches it is no_log.
+    ic_accounts: []
+    ic_operator_htpasswd: ""
+    ic_grafana_root_url: ""
+    ic_grafana_oidc: {}
+    ic_grafana_admin_password: ""
+    ic_grafana_admin_basic: ""
     ic_vm_image: "victoriametrics/victoria-metrics:v1.102.0"
     ic_grafana_image: "grafana/grafana:11.2.0"
+    ic_nginx_image: "nginx:1.27-alpine"
+    ic_loki_image: "grafana/loki:2.9.8"
+    # Short by design: these lines carry end-user IP addresses.
+    ic_log_retention_days: 14
     # Bound to the Docker bridge gateway, NOT to 127.0.0.1.
     #
     # Everything that consumes this stack is itself a container: the host
@@ -33,13 +66,12 @@
     # 127.0.0.1 bind is unreachable to every one of them — verified live,
     # where vmagent got "connection refused" against a healthy backend.
     #
-    # The bridge gateway is reachable from containers on this host and is
-    # not routable from outside it, so this keeps the endpoint private
-    # without needing a firewall rule. Remote hosts reach the stack
-    # through the panel's HTTPS proxy instead.
+    # Only nginx is published now. VictoriaMetrics and Grafana have no
+    # host port at all: they are reachable solely over the compose
+    # network, so there is no way to bypass the account boundary by
+    # talking to them directly.
     ic_bridge_ip: "{{ ansible_docker0.ipv4.address | default('172.17.0.1') }}"
-    ic_vm_bind: "{{ ic_bridge_ip }}:8428"
-    ic_grafana_bind: "{{ ic_bridge_ip }}:3000"
+    ic_gateway_bind: "{{ ic_bridge_ip }}:8428"
 
   tasks:
     - name: Create the central directories
@@ -52,18 +84,190 @@
         - "{{ ic_central_dir }}/provisioning/datasources"
         - "{{ ic_central_dir }}/provisioning/dashboards"
         - "{{ ic_central_dir }}/dashboards"
+        - "{{ ic_central_dir }}/nginx"
 
-    - name: Write the auth token for remote-write
+    - name: Write the per-account credentials
+      # The authenticated user IS the account label the gateway forces, so
+      # this file is the whole access-control list: an account present
+      # here can write and read its own series and nothing else, and
+      # removing a line revokes that in one step.
       ansible.builtin.copy:
-        dest: "{{ ic_central_dir }}/.remote_write_token"
-        content: "{{ ic_remote_write_token }}"
+        dest: "{{ ic_central_dir }}/nginx/accounts.htpasswd"
+        content: "{{ ic_accounts_htpasswd }}"
         mode: "0600"
       no_log: true
+      register: ic_accounts_file
+
+    - name: Write the operator credential
+      # Separate file and separate credential on purpose: this one reads
+      # across every account and must never be written to a host.
+      ansible.builtin.copy:
+        dest: "{{ ic_central_dir }}/nginx/operator.htpasswd"
+        content: "{{ ic_operator_htpasswd }}"
+        mode: "0600"
+      no_log: true
+      register: ic_operator_file
+
+    - name: Write the log store configuration
+      # Retention is short and deliberate: these lines carry the IP
+      # addresses of our tenants' end users, so we keep what an incident
+      # needs and no more. ``auth_enabled`` is what makes the account
+      # header meaningful — without it Loki ignores it and every account
+      # shares one namespace.
+      ansible.builtin.copy:
+        dest: "{{ ic_central_dir }}/loki.yaml"
+        mode: "0644"
+        content: |
+          auth_enabled: true
+          server:
+            http_listen_port: 3100
+          common:
+            instance_addr: 127.0.0.1
+            path_prefix: /loki
+            storage:
+              filesystem:
+                chunks_directory: /loki/chunks
+                rules_directory: /loki/rules
+            replication_factor: 1
+            ring:
+              kvstore:
+                store: inmemory
+          schema_config:
+            configs:
+              - from: 2020-10-24
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index:
+                  prefix: index_
+                  period: 24h
+          limits_config:
+            allow_structured_metadata: false
+            retention_period: {{ ic_log_retention_days }}d
+          compactor:
+            working_directory: /loki/compactor
+            retention_enabled: true
+            delete_request_store: filesystem
+      register: ic_loki_cfg
+
+    - name: Write the gateway configuration
+      ansible.builtin.copy:
+        dest: "{{ ic_central_dir }}/nginx/nginx.conf"
+        mode: "0644"
+        content: |
+          events {}
+          http {
+            access_log off;
+            server {
+              listen 8428;
+
+              # ── WRITE ────────────────────────────────────────────────
+              location /w/ {
+                  auth_basic           "metrics";
+                  auth_basic_user_file /etc/nginx/accounts.htpasswd;
+
+                  # The agent's own query string is thrown away, not
+                  # merged: measured, a second extra_label wins over the
+                  # first, so appending would let the agent choose its
+                  # own account.
+                  set $args "extra_label=ic_account=$remote_user";
+                  proxy_pass http://victoriametrics:8428/api/v1/write;
+              }
+
+              # ── READ (account-scoped) ────────────────────────────────
+              location /r/ {
+                  auth_basic           "metrics";
+                  auth_basic_user_file /etc/nginx/accounts.htpasswd;
+
+                  # Fail closed. Measured: repeated extra_filters[] are
+                  # ORed together, so a client that sends its own would
+                  # widen the result instead of narrowing it.
+                  if ($args ~* "(^|&)extra_(filters|label)") { return 400; }
+
+                  set $args "$args&extra_filters[]=%7Bic_account%3D%22$remote_user%22%7D";
+                  proxy_pass http://victoriametrics:8428/;
+              }
+
+              # ── READ (operator, unfiltered) ──────────────────────────
+              location /admin-r/ {
+                  auth_basic           "metrics-operator";
+                  auth_basic_user_file /etc/nginx/operator.htpasswd;
+                  if ($args ~* "(^|&)extra_(filters|label)") { return 400; }
+                  proxy_pass http://victoriametrics:8428/;
+              }
+
+              # ── LOGS: WRITE ─────────────────────────────────────────
+              # Same rule as metrics, different mechanism: the account is
+              # a header here rather than a query parameter. It is SET,
+              # never appended — proxy_set_header replaces whatever the
+              # client sent, which is what makes a collector unable to
+              # claim somebody else's account.
+              location /lw/ {
+                  auth_basic           "metrics";
+                  auth_basic_user_file /etc/nginx/accounts.htpasswd;
+                  proxy_set_header X-Scope-OrgID $remote_user;
+                  proxy_pass http://loki:3100/loki/api/v1/push;
+              }
+
+              # ── LOGS: READ ──────────────────────────────────────────
+              location /lr/ {
+                  auth_basic           "metrics";
+                  auth_basic_user_file /etc/nginx/accounts.htpasswd;
+                  proxy_set_header X-Scope-OrgID $remote_user;
+                  proxy_pass http://loki:3100/;
+              }
+
+              # ── GRAFANA (browser) ────────────────────────────────────
+              # The only way a browser reaches Grafana. It has no host
+              # port of its own precisely so that nothing on this machine
+              # — a tenant's own container included — can talk to it
+              # directly and skip whatever is in front.
+              #
+              # No auth_basic here: Grafana authenticates the person
+              # itself, through our identity provider, and puts them in
+              # their tenant's organisation. Adding a shared password in
+              # front would defeat that by giving everyone one identity.
+              location /grafana/ {
+                  proxy_pass http://grafana:3000/;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_set_header X-Forwarded-Host $host;
+                  # Grafana Live uses websockets.
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+              }
+
+              # ── GRAFANA (admin API, operator only) ───────────────────
+              # Used by the panel to create an organisation and its
+              # datasource per account. Grafana's file provisioning
+              # cannot create organisations, so this has to go through
+              # the API — and this is the one door it goes through,
+              # behind the same operator credential as the unfiltered
+              # read, so there is no second way in to keep track of.
+              location /gadmin/ {
+                  auth_basic           "metrics-operator";
+                  auth_basic_user_file /etc/nginx/operator.htpasswd;
+                  # The caller proves it is the operator; nginx then
+                  # swaps in Grafana's own admin credential. So the
+                  # panel never holds Grafana's admin password, and
+                  # rotating it is a redeploy of the central rather than
+                  # a change everywhere that talks to it.
+                  proxy_set_header Authorization "Basic {{ ic_grafana_admin_basic }}";
+                  proxy_pass http://grafana:3000/;
+                  proxy_set_header Host $host;
+              }
+            }
+          }
+      register: ic_nginx_cfg
 
     - name: Provision the Grafana datasource
+      # Points at the gateway's operator path, never at VictoriaMetrics
+      # directly: the operator organisation is the one view that spans
+      # accounts, and it still goes through the same front door.
       ansible.builtin.copy:
         dest: "{{ ic_central_dir }}/provisioning/datasources/victoriametrics.yml"
-        mode: "0644"
+        mode: "0600"
         content: |
           # Auto-generated by IncubaCloud. Do not edit by hand.
           apiVersion: 1
@@ -71,14 +275,13 @@
             - name: VictoriaMetrics
               type: prometheus
               access: proxy
-              url: http://victoriametrics:8428
+              url: http://gateway:8428/admin-r/
               isDefault: true
-          {% if ic_remote_write_token %}
               basicAuth: true
-              basicAuthUser: incubacloud
+              basicAuthUser: operator
               secureJsonData:
-                basicAuthPassword: "{{ ic_remote_write_token }}"
-          {% endif %}
+                basicAuthPassword: "{{ ic_operator_plain | default('') }}"
+      no_log: true
 
     - name: Provision the dashboard loader
       ansible.builtin.copy:
@@ -114,45 +317,98 @@
                 - '-retentionPeriod={{ ic_retention_days }}d'
                 - '-storageDataPath=/vmdata'
                 - '-httpListenAddr=:8428'
-          {% if ic_remote_write_token %}
-                # Actually enforce the shared secret. Single-node
-                # VictoriaMetrics has no bearer-token check of its own,
-                # so a token sent as `Authorization: Bearer` was written
-                # to every host, transmitted on every push, and then
-                # ignored — the endpoint accepted anonymous writes, and
-                # anyone who could reach it could poison the series the
-                # alert rules read. -httpAuth.* is the check it does
-                # have; the agents present the same secret as basic auth.
-                - '-httpAuth.username=incubacloud'
-                - '-httpAuth.password={{ ic_remote_write_token }}'
-          {% endif %}
+                # Bound to the compose network only — see the header.
               volumes:
                 - vmdata:/vmdata
+
+            loki:
+              image: {{ ic_loki_image }}
+              restart: unless-stopped
+              command: ['-config.file=/etc/loki/local-config.yaml']
+              volumes:
+                - {{ ic_central_dir }}/loki.yaml:/etc/loki/local-config.yaml:ro
+                - lokidata:/loki
+              # No host port, same as VictoriaMetrics: the account
+              # boundary is imposed by the gateway, and anything able to
+              # reach Loki directly would bypass it.
+
+            gateway:
+              image: {{ ic_nginx_image }}
+              restart: unless-stopped
+              volumes:
+                - {{ ic_central_dir }}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+                - {{ ic_central_dir }}/nginx/accounts.htpasswd:/etc/nginx/accounts.htpasswd:ro
+                - {{ ic_central_dir }}/nginx/operator.htpasswd:/etc/nginx/operator.htpasswd:ro
               ports:
-                - "{{ ic_vm_bind }}:8428"
+                - "{{ ic_gateway_bind }}:8428"
+              depends_on:
+                - victoriametrics
+                - loki
 
             grafana:
               image: {{ ic_grafana_image }}
               restart: unless-stopped
               environment:
-                # Anonymous behind the panel proxy — see the header.
-                GF_AUTH_ANONYMOUS_ENABLED: "true"
-                GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
-                GF_AUTH_BASIC_ENABLED: "false"
-                # Required for the panel to embed the dashboards.
+                # Anonymous access is OFF. It used to be on because the
+                # panel proxy was the only way in; on a shared central
+                # that would hand every account's data to anyone who
+                # reached the URL.
+                GF_AUTH_ANONYMOUS_ENABLED: "false"
+                # Kept ON, but only reachable through the gateway's
+                # operator-only path: Grafana cannot create an
+                # organisation from file provisioning, so the API is the
+                # only way, and the API needs a credential. Grafana has
+                # no host port, so this is not a second front door.
+                GF_AUTH_BASIC_ENABLED: "true"
+                GF_SECURITY_ADMIN_PASSWORD: "{{ ic_grafana_admin_password }}"
                 GF_SECURITY_ALLOW_EMBEDDING: "true"
                 GF_USERS_DEFAULT_THEME: "dark"
+                GF_USERS_ALLOW_SIGN_UP: "false"
+          {% if ic_grafana_root_url %}
+                GF_SERVER_ROOT_URL: "{{ ic_grafana_root_url }}"
+                # Grafana is served under /grafana/, so it must build its
+                # own links with that prefix or every asset 404s and the
+                # embed shows a blank frame.
+                GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+          {% endif %}
+          {% if ic_grafana_oidc %}
+                # Identity comes from the panel's own OIDC provider, and
+                # the account claim maps each user into its organisation.
+                # Grafana refuses datasources outside a user's org, which
+                # is the second ring behind the gateway's own filter.
+                GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+                GF_AUTH_GENERIC_OAUTH_NAME: "IncubaCloud"
+                GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "{{ ic_grafana_oidc.client_id }}"
+                GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "{{ ic_grafana_oidc.client_secret }}"
+                GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email"
+                GF_AUTH_GENERIC_OAUTH_AUTH_URL: "{{ ic_grafana_oidc.auth_url }}"
+                GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "{{ ic_grafana_oidc.token_url }}"
+                GF_AUTH_GENERIC_OAUTH_API_URL: "{{ ic_grafana_oidc.userinfo_url }}"
+                GF_AUTH_GENERIC_OAUTH_ORG_MAPPING: "{{ ic_grafana_oidc.org_mapping }}"
+                GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Viewer'"
+                GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "false"
+          {% else %}
+                # No identity provider (self-hosted). Grafana trusts a
+                # header, and the ONLY thing allowed to set it is the
+                # panel's own reverse proxy, which authenticates the
+                # session first. Never expose Grafana directly when this
+                # branch is active.
+                GF_AUTH_PROXY_ENABLED: "true"
+                GF_AUTH_PROXY_HEADER_NAME: "X-WEBAUTH-USER"
+                GF_AUTH_PROXY_HEADER_PROPERTY: "username"
+                GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+                GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN: "false"
+          {% endif %}
               volumes:
                 - grafana-data:/var/lib/grafana
                 - {{ ic_central_dir }}/provisioning:/etc/grafana/provisioning:ro
                 - {{ ic_central_dir }}/dashboards:/var/lib/grafana/dashboards:ro
-              ports:
-                - "{{ ic_grafana_bind }}:3000"
               depends_on:
-                - victoriametrics
+                - gateway
 
           volumes:
             vmdata:
+            lokidata:
             grafana-data:
 
     - name: Bring the central stack up
@@ -161,21 +417,135 @@
         chdir: "{{ ic_central_dir }}"
       changed_when: true
 
-    - name: Wait for VictoriaMetrics to answer
+    - name: Reload the gateway when only its configuration changed
+      # ``up -d`` does not restart a container whose image and compose
+      # definition are unchanged, so a new account list alone would not
+      # be picked up — and an account that cannot authenticate looks
+      # exactly like a broken agent.
+      ansible.builtin.command:
+        cmd: docker compose -p incubacloud-central -f docker-compose.yaml restart gateway
+        chdir: "{{ ic_central_dir }}"
+      when: ic_nginx_cfg is changed or ic_accounts_file is changed
+            or ic_operator_file is changed or ic_loki_cfg is changed
+      changed_when: true
+
+    - name: Wait for the gateway to answer
+      # Through the front door, with the operator credential: this proves
+      # the whole path works, not just that VictoriaMetrics is alive.
       ansible.builtin.uri:
-        url: "http://{{ ic_vm_bind }}/health"
+        url: "http://{{ ic_gateway_bind }}/admin-r/health"
         status_code: [200]
-        url_username: "{{ 'incubacloud' if ic_remote_write_token else omit }}"
-        url_password: "{{ ic_remote_write_token | default(omit, true) }}"
+        url_username: operator
+        url_password: "{{ ic_operator_plain | default(omit, true) }}"
         force_basic_auth: true
       register: ic_vm_health
       retries: 10
       delay: 3
       until: ic_vm_health is succeeded
+      no_log: true
+
+    - name: Refuse to finish if anonymous writes are accepted
+      # A regression here is silent and total: the boundary would be gone
+      # while every dashboard kept working. Cheap to assert, so assert it.
+      ansible.builtin.uri:
+        url: "http://{{ ic_gateway_bind }}/w/"
+        method: POST
+        body: ""
+        status_code: [401]
+      register: ic_anon_write
+
+    # ── Per-account Grafana organisations ─────────────────────────────
+    # One organisation per account, each with a datasource that can only
+    # reach that account's series. This is the ring behind the gateway's
+    # own filter: Grafana refuses a datasource outside a user's org, so
+    # even a bug in the query path cannot cross accounts.
+    #
+    # Done through the API because Grafana's file provisioning cannot
+    # create organisations — and through the gateway's operator-only
+    # path, so there is exactly one door rather than a second one to
+    # keep track of.
+    - name: Ensure an organisation exists per account
+      ansible.builtin.uri:
+        url_username: operator
+        url_password: "{{ ic_operator_plain }}"
+        force_basic_auth: true
+        url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs"
+        method: POST
+        body_format: json
+        body: { name: "{{ item.user }}" }
+        # 409 = already there. Re-running this playbook is the normal way
+        # to add a tenant, so "exists" is the common case, not an error.
+        status_code: [200, 409]
+      loop: "{{ ic_accounts }}"
+      loop_control:
+        label: "{{ item.user }}"
+      register: ic_orgs
+      no_log: true
+
+    - name: Look up each organisation id
+      ansible.builtin.uri:
+        url_username: operator
+        url_password: "{{ ic_operator_plain }}"
+        force_basic_auth: true
+        url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs/name/{{ item.user }}"
+        method: GET
+        status_code: [200]
+      loop: "{{ ic_accounts }}"
+      loop_control:
+        label: "{{ item.user }}"
+      register: ic_org_ids
+      no_log: true
+
+    - name: Point the admin session at each organisation in turn
+      # Grafana creates a datasource in whichever organisation the
+      # authenticated user is currently in, so the org has to be switched
+      # before each write. Stateful and slightly awkward, but it is the
+      # only path the API offers.
+      ansible.builtin.uri:
+        url_username: operator
+        url_password: "{{ ic_operator_plain }}"
+        force_basic_auth: true
+        url: "http://{{ ic_gateway_bind }}/gadmin/api/user/using/{{ item.1.json.id }}"
+        method: POST
+        status_code: [200]
+      loop: "{{ ic_accounts | zip(ic_org_ids.results) | list }}"
+      loop_control:
+        label: "{{ item.0.user }}"
+      no_log: true
+      register: ic_org_switch
+      changed_when: false
+
+    - name: Ensure each organisation has its own scoped datasource
+      # The credential here is the account's, so every query Grafana
+      # makes on its behalf is filtered by the gateway to that account.
+      # Nothing in the organisation can widen it: the users in it are
+      # Viewers and cannot edit a datasource.
+      ansible.builtin.uri:
+        url_username: operator
+        url_password: "{{ ic_operator_plain }}"
+        force_basic_auth: true
+        url: "http://{{ ic_gateway_bind }}/gadmin/api/datasources"
+        method: POST
+        body_format: json
+        body:
+          name: "VictoriaMetrics"
+          type: "prometheus"
+          access: "proxy"
+          url: "http://gateway:8428/r/"
+          isDefault: true
+          basicAuth: true
+          basicAuthUser: "{{ item.0.user }}"
+          secureJsonData:
+            basicAuthPassword: "{{ item.0.password }}"
+        status_code: [200, 409]
+      loop: "{{ ic_accounts | zip(ic_org_ids.results) | list }}"
+      loop_control:
+        label: "{{ item.0.user }}"
+      no_log: true
 
     - name: Export the central facts
       ansible.builtin.set_stats:
         aggregate: false
         data:
-          ic_central_up: "{{ ic_vm_health is succeeded }}"
-          ic_retention_days: "{{ ic_retention_days }}"
+          ic_central_up: "{{ (ic_vm_health.status | default(0)) == 200 }}"
+          ic_central_gateway: "http://{{ ic_gateway_bind }}"

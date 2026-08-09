@@ -42,7 +42,13 @@ class HostMetricsRetirementCase(TransactionCase):
         return ex
 
     def _fresh(self):
-        self.host.write({"last_probed": fields.Datetime.now()})
+        """Mark metrics as flowing for this host.
+
+        Writes ``metrics_last_seen`` and NOT ``last_probed``: the latter
+        is written by the SSH job itself, so using it here would test the
+        very confusion this suite now guards against.
+        """
+        self.host.write({"metrics_last_seen": fields.Datetime.now()})
 
 
 class TestConditionalRetirement(HostMetricsRetirementCase):
@@ -63,14 +69,36 @@ class TestConditionalRetirement(HostMetricsRetirementCase):
         """A stalled metrics stack must not leave specs uncollected."""
         self.settings.metrics_enabled = True
         stale = fields.Datetime.subtract(fields.Datetime.now(), hours=2)
-        self.host.write({"last_probed": stale})
+        self.host.write({"metrics_last_seen": stale})
         self.assertTrue(self._executor().get_commands())
 
     def test_probes_when_the_host_was_never_seen_by_metrics(self):
         """A host with no metrics reading yet still gets the SSH probe."""
         self.settings.metrics_enabled = True
-        self.host.write({"last_probed": False})
+        self.host.write({"metrics_last_seen": False})
         self.assertTrue(self._executor().get_commands())
+
+    def test_its_own_write_does_not_make_it_stand_down(self):
+        """The regression that made the fallback disable itself.
+
+        ``last_probed`` is written by BOTH the metrics reader and this
+        SSH job, and the skip decision used to read it. So with
+        observability enabled but no agents actually reporting, the job
+        ran once, stamped ``last_probed``, then saw its own footprint,
+        called metrics "fresh" and skipped — resuming only when the
+        freshness window expired. The fallback degraded from every five
+        minutes to roughly every fifteen, oscillating, precisely when it
+        was the only thing collecting.
+        """
+        self.settings.metrics_enabled = True
+        self.host.write({
+            "last_probed": fields.Datetime.now(),
+            "metrics_last_seen": False,
+        })
+        self.assertTrue(
+            self._executor().get_commands(),
+            "the SSH probe stood down on the strength of its own write",
+        )
 
 
 class TestSkippedRunWritesNothing(HostMetricsRetirementCase):

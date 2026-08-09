@@ -305,41 +305,31 @@ class FullSetupExecutor(AbstractSSHExecutor):
     def _chain_observability(self):
         """Queue the metrics agents for a freshly prepared host.
 
-        Without this a new host silently reports nothing until somebody
-        remembers to press the button — the fleet grows and monitoring
-        quietly falls behind it.
+        An accelerator, not the mechanism: the reconciliation cron is what
+        guarantees every host ends up enrolled. Chaining here just means a
+        brand-new host is covered in seconds instead of waiting for a
+        tick, and if this attempt fails the cron picks the host up anyway
+        — which is precisely what used to be missing, when this was the
+        only path and a single failure left the host blind for good.
 
-        Deliberately non-fatal and best-effort: the host IS set up, and a
-        problem installing monitoring must never turn a successful
-        preparation into a failure. The agent job raises its own alert if
-        it fails, so nothing is swallowed silently either.
+        Deliberately non-fatal: the host IS set up, and a problem
+        installing monitoring must never turn a successful preparation
+        into a failure.
         """
-        settings = self.env['cloud.settings'].sudo()._get_system()
-        if not settings.metrics_enabled:
-            return
-        if not (settings.metrics_remote_write_url or '').strip():
+        host = self._host()
+        if not host._observability_target():
             self._sys(
-                "ℹ Observability is enabled but has no remote-write URL; "
-                "skipping the agent install."
+                "ℹ Observability is not configured yet; this host will be "
+                "enrolled automatically once it is."
             )
             return
-        try:
-            self.env['cloud.job'].sudo().enqueue(
-                self._host().id, False, 'install_observability',
-                # We are inside full_setup's own on_success, so full_setup
-                # is still 'started' and is itself a host-scoped, visible
-                # job: the active-job guard would match it and refuse to
-                # queue its own descendant. Same case as the rollback
-                # chain in cloud_instance._enqueue_rollback_jobs.
-                bypass_running_check=True,
-            )
+        if host._enqueue_observability("host setup"):
             self._sys("Queued the observability agents for this host.")
-        except Exception as exc:  # noqa: BLE001 — never fail the setup
-            _logger.warning(
-                "full_setup: could not queue observability agents for "
-                "host %s: %s", self._host().name, exc,
+        else:
+            self._sys(
+                "⚠ Could not queue the observability agents now; the "
+                "reconciliation cron will retry."
             )
-            self._sys(f"⚠ Could not queue the observability agents: {exc}")
 
     async def on_failure(self, results, errors):
         self._sys(f"Setup failed with {len(errors)} error(s):")

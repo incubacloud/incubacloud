@@ -26,6 +26,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-13](RB-13-rollback-panel-deploy.md) | Roll back a bad panel deploy | critical | Panel broken after `deploy-update`, failed migration mid-window |
 | [RB-14](RB-14-restore-mailserver.md) | Restore the mail server | critical | Mail host lost or mail data corrupted; DKIM keys at risk |
 | [RB-15](RB-15-bump-copier-template-pin.md) | Bump the doodba template pin | planned | Adopting a newer doodba-copier-template release |
+| [RB-16](RB-16-tenant-sees-no-metrics.md) | A tenant sees no metrics | routine | Empty charts or missing Monitoring section for one tenant |
 
 ## Conventions
 

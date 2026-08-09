@@ -36,8 +36,9 @@
                     <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
                     <h3>Monitoring is not set up yet</h3>
                     <p t-if="!state.enabled">
-                        Enable observability in Settings, then install the agents
-                        on each host from its detail page.
+                        Enable observability in Settings. Every host is then
+                        enrolled automatically — there is nothing to install
+                        by hand.
                     </p>
                     <p t-else="">
                         Set the Grafana base URL in Settings to embed the dashboards here.
