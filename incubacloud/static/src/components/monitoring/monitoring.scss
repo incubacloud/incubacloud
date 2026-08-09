@@ -14,3 +14,32 @@
     border: 0;
   }
 }
+
+// ── Per-instance metrics tab ─────────────────────────────────────────
+// Same embed, plus the request view the charts cannot provide.
+.ic-metrics-panel {
+  .ic-monitoring-frame iframe {
+    // Shorter than the fleet view: this sits inside a tab that already
+    // has its own header and a table underneath it.
+    block-size: #{"min(52vh, 640px)"};
+  }
+}
+
+// Three side-by-side summaries that collapse to one column when there
+// is no room — this tab is opened from a phone during an incident at
+// least as often as from a desk.
+.ic-metrics-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-block: 12px;
+}
+
+// Paths and client IPs are data, not prose: monospace makes a scan for
+// the odd one out possible, and wrapping keeps a long query string from
+// widening the whole table.
+.ic-path {
+  font-family: var(--rl-fm);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}

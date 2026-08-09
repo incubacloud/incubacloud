@@ -642,7 +642,28 @@ export class HostDetail extends Component {
         return 'bar-ok';
     }
 
-    hasMetrics() {
+    /**
+   * Human-readable observability status for this host.
+   *
+   * Enrolment converges on its own, so the useful thing to show is
+   * whether metrics are actually arriving — not whether somebody
+   * remembered to press something.
+   */
+  get observabilityLabel() {
+    const host = this.state.host || {};
+    const state = host.metrics_agents_state || "never";
+    if (state === "installed") {
+      return host.metrics_last_seen
+        ? _t("Reporting")
+        : _t("Agents installed, no data yet");
+    }
+    if (state === "failed") {
+      return _t("Install failed — retrying automatically");
+    }
+    return _t("Not enrolled yet");
+  }
+
+  hasMetrics() {
         const h = this.state.host;
         return h && (h.cpu_cores > 0 || h.ram_total_gb > 0 || h.disk > 0);
     }

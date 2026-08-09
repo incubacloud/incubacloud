@@ -272,6 +272,14 @@ export class InstanceDetail extends JobsMixin(
       pipDeps: "",
       aptDeps: "",
       pipConflictModal: null, // { conflicts, choices }
+      // Metrics tab. The config is fetched once per visit; the access
+      // log is read on demand, because it is live data from the host and
+      // a stale copy would be worse than none during an incident.
+      metricsCfg: { loading: true, enabled: false, baseUrl: "" },
+      accessLog: {
+        loading: false, loaded: false, error: "",
+        entries: [], summary: { by_status: [], top_clients: [], top_paths: [] },
+      },
       // has_* flags — whether a password is currently stored server-side
       has_odoo_admin_password: false,
       has_postgres_password: false,
@@ -594,6 +602,96 @@ export class InstanceDetail extends JobsMixin(
     ) {
       this._loadAuditLog();
     }
+    if (tab === "metrics") {
+      this._loadMetricsConfig();
+      if (!this.state.accessLog.loaded && !this.state.accessLog.loading) {
+        this.loadAccessLog();
+      }
+    }
+  }
+
+  /**
+   * Fetch whether observability is on and where the dashboards live.
+   *
+   * Deliberately narrow: the backend never hands the browser the metrics
+   * credentials, only the public Grafana URL.
+   */
+  async _loadMetricsConfig() {
+    if (!this.state.metricsCfg.loading && this.state.metricsCfg.fetched) {
+      return;
+    }
+    this.state.metricsCfg.loading = true;
+    try {
+      const cfg = await rpc("/cloud/monitoring/config", {});
+      this.state.metricsCfg = {
+        loading: false,
+        fetched: true,
+        enabled: !!cfg.enabled,
+        baseUrl: cfg.grafana_base_url || "",
+      };
+    } catch {
+      this.state.metricsCfg = {
+        loading: false, fetched: true, enabled: false, baseUrl: "",
+      };
+    }
+  }
+
+  /**
+   * Read this instance's recent requests from the proxy on its host.
+   *
+   * Answers what the charts cannot: which client IPs are hitting it and
+   * on which paths. Nothing is cached server-side, so every refresh is
+   * a live read.
+   */
+  async loadAccessLog() {
+    this.state.accessLog.loading = true;
+    this.state.accessLog.error = "";
+    try {
+      const res = await rpc("/cloud/instance/access_log", {
+        instance_id: this.props.instance_id,
+      });
+      if (!res.ok) {
+        this.state.accessLog.error = res.error || _t("Could not read the proxy log.");
+        this.state.accessLog.entries = [];
+      } else {
+        this.state.accessLog.entries = res.entries || [];
+        this.state.accessLog.summary = res.summary || {
+          by_status: [], top_clients: [], top_paths: [],
+        };
+      }
+    } catch (e) {
+      this.state.accessLog.error =
+        e?.data?.message || e?.message || _t("Could not read the proxy log.");
+      this.state.accessLog.entries = [];
+    } finally {
+      this.state.accessLog.loading = false;
+      this.state.accessLog.loaded = true;
+    }
+  }
+
+  /**
+   * Grafana URL for this instance's dashboard, pinned to this instance.
+   *
+   * The variable is a view filter, never a boundary: what a viewer may
+   * see is decided by the gateway, from the credentials the datasource
+   * authenticates with. Changing it by hand only moves within what that
+   * account could already read.
+   */
+  get instanceDashboardUrl() {
+    const base = (this.state.metricsCfg.baseUrl || "").replace(/\/+$/, "");
+    if (!base || !this.state.inst) {
+      return "";
+    }
+    const theme =
+      document.documentElement.dataset.icTheme === "light" ? "light" : "dark";
+    const name = encodeURIComponent(this.state.inst.name || "");
+    return `${base}/d/ic-instance/incubacloud-instance` +
+      `?kiosk&theme=${theme}&var-instance=${name}`;
+  }
+
+  /** Most recent requests first, which is how an incident is read. */
+  get recentRequests() {
+    return [...(this.state.accessLog.entries || [])].reverse().slice(0, 100);
   }
 
   onInput(field, ev) {

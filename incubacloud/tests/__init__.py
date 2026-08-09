@@ -71,6 +71,7 @@ from . import (
     test_spa_theme_i18n_guards,
 )
 from . import test_encrypted_char_alert
+from . import test_access_log
 from . import test_audit_tracked_mixin
 from . import test_session_reconcile
 from . import test_backup_kind

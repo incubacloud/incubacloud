@@ -6,10 +6,11 @@ are worth pinning:
 * The shipped dashboards and the SPA's tab list are two hand-maintained
   copies of the same uid list. A mismatch renders an empty Grafana frame
   with no error at all.
-* A dashboard panel can filter on a label the pipeline never produces.
-  Two Traefik panels did exactly that: the ``instance`` label is set by
-  cAdvisor relabelling, and the Traefik job has no way to produce it,
-  so the panels were permanently blank and looked like "no traffic".
+* A dashboard panel can filter on a label the pipeline never produces,
+  and a blank panel is indistinguishable from "no traffic". Traefik
+  samples CAN carry an instance label — the service names are derived
+  from the project name the panel itself feeds copier — but only while
+  the scrape config actually emits the rules that attach it.
 * The per-host label map is a snapshot taken when the agents are
   installed. If nothing re-applies it, every instance deployed after
   Host Setup reports containers no rule can attribute.
@@ -18,6 +19,7 @@ import json
 import pathlib
 import re
 
+from odoo import fields
 from odoo.tests.common import BaseCase, TransactionCase
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -49,28 +51,36 @@ class TestDashboardsMatchTheSpa(BaseCase):
             "wrong uid renders an empty Grafana frame with no error",
         )
 
-    def test_no_panel_filters_traefik_by_an_instance_label(self):
-        """Traefik samples can never carry ``instance``/``instance_id``.
+    def test_traefik_panels_are_backed_by_relabelling_rules(self):
+        """A Traefik panel may filter by instance — but only because we
+        emit the rules that make the label exist.
 
-        Its service names are copier-time literals from each customer's
-        own prod.yaml and bear no relation to COMPOSE_PROJECT_NAME, the
-        key every other relabelling rule joins on. A panel filtering
-        Traefik by instance is therefore always empty — indistinguishable
-        from an instance that genuinely serves no traffic.
+        This test used to assert the opposite, on the belief that Traefik
+        service names were copier-time literals unrelated to anything we
+        control. That was wrong, and it came from surveying doodba
+        projects scaffolded by hand: the panel runs ``copier copy``
+        itself and feeds it the same project name it forces into
+        COMPOSE_PROJECT_NAME, so the names are derived. The invariant
+        worth pinning is therefore not "never filter by instance" but
+        "if a panel filters by it, the agent config must produce it".
         """
-        offenders = []
-        for path in _dashboard_files():
-            for panel in json.loads(path.read_text())["panels"]:
-                for target in panel.get("targets", []):
-                    expression = target.get("expr", "")
-                    if "traefik_" not in expression:
-                        continue
-                    if re.search(r'instance(_id)?\s*=', expression):
-                        offenders.append(f"{path.name}: {panel['title']}")
-        self.assertFalse(
-            offenders,
-            "Traefik panels filtered by an instance label they can never "
-            "carry: %s" % offenders,
+        filters_by_instance = any(
+            "traefik_" in target.get("expr", "")
+            and re.search(r'instance(_id)?\s*=', target.get("expr", ""))
+            for path in _dashboard_files()
+            for panel in json.loads(path.read_text())["panels"]
+            for target in panel.get("targets", [])
+        )
+        if not filters_by_instance:
+            self.skipTest("no Traefik panel filters by instance yet")
+        playbook = (
+            _ROOT / "ansible" / "playbooks" / "host_observability.yml"
+        ).read_text()
+        traefik_block = playbook.split("job_name: traefik", 1)[-1]
+        self.assertIn(
+            "traefik_prefix", traefik_block,
+            "a dashboard filters Traefik by instance but the scrape "
+            "config emits no rule that could attach the label",
         )
 
     def test_every_template_variable_used_is_declared(self):
@@ -103,13 +113,20 @@ class TestLabelMapFollowsTheInstanceSet(TransactionCase):
             "metrics_enabled": True,
             "metrics_central_url": "http://vm.test:8428",
             "metrics_remote_write_url": "http://vm.test:8428/api/v1/write",
+            "metrics_account": "acct_wiring",
         })
         self.host = self.env["cloud.host"].create({
             "name": "HObs",
             "ip_address": "10.0.0.30",
             "user": "root",
             "wildcard_domain": "hobs.example.com",
-            "last_probed": "2026-07-28 10:00:00",
+            "known_hosts_key": "hobs.example.com ssh-ed25519 AAAA",
+            # Enrolled: the agents are actually installed here. This used
+            # to be expressed as ``last_probed``, which the SSH telemetry
+            # job also writes — so with the fallback alive every host
+            # looked enrolled and the guard did the opposite of what it
+            # claimed.
+            "metrics_agents_state": "installed",
         })
 
     def _queued(self):
@@ -126,9 +143,26 @@ class TestLabelMapFollowsTheInstanceSet(TransactionCase):
             "after Host Setup report unattributed container metrics",
         )
 
-    def test_a_host_the_backend_never_saw_is_left_alone(self):
-        """Deploying an instance must not silently enrol a host."""
-        self.host.last_probed = False
+    def test_a_host_without_agents_is_left_alone(self):
+        """Deploying an instance must not silently enrol a host.
+
+        Enrolment is the reconciliation cron's job. Doing it here would
+        make monitoring a surprise side effect of an unrelated deploy.
+        """
+        self.host.metrics_agents_state = "never"
+        self.host.refresh_observability_labels(reason="test")
+        self.assertFalse(self._queued())
+
+    def test_a_probed_but_unenrolled_host_is_not_mistaken_for_enrolled(self):
+        """The regression: ``last_probed`` never meant "has agents".
+
+        The SSH telemetry job stamps it on every host it touches, so a
+        guard reading it saw the whole fleet as enrolled.
+        """
+        self.host.write({
+            "metrics_agents_state": "never",
+            "last_probed": "2026-07-28 10:00:00",
+        })
         self.host.refresh_observability_labels(reason="test")
         self.assertFalse(self._queued())
 
@@ -165,3 +199,93 @@ class TestLabelMapFollowsTheInstanceSet(TransactionCase):
             "these executors change a host's instance set without "
             "refreshing its label map: %s" % sorted(missing),
         )
+
+
+class TestEnrolmentConverges(TransactionCase):
+    """Observability applies to every host, without anyone asking for it.
+
+    It used to be installed once, chained to host setup, which left three
+    silent ways to end up unmonitored: set up before observability was
+    switched on, set up with no remote-write URL, or a single failed
+    install nobody retried. The cron replaces that one-shot event with a
+    state that converges.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.settings = self.env["cloud.settings"].sudo()._get_system()
+        self.settings.write({
+            "metrics_enabled": True,
+            "metrics_central_url": "http://vm.test:8428",
+            "metrics_remote_write_url": "http://vm.test:8428/api/v1/write",
+            "metrics_account": "acct_recon",
+        })
+        self.host = self.env["cloud.host"].create({
+            "name": "HRec",
+            "ip_address": "10.0.0.31",
+            "user": "root",
+            "wildcard_domain": "hrec.example.com",
+            "known_hosts_key": "hrec.example.com ssh-ed25519 AAAA",
+        })
+
+    def _queued(self):
+        return self.env["cloud.job"].search([
+            ("host_id", "=", self.host.id),
+            ("job_type_id.code", "=", "install_observability"),
+        ])
+
+    def test_an_unenrolled_host_is_picked_up(self):
+        """Turning observability on IS the instruction to enrol."""
+        self.env["cloud.host"]._cron_reconcile_observability()
+        self.assertTrue(self._queued())
+
+    def test_an_enrolled_host_is_left_alone(self):
+        self.host.metrics_agents_state = "installed"
+        self.env["cloud.host"]._cron_reconcile_observability()
+        self.assertFalse(self._queued())
+
+    def test_nothing_is_queued_while_observability_is_off(self):
+        """The master switch is the gate; the cron must respect it."""
+        self.settings.metrics_enabled = False
+        self.env["cloud.host"]._cron_reconcile_observability()
+        self.assertFalse(self._queued())
+
+    def test_a_recent_failure_backs_off_instead_of_hammering(self):
+        """An unreachable host must not be retried every single tick."""
+        self.host.write({
+            "metrics_agents_state": "failed",
+            "metrics_agents_attempts": 1,
+            "metrics_agents_since": fields.Datetime.now(),
+        })
+        self.env["cloud.host"]._cron_reconcile_observability()
+        self.assertFalse(self._queued())
+
+    def test_an_old_failure_is_retried(self):
+        """Backing off must not become giving up."""
+        self.host.write({
+            "metrics_agents_state": "failed",
+            "metrics_agents_attempts": 1,
+            "metrics_agents_since": fields.Datetime.subtract(
+                fields.Datetime.now(), hours=4,
+            ),
+        })
+        self.env["cloud.host"]._cron_reconcile_observability()
+        self.assertTrue(self._queued())
+
+    def test_an_unprepared_host_is_not_enrolled(self):
+        """It cannot take agents yet; queuing against it is just noise.
+
+        ``known_hosts_key`` is the marker: the panel only has one once it
+        has actually reached the host over SSH.
+        """
+        self.host.write({"known_hosts_key": ""})
+        self.env["cloud.host"]._cron_reconcile_observability()
+        self.assertFalse(self._queued())
+
+    def test_failures_are_counted_so_the_backoff_grows(self):
+        first = self.host._mark_observability_failed()
+        second = self.host._mark_observability_failed()
+        self.assertEqual((first, second), (1, 2))
+        self.host._mark_observability_installed()
+        self.assertEqual(self.host.metrics_agents_attempts, 0)
+        self.assertEqual(self.host.metrics_agents_state, "installed")

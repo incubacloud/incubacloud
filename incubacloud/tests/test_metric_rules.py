@@ -120,27 +120,36 @@ class TestSeededRules(TransactionCase):
             "an age-based watchdog needs a real staleness threshold",
         )
 
-    def test_no_seeded_rule_aggregates_the_host_label_away(self):
+    def test_no_seeded_rule_aggregates_its_own_label_away(self):
         """A rule must not lose the label its alert is attributed by.
 
         Labels ride along on their own — vmagent stamps ``host``/``host_id``
-        on every sample — so a plain expression needs no mention of them.
-        What *does* drop them is an aggregation: ``max by (x)`` keeps only
-        ``x``. So the invariant is narrow and mechanical: any ``by (...)``
-        must include the host label, or the resulting samples cannot be
-        mapped back to a host and are silently discarded by the evaluator.
+        on every sample, and the relabelling adds ``instance_id`` — so a
+        plain expression needs no mention of them. What *does* drop them
+        is an aggregation: ``max by (x)`` keeps only ``x``. So the
+        invariant is narrow and mechanical: any ``by (...)`` must include
+        whichever label this rule's scope resolves through, or the
+        resulting samples cannot be mapped back to anything and are
+        silently discarded by the evaluator.
+
+        Scope-aware since instance rules exist: an instance rule groups
+        by ``instance_id`` and has no business carrying ``host_id``.
         """
         import re
 
         for rule in self.env["cloud.metric.rule"].search([]):
-            label = rule.host_label or "host_id"
+            if rule.scope == "instance":
+                label = rule.instance_label or "instance_id"
+            else:
+                label = rule.host_label or "host_id"
             groups = re.findall(r"\bby\s*\(([^)]*)\)", rule.expression)
             for group in groups:
                 self.assertIn(
                     label, group,
-                    "rule %r aggregates with 'by (%s)', which drops %r — "
-                    "its alerts would be unattributable and dropped"
-                    % (rule.code, group.strip(), label),
+                    "rule %r (scope %s) aggregates with 'by (%s)', which "
+                    "drops %r — its alerts would be unattributable and "
+                    "dropped"
+                    % (rule.code, rule.scope, group.strip(), label),
                 )
 
 
@@ -290,17 +299,21 @@ class TestAlertApi(TransactionCase):
 class TestBackendCredential(MetricRuleCase):
     """The panel must present the credential the central enforces."""
 
-    def test_the_query_carries_the_shared_secret(self):
+    def test_the_query_authenticates_as_this_panel_account(self):
         """Without this the panel 401s against its own backend.
 
-        The central rejects anonymous access while a token is set, and a
-        401 is indistinguishable, from the cron's point of view, from an
-        outage: it raises the unreachable alert and stops resolving.
+        The user half is not cosmetic: the central derives the label
+        filter it forces on every query from whoever authenticated, so
+        querying as the wrong user returns another account's series or
+        none at all. A 401, from the cron's point of view, is
+        indistinguishable from an outage — it raises the unreachable
+        alert and stops resolving.
         """
+        self.settings.metrics_account = "acct_deadbeef"
         self.settings.metrics_remote_write_token = "s3cr3t"
         mocked = self._run_with(_promql())
         self.assertEqual(
-            mocked.call_args.kwargs.get("auth"), ("incubacloud", "s3cr3t"),
+            mocked.call_args.kwargs.get("auth"), ("acct_deadbeef", "s3cr3t"),
         )
 
     def test_no_credential_is_sent_when_none_is_configured(self):
@@ -308,3 +321,92 @@ class TestBackendCredential(MetricRuleCase):
         self.settings.metrics_remote_write_token = ""
         mocked = self._run_with(_promql())
         self.assertIsNone(mocked.call_args.kwargs.get("auth"))
+
+    def test_a_token_without_an_account_sends_nothing(self):
+        """Half a credential must fail loudly, not guess a username.
+
+        Guessing would resurrect the old fixed ``incubacloud`` user and
+        authenticate as somebody else's account on a shared central —
+        the exact confusion per-account credentials exist to remove.
+        """
+        self.settings.metrics_account = False
+        self.settings.metrics_remote_write_token = "s3cr3t"
+        mocked = self._run_with(_promql())
+        self.assertIsNone(mocked.call_args.kwargs.get("auth"))
+
+
+class TestInstanceScopedRules(MetricRuleCase):
+    """Rules that describe an instance, not the host it happens to be on."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env["cloud.host"].create({
+            "name": "HInst", "ip_address": "10.0.0.70", "user": "root",
+            "wildcard_domain": "hinst.example.com",
+        })
+        project = self.env["cloud.project"].create({"name": "PInst"})
+        self.instance = self.env["cloud.instance"].create({
+            "name": "prod", "project_id": project.id,
+            "environment": "production", "host_id": self.host.id,
+            "odoo_version": "19.0",
+        })
+        self.rule = self.env["cloud.metric.rule"].create({
+            "name": "Instance down", "code": "test_instance_down",
+            "scope": "instance",
+            "expression": "irrelevant", "comparator": "gt",
+            "threshold": 300.0, "level": "critical",
+            "message": "Instance %(host)s is silent (%(value)s s).",
+        })
+
+    def _alerts(self):
+        return self.env["cloud.alert"].sudo().search([
+            ("code", "=", "test_instance_down"),
+            ("state", "=", "active"),
+        ])
+
+    def _sample(self, age):
+        return [({"instance_id": str(self.instance.id)}, age)]
+
+    def test_a_breach_raises_against_the_instance(self):
+        self.rule._sync_alerts(self._sample(600.0))
+        alerts = self._alerts()
+        self.assertTrue(alerts)
+        self.assertEqual(alerts[0].instance_id, self.instance)
+
+    def test_a_healthy_instance_resolves(self):
+        self.rule._sync_alerts(self._sample(600.0))
+        self.rule._sync_alerts(self._sample(10.0))
+        self.assertFalse(self._alerts())
+
+    def test_a_sample_for_an_unknown_instance_is_skipped(self):
+        """An unattributable alert is worse than no alert."""
+        self.rule._sync_alerts([({"instance_id": "999999999"}, 600.0)])
+        self.assertFalse(self._alerts())
+
+    def test_a_suppressed_instance_never_alerts(self):
+        """The sleeping-instance trap.
+
+        An instance a plan puts to sleep stops every container on
+        purpose, so cAdvisor goes quiet and a naive rule concludes it is
+        down. Every Free instance would then raise a critical alert
+        nightly, and operators would learn to ignore the one that
+        matters. Core asks the instance; the SaaS layer is what knows
+        about sleeping.
+        """
+        self.patch(
+            type(self.instance), "_metric_alerts_suppressed",
+            lambda inst: True,
+        )
+        self.rule._sync_alerts(self._sample(600.0))
+        self.assertFalse(self._alerts())
+
+    def test_suppression_also_clears_an_alert_already_raised(self):
+        """Going to sleep must clear the alert, not freeze it on screen."""
+        self.rule._sync_alerts(self._sample(600.0))
+        self.assertTrue(self._alerts())
+        self.patch(
+            type(self.instance), "_metric_alerts_suppressed",
+            lambda inst: True,
+        )
+        self.rule._sync_alerts(self._sample(600.0))
+        self.assertFalse(self._alerts())

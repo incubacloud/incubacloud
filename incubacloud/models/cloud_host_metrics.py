@@ -51,12 +51,14 @@ class CloudHost(models.Model):
         base = (settings.metrics_central_url or "").strip()
         if not base:
             return
-        token = settings.metrics_remote_write_token or ""
+        user, token = settings._metrics_auth()
 
         readings = {}
         try:
             for key, expression in _QUERIES.items():
-                for labels, value in promql_query(base, expression, token=token):
+                for labels, value in promql_query(
+                    base, expression, token=token, user=user,
+                ):
                     raw = (labels or {}).get("host_id")
                     if not raw:
                         continue
@@ -77,7 +79,12 @@ class CloudHost(models.Model):
         now = fields.Datetime.now()
         for host in self.sudo().browse(list(readings)).exists():
             data = readings[host.id]
-            vals = {"last_probed": now}
+            # ``metrics_last_seen`` is written here and nowhere else. The
+            # SSH fallback writes ``last_probed`` too, so anything that
+            # asks "are metrics flowing?" must read this field instead —
+            # otherwise the fallback answers its own question and stops
+            # running exactly when it is needed.
+            vals = {"last_probed": now, "metrics_last_seen": now}
             if "cpu_cores" in data:
                 vals["cpu_cores"] = int(data["cpu_cores"])
             if "ram_total_gb" in data:

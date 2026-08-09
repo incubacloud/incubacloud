@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 
 from psycopg2 import sql
 
@@ -7,7 +8,11 @@ from odoo import _, api, fields, models, tools
 from odoo.exceptions import UserError
 
 from .encrypted_char import EncryptedChar
-from .password_utils import key_is_configured, rotate_value
+from .password_utils import (
+    generate_password,
+    key_is_configured,
+    rotate_value,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -213,15 +218,43 @@ class CloudSettings(models.Model):
              'port is opened, which is what keeps BYOH and NAT hosts '
              'working.',
     )
+    metrics_account = fields.Char(
+        string='Metrics account',
+        readonly=True,
+        copy=False,
+        help='Identity this panel authenticates as against the central, '
+             'and the label the central FORCES on every series it writes '
+             'for us. It is what keeps one panel from reading or poisoning '
+             "another's data, so it is never accepted from the agent: the "
+             'central derives it from the authenticated user. A '
+             'self-hosted panel generates its own; in SaaS mode the '
+             'manager assigns it.',
+    )
     metrics_remote_write_token = EncryptedChar(
-        string='Remote-write token',
-        help='Shared secret protecting the central. The agents present '
-             'it as HTTP basic auth when pushing, and the panel presents '
-             'it when querying; the central rejects anonymous access '
-             'while it is set. Stored encrypted and written to each host '
-             'as root-only 0600. Changing it means redeploying the '
-             'central AND re-running Install Observability everywhere — '
-             'until both sides match, pushes are refused.',
+        string='Metrics credential',
+        help='Password half of this panel\'s metrics account (the user '
+             'half is ``metrics_account``). Presented as HTTP basic auth '
+             'both when the agents push and when the panel queries. '
+             'Scoped: it can only write series labelled with this account '
+             'and only read those same series, so a host that leaks it '
+             'exposes nothing beyond what that panel could already see. '
+             'Stored encrypted; written to each host as root-only 0600.',
+    )
+    grafana_admin_password = EncryptedChar(
+        string='Grafana admin password',
+        help='Grafana\'s own administrative credential. Never leaves the '
+             'central: the gateway authenticates callers with the '
+             'operator credential and swaps this one in before proxying, '
+             'so rotating it is a redeploy rather than a change in every '
+             'place that talks to Grafana.',
+    )
+    metrics_operator_token = EncryptedChar(
+        string='Operator read credential',
+        help='Second credential, for the UNFILTERED read used by the '
+             "operator's own Grafana organisation. Only meaningful on the "
+             'panel that owns the central, and deliberately never written '
+             'to any host — that is the whole point of keeping it apart '
+             'from the account credential above.',
     )
     metrics_retention_days = fields.Integer(
         string='Metrics retention (days)',
@@ -234,6 +267,96 @@ class CloudSettings(models.Model):
         help='Base URL of the Grafana embedded in the panel, e.g. '
              'https://grafana.example.com. Empty hides the Monitoring tab.',
     )
+
+    # ── Metrics account helpers ────────────────────────────────────────────
+
+    def _ensure_metrics_account(self):
+        """Return this panel's metrics account, generating one if absent.
+
+        The identifier must be unique across every panel that shares a
+        central, so it is random rather than derived from anything local:
+        two self-hosted panels would otherwise both call themselves
+        ``acct_1``. Generated once and then stable — it is the label every
+        historical series carries, and series cannot be relabelled after
+        ingestion.
+
+        :return: the account identifier, e.g. ``acct_9f2c1ab4d0e7``.
+        """
+        settings = self._get_system()
+        if settings.metrics_account:
+            return settings.metrics_account
+        account = 'acct_%s' % uuid.uuid4().hex[:12]
+        settings.sudo().write({'metrics_account': account})
+        return account
+
+    def _ensure_operator_credential(self):
+        """Return the unfiltered read credential, generating it if absent.
+
+        Deliberately separate from the account credential: this one grants
+        a view across every account, so it must never be written to a
+        host. Only the panel that owns the central holds it, and only its
+        own Grafana organisation uses it.
+
+        :return: the plaintext operator password.
+        """
+        settings = self._get_system()
+        if settings.metrics_operator_token:
+            return settings.metrics_operator_token
+        token = generate_password(32)
+        settings.sudo().write({'metrics_operator_token': token})
+        return token
+
+    def _ensure_grafana_admin_password(self):
+        """Return Grafana's admin password, generating it once.
+
+        :return: the plaintext password.
+        """
+        settings = self._get_system()
+        if not settings.grafana_admin_password:
+            settings.sudo().write({
+                'grafana_admin_password': generate_password(32),
+            })
+        return settings.grafana_admin_password
+
+    def _ensure_metrics_credential(self):
+        """Return ``(account, password)``, generating both if absent.
+
+        Called when observability is switched on so the operator never
+        has to invent either half. A panel that already has them keeps
+        them: the account is the label on all of its historical series,
+        and series cannot be relabelled after ingestion.
+        """
+        settings = self._get_system()
+        account = self._ensure_metrics_account()
+        if not settings.metrics_remote_write_token:
+            settings.sudo().write({
+                'metrics_remote_write_token': generate_password(32),
+            })
+        return account, settings.metrics_remote_write_token
+
+    def _metrics_auth(self, operator=False):
+        """Return ``(user, password)`` for talking to the metrics central.
+
+        Replaces the fixed ``incubacloud`` user that predated per-account
+        credentials: the user half is now the account, because the central
+        derives the forced label from whoever authenticated.
+
+        :param operator: when True, return the unfiltered operator
+            credential instead of this panel's own account. Only the panel
+            that owns the central has one.
+        :return: ``(user, password)``, or ``('', '')`` when unset — callers
+            must treat that as "no credentials" and not as anonymous
+            access being acceptable.
+        """
+        settings = self._get_system()
+        if operator:
+            token = settings.metrics_operator_token or ''
+            return ('operator', token) if token else ('', '')
+        token = settings.metrics_remote_write_token or ''
+        account = settings.metrics_account or ''
+        if not (token and account):
+            return ('', '')
+        return (account, token)
 
     # ── Singleton constraint ───────────────────────────────────────────────
 

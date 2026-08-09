@@ -20,7 +20,7 @@ the new one had a blind spot.
 """
 import logging
 
-from odoo import api, models
+from odoo import api, fields, models
 
 from .cloud_metric_rule import promql_query
 
@@ -31,9 +31,64 @@ _logger = logging.getLogger(__name__)
 # not flap the flag.
 _SEEN_WINDOW_SECONDS = 180
 
+#: How long a metrics reading keeps the SSH health probe from writing
+#: ``running``. Comfortably above the liveness cron's own period so one
+#: skipped tick does not hand the flag back and forth.
+_LIVENESS_HANDOVER_SECONDS = 900
+
 
 class CloudInstance(models.Model):
     _inherit = "cloud.instance"
+
+    metrics_last_seen = fields.Datetime(
+        string="Metrics last seen",
+        copy=False,
+        readonly=True,
+        help="Last time the metrics backend reported on this instance. "
+             "Written only by the cron below, and read by the SSH health "
+             "probe to decide who owns ``running``: two writers with no "
+             "arbitration would fight over the flag every few minutes.",
+    )
+
+    def _metric_alerts_suppressed(self):
+        """Return True when metric alerts about this instance are noise.
+
+        Core always answers False: it knows of no legitimate reason for a
+        deployed instance to stop reporting. A layer above may — a plan
+        that sleeps an instance on idle stops every container, so cAdvisor
+        goes quiet and "down" is precisely what a naive rule concludes.
+        That layer overrides this.
+
+        Asking the instance, rather than testing a field core does not
+        have, is what keeps the sleep feature out of core entirely.
+        """
+        self.ensure_one()
+        return False
+
+    def _liveness_covered_by_metrics(self):
+        """Return True when metrics are the authority on ``running`` here.
+
+        Arbitration, not preference. Both the metrics cron and the SSH
+        health probe can determine whether an instance is up, and with
+        observability on they would otherwise both write the flag on
+        their own schedules — agreeing most of the time, and flapping the
+        instance's state whenever they briefly did not.
+
+        Metrics win while they are fresh because they are continuous and
+        cheap; the SSH probe remains the fallback and takes over by
+        itself the moment the readings go stale, so there is no window
+        where nobody decides.
+        """
+        self.ensure_one()
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if not settings.metrics_enabled:
+            return False
+        if not self.metrics_last_seen:
+            return False
+        age = (
+            fields.Datetime.now() - self.metrics_last_seen
+        ).total_seconds()
+        return age <= _LIVENESS_HANDOVER_SECONDS
 
     @api.model
     def _cron_refresh_running_from_metrics(self):
@@ -54,7 +109,7 @@ class CloudInstance(models.Model):
         base = (settings.metrics_central_url or "").strip()
         if not base:
             return
-        token = settings.metrics_remote_write_token or ""
+        user, token = settings._metrics_auth()
 
         # One sample per instance: the most recent time any of its
         # containers was seen. ``instance_id`` is attached by the agent's
@@ -83,15 +138,22 @@ class CloudInstance(models.Model):
         if not seen:
             return
 
+        now = fields.Datetime.now()
         instances = self.sudo().browse(list(seen)).exists()
         for inst in instances:
             running = seen[inst.id] <= _SEEN_WINDOW_SECONDS
+            vals = {"metrics_last_seen": now}
             if inst.running != running:
-                inst.write({"running": running})
+                vals["running"] = running
                 _logger.info(
                     "[metrics] instance %s running: %s → %s",
                     inst.name, not running, running,
                 )
+            # ``metrics_last_seen`` is stamped even when nothing changed:
+            # it is what tells the SSH health probe that liveness is
+            # already covered here, and "no change" is exactly the
+            # steady state where that matters most.
+            inst.write(vals)
 
     @api.model
     def _metrics_liveness_window(self):

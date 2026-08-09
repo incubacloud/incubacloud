@@ -1,3 +1,35 @@
+## Deploying
+
+1. **Settings → Monitoring** — pick the host that should run the central
+   and press **Enable observability**. That is the whole procedure.
+2. The job deploys VictoriaMetrics, Loki, Grafana and the gateway and,
+   when they answer, writes the endpoints back, generates this panel's
+   account credential and switches observability on.
+3. **Hosts enrol themselves.** A reconciliation cron (every 15 min)
+   installs the agents on any host that should be reporting and is not,
+   with a growing back-off per host and an alert once failures persist.
+   Host setup also chains an install, but only as an accelerator — if it
+   fails, the cron picks the host up.
+
+There is no per-host button, and no step to remember. There never should
+have been: there is no host to which observability does not apply, so
+enrolment is not a decision.
+
+**What the button cannot derive.** Agents on hosts *other* than the
+central's need a public HTTPS endpoint, which requires DNS and a
+certificate. That field is left empty under *Advanced* and the job log
+says so, because inventing a value would leave a fleet quietly failing to
+push.
+
+### Adding or removing a tenant (SaaS)
+
+The gateway's `accounts.htpasswd` **is** the access-control list: an
+account in it may write series labelled with itself and read those same
+series, and nothing else. It is rebuilt from the tenant list every time
+the central is deployed, so re-running that job is how a new tenant gains
+access and how a departed one loses it. Their Grafana organisation and
+scoped datasource are created in the same run.
+
 # Observability — operations guide
 
 How the metrics stack is put together, what it costs, and how to move or
@@ -8,22 +40,60 @@ the platform.
 ## Shape of the system
 
 ```
-每 host                                   central (one)
-┌──────────────────────────────┐          ┌────────────────────────┐
-│ node_exporter  (system)      │          │ VictoriaMetrics        │
-│ cAdvisor       (containers)  │          │   ← remote-write (push)│
-│ Traefik        (HTTP, :8082) │          │ Grafana (provisioned)  │
-│ vmagent  ── pushes ──────────┼─────────▶│                        │
-└──────────────────────────────┘   HTTPS  └────────────────────────┘
-                                                    ▲
-                                          PromQL    │
-                                     panel cron ────┘  → cloud.alert
+ 每 host                                   central (one, shared)
+┌──────────────────────────────┐   ┌──────────────────────────────────┐
+│ node_exporter  (system)      │   │  nginx gateway  ← the boundary   │
+│ cAdvisor       (containers)  │   │    /w/  /r/  /lw/  /lr/          │
+│ Traefik        (HTTP, :8082) │   │    /grafana/  /gadmin/           │
+│ vmagent   ── push ───────────┼──▶│         │                        │
+│ promtail  ── push ───────────┼──▶│         ├→ VictoriaMetrics       │
+└──────────────────────────────┘   │         ├→ Loki                  │
+                            HTTPS  │         └→ Grafana (org/account) │
+                                   └──────────────────────────────────┘
+                                              ▲
+                                     PromQL   │
+                                 panel cron ──┘   → cloud.alert
 ```
 
-**Push, not scrape.** Hosts open no inbound port; `vmagent` dials out.
+**Push, not scrape.** Hosts open no inbound port; the agents dial out.
 That is what makes bring-your-own-host and NAT'd boxes work without
-firewall exceptions, and it is why the remote-write endpoint must be
-reachable from every host.
+firewall exceptions, and it is why the write endpoint must be reachable
+from every host.
+
+**Only the gateway is published.** VictoriaMetrics, Loki and Grafana have
+no host port at all. Anything able to reach them directly would bypass
+the account boundary — including, on a host that runs tenant instances,
+a tenant's own container.
+
+### The account boundary
+
+The central is shared: in SaaS every tenant panel writes to and reads
+from it. Neither VictoriaMetrics nor Loki has a notion of accounts, so
+the boundary is imposed in front, and **imposed** is the operative word:
+
+| Path | Rule |
+| --- | --- |
+| `/w/` metrics write | the agent's query string is **discarded** and rebuilt, so the account label is the authenticated user |
+| `/r/` metrics read | a request carrying `extra_filters`/`extra_label` is **rejected with 400**, then the account filter is appended |
+| `/lw/` `/lr/` logs | the account header is **set**, replacing whatever the sender supplied |
+
+None of that is caution. Measured against VictoriaMetrics 1.102: repeated
+`extra_filters[]` are ORed together, and the last `extra_label` wins. A
+gateway that merely *appends* its own filter is therefore bypassable in
+both directions by a client that sends its own. Rejecting rather than
+sanitising is deliberate too — it is auditable at a glance, where
+sanitising means parsing and eventually getting it wrong.
+
+An agent runs on a machine its owner has root on. Its claim about who it
+is can never be trusted, which is why the label comes from the
+credential and not from the payload.
+
+**Two credentials, and they are not interchangeable.** Each account has
+one, scoped to itself, and it is written to that account's hosts. The
+*operator* credential reads across every account and is never written to
+any host. Grafana's own admin password stays on the central: the gateway
+authenticates callers with the operator credential and swaps it in before
+proxying, so rotating it is a redeploy rather than a change everywhere.
 
 **Alerts do not live in the metrics stack.** There is no Alertmanager and
 no vmalert. A panel cron (`cloud.metric.rule._cron_evaluate`, every 5
@@ -31,19 +101,11 @@ min) runs each rule's PromQL, compares against its threshold and
 raises/resolves `cloud.alert` — the same multichannel pipeline every
 other alert uses. One place to look, one notion of "alert".
 
-## Deploying
-
-1. **Central** — run the *Deploy Metrics Central* job against the host
-   that should hold it. Co-locating on the panel host is the default:
-   VictoriaMetrics + Grafana sit around 1–1.5 GB.
-2. **Settings** — fill in the backend URL, the remote-write URL and its
-   token, retention, and the Grafana base URL. Then switch
-   **observability on**.
-3. **Agents** — run *Install Observability* per host. It is idempotent;
-   re-run it whenever a host's instance list changes so the labels stay
-   accurate.
-
-Everything is a job: no manual SSH, no hand-edited config.
+Rules are host- or instance-scoped. An instance-scoped rule resolves
+through the instance label and raises against the instance, so it lands
+on its page. Instances a plan puts to sleep are suppressed: sleeping
+stops their containers on purpose, and a nightly critical alert per Free
+instance would train everyone to ignore the alert that matters.
 
 ## Costs and sizing
 
@@ -62,10 +124,10 @@ drops it as it ages out.
 The destination is a parameter, not a hard-coded host:
 
 1. Add the new server as a host and prepare it as usual.
-2. Run *Deploy Metrics Central* against it.
+2. Re-run *Enable observability* in Settings against the new host.
 3. Point **Metrics backend URL**, **Remote-write URL** and **Grafana base
    URL** at the new box.
-4. Re-run *Install Observability* on each host so the agents push to the
+4. The reconciliation cron re-applies the agents on each host so they push to the
    new endpoint.
 5. Decommission the old stack.
 
@@ -150,16 +212,28 @@ docker logs incubacloud-observability-cadvisor-1 | grep 'read-write layer'
 
 ## Retiring the SSH telemetry
 
-Done **conditionally**, not by deletion — and only for what is actually
-covered:
+The old per-target SSH jobs are being retired *conditionally*, never
+deleted outright, so no window exists where nobody collects.
 
-| SSH job | Status | Why |
-|---|---|---|
-| `host_metrics` | **Retired while metrics flow** | node_exporter supplies cores, RAM and disk; the disk-critical alert is now a `cloud.metric.rule`. The job self-skips when `last_probed` is fresher than 15 min and resumes automatically if the metrics stack is off or stalls. |
-| `instance_health` | **Kept, but no longer the liveness source** | `running` now comes from cAdvisor (verified live in both directions: containers up → True, stopped → False after the freshness window). The job stays because it *also* does HTTP health probing and error-log scraping, which need blackbox and Loki (observability v2). Retiring it wholesale would be a capability regression, not a cleanup. |
+**Host specs** — `host_metrics_executor` becomes a no-op while metrics
+are actually arriving, and resumes on its own if they stop. It decides
+that from `cloud.host.metrics_last_seen`, which **only the metrics reader
+writes**. That distinction is load-bearing: the field it used to read,
+`last_probed`, is also written by the SSH job itself, so the fallback
+stood down on the strength of its own footprint and degraded from every
+five minutes to roughly every fifteen — precisely when it was the only
+thing collecting.
 
-The conditional form is deliberate: there is never a window where nobody
-is collecting, and no flag day.
+**Instance liveness** — both the metrics cron and `instance_health` can
+decide whether an instance is up. Metrics own the flag while their
+readings are fresh (`cloud.instance.metrics_last_seen`); the SSH probe
+keeps doing what metrics cannot — HTTP probing, error-log scraping — and
+takes the flag back by itself the moment the readings go stale. Without
+that arbitration the two wrote on their own schedules and the state
+flapped whenever they briefly disagreed.
+
+`instance_health` cannot retire until synthetic probes cover its HTTP
+check. Its error-log scraping now has a better source in the access logs.
 
 ## Gotchas
 
@@ -184,7 +258,7 @@ is collecting, and no flag day.
   PromQL queries carry the same credential.
 
   Both sides must agree. Rotating the token means **redeploy the central
-  first, then re-run *Install Observability* on every host**; in between,
+  first, then let the reconciliation cron re-apply the agents everywhere**; in between,
   pushes are refused with 401 and the staleness rule will start firing —
   which is the intended behaviour, not a fault.
 

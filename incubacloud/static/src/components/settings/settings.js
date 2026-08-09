@@ -33,6 +33,10 @@ export class Settings extends Component {
             // Observability: the token is write-only, so only its
             // presence is tracked client-side.
             hasMetricsToken: false,
+            // Advanced metrics fields stay folded: with the button doing
+            // the wiring, a single-host setup never needs them, and six
+            // visible fields read as six decisions to make.
+            showAdvancedMetrics: false,
             deployingCentral: false,
             centralHostId: null,
             hosts: [],
@@ -230,6 +234,26 @@ export class Settings extends Component {
      * what makes "co-locate now, move to its own VPS later" a re-run
      * instead of a migration.
      */
+    /**
+     * One line describing where observability currently stands.
+     *
+     * The form used to show six fields and no answer to "is this
+     * working?". With enrolment automatic, that question is the only one
+     * an operator actually has on this screen.
+     */
+    get observabilityStatus() {
+        if (!this.state.form.metrics_enabled) {
+            return _t("Off. Pick a host above and enable it.");
+        }
+        if (!this.state.form.metrics_central_url) {
+            return _t("On, but no query endpoint is set — nothing can be read back.");
+        }
+        if (!this.state.form.grafana_base_url) {
+            return _t("Collecting. Charts are hidden until a Grafana URL is set.");
+        }
+        return _t("Collecting, with charts available.");
+    }
+
     async deployCentral() {
         if (this.state.deployingCentral) return;
         const hostId = this.state.centralHostId;

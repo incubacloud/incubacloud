@@ -36,6 +36,35 @@ entryPoints:
 api:
   dashboard: true
 
+# Per-request record of who asked for what. The metrics above give rate,
+# status and latency, which is enough to notice an instance is being
+# hammered — but they carry neither the client IP nor the path, so they
+# cannot tell you what is being done or let you block it. That only
+# exists here.
+#
+# Each line already carries ``RouterName`` and ``ServiceName`` in full
+# (``<project>-<version>-prod-main@docker``), which is the SAME key the
+# metric relabelling joins on. So attributing a log line to its instance
+# needs no domain lookup and survives custom domains, redirects and
+# multi-domain instances.
+#
+# Headers are dropped: keeping them would put cookies and Authorization
+# on disk on every host, and the point of this file is diagnosing
+# traffic, not archiving credentials.
+# Written to stdout on purpose, not to a file. A file would need
+# rotation, and an unrotated access log on a busy instance fills the
+# disk — the failure nobody notices until the host stops. Docker's
+# json-file driver already rotates every container's output at 10 MB
+# (set fleet-wide by the hardening playbook), so stdout inherits a
+# rotation policy that exists and is enforced.
+accessLog:
+  format: json
+  bufferingSize: 100
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: drop
+
 # HTTP metrics per router/service — this is what gives per-instance
 # request rates, status codes and latencies without installing anything
 # inside the instances themselves.

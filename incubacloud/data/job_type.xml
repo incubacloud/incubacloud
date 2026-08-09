@@ -129,13 +129,18 @@
             <field name="apply_to">host</field>
             <field name="description">Installs the metrics agents (node_exporter, cAdvisor, vmagent) on the host and labels every container with its instance/project so the panel can attribute metrics. Push-only: no inbound port is opened.</field>
             <field name="priority_tier">low</field>
-            <!-- Surfaces as a button on the host page through the
-                 existing pluggable-action mechanism: no bespoke endpoint
-                 and no template change. Re-runnable — it is how an
-                 operator refreshes the labels after adding instances. -->
-            <field name="show_as_action">True</field>
-            <field name="action_icon">fa-heartbeat</field>
-            <field name="action_order">40</field>
+            <!-- Deliberately NOT offered as a button. It used to be one,
+                 justified as "how an operator refreshes the labels after
+                 adding instances" — a task that became automatic when
+                 deploy/move/remove started refreshing them itself. What
+                 was left was a button whose only remaining purpose was
+                 enrolment, and enrolment is not a decision: there is no
+                 host to which observability does not apply. It is now
+                 applied by the reconciliation cron, so the button was
+                 pure noise, and worse, its presence implied a step that
+                 an operator could forget. The job itself stays — it is
+                 what the cron queues. -->
+            <field name="show_as_action">False</field>
         </record>
 
         <record id="deploy_metrics_central" model="cloud.job.type">

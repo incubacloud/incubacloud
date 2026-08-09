@@ -18,8 +18,10 @@
                         t-on-click="() => this.setTab('github')">GitHub</button>
                 <button t-att-class="state.tab === 'rates' ? 'rl-tab active' : 'rl-tab'"
                         t-on-click="() => this.setTab('rates')">Rates</button>
-                <button t-att-class="state.tab === 'monitoring' ? 'rl-tab active' : 'rl-tab'"
+                <t t-if="env.features?.can_configure_observability !== false">
+                    <button t-att-class="state.tab === 'monitoring' ? 'rl-tab active' : 'rl-tab'"
                         t-on-click="() => this.setTab('monitoring')">Monitoring</button>
+                </t>
             </div>
 
             <t t-if="state.loading">
@@ -410,96 +412,129 @@
                     <CoreRatesTab/>
                 </t>
 
-                <t t-if="state.tab === 'monitoring'">
+                <t t-if="state.tab === 'monitoring' and env.features?.can_configure_observability !== false">
                     <div class="rl-saas-fsec">Observability</div>
                     <p class="rl-tabnote">
                         Agents on every host push metrics to a central stack; the
                         panel reads it back to evaluate alert rules and embeds the
-                        dashboards. Nothing here is active while the switch is off.
+                        dashboards. Every host is enrolled automatically — there is
+                        nothing to install by hand.
                     </p>
-                    <div class="rl-ftoggle">
-                        <div>
-                            <div class="rl-tl-label">Observability</div>
-                            <div class="rl-th">Collect metrics from hosts and instances</div>
-                        </div>
-                        <button type="button"
-                                t-att-class="'rl-sw' + (state.form.metrics_enabled ? ' on' : '')"
-                                t-on-click="() => this.state.form.metrics_enabled = !this.state.form.metrics_enabled"
-                                aria-label="Toggle observability"/>
-                    </div>
 
+                    <!-- ── 1. The one decision ─────────────────────── -->
                     <div class="rl-frow">
-                        <label for="ic-metrics-central-url">Metrics backend URL</label>
-                        <input id="ic-metrics-central-url" type="text"
-                               placeholder="http://172.17.0.1:8428"
-                               t-att-value="state.form.metrics_central_url"
-                               t-on-change="(ev) => this.state.form.metrics_central_url = ev.target.value"/>
-                        <div class="rl-th">
-                            Queried by the panel, so it must resolve from inside the
-                            panel container — 127.0.0.1 there is the container itself.
-                        </div>
-                    </div>
-
-                    <div class="rl-frow">
-                        <label for="ic-metrics-rw-url">Remote-write URL</label>
-                        <input id="ic-metrics-rw-url" type="text"
-                               placeholder="https://metrics.example.com/api/v1/write"
-                               t-att-value="state.form.metrics_remote_write_url"
-                               t-on-change="(ev) => this.state.form.metrics_remote_write_url = ev.target.value"/>
-                        <div class="rl-th">
-                            Where each host's agent pushes. It must resolve from inside
-                            the agent container on every host.
-                        </div>
-                    </div>
-
-                    <div class="rl-frow">
-                        <label for="ic-metrics-token">Remote-write token</label>
-                        <input id="ic-metrics-token" type="password"
-                               t-att-placeholder="state.hasMetricsToken ? 'Stored — type to replace' : 'Not set'"
-                               t-att-value="state.form.metrics_remote_write_token"
-                               t-on-change="(ev) => this.state.form.metrics_remote_write_token = ev.target.value"/>
-                        <div class="rl-th">
-                            Fleet-wide write credential: stored encrypted and never shown
-                            again. Leave it blank to keep the current one.
-                        </div>
-                    </div>
-
-                    <div class="rl-frow">
-                        <label for="ic-metrics-retention">Metrics retention (days)</label>
-                        <input id="ic-metrics-retention" type="number" min="1" style="width:120px;"
-                               t-att-value="state.form.metrics_retention_days"
-                               t-on-change="(ev) => this.onIntInput('metrics_retention_days', ev)"/>
-                    </div>
-
-                    <div class="rl-frow">
-                        <label for="ic-grafana-url">Grafana base URL</label>
-                        <input id="ic-grafana-url" type="text"
-                               placeholder="https://grafana.example.com"
-                               t-att-value="state.form.grafana_base_url"
-                               t-on-change="(ev) => this.state.form.grafana_base_url = ev.target.value"/>
-                        <div class="rl-th">Empty hides the Monitoring section from the panel.</div>
-                    </div>
-
-                    <div class="rl-frow">
-                        <label>Metrics central</label>
+                        <label>Where the central runs</label>
                         <div class="rl-th" style="margin-bottom:8px;">
-                            VictoriaMetrics + Grafana, deployed as a job on the host you
-                            pick. Co-locating on the panel host is the usual start;
-                            re-run it against another host to move it.
+                            VictoriaMetrics, Grafana and a gateway, deployed as a job
+                            on the host you pick. Co-locating on the panel host is the
+                            usual start; re-run it against another host to move it.
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
                             <RlSelect options="centralHostOptions"
                                       value="state.centralHostId"
                                       placeholder.translate="Destination host…"
                                       onChange="(v) => this.state.centralHostId = v"/>
-                            <button class="rl-btn rl-btn-ghost rl-btn-sm"
-                                    t-att-disabled="state.deployingCentral || null"
+                            <button class="rl-btn rl-btn-primary rl-btn-sm"
+                                    t-att-disabled="state.deployingCentral || !state.centralHostId || null"
                                     t-on-click="deployCentral">
                                 <t t-if="state.deployingCentral">Queueing…</t>
-                                <t t-else="">Deploy central</t>
+                                <t t-else="">Enable observability</t>
                             </button>
                         </div>
+                        <div class="rl-th" style="margin-top:8px;">
+                            This deploys the stack and, when it comes up, fills in the
+                            endpoints and switches observability on. Nothing below
+                            needs touching for a single-host setup.
+                        </div>
                     </div>
+
+                    <!-- ── 2. Current state, read-only ─────────────── -->
+                    <div class="rl-ftoggle">
+                        <div>
+                            <div class="rl-tl-label">Status</div>
+                            <div class="rl-th" t-esc="observabilityStatus"/>
+                        </div>
+                    </div>
+
+                    <!-- ── 3. Advanced, folded away ────────────────── -->
+                    <div class="rl-frow">
+                        <button class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-on-click="() => this.state.showAdvancedMetrics = !this.state.showAdvancedMetrics">
+                            <t t-if="state.showAdvancedMetrics">Hide advanced</t>
+                            <t t-else="">Advanced…</t>
+                        </button>
+                        <div class="rl-th" style="margin-top:6px;">
+                            For a central that lives elsewhere, agents on more than one
+                            host, or an existing Grafana.
+                        </div>
+                    </div>
+
+                    <t t-if="state.showAdvancedMetrics">
+                        <div class="rl-ftoggle">
+                            <div>
+                                <div class="rl-tl-label">Observability</div>
+                                <div class="rl-th">Master switch. Everything is inert while it is off.</div>
+                            </div>
+                            <button type="button"
+                                    t-att-class="'rl-sw' + (state.form.metrics_enabled ? ' on' : '')"
+                                    t-on-click="() => this.state.form.metrics_enabled = !this.state.form.metrics_enabled"
+                                    aria-label="Toggle observability"/>
+                        </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-metrics-central-url">Query URL</label>
+                            <input id="ic-metrics-central-url" type="text"
+                                   placeholder="http://172.17.0.1:8428/r/"
+                                   t-att-value="state.form.metrics_central_url"
+                                   t-on-change="(ev) => this.state.form.metrics_central_url = ev.target.value"/>
+                            <div class="rl-th">
+                                Queried by the panel, so it must resolve from inside the
+                                panel container — 127.0.0.1 there is the container itself.
+                            </div>
+                        </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-metrics-rw-url">Remote-write URL</label>
+                            <input id="ic-metrics-rw-url" type="text"
+                                   placeholder="https://metrics.example.com/w/"
+                                   t-att-value="state.form.metrics_remote_write_url"
+                                   t-on-change="(ev) => this.state.form.metrics_remote_write_url = ev.target.value"/>
+                            <div class="rl-th">
+                                Where each host's agent pushes. It must resolve from inside
+                                the agent container on every host, so agents on other hosts
+                                need a public HTTPS endpoint here.
+                            </div>
+                        </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-metrics-token">Credential</label>
+                            <input id="ic-metrics-token" type="password"
+                                   t-att-placeholder="state.hasMetricsToken ? 'Stored — type to replace' : 'Generated on enable'"
+                                   t-att-value="state.form.metrics_remote_write_token"
+                                   t-on-change="(ev) => this.state.form.metrics_remote_write_token = ev.target.value"/>
+                            <div class="rl-th">
+                                Generated automatically. Replacing it means redeploying the
+                                central and re-enrolling every host — until both sides
+                                match, pushes are refused.
+                            </div>
+                        </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-metrics-retention">Metrics retention (days)</label>
+                            <input id="ic-metrics-retention" type="number" min="1" style="width:120px;"
+                                   t-att-value="state.form.metrics_retention_days"
+                                   t-on-change="(ev) => this.onIntInput('metrics_retention_days', ev)"/>
+                        </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-grafana-url">Grafana base URL</label>
+                            <input id="ic-grafana-url" type="text"
+                                   placeholder="https://metrics.example.com/grafana/"
+                                   t-att-value="state.form.grafana_base_url"
+                                   t-on-change="(ev) => this.state.form.grafana_base_url = ev.target.value"/>
+                            <div class="rl-th">Empty hides the charts. The dashboards are served under /grafana/ on the gateway.</div>
+                        </div>
+                    </t>
                 </t>
 
                 </div><!-- /rl-settings-body -->

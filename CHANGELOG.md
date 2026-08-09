@@ -6,6 +6,106 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.48] — 2026-08-09
+
+### Changed
+
+- **Documentation caught up with the system it describes.** The operations guide still showed a stack with no gateway, told operators to press a per-host button that no longer exists and to deploy a central via a job name that is now one setting away; the user reference still said metrics were manager-only and listed configuration steps that are now done for you. Both were rewritten, including the account boundary and *why* it rejects rather than sanitises — that rule came from measurement, and a reader who does not know it will eventually "simplify" it back into a hole
+- The metrics-backend runbook now diagnoses through the gateway (the only published port), tells the two credentials apart, and explains what a 400 on a query that used to work actually means
+- **New runbook: a tenant sees no metrics.** Five links in a chain, each failing differently, and only one of them the tenant's problem — with the explicit note that "ask them to enable something" is never the answer, because enrolment converges on its own
+- Spanish translations complete: 1564 entries, none untranslated, none fuzzy
+
+## [1.0.47] — 2026-08-09
+
+### Changed
+
+- **Turning observability on is one decision and one button.** The tab presented six fields and no answer to the only question an operator actually has on that screen — is this working? It now asks the single thing that cannot be derived (which host runs the central), and the button deploys the stack and, when it comes up, fills in the endpoints, generates the credential and switches observability on. A single-host setup never has to open the rest, which is folded away under Advanced. What genuinely cannot be derived is left empty and said out loud: agents on hosts *other* than the central's need a public HTTPS endpoint, which requires DNS and a certificate — inventing one would leave a fleet quietly failing to push, and that is worse than an empty field
+- The tab also states, in one line, whether metrics are being collected and whether charts are available — the question the six fields never answered
+
+## [1.0.46] — 2026-08-09
+
+### Added
+
+- **Alerts can now describe an instance, not just the host it happens to sit on.** Every seeded rule was host-scoped, so "this instance is broken" had no way of being said and landed, at best, as a symptom on its host's page. Rules gained a scope: instance-scoped ones resolve through the label the agents attach and raise against the instance itself. Two ship with it — an instance that stopped reporting containers, and an instance returning sustained server errors. The second only became expressible now that HTTP samples are attributed per instance, and it catches what no container metric can: an Odoo that is up and failing looks perfectly healthy to cAdvisor
+- **A suppression hook so sleeping instances do not page anybody.** An instance a plan puts to sleep stops every container on purpose; cAdvisor goes quiet, and a naive rule concludes it is down. Every Free instance would then raise a critical alert nightly, and operators would learn to ignore the one that matters. Core has no notion of sleeping — that is a SaaS feature — so it asks the instance and the SaaS layer answers. Going to sleep also clears an alert already raised, rather than freezing it on screen
+
+### Changed
+
+- The guard that stops a seeded rule from aggregating away the label its alert is attributed by is now **scope-aware**: it previously demanded the host label on every rule, which an instance rule has no business carrying
+
+## [1.0.45] — 2026-08-09
+
+### Added
+
+- **Access logs are collected centrally, with the same account boundary as metrics.** Reading them live over SSH answers "who is hitting this instance right now"; it cannot answer "was this happening yesterday", "which instances are seeing a spike in 401s", or alert on any of it. A collector on each host now ships the proxy's access lines to a log store beside VictoriaMetrics. The account is imposed exactly as it is for metrics — set from the authenticated user, never taken from what the sender claims — which was measured in a throwaway stack before being relied on: a collector pushing with a forged account header lands under its own account, and a reader forging the header still sees only its own lines
+- Retention is **14 days and deliberate**: these lines carry the IP addresses of our tenants' end users, so the store keeps what an incident needs and no more
+
+### Changed
+
+- The log endpoint is **derived from the metrics one** rather than configured separately — on the gateway the two sit side by side, and one fewer field to fill in is one fewer to get wrong. An endpoint that does not follow that shape (a self-hosted operator pointing at their own backend) disables collection instead of guessing a URL, because a collector retrying forever against something that does not exist looks like a fault rather than an absence
+
+## [1.0.44] — 2026-08-09
+
+### Fixed
+
+- **Grafana had no route to a browser at all.** The previous release moved it behind the gateway and removed its host port, which is right, but nothing then proxied it: the embed could only ever have rendered a blank frame, with no error to explain why. The gateway now serves it under `/grafana/`, and Grafana is told to build its links with that prefix — without which every asset 404s and the result looks identical to the original bug
+
+### Added
+
+- **One Grafana organisation per account, each with a datasource it cannot widen.** Grafana refuses a datasource outside a user's organisation, so this is the ring behind the gateway's own account filter: even a fault in the query path cannot cross accounts. Verified in a throwaway Grafana rather than assumed — a datasource created in one organisation is invisible from another, and the create/lookup/switch/create sequence behaves as the playbook expects, including the 409 that re-running produces
+- **An operator-only path to Grafana's admin API.** File provisioning cannot create organisations, so the API is the only way and it needs a credential. Rather than distributing Grafana's admin password, the gateway authenticates the caller with the operator credential and then swaps in Grafana's own before proxying — so the panel never holds it, and rotating it is a redeploy of the central instead of a change everywhere that talks to it
+
+## [1.0.43] — 2026-08-09
+
+### Changed
+
+- **Observability settings can be hidden by the layer above.** A new `can_configure_observability` feature flag gates the Monitoring tab in Settings. Core leaves it on, so a self-hosted operator configures their own stack as before; SaaS tenant panels turn it off, because there the account, credential and endpoints are injected at deploy time and re-pushed afterwards. Showing an editable copy would let a tenant point their agents elsewhere, or simply drift from what was pushed and then look broken to both sides
+
+## [1.0.42] — 2026-08-09
+
+### Added
+
+- **A Metrics tab on the instance page.** When one instance is in trouble, the fleet view is the wrong place to look, and it was the only place there was. The tab embeds that instance's dashboard pinned to it, and underneath shows the requests the charts cannot describe: status-code breakdown, the client IPs hitting hardest, the paths they are hitting, and the most recent requests with IP, method, path and status. The dashboard variable in the URL is a view filter and never a boundary — what a viewer can see is decided by the gateway from the credentials the datasource authenticates with, so editing it by hand only moves within what that account could already read
+- **A monitoring readout on the host page.** Whether a host is actually reporting was previously invisible, which is half of why manual enrolment was confusing: an unmonitored host looked exactly like a monitored one, and there was no way to tell whether the button still needed pressing. It now says whether the agents are installed, whether data is arriving, and whether an install keeps failing — a health readout, not a prompt, since enrolment converges on its own
+
+### Changed
+
+- **Fleet metrics moved out of the settings area and are hidden until they exist.** The entry hung at the bottom of the sidebar after Settings, as though it were something you configure rather than something you look at; it now sits with the other operational views, next to Hosts. It also disappears entirely while observability is off, instead of offering a section whose only possible message is "not configured"
+- **Metrics and the access log are visible from the developer role upwards**, where they were manager-only. Whoever debugs a slow or attacked instance is exactly the person who needs them, and requiring the manager role turned every incident into a relay race
+
+## [1.0.41] — 2026-08-09
+
+### Added
+
+- **The proxy access log, and a per-instance view of it.** Metrics say an instance is being hammered; they carry neither the client IP nor the requested path, so they cannot say what is being done to it or let you block it — the difference between an alert and an answer. Traefik's access log was never switched on; it now is, in JSON, with headers dropped so cookies and `Authorization` never land on disk. It goes to stdout rather than a file on purpose: a file needs rotation, an unrotated access log on a busy host fills the disk, and Docker's json-file driver already rotates every container's output at 10 MB fleet-wide. The panel reads a slice on demand over SSH and summarises it — request count, status-code breakdown, top client IPs, top paths — and stores nothing, because these lines contain the IP addresses of somebody else's end users. Attribution uses `RouterName`/`ServiceName`, which each line carries in full and which is the same key the metric relabelling joins on, so it survives custom domains, redirects and multi-domain instances rather than depending on a Host-header lookup
+
+### Fixed
+
+- **`cloud.instance.running` had two writers and no arbitration.** The SSH health probe and the metrics liveness cron both decide whether an instance is up, on their own schedules. They agree most of the time, and the state flapped whenever they briefly did not — a race that only appears once observability is enabled, which is to say it was waiting rather than absent. Metrics now own the flag while their readings are fresh (`cloud.instance.metrics_last_seen`, written only by the cron); the SSH probe keeps doing everything metrics cannot — HTTP probing, error-log scraping — and takes the flag back by itself the moment the readings go stale, so there is no window where nobody decides
+
+## [1.0.40] — 2026-08-09
+
+### Added
+
+- **Metrics accounts, so one panel cannot read or poison another's data.** The central used to be protected by a single fleet-wide secret that was valid for both reading and writing and was copied onto every host — workable while one panel owned its own backend, untenable the moment several share one. Each panel now has an account (`metrics_account`) and a credential scoped to it, and the central derives the label it stamps on every series from whoever authenticated rather than from anything the agent claims. That distinction is the whole point: an agent runs on a machine its owner has root on, so its claim about who it is can never be trusted. A second, separate credential covers the operator's unfiltered view and is deliberately never written to a host. Measured against VictoriaMetrics 1.102 before being designed around: repeated `extra_filters[]` are ORed and the last `extra_label` wins, so a gateway that merely *appends* its own filter is bypassable in both directions — hence the write path discards the agent's query string outright and the read path rejects (400) anything carrying those parameters instead of trying to sanitise it
+- **Per-instance HTTP attribution.** Traefik's request rates, status codes and latencies were already being scraped and thrown away unattributed, on the documented belief that its service names were copier-time literals unrelated to anything we control. They are not: the panel runs `copier copy` itself and feeds it `project_name = doodba_project_name`, the same string it forces into `COMPOSE_PROJECT_NAME`, so the names are derived and the scrape config now relabels them onto the owning instance. The earlier conclusion came from surveying doodba projects scaffolded by hand, which is not how any panel-deployed instance is built
+- **Reconciliation of observability enrolment.** A cron every 15 minutes enrols any host that should be reporting and is not, with a per-host back-off and an alert once failures persist
+
+### Changed
+
+- **Observability is applied to every host instead of being installed by hand.** The button on the host page is gone. It had been justified as "how an operator refreshes the labels after adding instances", a task that became automatic when deploy/move/remove started refreshing them; what remained was a button whose only purpose was enrolment — and enrolment is not a decision, since there is no host to which observability does not apply. Leaving it there implied a step that could be forgotten, and forgetting it produced a silently unmonitored host. Enabling observability is now itself the instruction: the next reconciliation tick enrols everything pending. The chain from host setup stays, but only as an accelerator — if it fails, the cron picks the host up, which is precisely what used to be missing
+- Grafana no longer runs anonymously and VictoriaMetrics no longer publishes a port; both sit behind the gateway, which is now the only way in
+
+### Fixed
+
+- **Two bugs that shared one cause: `last_probed` meant "somebody read this host's specs", and was being used to answer two questions it could not answer.** Both the metrics reader and the SSH telemetry job write it, so (a) the guard deciding whether a host had agents installed saw the entire fleet as enrolled — the opposite of what its comment claimed — and (b) the SSH fallback's self-disabling check read a field the SSH job itself had just written, so with observability on and agents not actually reporting it stood down on the strength of its own footprint, resuming only when the freshness window expired and then standing down again. That degraded the fallback from every five minutes to roughly every fifteen, oscillating, exactly when it was the only thing collecting. Enrolment is now recorded explicitly (`metrics_agents_state`) and metric freshness has its own field written by the reader alone (`metrics_last_seen`). Both bugs were latent: they could only bite once observability was switched on, which it never has been
+
+## [1.0.39] — 2026-08-09
+
+### Changed
+
+- **The Traefik scrape job no longer claims its samples cannot be attributed to an instance.** The note there stated there was no sound join key between a Traefik service name and a `cloud.instance`, and concluded that per-instance HTTP had to wait for a later observability phase. That conclusion came from surveying doodba projects scaffolded by hand, where `project_name` is whatever their author typed — it does not describe instances the panel deploys, which is all of them: `cloud_instance._render_copier_answers()` passes `project_name = doodba_project_name`, the very string the deploy forces into `COMPOSE_PROJECT_NAME`, and nothing overrides that method in any of the three modes. Service and router names are therefore derived rather than guessed (`<doodba_project_name>-<version, dots as dashes>-prod-<main|longpolling>@docker`), as confirmed against a running proxy. The comment now records the real rule, why the old survey misled, and the one extra path SaaS adds — tenant panels sit behind a Sablier router and report under `<tenant.slug>-svc@file`, a mapping that belongs to the manager layer. No behaviour changes; the relabelling itself is still unwired. The point is that the next person to read it will not re-derive the wrong answer and shelve the feature again
+
 ## [1.0.38] — 2026-08-08
 
 ### Changed

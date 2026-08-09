@@ -78,6 +78,57 @@
         <field name="message">CPU on %(host)s has been saturated (load/core %(value)s).</field>
     </record>
 
+    <!-- ── Instance-scoped rules ──────────────────────────────────────
+         These raise against the instance, so the alert lands on its own
+         page instead of being buried in its host's. Both depend on the
+         agents' relabelling attaching ``instance_id``.
+
+         Note what is deliberately NOT here: a disk-usage rule per
+         instance. The textfile collector reports bytes used, not a
+         percentage, and a byte threshold means nothing across instances
+         of different sizes — it would either never fire or fire on the
+         big ones permanently. Disk stays a host-level rule until there
+         is a per-instance quota to compare against.
+    -->
+
+    <record id="metric_rule_instance_down" model="cloud.metric.rule">
+        <field name="name">Instance stopped reporting</field>
+        <field name="sequence">40</field>
+        <field name="code">metrics_instance_absent</field>
+        <field name="scope">instance</field>
+        <!-- Age of the newest container sample for this instance. Same
+             shape as the host watchdog, and for the same reason: a
+             plain absent() carries no instance label, so nothing could
+             be attributed and no alert could ever be raised. -->
+        <field name="expression">max by (instance_id, instance) (time() - container_last_seen{instance_id!=""})</field>
+        <field name="comparator">gt</field>
+        <!-- Generous on purpose. A rebuild stops containers for a while,
+             and a deploy that takes four minutes must not page anyone. -->
+        <field name="threshold">300</field>
+        <field name="level">critical</field>
+        <field name="message">Instance %(host)s has stopped reporting containers.</field>
+    </record>
+
+    <record id="metric_rule_instance_errors" model="cloud.metric.rule">
+        <field name="name">Instance returning server errors</field>
+        <field name="sequence">50</field>
+        <field name="code">metrics_instance_5xx</field>
+        <field name="scope">instance</field>
+        <!-- Server errors per second over five minutes, attributed by
+             the Traefik relabelling. This is the signal that says "the
+             instance is up and failing", which no container metric can
+             express — an Odoo throwing 500s looks perfectly healthy to
+             cAdvisor. -->
+        <field name="expression">sum by (instance_id, instance) (rate(traefik_service_requests_total{code=~"5..",instance_id!=""}[5m]))</field>
+        <field name="comparator">gt</field>
+        <!-- Roughly one server error every two seconds, sustained. Low
+             enough to catch a broken deploy, high enough that the odd
+             500 from a crawler hitting a bad URL does not page. -->
+        <field name="threshold">0.5</field>
+        <field name="level">warning</field>
+        <field name="message">Instance %(host)s is returning %(value)s server errors per second.</field>
+    </record>
+
     <record id="cron_cloud_metric_rule_evaluate" model="ir.cron">
         <field name="name">Evaluate metric rules</field>
         <field name="model_id" ref="model_cloud_metric_rule"/>

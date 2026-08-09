@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Keeps every host enrolled in observability.
+
+        This cron is the single mechanism that applies the agents, which
+        is why enabling observability needs no companion "enrol existing
+        hosts" action: switching the master toggle on is itself the
+        instruction, and the next tick acts on it. The chain from host
+        setup remains, but only as an accelerator so a brand-new host is
+        covered in seconds rather than within a tick — if it fails, this
+        cron picks the host up anyway, which is exactly what used to be
+        missing.
+
+        Fifteen minutes is a compromise: new hosts are already covered by
+        the setup chain, so this interval only bounds how long the
+        catch-up cases wait (observability just switched on, an install
+        that failed, a host that was unreachable). Per-host back-off lives
+        in the model, so a shorter interval here would not hammer anything
+        — it would just spin.
+    -->
+    <record id="cron_reconcile_observability" model="ir.cron">
+        <field name="name">Reconcile observability enrolment</field>
+        <field name="model_id" ref="model_cloud_host"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_reconcile_observability()</field>
+        <field name="interval_number">15</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

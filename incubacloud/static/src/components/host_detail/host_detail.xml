@@ -222,6 +222,14 @@
                                         <span class="rl-v" t-esc="timeAgo(state.host.last_probed)"/>
                                     </div>
                                 </t>
+                                <!-- Whether this host is actually being
+                                     monitored. Enrolment is automatic, so
+                                     this is a health readout, not a
+                                     prompt to do something. -->
+                                <div class="rl-ovrow">
+                                    <span class="rl-l">Monitoring</span>
+                                    <span class="rl-v" t-esc="observabilityLabel"/>
+                                </div>
                             </div>
                         </div>
 

@@ -24,11 +24,21 @@
   vars:
     ic_obs_dir: "{{ ansible_env.HOME }}/observability"
     ic_remote_write_url: ""
+    # Where access logs are pushed. Empty disables collection entirely
+    # rather than starting a collector that pushes into the void.
+    ic_logs_write_url: ""
     ic_remote_write_token: ""
+    # User half of the credential, and the account this panel writes as.
+    # The central overwrites the label from whoever authenticates, so
+    # what the agent claims here is only a local convenience.
+    ic_remote_write_user: ""
+    ic_account: ""
     ic_host_id: ""
     ic_host_name: ""
-    # [{compose_project, instance_id, instance, project, tenant}, ...]
+    # [{compose_project, instance_id, instance, project, tenant,
+    #   traefik_prefix, traefik_extra}, ...]
     ic_instances: []
+    ic_promtail_image: "grafana/promtail:2.9.8"
     ic_node_exporter_image: "quay.io/prometheus/node-exporter:v1.8.2"
     # v0.54.0+ is REQUIRED, not merely preferred: Docker 28/29 default to
     # the containerd image store, and older cAdvisor (v0.52 and below)
@@ -81,6 +91,22 @@
       # ``container_label_com_docker_compose_project``; the panel sets that
       # to ``doodba_project_name`` at deploy time, so it is a stable join
       # key that survives renames of anything else.
+      #
+      # Traefik is joinable too, and an earlier note in this file claimed
+      # the opposite — that its service names were copier-time literals
+      # unrelated to anything we control, so per-instance HTTP had to wait
+      # for a later phase. That came from surveying doodba projects
+      # scaffolded by hand, where ``project_name`` is whatever their author
+      # typed. It does not describe instances the panel deploys, which is
+      # all of them: the panel runs ``copier copy`` itself and
+      # ``_render_copier_answers()`` passes
+      # ``project_name = doodba_project_name`` — the same string forced
+      # into COMPOSE_PROJECT_NAME. Traefik therefore reports under
+      # ``<doodba_project_name>-<version, dots as dashes>-prod-<main|longpolling>@docker``
+      # (routers: ``https-<same>-prod-<purpose>-<n>@docker``), verified
+      # against a running proxy. A deployment layer above core may put an
+      # extra router in front of an instance; when it does, mapping that
+      # name is the job of the layer that created it, not of this playbook.
       ansible.builtin.copy:
         dest: "{{ ic_obs_dir }}/scrape.yml"
         mode: "0644"
@@ -90,6 +116,13 @@
             external_labels:
               host: "{{ ic_host_name }}"
               host_id: "{{ ic_host_id }}"
+              # host_id is only unique within one panel's database, so on
+              # a shared central the pair (ic_account, host_id) is what
+              # identifies a host. Set here as a global label so it
+              # covers node_exporter, cAdvisor, Traefik and the textfile
+              # collector at once. The central overwrites it from the
+              # authenticated user, which is what makes it trustworthy.
+              ic_account: "{{ ic_account }}"
 
           scrape_configs:
             - job_name: node
@@ -105,20 +138,54 @@
             - job_name: traefik
               static_configs:
                 - targets: ["proxy:8082"]
-              # NOTE — these samples are host-scoped, not instance-scoped.
-              # Traefik reports per *service*, and the service name is a
-              # copier-time literal baked into the customer's own
-              # prod.yaml ("<their project_name>-19-0-prod-main@docker").
-              # It bears no relation to COMPOSE_PROJECT_NAME, which the
-              # deploy forces to "<remote_folder>-<instance>" — surveyed
-              # across eight real doodba projects, the two strings differ
-              # arbitrarily ("proddddd-16-0-prod-main" for a project whose
-              # compose name is something else entirely). So there is no
-              # sound join key here and no relabelling is attempted:
-              # guessing one would silently attribute another tenant's
-              # traffic to the wrong instance, which is worse than having
-              # no panel. Per-instance HTTP belongs to observability v2,
-              # where blackbox probes give it directly.
+              # Attribute each sample to the instance that answers under
+              # that service. The names are derived, not guessed: the
+              # panel feeds copier ``project_name = doodba_project_name``,
+              # the same string it forces into COMPOSE_PROJECT_NAME, so
+              # the prefix below is computed from panel state.
+              #
+              # Only the prefix is matched because the suffix varies by
+              # role and environment (``-prod-main``,
+              # ``-prod-longpolling``, ``-test-…``). Routers additionally
+              # carry an ``https-`` prefix in the template's output,
+              # hence the optional group.
+              metric_relabel_configs:
+          {% for inst in ic_instances %}
+          {% if inst.traefik_prefix %}
+                - source_labels: [service]
+                  regex: "{{ inst.traefik_prefix }}.*"
+                  target_label: instance_id
+                  replacement: "{{ inst.instance_id }}"
+                - source_labels: [service]
+                  regex: "{{ inst.traefik_prefix }}.*"
+                  target_label: instance
+                  replacement: "{{ inst.instance }}"
+                - source_labels: [service]
+                  regex: "{{ inst.traefik_prefix }}.*"
+                  target_label: project
+                  replacement: "{{ inst.project }}"
+                - source_labels: [router]
+                  regex: "(https-)?{{ inst.traefik_prefix }}.*"
+                  target_label: instance_id
+                  replacement: "{{ inst.instance_id }}"
+                - source_labels: [router]
+                  regex: "(https-)?{{ inst.traefik_prefix }}.*"
+                  target_label: instance
+                  replacement: "{{ inst.instance }}"
+          {% endif %}
+          {% for extra in inst.traefik_extra | default([]) %}
+                # An upper layer put its own router in front of this
+                # instance, so traffic reports under that name instead.
+                - source_labels: [service]
+                  regex: "{{ extra }}"
+                  target_label: instance_id
+                  replacement: "{{ inst.instance_id }}"
+                - source_labels: [service]
+                  regex: "{{ extra }}"
+                  target_label: instance
+                  replacement: "{{ inst.instance }}"
+          {% endfor %}
+          {% endfor %}
           {% endif %}
 
             - job_name: cadvisor
@@ -154,6 +221,54 @@
           {% endif %}
           {% endfor %}
       register: ic_scrape_cfg
+
+    - name: Write the access-log collector configuration
+      # Only the proxy's own container is read, and only its JSON access
+      # lines: Traefik's operational messages share the same stream and
+      # are noise here. The service name becomes a label, which is what
+      # makes "show me this instance's requests" a cheap query — its
+      # cardinality is bounded by the instances on this host, not by
+      # anything unbounded like a path or an IP.
+      when: ic_logs_write_url | length > 0
+      ansible.builtin.copy:
+        dest: "{{ ic_obs_dir }}/promtail.yaml"
+        mode: "0644"
+        content: |
+          server:
+            http_listen_port: 9080
+            grpc_listen_port: 0
+          positions:
+            filename: /tmp/positions.yaml
+          clients:
+            - url: {{ ic_logs_write_url }}
+              basic_auth:
+                username: {{ ic_remote_write_user }}
+                password_file: /etc/remote_write_token
+          scrape_configs:
+            - job_name: traefik-access
+              docker_sd_configs:
+                - host: unix:///var/run/docker.sock
+                  refresh_interval: 30s
+                  filters:
+                    - name: name
+                      values: ["inverseproxy-proxy-1"]
+              relabel_configs:
+                - source_labels: ['__meta_docker_container_name']
+                  target_label: container
+                - target_label: host
+                  replacement: "{{ ic_host_name }}"
+              pipeline_stages:
+                # Everything Traefik writes that is not an access line
+                # starts with something other than a brace.
+                - drop:
+                    expression: '^[^{]'
+                - json:
+                    expressions:
+                      service: ServiceName
+                      status: DownstreamStatus
+                - labels:
+                    service:
+      register: ic_promtail_cfg
 
     - name: Write the agents compose file
       ansible.builtin.copy:
@@ -197,6 +312,19 @@
                 - /var/lib/docker/:/var/lib/docker:ro
                 - /dev/disk/:/dev/disk:ro
 
+          {% if ic_logs_write_url %}
+            promtail:
+              image: {{ ic_promtail_image }}
+              restart: unless-stopped
+              command: ['-config.file=/etc/promtail/promtail.yaml']
+              volumes:
+                - {{ ic_obs_dir }}/promtail.yaml:/etc/promtail/promtail.yaml:ro
+                - {{ ic_obs_dir }}/.remote_write_token:/etc/remote_write_token:ro
+                # Read-only socket: it only needs to discover and read the
+                # proxy container's log stream.
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+          {% endif %}
+
             vmagent:
               image: {{ ic_vmagent_image }}
               restart: unless-stopped
@@ -217,7 +345,7 @@
                 # only knows how to check -httpAuth.*, so a bearer token
                 # was accepted-and-ignored by the central and authorised
                 # nothing at all. Same secret, a scheme that is enforced.
-                - '-remoteWrite.basicAuth.username=incubacloud'
+                - '-remoteWrite.basicAuth.username={{ ic_remote_write_user }}'
                 - '-remoteWrite.basicAuth.passwordFile=/etc/remote_write_token'
                 # Survive a central outage instead of dropping samples.
                 - '-remoteWrite.maxDiskUsagePerURL=512MB'
