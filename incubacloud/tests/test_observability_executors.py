@@ -243,3 +243,32 @@ class TestLogCollectorEndpoint(ObservabilityExecutorCase):
         )
         extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
         self.assertEqual(extra["ic_logs_write_url"], "")
+
+
+class TestFirstDeploymentIsUsable(ObservabilityExecutorCase):
+    """A central that comes up accepting no writes is the worst outcome.
+
+    It reports healthy from every angle — containers up, health endpoint
+    answering — while silently refusing every agent. The account file is
+    built from state that must therefore already exist when the playbook
+    runs, not be created after it succeeds.
+    """
+
+    def test_the_account_exists_before_the_account_file_is_built(self):
+        """Regression: the credential used to be minted in on_success.
+
+        The first deployment then wrote an empty account file, so the
+        central had to be deployed a second time before it would accept
+        anything — with nothing in the job log to say so.
+        """
+        self.settings.write({
+            "metrics_account": False,
+            "metrics_remote_write_token": False,
+        })
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.assertTrue(
+            extra["ic_accounts_htpasswd"].strip(),
+            "the central would have come up accepting no writes at all",
+        )
+        self.assertTrue(extra["ic_accounts"])
+        self.assertTrue(self.settings.metrics_account)

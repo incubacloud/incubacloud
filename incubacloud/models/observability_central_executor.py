@@ -63,6 +63,13 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
     def get_extra_vars(self):
         """Hand retention, credentials and Grafana auth to the playbook."""
         settings = self.env["cloud.settings"].sudo()._get_system()
+        # Mint this panel's own credential BEFORE listing the accounts.
+        # It used to be created in on_success, which meant the very first
+        # deployment wrote an empty account file: a central that came up
+        # healthy and accepted no writes at all, needing a second
+        # deployment to become usable. Nothing about that was visible
+        # from the job log.
+        settings._ensure_metrics_credential()
         accounts = self._metrics_accounts()
         operator_token = settings._ensure_operator_credential()
         admin_password = settings._ensure_grafana_admin_password()
@@ -72,10 +79,13 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             f"{len(accounts)} account(s))."
         )
         if not accounts:
+            # Unreachable for core, which just minted its own. A layer
+            # above could still hand back nothing, and a central that
+            # accepts no writes looks healthy from every angle — so say
+            # it rather than let it pass silently.
             self._sys(
-                "⚠ No metrics account is configured yet, so the central "
-                "will accept no writes. Enable observability in Settings "
-                "to generate one."
+                "⚠ No metrics account resolved, so this central will "
+                "accept no writes from anyone."
             )
         return {
             "ic_retention_days": settings.metrics_retention_days or 90,
@@ -152,7 +162,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         """
         settings = self.env["cloud.settings"].sudo()._get_system()
         gateway = str(self.playbook_facts().get("ic_central_gateway") or "")
-        account, _token = settings._ensure_metrics_credential()
+        # Already minted before the playbook ran; read it back for the log.
+        account = settings.metrics_account or ""
 
         vals = {"metrics_enabled": True}
         if gateway:
