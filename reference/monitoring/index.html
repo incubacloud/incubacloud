@@ -1089,6 +1089,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#where-to-look" class="md-nav__link">
+    <span class="md-ellipsis">
+      Where to look
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#alerts" class="md-nav__link">
     <span class="md-ellipsis">
       Alerts
@@ -1167,6 +1176,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#where-to-look" class="md-nav__link">
+    <span class="md-ellipsis">
+      Where to look
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#alerts" class="md-nav__link">
     <span class="md-ellipsis">
       Alerts
@@ -1217,80 +1235,56 @@
 
 
 <h1 id="monitoring">Monitoring<a class="headerlink" href="#monitoring" title="Permanent link">&para;</a></h1>
-<p>The <strong>Monitoring</strong> section shows what your servers and instances are
-actually doing: how loaded they are, how much disk they have left, and
-how your instances are responding to traffic.</p>
-<p>It is read-only. Nothing here changes your instances.</p>
+<p>Every host you manage reports its own health and that of the instances on
+it. There is nothing to install: once observability is switched on, hosts
+enrol themselves, and any host that fails to is retried automatically
+until it succeeds.</p>
 <h2 id="what-is-measured">What is measured<a class="headerlink" href="#what-is-measured" title="Permanent link">&para;</a></h2>
-<table>
-<thead>
-<tr>
-<th>What you see</th>
-<th>What it means</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Load per core</strong></td>
-<td>How busy the server's processor is. Sustained values above 2 mean work is queueing up.</td>
-</tr>
-<tr>
-<td><strong>Memory used</strong></td>
-<td>Percentage of RAM in use. Above ~92% the server starts trading speed for space.</td>
-</tr>
-<tr>
-<td><strong>Disk used</strong></td>
-<td>Percentage of the server's main disk in use. This is the one that eventually breaks things: a full disk stops backups, deploys and the database itself.</td>
-</tr>
-<tr>
-<td><strong>Disk per instance</strong></td>
-<td>How much space each instance's folder takes. Useful to find which instance is growing.</td>
-</tr>
-<tr>
-<td><strong>CPU / memory per container</strong></td>
-<td>The same, but broken down by the pieces of one instance (Odoo, database, backup).</td>
-</tr>
-<tr>
-<td><strong>HTTP requests</strong></td>
-<td>Requests reaching each instance, grouped by response code. A rising count of 5xx means errors your users are seeing.</td>
-</tr>
-<tr>
-<td><strong>Response time (p95)</strong></td>
-<td>95% of requests finish faster than this. A good early warning: it climbs before anything actually breaks.</td>
-</tr>
-</tbody>
-</table>
+<p><strong>Per host</strong> — CPU, memory, disk usage and free space, load, and whether
+the host is reporting at all.</p>
+<p><strong>Per instance</strong> — CPU and memory of each container, disk used by the
+instance's directory, and its HTTP traffic: requests per second, status
+codes and latency.</p>
+<p><strong>Per request</strong> — the proxy also records who asked for what. That is what
+the <em>Recent requests</em> panel on an instance shows: client IP, method, path
+and response code. Metrics tell you an instance is under load; only these
+tell you what is being done to it.</p>
+<h2 id="where-to-look">Where to look<a class="headerlink" href="#where-to-look" title="Permanent link">&para;</a></h2>
+<p><strong>One instance in trouble</strong> → open it and go to the <strong>Metrics</strong> tab. This
+is the right place during an incident: charts for that instance, and
+underneath, the requests hitting it right now, with a breakdown by status
+code and the client addresses sending the most.</p>
+<p><strong>The whole fleet</strong> → the <strong>Monitoring</strong> entry in the sidebar, next to
+Hosts. It appears only when observability is enabled.</p>
+<p><strong>Is a host being monitored?</strong> → its page states it plainly: reporting,
+agents installed but no data yet, install failed and retrying, or not
+enrolled yet.</p>
+<p>Both views need the <code>developer</code> role or above.</p>
 <h2 id="alerts">Alerts<a class="headerlink" href="#alerts" title="Permanent link">&para;</a></h2>
-<p>You do not have to watch the dashboards. When something crosses a
-threshold, the panel raises an alert and notifies you through the
-channels you already use (in-panel, email, and any integrations you
-configured).</p>
-<p>Alerts resolve themselves when the situation recovers — you will not
-have to dismiss them one by one.</p>
-<p>Out of the box you are warned when:</p>
-<ul>
-<li>a server <strong>stops reporting</strong> at all (it may be down or unreachable),</li>
-<li>its <strong>disk</strong> goes above 90%,</li>
-<li>its <strong>memory</strong> goes above 92%, or</li>
-<li>its <strong>processor</strong> stays saturated.</li>
-</ul>
-<div class="admonition note">
-<p class="admonition-title">If the metrics system itself goes down</p>
-<p>You get one alert saying so, and the existing alerts stay as they
-are. They are never cleared just because data stopped arriving —
-silence is not the same as "everything is fine".</p>
-</div>
+<p>Rules are data, not code: thresholds can be tuned without a release.
+Shipped rules cover a host that stopped reporting, a disk almost full,
+memory nearly exhausted, sustained CPU saturation, an instance that
+stopped reporting containers, and an instance returning server errors.</p>
+<p>Alerts arrive through the same channels as everything else — in-app,
+email, Telegram or webhook, as configured.</p>
+<p>An instance whose plan puts it to sleep on idle does <strong>not</strong> raise a
+"stopped reporting" alert. Sleeping stops its containers on purpose, and
+alerting on it every night would train everyone to ignore the alert that
+matters.</p>
 <h2 id="what-you-need-for-it-to-work">What you need for it to work<a class="headerlink" href="#what-you-need-for-it-to-work" title="Permanent link">&para;</a></h2>
-<ol>
-<li>Observability enabled in <strong>Settings</strong>.</li>
-<li>The metrics <strong>agents installed on each host</strong> (a one-click job from
-   the host's page, repeatable at any time).</li>
-</ol>
-<p>Until both are done, the section explains what is missing instead of
-showing empty charts.</p>
+<p><strong>On IncubaCloud's SaaS</strong> — nothing. Metrics are configured for you when
+your panel is created, and hosts you add later are enrolled on their own.</p>
+<p><strong>Self-hosted</strong> — one decision: which of your hosts runs the central
+stack. Settings → Monitoring, pick the host, press <em>Enable observability</em>.
+The endpoints and credentials are filled in for you.</p>
+<p>If you have hosts other than the one running the central, they need a
+public HTTPS address to push to; set it under <em>Advanced</em>. The local
+address the button fills in is only reachable from the central's own
+host.</p>
 <h2 id="what-is-not-here-yet">What is not here yet<a class="headerlink" href="#what-is-not-here-yet" title="Permanent link">&para;</a></h2>
-<p>Database-level metrics, log search, and per-instance monitoring shown to
-your own end customers are planned but not part of this version.</p>
+<p>Database metrics per instance (connections, cache hit ratio, locks) and
+synthetic probes from outside. Both are designed and deferred; nothing
+already collected changes when they land.</p>
 
 
 
