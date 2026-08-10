@@ -89,13 +89,20 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             lambda i: i.state != "draft",
         )
 
+    #: The write endpoint our own central exposes, under the account
+    #: prefix vmauth strips. Recognising it is what tells "this is our
+    #: gateway, derive the log endpoint" apart from "a foreign backend,
+    #: collect nothing".
+    _METRICS_WRITE_SUFFIX = "/w/api/v1/write"
+    _LOGS_WRITE_SUFFIX = "/lw/loki/api/v1/push"
+
     def _logs_write_url(self, settings):
         """Return where access logs are pushed, or '' to skip collection.
 
         Derived from the metrics endpoint rather than configured
         separately: on our gateway the two live side by side (``/w/`` and
-        ``/lw/``), and one fewer field to fill in is one fewer field to
-        get wrong.
+        ``/lw/`` under vmauth), and one fewer field to fill in is one
+        fewer field to get wrong.
 
         An endpoint that does not follow that shape — a self-hosted
         operator pointing at their own VictoriaMetrics, say — yields ''
@@ -106,11 +113,11 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         :param settings: the ``cloud.settings`` singleton.
         :return: the push URL, or ''.
         """
-        base = (settings.metrics_remote_write_url or "").strip()
-        if not base.rstrip("/").endswith("/w"):
+        base = (settings.metrics_remote_write_url or "").strip().rstrip("/")
+        if not base.endswith(self._METRICS_WRITE_SUFFIX):
             return ""
-        root = base.rstrip("/")[: -len("/w")]
-        return f"{root}/lw/"
+        root = base[: -len(self._METRICS_WRITE_SUFFIX)]
+        return f"{root}{self._LOGS_WRITE_SUFFIX}"
 
     def get_extra_vars(self):
         """Hand the agent configuration and the label map to the playbook."""

@@ -10,6 +10,8 @@ without ``__init__`` so no SSH transport or job record is needed.
 """
 from unittest.mock import MagicMock
 
+import yaml
+
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
@@ -55,6 +57,27 @@ class ObservabilityExecutorCase(TransactionCase):
         executor._sys = lambda *args, **kwargs: None
         executor._facts = {}
         return executor
+
+    def _user(self, cfg, username):
+        """Return the vmauth user dict for *username*, or None.
+
+        :param cfg: the parsed vmauth config.
+        :param username: the account (or ``operator``) to find.
+        """
+        return next(
+            (u for u in cfg.get("users", []) if u["username"] == username),
+            None,
+        )
+
+    def _route(self, user, src_path):
+        """Return the url_map entry of *user* matching *src_path*.
+
+        :param user: a vmauth user dict.
+        :param src_path: the exact ``src_paths`` regex to match.
+        """
+        return next(
+            e for e in user["url_map"] if src_path in e["src_paths"]
+        )
 
 
 class TestAgentsExecutor(ObservabilityExecutorCase):
@@ -151,14 +174,18 @@ class TestCentralExecutor(ObservabilityExecutorCase):
     def test_extra_vars_carry_retention_and_the_account_list(self):
         extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
         self.assertEqual(extra["ic_retention_days"], 45)
-        # The htpasswd IS the access-control list: an account in it can
-        # write and read its own series and nothing else. Hashed, so the
-        # assertion is on the user half.
-        self.assertIn("acct_test01:", extra["ic_accounts_htpasswd"])
-        self.assertNotIn(
-            "shared-secret", extra["ic_accounts_htpasswd"],
-            "the credential was written in clear instead of hashed",
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        # The vmauth user list IS the access-control list: a user in it
+        # writes and reads its own series and nothing else. The account
+        # is a username.
+        account = self._user(cfg, "acct_test01")
+        self.assertIsNotNone(
+            account, "the account is not a vmauth user, so it cannot write",
         )
+        # And the label it forces on writes is derived from that user, so
+        # a client cannot write as anyone else.
+        write = self._route(account, "/w/.*")
+        self.assertIn("extra_label=ic_account=acct_test01", write["url_prefix"])
 
     def test_the_operator_credential_is_separate_and_generated(self):
         """It reads across accounts, so it must never be an account's own.
@@ -168,15 +195,77 @@ class TestCentralExecutor(ObservabilityExecutorCase):
         exists for.
         """
         extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
-        self.assertIn("operator:", extra["ic_operator_htpasswd"])
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        operator = self._user(cfg, "operator")
+        self.assertIsNotNone(operator)
         self.assertTrue(extra["ic_operator_plain"])
         self.assertNotEqual(extra["ic_operator_plain"], "shared-secret")
+        self.assertEqual(operator["password"], extra["ic_operator_plain"])
+        # The operator owns the two cross-account doors and nothing else.
+        paths = {sp for entry in operator["url_map"] for sp in entry["src_paths"]}
+        self.assertEqual(paths, {"/admin-r/.*", "/gadmin/.*"})
 
     def test_retention_falls_back_to_ninety_days(self):
         """Zero would tell VictoriaMetrics to keep nothing."""
         self.settings.metrics_retention_days = 0
         extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
         self.assertEqual(extra["ic_retention_days"], 90)
+
+    def test_every_data_route_forces_the_account(self):
+        """The label pinning is what the whole boundary rests on.
+
+        Measured against real VM + Loki (lab, 2026-08-10): a client that
+        sends its own extra_label / extra_filters / X-Scope-OrgID has it
+        dropped for colliding with the one the route forces, so it cannot
+        write or read as anyone else. Pinned here so a config change that
+        drops the forcing fails loudly.
+        """
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        account = self._user(cfg, "acct_test01")
+        self.assertIn(
+            "extra_label=ic_account=acct_test01",
+            self._route(account, "/w/.*")["url_prefix"],
+        )
+        self.assertIn(
+            "acct_test01", self._route(account, "/r/.*")["url_prefix"],
+        )
+        for logs in ("/lw/.*", "/lr/.*"):
+            self.assertIn(
+                "X-Scope-OrgID: acct_test01",
+                self._route(account, logs)["headers"],
+            )
+
+    def test_no_unauthorized_user_so_missing_credentials_are_401(self):
+        """That section's ABSENCE is what makes a credential-less request
+        401 rather than proxied — measured, where adding it turned the
+        401 into a 503 against a dead backend."""
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        self.assertNotIn("unauthorized_user", cfg)
+
+    def test_every_route_uses_a_bare_root_prefix_and_drops_the_segment(self):
+        """The path shape that avoids the trailing-slash 404 Loki gives.
+
+        vmauth APPENDS the client's remaining path to url_prefix, so a
+        fixed-path prefix duplicates the path or leaves a slash Loki
+        rejects. Every route must therefore point at the backend root and
+        drop the one-segment account prefix.
+        """
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        for user in cfg["users"]:
+            for entry in user["url_map"]:
+                where = f"{user['username']} {entry['src_paths']}"
+                self.assertEqual(
+                    entry.get("drop_src_path_prefix_parts"), 1,
+                    f"{where} must drop the account segment",
+                )
+                root = entry["url_prefix"].split("?", 1)[0]
+                self.assertTrue(
+                    root.endswith("/") and root.count("/") == 3,
+                    f"{where} url_prefix is not a bare root: {root}",
+                )
 
     def test_a_backend_that_never_answered_is_not_a_success(self):
         """rc=0 only means Ansible finished, not that the stack works.
@@ -217,20 +306,34 @@ class TestLogCollectorEndpoint(ObservabilityExecutorCase):
         )._logs_write_url(self.settings)
 
     def test_it_is_derived_from_the_metrics_endpoint(self):
-        """One field fewer to fill in is one field fewer to get wrong."""
-        self.settings.metrics_remote_write_url = "https://m.example.com/w/"
-        self.assertEqual(self._url(), "https://m.example.com/lw/")
+        """One field fewer to fill in is one field fewer to get wrong.
 
-    def test_a_missing_trailing_slash_still_works(self):
-        self.settings.metrics_remote_write_url = "https://m.example.com/w"
-        self.assertEqual(self._url(), "https://m.example.com/lw/")
+        Both endpoints live under the account prefix vmauth strips: the
+        write path is ``/w/api/v1/write`` and the log path is the sibling
+        ``/lw/loki/api/v1/push``.
+        """
+        self.settings.metrics_remote_write_url = (
+            "https://m.example.com/w/api/v1/write"
+        )
+        self.assertEqual(
+            self._url(), "https://m.example.com/lw/loki/api/v1/push",
+        )
+
+    def test_a_trailing_slash_still_works(self):
+        self.settings.metrics_remote_write_url = (
+            "https://m.example.com/w/api/v1/write/"
+        )
+        self.assertEqual(
+            self._url(), "https://m.example.com/lw/loki/api/v1/push",
+        )
 
     def test_a_foreign_endpoint_disables_collection(self):
         """A self-hosted operator may point at their own backend.
 
         Guessing a URL there would start a collector that retries
         forever against something that does not exist — worse than not
-        collecting, because it looks like a fault.
+        collecting, because it looks like a fault. A backend that is not
+        ours does not carry the ``/w/`` account prefix.
         """
         self.settings.metrics_remote_write_url = (
             "https://vm.example.com/api/v1/write"
@@ -266,8 +369,12 @@ class TestFirstDeploymentIsUsable(ObservabilityExecutorCase):
             "metrics_remote_write_token": False,
         })
         extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        real_accounts = [
+            u for u in cfg["users"] if u["username"] != "operator"
+        ]
         self.assertTrue(
-            extra["ic_accounts_htpasswd"].strip(),
+            real_accounts,
             "the central would have come up accepting no writes at all",
         )
         self.assertTrue(extra["ic_accounts"])

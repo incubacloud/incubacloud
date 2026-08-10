@@ -16,8 +16,8 @@ While this lasts, **metric-based alerts are not being evaluated**.
 ## 1. Confirm the scope
 
 ```bash
-# From the central host. The gateway is the only published port; nothing
-# else in the stack has one, so this is the path to test.
+# From the central host. vmauth is the published data port; VM and Loki
+# have none, so this is the path to test.
 curl -sS -u operator:<operator credential> \
   http://172.17.0.1:8428/admin-r/health
 
@@ -59,17 +59,18 @@ the account list and Grafana organisations along the way.
 ## 3. The central is up but the panel cannot reach it
 
 - Check **Settings → Advanced → Query URL**. Co-located it should be the
-  docker bridge address ending in `/r/` (e.g.
-  `http://172.17.0.1:8428/r/`). Two mistakes are common: a loopback
+  docker bridge address ending in `/r` (e.g. `http://172.17.0.1:8428/r`;
+  the panel appends `/api/v1/query`). Two mistakes are common: a loopback
   address, which is the panel container's own namespace and not the
   host's; and a URL pointing straight at VictoriaMetrics, which no longer
-  has a published port — every path goes through the gateway.
-- A **401** means the panel's account credential and the central's
-  account list disagree. Re-deploy the central: the list is rebuilt from
-  the panel's own state, so that reconciles them.
-- A **400** on a query that used to work means something is sending
-  `extra_filters`/`extra_label`. The gateway rejects those by design —
-  they are how the account filter would be widened.
+  has a published port — every path goes through vmauth.
+- A **401** means the panel's account credential and the central's user
+  list disagree. Re-deploy the central: the list is rebuilt from the
+  panel's own state, so that reconciles them.
+- A query that returns another account's series, or none, usually means
+  the wrong account credential — vmauth forces the filter from whoever
+  authenticated, so a client's own `extra_filters` is dropped, not
+  honoured.
 - From the panel container, not the host:
   ```bash
   docker compose exec odoo curl -sS <metrics backend URL>/health

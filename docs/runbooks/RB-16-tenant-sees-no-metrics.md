@@ -70,14 +70,14 @@ not pushing; a tenant present but with charts empty is a read-side or
 Grafana problem, so continue to step 5.
 
 If their agents report auth failures, their credential and the central's
-account list disagree — re-deploy the central, which rebuilds the list
+user list disagree — re-deploy the central, which rebuilds the list
 from current state.
 
 ## 5. Can they read it back?
 
 Two things must both be true, and they fail differently:
 
-- **The gateway must accept their credential** on `/r/`. A 401 here has
+- **vmauth must accept their credential** on `/r/`. A 401 here has
   the same cause and fix as above.
 - **Grafana must place them in their own organisation**, whose datasource
   is scoped to their account. If the organisation is missing, re-deploying
@@ -97,6 +97,6 @@ answer, not an infrastructure one.
 
 ## Related
 
-- `docs/observability-operations.md` — the account boundary and how the
-  gateway imposes it
+- `docs/observability-operations.md` — the account boundary and how
+  vmauth imposes it
 - RB-11 — the central itself is unreachable
