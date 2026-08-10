@@ -1,0 +1,72 @@
+# /root/traefik/dynamic/metrics-gateway.yml on the central's host (Cloud1).
+#
+# Publishes the shared observability central for agents and browsers that
+# do NOT live on this host (today: the tenants on Tenants1). A separate
+# file: a bad edit here is rejected by Traefik and the rest keeps serving.
+#
+# Two backends on the Docker bridge (verified reachable from a container
+# on this host, 2026-08-10): vmauth on :8428 (the account boundary for
+# data) and Grafana on :3000 (the browser, which vmauth cannot proxy
+# because of websockets). Priority beats the .incubacloud.io catchall
+# (priority 1). Cert: the already-issued *.incubacloud.io wildcard.
+http:
+  routers:
+    # Operator-only paths must NOT be public. Their only consumers — the
+    # panel and Grafana's datasource — reach vmauth over the bridge, never
+    # through here. Higher priority so it wins over the data router below;
+    # the ipWhitelist turns any outside request into 403.
+    metrics-operator-denied:
+      rule: 'Host(`metrics.incubacloud.io`) && (PathPrefix(`/admin-r/`) || PathPrefix(`/gadmin/`))'
+      priority: 30
+      entryPoints:
+        - https
+      service: metrics-vmauth
+      middlewares:
+        - metrics-deny-public
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: '*.incubacloud.io'
+
+    # Grafana in the browser: websockets (Grafana Live), and NO basic auth
+    # in front — Grafana authenticates the person itself through OIDC.
+    metrics-grafana:
+      rule: 'Host(`metrics.incubacloud.io`) && PathPrefix(`/grafana/`)'
+      priority: 20
+      entryPoints:
+        - https
+      service: metrics-grafana
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: '*.incubacloud.io'
+
+    # The data plane (/w/ /r/ /lw/ /lr/). vmauth enforces the account
+    # boundary and returns 401 to a credential-less request, so this is
+    # safe to expose.
+    metrics-data:
+      rule: 'Host(`metrics.incubacloud.io`)'
+      priority: 10
+      entryPoints:
+        - https
+      service: metrics-vmauth
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: '*.incubacloud.io'
+
+  services:
+    metrics-vmauth:
+      loadBalancer:
+        servers:
+          - url: 'http://172.17.0.1:8428'
+    metrics-grafana:
+      loadBalancer:
+        servers:
+          - url: 'http://172.17.0.1:3000'
+
+  middlewares:
+    metrics-deny-public:
+      ipWhitelist:
+        sourceRange:
+          - '127.0.0.1/32'

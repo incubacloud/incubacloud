@@ -2,9 +2,9 @@
 
 1. **Settings → Monitoring** — pick the host that should run the central
    and press **Enable observability**. That is the whole procedure.
-2. The job deploys VictoriaMetrics, Loki, Grafana and the gateway and,
-   when they answer, writes the endpoints back, generates this panel's
-   account credential and switches observability on.
+2. The job deploys VictoriaMetrics, Loki, Grafana and vmauth (the account
+   boundary) and, when they answer, writes the endpoints back, generates
+   this panel's account credential and switches observability on.
 3. **Hosts enrol themselves.** A reconciliation cron (every 15 min)
    installs the agents on any host that should be reporting and is not,
    with a growing back-off per host and an alert once failures persist.
@@ -23,12 +23,12 @@ push.
 
 ### Adding or removing a tenant (SaaS)
 
-The gateway's `accounts.htpasswd` **is** the access-control list: an
-account in it may write series labelled with itself and read those same
-series, and nothing else. It is rebuilt from the tenant list every time
-the central is deployed, so re-running that job is how a new tenant gains
-access and how a departed one loses it. Their Grafana organisation and
-scoped datasource are created in the same run.
+vmauth's user list **is** the access-control list: a user in it may write
+series labelled with itself and read those same series, and nothing else.
+It is rebuilt from the tenant list every time the central is deployed, so
+re-running that job is how a new tenant gains access and how a departed
+one loses it. Their Grafana organisation and scoped datasource are
+created in the same run.
 
 # Observability — operations guide
 
@@ -42,13 +42,14 @@ the platform.
 ```
  每 host                                   central (one, shared)
 ┌──────────────────────────────┐   ┌──────────────────────────────────┐
-│ node_exporter  (system)      │   │  nginx gateway  ← the boundary   │
-│ cAdvisor       (containers)  │   │    /w/  /r/  /lw/  /lr/          │
-│ Traefik        (HTTP, :8082) │   │    /grafana/  /gadmin/           │
+│ node_exporter  (system)      │   │  vmauth  ← the account boundary  │
+│ cAdvisor       (containers)  │   │    /w/  /r/  /lw/  /lr/           │
+│ Traefik        (HTTP, :8082) │   │    /admin-r/  /gadmin/           │
 │ vmagent   ── push ───────────┼──▶│         │                        │
 │ promtail  ── push ───────────┼──▶│         ├→ VictoriaMetrics       │
-└──────────────────────────────┘   │         ├→ Loki                  │
-                            HTTPS  │         └→ Grafana (org/account) │
+└──────────────────────────────┘   │         └→ Loki                  │
+                            HTTPS  │                                   │
+   browser ─ HTTPS ─▶ Traefik ─────┼──▶ Grafana (org per account)     │
                                    └──────────────────────────────────┘
                                               ▲
                                      PromQL   │
@@ -60,29 +61,40 @@ That is what makes bring-your-own-host and NAT'd boxes work without
 firewall exceptions, and it is why the write endpoint must be reachable
 from every host.
 
-**Only the gateway is published.** VictoriaMetrics, Loki and Grafana have
-no host port at all. Anything able to reach them directly would bypass
-the account boundary — including, on a host that runs tenant instances,
-a tenant's own container.
+**Two proxies, by capability, not preference.** vmauth is the account
+boundary for *data* (metrics and logs), because only it can force the
+account into a query arg / header that a client cannot override — Traefik
+cannot touch a query string. Grafana in the *browser* goes through
+Traefik instead, because it needs websockets (Grafana Live) and vmauth
+does not proxy them. Each does the one thing only it can.
+
+**vmauth and Grafana are published; VictoriaMetrics and Loki are not.**
+The two backends have no host port at all — anything able to reach them
+directly would bypass the boundary, including a tenant's own container on
+a shared host. Grafana having a bridge port is safe where theirs is not:
+Grafana authenticates every request itself (OIDC); VM and Loki
+authenticate nothing.
 
 ### The account boundary
 
 The central is shared: in SaaS every tenant panel writes to and reads
 from it. Neither VictoriaMetrics nor Loki has a notion of accounts, so
-the boundary is imposed in front, and **imposed** is the operative word:
+the boundary is imposed in front by **vmauth** — VictoriaMetrics' own
+auth proxy, which forces the account per route from the authenticated
+user:
 
 | Path | Rule |
 | --- | --- |
-| `/w/` metrics write | the agent's query string is **discarded** and rebuilt, so the account label is the authenticated user |
-| `/r/` metrics read | a request carrying `extra_filters`/`extra_label` is **rejected with 400**, then the account filter is appended |
-| `/lw/` `/lr/` logs | the account header is **set**, replacing whatever the sender supplied |
+| `/w/` metrics write | the route forces `extra_label=ic_account=<user>`; a client's own copy is **dropped** for colliding |
+| `/r/` metrics read | the route forces `extra_filters[]={ic_account="<user>"}` the same way, so a client cannot widen the result |
+| `/lw/` `/lr/` logs | the `X-Scope-OrgID` header is **set** from the user, replacing whatever the sender supplied |
 
-None of that is caution. Measured against VictoriaMetrics 1.102: repeated
-`extra_filters[]` are ORed together, and the last `extra_label` wins. A
-gateway that merely *appends* its own filter is therefore bypassable in
-both directions by a client that sends its own. Rejecting rather than
-sanitising is deliberate too — it is auditable at a glance, where
-sanitising means parsing and eventually getting it wrong.
+None of that is caution. Measured against real VictoriaMetrics + Loki
+(2026-08-10): vmauth drops a client's query arg that collides with the
+one the route forces, so the account filter cannot be widened — and it
+needs no hand-written reject rules that would rot when VictoriaMetrics
+changes a query arg's meaning. A credential-less request is 401 because
+the config declares no `unauthorized_user`.
 
 An agent runs on a machine its owner has root on. Its claim about who it
 is can never be trusted, which is why the label comes from the
@@ -90,10 +102,17 @@ credential and not from the payload.
 
 **Two credentials, and they are not interchangeable.** Each account has
 one, scoped to itself, and it is written to that account's hosts. The
-*operator* credential reads across every account and is never written to
-any host. Grafana's own admin password stays on the central: the gateway
-authenticates callers with the operator credential and swaps it in before
-proxying, so rotating it is a redeploy rather than a change everywhere.
+*operator* credential reads across every account (`/admin-r/`) and is
+never written to any host. Grafana's own admin password stays on the
+central: vmauth authenticates callers on `/gadmin/` with the operator
+credential and swaps in the admin credential before proxying, so rotating
+it is a redeploy rather than a change everywhere.
+
+vmauth keeps its credentials in clear (it has no hash support). That is
+mitigated the same way the agents' copy of the token is: the config lives
+in the central's `0700` directory and every task that writes it is
+`no_log`. The token already exists in clear on every agent and in each
+Grafana datasource, so this adds no new exposure.
 
 **Alerts do not live in the metrics stack.** There is no Alertmanager and
 no vmalert. A panel cron (`cloud.metric.rule._cron_evaluate`, every 5
@@ -160,25 +179,58 @@ The two URLs in Settings are consumed by **different containers**, and
 this is the single easiest thing to get wrong (it was got wrong during
 the first live deploy):
 
-| Setting | Used by | Must resolve from |
-|---|---|---|
-| **Metrics backend URL** | the panel (PromQL queries) | inside the **panel** container |
-| **Remote-write URL** | `vmagent` on every host | inside the **agent** container, on each host |
+| Setting | Used by | Value shape | Must resolve from |
+|---|---|---|---|
+| **Metrics backend URL** | the panel (PromQL queries) | `…/r` (the panel appends `/api/v1/query`) | inside the **panel** container |
+| **Remote-write URL** | `vmagent` on every host | `…/w/api/v1/write` | inside the **agent** container, on each host |
+
+The endpoint travels *in* the URL, after the account prefix (`/w/`,
+`/r/`), because vmauth strips the prefix and appends the rest — a bare
+`/w/` would not reach `/api/v1/write`. The log endpoint is derived from
+the write one (`/w/api/v1/write` → `/lw/loki/api/v1/push`), so there is
+one fewer field to get wrong.
 
 `127.0.0.1` is almost never correct for either: a container's loopback is
-its own, not the host's. The central therefore binds to the **Docker
-bridge gateway** (`172.17.0.1` by default, discovered from facts), which
-is reachable by containers on that host and not routable from outside it.
+its own, not the host's. The central therefore binds vmauth to the
+**Docker bridge gateway** (`172.17.0.1` by default, discovered from
+facts), reachable by containers on that host and not routable from
+outside it.
 
-- Agents **on the central's own host**: `http://host.docker.internal:8428/api/v1/write`
-  (the agent compose adds the `host-gateway` mapping).
+- Agents **on the central's own host**: the bridge address, filled in
+  automatically by the deploy.
 - Agents **on any other host**: the central's public HTTPS URL, published
-  through the panel's proxy.
+  through Traefik (see below).
 
 Symptom of getting it wrong: the backend is healthy and `curl` works from
 the host shell, while `docker logs …vmagent` repeats `connection
 refused`. Buffered samples are not lost — vmagent retries and backfills
 once the URL is right.
+
+## Publishing the central through Traefik (agents on other hosts)
+
+Agents and browsers that are not on the central's host reach it over
+public HTTPS, terminated by the panel's existing Traefik. This is a
+one-time edit to Traefik's dynamic config on the central's host — a
+**separate file**, so a bad edit is rejected without taking the rest of
+the proxy down. A reference copy lives beside this guide; the shape is:
+
+- `Host(metrics.<domain>)` and `/admin-r/` or `/gadmin/` → **denied**
+  from the public (an `ipWhitelist`). Their only real callers — the panel
+  and Grafana's datasource — reach vmauth over the bridge, never through
+  Traefik.
+- `Host(metrics.<domain>)` and `/grafana/` → Grafana's bridge port
+  (websockets pass through; Grafana authenticates via OIDC).
+- `Host(metrics.<domain>)` (everything else: `/w/ /r/ /lw/ /lr/`) →
+  vmauth's bridge port, which returns 401 without a credential.
+
+Then set the tenant-facing URLs in Settings to
+`https://metrics.<domain>/w/api/v1/write` and
+`https://metrics.<domain>/r`.
+
+If the metrics hostname is proxied by Cloudflare (orange-cloud), a bot
+challenge on the ingest path can silently drop `vmagent`. If ingestion
+misbehaves, make the record a grey-cloud (DNS-only) A record straight to
+the host.
 
 ## cAdvisor version requirement (do not pin it back)
 

@@ -19,11 +19,14 @@ import json
 import pathlib
 import re
 
+import yaml
+
 from odoo import fields
 from odoo.tests.common import BaseCase, TransactionCase
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DASHBOARDS = _ROOT / "ansible" / "files" / "dashboards"
+_CENTRAL_PLAYBOOK = _ROOT / "ansible" / "playbooks" / "observability_central.yml"
 _MONITORING_JS = (
     _ROOT / "static" / "src" / "components" / "monitoring" / "monitoring.js"
 )
@@ -289,3 +292,113 @@ class TestEnrolmentConverges(TransactionCase):
         self.host._mark_observability_installed()
         self.assertEqual(self.host.metrics_agents_attempts, 0)
         self.assertEqual(self.host.metrics_agents_state, "installed")
+
+
+class TestTheCentralIsReadableByItsOwnContainers(BaseCase):
+    """What the central mounts, the container's process must be able to read.
+
+    The processes behind the mounts are not root: vmauth runs
+    unprivileged and Grafana runs as uid 472. Writing their configuration
+    owner-only is the intuitive "careful" choice and it is the wrong one —
+    the first live deployment (nginx, then) answered ``permission denied``
+    on its own credential file and left a Grafana in a restart loop, from
+    files that looked perfect on the host.
+
+    Then the obvious fix broke it a second way: two of these paths are
+    mounted as DIRECTORIES, so tightening the whole tree to 0700 left
+    Grafana unable to traverse them. Confidentiality therefore lives on
+    the root of the tree, which nothing mounts, and everything below it
+    stays reachable. Both mistakes are cheap to make and silent from the
+    host, so both are pinned here.
+    """
+
+    def _tasks(self):
+        """Return the central playbook's task list."""
+        return yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]["tasks"]
+
+    def _mounted_paths(self):
+        """Return the host paths the compose file bind-mounts, as suffixes.
+
+        :return: set of paths relative to ``ic_central_dir``, e.g.
+            ``/vmauth/auth.yml``.
+        """
+        for task in self._tasks():
+            if task.get("name") == "Write the central compose file":
+                compose = task["ansible.builtin.copy"]["content"]
+                break
+        else:
+            self.fail("the compose-writing task was renamed or removed")
+        return set(re.findall(
+            r"-\s*\{\{\s*ic_central_dir\s*\}\}(/\S*?):/", compose,
+        ))
+
+    def _declared_modes(self, module):
+        """Return ``{path_suffix: mode}`` for one Ansible module's tasks.
+
+        Paths are returned relative to ``ic_central_dir`` so they can be
+        compared with the mount list. Looped tasks contribute every item.
+
+        :param module: ``'ansible.builtin.copy'`` or
+            ``'ansible.builtin.file'``.
+        """
+        out = {}
+        marker = "{{ ic_central_dir }}"
+        for task in self._tasks():
+            spec = task.get(module)
+            if not isinstance(spec, dict) or "mode" not in spec:
+                continue
+            targets = [spec.get("dest") or spec.get("path") or ""]
+            if "{{ item }}" in targets[0]:
+                targets = [str(i) for i in (task.get("loop") or [])]
+            for target in targets:
+                if marker in target:
+                    out[target.split(marker, 1)[1]] = str(spec["mode"])
+        return out
+
+    def test_the_root_of_the_tree_is_the_only_gate(self):
+        """Nothing mounts it, so it can be — and must be — owner-only.
+
+        Inherited protection is not enough: the parent is the SSH user's
+        home, and on a hardened host that is not 0700.
+        """
+        modes = self._declared_modes("ansible.builtin.file")
+        self.assertEqual(
+            modes.get(""), "0700",
+            "the central directory must be owner-only; it is what keeps "
+            "the operator credential away from other users on the host",
+        )
+
+    def test_every_mounted_file_is_readable_by_a_non_root_process(self):
+        files = self._declared_modes("ansible.builtin.copy")
+        checked = 0
+        for path in self._mounted_paths():
+            mode = files.get(path)
+            if mode is None:
+                continue  # a directory mount, covered by the next test
+            checked += 1
+            self.assertIn(
+                mode[-1], "4567",
+                f"{path} is mounted into a container whose process is not "
+                f"root, but is written {mode}: the container will fail to "
+                f"read it while the file looks correct on the host",
+            )
+        self.assertGreaterEqual(
+            checked, 2, "the mount list stopped matching the copy tasks",
+        )
+
+    def test_every_mounted_directory_can_be_entered(self):
+        """A directory mount needs the execute bit, not just read."""
+        dirs = self._declared_modes("ansible.builtin.file")
+        files = self._declared_modes("ansible.builtin.copy")
+        for path in self._mounted_paths():
+            if path in files:
+                continue
+            mode = dirs.get(path)
+            self.assertIsNotNone(
+                mode, f"{path} is mounted but never created",
+            )
+            self.assertIn(
+                mode[-1], "1357",
+                f"{path} is mounted into Grafana as a directory but is "
+                f"written {mode}: uid 472 cannot traverse it",
+            )
