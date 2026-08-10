@@ -361,11 +361,13 @@
         chdir: "{{ ic_central_dir }}"
       changed_when: true
 
-    - name: Reload vmauth when only its configuration changed
+    - name: Reload vmauth when only its configuration changed  # noqa: no-handler
       # ``up -d`` does not restart a container whose image and compose
       # definition are unchanged, so a new account list alone would not
       # be picked up — and an account that cannot authenticate looks
-      # exactly like a broken agent.
+      # exactly like a broken agent. Not a handler on purpose: the reload
+      # must land between ``up -d`` and the health check below, whereas
+      # handlers run at the end of the play — after the probe.
       ansible.builtin.command:
         cmd: docker compose -p incubacloud-central -f docker-compose.yaml restart vmauth
         chdir: "{{ ic_central_dir }}"
