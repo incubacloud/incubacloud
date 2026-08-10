@@ -400,6 +400,39 @@
         status_code: [401]
       register: ic_anon_write
 
+    - name: Wait for Grafana to answer
+      # The org provisioning below drives Grafana's admin API; it must be
+      # up first. Its own port on the bridge, not through vmauth (which
+      # does not carry the browser path).
+      ansible.builtin.uri:
+        url: "http://{{ ic_grafana_bind }}/api/health"
+        status_code: [200]
+      register: ic_grafana_health
+      retries: 15
+      delay: 3
+      until: ic_grafana_health is succeeded
+
+    - name: Force Grafana's admin password to match this deployment
+      # GF_SECURITY_ADMIN_PASSWORD is applied only when Grafana first
+      # initialises its database. The grafana-data volume persists across
+      # redeploys, so a rotated password never reaches a Grafana that was
+      # already initialised — and the admin API then rejects vmauth's
+      # /gadmin/ credential swap with 401, which is exactly how the first
+      # vmauth deploy failed (a volume left by an earlier attempt). Reset
+      # it every run so the running Grafana, the compose file and the swap
+      # always agree, whatever state the volume is in.
+      #
+      # Password on stdin, never as an argument: it is url-safe base64 and
+      # can start with '-', which grafana-cli would read as a flag.
+      ansible.builtin.command:
+        cmd: >-
+          docker exec -i incubacloud-central-grafana-1
+          grafana-cli admin reset-admin-password --password-from-stdin
+        stdin: "{{ ic_grafana_admin_password }}"
+        stdin_add_newline: false
+      no_log: true
+      changed_when: true
+
     # ── Per-account Grafana organisations ─────────────────────────────
     # One organisation per account, each with a datasource that can only
     # reach that account's series. This is the ring behind vmauth's own
