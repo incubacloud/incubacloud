@@ -333,8 +333,15 @@
                 GF_AUTH_GENERIC_OAUTH_ORG_MAPPING: "{{ ic_grafana_oidc.org_mapping }}"
                 # ``groups`` is the account-list claim the provider emits
                 # (res.users._oidc_account_groups); org_mapping above maps
-                # each entry to its own organisation.
-                GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH: "groups"
+                # each entry to its own organisation. This MUST be
+                # org_attribute_path, not groups_attribute_path — the
+                # latter feeds Grafana's separate team-sync feature (which
+                # we don't use) and org_mapping silently falls back to the
+                # default org when it isn't set. Verified live: without
+                # it, every login landed in Grafana's "Main Org." as
+                # Viewer despite the id_token/userinfo carrying the
+                # correct groups claim.
+                GF_AUTH_GENERIC_OAUTH_ORG_ATTRIBUTE_PATH: "groups"
                 GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Viewer'"
                 GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "false"
           {% else %}
