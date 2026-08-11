@@ -6,11 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.50] — 2026-08-11
+
+### Fixed
+
+- **Grafana's org_mapping now actually reads the account claim.** 1.0.49 wired the account list into `GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH`, which feeds Grafana's team-sync feature — a different thing from org_mapping, which reads `org_attribute_path` instead. With no `org_attribute_path` set, org_mapping had nothing to match against and silently fell back to Grafana's default organisation, Viewer role, regardless of what the id_token or userinfo carried. Caught live: the id_token decoded to the correct `"groups":["acct_…"]`, `/oauth/userinfo` returned the same, and the operator still landed in "Main Org." — the claim was right, Grafana just wasn't reading it from where org_mapping looks. Renamed to `GF_AUTH_GENERIC_OAUTH_ORG_ATTRIBUTE_PATH`
+
 ## [1.0.49] — 2026-08-11
 
 ### Fixed
 
 - **Grafana's OIDC login now actually completes.** The central's `oidc.client` requires PKCE by default, but the playbook never told Grafana to send a `code_challenge` — the provider's `/oauth/authorize` would have rejected every login attempt with a 400. It also never told Grafana where the account claim lives, so the per-account `org_mapping` had nothing to match against and everyone would have landed in Grafana's default organisation. Both are now wired into the OIDC branch: `GF_AUTH_GENERIC_OAUTH_USE_PKCE` and `GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH`. The claim itself, the corrected `/oauth/*` endpoints and the account-keyed org mapping live in the SaaS layer, which is the only one that knows tenants — and their accounts — exist
+
+## [1.0.49] — 2026-08-09
+
+<!-- TODO(prune-protect): renumber to the next free version before committing — 1.0.49 was taken above. -->
+
+### Fixed
+
+- **Every deploy flavour now stamps the prune-protect label — in the base executor, unconditionally.** The label that keeps `docker system prune -af --filter "label!=…"` away from panel-managed stacks lived in one SaaS subclass, so any rebuild whose class chain skipped it rewrote the compose override *without* the label — and the nightly prune then swept the stopped stack. Measured in production: zero labelled containers, zero labelled networks, the warm pool deleted daily, two days of failed free-host backups. The invariant is "deployed by the panel, may legitimately sit stopped" (a warm spare, a plan-slept instance, a manual stop), so the base deploy executor now labels every service and the default network for every flavour, and a structural test sweeps the executor registry so a future flavour cannot lose it again
+
+### Added
+
+- **The prune now proves what it did.** The maintenance playbook inventories the surviving containers after pruning, and the job compares that against the `odoo`/`db` containers every deployed instance must have — a swept managed stack raises a critical alert the minute it happens, instead of surfacing days later as a failed backup. The job log also gains a per-kind summary of what was deleted (networks by name — containers are printed by ID, which explains nothing once they are gone)
+- **The health probe now tells "stopped" apart from "gone".** `docker compose ps` without `-a` shows neither, so a slept instance and a pruned one produced the same generic alert. The probe now sees stopped containers, says "missing (pruned, or never created)" when there is no container at all, and asks a hook whether a stopped-but-present `odoo` was scheduled — core always answers no; the SaaS layer answers from the tenant's plan, so a sleeping Free instance reads healthy while its companion containers are still graded
 
 ## [1.0.48] — 2026-08-09
 
