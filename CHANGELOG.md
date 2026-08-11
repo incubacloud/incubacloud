@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.49] — 2026-08-11
+
+### Fixed
+
+- **Grafana's OIDC login now actually completes.** The central's `oidc.client` requires PKCE by default, but the playbook never told Grafana to send a `code_challenge` — the provider's `/oauth/authorize` would have rejected every login attempt with a 400. It also never told Grafana where the account claim lives, so the per-account `org_mapping` had nothing to match against and everyone would have landed in Grafana's default organisation. Both are now wired into the OIDC branch: `GF_AUTH_GENERIC_OAUTH_USE_PKCE` and `GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH`. The claim itself, the corrected `/oauth/*` endpoints and the account-keyed org mapping live in the SaaS layer, which is the only one that knows tenants — and their accounts — exist
+
 ## [1.0.48] — 2026-08-09
 
 ### Changed

@@ -326,7 +326,15 @@
                 GF_AUTH_GENERIC_OAUTH_AUTH_URL: "{{ ic_grafana_oidc.auth_url }}"
                 GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "{{ ic_grafana_oidc.token_url }}"
                 GF_AUTH_GENERIC_OAUTH_API_URL: "{{ ic_grafana_oidc.userinfo_url }}"
+                # The provider's oidc.client requires PKCE by default —
+                # without this, Grafana's authorize request lacks a
+                # code_challenge and the provider rejects it with 400.
+                GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
                 GF_AUTH_GENERIC_OAUTH_ORG_MAPPING: "{{ ic_grafana_oidc.org_mapping }}"
+                # ``groups`` is the account-list claim the provider emits
+                # (res.users._oidc_account_groups); org_mapping above maps
+                # each entry to its own organisation.
+                GF_AUTH_GENERIC_OAUTH_GROUPS_ATTRIBUTE_PATH: "groups"
                 GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Viewer'"
                 GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "false"
           {% else %}
