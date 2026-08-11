@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.52] — 2026-08-11
+
+### Fixed
+
+- **Every account's Grafana organisation now actually gets its own datasource — and its own dashboards.** Switching the admin session to an organisation and creating its datasource were two separate tasks, each looping over every account on its own; Grafana's "current org" is a persistent property of the authenticated admin, not a per-request header, so by the time the datasource task's loop started, the switch task had already finished its own loop and left every write landing in whichever org was switched to last. Measured in production: 9 accounts, 2 datasources ever created, one of them holding a DIFFERENT account's credential. Switch and write are now one block per account, so the org is never stale when written to; an existing-but-wrong datasource is corrected in place rather than silently left behind (a bare create only ever 409s on a name collision, it can't fix one)
+- **Dashboards were never visible outside Grafana's default organisation.** The file-based dashboard provider carries no `orgId`, so the fleet/instance/host dashboards only ever loaded into org 1 — and every account lands in its own organisation instead, where the panel's embed showed "Dashboard not found" and a `dashboards:read` permission error. Each account's organisation now gets its own copy of the same three dashboards, created via the API right after its datasource; since none of their panels pin an explicit datasource, each copy binds to whichever one is default in the org it lands in
+
 ## [1.0.51] — 2026-08-11
 
 ### Fixed

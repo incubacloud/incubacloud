@@ -500,52 +500,106 @@
       register: ic_org_ids
       no_log: true
 
-    - name: Point the admin session at each organisation in turn
-      # Grafana creates a datasource in whichever organisation the
-      # authenticated user is currently in, so the org has to be switched
-      # before each write. Stateful and slightly awkward, but it is the
-      # only path the API offers.
-      ansible.builtin.uri:
-        url_username: operator
-        url_password: "{{ ic_operator_plain }}"
-        force_basic_auth: true
-        url: "http://{{ ic_gateway_bind }}/gadmin/api/user/using/{{ item.1.json.id }}"
-        method: POST
-        status_code: [200]
-      loop: "{{ ic_accounts | zip(ic_org_ids.results) | list }}"
-      loop_control:
-        label: "{{ item.0.user }}"
-      no_log: true
-      register: ic_org_switch
-      changed_when: false
+    - name: Provision each organisation (switch, datasource, dashboards)
+      # Switch, datasource and dashboards used to be three separate
+      # tasks, each looping over every account on its own. Grafana's
+      # "current org" is a persistent property of the authenticated
+      # user, not a per-request header — so by the time the second
+      # task's loop started, the switch task had already finished ITS
+      # loop and left every write landing in whichever org was last
+      # switched to. Measured in production: 9 accounts, only 2
+      # datasources ever created, and one of those held the WRONG
+      # account's credential. A block scopes switch+write to the same
+      # loop iteration, so the org is never stale when we write to it.
+      block:
+        - name: Point the admin session at this organisation
+          ansible.builtin.uri:
+            url_username: operator
+            url_password: "{{ ic_operator_plain }}"
+            force_basic_auth: true
+            url: "http://{{ ic_gateway_bind }}/gadmin/api/user/using/{{ item.1.json.id }}"
+            method: POST
+            status_code: [200]
+          changed_when: false
 
-    - name: Ensure each organisation has its own scoped datasource
-      # The credential here is the account's, so every query Grafana
-      # makes on its behalf is filtered by vmauth to that account.
-      # Nothing in the organisation can widen it: the users in it are
-      # Viewers and cannot edit a datasource.
-      ansible.builtin.uri:
-        url_username: operator
-        url_password: "{{ ic_operator_plain }}"
-        force_basic_auth: true
-        url: "http://{{ ic_gateway_bind }}/gadmin/api/datasources"
-        method: POST
-        body_format: json
-        body:
-          name: "VictoriaMetrics"
-          type: "prometheus"
-          access: "proxy"
-          url: "http://vmauth:8428/r/"
-          isDefault: true
-          basicAuth: true
-          basicAuthUser: "{{ item.0.user }}"
-          secureJsonData:
-            basicAuthPassword: "{{ item.0.password }}"
-        status_code: [200, 409]
+        - name: Look up this organisation's datasource, if any
+          ansible.builtin.uri:
+            url_username: operator
+            url_password: "{{ ic_operator_plain }}"
+            force_basic_auth: true
+            url: "http://{{ ic_gateway_bind }}/gadmin/api/datasources/name/VictoriaMetrics"
+            method: GET
+            status_code: [200, 404]
+          register: ic_existing_ds
+
+        - name: Create this organisation's scoped datasource
+          # The credential here is the account's, so every query Grafana
+          # makes on its behalf is filtered by vmauth to that account.
+          # Nothing in the organisation can widen it: the users in it
+          # are Viewers and cannot edit a datasource.
+          ansible.builtin.uri:
+            url_username: operator
+            url_password: "{{ ic_operator_plain }}"
+            force_basic_auth: true
+            url: "http://{{ ic_gateway_bind }}/gadmin/api/datasources"
+            method: POST
+            body_format: json
+            body: &ic_datasource_body
+              name: "VictoriaMetrics"
+              type: "prometheus"
+              access: "proxy"
+              url: "http://vmauth:8428/r/"
+              isDefault: true
+              basicAuth: true
+              basicAuthUser: "{{ item.0.user }}"
+              secureJsonData:
+                basicAuthPassword: "{{ item.0.password }}"
+            status_code: [200]
+          when: ic_existing_ds.status == 404
+
+        - name: Correct this organisation's scoped datasource if the credential drifted
+          # A datasource named "VictoriaMetrics" already existing here
+          # does not mean it holds THIS org's credential — POST alone
+          # only 409s on a name collision, it can never fix one. This is
+          # exactly how one org ended up authenticating as a different
+          # account entirely (see the block comment above).
+          ansible.builtin.uri:
+            url_username: operator
+            url_password: "{{ ic_operator_plain }}"
+            force_basic_auth: true
+            url: "http://{{ ic_gateway_bind }}/gadmin/api/datasources/uid/{{ ic_existing_ds.json.uid }}"
+            method: PUT
+            body_format: json
+            body: *ic_datasource_body
+            status_code: [200]
+          when: ic_existing_ds.status == 200
+
+        - name: Provision this organisation's dashboards
+          # File-based provisioning (above) only ever lands in Grafana's
+          # default org — every account here has its own org instead, so
+          # from there those dashboards don't exist. Panels carry no
+          # explicit datasource, so each copy binds to whichever one is
+          # default in the org it lands in: the account-scoped one just
+          # created above.
+          ansible.builtin.uri:
+            url_username: operator
+            url_password: "{{ ic_operator_plain }}"
+            force_basic_auth: true
+            url: "http://{{ ic_gateway_bind }}/gadmin/api/dashboards/db"
+            method: POST
+            body_format: json
+            body:
+              dashboard: "{{ (lookup('file', dash_file) | from_json) | combine({'id': None}) }}"
+              overwrite: true
+            status_code: [200]
+          loop: "{{ query('fileglob', '../files/dashboards/*.json') }}"
+          loop_control:
+            loop_var: dash_file
+            label: "{{ dash_file | basename }}"
+      no_log: true
       loop: "{{ ic_accounts | zip(ic_org_ids.results) | list }}"
       loop_control:
         label: "{{ item.0.user }}"
-      no_log: true
 
     - name: Export the central facts
       ansible.builtin.set_stats:
