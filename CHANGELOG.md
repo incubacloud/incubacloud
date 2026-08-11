@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.51] — 2026-08-11
+
+### Fixed
+
+- **The embedded Grafana now actually feels embedded.** The panel embeds it in an iframe on an already-authenticated session, but Grafana still opened on its own native login form and made the operator click "Sign in with IncubaCloud" by hand before the OIDC exchange even started — inside an iframe that reads as "asks me to log in again" even though nothing was actually wrong. `GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN` skips straight to `/oauth/authorize`; with the panel session already live, the whole round-trip completes with no visible login screen. The basic-auth path used only for the server-to-server admin API swap is unaffected and still reachable directly if ever needed
+
 ## [1.0.50] — 2026-08-11
 
 ### Fixed

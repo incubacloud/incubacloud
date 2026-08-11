@@ -344,6 +344,17 @@
                 GF_AUTH_GENERIC_OAUTH_ORG_ATTRIBUTE_PATH: "groups"
                 GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Viewer'"
                 GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "false"
+                # Grafana is embedded in an iframe inside the panel, where
+                # an operator is already authenticated — without this,
+                # Grafana shows its OWN login form first and makes them
+                # click "Sign in with IncubaCloud" by hand every time.
+                # With it, loading the iframe redirects straight into
+                # /oauth/authorize; since their panel session is already
+                # live, the whole exchange completes with no visible
+                # login screen at all. Basic auth (used only for the
+                # server-to-server admin API swap, never by a browser)
+                # stays reachable via /grafana/login?disableAutoLogin=true.
+                GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "true"
           {% else %}
                 # No identity provider (self-hosted). Grafana trusts a
                 # header, and the ONLY thing allowed to set it is the
