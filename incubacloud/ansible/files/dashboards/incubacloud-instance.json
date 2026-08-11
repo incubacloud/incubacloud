@@ -16,11 +16,11 @@
       {
         "name": "instance",
         "type": "query",
-        "datasource": {
-          "type": "prometheus",
-          "uid": "victoriametrics"
+        "definition": "label_values(container_last_seen, instance)",
+        "query": {
+          "query": "label_values(container_last_seen, instance)",
+          "refId": "instance-Variable-Query"
         },
-        "query": "label_values(container_last_seen, instance)",
         "refresh": 1,
         "includeAll": false
       }

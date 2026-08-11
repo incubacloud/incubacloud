@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.53] — 2026-08-12
+
+### Fixed
+
+- **The instance and host dashboards render again.** Both carried their `$instance`/`$host` template variable's query in the legacy plain-string format Grafana 9 used, plus a datasource pinned to a UID (`victoriametrics`) that only ever existed by convention, never by actually matching what the API assigns on creation. Grafana 11 tries to auto-upgrade the legacy format on load and failed, surfacing "Templating: Failed to upgrade legacy queries" and leaving the fleet-wide Hosts/Instances tabs with no data — panels still rendered wherever a URL param handed them `$instance` directly (the per-instance embed), which is what made this easy to miss. The query now uses the structured object form real Grafana 11 dashboards ship with, and the variable drops its pinned datasource entirely — same as every panel already does, which is why panels never broke: falling back to whichever datasource is default in the org it loads into
+
 ## [1.0.52] — 2026-08-11
 
 ### Fixed
