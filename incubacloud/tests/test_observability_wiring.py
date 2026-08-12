@@ -123,9 +123,9 @@ class TestDashboardsMatchTheSpa(BaseCase):
         the same host. The threshold is pinned for the same reason: the
         colour break has to fall where the alert fires.
         """
-        rule = ElementTree.parse(_METRIC_RULES).getroot().find(
-            ".//record[@id='metric_rule_host_down']",
-        )
+        rule = ElementTree.parse(  # nosec B314 — our own data file, shipped in this repo
+            _METRIC_RULES,
+        ).getroot().find(".//record[@id='metric_rule_host_down']")
         expression = rule.find("field[@name='expression']").text.strip()
         threshold = float(rule.find("field[@name='threshold']").text)
 
