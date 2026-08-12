@@ -116,3 +116,115 @@ class TestTraefikMetricsRetrofit(TransactionCase):
         host.invalidate_recordset()
         self.assertIn("prometheus:", host.traefik_yml)
         self.assertIn('127.0.0.1:8082:8082', host.traefik_inverseproxy_yaml)
+
+
+class TestTraefikAccessLogRetrofit(TransactionCase):
+    """The access log followed the metrics block into the seed template and
+    reached no existing host, because nothing amended the stored copies.
+    Same three properties, same reasons."""
+
+    def setUp(self):
+        super().setUp()
+        self.Host = self.env["cloud.host"]
+
+    def test_adds_the_access_log_block(self):
+        out = self.Host._add_traefik_access_log(_SEED_TRAEFIK)
+        self.assertIn("accessLog:", out)
+        self.assertIn("format: json", out)
+        # Headers carry cookies and Authorization; dropping them is what
+        # makes it safe to keep this on every host.
+        self.assertIn("defaultMode: drop", out)
+
+    def test_is_idempotent(self):
+        once = self.Host._add_traefik_access_log(_SEED_TRAEFIK)
+        twice = self.Host._add_traefik_access_log(once)
+        self.assertEqual(once, twice)
+
+    def test_leaves_a_customised_template_alone(self):
+        custom = _SEED_TRAEFIK + "\naccessLog:\n  filePath: /var/log/own.log\n"
+        self.assertEqual(self.Host._add_traefik_access_log(custom), custom)
+
+    def test_preserves_existing_content(self):
+        out = self.Host._add_traefik_access_log(_SEED_TRAEFIK)
+        for line in ("sendAnonymousUsage: false", "dashboard: true",
+                     'address: ":80"', 'address: ":443"'):
+            self.assertIn(line, out)
+
+    def test_handles_an_empty_template(self):
+        self.assertFalse(self.Host._add_traefik_access_log(""))
+        self.assertFalse(self.Host._add_traefik_access_log(False))
+
+
+_SEED_CONFIG_OLD = """\
+http:
+  middlewares:
+    buffering:
+      buffering:
+        retryExpression: IsNetworkError() && Attempts() < 5
+    secure:
+      headers:
+        forceSTSHeader: "true"
+        sslRedirect: "true"
+    nocrawlers:
+      headers:
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow"
+"""
+
+
+class TestTraefikSecurityHeadersRetrofit(TransactionCase):
+    """``secure`` gained its header set after the first hosts existed."""
+
+    def setUp(self):
+        super().setUp()
+        self.Host = self.env["cloud.host"]
+
+    def test_adds_the_missing_headers(self):
+        out = self.Host._add_traefik_security_headers(_SEED_CONFIG_OLD)
+        for key in ("stsSeconds", "stsIncludeSubdomains", "stsPreload",
+                    "frameDeny", "contentTypeNosniff", "browserXssFilter",
+                    "referrerPolicy"):
+            self.assertIn(key, out)
+
+    def test_adds_them_under_the_secure_middleware(self):
+        """Anchored on ``secure``: another middleware must not be extended."""
+        out = self.Host._add_traefik_security_headers(_SEED_CONFIG_OLD)
+        secure = out.split("secure:", 1)[1].split("nocrawlers:", 1)[0]
+        self.assertIn("frameDeny", secure)
+        # ...and the indentation has to match, or the file stops parsing.
+        self.assertIn('        frameDeny: "true"\n', out)
+
+    def test_the_result_still_parses(self):
+        import yaml
+
+        out = self.Host._add_traefik_security_headers(_SEED_CONFIG_OLD)
+        parsed = yaml.safe_load(out)
+        headers = parsed["http"]["middlewares"]["secure"]["headers"]
+        self.assertEqual(headers["stsSeconds"], 31536000)
+        self.assertEqual(headers["referrerPolicy"],
+                         "strict-origin-when-cross-origin")
+        # The keys that were already there survive untouched.
+        self.assertEqual(headers["forceSTSHeader"], "true")
+
+    def test_is_idempotent(self):
+        once = self.Host._add_traefik_security_headers(_SEED_CONFIG_OLD)
+        twice = self.Host._add_traefik_security_headers(once)
+        self.assertEqual(once, twice)
+
+    def test_keeps_a_hosts_own_value(self):
+        """An operator who shortened the HSTS window keeps their number."""
+        own = _SEED_CONFIG_OLD.replace(
+            '        sslRedirect: "true"\n',
+            '        sslRedirect: "true"\n        stsSeconds: 60\n',
+        )
+        out = self.Host._add_traefik_security_headers(own)
+        self.assertIn("stsSeconds: 60", out)
+        self.assertNotIn("stsSeconds: 31536000", out)
+
+    def test_skips_an_unrecognisable_middleware_block(self):
+        odd = "http:\n  middlewares:\n    secure: {}\n"
+        self.assertEqual(self.Host._add_traefik_security_headers(odd), odd)
+
+    def test_handles_an_empty_template(self):
+        self.assertFalse(self.Host._add_traefik_security_headers(""))
+        self.assertFalse(self.Host._add_traefik_security_headers(False))

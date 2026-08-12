@@ -618,6 +618,24 @@ export class HostDetail extends Component {
     }
 
     /**
+     * Tooltip listing what the saved Traefik config is missing.
+     *
+     * The specifics matter here: "behind the templates" alone would send
+     * the operator diffing three files by hand, which is how this drift
+     * went unnoticed in the first place.
+     *
+     * @returns {string} the pill's ``title`` text
+     */
+    get templateDriftTitle() {
+        const details = this.state.host.template_drift_details || "";
+        return (
+            "The saved Traefik configuration is missing settings the " +
+            "shipped templates declare. Upgrading the module adds them; " +
+            "re-run full setup afterwards to ship them.\n\n" + details
+        );
+    }
+
+    /**
      * Map a host status to a Relay overview-value (``rl-v``) modifier class
      * for the Overview "State" row, so the value text picks up the matching
      * severity colour.

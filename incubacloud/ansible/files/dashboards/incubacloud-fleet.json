@@ -107,6 +107,12 @@
         "x": 12,
         "y": 5
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "topk(10, 100 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"} * 100))",
@@ -123,6 +129,12 @@
         "x": 0,
         "y": 13
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "topk(10, 100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100))",
@@ -131,14 +143,56 @@
       ]
     },
     {
-      "type": "timeseries",
+      "type": "state-timeline",
       "title": "Ingest age per host (seconds since last sample)",
-      "description": "The same expression the staleness rule alerts on, so the panel and the alert can never disagree.",
+      "description": "The same expression the staleness rule alerts on, so the panel and the alert can never disagree. One lane per host: on a shared time axis the hosts drew identical lines and hid each other, because every agent in the fleet scrapes on the same wall-clock tick. Green/red mirrors the alert's own threshold.",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
         "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "custom": {
+            "fillOpacity": 90,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": false,
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
       },
       "targets": [
         {

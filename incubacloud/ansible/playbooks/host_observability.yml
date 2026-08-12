@@ -373,6 +373,17 @@
       # node_exporter's textfile collector turns a plain script into
       # metrics. Disk per instance is the one number cAdvisor cannot give
       # (it measures containers, not the deploy directory).
+      #
+      # ``inst.dir`` arrives as the panel stores it — ``~/<folder>/<name>``
+      # unless the instance pins an absolute one. The tilde is expanded
+      # HERE, while rendering, because bash never expands one that reaches
+      # it as data: neither inside double quotes nor through a variable.
+      # Left literal, the ``[ -d ]`` below is false for every instance, du
+      # never runs, and the .prom file ends up holding nothing but its two
+      # header lines — which reads as "no data", not as a bug. This is the
+      # same expansion ``ic_expand_home`` does for the scripts that go
+      # through run_script(); this template is the one generator that does
+      # not, so it repeats it rather than sourcing lib/common.sh.
       ansible.builtin.copy:
         dest: "{{ ic_obs_dir }}/collect_disk.sh"
         mode: "0755"
@@ -388,8 +399,9 @@
             echo "# HELP ic_instance_disk_bytes Disk used by an instance directory."
             echo "# TYPE ic_instance_disk_bytes gauge"
           {% for inst in ic_instances %}
-            if [ -d "{{ inst.dir }}" ]; then
-              size=$(du -sb "{{ inst.dir }}" 2>/dev/null | awk '{print $1}')
+          {% set inst_dir = inst.dir | regex_replace('^~/', ansible_env.HOME ~ '/') %}
+            if [ -d "{{ inst_dir }}" ]; then
+              size=$(du -sb "{{ inst_dir }}" 2>/dev/null | awk '{print $1}')
               [ -n "${size:-}" ] && printf 'ic_instance_disk_bytes{instance_id="%s",instance="%s"} %s\n' \
                 '{{ inst.instance_id }}' '{{ inst.instance }}' "$size"
             fi

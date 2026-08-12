@@ -18,6 +18,7 @@ are worth pinning:
 import json
 import pathlib
 import re
+from xml.etree import ElementTree
 
 import yaml
 
@@ -27,9 +28,14 @@ from odoo.tests.common import BaseCase, TransactionCase
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DASHBOARDS = _ROOT / "ansible" / "files" / "dashboards"
 _CENTRAL_PLAYBOOK = _ROOT / "ansible" / "playbooks" / "observability_central.yml"
+_METRIC_RULES = _ROOT / "data" / "metric_rule_data.xml"
 _MONITORING_JS = (
     _ROOT / "static" / "src" / "components" / "monitoring" / "monitoring.js"
 )
+
+# Load per core is a ratio: there is no unit to give it, and forcing one
+# would be worse than none. Everything else has to name its numbers.
+_RATIO_PANELS = frozenset({"Load per core, by host", "CPU load per core"})
 
 
 def _dashboard_files():
@@ -98,11 +104,93 @@ class TestDashboardsMatchTheSpa(BaseCase):
             for panel in dashboard["panels"]:
                 for target in panel.get("targets", []):
                     for used in re.findall(r'\$(\w+)', target.get("expr", "")):
-                        if used not in declared:
-                            offenders.append(
-                                f"{path.name}: {panel['title']} uses ${used}"
-                            )
+                        # ``$1`` and friends are label_replace's capture
+                        # references, resolved by PromQL itself — not
+                        # dashboard variables, and never declared.
+                        if used.isdigit() or used in declared:
+                            continue
+                        offenders.append(
+                            f"{path.name}: {panel['title']} uses ${used}"
+                        )
         self.assertFalse(offenders, "undeclared dashboard variables: %s"
+                         % offenders)
+
+    def test_the_staleness_panel_still_matches_its_alert(self):
+        """The panel and the rule share one expression, by design.
+
+        Whoever "improves" the panel query has to change the rule too, or
+        the fleet view and the alert start telling different stories about
+        the same host. The threshold is pinned for the same reason: the
+        colour break has to fall where the alert fires.
+        """
+        rule = ElementTree.parse(_METRIC_RULES).getroot().find(
+            ".//record[@id='metric_rule_host_down']",
+        )
+        expression = rule.find("field[@name='expression']").text.strip()
+        threshold = float(rule.find("field[@name='threshold']").text)
+
+        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
+        panel = next(
+            p for p in fleet["panels"]
+            if p["title"].startswith("Ingest age per host")
+        )
+        self.assertEqual(panel["targets"][0]["expr"], expression)
+        # Lanes, not lines: every agent in the fleet scrapes on the same
+        # wall-clock tick, so on a shared axis the healthy hosts drew
+        # identical curves and hid one another completely.
+        self.assertEqual(panel["type"], "state-timeline")
+        steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
+        red = [s for s in steps if s["color"] == "red"]
+        self.assertEqual([s["value"] for s in red], [threshold])
+
+    def test_the_instance_picker_only_offers_real_instances(self):
+        """cAdvisor labels anything it cannot attribute with the raw
+        target address — the same literal string on every host. It sorts
+        before every real instance, so it was what the dashboard opened
+        on, and selecting it adds up containers across hosts."""
+        instance = json.loads(
+            (_DASHBOARDS / "incubacloud-instance.json").read_text()
+        )
+        variable = next(
+            v for v in instance["templating"]["list"] if v["name"] == "instance"
+        )
+        self.assertIn('instance_id!=""', variable["definition"])
+        self.assertEqual(variable["definition"], variable["query"]["query"])
+
+    def test_instance_panels_are_scoped_to_one_host(self):
+        """Container names repeat across hosts and an instance name is
+        only unique within its project, so an unscoped filter can add up
+        two machines without saying so."""
+        instance = json.loads(
+            (_DASHBOARDS / "incubacloud-instance.json").read_text()
+        )
+        for panel in instance["panels"]:
+            for target in panel["targets"]:
+                self.assertIn(
+                    'host=~"$host"', target["expr"],
+                    f"{panel['title']} filters by instance without a host",
+                )
+
+    def test_every_chart_panel_says_what_its_numbers_are(self):
+        """A byte count rendered as ``10000000000`` is not a reading.
+
+        Ratios are exempt because there is nothing to name; anything else
+        declares a unit or, where Grafana has none, an axis label.
+        """
+        offenders = []
+        for path in _dashboard_files():
+            for panel in json.loads(path.read_text())["panels"]:
+                if panel["type"] not in ("timeseries", "state-timeline"):
+                    continue
+                if panel["title"] in _RATIO_PANELS:
+                    continue
+                defaults = panel.get("fieldConfig", {}).get("defaults", {})
+                if defaults.get("unit"):
+                    continue
+                if defaults.get("custom", {}).get("axisLabel"):
+                    continue
+                offenders.append(f"{path.name}: {panel['title']}")
+        self.assertFalse(offenders, "panels with unlabelled numbers: %s"
                          % offenders)
 
 

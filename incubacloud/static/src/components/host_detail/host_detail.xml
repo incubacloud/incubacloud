@@ -51,6 +51,12 @@
                                         Changes not applied
                                     </span>
                                 </t>
+                                <t t-if="state.host.template_drift">
+                                    <span class="rl-pill pending"
+                                          t-att-title="templateDriftTitle">
+                                        Behind the shipped templates
+                                    </span>
+                                </t>
                             </t>
                         </h1>
                         <t t-if="!isNew">

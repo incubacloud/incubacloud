@@ -743,6 +743,8 @@ class CrudMixin:
             'instance_count': len(host.instance_ids),
             'traefik_deployed': host.traefik_deployed,
             'config_dirty': host.config_dirty,
+            'template_drift': host.template_drift,
+            'template_drift_details': host.template_drift_details or '',
             'wildcard_domain': host.wildcard_domain or '',
             'has_traefik_panel_password':
                 _has_encrypted(host, 'traefik_panel_password'),

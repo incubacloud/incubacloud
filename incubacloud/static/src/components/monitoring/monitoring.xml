@@ -58,6 +58,27 @@
                         </button>
                     </t>
                 </div>
+                <!-- Which host/instance is on screen. Kiosk mode hides
+                     Grafana's own picker, so without this the embed showed
+                     one arbitrary subject and never said which. -->
+                <div class="ic-monitoring-subject" t-if="needsHost or needsInstance">
+                    <t t-if="needsHost">
+                        <span class="ic-monitoring-subject-label">Host</span>
+                        <SearchSelect options="hostOptions"
+                                      value="state.host"
+                                      onChange.bind="setHost"
+                                      placeholder.translate="Select a host"
+                                      emptyLabel.translate="Select a host"/>
+                    </t>
+                    <t t-else="">
+                        <span class="ic-monitoring-subject-label">Instance</span>
+                        <SearchSelect options="instanceOptions"
+                                      value="state.instance"
+                                      onChange.bind="setInstance"
+                                      placeholder.translate="Select an instance"
+                                      emptyLabel.translate="Select an instance"/>
+                    </t>
+                </div>
                 <div class="rl-card ic-monitoring-frame">
                     <iframe t-att-src="currentUrl"
                             t-att-title="'Monitoring dashboard: ' + state.current"

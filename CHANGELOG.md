@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.54] — 2026-08-12
+
+### Fixed
+
+- **The fleet's staleness panel showed one host and hid the rest.** Every agent in the fleet scrapes on the same wall-clock tick — Prometheus derives its jitter offset from the job and target address, and those are identical on every host (`node` / `node-exporter:9100`); only the external labels differ. So the healthy hosts produce the same value at the same timestamp, bit for bit, and on a shared time axis the last series drawn covered all the others. The panel is now a state timeline: one lane per host, which cannot overlap. Its expression is untouched — it is deliberately the same one the host-down rule alerts on — and the green/red break is pinned to that rule's own threshold, so panel and alert cannot drift apart. A test now enforces both halves.
+- **Monitoring's Hosts and Instances tabs rendered an unnamed subject.** The embed passed no `var-host`/`var-instance`, so Grafana fell back to the first value its variable query returned, alphabetically; kiosk mode then hid the picker that would have said which one. Every host and instance but one was unreachable from that tab, with nothing on screen indicating it. Both tabs now carry a searchable picker and pin the subject explicitly.
+- **The instance picker offered a bucket that is not an instance.** cAdvisor labels any container the scrape config cannot attribute — the proxy, the whitelist, the metrics stack itself — with the raw target address, which is the same literal string on every host. It sorts before every real instance, so it was exactly what the dashboard opened on. The picker now lists only containers that carry an instance id, and the panels scope to a host as well: container names repeat across hosts and an instance name is only unique within its project, so filtering by instance alone could add up two machines without saying so.
+- **Every chart now says what its numbers are.** No panel in any of the three dashboards declared a unit, so a memory reading rendered as `10000000000`. Units are set per panel (bytes, percent, seconds, requests/second), with an axis label where Grafana has no unit to offer; a test fails any new chart panel that omits both.
+- **Traefik legends dropped the provider suffix.** Service names arrive as `name@docker`/`name@file`; the two Traefik panels now strip it in the query, so the legend reads as the service.
+- **"Disk used per instance" was empty on every host, always.** The generated collector tested `[ -d "~/project/instance" ]` with the tilde still literal — bash never expands one that reaches it as data, inside quotes or through a variable — so `du` never ran and the metrics file held nothing but its two header lines, which reads as "no data" rather than as a fault. The path is now resolved while the collector is rendered, which is where the remote home directory is known. This is the same expansion the scripts that go through `run_script()` already do; this generator was the one that did not.
+- **The proxy access log never reached a provisioned host.** `traefik.yml` gained a JSON access log, but the stored per-host copies are only ever filled when empty, so the change reached new hosts only and "Recent requests" stayed empty forever on every existing one. Upgrading now merges the block into each host's saved copy — a minimal merge, never a regeneration, so a host that customised its template keeps what it configured. Re-run full setup afterwards to ship it.
+- **The `secure` middleware was missing its header set on hosts provisioned before it grew one.** The same one-way template problem: HSTS, clickjacking, MIME-sniffing and referrer headers are now merged into the saved `config.yml` of hosts still on the older version, leaving any value the host set itself alone.
+
+### Added
+
+- **Hosts report when their saved configuration is behind the shipped templates.** Config drift only ever answered "is what we saved what we shipped" — a host could be perfectly clean by that measure and still be running a template from before a feature existed, which is exactly how the access log went unnoticed. Host detail now also shows which specific settings the saved copy lacks. It reports missing settings only: a value the host set differently is its own configuration, not drift, and settings that are the same feature written another way (a file provider reading a directory rather than a single file) are recognised as equivalent rather than flagged forever.
+
 ## [1.0.53] — 2026-08-12
 
 ### Fixed

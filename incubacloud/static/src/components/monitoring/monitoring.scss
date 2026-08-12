@@ -15,6 +15,30 @@
   }
 }
 
+// Which host/instance the embed is pinned to. Sits between the tabs and
+// the frame because it changes what the frame shows, and wraps so the
+// picker keeps a usable width on a phone.
+.ic-monitoring-subject {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-block: 10px;
+
+  > :last-child {
+    flex: 1 1 220px;
+    max-inline-size: 340px;
+  }
+}
+
+.ic-monitoring-subject-label {
+  font-family: var(--rl-fm);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rl-muted);
+}
+
 // ── Per-instance metrics tab ─────────────────────────────────────────
 // Same embed, plus the request view the charts cannot provide.
 .ic-metrics-panel {
