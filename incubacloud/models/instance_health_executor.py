@@ -87,6 +87,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     # unreachable after the last attempt. See AbstractExecutor.
     _retry_on_connection_loss = True
 
+    # Class attribute so layered modules can extend the blocking set
+    # with their own intrusive job types (e.g. the SaaS tenant/warm
+    # deploy and rebuild flows) without touching this module.
+    _blocking_job_types = _BLOCKING_JOB_TYPES
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _inst(self):
@@ -104,8 +109,20 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             ('id', '!=', self.job.id),
             ('instance_id', '=', inst.id),
             ('state', 'in', Job._active_states),
-            ('job_type_id.code', 'in', list(_BLOCKING_JOB_TYPES)),
+            ('job_type_id.code', 'in', list(self._blocking_job_types)),
         ]))
+
+    def _odoo_stop_is_expected(self):
+        """Whether a stopped-but-present ``odoo`` container is normal.
+
+        Core has no concept of scheduled sleep, so this is always
+        False and a stopped ``odoo`` keeps raising ``instance_down``.
+        Layered modules override it (the SaaS manager returns True for
+        sleep-eligible tenants, whose ``odoo`` is stopped by Sablier on
+        inactivity). Only consulted when the container *exists*: a
+        missing container is never expected and always alerts.
+        """
+        return False
 
     # ── AbstractSSHExecutor interface ─────────────────────────────────────
 
@@ -138,11 +155,14 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             since = "10m"
 
         return [
-            # 1. Container state
+            # 1. Container state. ``-a`` includes stopped containers so
+            #    a present-but-exited service (a Sablier-slept tenant)
+            #    can be told apart from a *missing* one (pruned or never
+            #    created) — the two demand opposite reactions.
             (
                 "container_state",
                 f"cd {d} && "
-                f"docker compose ps --format '{{{{.Service}}}}\t{{{{.State}}}}' 2>&1",
+                f"docker compose ps -a --format '{{{{.Service}}}}\t{{{{.State}}}}' 2>&1",
             ),
             # 2. CPU / memory — single non-streaming snapshot (~1.5 s).
             # `docker stats --no-stream` already computes CPU% from two
@@ -209,8 +229,15 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             parts = line.strip().split('\t')
             if len(parts) >= 2:
                 svc = parts[0].strip()
-                if svc:
-                    self._service_states[svc] = parts[1].strip().lower()
+                if not svc:
+                    continue
+                state = parts[1].strip().lower()
+                # ``ps -a`` may list several containers for one service
+                # (stale one-off ``run`` leftovers next to the real
+                # one). A running container always wins: the service is
+                # up no matter how many corpses sit beside it.
+                if self._service_states.get(svc) != 'running':
+                    self._service_states[svc] = state
         self._container_running = (
             self._service_states.get('odoo') == 'running'
         )
@@ -309,6 +336,28 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         owns_running = not inst._liveness_covered_by_metrics()
 
         if not self._container_running:
+            odoo_present = 'odoo' in self._service_states
+            if odoo_present and self._odoo_stop_is_expected():
+                # Present but stopped, and the stop is scheduled (e.g.
+                # Sablier sleep): not an incident. ``running=False`` is
+                # still written — downstream hooks read it to track the
+                # sleep/wake cycle — but status stays green and no
+                # alert fires. The companion services must keep
+                # running while the instance sleeps, so they are still
+                # graded below.
+                vals = {
+                    'cpu_over_threshold_streak': 0,
+                    'mem_over_threshold_streak': 0,
+                }
+                if owns_running:
+                    vals['running'] = False
+                inst.write(vals)
+                self._resolve_inst_alert('instance_down')
+                issues = []
+                self._check_other_services(inst, issues)
+                inst.write({'status': 'warning' if issues else 'ok'})
+                self._sys(f"✓ '{inst.name}' is asleep (expected).")
+                return
             vals = {
                 'status': 'error',
                 'cpu_over_threshold_streak': 0,
@@ -317,12 +366,20 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             if owns_running:
                 vals['running'] = False
             inst.write(vals)
-            self._inst_alert(
-                'instance_down',
-                f"Container 'odoo' is not running on '{inst.name}'.",
-                level='critical',
-            )
-            self._sys(f"✗ Container down — '{inst.name}' is not running.")
+            if odoo_present:
+                message = f"Container 'odoo' is not running on '{inst.name}'."
+                log = f"✗ Container down — '{inst.name}' is not running."
+            else:
+                # No container at all — not even a stopped one. This is
+                # how a pruned stack presents itself; say so instead of
+                # the generic "not running" that once cost a log dig.
+                message = (
+                    f"Container 'odoo' is missing on '{inst.name}' "
+                    f"(pruned, or never created)."
+                )
+                log = f"✗ Container missing — '{inst.name}' has no odoo container."
+            self._inst_alert('instance_down', message, level='critical')
+            self._sys(log)
             return
 
         # Container is up — resolve down alert if it existed
@@ -384,45 +441,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         elif not cpu_over:
             self._resolve_inst_alert('instance_high_cpu')
 
-        # Per-service container state — alert on any expected service
-        # that is not ``running``. ``odoo`` is intentionally excluded
-        # because it has its own end-to-end track (``instance_down``
-        # for the container, ``instance_unresponsive`` for HTTP) which
-        # carries the right severity (``critical``). Backup, db, smtp
-        # going sideways is a ``warning`` — the instance keeps serving
-        # traffic — but stays visible so the operator does not learn
-        # about a 2-day-old broken backup container from a failed cron.
-        expected_other = set(inst.expected_services()) - {'odoo'}
-        all_known = expected_other | {
-            svc for svc in self._service_states
-            if svc != 'odoo'
-        }
-        for svc in sorted(all_known):
-            code = f'instance_service_{svc}_down'
-            if svc not in expected_other:
-                # Service runs on the host but the instance doesn't
-                # actually need it (e.g. backup container left over
-                # from a plan downgrade). Drop any stale alert and
-                # move on — we don't grade what we don't expect.
-                self._resolve_inst_alert(code)
-                continue
-            observed = self._service_states.get(svc)
-            if observed != 'running':
-                issues.append(f'{svc}:{observed or "missing"}')
-                self._inst_alert(
-                    code,
-                    (
-                        f"Container '{svc}' is {observed or 'missing'} "
-                        f"on '{inst.name}'."
-                    ),
-                    level='warning',
-                    payload={'service': svc, 'state': observed or 'missing'},
-                )
-                self._sys(
-                    f"⚠ Service '{svc}' is {observed or 'missing'}."
-                )
-            else:
-                self._resolve_inst_alert(code)
+        self._check_other_services(inst, issues)
 
         # Error logs — dedupe groups + payload
         if len(self._error_groups) >= _ERROR_GROUPS_WARN:
@@ -457,6 +476,52 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 f"✓ '{inst.name}' healthy — "
                 f"CPU {self._cpu_current:.0f}% · Mem {self._mem_current:.0f}%"
             )
+
+    def _check_other_services(self, inst, issues):
+        """Grade every expected non-``odoo`` service; append to *issues*.
+
+        Alerts on any expected service that is not ``running``.
+        ``odoo`` is intentionally excluded because it has its own
+        end-to-end track (``instance_down`` for the container,
+        ``instance_unresponsive`` for HTTP) which carries the right
+        severity (``critical``). Backup, db, smtp going sideways is a
+        ``warning`` — the instance keeps serving traffic — but stays
+        visible so the operator does not learn about a 2-day-old broken
+        backup container from a failed cron. Also runs while the
+        instance sleeps: Sablier only stops ``odoo``, so its companions
+        must stay up.
+        """
+        expected_other = set(inst.expected_services()) - {'odoo'}
+        all_known = expected_other | {
+            svc for svc in self._service_states
+            if svc != 'odoo'
+        }
+        for svc in sorted(all_known):
+            code = f'instance_service_{svc}_down'
+            if svc not in expected_other:
+                # Service runs on the host but the instance doesn't
+                # actually need it (e.g. backup container left over
+                # from a plan downgrade). Drop any stale alert and
+                # move on — we don't grade what we don't expect.
+                self._resolve_inst_alert(code)
+                continue
+            observed = self._service_states.get(svc)
+            if observed != 'running':
+                issues.append(f'{svc}:{observed or "missing"}')
+                self._inst_alert(
+                    code,
+                    (
+                        f"Container '{svc}' is {observed or 'missing'} "
+                        f"on '{inst.name}'."
+                    ),
+                    level='warning',
+                    payload={'service': svc, 'state': observed or 'missing'},
+                )
+                self._sys(
+                    f"⚠ Service '{svc}' is {observed or 'missing'}."
+                )
+            else:
+                self._resolve_inst_alert(code)
 
     # ── Instance-scoped alert helpers ─────────────────────────────────────
 
