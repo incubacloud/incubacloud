@@ -171,6 +171,37 @@ class TestDashboardsMatchTheSpa(BaseCase):
                     f"{panel['title']} filters by instance without a host",
                 )
 
+    def test_the_disk_panel_reads_a_label_the_collector_emits(self):
+        """A legend can only name a label the exposed metric carries.
+
+        And it must not name ``instance``: the scraper owns that one and
+        overwrites it with the target address, renaming whatever the
+        metric called that to ``exported_instance``. A panel keyed on it
+        renders every series of a host under the same legend — data
+        present, series distinct, and completely unreadable.
+        """
+        playbook = (
+            _ROOT / "ansible" / "playbooks" / "host_observability.yml"
+        ).read_text()
+        exposed = set(re.findall(
+            r"(\w+)=\"%s\"",
+            playbook.split("ic_instance_disk_bytes{", 1)[1].split("}", 1)[0],
+        ))
+        self.assertNotIn(
+            "instance", exposed,
+            "the collector exposes a label the scraper overwrites",
+        )
+        host = json.loads((_DASHBOARDS / "incubacloud-host.json").read_text())
+        panel = next(
+            p for p in host["panels"] if p["title"] == "Disk used per instance"
+        )
+        used = set(re.findall(r"{{(\w+)}}", panel["targets"][0]["legendFormat"]))
+        self.assertTrue(
+            used <= exposed,
+            f"the panel legends by {used - exposed}, which the collector "
+            f"never emits (it emits {exposed})",
+        )
+
     def test_every_chart_panel_says_what_its_numbers_are(self):
         """A byte count rendered as ``10000000000`` is not a reading.
 

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.55] — 2026-08-12
+
+### Fixed
+
+- **"Disk used per instance" legended every series identically.** The per-instance disk collector labelled its samples `instance`, which is the one label a scraper owns: Prometheus sets it to the target address and renames the exposed one to `exported_instance`. Every series on a host therefore arrived as `node-exporter:9100` — distinct series, correct numbers, one repeated legend. Only visible once 1.0.54 made the metric exist at all, since the collector had never produced a sample. It now labels the name `instance_name`, which nothing else claims, and the panel legends by it. A test pins the panel's legend to a label the collector actually emits and refuses the reserved one. Re-running the observability agents on a host applies it.
+
 ## [1.0.54] — 2026-08-12
 
 ### Fixed
