@@ -676,6 +676,10 @@ export class InstanceDetail extends JobsMixin(
    * see is decided by the gateway, from the credentials the datasource
    * authenticates with. Changing it by hand only moves within what that
    * account could already read.
+   *
+   * The host is pinned too. Container names repeat across hosts and an
+   * instance name is only unique within its project, so filtering by the
+   * instance alone can quietly add up series from two different machines.
    */
   get instanceDashboardUrl() {
     const base = (this.state.metricsCfg.baseUrl || "").replace(/\/+$/, "");
@@ -685,8 +689,11 @@ export class InstanceDetail extends JobsMixin(
     const theme =
       document.documentElement.dataset.icTheme === "light" ? "light" : "dark";
     const name = encodeURIComponent(this.state.inst.name || "");
+    const host = encodeURIComponent(this.state.inst.host || "");
     return `${base}/d/ic-instance/incubacloud-instance` +
-      `?kiosk&theme=${theme}&var-instance=${name}`;
+      `?kiosk&theme=${theme}` +
+      (host ? `&var-host=${host}` : "") +
+      `&var-instance=${name}`;
   }
 
   /** Most recent requests first, which is how an incident is read. */

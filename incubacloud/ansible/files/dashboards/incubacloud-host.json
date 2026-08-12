@@ -52,6 +52,12 @@
         "x": 12,
         "y": 0
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "100 - (node_memory_MemAvailable_bytes{host=\"$host\"} / node_memory_MemTotal_bytes{host=\"$host\"} * 100)",
@@ -68,6 +74,12 @@
         "x": 0,
         "y": 8
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "expr": "100 - (node_filesystem_avail_bytes{host=\"$host\",mountpoint=\"/\"} / node_filesystem_size_bytes{host=\"$host\",mountpoint=\"/\"} * 100)",
@@ -83,6 +95,12 @@
         "w": 12,
         "x": 12,
         "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
       },
       "targets": [
         {
@@ -101,9 +119,15 @@
         "x": 0,
         "y": 16
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum by (service) (rate(traefik_service_requests_total{host=\"$host\"}[5m]))",
+          "expr": "sum by (service) (label_replace(rate(traefik_service_requests_total{host=\"$host\"}[5m]), \"service\", \"$1\", \"service\", \"(.*)@.*\"))",
           "legendFormat": "{{service}}"
         }
       ]
@@ -117,9 +141,15 @@
         "x": 12,
         "y": 16
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (service, le) (rate(traefik_service_request_duration_seconds_bucket{host=\"$host\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (service, le) (label_replace(rate(traefik_service_request_duration_seconds_bucket{host=\"$host\"}[5m]), \"service\", \"$1\", \"service\", \"(.*)@.*\")))",
           "legendFormat": "{{service}}"
         }
       ]

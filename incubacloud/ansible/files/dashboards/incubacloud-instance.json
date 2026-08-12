@@ -14,11 +14,31 @@
   "templating": {
     "list": [
       {
+        "name": "host",
+        "type": "query",
+        "label": "Host",
+        "description": "Scopes the instance list and the panels to one host. Container names are only unique within a host, and an instance name is only unique within its project, so without this two hosts can silently add up in the same series. Defaults to All, which is what a link that does not set it gets.",
+        "definition": "label_values(container_last_seen, host)",
+        "query": {
+          "query": "label_values(container_last_seen, host)",
+          "refId": "host-Variable-Query"
+        },
+        "refresh": 1,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
         "name": "instance",
         "type": "query",
-        "definition": "label_values(container_last_seen, instance)",
+        "label": "Instance",
+        "description": "Only containers the scrape config could attribute to an instance. cAdvisor labels every other container on the host (the proxy, the whitelist, the metrics stack itself) with the raw target address instead, which is the same literal string on every host and is not an instance at all.",
+        "definition": "label_values(container_last_seen{host=~\"$host\",instance_id!=\"\"}, instance)",
         "query": {
-          "query": "label_values(container_last_seen, instance)",
+          "query": "label_values(container_last_seen{host=~\"$host\",instance_id!=\"\"}, instance)",
           "refId": "instance-Variable-Query"
         },
         "refresh": 1,
@@ -36,9 +56,17 @@
         "x": 0,
         "y": 0
       },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisLabel": "cores"
+          }
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{instance=\"$instance\"}[5m]))",
+          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{host=~\"$host\",instance=\"$instance\"}[5m]))",
           "legendFormat": "{{name}}"
         }
       ]
@@ -52,9 +80,15 @@
         "x": 12,
         "y": 0
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum by (name) (container_memory_working_set_bytes{instance=\"$instance\"})",
+          "expr": "sum by (name) (container_memory_working_set_bytes{host=~\"$host\",instance=\"$instance\"})",
           "legendFormat": "{{name}}"
         }
       ]

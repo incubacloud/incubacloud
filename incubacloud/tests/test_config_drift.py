@@ -144,3 +144,120 @@ class TestRebuildReanchorsDrift(TransactionCase):
         self.assertEqual(
             inst.applied_config_hash, inst._config_snapshot_hash(),
         )
+
+
+class TestTemplateDrift(TransactionCase):
+    """Tier 3 — template drift: saved config vs what this version ships.
+
+    A different question from ``config_dirty``, and the reason it exists:
+    a host can be perfectly in sync with what the last full setup shipped
+    and still be running a Traefik config from before a feature was added
+    to the seed templates. That is exactly how the JSON access log reached
+    no provisioned host for months while every drift signal read clean.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.Host = self.env["cloud.host"]
+        self.host = self.Host.create(
+            {
+                "name": "tpl-drift-host",
+                "ip_address": "192.0.2.42",
+                "user": "ubuntu",
+                "wildcard_domain": "tpl.example.com",
+            }
+        )
+
+    def _drift(self):
+        self.host.invalidate_recordset(
+            ["template_drift", "template_drift_details"],
+        )
+        return self.host
+
+    # ── The walker ─────────────────────────────────────────────────────
+
+    def test_reports_a_key_the_stored_copy_lacks(self):
+        missing = self.Host._missing_template_paths(
+            {"a": {"b": 1, "c": 2}}, {"a": {"b": 1}},
+        )
+        self.assertEqual(missing, ["a.c"])
+
+    def test_ignores_a_different_value(self):
+        """A host's own domain, e-mail or port is not drift."""
+        missing = self.Host._missing_template_paths(
+            {"acme": {"email": "seed@example.com"}},
+            {"acme": {"email": "ops@customer.com"}},
+        )
+        self.assertEqual(missing, [])
+
+    def test_ignores_extra_keys_the_host_added(self):
+        missing = self.Host._missing_template_paths(
+            {"a": 1}, {"a": 1, "plugins": {"sablier": {}}},
+        )
+        self.assertEqual(missing, [])
+
+    def test_reports_a_whole_missing_block(self):
+        missing = self.Host._missing_template_paths(
+            {"accessLog": {"format": "json"}}, {},
+        )
+        self.assertEqual(missing, ["accessLog"])
+
+    # ── Equivalences ───────────────────────────────────────────────────
+
+    def test_an_equivalent_spelling_is_not_drift(self):
+        """``filename`` and ``directory`` are the same file provider.
+
+        A layer that needs to drop extra dynamic files switches to the
+        directory form. Flagging that would leave a warning nobody can
+        clear, which is how a drift signal stops being read at all.
+        """
+        self.host.traefik_yml = self.host.traefik_yml.replace(
+            "filename: /etc/traefik/config.yml",
+            "directory: /etc/traefik/dynamic",
+        )
+        details = self._drift().template_drift_details or ""
+        self.assertNotIn("providers.file.filename", details)
+
+    def test_the_equivalence_only_covers_its_own_pair(self):
+        """Dropping the provider outright is still drift."""
+        self.host.traefik_yml = self.host.traefik_yml.replace(
+            "    filename: /etc/traefik/config.yml\n", "",
+        )
+        self.assertTrue(self._drift().template_drift)
+
+    # ── Behaviour on records ───────────────────────────────────────────
+
+    def test_a_host_seeded_from_the_templates_is_clean(self):
+        """The guard: this fails the day a template gains a setting and
+        no retrofit is wired to carry it to existing hosts.
+
+        That omission is precisely what left every host without an access
+        log, silently, and nothing in the system could notice."""
+        self.Host.init_traefik_templates()
+        self.host.invalidate_recordset()
+        self.assertFalse(
+            self._drift().template_drift,
+            "A host built from the shipped templates reports drift: a "
+            "template declares something init_traefik_templates does not "
+            "retrofit. Add the merge, do not relax this test.",
+        )
+
+    def test_a_stale_stored_copy_is_flagged_and_named(self):
+        self.host.traefik_yml = "global:\n  sendAnonymousUsage: false\n"
+        host = self._drift()
+        self.assertTrue(host.template_drift)
+        self.assertIn("traefik.yml: accessLog", host.template_drift_details)
+
+    def test_the_access_log_retrofit_clears_it(self):
+        self.host.traefik_yml = self.host.traefik_yml.replace(
+            "accessLog:", "accessLogDisabled:",
+        )
+        self.assertTrue(self._drift().template_drift)
+        self.Host.init_traefik_templates()
+        self.host.invalidate_recordset()
+        self.assertFalse(self._drift().template_drift)
+
+    def test_unparseable_yaml_does_not_break_the_page(self):
+        """An operator's editing mistake is a different problem."""
+        self.host.traefik_yml = "global:\n  broken: [unclosed\n"
+        self.assertFalse(self._drift().template_drift)

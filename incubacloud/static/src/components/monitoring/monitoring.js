@@ -3,6 +3,8 @@
 import { Component, useState, onWillStart } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 
+import { SearchSelect } from "../search_select/search_select";
+
 /**
  * Monitoring — the operator view of the metrics stack (Fase 4 / A10).
  *
@@ -23,6 +25,7 @@ import { rpc } from "@web/core/network/rpc";
  */
 export class Monitoring extends Component {
     static template = "incubacloud.Monitoring";
+    static components = { SearchSelect };
     static props = {};
 
     // Dashboards provisioned by the central playbook. ``uid`` must match
@@ -40,12 +43,35 @@ export class Monitoring extends Component {
             enabled: false,
             baseUrl: "",
             current: Monitoring.DASHBOARDS[0].uid,
+            hosts: [],
+            instances: [],
+            // Which host/instance the embed is pinned to. Empty means
+            // "let Grafana pick", which is what used to happen always.
+            host: "",
+            instance: "",
         });
         onWillStart(() => this.loadConfig());
     }
 
     get dashboards() {
         return Monitoring.DASHBOARDS;
+    }
+
+    get hostOptions() {
+        return this.state.hosts.map((h) => h.name);
+    }
+
+    get instanceOptions() {
+        return this.state.instances.map((i) => i.name);
+    }
+
+    /** True while a tab that needs a subject is showing. */
+    get needsHost() {
+        return this.state.current === "ic-host";
+    }
+
+    get needsInstance() {
+        return this.state.current === "ic-instance";
     }
 
     /** Fetch whether monitoring is configured and where Grafana lives. */
@@ -56,6 +82,12 @@ export class Monitoring extends Component {
             const cfg = await rpc("/cloud/monitoring/config", {});
             this.state.enabled = !!cfg.enabled;
             this.state.baseUrl = cfg.grafana_base_url || "";
+            this.state.hosts = cfg.hosts || [];
+            this.state.instances = cfg.instances || [];
+            // Pin the first of each rather than leaving it blank: a blank
+            // subject is exactly the silent default this fixes.
+            this.state.host = this.state.hosts[0]?.name || "";
+            this.state.instance = this.state.instances[0]?.name || "";
         } catch (err) {
             const msg = err?.data?.message ?? err?.message;
             this.state.error = (typeof msg === "string" && msg)
@@ -66,12 +98,21 @@ export class Monitoring extends Component {
         }
     }
 
+    /** The host an instance runs on, so the embed can scope to it. */
+    hostOfInstance(name) {
+        return this.state.instances.find((i) => i.name === name)?.host || "";
+    }
+
     /**
      * Build the embed URL for a dashboard.
      *
      * ``kiosk`` strips Grafana's own chrome so the panel supplies the
      * navigation, and the theme follows the SPA's so the embed does not
      * flash a light panel inside a dark app.
+     *
+     * The subject is passed explicitly. ``kiosk`` also hides the row where
+     * Grafana would show its own variable pickers, so a dashboard left on
+     * its default rendered one arbitrary host with nothing naming it.
      */
     embedUrl(uid) {
         if (!this.state.baseUrl) return "";
@@ -82,7 +123,19 @@ export class Monitoring extends Component {
                 ? "light"
                 : "dark";
         const base = this.state.baseUrl.replace(/\/+$/, "");
-        return `${base}/d/${dash.uid}/${dash.slug}?kiosk&theme=${theme}`;
+        let url = `${base}/d/${dash.uid}/${dash.slug}?kiosk&theme=${theme}`;
+        if (uid === "ic-host" && this.state.host) {
+            url += `&var-host=${encodeURIComponent(this.state.host)}`;
+        } else if (uid === "ic-instance" && this.state.instance) {
+            // Both: container names repeat across hosts, so an instance
+            // alone can add up series belonging to two different ones.
+            const host = this.hostOfInstance(this.state.instance);
+            if (host) {
+                url += `&var-host=${encodeURIComponent(host)}`;
+            }
+            url += `&var-instance=${encodeURIComponent(this.state.instance)}`;
+        }
+        return url;
     }
 
     get currentUrl() {
@@ -91,5 +144,13 @@ export class Monitoring extends Component {
 
     select(uid) {
         this.state.current = uid;
+    }
+
+    setHost(name) {
+        this.state.host = name || "";
+    }
+
+    setInstance(name) {
+        this.state.instance = name || "";
     }
 }

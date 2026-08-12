@@ -1111,15 +1111,35 @@ class OpsMixin:
     def cloud_monitoring_config(self):
         """Return what the Monitoring tab needs to embed Grafana.
 
-        Deliberately narrow: only the master switch and the public
-        Grafana URL. The metrics backend URL and the remote-write token
-        stay server-side — the browser has no business knowing either,
-        and the token is a write credential for the whole fleet.
+        Deliberately narrow: the master switch, the public Grafana URL,
+        and the two picklists the embed has to fill in. The metrics
+        backend URL and the remote-write token stay server-side — the
+        browser has no business knowing either, and the token is a write
+        credential for the whole fleet.
+
+        The picklists are names, not records: they exist only to build
+        ``var-host=``/``var-instance=`` for the iframe. Without them
+        Grafana falls back to the first value its own variable query
+        returns, so every host and instance but one was unreachable from
+        this tab, with nothing on screen saying so.
+
+        Instances follow the same rule the label map does — drafts are
+        skipped, because nothing of theirs runs on a host yet and no
+        series can carry their name.
         """
         self._sec()._check_can_view_metrics()
         settings = request.env["cloud.settings"].sudo()._get_system()
+        hosts = request.env["cloud.host"].search([], order="name")
+        instances = request.env["cloud.instance"].search(
+            [("state", "!=", "draft"), ("host_id", "!=", False)],
+            order="name",
+        )
         return {
             "ok": True,
             "enabled": bool(settings.metrics_enabled),
             "grafana_base_url": settings.grafana_base_url or "",
+            "hosts": [{"name": h.name} for h in hosts],
+            "instances": [
+                {"name": i.name, "host": i.host_id.name} for i in instances
+            ],
         }

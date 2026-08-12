@@ -6,6 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import asyncssh
+import yaml
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
@@ -504,6 +505,29 @@ class CloudHost(models.Model):
              "applies it.",
     )
 
+    # ── Template drift: saved host config vs what the templates declare ──
+    # A second, independent question from config_dirty, and deliberately
+    # not folded into it. ``config_dirty`` answers "is what we saved what
+    # we shipped"; a host can be perfectly clean by that measure and still
+    # be running a template from before a feature existed — which is what
+    # happened when the access log was added to the seed file and reached
+    # no provisioned host for months, with nothing anywhere saying so.
+    #
+    # The remedies differ too, which is the real reason to keep them
+    # apart: config_dirty is fixed by re-running full setup, while this is
+    # fixed by amending the stored copy FIRST. Merging them would tell the
+    # operator to re-ship the stale config and call it done.
+
+    template_drift = fields.Boolean(
+        compute="_compute_template_drift",
+        help="True when a shipped Traefik template declares something the "
+             "host's saved copy does not have at all.",
+    )
+    template_drift_details = fields.Text(
+        compute="_compute_template_drift",
+        help="The specific template settings the saved copy is missing.",
+    )
+
     def _config_snapshot_fields(self):
         """Host fields full_setup renders and uploads.
 
@@ -556,6 +580,117 @@ class CloudHost(models.Model):
                     host.id, exc_info=True,
                 )
                 host.config_dirty = False
+
+    # A template setting is also satisfied by the sibling listed here.
+    # Not an exception list: these are the SAME feature written the other
+    # way, and Traefik accepts either. Its file provider reads one
+    # ``filename`` or a whole ``directory``; a deployment layer that needs
+    # to drop in extra dynamic files switches to the directory form, and
+    # calling that "drift" would leave a warning nobody can ever clear —
+    # which is how a drift signal stops being read at all.
+    _TRAEFIK_TEMPLATE_EQUIVALENTS = {
+        "traefik_yml": {"providers.file.filename": "providers.file.directory"},
+    }
+
+    @staticmethod
+    def _missing_template_paths(template, current, prefix=""):
+        """Dotted paths ``template`` declares that ``current`` lacks.
+
+        Only absent keys are reported. A key present with a DIFFERENT
+        value is a host's own setting — its domain, its ACME e-mail, its
+        ports — and reporting those would drown the real signal.
+
+        :param template: the parsed shipped template.
+        :param current: the parsed copy stored on the host.
+        :param prefix: dotted path of the node being compared.
+        :return: list of dotted paths, in template order.
+        """
+        if not isinstance(template, dict):
+            return []
+        if not isinstance(current, dict):
+            return [prefix] if prefix else []
+        missing = []
+        for key, value in template.items():
+            path = f"{prefix}.{key}" if prefix else key
+            if key not in current:
+                missing.append(path)
+            else:
+                missing.extend(
+                    CloudHost._missing_template_paths(
+                        value, current[key], path,
+                    )
+                )
+        return missing
+
+    def _template_drift(self):
+        """Return ``{field: [missing path, ...]}`` for this host.
+
+        Compares each stored Traefik config against the template shipped
+        in this version of the module. A field that does not parse is
+        skipped rather than reported: it is an operator's editing mistake,
+        a different problem with a different fix, and guessing about it
+        here would be noise.
+        """
+        self.ensure_one()
+        host = self.sudo()
+        drift = {}
+        for field, filename in self._TRAEFIK_TEMPLATE_FIELDS.items():
+            try:
+                template = yaml.safe_load(_read_traefik_template(filename))
+                current = yaml.safe_load(host[field] or "") or {}
+            except yaml.YAMLError:
+                continue
+            if not isinstance(template, dict):
+                continue
+            equivalents = self._TRAEFIK_TEMPLATE_EQUIVALENTS.get(field, {})
+            missing = [
+                path
+                for path in self._missing_template_paths(template, current)
+                if not self._path_present(current, equivalents.get(path))
+            ]
+            if missing:
+                drift[field] = missing
+        return drift
+
+    @staticmethod
+    def _path_present(data, path):
+        """True when ``path`` (dotted) resolves to a key inside ``data``."""
+        if not path:
+            return False
+        node = data
+        for part in path.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return False
+            node = node[part]
+        return True
+
+    # Only the stored side can be depended on; the reference side lives on
+    # disk and changes when the module is upgraded, not when a record is
+    # written. That is precisely the drift this reports, so the compute is
+    # correct on read and cannot be invalidated by a write that never
+    # happened.
+    @api.depends("traefik_yml", "traefik_config_yml", "traefik_inverseproxy_yaml")
+    def _compute_template_drift(self):
+        """Flag hosts whose saved Traefik config predates a template."""
+        for host in self:
+            try:
+                drift = host._template_drift()
+            except Exception:
+                # A host detail page must never fail to render because a
+                # template could not be read off disk.
+                _logger.warning(
+                    "template_drift: comparison failed for host %s",
+                    host.id, exc_info=True,
+                )
+                host.template_drift = False
+                host.template_drift_details = ""
+                continue
+            host.template_drift = bool(drift)
+            host.template_drift_details = "\n".join(
+                f"{self._TRAEFIK_TEMPLATE_FIELDS[field]}: {path}"
+                for field, paths in drift.items()
+                for path in paths
+            )
 
     def _subdomain_suffix(self):
         """Return the wildcard domain ready to suffix an instance subdomain.
@@ -1233,6 +1368,107 @@ class CloudHost(models.Model):
             )
         return out.rstrip("\n") + "\n" + CloudHost._TRAEFIK_METRICS_BLOCK
 
+    # Kept short on purpose: the seed template explains at length why the
+    # log goes to stdout and why headers are dropped, and that prose is
+    # already on every host provisioned from it. What a retrofitted host
+    # needs is the block plus a note saying where it came from.
+    _TRAEFIK_ACCESS_LOG_BLOCK = (
+        "\n# Auto-added by IncubaCloud: per-request access log, in JSON, on\n"
+        "# stdout. This is what attributes a request to an instance; the\n"
+        "# metrics carry neither client IP nor path. Headers are dropped so\n"
+        "# no cookie or Authorization value is ever written to the host.\n"
+        "accessLog:\n"
+        "  format: json\n"
+        "  bufferingSize: 100\n"
+        "  fields:\n"
+        "    defaultMode: keep\n"
+        "    headers:\n"
+        "      defaultMode: drop\n"
+    )
+
+    # Response headers the ``secure`` middleware gained after the first
+    # hosts were provisioned. Ordered as in the seed template.
+    _TRAEFIK_SECURITY_HEADERS = (
+        ("stsSeconds", "31536000"),
+        ("stsIncludeSubdomains", '"true"'),
+        ("stsPreload", '"true"'),
+        ("frameDeny", '"true"'),
+        ("contentTypeNosniff", '"true"'),
+        ("browserXssFilter", '"true"'),
+        ("referrerPolicy", '"strict-origin-when-cross-origin"'),
+    )
+
+    @staticmethod
+    def _add_traefik_access_log(traefik_yml):
+        """Return ``traefik.yml`` with the JSON access log, if missing.
+
+        Idempotent and conservative, like the metrics retrofit: a host that
+        already declares ``accessLog`` keeps whatever it configured, even
+        if it configured something else entirely.
+        """
+        import re
+
+        if not traefik_yml:
+            return traefik_yml
+        if re.search(r"^accessLog:", traefik_yml, re.MULTILINE):
+            return traefik_yml
+        return (
+            traefik_yml.rstrip("\n")
+            + "\n"
+            + CloudHost._TRAEFIK_ACCESS_LOG_BLOCK
+        )
+
+    @staticmethod
+    def _add_traefik_security_headers(config_yml):
+        """Return ``config.yml`` with the ``secure`` middleware completed.
+
+        The middleware predates the headers below, so hosts provisioned
+        early carry a version that only forces HSTS and TLS. The missing
+        keys are appended to the mapping that is already there — the block
+        is never rewritten, so an operator's own values and the comments
+        around them survive.
+
+        Idempotent, and a no-op when the structure is not the one this
+        knows how to extend: the same stance as the metrics port retrofit,
+        because guessing where to insert into a hand-edited file is how a
+        retrofit breaks a proxy.
+        """
+        import re
+
+        if not config_yml:
+            return config_yml
+        # The ``headers`` mapping of the ``secure`` middleware, plus every
+        # line indented under it. Anchored on ``secure:`` so a different
+        # middleware that also sets headers is never the one extended.
+        match = re.search(
+            r"^[ \t]+secure:[ \t]*\n"
+            r"(?P<hindent>[ \t]+)headers:[ \t]*\n"
+            r"(?P<body>(?:(?P=hindent)[ \t]+\S.*\n)*)",
+            config_yml,
+            re.MULTILINE,
+        )
+        if not match:
+            return config_yml
+        body = match.group("body")
+        if not body:
+            return config_yml
+        missing = [
+            (key, value)
+            for key, value in CloudHost._TRAEFIK_SECURITY_HEADERS
+            if not re.search(rf"^[ \t]+{key}:", body, re.MULTILINE)
+        ]
+        if not missing:
+            return config_yml
+        child_indent = re.match(r"[ \t]*", body).group(0)
+        addition = "".join(
+            f"{child_indent}{key}: {value}\n" for key, value in missing
+        )
+        return (
+            config_yml[: match.end("body")]
+            + addition
+            + config_yml[match.end("body"):]
+        )
+
     @staticmethod
     def _add_traefik_metrics_port(inverseproxy_yaml):
         """Publish the metrics port on loopback, if not already published.
@@ -1304,6 +1540,31 @@ class CloudHost(models.Model):
                 _logger.info(
                     "Added Traefik metrics config for host: %s", host.name,
                 )
+            # Same reasoning for the access log: the proxy only writes one
+            # when told to, so a host still on the pre-accessLog template
+            # produces nothing for "Recent requests" to read, forever, and
+            # an empty list is indistinguishable from a quiet instance.
+            with_log = self._add_traefik_access_log(
+                vals.get("traefik_yml", host.traefik_yml),
+            )
+            if with_log != (vals.get("traefik_yml", host.traefik_yml)):
+                vals["traefik_yml"] = with_log
+                _logger.info(
+                    "Added Traefik access log config for host: %s", host.name,
+                )
+
+            # The security headers the ``secure`` middleware gained later.
+            with_headers = self._add_traefik_security_headers(
+                vals.get("traefik_config_yml", host.traefik_config_yml),
+            )
+            if with_headers != (
+                vals.get("traefik_config_yml", host.traefik_config_yml)
+            ):
+                vals["traefik_config_yml"] = with_headers
+                _logger.info(
+                    "Added Traefik security headers for host: %s", host.name,
+                )
+
             with_port = self._add_traefik_metrics_port(
                 vals.get(
                     "traefik_inverseproxy_yaml",
