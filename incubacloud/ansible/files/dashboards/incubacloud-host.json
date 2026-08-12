@@ -105,7 +105,7 @@
       "targets": [
         {
           "expr": "ic_instance_disk_bytes{host=\"$host\"}",
-          "legendFormat": "{{instance}}"
+          "legendFormat": "{{instance_name}}"
         }
       ]
     },
