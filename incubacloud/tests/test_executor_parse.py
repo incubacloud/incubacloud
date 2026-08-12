@@ -177,6 +177,32 @@ class TestInstanceHealthParseResults(BaseCase):
         self.assertFalse(hasattr(self.executor, '_cpu_current'))
         self.assertFalse(hasattr(self.executor, '_error_groups'))
 
+    def test_duplicate_service_lines_prefer_running(self):
+        """``ps -a`` may list a stale one-off ``run`` container next to
+        the live one under the same service name; a running container
+        must win regardless of line order."""
+        for state_out in (
+            "odoo\texited\nodoo\trunning",
+            "odoo\trunning\nodoo\texited",
+        ):
+            self.executor.parse_results(self._results(
+                container_state=state_out + "\ndb\trunning",
+            ))
+            self.assertTrue(
+                self.executor._container_running,
+                f"odoo must count as running for {state_out!r}",
+            )
+
+    def test_container_state_command_includes_stopped(self):
+        """``-a`` is what tells a slept container apart from a pruned
+        one — without it both present as 'no line for the service'."""
+        self.executor._skipped = False
+        inst = MagicMock(last_health_check=False)
+        self.executor._inst = MagicMock(return_value=inst)
+        self.executor._inst_dir = MagicMock(return_value="~/foo/bar")
+        cmds = dict(self.executor.get_commands())
+        self.assertIn("docker compose ps -a", cmds["container_state"])
+
     def test_error_lines_command_anchors_and_strips_ansi(self):
         """The shell command for the error_lines step must:
 

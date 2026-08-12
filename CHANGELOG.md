@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.56] — 2026-08-12
+
+### Fixed
+
+- **The prune protection now covers everything the panel deploys, on every path.** The `incubacloud.protect=1` label was stamped only by the SaaS warm-pool *deploy* executor, and a warm *rebuild* resolves to core's rebuild — a class that never passed through it. Every rebuild therefore rewrote `docker-compose.override.yml` without the label and handed the stopped stack back to the next nightly prune, which is why the free-host backups kept failing after 1.0.35 supposedly fixed them: measured on the live host, not one container or network carried the label. The label is now stamped by core's deploy override on every service and on the project's default network, unconditionally, so it cannot depend on which subclass rendered the file. The invariant is "the panel deployed it and it may legitimately sit stopped" — a warm spare, a Sablier-slept free instance, a manually stopped one — and what the panel deploys is destroyed by `delete_instance`, never by the prune
+- **A stopped `odoo` container and a missing one are no longer the same thing to the health probe.** It listed only running containers, so a pruned stack and a sleeping one both read as "not running" and got the same generic `instance_down`. The probe now lists stopped containers too and says which case it found; a *missing* container always alerts, while a merely stopped one can be declared expected by a layered module through the new `_odoo_stop_is_expected` hook (core has no notion of scheduled sleep and keeps treating it as an incident). Companion services are still graded while an instance sleeps, since only `odoo` is put to sleep
+
+### Added
+
+- **The prune now proves it did no harm.** The playbook inventories the containers that survived and the executor compares them against the `odoo`/`db` containers every deployed instance on that host must have, raising a critical `prune_swept_managed` alert naming what is missing and resolving it once the stack is whole again. Instances with a job in flight are exempt, since a rebuild legitimately leaves the stack containerless for a while. With the labelling fixed this should never fire — it exists because the silent version of this failure went unnoticed for two days, surfacing only as a failed backup
+- The prune log now says what was deleted, counted by kind, and names the networks it removed instead of only reporting the reclaimed space
+
 ## [1.0.55] — 2026-08-12
 
 ### Fixed

@@ -24,8 +24,21 @@
       register: ic_prune
       changed_when: true
 
+    # Post-prune inventory: every container still present, any state.
+    # The panel compares it against the containers each deployed
+    # instance must have, so a prune that swept a managed stack is
+    # alerted the minute it happens instead of surfacing days later as
+    # a failed backup. Docker's {{.Names}} template is wrapped in
+    # {% raw %} so Ansible does not try to expand it as Jinja2.
+    - name: Inventory the surviving containers
+      ansible.builtin.command:
+        cmd: "docker ps -a --format {% raw %}'{{.Names}}'{% endraw %}"
+      register: ic_survivors
+      changed_when: false
+
     - name: Export the reclaimed-space summary
       ansible.builtin.set_stats:
         aggregate: false
         data:
           ic_prune_stdout: "{{ ic_prune.stdout | default('') }}"
+          ic_containers_after: "{{ ic_survivors.stdout | default('') }}"
