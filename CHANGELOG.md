@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.60] — 2026-08-13
+
+### Security
+
+- **The fail2ban exemption list no longer inherits the firewall's catch-all.** 1.0.59 gave the sshd jail an `ignoreip` built straight from the SSH allowlist, on the reasoning that those addresses are already the only ones the firewall lets near the port. That reasoning only holds while the allowlist names addresses. It degrades to `0.0.0.0/0` whenever no operator IP is known — deliberately, since locking every operator out is worse than a reachable port — and both production hosts sit in exactly that state, so the jail would have been written exempting every source on the internet. fail2ban would have stopped banning anyone while the config still read like a hardened one: no error, no log line, nothing to notice. The list is now built in its own fact that drops catch-alls and keeps named addresses, and the test asserts the filter rather than the mere presence of `ignoreip` — the weaker assertion is what let the flaw through in the first place
+
 ## [1.0.59] — 2026-08-13
 
 ### Fixed
