@@ -19,6 +19,22 @@ echo "$tool \$*" >> "\$CALLS"
 STUB
         chmod +x "$TMP/bin/$tool"
     done
+    # The boot test asks docker two questions it cannot proceed without:
+    # the gateway of the project network (it publishes the throwaway PG
+    # there rather than joining the network) and the host port docker
+    # picked for it. It also asks which services were running, so it can
+    # put them back. A stub that answers nothing makes the step abort,
+    # which is correct behaviour and not what these tests exercise.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"network inspect"*)          echo "172.18.0.1" ;;
+    "port "*)                     echo "172.18.0.1:49153" ;;
+    *"compose ps --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
+esac
+STUB
+    chmod +x "$TMP/bin/docker"
     # The script invokes copier by absolute path (~/.local/bin/copier).
     cat > "$HOME/.local/bin/copier" <<STUB
 #!/usr/bin/env bash
@@ -104,9 +120,79 @@ YAML
     calls="$(cat "$CALLS")"
     [[ "$calls" == *"pg_basebackup -U odoo -D /tmp/ic_boot_backup_42"* ]]
     [[ "$calls" == *"postgres-autoconf:17-alpine"* ]]
-    [[ "$calls" == *"--network myproj_default"* ]]
     [[ "$calls" == *"click-odoo-update --database prod"* ]]
     # cleanup removed the throwaway PG
+    [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
+}
+
+@test "boot-test keeps the throwaway PG off the project network" {
+    # The regression that took every tenant on a host down, twice: a
+    # container holding an endpoint on the project network stops docker
+    # compose from recreating that network, so the step dies with 'has
+    # active endpoints' and leaves the stack half stopped.
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" != *"--network myproj_default"* ]]
+    # Reached through the network's gateway instead: visible to every
+    # container on that bridge, invisible to compose.
+    [[ "$calls" == *"network inspect myproj_default"* ]]
+    [[ "$calls" == *"-p 172.18.0.1::5432"* ]]
+    [[ "$calls" == *"PGHOST=172.18.0.1"* ]]
+    [[ "$calls" == *"PGPORT=49153"* ]]
+}
+
+@test "boot-test aborts when the gateway cannot be resolved" {
+    # Falling back to the old on-network behaviour would reintroduce the
+    # outage silently. Failing here is safe: the caller marks the step
+    # stop_on_failure, so the instance keeps running its previous image.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"network inspect"*) exit 1 ;;
+esac
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"cannot resolve the gateway"* ]]
+    [[ "$(cat "$CALLS")" != *"click-odoo-update"* ]]
+}
+
+@test "boot-test puts back the services it found running" {
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"compose ps --services --status running"* ]]
+    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    # 'start', never 'up': up would re-evaluate the image and deploy the
+    # very build the boot test just rejected, and would reconcile
+    # networks, so the restore could trip over the same drift as the
+    # failure it is cleaning up after.
+    [[ "$calls" != *"compose up"* ]]
+}
+
+@test "boot-test restores the stack even when a step blows up mid-way" {
+    # ``set -e`` skips any cleanup written at the tail of the block, and
+    # that is precisely when the stack most needs putting back. Here the
+    # clone copy fails: nothing after it runs, but the trap still does.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"compose cp"*)            exit 1 ;;
+    *"network inspect"*)       echo "172.18.0.1" ;;
+    "port "*)                  echo "172.18.0.1:49153" ;;
+    *"compose ps --services"*) printf 'odoo\ndb\nsmtp\n' ;;
+esac
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -ne 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" != *"click-odoo-update"* ]]
+    [[ "$calls" == *"compose start odoo db smtp"* ]]
     [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
 }
 
