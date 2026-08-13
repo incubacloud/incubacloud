@@ -356,18 +356,29 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         Only includes services that actually exist in the target
         environment's compose file to avoid Docker Compose errors.
 
-        Every service — and the project's ``default`` network — also
-        carries ``PROTECT_LABEL`` so the daily ``docker_prune``
-        (``docker system prune -af --filter "label!=…"``) never sweeps
-        panel-managed resources. The invariant is "deployed by the
-        panel, may legitimately sit stopped" (a warm pool spare, a
-        Sablier-slept free instance, a manually stopped one): an
-        unlabelled stopped container *matches* the ``label!=`` filter
-        and is deleted. Anything the panel deploys is destroyed by
-        ``delete_instance`` (``compose down``), never by the prune, so
-        the label costs nothing. Because the labels are unconditional
-        this method never returns ``None`` anymore — every consumer
-        already tolerates both shapes.
+        Every service carries ``PROTECT_LABEL`` so the daily
+        ``docker_prune`` (``docker system prune -af --filter
+        "label!=…"``) never sweeps panel-managed resources. The
+        invariant is "deployed by the panel, may legitimately sit
+        stopped" (a warm pool spare, a Sablier-slept free instance, a
+        manually stopped one): an unlabelled stopped container
+        *matches* the ``label!=`` filter and is deleted. Anything the
+        panel deploys is destroyed by ``delete_instance`` (``compose
+        down``), never by the prune, so the label costs nothing.
+        Because the labels are unconditional this method never returns
+        ``None`` anymore — every consumer already tolerates both shapes.
+
+        The project's ``default`` network is deliberately NOT labelled.
+        Docker keeps a network alive while any container — running or
+        stopped — still holds an endpoint on it, so protecting the
+        containers already protects the network; it was only swept back
+        when the containers went with it. Labelling it, on the other
+        hand, changes the network's definition, and ``docker compose``
+        answers that by recreating it: on an instance whose network
+        predates the label that means tearing the live stack down
+        mid-command, which failed outright ("has active endpoints"
+        during a rebuild's boot test, "is not connected to the network"
+        on a plain ``up``) and left tenants stopped.
         """
         inst = self._inst()
         allowed = (
@@ -395,11 +406,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 services[svc] = entry
         key, value = PROTECT_LABEL.split("=", 1)
         for svc in allowed:
-            services.setdefault(svc, {})["labels"] = {key: value}
-        data = {
-            "services": services,
-            "networks": {"default": {"labels": {key: value}}},
-        }
+            services.setdefault(svc, {}).setdefault("labels", {})[key] = value
+        data = {"services": services}
         return yaml.dump(
             data,
             default_flow_style=False,

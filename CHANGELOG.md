@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.57] — 2026-08-13
+
+### Fixed
+
+- **The override no longer labels the project's default network, which was tearing live stacks down.** 1.0.56 stamped the protect label on the network as well as on the services. Adding a label changes the network's definition, and `docker compose` answers that by *recreating* it — so on any instance whose network predates the label, the next compose command stopped the running containers to rebuild the network underneath them. It then failed either way: a rebuild's boot test died with `has active endpoints` (its temporary Postgres was still attached) and a plain `up` with `is not connected to the network`, leaving three tenants stopped instead of started. Labelling the network was never necessary: Docker keeps a network alive while any container — running or stopped — still holds an endpoint on it, so containers that survive the prune keep their network alive with them. It only disappeared before because the containers disappeared first
+
 ## [1.0.56] — 2026-08-12
 
 ### Fixed
