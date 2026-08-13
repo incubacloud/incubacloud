@@ -5,7 +5,7 @@ SMTP stripping, safe boot test, and click-odoo-update integration.
 import shlex
 import unittest
 
-from odoo.tests.common import BaseCase
+from odoo.tests.common import BaseCase, TransactionCase
 
 from types import SimpleNamespace
 
@@ -511,3 +511,68 @@ class TestGitConfigIdempotentGuard(BaseCase):
             git_install, git_seed,
             "git must be installed before the gitconfig seed",
         )
+
+
+# ---------------------------------------------------------------------------
+# Class 10: TestDeleteCommandsWhenInstanceIsGone
+# ---------------------------------------------------------------------------
+
+class TestDeleteCommandsWhenInstanceIsGone(TransactionCase):
+    """A retried teardown must tell 'already unlinked' from 'archived'.
+
+    ``on_success`` commits on its own cursor, so when the job's own
+    transaction dies afterwards (five sibling deletes finishing at once
+    lose a serialization race and queue_job re-queues them) the remote
+    work is already done and the record already unlinked. The second run
+    used to reach ``get_remote_dir()`` on an empty recordset and raise
+    ``Expected singleton``, marking a clean removal as failed and raising
+    an alert. Archiving is a different thing: the record still exists and
+    still has its directory on the host, so it must still be torn down.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'Teardown Host',
+            'ip_address': '10.0.0.9',
+            'user': 'ubuntu',
+            'wildcard_domain': 'test.example.com',
+        })
+        self.project = self.env['cloud.project'].create({'name': 'Teardown'})
+        self.instance = self.env['cloud.instance'].create({
+            'name': 'doomed',
+            'project_id': self.project.id,
+            'environment': 'staging',
+            'host_id': self.host.id,
+        })
+        self.job_type = self.env['cloud.job.type'].search(
+            [('code', '=', 'delete_instance')], limit=1,
+        )
+        self.job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'instance_id': self.instance.id,
+            'job_type_id': self.job_type.id,
+            'name': 'Delete Instance',
+        })
+
+    def _executor(self):
+        from odoo.addons.incubacloud.models.delete_instance_executor import (
+            DeleteInstanceExecutor,
+        )
+        return DeleteInstanceExecutor(
+            job_record=self.job, host_record=self.host,
+        )
+
+    def test_live_instance_still_gets_torn_down(self):
+        self.assertEqual(len(self._executor().get_commands()), 2)
+
+    def test_archived_instance_still_gets_torn_down(self):
+        """Archived is not gone: the directory is still on the host."""
+        self.instance.write({'active': False})
+        self.job.invalidate_recordset(['instance_id'])
+        self.assertEqual(len(self._executor().get_commands()), 2)
+
+    def test_unlinked_instance_yields_no_commands(self):
+        self.instance.unlink()
+        self.job.invalidate_recordset(['instance_id'])
+        self.assertEqual(self._executor().get_commands(), [])

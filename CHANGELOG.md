@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.58] — 2026-08-13
+
+### Fixed
+
+- **A teardown that already finished no longer reports itself as failed.** `on_success` commits on its own cursor, so when the job's own transaction dies afterwards the remote work survives the rollback — and queue_job re-queues the job. That happens for real whenever several instances are deleted at once on one host: the sibling jobs finish within the same instant, their closing writes lose a serialization race, and every one of them runs a second time. The retry then asked a record that no longer existed for its remote directory and died with `Expected singleton`, so a clean removal showed up in the panel as a failure and raised an alert for a host that was already tidy. The teardown now recognises the case and finishes as the no-op it is. Only an *unlinked* instance takes that path: an archived one still exists and still has its directory on the host, so it is torn down exactly as before
+
 ## [1.0.57] — 2026-08-13
 
 ### Fixed
