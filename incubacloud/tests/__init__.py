@@ -38,6 +38,7 @@ from . import (
     test_executor_features,
     test_log_classification,
     test_rebuild_fingerprint,
+    test_rebuild_boot_isolation,
     test_cloud_host,
     test_host_autoassign,
     test_pluggable_actions,

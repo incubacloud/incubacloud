@@ -275,7 +275,17 @@ class CloudMetricRule(models.Model):
         return instance if instance.exists() else False
 
     def _resolve_host(self, Host, labels):
-        """Map a sample's labels back to a ``cloud.host``, or False."""
+        """Map a sample's labels back to a live ``cloud.host``, or False.
+
+        Archived hosts are dropped as deliberately as unknown ones. A
+        host taken out of the fleet keeps its series in the backend
+        until retention expires, and ``metrics_host_absent`` measures
+        exactly that silence — so a machine the operator destroyed on
+        purpose went on alerting as if it had failed. Its silence is the
+        expected outcome, not a fault, and that holds for every
+        host-scoped rule, not just the watchdog: nothing measured on a
+        decommissioned box is worth an alert.
+        """
         self.ensure_one()
         raw = (labels or {}).get(self.host_label or "host_id")
         if not raw:
@@ -284,4 +294,6 @@ class CloudMetricRule(models.Model):
             host = Host.browse(int(raw))
         except (TypeError, ValueError):
             return False
-        return host if host.exists() else False
+        if not host.exists() or not host.active:
+            return False
+        return host

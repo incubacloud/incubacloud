@@ -215,6 +215,46 @@ class TestRuleEvaluation(MetricRuleCase):
         self.assertFalse(self._alerts("test_disk"))
 
 
+class TestRetiredHostsStopAlerting(MetricRuleCase):
+    """A host taken out of the fleet must go quiet, and stay quiet.
+
+    Decommissioning does not remove the host's series from the central,
+    so it lingers for the whole retention window. ``metrics_host_absent``
+    measures precisely that silence, and kept reporting a machine the
+    operator had destroyed on purpose as if it had failed.
+    """
+
+    def test_an_archived_host_raises_nothing(self):
+        self.host.write({"active": False})
+        self._run_with(_promql(({"host_id": str(self.host.id)}, 99.0)))
+        self.assertFalse(
+            self._alerts("test_disk"),
+            "a decommissioned host is not a fault: its readings, and its "
+            "silence, are the expected outcome",
+        )
+
+    def test_archiving_closes_what_was_already_open(self):
+        """Otherwise the last alert stays on screen forever.
+
+        Skipping evaluation only stops new ones; whatever was active at
+        the moment of retirement would never be resolved by anything.
+        """
+        self._run_with(_promql(({"host_id": str(self.host.id)}, 99.0)))
+        self.assertTrue(self._alerts("test_disk"))
+        self.host.write({"active": False})
+        self.assertFalse(self._alerts("test_disk"))
+        self.assertTrue(
+            self._alerts("test_disk", state="dismissed"),
+            "the alert must be resolved, so the external channels see "
+            "the closure they were told to expect",
+        )
+
+    def test_a_live_host_still_alerts(self):
+        """The guard must not silence the fleet it is meant to watch."""
+        self._run_with(_promql(({"host_id": str(self.host.id)}, 99.0)))
+        self.assertTrue(self._alerts("test_disk"))
+
+
 class TestBackendFailSafe(MetricRuleCase):
     """The property that matters most: silence is not health."""
 

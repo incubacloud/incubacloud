@@ -87,6 +87,35 @@ case "$op" in
         clone_on_host="/tmp/ic_boot_${inst_id}"
         pg_container="ic_boot_pg_${inst_id}"
 
+        # Whatever this test disturbs has to come back up, so the restore
+        # runs from a trap rather than from the tail of the block: with
+        # ``set -e`` any unexpected failure in between (a cp that breaks,
+        # a container that will not start) would jump straight past a
+        # cleanup written at the end and leave the stack down. That is
+        # how a failed boot test used to take the tenant with it.
+        #
+        # ``start`` and not ``up``, deliberately, twice over: it neither
+        # recreates containers nor re-evaluates the image, so a failed
+        # boot test can never deploy the very image it just rejected;
+        # and it does not reconcile networks, so the restore cannot trip
+        # over the same drift as the failure it is cleaning up after. On
+        # services that never stopped it is a no-op.
+        running_before="$(docker compose ps --services --status running \
+            2>/dev/null | tr '\n' ' ')"
+        # shellcheck disable=SC2317  # reached through the EXIT trap below
+        ic_boot_restore() {
+            docker rm -f "$pg_container" 2>/dev/null || true
+            docker run --rm -v /tmp:/host_tmp alpine \
+                rm -rf "/host_tmp/ic_boot_${inst_id}" 2>/dev/null || true
+            if [ -n "${running_before// /}" ]; then
+                # Word splitting is the point: a space-separated service list.
+                # shellcheck disable=SC2086
+                docker compose start $running_before 2>/dev/null || true
+            fi
+            docker compose exec -T db rm -rf "$backup_in_db" 2>/dev/null || true
+        }
+        trap ic_boot_restore EXIT
+
         # Defensive pre-cleanup: pg_basebackup refuses a non-empty target,
         # and an interrupted run may have left a UID-70 dir on the host.
         docker compose exec -T db rm -rf "$backup_in_db"
@@ -107,32 +136,53 @@ case "$op" in
         # container (the host user lacks CAP_CHOWN).
         docker run --rm -v "$clone_on_host:/data" alpine chown -R 70:70 /data
 
-        # Start a throwaway PG on the compose network. postgres-autoconf
-        # (not vanilla postgres:*-alpine) bundles pgvector, which the
-        # cloned Odoo 19 cluster needs to open its ``ai`` embedding index.
+        # The throwaway PG is reached *through* the project network's
+        # gateway, never from inside it. A container holding an endpoint
+        # on that network blocks any reconciliation docker compose
+        # decides to do mid-test: compose cannot remove the network to
+        # recreate it, so the step dies with 'has active endpoints' and
+        # leaves the stack half stopped — twice on 2026-08-13, taking
+        # every tenant on the host down with it. Published on the gateway
+        # address alone, the PG is reachable from every container on that
+        # bridge and from nowhere else, while compose stays free to
+        # reconcile whatever it likes.
+        #
+        # postgres-autoconf (not vanilla postgres:*-alpine) bundles
+        # pgvector, which the cloned Odoo 19 cluster needs to open its
+        # ``ai`` embedding index.
+        gw="$(docker network inspect "${project}_default" \
+            -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
+        # Failing here is safe and deliberate: the caller marks the step
+        # stop_on_failure, so the rebuild aborts with the instance still
+        # running its previous image. Falling back to the old on-network
+        # behaviour would reintroduce the outage silently.
+        [ -n "$gw" ] || ic_die "cannot resolve the gateway of ${project}_default"
+
         docker rm -f "$pg_container" 2>/dev/null || true
         docker run -d --name "$pg_container" \
-            --network "${project}_default" \
+            -p "$gw::5432" \
             -v "$clone_on_host:/var/lib/postgresql/data" \
             --user postgres --entrypoint postgres \
             "ghcr.io/tecnativa/postgres-autoconf:${pg_version}-alpine" \
             -D /var/lib/postgresql/data
         sleep 5
 
+        # Docker picked the host port; ask it which one.
+        pg_port="$(docker port "$pg_container" 5432 | head -1 | sed 's/.*://')"
+        [ -n "$pg_port" ] || ic_die "throwaway postgres published no port"
+
         # The boot test itself: click-odoo-update against the throwaway PG
         # verifies the new image opens the DB. ``set +e`` so a boot
         # failure is captured and reported rather than aborting before
         # cleanup — the whole point is to fail *without* touching the live
-        # stack.
+        # stack. Doodba reads PGHOST/PGPORT through libpq, so pointing at
+        # the gateway needs no config change inside the image.
         set +e
-        docker compose run --rm -e "PGHOST=$pg_container" odoo \
+        docker compose run --rm -e "PGHOST=$gw" -e "PGPORT=$pg_port" odoo \
             click-odoo-update --database "$dbname"
         ic_test_exit=$?
         set -e
-        docker rm -f "$pg_container" 2>/dev/null || true
-        docker compose exec -T db rm -rf "$backup_in_db" 2>/dev/null || true
-        docker run --rm -v /tmp:/host_tmp alpine \
-            rm -rf "/host_tmp/ic_boot_${inst_id}"
+        # Cleanup and stack restore both run from the EXIT trap.
         exit "$ic_test_exit"
         ;;
 
