@@ -311,6 +311,22 @@
           {{ [(ic_ssh_connection.stdout | default('')).split(' ') | first]
              if (ic_ssh_connection.stdout | default('') | trim) else [] }}
 
+    # The firewall allowlist degrades to 0.0.0.0/0 when no operator IP is
+    # known, deliberately: locking every operator out is worse than a
+    # reachable port. fail2ban must NOT inherit that. Exempting a
+    # catch-all there would whitelist the whole internet and disable the
+    # jail silently -- the failure mode is invisible, because the file
+    # still reads like a hardened config. Catch-alls are dropped; real
+    # addresses (the control IP, any configured allowlist) are kept.
+    - name: Build the fail2ban exemption list
+      ansible.builtin.set_fact:
+        ic_fail2ban_ignoreip: >-
+          {{ (['127.0.0.1/8', '::1']
+              + (ic_effective_allowlist.split(',') | map('trim')
+                 | reject('equalto', '') | reject('equalto', '0.0.0.0/0')
+                 | reject('equalto', '::/0') | list))
+             | unique | join(' ') }}
+
     - name: Report the effective allowlist
       ansible.builtin.debug:
         msg: >-
@@ -357,20 +373,20 @@
         state: started
 
     # ── Phase 5: fail2ban ─────────────────────────────────────────────
-    # ``ignoreip`` carries the same allowlist the firewall already
-    # enforces, panel included. Without it three failed authentications
-    # from the panel — one misconfigured agent offering too many keys is
-    # enough — ban it for the full hour, and the panel is the only thing
-    # that manages this host: every job against it fails
+    # ``ignoreip`` exempts the operators the firewall already trusts, the
+    # panel included. Without it three failed authentications from the
+    # panel — one misconfigured agent offering too many keys is enough —
+    # ban it for the full bantime, and the panel is the only thing that
+    # manages this host: every job against it fails
     # ConnectionRefusedError until the ban lapses. That is exactly what
-    # happened to Tenants1 on 2026-08-13, 11:44 to 12:43. Customers were
-    # unaffected (80/443 never involved); management and monitoring were
-    # gone for the hour.
+    # happened on 2026-08-13, for a solid hour. Customers were unaffected
+    # (80/443 are never involved); management and monitoring were not.
     #
-    # The trade is deliberate: these addresses are already the only ones
-    # the firewall lets reach the SSH port at all, so fail2ban was adding
-    # nothing against them while being able to lock us out. It keeps
-    # working normally for every other source.
+    # The trade is deliberate but narrow: a *named* address is already
+    # the only kind the firewall lets reach the SSH port, so fail2ban was
+    # adding nothing against it while being able to lock us out. It keeps
+    # working normally for every other source — see the exemption list
+    # above, which drops the catch-all rather than exempting the world.
     - name: Write the fail2ban sshd jail
       ansible.builtin.copy:
         dest: /etc/fail2ban/jail.d/sshd-incubacloud.local
@@ -384,7 +400,7 @@
           maxretry = 3
           findtime = 600
           bantime  = 3600
-          ignoreip = 127.0.0.1/8 ::1 {{ ic_effective_allowlist | replace(',', ' ') }}
+          ignoreip = {{ ic_fail2ban_ignoreip }}
 
     - name: Enable and (re)start fail2ban
       # Non-fatal: the network-edge firewall + sshd hardening still protect

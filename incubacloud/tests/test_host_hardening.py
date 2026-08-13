@@ -170,21 +170,44 @@ class TestHardeningPreflight(TransactionCase):
         content = jails[0]["ansible.builtin.copy"]["content"]
         self.assertIn("ignoreip", content)
         self.assertIn(
-            "ic_effective_allowlist", content,
-            "the jail must exempt the same allowlist the firewall uses — "
+            "ic_fail2ban_ignoreip", content,
+            "the jail must exempt the operators the firewall trusts — "
             "including the control IP the play itself came from",
         )
-        ignore_line = next(
-            line for line in content.splitlines()
-            if line.strip().startswith("ignoreip")
+
+    def test_fail2ban_never_exempts_the_whole_internet(self):
+        """The exemption list must not inherit the firewall's catch-all.
+
+        ``_build_ssh_allowlist`` degrades to ``0.0.0.0/0`` when no
+        operator IP is known — deliberately, since locking every operator
+        out is worse than a reachable port. Both production hosts sit in
+        exactly that state. Copying it into ``ignoreip`` would exempt
+        every source on the internet and disable the jail, and the file
+        would still read like a hardened config: the failure is
+        completely invisible. The list is therefore built separately,
+        dropping catch-alls and keeping named addresses.
+        """
+        play = self._playbook()
+        facts = [
+            t for t in (play.get("tasks") or [])
+            if "ic_fail2ban_ignoreip" in str(
+                t.get("ansible.builtin.set_fact", {})
+            )
+        ]
+        self.assertEqual(
+            len(facts), 1,
+            "the exemption list must be built once, in its own fact",
         )
-        self.assertIn(
-            "replace(',', ' ')", ignore_line,
-            "fail2ban splits ignoreip on whitespace, not commas, while "
-            "the allowlist is comma-joined for nftables: without the "
-            "filter the whole list renders as one malformed address and "
-            "the jail silently exempts nobody",
-        )
+        expr = facts[0]["ansible.builtin.set_fact"]["ic_fail2ban_ignoreip"]
+        for catch_all in ("0.0.0.0/0", "::/0"):
+            self.assertIn(
+                f"reject('equalto', '{catch_all}')", expr,
+                f"{catch_all} must be filtered out of ignoreip, or "
+                f"fail2ban silently stops banning anyone",
+            )
+        # Whitespace-separated: fail2ban does not split ignoreip on
+        # commas, and the allowlist arrives comma-joined for nftables.
+        self.assertIn("join(' ')", expr)
 
     def test_the_operator_cannot_fence_themselves_off(self):
         """The firewall rule must allow the address the play came from.
