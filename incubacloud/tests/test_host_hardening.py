@@ -146,6 +146,46 @@ class TestHardeningPreflight(TransactionCase):
                 "silently reverts to port 22 on the next reboot",
             )
 
+    def test_fail2ban_never_bans_the_panel(self):
+        """The sshd jail must exempt the addresses the firewall allows.
+
+        Without ``ignoreip``, three failed authentications from the panel
+        — one agent offering too many keys reaches that on its own — ban
+        it for the full ``bantime``. The panel is the only thing that
+        manages the host, so every job against it fails until the ban
+        lapses; Tenants1 was unmanageable for exactly one hour on
+        2026-08-13 this way. Exempting them costs nothing: they are
+        already the only addresses nftables lets near the port.
+        """
+        play = self._playbook()
+        jails = [
+            t for t in (play.get("tasks") or [])
+            if "fail2ban/jail.d" in str(
+                t.get("ansible.builtin.copy", {}).get("dest", "")
+            )
+        ]
+        self.assertEqual(
+            len(jails), 1, "hardening must ship exactly one sshd jail",
+        )
+        content = jails[0]["ansible.builtin.copy"]["content"]
+        self.assertIn("ignoreip", content)
+        self.assertIn(
+            "ic_effective_allowlist", content,
+            "the jail must exempt the same allowlist the firewall uses — "
+            "including the control IP the play itself came from",
+        )
+        ignore_line = next(
+            line for line in content.splitlines()
+            if line.strip().startswith("ignoreip")
+        )
+        self.assertIn(
+            "replace(',', ' ')", ignore_line,
+            "fail2ban splits ignoreip on whitespace, not commas, while "
+            "the allowlist is comma-joined for nftables: without the "
+            "filter the whole list renders as one malformed address and "
+            "the jail silently exempts nobody",
+        )
+
     def test_the_operator_cannot_fence_themselves_off(self):
         """The firewall rule must allow the address the play came from.
 

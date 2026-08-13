@@ -288,6 +288,34 @@ class TestLabelMapFollowsTheInstanceSet(TransactionCase):
         self.host.refresh_observability_labels(reason="test")
         self.assertFalse(self._queued())
 
+    def test_repeated_refreshes_collapse_onto_the_queued_job(self):
+        """Five deletions on one host must not queue five installs.
+
+        That stampede is what fed the serialization race of 2026-08-13:
+        the losing transactions were rolled back and re-run, and reported
+        failures for teardowns that had already finished. Collapsing is
+        safe because the playbook renders its label map when it runs, so
+        a job still waiting picks up the final state either way.
+        """
+        first = self.host.refresh_observability_labels(reason="one")
+        second = self.host.refresh_observability_labels(reason="two")
+        third = self.host.refresh_observability_labels(reason="three")
+        self.assertEqual(
+            len(self._queued()), 1,
+            "each refresh queued its own install job",
+        )
+        self.assertEqual(second, first)
+        self.assertEqual(third, first)
+
+    def test_a_running_install_does_not_absorb_a_later_change(self):
+        """A started job already rendered its map; a change after it needs
+        its own job or it waits for the reconciliation cron to be seen."""
+        self.host.refresh_observability_labels(reason="one")
+        queued = self._queued()
+        queued.queue_job_id.write({"state": "started"})
+        self.host.refresh_observability_labels(reason="two")
+        self.assertEqual(len(self._queued()), 2)
+
     def test_nothing_happens_when_observability_is_off(self):
         self.settings.metrics_enabled = False
         self.host.refresh_observability_labels(reason="test")

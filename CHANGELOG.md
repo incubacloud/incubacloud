@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.59] — 2026-08-13
+
+### Fixed
+
+- **The rebuild's boot test can no longer take the tenant down with it.** Its throwaway Postgres was started *on* the project's compose network, so it held an endpoint there for the length of the test. Any reconciliation `docker compose` decided to do in that window could not remove the network to recreate it, the step died with `has active endpoints`, and `stop_on_failure` aborted the job with `db` and `smtp` already stopped under a live `odoo` — twice on 13 August, every tenant on the host serving 502 until the containers were recreated by hand. The throwaway Postgres is now published on the project network's *gateway* instead of joining it: reachable from every container on that bridge, invisible to compose, which stays free to reconcile whatever it likes. If the gateway cannot be resolved the step fails outright rather than falling back to the old behaviour, so the rebuild stops with the instance still running its previous image
+- **A failed boot test now puts the stack back.** The cleanup ran from the tail of the script, which `set -e` skips the moment anything upstream fails — precisely when the stack most needs restoring. It moved to an `EXIT` trap that restarts whatever was running before the test. Deliberately `docker compose start` and not `up`: `up` would re-evaluate the image and deploy the very build the boot test just rejected, and would reconcile networks, so the restore could trip over the same drift as the failure it is cleaning up after
+- **Metric alerts stop chasing hosts that were decommissioned on purpose.** Retiring a host does not remove its series from the central, so `metrics_host_absent` kept measuring the silence of a machine the operator had destroyed and re-raising a critical alert that could never resolve. Host-scoped rules now skip archived hosts entirely — nothing measured on a machine that left the fleet is worth an alert — and archiving a host closes whatever it still had open, through `resolve_alert` so the external channels see the closure rather than an incident that stays open forever
+- **Deleting several instances from one host no longer queues one observability install per deletion.** Five removals queued five identical playbook runs, and that stampede is what fed the serialization race of 13 August: the losing transactions were rolled back and re-run by queue_job, which then reported failures for teardowns that had already finished. A refresh now collapses onto an install that is queued but not yet started. Nothing is lost, because the playbook renders its label map when it runs rather than when it was queued; a job already `started` is deliberately not matched, since it rendered its map at launch and a change arriving mid-flight does need its own run
+
+### Security
+
+- **fail2ban no longer bans the panel.** The sshd jail shipped without `ignoreip`, so three failed authentications from the panel — one agent offering too many keys reaches that on its own — banned it for the full `bantime`. The panel is the only thing that manages a host, so every job against the banned host failed with `ConnectionRefusedError` for a solid hour, as happened to a tenant host on 13 August. Customers were unaffected throughout (80/443 are never involved); management and monitoring were not. The jail now exempts the same allowlist nftables enforces, the control IP included. Those addresses are already the only ones the firewall lets near the SSH port, so fail2ban was adding nothing against them while being able to lock us out
+
 ## [1.0.58] — 2026-08-13
 
 ### Fixed

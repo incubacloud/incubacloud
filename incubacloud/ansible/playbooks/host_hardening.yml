@@ -357,6 +357,20 @@
         state: started
 
     # ── Phase 5: fail2ban ─────────────────────────────────────────────
+    # ``ignoreip`` carries the same allowlist the firewall already
+    # enforces, panel included. Without it three failed authentications
+    # from the panel — one misconfigured agent offering too many keys is
+    # enough — ban it for the full hour, and the panel is the only thing
+    # that manages this host: every job against it fails
+    # ConnectionRefusedError until the ban lapses. That is exactly what
+    # happened to Tenants1 on 2026-08-13, 11:44 to 12:43. Customers were
+    # unaffected (80/443 never involved); management and monitoring were
+    # gone for the hour.
+    #
+    # The trade is deliberate: these addresses are already the only ones
+    # the firewall lets reach the SSH port at all, so fail2ban was adding
+    # nothing against them while being able to lock us out. It keeps
+    # working normally for every other source.
     - name: Write the fail2ban sshd jail
       ansible.builtin.copy:
         dest: /etc/fail2ban/jail.d/sshd-incubacloud.local
@@ -370,6 +384,7 @@
           maxretry = 3
           findtime = 600
           bantime  = 3600
+          ignoreip = 127.0.0.1/8 ::1 {{ ic_effective_allowlist | replace(',', ' ') }}
 
     - name: Enable and (re)start fail2ban
       # Non-fatal: the network-edge firewall + sshd hardening still protect

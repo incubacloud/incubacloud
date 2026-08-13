@@ -1140,6 +1140,31 @@ class CloudHost(models.Model):
         attached to the host (cloud VMs, DNS records, remote API
         registrations, etc.). No-op by default."""
 
+    def _dismiss_alerts_on_retirement(self):
+        """Close every alert still open against a host leaving the fleet.
+
+        Retiring a host does not retire what was said about it: its open
+        alerts stayed active in the panel, and the metric-based ones
+        would be re-raised on the next evaluation anyway while the
+        backend still held its series. ``_resolve_host`` now skips
+        archived hosts, which stops the re-raising; this closes what was
+        already on screen, so a decommission leaves no residue.
+
+        Uses ``resolve_alert`` rather than a bulk write so the external
+        channels see the closure: whoever was paged when the alert
+        opened must see it shut, or every incident looks permanently
+        open from Telegram.
+        """
+        Alert = self.env["cloud.alert"].sudo()
+        for host in self:
+            codes = set(
+                Alert.search(
+                    [("host_id", "=", host.id), ("state", "=", "active")],
+                ).mapped("code")
+            )
+            for code in codes:
+                Alert.resolve_alert(code, host=host)
+
     def unlink(self):
         self._check_can_manage_hosts()
         self._check_no_instances()
@@ -1158,6 +1183,7 @@ class CloudHost(models.Model):
         if vals.get("active") is False:
             self._check_no_instances()
             self.filtered("active")._release_external_resources()
+            self.filtered("active")._dismiss_alerts_on_retirement()
         # Drop empty password values so existing stored passwords are preserved
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:

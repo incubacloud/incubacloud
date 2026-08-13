@@ -124,10 +124,40 @@ class CloudHost(models.Model):
     def _enqueue_observability(self, reason):
         """Queue the agent install for this host, swallowing failures.
 
+        Collapses onto a job that is queued but has not started yet.
+        Deleting five instances from one host queued five identical
+        installs, and that stampede is what fed the serialization race
+        of 2026-08-13: the losers were rolled back, re-run by queue_job,
+        and reported failures for teardowns that had already completed.
+
+        Collapsing loses nothing because the playbook renders its label
+        map *when it runs*, not when it was queued, so a job still
+        waiting will pick up the final state of the host whether it
+        covers one removal or five. A job already ``started`` is
+        deliberately not matched: it rendered its map when it began, so
+        a change landing mid-flight does need its own job or it would
+        wait for the reconciliation cron to be noticed.
+
         :param reason: short free text for the log.
-        :return: the queued job id, or ``False``.
+        :return: the queued job id, the id of the job it collapsed onto,
+            or ``False``.
         """
         self.ensure_one()
+        pending = self.env["cloud.job"].sudo().search(
+            [
+                ("host_id", "=", self.id),
+                ("job_type_id.code", "=", "install_observability"),
+                ("state", "in", ("pending", "enqueued", "wait_dependencies")),
+            ],
+            limit=1,
+        )
+        if pending:
+            _logger.info(
+                "[metrics] agents already queued on host %s (job %s); "
+                "collapsing the '%s' refresh onto it.",
+                self.name, pending.id, reason,
+            )
+            return pending.id
         try:
             return self.env["cloud.job"].sudo().enqueue(
                 self.id, False, "install_observability",
