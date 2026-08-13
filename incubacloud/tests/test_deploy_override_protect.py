@@ -67,12 +67,14 @@ class TestDeployOverrideProtectLabel(TransactionCase):
                 labels.get(self.key), self.value,
                 f"service {svc!r} must carry the protect label",
             )
-        net_labels = (
-            data.get("networks", {}).get("default", {}).get("labels") or {}
-        )
-        self.assertEqual(
-            net_labels.get(self.key), self.value,
-            "the default network must carry the protect label",
+        self.assertNotIn(
+            "networks", data,
+            "the override must not declare the default network: labelling "
+            "it changes its definition, and compose answers that by "
+            "recreating the network — which tears down a live stack whose "
+            "network predates the label. Protecting the containers is "
+            "enough, since Docker keeps a network while any container "
+            "still holds an endpoint on it.",
         )
 
     def test_production_override_protects_all_expected_services(self):
