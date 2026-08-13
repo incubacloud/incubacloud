@@ -38,6 +38,22 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
 
     def get_commands(self):
         inst = self._inst()
+        if not inst.exists():
+            # Nothing left to tear down: an earlier attempt already
+            # finished and unlinked the record. This job is running
+            # again because its own transaction lost a serialization
+            # race against the sibling deletes committing at the same
+            # instant and queue_job re-queued it — not because the
+            # teardown failed. ``on_success`` commits on its own cursor,
+            # so the remote work survived that rollback; re-running has
+            # to be a no-op or a completed removal reports as failed and
+            # raises an alert for a host that is already clean.
+            #
+            # Only the *unlinked* case lands here. An archived instance
+            # still exists and still has its directory on the host, so
+            # it goes down the normal path below.
+            self._sys("Instance already removed from the host; nothing to do.")
+            return []
         d = self._inst_dir(inst)
         return [
             # 1. Shut down containers (the script skips a missing dir)
