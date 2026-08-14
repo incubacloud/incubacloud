@@ -230,6 +230,31 @@ class CloudSettings(models.Model):
              'self-hosted panel generates its own; in SaaS mode the '
              'manager assigns it.',
     )
+    # Where the central runs, and who it currently lets in. Both are
+    # written by the deployment from what it actually did, never from
+    # intent: they exist precisely so that a later job can tell the state
+    # of the gateway apart from the state of this database.
+    metrics_central_host_id = fields.Many2one(
+        'cloud.host',
+        string='Metrics central host',
+        readonly=True,
+        copy=False,
+        ondelete='set null',
+        help='Host carrying the central stack, recorded when a '
+             'deployment of it succeeds. The account sync targets it. '
+             'Empty means no central was ever deployed from this panel, '
+             'and accounts cannot be granted until one is.',
+    )
+    metrics_accounts_deployed = fields.Text(
+        string='Accounts on the central',
+        readonly=True,
+        copy=False,
+        help='Metrics accounts the last successful deployment or sync '
+             "wrote into the gateway's access-control list, one per "
+             'line. An account minted but absent from here cannot '
+             'authenticate yet, so handing out its credential would '
+             'produce a permanent 401 rather than observability.',
+    )
     metrics_remote_write_token = EncryptedChar(
         string='Metrics credential',
         help='Password half of this panel\'s metrics account (the user '

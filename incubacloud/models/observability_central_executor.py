@@ -64,6 +64,45 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         user, token = settings._metrics_auth()
         return [(user, token)] if (user and token) else []
 
+    def _accounts_for_deployment(self):
+        """Return the account list this run is built from, memoised.
+
+        ``_metrics_accounts()`` is read more than once while the playbook
+        is assembled, and what gets recorded afterwards has to be what
+        was actually shipped rather than what the database says by the
+        time the job finishes. An account minted while the playbook runs
+        must not be recorded as granted, because on the gateway it is
+        not — and a record of intent instead of fact would defeat the
+        record's only purpose.
+        """
+        if not hasattr(self, "_shipped_accounts"):
+            self._shipped_accounts = self._metrics_accounts()
+        return self._shipped_accounts
+
+    def _record_shipped_accounts(self):
+        """Write down the access-control list this run put in force.
+
+        Without it, "the gateway has never heard of this account" and
+        "we have not told this panel about it yet" are indistinguishable
+        from the panel — and nothing can safely decide whether handing a
+        credential out will authenticate or 401 forever.
+        """
+        accounts = getattr(self, "_shipped_accounts", None)
+        if accounts is None:
+            # The playbook ran, so the list was built; only a subclass
+            # bypassing _accounts_for_deployment() reaches this. Guessing
+            # would grant access on paper that does not exist on disk.
+            _logger.warning(
+                "Metrics central job finished without a recorded account "
+                "list; the account record was left untouched.",
+            )
+            return
+        self.env["cloud.settings"].sudo()._get_system().write({
+            "metrics_accounts_deployed": "\n".join(
+                sorted(user for user, _password in accounts)
+            ),
+        })
+
     def _account_url_map(self, user):
         """Return the vmauth ``url_map`` for one account.
 
@@ -177,7 +216,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         # deployment to become usable. Nothing about that was visible
         # from the job log.
         settings._ensure_metrics_credential()
-        accounts = self._metrics_accounts()
+        accounts = self._accounts_for_deployment()
         operator_token = settings._ensure_operator_credential()
         admin_password = settings._ensure_grafana_admin_password()
         self._sys(
@@ -272,7 +311,15 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         # Already minted before the playbook ran; read it back for the log.
         account = settings.metrics_account or ""
 
-        vals = {"metrics_enabled": True}
+        # Where the central lives, so a later account sync knows which
+        # host to reach. Recorded on success rather than on enqueue: the
+        # job's target host is only the central's home once the stack is
+        # actually running on it, and a wrong answer here sends the sync
+        # to write an access-control list nobody serves.
+        vals = {
+            "metrics_enabled": True,
+            "metrics_central_host_id": self._host().id,
+        }
         if gateway:
             # Read path: the panel queries from inside its own container,
             # so the docker bridge address the playbook reports is
@@ -290,6 +337,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                     f"{gateway}/w/api/v1/write"
                 )
         settings.write(vals)
+        self._record_shipped_accounts()
 
         self._sys(
             f"✓ Metrics central is up and observability is enabled "

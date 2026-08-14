@@ -150,6 +150,19 @@
             <field name="description">Deploys the central metrics stack (VictoriaMetrics + Grafana with provisioned dashboards) on the target host. Run it against the panel host to co-locate, or against a dedicated VPS to move it.</field>
         </record>
 
+        <record id="sync_metrics_accounts" model="cloud.job.type">
+            <field name="name">Sync Metrics Accounts</field>
+            <field name="code">sync_metrics_accounts</field>
+            <field name="apply_to">host</field>
+            <!-- Deliberately NOT in cloud.job._hidden_job_types: hidden
+                 types are exempt from the active-job guard, and this one
+                 rewrites the very file a central deployment writes. Being
+                 visible is what serialises the two against the same
+                 host. -->
+            <field name="show_as_action">False</field>
+            <field name="description">Rewrites the gateway's access-control list on an already-deployed central and provisions the Grafana organisations of any new accounts. Granting an account is a sub-second reload of the proxy — it never touches the compose file, so it cannot recreate VictoriaMetrics, Loki or Grafana.</field>
+        </record>
+
         <record id="host_hardening" model="cloud.job.type">
             <field name="name">Harden Host</field>
             <field name="code">host_hardening</field>

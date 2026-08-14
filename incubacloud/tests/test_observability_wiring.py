@@ -460,8 +460,37 @@ class TestTheCentralIsReadableByItsOwnContainers(BaseCase):
     """
 
     def _tasks(self):
-        """Return the central playbook's task list."""
-        return yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]["tasks"]
+        """Return the central playbook's task list, includes expanded.
+
+        The tasks that write and mount the credential files now live in
+        shared task files, because the account sync applies the same
+        boundary and the two must not be able to disagree about it. This
+        walks into them the way Ansible does — without it the guards
+        below would keep passing while quietly checking a shrinking set,
+        which is the failure mode they exist to prevent.
+        """
+        return self._expand(
+            yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]["tasks"],
+            _CENTRAL_PLAYBOOK.parent,
+        )
+
+    def _expand(self, tasks, base):
+        """Return *tasks* with ``include_tasks`` replaced by their contents.
+
+        :param tasks: task list as parsed from YAML
+        :param base: directory the includes resolve against
+        """
+        out = []
+        for task in tasks:
+            included = task.get("ansible.builtin.include_tasks")
+            if not included:
+                out.append(task)
+                continue
+            path = base / str(included)
+            out.extend(
+                self._expand(yaml.safe_load(path.read_text()), path.parent),
+            )
+        return out
 
     def _mounted_paths(self):
         """Return the host paths the compose file bind-mounts, as suffixes.
@@ -549,3 +578,73 @@ class TestTheCentralIsReadableByItsOwnContainers(BaseCase):
                 f"{path} is mounted into Grafana as a directory but is "
                 f"written {mode}: uid 472 cannot traverse it",
             )
+
+
+class TestTheAccountSyncSharesTheBoundary(BaseCase):
+    """The sync and the deployment must not drift apart.
+
+    They write the same file on the same host. The moment they stop
+    doing it from the same tasks, one of them starts producing a
+    boundary the other would not recognise — and nothing about a green
+    deployment would reveal it.
+    """
+
+    _SYNC_PLAYBOOK = _ROOT / "ansible" / "playbooks" / "metrics_acl_sync.yml"
+    _TASKS_DIR = _ROOT / "ansible" / "playbooks" / "tasks"
+
+    def _includes(self, playbook):
+        return {
+            str(task["ansible.builtin.include_tasks"])
+            for task in yaml.safe_load(playbook.read_text())[0]["tasks"]
+            if task.get("ansible.builtin.include_tasks")
+        }
+
+    def test_both_playbooks_write_the_acl_from_the_same_task_file(self):
+        shared = self._includes(_CENTRAL_PLAYBOOK) & self._includes(
+            self._SYNC_PLAYBOOK,
+        )
+        self.assertIn("tasks/vmauth_acl_write.yml", shared)
+        self.assertIn("tasks/vmauth_acl_apply.yml", shared)
+
+    def test_neither_playbook_writes_the_acl_inline(self):
+        """A second copy of the copy task is how they would drift.
+
+        Matched on the rendered document rather than on the file path:
+        the compose file legitimately *mounts* ``vmauth/auth.yml``, and
+        only one task may *write* it.
+        """
+        for playbook in (_CENTRAL_PLAYBOOK, self._SYNC_PLAYBOOK):
+            body = playbook.read_text()
+            self.assertNotIn(
+                "{{ ic_vmauth_config }}", body,
+                f"{playbook.name} writes the access-control document "
+                "itself instead of including the shared task file",
+            )
+
+    def test_the_sync_never_touches_the_compose_file(self):
+        """Its whole safety argument is that it cannot recreate anything.
+
+        The moment it writes the compose file, granting an account stops
+        being a proxy reload and becomes a restart of the shared stack —
+        which is the cost that made automating it look unacceptable.
+        """
+        body = self._SYNC_PLAYBOOK.read_text()
+        self.assertNotIn("docker-compose.yaml:", body)
+        self.assertNotIn("up -d", body)
+
+    def test_the_dashboard_glob_resolves_from_the_task_file(self):
+        """A wrong relative depth here does not fail, it provisions
+        organisations with a datasource and no dashboards at all."""
+        orgs = self._TASKS_DIR / "grafana_orgs.yml"
+        globs = re.findall(r"fileglob',\s*'([^']+)'", orgs.read_text())
+        self.assertEqual(len(globs), 1, "the dashboard glob moved or split")
+        resolved = (orgs.parent / globs[0]).resolve()
+        self.assertEqual(
+            resolved.parent, _DASHBOARDS,
+            f"the glob resolves to {resolved.parent}, not the shipped "
+            f"dashboards directory",
+        )
+        self.assertTrue(
+            list(orgs.parent.glob(globs[0])),
+            "the glob matches no dashboard files from its own directory",
+        )

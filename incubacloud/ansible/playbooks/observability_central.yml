@@ -128,26 +128,9 @@
         - "{{ ic_central_dir }}/vmauth"
 
     - name: Write the vmauth access-control config
-      # This file IS the boundary: one vmauth user per account (writes
-      # and reads only its own series and logs, because the route forces
-      # the ic_account label and the X-Scope-OrgID header from the
-      # authenticated user) plus one operator (the cross-account read and
-      # the Grafana admin API). Adding a user grants access; removing one
-      # revokes it. There is no unauthorized_user section, which is what
-      # makes a credential-less request 401 rather than proxied.
-      #
-      # Rendered whole by the executor rather than templated here: the
-      # per-account url_map is easier to get right (and to test) in Python
-      # than in Jinja, and it carries clear-text credentials that must not
-      # be split across log lines.
-      ansible.builtin.copy:
-        dest: "{{ ic_central_dir }}/vmauth/auth.yml"
-        content: "{{ ic_vmauth_config }}"
-        # Readable by vmauth's non-root process — confidentiality is on
-        # the 0700 directory, see the directory task.
-        mode: "0644"
-      no_log: true
-      register: ic_vmauth_cfg
+      # Shared with the account sync so the boundary has exactly one
+      # definition: same file, same renderer, two callers.
+      ansible.builtin.include_tasks: tasks/vmauth_acl_write.yml
 
     - name: Write the log store configuration
       # Retention is short and deliberate: these lines carry the IP
@@ -387,44 +370,11 @@
         chdir: "{{ ic_central_dir }}"
       changed_when: true
 
-    - name: Reload vmauth when only its configuration changed  # noqa: no-handler
-      # ``up -d`` does not restart a container whose image and compose
-      # definition are unchanged, so a new account list alone would not
-      # be picked up — and an account that cannot authenticate looks
-      # exactly like a broken agent. Not a handler on purpose: the reload
-      # must land between ``up -d`` and the health check below, whereas
-      # handlers run at the end of the play — after the probe.
-      ansible.builtin.command:
-        cmd: docker compose -p incubacloud-central -f docker-compose.yaml restart vmauth
-        chdir: "{{ ic_central_dir }}"
-      when: ic_vmauth_cfg is changed
-      changed_when: true
-
-    - name: Wait for vmauth to answer
-      # Through the front door, with the operator credential: this proves
-      # the whole path works, not just that VictoriaMetrics is alive.
-      # /admin-r/health -> vmauth drops /admin-r -> VM /health.
-      ansible.builtin.uri:
-        url: "http://{{ ic_gateway_bind }}/admin-r/health"
-        status_code: [200]
-        url_username: operator
-        url_password: "{{ ic_operator_plain | default(omit, true) }}"
-        force_basic_auth: true
-      register: ic_vm_health
-      retries: 10
-      delay: 3
-      until: ic_vm_health is succeeded
-      no_log: true
-
-    - name: Refuse to finish if anonymous writes are accepted
-      # A regression here is silent and total: the boundary would be gone
-      # while every dashboard kept working. Cheap to assert, so assert it.
-      ansible.builtin.uri:
-        url: "http://{{ ic_gateway_bind }}/w/"
-        method: POST
-        body: ""
-        status_code: [401]
-      register: ic_anon_write
+    - name: Apply the access-control config and verify the boundary
+      # Shared with the account sync: reload vmauth if the document
+      # changed, wait for it through the front door, and refuse to finish
+      # if anonymous writes are accepted.
+      ansible.builtin.include_tasks: tasks/vmauth_acl_apply.yml
 
     - name: Wait for Grafana to answer
       # The org provisioning below drives Grafana's admin API; it must be
@@ -468,65 +418,11 @@
     # Done through the API because Grafana's file provisioning cannot
     # create organisations — and through vmauth's operator-only path, so
     # there is exactly one door rather than a second one to keep track of.
-    - name: Ensure an organisation exists per account
-      ansible.builtin.uri:
-        url_username: operator
-        url_password: "{{ ic_operator_plain }}"
-        force_basic_auth: true
-        url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs"
-        method: POST
-        body_format: json
-        body: { name: "{{ item.user }}" }
-        # 409 = already there. Re-running this playbook is the normal way
-        # to add a tenant, so "exists" is the common case, not an error.
-        status_code: [200, 409]
-      loop: "{{ ic_accounts }}"
-      loop_control:
-        label: "{{ item.user }}"
-      register: ic_orgs
-      no_log: true
-
-    - name: Look up each organisation id
-      ansible.builtin.uri:
-        url_username: operator
-        url_password: "{{ ic_operator_plain }}"
-        force_basic_auth: true
-        url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs/name/{{ item.user }}"
-        method: GET
-        status_code: [200]
-      loop: "{{ ic_accounts }}"
-      loop_control:
-        label: "{{ item.user }}"
-      register: ic_org_ids
-      no_log: true
-
-    - name: Resolve the dashboard file paths once
-      # Relative fileglob lookups resolve against the CURRENT task
-      # file's own directory, which would differ once the include below
-      # moves into playbooks/tasks/ — resolve here, where the existing
-      # "Install the dashboards" task already proves this relative path
-      # correct, and pass the resolved list down instead of re-globbing.
-      ansible.builtin.set_fact:
-        ic_dashboard_files: "{{ query('fileglob', '../files/dashboards/*.json') }}"
-
-    - name: Provision each organisation (switch, datasource, dashboards)
-      # Switch, datasource and dashboards used to be three separate
-      # tasks, each looping over every account on its own. Grafana's
-      # "current org" is a persistent property of the authenticated
-      # user, not a per-request header — so by the time the second
-      # task's loop started, the switch task had already finished ITS
-      # loop and left every write landing in whichever org was last
-      # switched to. Measured in production: 9 accounts, only 2
-      # datasources ever created, and one of those held the WRONG
-      # account's credential. include_tasks scopes switch+write to the
-      # same loop iteration, so the org is never stale when we write to
-      # it — a block cannot do this (ansible-lint: "'loop' is not a
-      # valid attribute for a Block").
-      ansible.builtin.include_tasks: tasks/provision_grafana_org.yml
-      no_log: true
-      loop: "{{ ic_accounts | zip(ic_org_ids.results) | list }}"
-      loop_control:
-        label: "{{ item.0.user }}"
+    - name: Provision the per-account Grafana organisations
+      # Shared with the account sync, which passes only the accounts the
+      # deployed access-control list is missing. Here it is every one of
+      # them: a full deployment is also how an operator repairs orgs.
+      ansible.builtin.include_tasks: tasks/grafana_orgs.yml
 
     - name: Export the central facts
       ansible.builtin.set_stats:
