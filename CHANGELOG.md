@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.63] — 2026-08-14
+
+### Changed
+
+- **The access-control list is assembled by the settings model, not by the job that writes it.** Reconciliation has to compare the same set without being an executor, and two places assembling "who should have access" is exactly how the gateway and the database drifted apart in the first place. `cloud.settings._desired_metrics_accounts()` is now the single source; the deployment and the sync both read it. A layer that adds accounts — the SaaS manager adds one per tenant — extends the model instead of overriding every job that touches the list, so the tenant-aware behaviour follows the data rather than having to be re-declared each time
+
 ## [1.0.62] — 2026-08-14
 
 ### Added

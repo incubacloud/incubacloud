@@ -60,9 +60,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         account here is the single act that grants a panel the right to
         write, and removing it is the single act that revokes it.
         """
-        settings = self.env["cloud.settings"].sudo()._get_system()
-        user, token = settings._metrics_auth()
-        return [(user, token)] if (user and token) else []
+        return self.env["cloud.settings"].sudo()._desired_metrics_accounts()
 
     def _accounts_for_deployment(self):
         """Return the account list this run is built from, memoised.

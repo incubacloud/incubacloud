@@ -255,6 +255,22 @@ class CloudSettings(models.Model):
              'authenticate yet, so handing out its credential would '
              'produce a permanent 401 rather than observability.',
     )
+    def _desired_metrics_accounts(self):
+        """Return ``[(user, token), ...]`` that should exist on the central.
+
+        The single source of the access-control list. Core knows exactly
+        one account: this panel's own. The SaaS layer overrides this to
+        append one entry per tenant, because only it knows tenants exist.
+
+        Deliberately on the model rather than on the executor that writes
+        the list: the reconciliation has to compare the same set without
+        being an executor, and two places assembling "who should have
+        access" is precisely how the gateway and the database drifted
+        apart in the first place.
+        """
+        user, token = self._get_system()._metrics_auth()
+        return [(user, token)] if (user and token) else []
+
     metrics_remote_write_token = EncryptedChar(
         string='Metrics credential',
         help='Password half of this panel\'s metrics account (the user '
