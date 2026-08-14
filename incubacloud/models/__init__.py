@@ -68,4 +68,5 @@ from . import move_rollback_cleanup_executor
 from . import host_hardening_executor
 from . import observability_agents_executor
 from . import observability_central_executor
+from . import metrics_acl_sync_executor
 

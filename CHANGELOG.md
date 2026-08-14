@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.62] — 2026-08-14
+
+### Added
+
+- **Granting a metrics account is now an act of its own, instead of a side effect of redeploying the central.** The access-control list vmauth enforces was only ever written by the full deployment. For a self-hosted panel that is airtight: there is one account, minted by that same deployment, so minting and granting are literally the same act and cannot drift. A shared central breaks the equivalence — accounts are minted whenever a panel is added, while the list stays a snapshot of whoever existed the last time somebody deployed, so everyone minted afterwards holds a credential the gateway has never heard of and their agents retry against a 401 forever. Re-running the full deployment would fix it and is the wrong tool: it rewrites the compose file, recreates whatever differs, and resets Grafana's admin password. The new `sync_metrics_accounts` job does only the part that grants — rewrite the document, reload the proxy, provision the organisations the new accounts need — from the same task files the deployment uses, so the two cannot disagree about what the boundary looks like. It never touches the compose file, so it cannot recreate VictoriaMetrics, Loki or Grafana: granting an account is a sub-second reload of one proxy, which is what makes automating it uncontroversial
+- **The panel now records what the gateway was actually told, not what it intended.** `metrics_accounts_deployed` holds the accounts the last successful deployment or sync put in force, and `metrics_central_host_id` holds the host carrying the stack. Without the first, "the gateway has never heard of this account" and "we have not told this panel about it yet" are indistinguishable, and nothing can decide whether handing out a credential will authenticate or fail forever. Both are written from what the run was built from rather than from the database as it stands afterwards, so an account minted while the playbook is running is not recorded as granted — because on the gateway it is not
+
+### Changed
+
+- The vmauth document, its reload-and-verify, and the per-account Grafana provisioning moved into task files shared by the deployment and the sync. The dashboards fileglob moved with them, which changes what its relative path resolves against — an error that does not fail but silently provisions organisations with no dashboards at all, so the task file now asserts the glob is non-empty
+
 ## [1.0.61] — 2026-08-14
 
 ### Fixed

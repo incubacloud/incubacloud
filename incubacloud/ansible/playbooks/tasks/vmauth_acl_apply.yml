@@ -1,0 +1,48 @@
+---
+# Makes a freshly written access-control document take effect, and then
+# proves the boundary still stands. Included by both the full central
+# deployment and the account sync.
+#
+# Requires ``ic_vmauth_cfg`` to be registered by tasks/vmauth_acl_write.yml
+# earlier in the same play.
+
+- name: Reload vmauth when only its configuration changed  # noqa: no-handler
+  # ``up -d`` does not restart a container whose image and compose
+  # definition are unchanged, so a new account list alone would not
+  # be picked up — and an account that cannot authenticate looks
+  # exactly like a broken agent. Not a handler on purpose: the reload
+  # must land between ``up -d`` and the health check below, whereas
+  # handlers run at the end of the play — after the probe.
+  ansible.builtin.command:
+    cmd: docker compose -p incubacloud-central -f docker-compose.yaml restart vmauth
+    chdir: "{{ ic_central_dir }}"
+  when: ic_vmauth_cfg is changed
+  changed_when: true
+
+- name: Wait for vmauth to answer
+  # Through the front door, with the operator credential: this proves
+  # the whole path works, not just that VictoriaMetrics is alive.
+  # /admin-r/health -> vmauth drops /admin-r -> VM /health.
+  ansible.builtin.uri:
+    url: "http://{{ ic_gateway_bind }}/admin-r/health"
+    status_code: [200]
+    url_username: operator
+    url_password: "{{ ic_operator_plain | default(omit, true) }}"
+    force_basic_auth: true
+  register: ic_vm_health
+  retries: 10
+  delay: 3
+  until: ic_vm_health is succeeded
+  no_log: true
+
+- name: Refuse to finish if anonymous writes are accepted
+  # A regression here is silent and total: the boundary would be gone
+  # while every dashboard kept working. Cheap to assert, so assert it.
+  # It matters as much after a sync as after a deployment — a sync
+  # rewrites this very document, so it is exactly as able to break it.
+  ansible.builtin.uri:
+    url: "http://{{ ic_gateway_bind }}/w/"
+    method: POST
+    body: ""
+    status_code: [401]
+  register: ic_anon_write

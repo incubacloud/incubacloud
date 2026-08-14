@@ -1,0 +1,88 @@
+---
+# One Grafana organisation per account, each with a datasource that can
+# only reach that account's series. This is the ring behind vmauth's own
+# filter: Grafana refuses a datasource outside a user's org, so even a
+# bug in the query path cannot cross accounts.
+#
+# Included by both the full central deployment (which passes every
+# account) and the account sync (which passes only the ones missing from
+# the deployed access-control list). Every task here is idempotent, so
+# the difference is cost, not behaviour: at a thousand tenants the sync
+# does one org, the deployment does a thousand.
+#
+# Done through the API because Grafana's file provisioning cannot create
+# organisations — and through vmauth's operator-only path, so there is
+# exactly one door rather than a second one to keep track of.
+
+- name: Ensure an organisation exists per account
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs"
+    method: POST
+    body_format: json
+    body: {name: "{{ item.user }}"}
+    # 409 = already there. Re-running is the normal way to add a tenant,
+    # so "exists" is the common case, not an error.
+    status_code: [200, 409]
+  loop: "{{ ic_accounts }}"
+  loop_control:
+    label: "{{ item.user }}"
+  register: ic_orgs
+  no_log: true
+
+- name: Look up each organisation id
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs/name/{{ item.user }}"
+    method: GET
+    status_code: [200]
+  loop: "{{ ic_accounts }}"
+  loop_control:
+    label: "{{ item.user }}"
+  register: ic_org_ids
+  no_log: true
+
+- name: Resolve the dashboard file paths once
+  # Relative fileglob lookups resolve against the CURRENT task file's own
+  # directory. This file lives in playbooks/tasks/, so the addon's
+  # ansible/files/ is two levels up — NOT one, as it is from a playbook
+  # sitting in playbooks/. Getting this wrong does not fail: the glob
+  # simply returns nothing and every organisation is provisioned with a
+  # datasource and no dashboards at all. ``test_observability_wiring``
+  # derives the expected depth from this file's own location so the
+  # silence cannot come back.
+  ansible.builtin.set_fact:
+    ic_dashboard_files: "{{ query('fileglob', '../../files/dashboards/*.json') }}"
+
+- name: Refuse to provision organisations with no dashboards
+  # The glob above is the one thing here that fails silently. An empty
+  # result is either a broken relative path or a lost dashboard
+  # directory, and both produce orgs that look provisioned and show
+  # nothing.
+  ansible.builtin.assert:
+    that: ic_dashboard_files | length > 0
+    fail_msg: >-
+      No dashboard JSON resolved from playbooks/tasks/ — the relative
+      fileglob or the ansible/files/dashboards directory is wrong.
+
+- name: Provision each organisation (switch, datasource, dashboards)
+  # Switch, datasource and dashboards used to be three separate tasks,
+  # each looping over every account on its own. Grafana's "current org"
+  # is a persistent property of the authenticated user, not a per-request
+  # header — so by the time the second task's loop started, the switch
+  # task had already finished ITS loop and left every write landing in
+  # whichever org was last switched to. Measured in production: 9
+  # accounts, only 2 datasources ever created, and one of those held the
+  # WRONG account's credential. include_tasks scopes switch+write to the
+  # same loop iteration, so the org is never stale when we write to it —
+  # a block cannot do this (ansible-lint: "'loop' is not a valid
+  # attribute for a Block").
+  ansible.builtin.include_tasks: provision_grafana_org.yml
+  no_log: true
+  loop: "{{ ic_accounts | zip(ic_org_ids.results) | list }}"
+  loop_control:
+    label: "{{ item.0.user }}"

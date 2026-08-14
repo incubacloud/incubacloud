@@ -1,0 +1,33 @@
+---
+# Writes the vmauth access-control document. Included by BOTH the full
+# central deployment and the account sync, because those two must never
+# be able to disagree about what the boundary looks like: one file, one
+# renderer (``ObservabilityCentralExecutor._vmauth_config``), two callers.
+#
+# Kept separate from the reload (tasks/vmauth_acl_apply.yml) on purpose.
+# The full deployment writes this early, alongside every other config
+# file, and only reloads after ``docker compose up -d`` has had its say;
+# the sync writes and reloads back to back. Splitting them is what lets
+# both orders reuse the same tasks instead of one of them duplicating.
+
+- name: Write the vmauth access-control config
+  # This file IS the boundary: one vmauth user per account (writes
+  # and reads only its own series and logs, because the route forces
+  # the ic_account label and the X-Scope-OrgID header from the
+  # authenticated user) plus one operator (the cross-account read and
+  # the Grafana admin API). Adding a user grants access; removing one
+  # revokes it. There is no unauthorized_user section, which is what
+  # makes a credential-less request 401 rather than proxied.
+  #
+  # Rendered whole by the executor rather than templated here: the
+  # per-account url_map is easier to get right (and to test) in Python
+  # than in Jinja, and it carries clear-text credentials that must not
+  # be split across log lines.
+  ansible.builtin.copy:
+    dest: "{{ ic_central_dir }}/vmauth/auth.yml"
+    content: "{{ ic_vmauth_config }}"
+    # Readable by vmauth's non-root process — confidentiality is on
+    # the 0700 directory, see the directory task in the deployment.
+    mode: "0644"
+  no_log: true
+  register: ic_vmauth_cfg
