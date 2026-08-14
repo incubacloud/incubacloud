@@ -209,6 +209,39 @@ class TestHardeningPreflight(TransactionCase):
         # commas, and the allowlist arrives comma-joined for nftables.
         self.assertIn("join(' ')", expr)
 
+    def test_the_ruleset_replaces_only_our_own_table(self):
+        """``flush ruleset`` would take Docker's packet rules with it.
+
+        Docker programs its filter/nat chains through iptables-nft, so a
+        host-wide flush deletes them. The daemon never notices and never
+        re-adds them: every published port loses its DNAT, containers
+        keep answering on localhost, and the outside world gets nothing.
+        That is how re-running hardening on a live host took the whole
+        fleet down on 2026-08-14 — it had only ever run before Docker
+        existed, so the flush had never had anything to destroy.
+        """
+        play = self._playbook()
+        rulesets = [
+            t for t in (play.get("tasks") or [])
+            if str(t.get("ansible.builtin.copy", {}).get("dest", ""))
+            == "/etc/nftables.conf"
+        ]
+        self.assertEqual(len(rulesets), 1)
+        content = rulesets[0]["ansible.builtin.copy"]["content"]
+        # Directives only: the comment above the ruleset names the thing
+        # it is warning against, and prose must not fail the assertion.
+        directives = [
+            line.strip() for line in content.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        self.assertNotIn(
+            "flush ruleset", directives,
+            "a host-wide flush deletes Docker's chains along with ours",
+        )
+        # Declare-then-delete: the bare declaration creates the table when
+        # it is missing, so the delete cannot fail on a first run.
+        self.assertIn("table inet filter\ndelete table inet filter", content)
+
     def test_the_operator_cannot_fence_themselves_off(self):
         """The firewall rule must allow the address the play came from.
 
