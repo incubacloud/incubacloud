@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.61] — 2026-08-14
+
+### Fixed
+
+- **Hardening no longer takes Docker's packet rules down with it.** The nftables ruleset opened with `flush ruleset`, which deletes *every* nft table on the host — including the filter/nat chains Docker programs through iptables-nft. The daemon does not notice and never re-adds them, so every published port silently loses its DNAT: containers stay up and answer on localhost while the outside world gets nothing, and the host still passes an ICMP and SSH check. Re-running hardening on a live host therefore took an entire tenant fleet offline, and it had never surfaced before because hardening only ever ran on fresh hosts, ahead of `full_setup` installing Docker — the flush had nothing to destroy yet. The ruleset now replaces only its own table (`table inet filter` / `delete table inet filter`, the idiom that also works on a first run when the table does not exist), leaving every other table untouched. Verified against a live `nft`: a foreign table created between two passes survives the second one
+
 ## [1.0.60] — 2026-08-13
 
 ### Security
