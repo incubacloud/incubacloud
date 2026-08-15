@@ -261,17 +261,8 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # "no identity provider available", which is the self-hosted
             # case: the playbook falls back to trusting a header set by
             # the panel's own reverse proxy.
-            "ic_grafana_oidc": self._grafana_oidc(),
+            "ic_grafana_oidc": settings._grafana_oidc(accounts),
         }
-
-    def _grafana_oidc(self):
-        """Return the OIDC settings for Grafana, or ``{}`` if none.
-
-        Core has no identity provider of its own, so it always returns
-        empty and the playbook wires ``auth.proxy`` instead. The SaaS
-        manager overrides this.
-        """
-        return {}
 
     def parse_results(self, results):
         """Require the backend to actually answer before calling it up."""

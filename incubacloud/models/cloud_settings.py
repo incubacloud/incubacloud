@@ -271,6 +271,44 @@ class CloudSettings(models.Model):
         user, token = self._get_system()._metrics_auth()
         return [(user, token)] if (user and token) else []
 
+    def _grafana_oidc(self, accounts):
+        """Return the OIDC settings Grafana should authenticate with.
+
+        Empty here: core ships to partners, who have no identity provider
+        of ours, so the playbook wires ``auth.proxy`` instead and trusts
+        a header set by the panel's own reverse proxy. The SaaS manager
+        overrides this.
+
+        On the model rather than on the executor for the same reason the
+        account list is: both the deployment and the account sync need
+        it, and a job that had to re-declare it would eventually be one
+        that forgot to.
+
+        :param accounts: ``[(user, token), ...]`` the run is built from,
+            used to map each account to its own organisation.
+        """
+        return {}
+
+    def _grafana_org_mapping(self, accounts):
+        """Return Grafana's ``org_mapping`` string, one entry per account.
+
+        Format is ``claim:org:role`` entries separated by spaces. No
+        wildcard entry: a wildcard would send any authenticated user into
+        an organisation it does not own. Everyone gets Viewer except this
+        panel's own account, which the operator needs Editor on to manage
+        dashboards and datasources.
+
+        :param accounts: ``[(user, token), ...]`` to map.
+        """
+        system_account = self._get_system().metrics_account
+        return " ".join(
+            "%s:%s:%s" % (
+                account, account,
+                "Editor" if account == system_account else "Viewer",
+            )
+            for account, _token in accounts
+        )
+
     metrics_remote_write_token = EncryptedChar(
         string='Metrics credential',
         help='Password half of this panel\'s metrics account (the user '

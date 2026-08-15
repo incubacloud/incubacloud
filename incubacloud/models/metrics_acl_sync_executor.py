@@ -73,6 +73,11 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
                 accounts, operator_token, grafana_admin_basic,
             ),
             "ic_accounts": new,
+            # The organisation mapping has to name every account, not
+            # just the new ones: it replaces the setting rather than
+            # adding to it, so a partial map would strand everyone
+            # missing from it in Grafana's default organisation.
+            "ic_grafana_oidc": settings._grafana_oidc(accounts),
         }
 
     def parse_results(self, results):

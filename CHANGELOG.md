@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.64] — 2026-08-15
+
+### Changed
+
+- **Grafana's identity configuration left the compose file, so adding an account no longer recreates it.** The organisation map names every account, so it changed with every tenant — and it lived in the container's environment, which means `up -d` recreated Grafana and dropped every open session for a change that concerned one account. That cost is what made automating the grant look unacceptable in the first place. Measured in a lab against Grafana 11.2.0: the SSO settings API writes to Grafana's own database, **overrides** the `GF_AUTH_GENERIC_OAUTH_*` environment (the provider's `source` flips from `system` to `database`), and applies live — the login page served the new configuration with the container's restart count still at zero. The deployment and the account sync now both push the provider through that API, and the compose file carries none of it: since the database wins, a copy in the environment would be a second source that silently loses. The PUT replaces the whole provider block rather than patching a field, so the complete configuration travels — including `orgAttributePath`, whose absence silently sends every login to the default organisation while the token carries the right claim, which this codebase has already paid for once
+- `_grafana_oidc()` and `_grafana_org_mapping()` join the account list on `cloud.settings`. With that, neither central job needs a SaaS subclass at all: the tenant-aware behaviour follows the data instead of being re-declared on each job, and `observability_central_ext` has nothing left to declare
+
 ## [1.0.63] — 2026-08-14
 
 ### Changed
