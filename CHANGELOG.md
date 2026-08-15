@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.66] — 2026-08-15
+
+### Fixed
+
+- **Instance liveness was querying the metrics central with no credentials at all.** `promql_query` attaches auth only when handed both halves — `auth=(user, token) if (token and user) else None` — so the liveness cron, which unpacked `user, token` and then forwarded only `token=`, queried anonymously. The central answered 401, the caller logged a warning and returned, and `running` silently stopped being refreshed from metrics: every instance kept whatever it last had, which feeds `sleeping`, then `last_activity_at`, then the auto-suspend clock. One of three call sites; the other two always passed both. Beyond the fix, a structural test now reads the source and refuses any `promql_query` call missing either keyword, because a behavioural test would have to be written once per call site — which is exactly what had not happened, for any of them
+
 ## [1.0.65] — 2026-08-15
 
 ### Fixed
