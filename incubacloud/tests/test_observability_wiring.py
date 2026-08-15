@@ -648,3 +648,77 @@ class TestTheAccountSyncSharesTheBoundary(BaseCase):
             list(orgs.parent.glob(globs[0])),
             "the glob matches no dashboard files from its own directory",
         )
+
+
+class TestGrafanaIdentityIsNotInTheComposeFile(BaseCase):
+    """Why adding a tenant stopped recreating Grafana.
+
+    The organisation map names every account, so it changed with every
+    tenant — and it lived in the compose file, whose every change makes
+    ``up -d`` recreate the container. One new account dropped every open
+    session in the fleet, which is what made automating the grant look
+    unacceptable in the first place.
+
+    Measured (lab, Grafana 11.2.0): the SSO settings API writes to
+    Grafana's database, overrides the env vars (``source`` flips from
+    ``system`` to ``database``) and applies with the restart count still
+    at zero.
+    """
+
+    _TASKS_DIR = _ROOT / "ansible" / "playbooks" / "tasks"
+
+    def _sso_task(self):
+        for task in yaml.safe_load(
+            (self._TASKS_DIR / "grafana_orgs.yml").read_text(),
+        ):
+            if "sso-settings" in str(task.get("ansible.builtin.uri", {})):
+                return task
+        self.fail("the SSO settings task was renamed or removed")
+
+    def test_the_compose_file_carries_no_oauth_configuration(self):
+        """Two sources for one block, with the database silently
+        winning, is worse than either alone."""
+        self.assertNotIn(
+            "GF_AUTH_GENERIC_OAUTH",
+            _CENTRAL_PLAYBOOK.read_text(),
+            "the OAuth config is back in the compose file, so every new "
+            "account recreates Grafana again — and the database copy "
+            "written by the API would override it anyway",
+        )
+
+    def test_the_whole_provider_block_is_sent(self):
+        """The API replaces the provider, it does not patch a field.
+
+        Anything omitted here silently reverts to Grafana's default.
+        ``orgAttributePath`` is the one that already cost us: with
+        ``groupsAttributePath`` instead, org_mapping falls back to the
+        default organisation and every login lands in "Main Org." while
+        the token carries the right claim.
+        """
+        settings = self._sso_task()["ansible.builtin.uri"]["body"]["settings"]
+        for key in (
+            "enabled", "clientId", "clientSecret", "authUrl", "tokenUrl",
+            "apiUrl", "scopes", "usePkce", "orgMapping", "orgAttributePath",
+            "roleAttributePath", "allowAssignGrafanaAdmin", "autoLogin",
+        ):
+            self.assertIn(
+                key, settings,
+                f"{key} is missing from the SSO settings body; the PUT "
+                f"replaces the whole provider, so it would silently "
+                f"revert to Grafana's default",
+            )
+        self.assertEqual(settings["orgAttributePath"], "groups")
+
+    def test_it_is_skipped_without_an_identity_provider(self):
+        """The self-hosted case has none, and the playbook wires
+        auth.proxy instead — enabling OAuth there would deploy a Grafana
+        redirecting to a provider that will refuse it."""
+        self.assertIn("ic_grafana_oidc", str(self._sso_task().get("when", "")))
+
+    def test_it_goes_through_the_operator_door(self):
+        """One door, not a second one to keep track of: vmauth
+        authenticates the operator and swaps in Grafana's admin
+        credential, so the panel never holds Grafana's password."""
+        uri = self._sso_task()["ansible.builtin.uri"]
+        self.assertIn("/gadmin/", uri["url"])
+        self.assertEqual(uri["url_username"], "operator")

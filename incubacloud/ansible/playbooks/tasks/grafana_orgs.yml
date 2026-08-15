@@ -69,6 +69,68 @@
       No dashboard JSON resolved from playbooks/tasks/ — the relative
       fileglob or the ansible/files/dashboards directory is wrong.
 
+- name: Point Grafana's OIDC at the current organisation map
+  # Measured (lab, Grafana 11.2.0): the SSO settings API writes to
+  # Grafana's database and OVERRIDES the GF_AUTH_GENERIC_OAUTH_* env
+  # vars — the provider's ``source`` flips from ``system`` to
+  # ``database`` — and it applies live: the login page served the new
+  # config with the container's restart count still at zero.
+  #
+  # That is what lets an account be added without recreating Grafana.
+  # The mapping used to live in the compose file, so every new tenant
+  # changed the container definition and ``up -d`` recreated it —
+  # dropping every open session for a change that concerns one account.
+  #
+  # The PUT replaces the WHOLE provider block, not one field, so this
+  # sends the complete configuration. That is also why the compose no
+  # longer carries any of it: two sources for one block, with the
+  # database silently winning, would be worse than either alone.
+  #
+  # Skipped when no identity provider is configured — the self-hosted
+  # case, where the playbook wires auth.proxy instead.
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/v1/sso-settings/generic_oauth"
+    method: PUT
+    body_format: json
+    body:
+      id: ""
+      provider: generic_oauth
+      settings:
+        enabled: true
+        name: IncubaCloud
+        clientId: "{{ ic_grafana_oidc.client_id }}"
+        clientSecret: "{{ ic_grafana_oidc.client_secret }}"
+        authUrl: "{{ ic_grafana_oidc.auth_url }}"
+        tokenUrl: "{{ ic_grafana_oidc.token_url }}"
+        apiUrl: "{{ ic_grafana_oidc.userinfo_url }}"
+        scopes: openid profile email
+        # The provider's oidc.client requires PKCE by default — without
+        # this, Grafana's authorize request carries no code_challenge and
+        # the provider rejects it with 400.
+        usePkce: true
+        orgMapping: "{{ ic_grafana_oidc.org_mapping }}"
+        # MUST be orgAttributePath, not groupsAttributePath: the latter
+        # feeds Grafana's separate team-sync feature, and orgMapping then
+        # silently falls back to the default organisation. Verified live
+        # before this moved here — every login landed in "Main Org." as
+        # Viewer while the id_token carried the correct groups claim.
+        orgAttributePath: groups
+        roleAttributePath: "'Viewer'"
+        allowAssignGrafanaAdmin: false
+        # Grafana is embedded in an iframe inside the panel, where the
+        # operator is already authenticated. Without this it shows its
+        # own login form first and makes them click "Sign in with
+        # IncubaCloud" by hand every time. Basic auth, used only for the
+        # server-to-server admin swap, stays reachable through
+        # /grafana/login?disableAutoLogin=true.
+        autoLogin: true
+    status_code: [200, 204]
+  when: ic_grafana_oidc | length > 0
+  no_log: true
+
 - name: Provision each organisation (switch, datasource, dashboards)
   # Switch, datasource and dashboards used to be three separate tasks,
   # each looping over every account on its own. Grafana's "current org"

@@ -301,43 +301,22 @@
                 # the account claim maps each user into its organisation.
                 # Grafana refuses datasources outside a user's org, which
                 # is the second ring behind vmauth's own filter.
-                GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
-                GF_AUTH_GENERIC_OAUTH_NAME: "IncubaCloud"
-                GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "{{ ic_grafana_oidc.client_id }}"
-                GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "{{ ic_grafana_oidc.client_secret }}"
-                GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email"
-                GF_AUTH_GENERIC_OAUTH_AUTH_URL: "{{ ic_grafana_oidc.auth_url }}"
-                GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "{{ ic_grafana_oidc.token_url }}"
-                GF_AUTH_GENERIC_OAUTH_API_URL: "{{ ic_grafana_oidc.userinfo_url }}"
-                # The provider's oidc.client requires PKCE by default —
-                # without this, Grafana's authorize request lacks a
-                # code_challenge and the provider rejects it with 400.
-                GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
-                GF_AUTH_GENERIC_OAUTH_ORG_MAPPING: "{{ ic_grafana_oidc.org_mapping }}"
-                # ``groups`` is the account-list claim the provider emits
-                # (res.users._oidc_account_groups); org_mapping above maps
-                # each entry to its own organisation. This MUST be
-                # org_attribute_path, not groups_attribute_path — the
-                # latter feeds Grafana's separate team-sync feature (which
-                # we don't use) and org_mapping silently falls back to the
-                # default org when it isn't set. Verified live: without
-                # it, every login landed in Grafana's "Main Org." as
-                # Viewer despite the id_token/userinfo carrying the
-                # correct groups claim.
-                GF_AUTH_GENERIC_OAUTH_ORG_ATTRIBUTE_PATH: "groups"
-                GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Viewer'"
-                GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "false"
-                # Grafana is embedded in an iframe inside the panel, where
-                # an operator is already authenticated — without this,
-                # Grafana shows its OWN login form first and makes them
-                # click "Sign in with IncubaCloud" by hand every time.
-                # With it, loading the iframe redirects straight into
-                # /oauth/authorize; since their panel session is already
-                # live, the whole exchange completes with no visible
-                # login screen at all. Basic auth (used only for the
-                # server-to-server admin API swap, never by a browser)
-                # stays reachable via /grafana/login?disableAutoLogin=true.
-                GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "true"
+                #
+                # Deliberately NOT configured here. The whole
+                # generic_oauth block is written afterwards through
+                # Grafana's SSO settings API (tasks/grafana_orgs.yml),
+                # because the organisation map names every account and so
+                # changed with every tenant — which changed this file,
+                # and a changed compose definition means ``up -d``
+                # recreates the container. Adding one account dropped
+                # every open session in the fleet.
+                #
+                # Measured (lab, 11.2.0): the API writes to Grafana's own
+                # database, OVERRIDES these env vars (the provider's
+                # ``source`` flips from ``system`` to ``database``) and
+                # takes effect with no restart. Since the database wins,
+                # leaving a copy here would be a second source that
+                # silently loses — worse than no copy at all.
           {% else %}
                 # No identity provider (self-hosted). Grafana trusts a
                 # header, and the ONLY thing allowed to set it is the
