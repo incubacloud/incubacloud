@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.65] — 2026-08-15
+
+### Fixed
+
+- **The backup listing no longer shells into stacks that are stopped.** `cron_refresh_backup_list` already skipped instances whose compose stack defines no `backup` service, but "defined" and "running" are not the same precondition: `docker compose exec` needs the container up, and a stopped stack answers `service "backup" is not running` with status 1 — a failed job and an alert, every day, for as long as the stack stays down. Warm spares are what surfaced it: they ship stopped by design and hold no customer data at all, yet their own rebuild writes `backup` into `compose_services`, so the moment a spare was refreshed it became a permanent daily failure that listing its backups could never have made succeed. The cron now requires the instance to be running, which is the same condition the executor depends on and also covers a tenant asleep behind its wake gate
+
 ## [1.0.64] — 2026-08-15
 
 ### Changed

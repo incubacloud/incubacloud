@@ -1668,12 +1668,21 @@ class CloudInstance(models.Model):
         (e.g. free-tier tenants): the executor shells into the backup
         container via ``docker compose exec -T backup`` and would fail
         with exit status 1 on every run otherwise.
+
+        Stopped stacks are skipped for exactly the same reason — ``exec``
+        needs the container up, and a stopped one answers ``service
+        "backup" is not running`` with status 1. Warm spares are what
+        forced this: they ship stopped by design and hold no customer
+        data at all, so listing their backups could only ever produce
+        one failed job (and one alert) per spare per day, for as long as
+        the spare sat in the pool.
         """
         instances = self.search(
             [
                 ("deployed", "=", True),
                 ("environment", "=", "production"),
                 ("move_origin_host_id", "=", False),
+                ("running", "=", True),
             ]
         )
         for inst in instances:
