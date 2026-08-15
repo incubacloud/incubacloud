@@ -500,6 +500,7 @@ class TestCronRefreshBackupList(TransactionCase):
             "host_id": self.host.id,
             "environment": "production",
             "state": "deployed",
+            "running": True,
             "compose_services": compose_services,
         }
         return self.env["cloud.instance"].create(base | kw)
@@ -592,6 +593,31 @@ class TestCronRefreshBackupList(TransactionCase):
             }
         )
         inst.move_origin_host_id = source.id
+        calls, original, mc = self._patch_list_backups()
+        try:
+            self.env["cloud.instance"].cron_refresh_backup_list()
+        finally:
+            self._restore_list_backups(original, mc)
+        self.assertNotIn(inst.id, calls)
+
+    def test_stopped_instance_skipped(self):
+        """``docker compose exec`` needs the container up, full stop.
+
+        A stopped stack answers ``service "backup" is not running`` with
+        status 1, so the job can only fail. The case that forced this:
+        a warm spare, which ships stopped by design and holds no
+        customer data, had ``backup`` written into its
+        ``compose_services`` by its own rebuild — the only gate at the
+        time — and the cron started shelling into it daily. One failed
+        job and one alert per spare, for as long as it sat unclaimed.
+        (Warm fields live in the SaaS layer, so the property is pinned
+        here through the state every stopped stack shares.)
+        """
+        inst = self._create_instance(
+            "asleep-prod",
+            "odoo,db,backup",
+            running=False,
+        )
         calls, original, mc = self._patch_list_backups()
         try:
             self.env["cloud.instance"].cron_refresh_backup_list()
