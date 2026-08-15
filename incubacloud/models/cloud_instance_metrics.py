@@ -119,7 +119,7 @@ class CloudInstance(models.Model):
             'instance_id!=""})'
         )
         try:
-            samples = promql_query(base, expression, token=token)
+            samples = promql_query(base, expression, token=token, user=user)
         except Exception as exc:  # noqa: BLE001 — logged, never fatal
             _logger.warning(
                 "[metrics] could not refresh instance liveness: %s", exc,

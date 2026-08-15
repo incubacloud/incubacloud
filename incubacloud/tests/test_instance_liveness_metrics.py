@@ -52,6 +52,40 @@ class InstanceLivenessCase(TransactionCase):
             self.env["cloud.instance"]._cron_refresh_running_from_metrics()
 
 
+class TestLivenessSendsCredentials(InstanceLivenessCase):
+    """The liveness query must authenticate as this panel's account.
+
+    ``promql_query`` attaches credentials only when given BOTH halves —
+    ``auth=(user, token) if (token and user) else None`` — so a caller
+    that unpacks the pair and forwards just the token queries
+    anonymously. The central answers 401, the cron logs a warning and
+    returns, and liveness silently stops being refreshed: every
+    instance keeps whatever ``running`` it last had, which then feeds
+    ``sleeping`` and the auto-suspend clock.
+
+    That is precisely what this call site did while the other two
+    passed both halves, so the property is pinned on the wire rather
+    than on the call.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.settings.write({
+            "metrics_account": "acct_test",
+            "metrics_remote_write_token": "s3cr3t",
+        })
+
+    def test_the_query_carries_both_halves_of_the_credential(self):
+        resp = MagicMock(spec=requests.Response)
+        resp.json.return_value = _samples()
+        resp.raise_for_status.return_value = None
+        with patch(f"{_MODULE}.requests.get", return_value=resp) as get:
+            self.env["cloud.instance"]._cron_refresh_running_from_metrics()
+        self.assertEqual(
+            get.call_args.kwargs["auth"], ("acct_test", "s3cr3t"),
+        )
+
+
 class TestLiveness(InstanceLivenessCase):
 
     def test_a_recently_seen_container_marks_running(self):
