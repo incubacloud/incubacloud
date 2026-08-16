@@ -1661,21 +1661,40 @@ class CloudInstance(models.Model):
         return job_ids[0]
 
     @api.model
+    def _periodic_maintenance_domain(self):
+        """Extra filter every periodic maintenance cron must respect.
+
+        The extension point for layers that deploy instances the daily
+        crons have no business touching. Core deploys none, so it adds
+        nothing; a SaaS layer with a pool of stopped spares excludes
+        them here, once, instead of reimplementing each cron.
+
+        That reimplementing is what this exists to stop. A layer that
+        copies a cron body to add one filter owns a copy that stops
+        receiving the guards added to the original — and the copy fails
+        silently, because a cron that queues jobs nobody reads looks
+        exactly like a cron doing its job.
+
+        :return: a search domain, ANDed into each cron's own.
+        """
+        return []
+
+    @api.model
     def cron_refresh_backup_list(self):
         """Queue a backup_list job for every production instance.
 
         Skips instances whose compose stack has no ``backup`` service
         (e.g. free-tier tenants): the executor shells into the backup
-        container via ``docker compose exec -T backup`` and would fail
-        with exit status 1 on every run otherwise.
+        container via ``docker compose exec -T backup``, which answers
+        ``service "backup" is not running`` with status 1 for a service
+        that is stopped *and* for one the compose file never declared.
+        Either way it is a failed job and an alert, every day, forever —
+        and one that never resolves, since a successful run is what
+        clears it.
 
-        Stopped stacks are skipped for exactly the same reason — ``exec``
-        needs the container up, and a stopped one answers ``service
-        "backup" is not running`` with status 1. Warm spares are what
-        forced this: they ship stopped by design and hold no customer
-        data at all, so listing their backups could only ever produce
-        one failed job (and one alert) per spare per day, for as long as
-        the spare sat in the pool.
+        Stopped stacks are skipped for the same reason. Warm spares are
+        what forced that one: they ship stopped by design and hold no
+        customer data at all.
         """
         instances = self.search(
             [
@@ -1684,6 +1703,7 @@ class CloudInstance(models.Model):
                 ("move_origin_host_id", "=", False),
                 ("running", "=", True),
             ]
+            + self._periodic_maintenance_domain()
         )
         for inst in instances:
             if not inst.host_id or not inst.instance_backup_dst:
@@ -1756,7 +1776,9 @@ class CloudInstance(models.Model):
     @api.model
     def cron_instance_health(self):
         """Queue an instance_health job for every deployed instance."""
-        instances = self.search([("deployed", "=", True)])
+        instances = self.search(
+            [("deployed", "=", True)] + self._periodic_maintenance_domain()
+        )
         for inst in instances:
             if not inst.host_id:
                 continue

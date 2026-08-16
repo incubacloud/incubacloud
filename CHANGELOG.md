@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.70] — 2026-08-16
+
+### Added
+
+- **`cloud.instance._periodic_maintenance_domain()`** — one extension point for the daily maintenance crons, so a layer that deploys instances they have no business touching says so once instead of reimplementing each cron. `cron_refresh_backup_list` and `cron_instance_health` AND it into their own domain; core adds nothing to it
+
+### Fixed
+
+- The SaaS layer had been carrying **copies** of both cron bodies to add a single filter, and the copies stopped receiving the guards added here afterwards. The one that mattered was "only instances whose compose file declares a `backup` service": a free-plan tenant declares none, so this side skipped it and the copy did not, and every free tenant got a daily `backup_list` shelling into a container that does not exist. `docker compose exec` answers `service "backup" is not running` for a service that is stopped **and** for one that was never declared — so it read as a sleeping stack rather than a missing service, and the diagnosis went the wrong way for a while. A failed job and a warning alert per free tenant per day, and the alert never resolved, since a clean run is what clears it
+- The docstring of `cron_refresh_backup_list` now says which of the two `exec` answers it is guarding against, because they are indistinguishable from the message alone
+
 ## [1.0.69] — 2026-08-16
 
 ### Removed
