@@ -6714,6 +6714,13 @@ msgid "Open Shell"
 msgstr "Abrir terminal"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "Open in Grafana"
+msgstr "Abrir en Grafana"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__opened_at
 msgid "Opened At"
 msgstr "Abierto el"
@@ -8626,6 +8633,26 @@ msgstr "Mostrando los primeros"
 #: code:addons/incubacloud/static/src/components/slide_over/slide_over.xml:0
 msgid "Side panel"
 msgstr "Panel lateral"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Signing in cannot happen inside the frame. If the\n"
+"                            charts below are blank, open it once in a new tab."
+msgstr ""
+"El inicio de sesión no puede hacerse dentro del marco. Si las gráficas de "
+"abajo salen en blanco, ábrelo una vez en una pestaña nueva."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid ""
+"Signing in cannot happen inside the frame. If the\n"
+"                        panel below is blank, open it once in a new tab."
+msgstr ""
+"El inicio de sesión no puede hacerse dentro del marco. Si el panel de abajo "
+"sale en blanco, ábrelo una vez en una pestaña nueva."
 
 #. module: incubacloud
 #. odoo-javascript

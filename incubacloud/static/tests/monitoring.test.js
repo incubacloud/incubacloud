@@ -61,6 +61,53 @@ describe("Monitoring — embed URL", () => {
     });
 });
 
+describe("Monitoring — the way out of the frame", () => {
+    /**
+     * The embed cannot ask for a password: the identity provider serves
+     * `frame-ancestors 'self'`, so the browser refuses to paint its
+     * login page inside a frame on another subdomain. Measured against
+     * production on 16-ago; before that we assumed the cookie was the
+     * obstacle and it is not — same registrable domain, Lax travels.
+     */
+    const build = (baseUrl, uid = "ic-host") => {
+        const cmp = Object.create(Monitoring.prototype);
+        cmp.state = { baseUrl, current: uid };
+        return cmp.externalUrl(uid);
+    };
+
+    test("keeps Grafana's chrome, which is where the sign-in lives", () => {
+        // The whole point of the link: kiosk hides the very prompt the
+        // user opens this tab to answer.
+        expect(build("https://grafana.example.com")).not.toInclude("kiosk");
+    });
+
+    test("points at the same dashboard as the embed", () => {
+        // A link that landed somewhere else would send the user to sign
+        // in for a page they are not looking at.
+        expect(build("https://grafana.example.com"))
+            .toInclude("/d/ic-host/incubacloud-host");
+    });
+
+    test("carries the subject the embed was pinned to", () => {
+        const cmp = Object.create(Monitoring.prototype);
+        cmp.state = {
+            baseUrl: "https://grafana.example.com",
+            current: "ic-instance",
+            instance: "acme-prod",
+            instances: [{ name: "acme-prod", host: "h1" }],
+        };
+        const url = cmp.externalUrl("ic-instance");
+        expect(url).toInclude("var-instance=acme-prod");
+        expect(url).toInclude("var-host=h1");
+    });
+
+    test("is empty when there is nothing to point at", () => {
+        // Guards the template: an href of "" reloads the panel itself,
+        // which looks like the link is broken rather than absent.
+        expect(build("")).toBe("");
+    });
+});
+
 describe("Monitoring — who may configure it", () => {
     /**
      * The axis that decides whether "set it up in Settings" is advice or

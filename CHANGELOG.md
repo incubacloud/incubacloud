@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.68] — 2026-08-16
+
+### Fixed
+
+- **An embedded dashboard can no longer be a blank rectangle with nothing to click.** Grafana delegates its sign-in to the panel's own identity provider, and that provider answers with `content-security-policy: frame-ancestors 'self'` — so the browser refuses to paint the login page inside a frame served from any other subdomain. Anyone who had not signed in to Grafana yet therefore got an empty embed, no prompt, and no explanation. Both surfaces that embed a dashboard (the Monitoring page and the instance Metrics tab) now carry a link that opens the same dashboard in a tab of its own, where the sign-in completes normally; every later visit finds the cookie and embeds as before. The link keeps Grafana's own chrome, since `kiosk` hides the very prompt the tab is opened to answer
+- The note beside the link is unconditional on purpose: a frame blocked by CSP still fires `load`, so the component has no way to tell the blank case from a working one and offer the explanation only when it is needed. This was the failure predicted in the layered-observability plan as the one thing to measure before turning on tenant dashboards, and the measurement (against production, 16-ago) found it real — though not for the reason assumed: the cookie travels fine, since the panel and Grafana share a registrable domain. A structural test now fails if a third surface ever embeds a dashboard without offering the way out
+
 ## [1.0.67] — 2026-08-15
 
 ### Changed

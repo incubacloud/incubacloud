@@ -95,6 +95,22 @@
                                       emptyLabel.translate="Select an instance"/>
                     </t>
                 </div>
+                <!-- The way out of a frame that cannot ask for a
+                     password. Grafana's sign-in is served by the
+                     identity provider with `frame-ancestors 'self'`, so
+                     the browser refuses to paint it inside this embed:
+                     a visitor with no Grafana session yet gets a blank
+                     panel and no prompt. The note is always on because
+                     the blank frame cannot be detected from here — a
+                     frame blocked by CSP still fires `load`. -->
+                <p class="ic-monitoring-escape">
+                    <a class="rl-link" t-att-href="currentExternalUrl"
+                       target="_blank" rel="noopener">Open in Grafana</a>
+                    <span>
+                        Signing in cannot happen inside the frame. If the
+                        panel below is blank, open it once in a new tab.
+                    </span>
+                </p>
                 <div class="rl-card ic-monitoring-frame">
                     <iframe t-att-src="currentUrl"
                             t-att-title="'Monitoring dashboard: ' + state.current"

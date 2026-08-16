@@ -413,9 +413,31 @@ no organisation to be mapped into and lands in Grafana's **default**
 one, which holds the file-provisioned datasource — and that one
 authenticates as `operator`, unfiltered across every account.
 
-**Measure before switching it on.** The embed is cross-origin
-(`<slug>.incubacloud.io` → `metrics.incubacloud.io`) and the first login
-happens inside the iframe, which the provider's authorize step may refuse
-to be framed for. If it does, the fix is a "open dashboards" link in a
-new tab rather than an embed, and that is a UI decision to take with the
-measurement in hand. Switch it on for one tenant with a live VPS first.
+### The first sign-in cannot happen inside the frame (measured)
+
+The embed is cross-origin (`<slug>.incubacloud.io` →
+`metrics.incubacloud.io`), and the question was whether the first Grafana
+login survives being framed. Measured against production on 16-ago-2026:
+
+| Checked | Result |
+|---|---|
+| `metrics.incubacloud.io/grafana/` | `302` → `/grafana/login`, no `X-Frame-Options` |
+| Grafana's session cookie | `SameSite=Lax` — **travels fine**, same registrable domain |
+| The provider's login page | `content-security-policy: frame-ancestors 'self'` |
+
+So the cookie was never the obstacle; the provider's own login page is.
+The browser refuses to paint it in a frame on another subdomain, which
+means a visitor with no Grafana session sees a blank panel and no prompt.
+
+The fix shipped in core 1.0.68: both embedding surfaces carry an **Open
+in Grafana** link to the same dashboard in a tab of its own, where the
+sign-in completes; from then on the embed works. The note beside it is
+always visible because a CSP-blocked frame still fires `load`, so there
+is no signal to show it only when needed. Do not "solve" this by
+loosening `frame-ancestors` on the provider — that is the login page of
+the identity provider, and framing it is the clickjacking case the header
+exists for.
+
+Switch the toggle on for one tenant with a live VPS first: pause the
+`Tenant settings reconciliation` cron, push that tenant by hand, look at
+the panel, then resume.
