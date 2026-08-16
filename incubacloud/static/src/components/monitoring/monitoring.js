@@ -127,13 +127,8 @@ export class Monitoring extends Component {
      * The subject is passed explicitly. ``kiosk`` also hides the row where
      * Grafana would show its own variable pickers, so a dashboard left on
      * its default rendered one arbitrary host with nothing naming it.
-     *
-     * @param {string} uid  Dashboard uid, one of DASHBOARDS.
-     * @param {Object} [opts]
-     * @param {boolean} [opts.kiosk=true]  Strip Grafana's own chrome.
-     * @returns {string} The URL, or "" when there is nothing to point at.
      */
-    embedUrl(uid, { kiosk = true } = {}) {
+    embedUrl(uid) {
         if (!this.state.baseUrl) return "";
         const dash = Monitoring.DASHBOARDS.find((d) => d.uid === uid);
         if (!dash) return "";
@@ -142,9 +137,7 @@ export class Monitoring extends Component {
                 ? "light"
                 : "dark";
         const base = this.state.baseUrl.replace(/\/+$/, "");
-        let url =
-            `${base}/d/${dash.uid}/${dash.slug}` +
-            `?${kiosk ? "kiosk&" : ""}theme=${theme}`;
+        let url = `${base}/d/${dash.uid}/${dash.slug}?kiosk&theme=${theme}`;
         if (uid === "ic-host" && this.state.host) {
             url += `&var-host=${encodeURIComponent(this.state.host)}`;
         } else if (uid === "ic-instance" && this.state.instance) {
@@ -159,33 +152,8 @@ export class Monitoring extends Component {
         return url;
     }
 
-    /**
-     * The same dashboard, addressed for a tab of its own.
-     *
-     * Needed because the embed cannot ask for a password. Grafana's
-     * sign-in is served by the identity provider, which sends
-     * ``frame-ancestors 'self'``; the browser therefore refuses to paint
-     * that login page inside a frame hosted on another subdomain, and a
-     * visitor without a Grafana session yet sees a blank panel with
-     * nothing to click. In its own tab the sign-in completes normally,
-     * and every later visit finds the cookie and embeds fine.
-     *
-     * Grafana's chrome is kept here — in a tab of its own it is what
-     * makes the page navigable, and it is where the sign-in prompt is.
-     *
-     * @param {string} uid  Dashboard uid, one of DASHBOARDS.
-     * @returns {string} The URL, or "" when there is nothing to point at.
-     */
-    externalUrl(uid) {
-        return this.embedUrl(uid, { kiosk: false });
-    }
-
     get currentUrl() {
         return this.embedUrl(this.state.current);
-    }
-
-    get currentExternalUrl() {
-        return this.externalUrl(this.state.current);
     }
 
     select(uid) {

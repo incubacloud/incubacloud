@@ -6,12 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.69] — 2026-08-16
+
+### Removed
+
+- **Reverts the whole of 1.0.68**, because the failure it guarded against does not occur. The reasoning behind it had a gap: `frame-ancestors 'self'` only bites when the identity provider has to *render* its login page inside the frame, and it never does when the browser already carries a provider session — the authorize step answers with a redirect, and a redirect is not something a framing rule can block. Since every panel is entered through that same provider, having a session there is the normal state and not a lucky one, so the embed simply works. The link and its note were an answer to a question nobody was asking, and the note in particular told a reader looking at working charts that signing in was impossible
+- What is left behind is the measurement itself, rewritten in `docs/observability-operations.md` as a statement of why the embed works and what it depends on, so nobody has to re-derive it from headers a year from now
+- Also gone: the `kiosk` parameter that only the removed link passed, and the structural test that required every embed to offer a way out — that rule described a constraint this system does not have
+
 ## [1.0.68] — 2026-08-16
 
 ### Fixed
 
-- **An embedded dashboard can no longer be a blank rectangle with nothing to click.** Grafana delegates its sign-in to the panel's own identity provider, and that provider answers with `content-security-policy: frame-ancestors 'self'` — so the browser refuses to paint the login page inside a frame served from any other subdomain. Anyone who had not signed in to Grafana yet therefore got an empty embed, no prompt, and no explanation. Both surfaces that embed a dashboard (the Monitoring page and the instance Metrics tab) now carry a link that opens the same dashboard in a tab of its own, where the sign-in completes normally; every later visit finds the cookie and embeds as before. The link keeps Grafana's own chrome, since `kiosk` hides the very prompt the tab is opened to answer
-- The note beside the link is unconditional on purpose: a frame blocked by CSP still fires `load`, so the component has no way to tell the blank case from a working one and offer the explanation only when it is needed. This was the failure predicted in the layered-observability plan as the one thing to measure before turning on tenant dashboards, and the measurement (against production, 16-ago) found it real — though not for the reason assumed: the cookie travels fine, since the panel and Grafana share a registrable domain. A structural test now fails if a third surface ever embeds a dashboard without offering the way out
+- **An embedded dashboard can no longer be a blank rectangle with nothing to click.** Grafana delegates its sign-in to the panel's own identity provider, and that provider answers with `content-security-policy: frame-ancestors 'self'` — so the browser refuses to paint the login page inside a frame served from any other subdomain. Both surfaces that embed a dashboard now carry a link that opens the same dashboard in a tab of its own, where the sign-in completes normally
+- *(Superseded the same day by 1.0.69, which reverts all of this. Kept in the log because it was released and ran in production: see that entry for why the premise was wrong.)*
 
 ## [1.0.67] — 2026-08-15
 

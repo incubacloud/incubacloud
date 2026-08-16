@@ -2681,19 +2681,6 @@
                     </div>
                 </t>
                 <t t-else="">
-                    <!-- Same reason as the fleet view: the identity
-                         provider sends `frame-ancestors 'self'`, so the
-                         first Grafana sign-in cannot happen inside this
-                         frame and would leave the charts blank with
-                         nothing to click. -->
-                    <p class="ic-monitoring-escape">
-                        <a class="rl-link" t-att-href="instanceDashboardTabUrl"
-                           target="_blank" rel="noopener">Open in Grafana</a>
-                        <span>
-                            Signing in cannot happen inside the frame. If the
-                            charts below are blank, open it once in a new tab.
-                        </span>
-                    </p>
                     <div class="rl-card ic-monitoring-frame">
                         <iframe t-att-src="instanceDashboardUrl"
                                 t-att-title="'Metrics for ' + (state.inst.name || '')"
