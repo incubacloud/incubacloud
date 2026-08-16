@@ -692,7 +692,15 @@ export class InstanceDetail extends JobsMixin(
    * instance name is only unique within its project, so filtering by the
    * instance alone can quietly add up series from two different machines.
    */
-  get instanceDashboardUrl() {
+  /**
+   * Build this instance's dashboard URL.
+   *
+   * @param {Object} [opts]
+   * @param {boolean} [opts.kiosk=true]  Strip Grafana's own chrome, so
+   *   the embed does not show a second, conflicting menu bar.
+   * @returns {string} The URL, or "" when there is nothing to point at.
+   */
+  dashboardUrl({ kiosk = true } = {}) {
     const base = (this.state.metricsCfg.baseUrl || "").replace(/\/+$/, "");
     if (!base || !this.state.inst) {
       return "";
@@ -702,9 +710,29 @@ export class InstanceDetail extends JobsMixin(
     const name = encodeURIComponent(this.state.inst.name || "");
     const host = encodeURIComponent(this.state.inst.host || "");
     return `${base}/d/ic-instance/incubacloud-instance` +
-      `?kiosk&theme=${theme}` +
+      `?${kiosk ? "kiosk&" : ""}theme=${theme}` +
       (host ? `&var-host=${host}` : "") +
       `&var-instance=${name}`;
+  }
+
+  get instanceDashboardUrl() {
+    return this.dashboardUrl();
+  }
+
+  /**
+   * The same dashboard, addressed for a tab of its own.
+   *
+   * The embed cannot ask for a password: Grafana's sign-in is served by
+   * the identity provider with ``frame-ancestors 'self'``, so a browser
+   * with no Grafana session yet refuses to paint the login page in this
+   * frame and the charts come up blank with nothing to click. Grafana's
+   * chrome is kept — in its own tab it is what makes the page navigable
+   * and where the sign-in prompt lives.
+   *
+   * @returns {string} The URL, or "" when there is nothing to point at.
+   */
+  get instanceDashboardTabUrl() {
+    return this.dashboardUrl({ kiosk: false });
   }
 
   /** Most recent requests first, which is how an incident is read. */

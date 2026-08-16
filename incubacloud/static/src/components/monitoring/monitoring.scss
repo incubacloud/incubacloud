@@ -15,6 +15,25 @@
   }
 }
 
+// The escape hatch from an embed that cannot prompt for a password.
+// Grafana's sign-in is served with `frame-ancestors 'self'`, so the
+// first one has to happen in a tab of its own. Sits immediately above
+// the frame it explains, and stays muted: for everyone already signed
+// in — which is everyone after the first visit — it is a footnote.
+.ic-monitoring-escape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-block: 10px 8px;
+  font-size: 12px;
+  color: var(--rl-muted);
+
+  a {
+    font-weight: 600;
+  }
+}
+
 // Which host/instance the embed is pinned to. Sits between the tabs and
 // the frame because it changes what the frame shows, and wraps so the
 // picker keeps a usable width on a phone.
