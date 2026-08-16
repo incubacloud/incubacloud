@@ -44,7 +44,7 @@
       },
       "targets": [
         {
-          "expr": "count(count by (instance_id) (container_last_seen))",
+          "expr": "count(count by (instance_id) (container_last_seen{instance_id!=\"\"})) or vector(0)",
           "legendFormat": "instances"
         }
       ]
