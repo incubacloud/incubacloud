@@ -18,7 +18,7 @@
                         t-on-click="() => this.setTab('github')">GitHub</button>
                 <button t-att-class="state.tab === 'rates' ? 'rl-tab active' : 'rl-tab'"
                         t-on-click="() => this.setTab('rates')">Rates</button>
-                <t t-if="env.features?.can_configure_observability !== false">
+                <t t-if="env.features?.observability?.configure !== false">
                     <button t-att-class="state.tab === 'monitoring' ? 'rl-tab active' : 'rl-tab'"
                         t-on-click="() => this.setTab('monitoring')">Monitoring</button>
                 </t>
@@ -412,7 +412,7 @@
                     <CoreRatesTab/>
                 </t>
 
-                <t t-if="state.tab === 'monitoring' and env.features?.can_configure_observability !== false">
+                <t t-if="state.tab === 'monitoring' and env.features?.observability?.configure !== false">
                     <div class="rl-saas-fsec">Observability</div>
                     <p class="rl-tabnote">
                         Agents on every host push metrics to a central stack; the

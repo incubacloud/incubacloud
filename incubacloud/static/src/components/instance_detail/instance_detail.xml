@@ -2658,6 +2658,14 @@
                         <div class="ic-skeleton-line"/>
                     </div>
                 </t>
+                <!-- Nothing to embed. On a panel that owns its settings
+                     that is a prompt; on one where they are injected it
+                     is not, so the charts block is simply absent and the
+                     tab keeps what it can actually deliver — the recent
+                     requests below, which need no Grafana. -->
+                <t t-elif="!canConfigureObservability">
+                    <!-- nothing: no charts, no instruction to nowhere -->
+                </t>
                 <t t-elif="!state.metricsCfg.enabled">
                     <div class="rl-stub">
                         <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.67] — 2026-08-15
+
+### Changed
+
+- **One definition of "observability is configured", replacing four.** The nav entry read the master switch; the Monitoring page read the switch *and* the Grafana URL; the Settings tab read who owns the settings; the instance Metrics tab read none of them. Four surfaces each deciding it for themselves is four ways to disagree, and the disagreement that shipped was a panel offering a Monitoring entry whose only possible message was an instruction to open a Settings tab that same panel hides — a dead end reachable by anyone whose settings are injected rather than owned. `cloud.settings._observability_capabilities()` is now the single answer, and it is three independent facts rather than one boolean pretending to be enough: `collect` (the data layer is on), `dashboards` (there is something to look at — collection *and* a Grafana), and `configure` (this panel's own operator edits these settings). Collapsing those three into two flat flags is what made the contradiction expressible in the first place
+- Every UI surface consumes the descriptor and none re-derives it. The Monitoring entry now appears when there are dashboards to show, **or** when there are none and this operator is the one who could set them up — so a self-hosted panel that switched observability on without a Grafana URL keeps its actionable prompt, and a panel that can act on neither is offered neither. The instance Metrics tab drops the charts block entirely in that last case rather than printing an instruction to nowhere, and keeps Recent requests, which needs no Grafana at all
+- `configure` is published as `True` and left for the layer above to contradict, exactly as the flag it replaces was: core has no notion of a panel whose settings arrive from elsewhere, and acquiring one to fix this would have been the wrong repair
+
 ## [1.0.66] — 2026-08-15
 
 ### Fixed

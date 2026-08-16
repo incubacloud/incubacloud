@@ -344,6 +344,11 @@ msgstr ""
 "Acceso denegado (403): verifica tus credenciales y política del bucket."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_accounts_deployed
+msgid "Accounts on the central"
+msgstr "Cuentas en el central"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
@@ -1100,6 +1105,12 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__wildcard_domain
 msgid "Base domain for wildcard certificates (e.g. *.example.com)."
 msgstr "Dominio base para certificados comodín (ej. *.example.com)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Behind the shipped templates"
+msgstr "Por detrás de las plantillas distribuidas"
 
 #. module: incubacloud
 #. odoo-python
@@ -2421,6 +2432,12 @@ msgstr "Paneles"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "Dashboards are not available on this panel"
+msgstr "Los paneles no están disponibles aquí"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Data as of right now; runs a dump on the live database"
 msgstr ""
@@ -3035,11 +3052,11 @@ msgstr "Activar la observabilidad"
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 msgid ""
 "Enable observability in Settings. Every host is then\n"
-"                        enrolled automatically — there is nothing to install\n"
-"                        by hand."
+"                            enrolled automatically — there is nothing to install\n"
+"                            by hand."
 msgstr ""
-"Active la observabilidad en Configuración. A partir de ahí todos los hosts "
-"se enrolan automáticamente — no hay nada que instalar a mano."
+"Activa la observabilidad en Ajustes. Cada host queda inscrito\n"
+"                            automáticamente — no hay nada que instalar a mano."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__auto_security_updates
@@ -4206,6 +4223,7 @@ msgstr "Alta"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__host_id
@@ -4250,6 +4268,18 @@ msgstr "Tipo de host"
 #: model:ir.model,name:incubacloud.model_cloud_host_whitelist
 msgid "Host Whitelist Entry"
 msgstr "Entrada de lista blanca del host"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_host_id
+msgid ""
+"Host carrying the central stack, recorded when a deployment of it succeeds. "
+"The account sync targets it. Empty means no central was ever deployed from "
+"this panel, and accounts cannot be granted until one is."
+msgstr ""
+"Host que aloja la pila central, registrado cuando un despliegue de ella "
+"tiene éxito. La sincronización de cuentas apunta a él. Vacío significa que "
+"nunca se desplegó un central desde este panel, y no se pueden conceder "
+"cuentas hasta que lo haya."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4651,6 +4681,7 @@ msgstr "Instalados"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__instance_id
@@ -5710,9 +5741,28 @@ msgid "Metrics account"
 msgstr "Cuenta de métricas"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_accounts_deployed
+msgid ""
+"Metrics accounts the last successful deployment or sync wrote into the "
+"gateway's access-control list, one per line. An account minted but absent "
+"from here cannot authenticate yet, so handing out its credential would "
+"produce a permanent 401 rather than observability."
+msgstr ""
+"Cuentas de métricas que el último despliegue o sincronización con éxito "
+"escribió en la lista de control de acceso de la pasarela, una por línea. Una"
+" cuenta acuñada pero ausente de aquí todavía no puede autenticarse, así que "
+"entregar su credencial produciría un 401 permanente en vez de "
+"observabilidad."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_url
 msgid "Metrics backend URL"
 msgstr "URL del backend de métricas"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_host_id
+msgid "Metrics central host"
+msgstr "Host del central de métricas"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_remote_write_token
@@ -5758,6 +5808,16 @@ msgstr "Módulos"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Monitoring"
 msgstr "Monitorización"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid ""
+"Monitoring is managed for you. Host and instance\n"
+"                            health is shown on their own pages."
+msgstr ""
+"La monitorización está gestionada por nosotros. La salud de los\n"
+"                            hosts e instancias se muestra en sus propias páginas."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8337,6 +8397,18 @@ msgid "Select"
 msgstr "Seleccionar"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "Select a host"
+msgstr "Selecciona un host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+msgid "Select an instance"
+msgstr "Selecciona una instancia"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__type__self_hosted
 msgid "Self-hosted"
 msgstr "Auto-alojado"
@@ -8826,6 +8898,16 @@ msgstr ""
 "El ID de chat de Telegram es obligatorio si se configura un token del bot"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__template_drift
+msgid "Template Drift"
+msgstr "Desviación de plantilla"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__template_drift_details
+msgid "Template Drift Details"
+msgstr "Detalles de la desviación de plantilla"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
 msgid "Terminal open (per instance)"
@@ -9012,6 +9094,12 @@ msgstr "El origen debe ser una instancia de producción."
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "The source must belong to the same project."
 msgstr "El origen debe pertenecer al mismo proyecto."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__template_drift_details
+msgid "The specific template settings the saved copy is missing."
+msgstr ""
+"Los ajustes concretos de la plantilla que le faltan a la copia guardada."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9334,6 +9422,15 @@ msgstr ""
 "Lanza un backup de duplicity a S3. La cadena es incremental: una completa "
 "por semana e incrementales en el medio. Después se ejecuta un job "
 "backup_list para refrescar la tabla siguiente."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__template_drift
+msgid ""
+"True when a shipped Traefik template declares something the host's saved "
+"copy does not have at all."
+msgstr ""
+"Verdadero cuando una plantilla Traefik distribuida declara algo que la copia"
+" guardada del host no tiene en absoluto."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__config_dirty

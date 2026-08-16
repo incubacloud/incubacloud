@@ -611,6 +611,17 @@ export class InstanceDetail extends JobsMixin(
   }
 
   /**
+   * True when this panel's own operator edits the observability
+   * settings, so a stub pointing at Settings is actionable advice.
+   *
+   * @see Monitoring#canConfigure — same axis, same reason for reading it
+   * from the boot config rather than from the metrics route.
+   */
+  get canConfigureObservability() {
+    return this.env.features?.observability?.configure !== false;
+  }
+
+  /**
    * Fetch whether observability is on and where the dashboards live.
    *
    * Deliberately narrow: the backend never hands the browser the metrics

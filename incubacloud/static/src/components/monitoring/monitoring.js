@@ -57,6 +57,20 @@ export class Monitoring extends Component {
         return Monitoring.DASHBOARDS;
     }
 
+    /**
+     * True when this panel's own operator edits the observability
+     * settings, so pointing them at Settings is actionable advice.
+     *
+     * Read from the boot config rather than from the route below on
+     * purpose: ``enabled`` and the base URL are settings that change
+     * while the app is open, so those are re-fetched, whereas who owns
+     * them is a property of the deployment and cannot change under a
+     * running session.
+     */
+    get canConfigure() {
+        return this.env.features?.observability?.configure !== false;
+    }
+
     get hostOptions() {
         return this.state.hosts.map((h) => h.name);
     }

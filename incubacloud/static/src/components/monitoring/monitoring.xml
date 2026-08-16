@@ -30,19 +30,35 @@
                 </div>
             </t>
 
-            <!-- Not configured yet: say what is missing, do not fake a chart -->
+            <!-- Not configured yet: say what is missing, do not fake a
+                 chart. Which of these is reachable depends on the panel:
+                 an operator who owns the settings gets an instruction,
+                 while a panel whose settings are injected gets a plain
+                 statement of fact. Telling the second one to visit a tab
+                 it does not have is the dead end this replaces; the nav
+                 entry is already hidden there, so this is what a typed
+                 URL lands on. -->
             <t t-elif="!state.enabled or !state.baseUrl">
                 <div class="rl-stub">
                     <span class="rl-si"><t t-out="env.icon('heartbeat', 46)"/></span>
-                    <h3>Monitoring is not set up yet</h3>
-                    <p t-if="!state.enabled">
-                        Enable observability in Settings. Every host is then
-                        enrolled automatically — there is nothing to install
-                        by hand.
-                    </p>
-                    <p t-else="">
-                        Set the Grafana base URL in Settings to embed the dashboards here.
-                    </p>
+                    <t t-if="!canConfigure">
+                        <h3>Dashboards are not available on this panel</h3>
+                        <p>
+                            Monitoring is managed for you. Host and instance
+                            health is shown on their own pages.
+                        </p>
+                    </t>
+                    <t t-else="">
+                        <h3>Monitoring is not set up yet</h3>
+                        <p t-if="!state.enabled">
+                            Enable observability in Settings. Every host is then
+                            enrolled automatically — there is nothing to install
+                            by hand.
+                        </p>
+                        <p t-else="">
+                            Set the Grafana base URL in Settings to embed the dashboards here.
+                        </p>
+                    </t>
                 </div>
             </t>
 

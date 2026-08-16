@@ -413,6 +413,47 @@ class CloudSettings(models.Model):
             })
         return account, settings.metrics_remote_write_token
 
+    def _observability_capabilities(self):
+        """Return what this panel can do with observability, as three axes.
+
+        The single definition of "observability is configured", because
+        four screens each deciding it for themselves is how a panel ended
+        up offering a Monitoring section whose only possible message was
+        an instruction to visit a Settings tab that panel does not have.
+        They are three independent facts and collapsing them into one
+        boolean is what made the contradiction expressible:
+
+        ``collect``
+            The data layer is on: agents enrol, rules evaluate, the panel
+            queries the backend. Everything else is inert without it.
+        ``dashboards``
+            There is something to *look at* — collection plus a Grafana
+            to embed. Collecting without a Grafana URL is a perfectly
+            valid state; offering dashboards in it is not.
+        ``configure``
+            This panel's own operator edits these settings. False where
+            they are injected from above, which core never does itself:
+            it publishes ``True`` and lets the layer that injects them
+            say otherwise, exactly as it does for every other capability
+            it cannot know about.
+
+        Every UI surface consumes this and none re-derives it. A new
+        surface that needs a different question answered adds an axis
+        here rather than reading a field directly.
+
+        :return: dict with the ``collect``, ``dashboards`` and
+            ``configure`` booleans.
+        """
+        settings = self._get_system()
+        collect = bool(settings.metrics_enabled)
+        return {
+            'collect': collect,
+            'dashboards': collect and bool(
+                (settings.grafana_base_url or '').strip()
+            ),
+            'configure': True,
+        }
+
     def _metrics_auth(self, operator=False):
         """Return ``(user, password)`` for talking to the metrics central.
 
