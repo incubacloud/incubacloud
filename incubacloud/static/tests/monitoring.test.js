@@ -60,3 +60,35 @@ describe("Monitoring — embed URL", () => {
         expect(cmp.embedUrl("nope")).toBe("");
     });
 });
+
+describe("Monitoring — who may configure it", () => {
+    /**
+     * The axis that decides whether "set it up in Settings" is advice or
+     * a dead end. It comes from the boot config rather than the metrics
+     * route because it is a property of the deployment, not a setting.
+     */
+    const withEnv = (features) => {
+        const cmp = Object.create(Monitoring.prototype);
+        cmp.env = { features };
+        return cmp;
+    };
+
+    test("a panel that owns its settings may be told to open them", () => {
+        expect(withEnv({ observability: { configure: true } }).canConfigure)
+            .toBe(true);
+    });
+
+    test("a panel whose settings are injected may not", () => {
+        // The tenant case: pointing them at a Settings tab their panel
+        // hides is the dead end this replaces.
+        expect(withEnv({ observability: { configure: false } }).canConfigure)
+            .toBe(false);
+    });
+
+    test("defaults to configurable when the descriptor is absent", () => {
+        // A boot config that failed to load must not silently downgrade
+        // an operator's panel into the injected-settings variant.
+        expect(withEnv(undefined).canConfigure).toBe(true);
+        expect(withEnv({}).canConfigure).toBe(true);
+    });
+});

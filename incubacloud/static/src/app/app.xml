@@ -56,11 +56,17 @@
                                 <!-- Fleet metrics belong with the other
                                      operational views, not after Settings:
                                      it is something you look at, not
-                                     something you configure. Hidden when
-                                     observability is off — a section whose
-                                     only possible message is "not
-                                     configured" is worse than no section. -->
-                                <t t-if="env.permissions?.can_view_metrics and env.features?.observability">
+                                     something you configure. A section
+                                     whose only possible message is "not
+                                     configured" is worse than no section —
+                                     so this appears when there are
+                                     dashboards to show, OR when there are
+                                     none but this operator is the one who
+                                     could set them up. A panel whose
+                                     settings are injected (a tenant's)
+                                     gets neither, which is the case the
+                                     old single flag could not express. -->
+                                <t t-if="env.permissions?.can_view_metrics and (env.features?.observability?.dashboards or (env.features?.observability?.collect and env.features?.observability?.configure))">
                                     <li t-att-class="{ active: state.route === 'monitoring' }"
                                         t-att-aria-current="state.route === 'monitoring' ? 'page' : undefined"
                                         tabindex="0" role="link" t-on-keydown="onNavItemKeydown"

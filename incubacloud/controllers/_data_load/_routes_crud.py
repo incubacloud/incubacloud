@@ -94,18 +94,18 @@ class CrudMixin:
             nav_counts['hosts'] = request.env['cloud.host'].search_count([])
         if perms.get('can_manage_settings'):
             nav_counts['backups'] = request.env['cloud.backup.backend'].search_count([])
-        settings = request.env['cloud.settings'].sudo()._get_system()
+        Settings = request.env['cloud.settings'].sudo()
         return {
             'features': {
-                # Drives whether the fleet metrics entry is offered at
-                # all. Showing a section that can only say "not
-                # configured" is worse than not showing it.
-                'observability': bool(settings.metrics_enabled),
-                # Whether this deployment lets its operator configure
-                # observability at all. False in SaaS tenant panels,
-                # where the settings are injected and showing an
-                # editable copy would invite drift from what we pushed.
-                'can_configure_observability': True,
+                # The three axes of what this panel can do with
+                # observability — collect / dashboards / configure. One
+                # descriptor rather than a flag per screen: the two flat
+                # booleans this replaces were read by four surfaces that
+                # each picked a different one, and a tenant panel ended
+                # up offering a Monitoring entry whose only message was
+                # "configure it in Settings" — the one tab it hides.
+                # See cloud.settings._observability_capabilities.
+                'observability': Settings._observability_capabilities(),
             },
             'role': perms.pop('role', 'stakeholder'),
             'permissions': perms,

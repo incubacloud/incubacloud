@@ -722,3 +722,136 @@ class TestGrafanaIdentityIsNotInTheComposeFile(BaseCase):
         uri = self._sso_task()["ansible.builtin.uri"]
         self.assertIn("/gadmin/", uri["url"])
         self.assertEqual(uri["url_username"], "operator")
+
+
+class TestObservabilityCapabilities(TransactionCase):
+    """The one definition of what a panel can do with observability.
+
+    Four surfaces used to decide this for themselves — the nav entry read
+    the master switch, the Monitoring page read the switch *and* the
+    Grafana URL, the Settings tab read who owns the settings, and the
+    instance Metrics tab read none of them. Four definitions is four ways
+    to contradict each other, and the contradiction that shipped was a
+    tenant panel offering a Monitoring entry whose only possible message
+    was an instruction to open the Settings tab it hides.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.settings = self.env["cloud.settings"].sudo()._get_system()
+
+    def _caps(self):
+        return self.env["cloud.settings"].sudo()._observability_capabilities()
+
+    def test_off_collects_nothing_and_shows_nothing(self):
+        self.settings.write({
+            "metrics_enabled": False, "grafana_base_url": "",
+        })
+        self.assertEqual(
+            self._caps(),
+            {"collect": False, "dashboards": False, "configure": True},
+        )
+
+    def test_collecting_without_grafana_offers_no_dashboards(self):
+        """The state the fix is about: real data, nothing to embed.
+
+        Perfectly valid — the panel still enrols hosts, evaluates rules
+        and reads metrics. What it must not do is offer dashboards.
+        """
+        self.settings.write({
+            "metrics_enabled": True, "grafana_base_url": "",
+        })
+        caps = self._caps()
+        self.assertTrue(caps["collect"])
+        self.assertFalse(
+            caps["dashboards"],
+            "a panel with no Grafana URL reported dashboards, which is "
+            "how the Monitoring section became a dead end",
+        )
+
+    def test_a_blank_grafana_url_is_not_a_grafana_url(self):
+        """Whitespace is what a paste into an empty field leaves behind,
+        and it builds an embed URL that loads the panel inside itself."""
+        self.settings.write({
+            "metrics_enabled": True, "grafana_base_url": "   ",
+        })
+        self.assertFalse(self._caps()["dashboards"])
+
+    def test_fully_configured_offers_everything(self):
+        self.settings.write({
+            "metrics_enabled": True,
+            "grafana_base_url": "https://grafana.example.com",
+        })
+        self.assertEqual(
+            self._caps(),
+            {"collect": True, "dashboards": True, "configure": True},
+        )
+
+    def test_dashboards_require_collection(self):
+        """A URL alone is not dashboards: with collection off there are
+        no series behind them, so the embed would render empty panels."""
+        self.settings.write({
+            "metrics_enabled": False,
+            "grafana_base_url": "https://grafana.example.com",
+        })
+        self.assertFalse(self._caps()["dashboards"])
+
+    def test_core_never_claims_someone_else_configures_it(self):
+        """``configure`` is core's answer for its own operator, and core
+        has no notion of a panel whose settings arrive from elsewhere.
+        The layer that injects them says so; core saying it would mean
+        core knowing about tenants."""
+        for enabled in (True, False):
+            self.settings.metrics_enabled = enabled
+            self.assertTrue(self._caps()["configure"])
+
+    def test_the_descriptor_carries_exactly_these_axes(self):
+        """Pins the contract the SPA and the layers above consume.
+
+        A key added here without its consumer, or renamed under one, is
+        the class of drift this descriptor exists to end.
+        """
+        self.assertEqual(
+            set(self._caps()), {"collect", "dashboards", "configure"},
+        )
+
+
+class TestNavGateConsultsEveryAxis(BaseCase):
+    """The Monitoring nav entry must not regress to a single flag.
+
+    Structural rather than behavioural because the gate lives in a QWeb
+    attribute, and the bug it guards against is precisely the one that
+    reads *plausible*: ``observability`` alone looks like it means "is
+    observability on", and that reading is what put a dead-end entry in
+    every tenant's sidebar.
+    """
+
+    def _nav_gate(self):
+        app_xml = (_ROOT / "static" / "src" / "app" / "app.xml").read_text()
+        match = re.search(
+            r"<t t-if=\"([^\"]*can_view_metrics[^\"]*)\">\s*"
+            r"<li[^>]*state\.route === 'monitoring'",
+            app_xml,
+        )
+        self.assertIsNotNone(
+            match, "could not find the Monitoring nav gate in app.xml",
+        )
+        return match.group(1)
+
+    def test_it_reads_all_three_axes(self):
+        gate = self._nav_gate()
+        for axis in ("dashboards", "collect", "configure"):
+            self.assertIn(
+                f"observability?.{axis}", gate,
+                f"the nav gate ignores the '{axis}' axis; a panel that "
+                f"cannot act on what the section says would be offered "
+                f"it anyway",
+            )
+
+    def test_it_offers_dashboards_or_a_way_to_set_them_up(self):
+        """Either there is something to look at, or this operator is the
+        one who could set it up. A tenant is neither, and that is the
+        case the old single flag could not express."""
+        gate = self._nav_gate()
+        self.assertIn("observability?.dashboards or", gate)
+        self.assertIn("observability?.configure", gate)

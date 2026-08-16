@@ -335,3 +335,87 @@ check. Its error-log scraping now has a better source in the access logs.
 - **`running` comes from cAdvisor**, not from HTTP traffic. An idle but
   healthy instance must keep reading as running; sourcing it from traffic
   would eventually feed the 14-day auto-suspend with false idleness.
+
+## What each panel is allowed to show, and why
+
+Observability is not one switch: it is three independent facts, and the
+panel asks `cloud.settings._observability_capabilities()` for all three
+rather than reading fields. They are:
+
+| Axis | True when | Owned by |
+|---|---|---|
+| `collect` | `metrics_enabled` — agents enrol, rules evaluate, PromQL is queried | the panel's own settings |
+| `dashboards` | `collect` **and** a non-blank `grafana_base_url` | the panel's own settings |
+| `configure` | this panel's operator edits those settings | core says `True`; a layer above says otherwise |
+
+Core publishes `configure: True` because it has no notion of a panel
+whose settings arrive from elsewhere. `incubacloud_tenant` sets it to
+`False` — that single line is the whole of its observability override,
+and everything else a tenant panel shows follows from the settings the
+manager pushed it.
+
+**The rule every surface follows:** never offer something whose only
+possible message is an instruction the viewer cannot act on. Concretely:
+
+- The **Monitoring nav entry** appears when `dashboards` is true, or when
+  it is false and `configure` is true (so the empty state is a prompt the
+  operator can act on). A panel with neither gets no entry.
+- The **Monitoring page** states what is missing when `configure` is
+  true, and states plainly that dashboards are unavailable when it is
+  false. That branch is reachable only by typing the URL, and exists so
+  that doing so is honest rather than misleading.
+- The **instance Metrics tab** drops its charts block entirely when
+  `configure` is false and there is nothing to embed. Recent requests
+  stay: they need no Grafana.
+
+### Convivencia matrix — check this before releasing an observability change
+
+Six deployments, five surfaces. Run this by hand when the descriptor or
+any of its consumers change; the axes themselves are pinned by
+`test_observability_wiring.TestObservabilityCapabilities` and the nav
+gate by `TestNavGateConsultsEveryAxis`, but "does the whole thing still
+make sense together" is a reading, not an assertion.
+
+| Deployment | C | D | F | Nav entry | Monitoring page | Instance Metrics | Settings→Monitoring |
+|---|---|---|---|---|---|---|---|
+| Partner, observability off | ✗ | ✗ | ✓ | shown | "Enable observability in Settings" | prompt + recent requests | shown |
+| Partner, no Grafana URL | ✓ | ✗ | ✓ | shown | "Set the Grafana base URL" | prompt + recent requests | shown |
+| Partner, fully configured | ✓ | ✓ | ✓ | shown | dashboards | charts + recent requests | shown |
+| Manager (our own panel) | ✓ | ✓ | ✓ | shown | dashboards | charts + recent requests | shown |
+| Tenant, granted, dashboards off | ✓ | ✗ | ✗ | **hidden** | (typed URL) "not available here" | no charts; recent requests | hidden |
+| Tenant, granted, dashboards on | ✓ | ✓ | ✗ | shown | dashboards for their account | charts + recent requests | hidden |
+| Tenant, not granted yet | ✗ | ✗ | ✗ | hidden | (typed URL) "not available here" | no charts; recent requests | hidden |
+
+## Tenant dashboards
+
+Off by default, behind `cloud.settings.metrics_tenant_dashboards_enabled`
+on the manager. There is no UI for it, the same as its siblings
+`metrics_tenant_write_url` and `metrics_tenant_read_url`: set it from a
+shell on the manager.
+
+Turning it on adds `grafana_base_url` to what
+`cloud.tenant._metrics_settings_payload()` pushes. That changes the
+settings fingerprint, so the reconciliation cron re-pushes each tenant on
+its own tick and the entry appears in their panel by itself. Turning it
+off pushes an **empty** URL rather than omitting the key — the push
+writes what it is given and nothing more, so omission would leave the old
+URL in place forever and the switch would be a no-op.
+
+What makes this safe on the Grafana side was already built for the
+operator: one organisation per account, each with a datasource
+credentialled as that account and its own copies of the dashboards
+(`provision_grafana_org.yml`). The only door that had to change is the
+OIDC client, which was registered `internal_only` — operators only.
+It is now `account_scoped`: anyone carrying at least one metrics account
+may authenticate, which covers operators and tenant users alike, and
+nobody else. That last part is not a nicety. A user with no account has
+no organisation to be mapped into and lands in Grafana's **default**
+one, which holds the file-provisioned datasource — and that one
+authenticates as `operator`, unfiltered across every account.
+
+**Measure before switching it on.** The embed is cross-origin
+(`<slug>.incubacloud.io` → `metrics.incubacloud.io`) and the first login
+happens inside the iframe, which the provider's authorize step may refuse
+to be framed for. If it does, the fix is a "open dashboards" link in a
+new tab rather than an embed, and that is a UI decision to take with the
+measurement in hand. Switch it on for one tenant with a live VPS first.
