@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.71] — 2026-08-16
+
+### Fixed
+
+- **The fleet's "Instances observed" counter reported one instance more than the fleet has**, on every panel with at least one host reporting containers — a panel with a single instance read 2, and an empty one would have read 1. `instance_id` is attached by the agent's relabelling and only to containers that belong to an instance, so the agents' own stack and the proxy never carry it. Grouping by a label the series do not have does not drop them: PromQL collects them all into one group keyed on the empty string, and that group counted as an instance. Filtered to the series that carry the label, with `or vector(0)` so an empty fleet still reads 0 instead of falling back to "No data" — until now the phantom group guaranteed a number was always drawn
+- Third appearance of this same omission: the instance picker and the liveness cron already filter on `instance_id!=""`, and the fleet counter was the surface left out. Pinned by a test so the next reader of the trio finds all three agreeing
+
 ## [1.0.70] — 2026-08-16
 
 ### Added

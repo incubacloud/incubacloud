@@ -157,6 +157,26 @@ class TestDashboardsMatchTheSpa(BaseCase):
         self.assertIn('instance_id!=""', variable["definition"])
         self.assertEqual(variable["definition"], variable["query"]["query"])
 
+    def test_the_fleet_counter_only_counts_real_instances(self):
+        """The same omission as the picker above, one panel over.
+
+        ``instance_id`` is attached by the agent's relabelling, and only
+        to containers belonging to an instance — the agents' own stack
+        and the proxy never carry it. PromQL does not drop the series
+        that lack the grouping label: it collects them into one group
+        keyed on the empty string. So the count came out at one more
+        than the fleet holds, on every host that reports containers at
+        all, and read as a real instance nobody could find. Filtered, an
+        empty fleet has no series left to count, hence the fallback.
+        """
+        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
+        panel = next(
+            p for p in fleet["panels"] if p["title"] == "Instances observed"
+        )
+        expression = panel["targets"][0]["expr"]
+        self.assertIn('instance_id!=""', expression)
+        self.assertIn("or vector(0)", expression)
+
     def test_instance_panels_are_scoped_to_one_host(self):
         """Container names repeat across hosts and an instance name is
         only unique within its project, so an unscoped filter can add up
