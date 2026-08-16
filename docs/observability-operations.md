@@ -413,31 +413,49 @@ no organisation to be mapped into and lands in Grafana's **default**
 one, which holds the file-provisioned datasource — and that one
 authenticates as `operator`, unfiltered across every account.
 
-### The first sign-in cannot happen inside the frame (measured)
+### Why the cross-origin embed works (measured 16-ago-2026)
 
-The embed is cross-origin (`<slug>.incubacloud.io` →
-`metrics.incubacloud.io`), and the question was whether the first Grafana
-login survives being framed. Measured against production on 16-ago-2026:
+The embed is cross-origin — `<slug>.incubacloud.io` framing
+`metrics.incubacloud.io` — so before switching tenant dashboards on we
+measured what actually happens to a browser that has no Grafana session
+yet. Recorded here because the headers alone read as if it could not
+work:
 
 | Checked | Result |
 |---|---|
 | `metrics.incubacloud.io/grafana/` | `302` → `/grafana/login`, no `X-Frame-Options` |
-| Grafana's session cookie | `SameSite=Lax` — **travels fine**, same registrable domain |
-| The provider's login page | `content-security-policy: frame-ancestors 'self'` |
+| Grafana's session cookie | `SameSite=Lax` — travels fine, same registrable domain |
+| The provider's login **page** | `content-security-policy: frame-ancestors 'self'` |
 
-So the cookie was never the obstacle; the provider's own login page is.
-The browser refuses to paint it in a frame on another subdomain, which
-means a visitor with no Grafana session sees a blank panel and no prompt.
+The cookie is not an obstacle: the panel and Grafana share a registrable
+domain, so the frame is same-site.
 
-The fix shipped in core 1.0.68: both embedding surfaces carry an **Open
-in Grafana** link to the same dashboard in a tab of its own, where the
-sign-in completes; from then on the embed works. The note beside it is
-always visible because a CSP-blocked frame still fires `load`, so there
-is no signal to show it only when needed. Do not "solve" this by
-loosening `frame-ancestors` on the provider — that is the login page of
-the identity provider, and framing it is the clickjacking case the header
-exists for.
+The header on the login page is real, but it only applies to a page the
+browser is asked to **render**. Inside the frame, Grafana redirects to
+the provider's authorize endpoint, and when the browser already carries a
+session there, that endpoint answers with a redirect straight back —
+**no login page is ever rendered, so nothing is ever blocked**. Every
+panel is entered through that same provider, so carrying its session is
+the ordinary state, not a lucky one. That is why the charts come up.
+
+**What it depends on, stated so it is not forgotten:** a live session at
+the *provider*, which is a different cookie from the one for the panel
+the user is looking at. The two live on different servers with their own
+lifetimes. If the provider's expires while the panel's does not — or if
+someone reaches a panel without ever passing through the provider — the
+authorize step would have to draw its login inside the frame, and that is
+the case the header forbids. The symptom would be an empty area where the
+charts belong, with no error. Nothing in the panel can detect it: a frame
+blocked by CSP still fires `load`.
+
+A version shipped (1.0.68) that pre-empted this with an "Open in Grafana"
+link and a permanent note. It was reverted the same day: the case does
+not arise in normal use, and the note contradicted what a reader with
+working charts was looking at. If it ever does arise, an incident is a
+better basis for the fix than this paragraph.
 
 Switch the toggle on for one tenant with a live VPS first: pause the
-`Tenant settings reconciliation` cron, push that tenant by hand, look at
-the panel, then resume.
+`SaaS: Reconcile tenant observability settings` cron, push that tenant by
+hand, look at the panel, then resume. Note that `search()` hides inactive
+records — re-activating that cron needs
+`with_context(active_test=False)`, or the write silently finds nothing.
