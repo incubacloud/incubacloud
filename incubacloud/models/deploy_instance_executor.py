@@ -226,6 +226,28 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         """
         return self._inst()._render_copier_answers()
 
+    def _repo_merge_ref(self, repo, branch):
+        """Return the ref ``repos.yaml`` should merge for *repo*.
+
+        A pinned row builds that exact commit; an unpinned one tracks
+        its branch.
+
+        A method rather than an inline expression so a subclass can
+        answer from somewhere other than the row. That matters when the
+        pin is written on a different transaction than the one
+        rendering this file: Odoo runs its cursors REPEATABLE READ, so
+        such a row is invisible here no matter how the cache is
+        invalidated, and a subclass has to supply the value directly.
+
+        Args:
+            repo: The ``cloud.instance.repo`` row being rendered.
+            branch: Its branch, already stripped and defaulted.
+
+        Returns:
+            str: A commit SHA or a branch name.
+        """
+        return repo.commit_sha or branch
+
     def _repos_yaml_content(self):
         """Build repos.yaml: odoo first, then the instance's git repos.
 
@@ -260,7 +282,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 token_cache,
             )
             url = _github_authed_url(raw_url, token)
-            merge_ref = repo.commit_sha or branch
+            merge_ref = self._repo_merge_ref(repo, branch)
             data[alias] = {
                 "defaults": {"depth": "$DEPTH_DEFAULT"},
                 "merges": [f"{alias} {merge_ref}"],
