@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.72] — 2026-08-17
+
+### Added
+
+- **`deploy_instance_executor._repo_merge_ref(repo, branch)`** — the ref `repos.yaml` merges for a repo, split out of the renderer so a subclass can answer from somewhere other than the repo row. Same behaviour as before (`commit_sha or branch`); the seam exists because a pin written on a different transaction than the one rendering the file is invisible to it — Odoo opens its cursors `REPEATABLE READ`, so the render's snapshot predates the commit and no amount of cache invalidation reveals it
+
 ## [1.0.71] — 2026-08-16
 
 ### Fixed
