@@ -875,3 +875,114 @@ class TestNavGateConsultsEveryAxis(BaseCase):
         gate = self._nav_gate()
         self.assertIn("observability?.dashboards or", gate)
         self.assertIn("observability?.configure", gate)
+
+
+class TestTheDefaultOrganisationIsNotAPrivilegedFallback(BaseCase):
+    """Grafana's default org must hold nothing worth landing in.
+
+    It is where Grafana drops a login whose ``groups`` claim matches no
+    entry in ``orgMapping`` — so whatever lives there is what an
+    unrecognised user reads. File provisioning carries no orgId, which
+    means a datasource provisioned from a file lands exactly there, and
+    the one that used to be provisioned pointed at vmauth's operator
+    path: no account filter, the whole fleet.
+
+    Structural because the failure is silent from every angle. The
+    tenant sees a dashboard that works, the operator sees an org nobody
+    uses, and the only difference between the two readings is which
+    session rendered the iframe.
+    """
+
+    _SYNC_PLAYBOOK = _ROOT / "ansible" / "playbooks" / "metrics_acl_sync.yml"
+    _DATASOURCE_FILE = "provisioning/datasources"
+
+    def _tasks(self, playbook):
+        return yaml.safe_load(playbook.read_text())[0]["tasks"]
+
+    def test_no_task_writes_a_datasource_provisioning_file(self):
+        """Writing one at all is the bug: it can only land in org 1."""
+        for task in self._tasks(_CENTRAL_PLAYBOOK):
+            copy = task.get("ansible.builtin.copy") or {}
+            self.assertNotIn(
+                self._DATASOURCE_FILE, str(copy.get("dest", "")),
+                f"'{task.get('name')}' provisions a datasource from a "
+                f"file, and file provisioning has no orgId: it lands in "
+                f"the default organisation, which is the fallback for "
+                f"every unmapped login",
+            )
+
+    def test_the_provisioned_datasource_is_removed(self):
+        """Not writing it is not enough on an already-deployed central."""
+        removals = [
+            task for task in self._tasks(_CENTRAL_PLAYBOOK)
+            if self._DATASOURCE_FILE
+            in str((task.get("ansible.builtin.file") or {}).get("path", ""))
+        ]
+        self.assertEqual(
+            len(removals), 1,
+            "exactly one task should account for the datasource "
+            "provisioning file",
+        )
+        self.assertEqual(
+            removals[0]["ansible.builtin.file"].get("state"), "absent",
+        )
+
+    def test_the_datasource_already_in_grafana_is_deleted(self):
+        """The file is not the datasource.
+
+        Removing the provisioning file stops a *new* Grafana from making
+        one; the row an earlier deployment created lives in Grafana's
+        database and outlives every file. Without this task the fix
+        would read as applied and change nothing on the only centrals
+        that have the problem.
+        """
+        tasks = self._tasks(_CENTRAL_PLAYBOOK)
+        deletes = [
+            i for i, task in enumerate(tasks)
+            if (task.get("ansible.builtin.uri") or {}).get("method") == "DELETE"
+            and "api/datasources/name/"
+            in str((task.get("ansible.builtin.uri") or {}).get("url", ""))
+        ]
+        self.assertEqual(len(deletes), 1, "the datasource delete is missing")
+        deleted = tasks[deletes[0]]["ansible.builtin.uri"]
+        self.assertIn(
+            404, deleted.get("status_code", []),
+            "a central deployed after this change never had one; absent "
+            "must be a success, not a failed deployment",
+        )
+        # Grafana's current org is a persistent property of the
+        # authenticated user, not a per-request header. A delete that
+        # does not immediately follow its own switch deletes whatever
+        # the previous switch left current — which, in a playbook that
+        # loops over every account, is somebody's real datasource.
+        before = tasks[deletes[0] - 1].get("ansible.builtin.uri") or {}
+        self.assertEqual(before.get("method"), "POST")
+        self.assertTrue(
+            str(before.get("url", "")).endswith("/gadmin/api/user/using/1"),
+            "the delete is not immediately preceded by a switch into the "
+            "default organisation",
+        )
+
+    def test_the_organisation_map_is_rewritten_on_every_sync(self):
+        """``orgMapping`` names every account, so it cannot be gated.
+
+        The sync used to include this only when it had new accounts to
+        grant. The organisations are indeed the only thing that needs a
+        new account — but the map is rewritten whole, and skipping it
+        leaves an account minted and unmapped until the next full
+        deployment of the central. Its user lands in the default
+        organisation for the entire window.
+        """
+        includes = [
+            task for task in self._tasks(self._SYNC_PLAYBOOK)
+            if task.get("ansible.builtin.include_tasks")
+            == "tasks/grafana_orgs.yml"
+        ]
+        self.assertEqual(len(includes), 1)
+        self.assertNotIn(
+            "when", includes[0],
+            "the sync gates the organisation map on there being new "
+            "accounts; a revocation-only sync would then leave the map "
+            "naming an account that no longer exists, and a grant whose "
+            "org already existed would never refresh it",
+        )

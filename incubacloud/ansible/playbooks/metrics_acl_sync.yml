@@ -68,11 +68,17 @@
     - name: Apply the access-control config and verify the boundary
       ansible.builtin.include_tasks: tasks/vmauth_acl_apply.yml
 
-    - name: Provision the Grafana organisations of the new accounts
-      # Skipped entirely when nothing is new, which is the common case:
-      # a sync triggered by a revocation has no organisations to create.
+    - name: Provision the Grafana organisations and the organisation map
+      # Deliberately NOT gated on there being new accounts. The task file
+      # also writes ``orgMapping``, which names EVERY account, and that is
+      # the one thing a sync must never skip: an account minted but absent
+      # from the map leaves its user landing in Grafana's default
+      # organisation instead of its own, and it stays that way until the
+      # next full deployment of the central.
+      #
+      # Running it with nothing new costs one PUT: every loop here is over
+      # ``ic_accounts`` and does nothing when it is empty.
       ansible.builtin.include_tasks: tasks/grafana_orgs.yml
-      when: ic_accounts | length > 0
 
     - name: Export the sync facts
       ansible.builtin.set_stats:

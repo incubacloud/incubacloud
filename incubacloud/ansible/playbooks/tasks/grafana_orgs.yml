@@ -10,6 +10,12 @@
 # the difference is cost, not behaviour: at a thousand tenants the sync
 # does one org, the deployment does a thousand.
 #
+# That is true of the ORGANISATIONS. It is not true of ``orgMapping``
+# below, which names every account and is rewritten in full on every
+# call — which is why neither caller may gate this file on there being
+# new accounts. Running it with an empty list is a no-op for the loops
+# and still refreshes the map.
+#
 # Done through the API because Grafana's file provisioning cannot create
 # organisations — and through vmauth's operator-only path, so there is
 # exactly one door rather than a second one to keep track of.

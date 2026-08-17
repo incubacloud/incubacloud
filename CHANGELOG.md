@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.73] — 2026-08-17
+
+### Fixed
+
+- **Grafana's default organisation held a datasource with no account filter**, and the default organisation is where Grafana drops a login whose `groups` claim matches no entry in `orgMapping`. File provisioning carries no orgId, so the datasource the central deployment provisioned from a file could only ever land there — pointed at vmauth's operator path, which spans every account. The fallback was therefore the most privileged view in the system, reachable by a tenant whose account exists but is not yet in the map. The deployment now provisions none and deletes the one an earlier deployment left behind; the operator loses nothing, since OIDC puts them in their own account's organisation, filtered like everyone else's. A cross-account view, if ever wanted, belongs in that organisation as a datasource named for what it is
+- **The account sync skipped the organisation map whenever it had no new accounts to grant** — the common case, and the one that mattered. The organisations are the only part that needs a new account; `orgMapping` names every one of them and is rewritten whole, so gating it left an account minted and unmapped until the next full deployment of the central, with its user landing in the default organisation for the entire window. A revocation-only sync also left the map naming an account that no longer existed. The include is no longer gated: every loop inside it is over the new-account list and does nothing when it is empty, so the cost of running it anyway is one request
+
 ## [1.0.72] — 2026-08-17
 
 ### Added
