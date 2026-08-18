@@ -899,68 +899,73 @@ class TestTheDefaultOrganisationIsNotAPrivilegedFallback(BaseCase):
     def _tasks(self, playbook):
         return yaml.safe_load(playbook.read_text())[0]["tasks"]
 
-    def test_no_task_writes_a_datasource_provisioning_file(self):
-        """Writing one at all is the bug: it can only land in org 1."""
-        for task in self._tasks(_CENTRAL_PLAYBOOK):
-            copy = task.get("ansible.builtin.copy") or {}
-            self.assertNotIn(
-                self._DATASOURCE_FILE, str(copy.get("dest", "")),
-                f"'{task.get('name')}' provisions a datasource from a "
-                f"file, and file provisioning has no orgId: it lands in "
-                f"the default organisation, which is the fallback for "
-                f"every unmapped login",
-            )
-
-    def test_the_provisioned_datasource_is_removed(self):
-        """Not writing it is not enough on an already-deployed central."""
-        removals = [
-            task for task in self._tasks(_CENTRAL_PLAYBOOK)
+    def _datasource_file_task(self):
+        tasks = [
+            (i, task) for i, task in enumerate(self._tasks(_CENTRAL_PLAYBOOK))
             if self._DATASOURCE_FILE
-            in str((task.get("ansible.builtin.file") or {}).get("path", ""))
+            in str((task.get("ansible.builtin.copy") or {}).get("dest", ""))
         ]
         self.assertEqual(
-            len(removals), 1,
+            len(tasks), 1,
             "exactly one task should account for the datasource "
             "provisioning file",
         )
-        self.assertEqual(
-            removals[0]["ansible.builtin.file"].get("state"), "absent",
+        return tasks[0]
+
+    def test_the_provisioning_file_declares_no_datasource(self):
+        """Declaring one at all is the bug: it can only land in org 1."""
+        _, task = self._datasource_file_task()
+        content = task["ansible.builtin.copy"]["content"]
+        self.assertNotIn(
+            "datasources:\n", content.replace("deleteDatasources:", ""),
+            "the central provisions a datasource from a file, and file "
+            "provisioning has no orgId: it lands in the default "
+            "organisation, the fallback for every unmapped login",
         )
+        self.assertNotIn("admin-r", content)
 
     def test_the_datasource_already_in_grafana_is_deleted(self):
-        """The file is not the datasource.
+        """Not declaring it is not enough on an already-deployed central.
 
-        Removing the provisioning file stops a *new* Grafana from making
-        one; the row an earlier deployment created lives in Grafana's
-        database and outlives every file. Without this task the fix
-        would read as applied and change nothing on the only centrals
-        that have the problem.
+        The row an earlier deployment created lives in Grafana's
+        database and outlives every file, and Grafana flags what it
+        provisioned read-only: the HTTP API answers 403 "Cannot delete
+        read-only data source". ``deleteDatasources`` is therefore not
+        one way to remove it, it is the only one — and dropping the file
+        instead leaves the row orphaned and serving, which reads as
+        fixed and is not.
         """
+        _, task = self._datasource_file_task()
+        declared = yaml.safe_load(task["ansible.builtin.copy"]["content"])
+        self.assertEqual(
+            declared.get("deleteDatasources"),
+            [{"name": "VictoriaMetrics", "orgId": 1}],
+            "the provisioning file does not delete the datasource the "
+            "central used to create in the default organisation",
+        )
+
+    def test_the_deletion_is_applied_without_waiting_for_a_restart(self):
+        """Grafana reads provisioning at startup, and this deployment
+        gives it no reason to restart: ``up -d`` recreates a container
+        whose definition changed, and a provisioning file is not part of
+        one. Without the reload the fix applies whenever Grafana next
+        happens to restart, which is not a schedule."""
         tasks = self._tasks(_CENTRAL_PLAYBOOK)
-        deletes = [
+        reloads = [
             i for i, task in enumerate(tasks)
-            if (task.get("ansible.builtin.uri") or {}).get("method") == "DELETE"
-            and "api/datasources/name/"
+            if "provisioning/datasources/reload"
             in str((task.get("ansible.builtin.uri") or {}).get("url", ""))
         ]
-        self.assertEqual(len(deletes), 1, "the datasource delete is missing")
-        deleted = tasks[deletes[0]]["ansible.builtin.uri"]
-        self.assertIn(
-            404, deleted.get("status_code", []),
-            "a central deployed after this change never had one; absent "
-            "must be a success, not a failed deployment",
+        self.assertEqual(
+            len(reloads), 1, "the provisioning reload is missing",
         )
-        # Grafana's current org is a persistent property of the
-        # authenticated user, not a per-request header. A delete that
-        # does not immediately follow its own switch deletes whatever
-        # the previous switch left current — which, in a playbook that
-        # loops over every account, is somebody's real datasource.
-        before = tasks[deletes[0] - 1].get("ansible.builtin.uri") or {}
-        self.assertEqual(before.get("method"), "POST")
-        self.assertTrue(
-            str(before.get("url", "")).endswith("/gadmin/api/user/using/1"),
-            "the delete is not immediately preceded by a switch into the "
-            "default organisation",
+        self.assertEqual(
+            tasks[reloads[0]]["ansible.builtin.uri"].get("method"), "POST",
+        )
+        written, _task = self._datasource_file_task()
+        self.assertGreater(
+            reloads[0], written,
+            "the reload runs before the file it is meant to apply",
         )
 
     def test_the_organisation_map_is_rewritten_on_every_sync(self):
