@@ -327,7 +327,7 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
         # current snapshot, so the saved config is applied. Without this
         # only full deploys re-anchored, and a drift-curing rebuild left
         # the config_dirty pill lit forever.
-        write_vals['applied_config_hash'] = inst._config_snapshot_hash()
+        write_vals.update(inst._applied_config_vals())
         inst.write(write_vals)
         self._sys(
             f"✓ '{inst.name}' rebuilt and restarted"

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.75] — 2026-08-18
+
+### Added
+
+- **The `instance_error_logs` alert now carries the traceback, not just the headline.** The probe greps the container log anchored to the Odoo log-level field, and a Python traceback's lines carry no level of their own, so the payload held a line saying `Exception during request handling` and nothing that could explain it. When three of those arrived on 2026-08-16, the rebuild an hour later recreated the container and took the only copy of the stack with it. The grep now keeps the lines following each header and files them under the fingerprint they belong to, one sample per group, bounded so a log stuck in a loop cannot inflate the serialized payload
+- **The snapshot behind `applied_config_hash` is stored alongside it.** The hash answers whether the saved configuration is still what the last deploy shipped, and nothing else: when the whole fleet lit its "Changes not deployed" pill on 2026-08-18, finding out *what* had moved meant rebuilding the snapshot by hand and testing hypotheses against it. `_config_drift_diff()` now names the keys. Instances anchored before this field existed return nothing rather than guessing
+- **A structural gate freezes the shape of the config snapshot.** Editing what `_render_copier_answers` emits moves every instance's hash at once, with nobody having touched a thing — it has happened twice, and both times the fleet stayed dirty until each instance was rebuilt or re-anchored by hand. The test fails on any key added or removed and says what the release owes the fleet. It asserts on keys rather than values, which differ legitimately between an empty CI database and a real one
+
 ## [1.0.74] — 2026-08-18
 
 ### Fixed

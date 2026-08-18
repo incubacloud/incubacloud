@@ -298,7 +298,7 @@ class FullSetupExecutor(AbstractSSHExecutor):
             'traefik_deployed': True,
             # Config-drift anchor: this setup just shipped exactly the
             # current snapshot, so the saved host config is applied.
-            'applied_config_hash': host._config_snapshot_hash(),
+            **host._applied_config_vals(),
         })
         self._chain_observability()
 
