@@ -11,9 +11,11 @@ from .abstract_executor import AbstractSSHExecutor
 _MEM_WARN_PCT = 85.0      # memory % that triggers a warning once sustained
 _CPU_WARN_PCT = 90.0      # CPU %    that triggers a warning once sustained
 _ERROR_GROUPS_WARN = 1    # number of distinct ERROR fingerprints since last check
-_ERROR_LINES_HEAD = 200   # cap raw ERROR lines fetched from the container log
+_ERROR_LINES_HEAD = 600   # cap raw log lines fetched (headers + context)
 _ERROR_GROUPS_MAX = 10    # cap distinct fingerprints shipped in the payload
 _ERROR_SAMPLE_PER_GRP = 3 # raw lines kept per fingerprint for the payload
+_ERROR_CONTEXT_LINES = 25 # log lines captured after each ERROR header
+_ERROR_CONTEXT_CHARS = 2000  # hard cap on the context stored per group
 
 # Hysteresis: how many consecutive cycles must stay above the CPU/memory
 # threshold before we surface the alert. With the cron firing every 5 min,
@@ -49,6 +51,15 @@ _DIGIT_RUN_RE = re.compile(r'\b\d+\b')
 # Hex / pointer-like runs (object ids, memory addrs) — same treatment.
 _HEX_RUN_RE = re.compile(r'\b0x[0-9a-fA-F]+\b')
 _FINGERPRINT_MAX_LEN = 160
+# Same anchor as the remote grep, applied on our side to tell an ERROR
+# header from the traceback lines ``grep -A`` prints after it. Those
+# carry no level field, which is exactly why the anchored grep used to
+# drop them — and why an alert could never be diagnosed once the
+# container had been recreated.
+_ERROR_HEADER_RE = re.compile(
+    r'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[.,]\d+\s+\d+\s+'
+    r'(ERROR|CRITICAL)\s'
+)
 
 
 class InstanceHealthExecutor(AbstractSSHExecutor):
@@ -192,6 +203,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             # 4. ERROR lines in odoo logs since last check — raw sample,
             # capped to _ERROR_LINES_HEAD so a runaway log loop can't
             # blow up parsing memory. Dedupe happens in parse_results.
+            # ``-A`` carries the traceback that follows each header:
+            # those lines have no level field of their own, so without
+            # it the payload kept the headline and nothing to diagnose
+            # it with once the container had been recreated.
             # The grep is anchored to the Odoo log-level field (after the
             # "<date> <time> <pid>" prefix) so substrings of the word ERROR
             # inside INFO/DEBUG lines — notably asyncssh logging the very
@@ -208,6 +223,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 f"\\d{{2}}:\\d{{2}}:\\d{{2}}[.,]\\d+\\s+\\d+\\s+"
                 f"(\\x1b\\[[0-9;]+m)*(ERROR|CRITICAL)"
                 f"(\\x1b\\[[0-9;]+m)*\\s' "
+                f"-A {_ERROR_CONTEXT_LINES} "
                 f"| sed -E 's/\\x1b\\[[0-9;]*m//g' "
                 f"| head -{_ERROR_LINES_HEAD} || true",
             ),
@@ -275,27 +291,62 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         stripped = _DIGIT_RUN_RE.sub('<N>', stripped)
         return stripped[:_FINGERPRINT_MAX_LEN]
 
+    def _append_context(self, group, line):
+        """Store one traceback line under its ERROR group.
+
+        Only the first occurrence of a fingerprint contributes context —
+        every repeat carries the same stack — and the group stops
+        growing at ``_ERROR_CONTEXT_CHARS`` so a log stuck in a loop
+        cannot inflate the serialized alert payload.
+        """
+        if group['count'] > 1:
+            return
+        used = sum(len(stored) for stored in group['context'])
+        if used >= _ERROR_CONTEXT_CHARS:
+            return
+        group['context'].append(line[:_ERROR_CONTEXT_CHARS - used])
+
     def _dedupe_error_lines(self, raw):
-        """Turn a blob of raw ERROR lines into an ordered list of groups:
-        ``[{'fingerprint', 'count', 'samples'}, ...]``, sorted by count
-        descending, capped to ``_ERROR_GROUPS_MAX``.
+        """Turn a blob of raw log lines into an ordered list of groups:
+        ``[{'fingerprint', 'count', 'samples', 'context'}, ...]``, sorted
+        by count descending, capped to ``_ERROR_GROUPS_MAX``.
+
+        The blob interleaves ERROR headers with the traceback lines
+        ``grep -A`` printed after each one, so headers are recognised by
+        ``_ERROR_HEADER_RE`` and anything else is filed as context of the
+        header above it. ``count`` therefore still counts ERROR lines,
+        not log lines. Blocks are separated by grep's own ``--`` marker,
+        which closes the context of whatever preceded it.
         """
         groups = {}
         order = []
+        current = None
         for line in raw.splitlines():
             line = line.rstrip()
-            if not line:
+            if not line or line == '--':
+                current = None
+                continue
+            if not _ERROR_HEADER_RE.match(line):
+                if current is not None:
+                    self._append_context(current, line)
                 continue
             fp = self._fingerprint(line)
             if not fp:
+                current = None
                 continue
             if fp not in groups:
-                groups[fp] = {'fingerprint': fp, 'count': 0, 'samples': []}
+                groups[fp] = {
+                    'fingerprint': fp,
+                    'count': 0,
+                    'samples': [],
+                    'context': [],
+                }
                 order.append(fp)
             grp = groups[fp]
             grp['count'] += 1
             if len(grp['samples']) < _ERROR_SAMPLE_PER_GRP:
                 grp['samples'].append(line[:512])
+            current = grp
         ordered = sorted(
             (groups[fp] for fp in order),
             key=itemgetter('count'),
