@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.74] — 2026-08-18
+
+### Fixed
+
+- **The removal of the default organisation's unfiltered datasource did not remove anything.** 1.0.73 dropped the provisioning file and deleted the row through Grafana's HTTP API; Grafana flags what it provisioned from a file as read-only and answers `403 Cannot delete read-only data source`, so the deployment failed at that task with production's datasource still in place — and dropping the file on its own leaves the row orphaned and serving, which reads as fixed and is not. `deleteDatasources` is not one way to remove a provisioned datasource, it is the only one: the file is written again, declaring the deletion instead of the datasource, and left in place so every run reasserts it. Grafana reads provisioning at startup and this deployment gives it no reason to restart, so the provisioning reload endpoint applies it in place
+
 ## [1.0.73] — 2026-08-17
 
 ### Fixed
