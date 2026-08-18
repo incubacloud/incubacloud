@@ -9,6 +9,7 @@ from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
 from ._odoo_versions import ODOO_VERSION_SELECTION
+from . import _config_snapshot_diff as _snapshot_diff
 from ._repo_requirements import _normalize_url
 from .cloud_host import parse_memory_to_gb
 from .encrypted_char import EncryptedChar
@@ -580,6 +581,13 @@ class CloudInstance(models.Model):
              "rebuild shipped. Compared against the current snapshot to "
              "surface unapplied changes.",
     )
+    applied_config_snapshot = fields.Json(
+        copy=False,
+        readonly=True,
+        help="The snapshot behind applied_config_hash. Kept so the drift "
+             "pill can say which keys moved instead of just that "
+             "something did.",
+    )
     config_dirty = fields.Boolean(
         compute="_compute_config_dirty",
         help="True when the saved configuration differs from what the "
@@ -747,6 +755,35 @@ class CloudInstance(models.Model):
             self._render_config_snapshot(), sort_keys=True, default=str,
         )
         return hashlib.sha256(raw.encode()).hexdigest()
+
+    def _applied_config_vals(self):
+        """Write values that anchor this instance's config to right now.
+
+        Every successful deploy / rebuild / warm build stamps through
+        here so the hash and the snapshot behind it can never drift
+        apart — a stamp that recorded only one of them would leave the
+        pill unable to explain itself.
+        """
+        self.ensure_one()
+        return {
+            "applied_config_hash": self._config_snapshot_hash(),
+            "applied_config_snapshot": _snapshot_diff.normalize(
+                self._render_config_snapshot(),
+            ),
+        }
+
+    def _config_drift_diff(self):
+        """Return the snapshot keys that moved since the last deploy.
+
+        Empty when nothing differs — and also when no snapshot was
+        recorded, which is the case for every instance anchored before
+        this field existed: the hash alone cannot name what changed.
+        """
+        self.ensure_one()
+        stored = self.applied_config_snapshot
+        if not stored:
+            return []
+        return _snapshot_diff.diff_keys(stored, self._render_config_snapshot())
 
     # Depends: only on the anchor. The snapshot side deliberately has NO
     # field dependency list (its whole point is covering every deploy

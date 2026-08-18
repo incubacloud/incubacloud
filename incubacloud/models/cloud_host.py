@@ -12,6 +12,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import file_open
 
+from . import _config_snapshot_diff as _snapshot_diff
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
@@ -498,6 +499,12 @@ class CloudHost(models.Model):
              "full setup shipped. Compared against the current snapshot "
              "to surface unapplied changes.",
     )
+    applied_config_snapshot = fields.Json(
+        copy=False,
+        readonly=True,
+        help="The snapshot behind applied_config_hash, kept so drift can "
+             "name the keys that moved.",
+    )
     config_dirty = fields.Boolean(
         compute="_compute_config_dirty",
         help="True when the saved host configuration differs from what "
@@ -561,6 +568,28 @@ class CloudHost(models.Model):
 
     # Same dependency stance as cloud.instance: anchor-only on purpose;
     # HTTP requests read through a fresh cache, tests invalidate.
+    def _applied_config_vals(self):
+        """Write values anchoring this host's config to right now."""
+        self.ensure_one()
+        return {
+            "applied_config_hash": self._config_snapshot_hash(),
+            "applied_config_snapshot": _snapshot_diff.normalize(
+                self._render_config_snapshot(),
+            ),
+        }
+
+    def _config_drift_diff(self):
+        """Return the snapshot keys that moved since the last setup.
+
+        Empty when nothing differs, and for hosts anchored before the
+        snapshot was stored.
+        """
+        self.ensure_one()
+        stored = self.applied_config_snapshot
+        if not stored:
+            return []
+        return _snapshot_diff.diff_keys(stored, self._render_config_snapshot())
+
     @api.depends("applied_config_hash")
     def _compute_config_dirty(self):
         """Dirty only when a full_setup recorded a hash and it no longer

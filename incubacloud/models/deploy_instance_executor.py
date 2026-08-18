@@ -1050,7 +1050,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 "last_rebuild_fingerprint": inst.rebuild_fingerprint,
                 # Config-drift anchor: this deploy just shipped exactly
                 # the current snapshot, so the saved config is applied.
-                "applied_config_hash": inst._config_snapshot_hash(),
+                **inst._applied_config_vals(),
             }
         )
         inst._transition("deployed")
