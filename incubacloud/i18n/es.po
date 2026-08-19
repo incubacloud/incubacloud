@@ -173,6 +173,12 @@ msgstr "0 = sin cuota (el uso se sigue midiendo)."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "10m"
+msgstr "10m"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "1g"
 msgstr "1g"
@@ -313,6 +319,12 @@ msgid ""
 msgstr ""
 "Ya hay una tarea en ejecución para esta instancia: %(name)s. Espera a que "
 "termine o cancélala primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid "A log search must sweep at least 1 day."
+msgstr "Una búsqueda de logs debe recorrer al menos 1 día."
 
 #. module: incubacloud
 #. odoo-python
@@ -701,6 +713,12 @@ msgstr "Nombre de la aplicación"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__applied_config_hash
 msgid "Applied Config Hash"
 msgstr "Hash de configuración aplicada"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__applied_config_snapshot
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__applied_config_snapshot
+msgid "Applied Config Snapshot"
+msgstr "Instantánea de la configuración aplicada"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1381,6 +1399,30 @@ msgstr ""
 "moverla de vuelta si lo necesita."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__rate_limit_log_search_per_min
+msgid ""
+"Cap on cross-day log searches and log downloads per user. A search "
+"decompresses up to the configured number of days on the instance's host; a "
+"download ships a whole day through the panel. 0 falls back to the default."
+msgstr ""
+"Límite de búsquedas de logs entre días y descargas de logs por usuario. Una "
+"búsqueda descomprime hasta el número de días configurado en el host de la "
+"instancia; una descarga envía un día entero a través del panel. 0 usa el "
+"valor por defecto."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__rate_limit_logs_per_min
+msgid ""
+"Cap on log reads per user: the live tail, the day listing and reading one "
+"archived day. The viewer polls the live tail every 4 seconds, so a cap below "
+"~15 breaks a single open viewer. 0 falls back to the default."
+msgstr ""
+"Límite de lecturas de logs por usuario: el seguimiento en vivo, el listado "
+"de días y la lectura de un día archivado. El visor consulta el log en vivo "
+"cada 4 segundos, así que un límite por debajo de ~15 rompe un solo visor "
+"abierto. 0 usa el valor por defecto."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Category"
@@ -2019,6 +2061,34 @@ msgid "Consultant"
 msgstr "Consultor"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__container_log_max_file
+msgid "Container log files kept"
+msgstr "Ficheros de log de contenedor conservados"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid "Container log files kept must be at least 1."
+msgstr "Los ficheros de log de contenedor conservados deben ser al menos 1."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__container_log_max_size
+msgid "Container log max size"
+msgstr "Tamaño máximo del log de contenedor"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"Container log max size must be a positive integer followed by k, m or g (for "
+"example 10m), got %s."
+msgstr ""
+"El tamaño máximo del log de contenedor debe ser un entero positivo seguido "
+"de k, m o g (por ejemplo 10m); se recibió %s."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__content
 msgid "Content"
 msgstr "Contenido"
@@ -2475,6 +2545,18 @@ msgstr "Fecha"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__date_done
 msgid "Date Done"
 msgstr "Fecha de finalización"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__odoo_log_archive_days
+msgid ""
+"Days of Odoo's own log kept per instance on its host, as one dated file per "
+"day (compressed from the day before yesterday). Applied by logrotate on the "
+"host; a change reaches an instance on its next deploy or rebuild."
+msgstr ""
+"Días del log propio de Odoo que se conservan por instancia en su host, como "
+"un fichero fechado por día (comprimido a partir de anteayer). Lo aplica "
+"logrotate en el host; un cambio llega a la instancia en su próximo "
+"despliegue o reconstrucción."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2975,6 +3057,12 @@ msgstr "Descargar"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Download a database dump"
 msgstr "Descargar un dump de la base de datos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Download cap (MB)"
+msgstr "Tope de descarga (MB)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4378,6 +4466,17 @@ msgstr ""
 "30 días, 1Y = 1 año)."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__log_search_max_files
+msgid ""
+"How many archived days a cross-day log search reads, newest first. Each one "
+"is decompressed on the instance's host, so this is a bound on that host's "
+"CPU."
+msgstr ""
+"Cuántos días archivados lee una búsqueda entre días, empezando por el más "
+"reciente. Cada uno se descomprime en el host de la instancia, así que esto "
+"acota la CPU de ese host."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__comparator
 msgid "How the returned value is compared with the threshold."
 msgstr "Cómo se compara el valor devuelto con el umbral."
@@ -4785,6 +4884,12 @@ msgstr "Dominio de instancia"
 #: model:ir.actions.server,name:incubacloud.cron_instance_health_ir_actions_server
 msgid "Instance Health Check"
 msgstr "Verificación de salud de instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Instance Logs"
+msgstr "Logs de instancia"
 
 #. module: incubacloud
 #. odoo-python
@@ -5210,6 +5315,17 @@ msgid "Language installed via odoo -i base -l <code> on first deploy."
 msgstr "Idioma instalado via odoo -i base -l <code> en el primer despliegue."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__log_download_max_mb
+msgid ""
+"Largest compressed log download the panel will serve. A day whose rotation "
+"stalled can be gigabytes, and the whole answer is held in memory while it is "
+"sent."
+msgstr ""
+"Descarga de log comprimida más grande que servirá el panel. Un día cuya "
+"rotación se detuvo puede ocupar gigabytes, y la respuesta completa se "
+"mantiene en memoria mientras se envía."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__last_alert_sent_at
 msgid "Last Alert Sent At"
 msgstr "Último aviso enviado"
@@ -5544,6 +5660,43 @@ msgid "Log Chunks"
 msgstr "Fragmentos de log"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__log_download_max_mb
+msgid "Log download cap (MB)"
+msgstr "Tope de descarga de logs (MB)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
+msgid "Log reads (per user)"
+msgstr "Lecturas de logs (por usuario)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__rate_limit_logs_per_min
+msgid "Log reads per minute (per user)"
+msgstr "Lecturas de logs por minuto (por usuario)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__log_search_timeout_s
+msgid "Log search timeout (s)"
+msgstr "Tiempo límite de búsqueda de logs (s)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__log_search_max_files
+msgid "Log search: days swept"
+msgstr "Búsqueda de logs: días recorridos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
+msgid "Log searches and downloads (per user)"
+msgstr "Búsquedas y descargas de logs (por usuario)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__rate_limit_log_search_per_min
+msgid "Log searches per minute (per user)"
+msgstr "Búsquedas de logs por minuto (por usuario)"
+
+#. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
 msgid "Log →"
 msgstr "Registro →"
@@ -5696,6 +5849,12 @@ msgstr ""
 "monorepo con muchos triggers de workflow, así que el valor por defecto es "
 "generoso; bájelo si ve abuso. Ponga 0 para usar el valor documentado por "
 "defecto (300)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Max size per container log"
+msgstr "Tamaño máximo por log de contenedor"
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_measure_backup_usage_ir_actions_server
@@ -5934,6 +6093,30 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Must be a positive integer"
 msgstr "Debe ser un entero positivo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Must be at least 1"
+msgstr "Debe ser al menos 1"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Must be at least 1 MB"
+msgstr "Debe ser al menos 1 MB"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Must be at least 1 day"
+msgstr "Debe ser al menos 1 día"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Must be at least 5 seconds"
+msgstr "Debe ser al menos 5 segundos"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6533,6 +6716,17 @@ msgstr ""
 "(la tabla crecerá sin límite)."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__container_log_max_file
+msgid ""
+"Number of rotated log files Docker keeps per container (the current one "
+"included). Older files are deleted; the retained history is at most size x "
+"files per container."
+msgstr ""
+"Número de ficheros de log rotados que Docker conserva por contenedor "
+"(incluido el actual). Los más antiguos se borran; el histórico retenido es "
+"como máximo tamaño x ficheros por contenedor."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_res_users__cloud_telegram_chat_id
 msgid "Numeric chat or channel ID where the bot sends messages."
 msgstr "ID numérico del chat o canal donde el bot envía los mensajes."
@@ -6641,9 +6835,49 @@ msgstr "Contenedor Odoo no encontrado o no en ejecución"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__odoo_log_archive_days
+msgid "Odoo log archive (days)"
+msgstr "Archivo de logs de Odoo (días)"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 msgid "Odoo version is required"
 msgstr "La versión de Odoo es obligatoria"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"Odoo writes its log to a file on the host, which is rotated daily\n"
+"                        into one dated file per day (Instance detail → Logs "
+"shows them, and\n"
+"                        can download one). That copy survives a rebuild, "
+"which recreates the\n"
+"                        container and would otherwise discard its history. "
+"The other\n"
+"                        containers (database, backup, mail) keep logging to "
+"Docker's\n"
+"                        json-file driver, capped below so they cannot fill "
+"the host's disk.\n"
+"                        Both settings reach an instance on its next deploy "
+"or rebuild."
+msgstr ""
+"Odoo escribe su log en un fichero del host, que se rota a diario\n"
+"                        en un fichero fechado por día (Instance detail → "
+"Logs los muestra y\n"
+"                        permite descargar uno). Esa copia sobrevive a una "
+"reconstrucción, que\n"
+"                        recrea el contenedor y de lo contrario descartaría "
+"su histórico. Los\n"
+"                        demás contenedores (base de datos, backup, correo) "
+"siguen escribiendo\n"
+"                        en el driver json-file de Docker, acotado más abajo "
+"para que no puedan\n"
+"                        llenar el disco del host. Ambos ajustes llegan a la "
+"instancia en su\n"
+"                        próximo despliegue o reconstrucción."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7505,6 +7739,29 @@ msgstr "Leyendo configuración de la instancia..."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"Reading logs back costs the instance's host: a search\n"
+"                        decompresses days of them and a download sends one "
+"through the\n"
+"                        panel. These bound that cost. A search that hits its "
+"timeout says\n"
+"                        so rather than reporting no matches. How often each "
+"operator may\n"
+"                        read or search lives on the Rates tab."
+msgstr ""
+"Leer los logs cuesta trabajo al host de la instancia: una búsqueda\n"
+"                        descomprime días de ellos y una descarga envía uno a "
+"través del\n"
+"                        panel. Esto acota ese coste. Una búsqueda que agota "
+"su tiempo límite lo\n"
+"                        indica en vez de informar de que no hay "
+"coincidencias. La frecuencia con\n"
+"                        la que cada operador puede leer o buscar está en la "
+"pestaña Rates."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Reading…"
 msgstr "Leyendo…"
@@ -8350,6 +8607,12 @@ msgstr "Buscar proyectos..."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Search timeout (s)"
+msgstr "Tiempo límite de búsqueda (s)"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Search user or action…"
@@ -8360,6 +8623,12 @@ msgstr "Buscar usuario o acción…"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Search users to add..."
 msgstr "Buscar usuarios para agregar..."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Search: days swept"
+msgstr "Búsqueda: días recorridos"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8385,6 +8654,16 @@ msgstr ""
 "Grafana del operador. Solo tiene sentido en el panel dueño del central, y "
 "deliberadamente nunca se escribe en ningún host — que es justo el motivo de "
 "mantenerla separada de la credencial de cuenta de arriba."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__log_search_timeout_s
+msgid ""
+"Seconds a cross-day log search may run on the host before it is cut short. A "
+"search that is cut short says so instead of reporting no matches."
+msgstr ""
+"Segundos que una búsqueda entre días puede ejecutarse en el host antes de "
+"cortarse. Una búsqueda cortada lo indica en vez de informar de que no hay "
+"coincidencias."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8673,6 +8952,17 @@ msgstr "Tamaño"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__size
 msgid "Size (bytes)"
 msgstr "Tamaño (bytes)"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__container_log_max_size
+msgid ""
+"Size at which Docker rotates each container's log file, as a positive "
+"integer followed by k, m or g (e.g. 10m). Applies to every service of every "
+"instance from its next deploy or rebuild."
+msgstr ""
+"Tamaño al que Docker rota el fichero de log de cada contenedor, como entero "
+"positivo seguido de k, m o g (p. ej. 10m). Se aplica a todos los servicios "
+"de todas las instancias desde su próximo despliegue o reconstrucción."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9042,6 +9332,12 @@ msgstr "La dirección IP del host cloud."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid "The Odoo log archive must keep at least 1 day."
+msgstr "El archivo de logs de Odoo debe conservar al menos 1 día."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid ""
 "The PAT does not have access to this repository. Verify the token has the "
@@ -9085,6 +9381,21 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid "The log download cap must be at least 1 MB."
+msgstr "El tope de descarga de logs debe ser al menos 1 MB."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"The log search timeout must be at least 5 seconds, or no search can finish."
+msgstr ""
+"El tiempo límite de búsqueda de logs debe ser al menos 5 segundos, o ninguna "
+"búsqueda podrá terminar."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_host.py:0
 msgid ""
 "The machine at %(ip)s:%(port)s ('%(name)s') presents a different SSH host "
@@ -9103,6 +9414,24 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__port
 msgid "The port to connect to the cloud host."
 msgstr "El puerto para conectar al host cloud."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__applied_config_snapshot
+msgid ""
+"The snapshot behind applied_config_hash, kept so drift can name the keys "
+"that moved."
+msgstr ""
+"La instantánea detrás de applied_config_hash, conservada para que la deriva "
+"pueda nombrar las claves que cambiaron."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__applied_config_snapshot
+msgid ""
+"The snapshot behind applied_config_hash. Kept so the drift pill can say "
+"which keys moved instead of just that something did."
+msgstr ""
+"La instantánea detrás de applied_config_hash. Se conserva para que la "
+"píldora de deriva pueda decir qué claves cambiaron y no solo que algo cambió."
 
 #. module: incubacloud
 #. odoo-python
@@ -9401,6 +9730,20 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "Too many log reads recently. Try again in a minute."
+msgstr ""
+"Demasiadas lecturas de logs recientemente. Inténtelo de nuevo en un minuto."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "Too many log searches recently. Try again in a minute."
+msgstr ""
+"Demasiadas búsquedas de logs recientemente. Inténtelo de nuevo en un minuto."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid ""
 "Too many terminal sessions open against this instance. Try again in a minute."
@@ -9548,6 +9891,12 @@ msgid "Type"
 msgstr "Tipo"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "Type at least two characters to search."
+msgstr "Escriba al menos dos caracteres para buscar."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Type of dump"
@@ -9664,6 +10013,12 @@ msgid "Unknown error."
 msgstr "Error desconocido."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+msgid "Unknown log file"
+msgstr "Fichero de log desconocido"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
@@ -9751,6 +10106,12 @@ msgid ""
 msgstr ""
 "Usa una redirección permanente (301) en vez de temporal (302). Solo aplica "
 "cuando \"Redirigir a\" está definido."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Use a positive integer followed by k, m or g (e.g. 10m)"
+msgstr "Use un entero positivo seguido de k, m o g (p. ej. 10m)"
 
 #. module: incubacloud
 #. odoo-javascript

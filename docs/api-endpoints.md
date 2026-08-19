@@ -91,6 +91,10 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/compare_sync` | consultant | Diff instance config vs. what is deployed on the host. |
 | `/cloud/apply_sync` | consultant | Apply the config diff to the host. |
 | `/cloud/fetch_container_logs` | view logs | Tail container logs for the log viewer page. |
+| `/cloud/instance_log_archives` | view logs | List the daily Odoo log files kept on the host (name, size, mtime). |
+| `/cloud/fetch_log_archive` | view logs | Read one archived day, with an optional fixed-string filter applied on the host. |
+| `/cloud/search_log_archives` | view logs | Which archived days mention a term, with hit counts (bounded sweep on the host). Rate-limited; audited with the term. |
+| `/cloud/instance/<id>/log_archive/<name>` | view logs | Download one archived day, gzipped (HTTP, not JSON-RPC). Rate-limited; audited. |
 
 Deploy/rebuild endpoints include data-race prevention: if a job is already running for the instance, the response is an error (or a `{blocked: true, alert_id, alert_code, conflicts}` envelope when a blocking pip-conflict alert exists).
 

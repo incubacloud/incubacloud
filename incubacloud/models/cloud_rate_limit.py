@@ -40,6 +40,12 @@ RATE_LIMIT_DEFAULTS = {
     'rate_limit_terminal_user_per_min': 10,
     'rate_limit_connect_per_min': 20,
     'rate_limit_connect_user_per_min': 10,
+    # Reading logs: the viewer polls the live tail every 4 s, so the
+    # read cap has to clear ~15/min per open viewer with room for a few
+    # of them. The sweep is a different animal — it decompresses days
+    # of logs on the customer's host — and gets a much tighter one.
+    'rate_limit_logs_per_min': 60,
+    'rate_limit_log_search_per_min': 6,
 }
 
 

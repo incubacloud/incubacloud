@@ -50,6 +50,13 @@ export class Settings extends Component {
                 default_backup_alert_threshold_pct: 80,
                 github_event_retention_days: 90,
                 github_event_truncate_days: 7,
+                // Container log rotation (per service, in the compose override)
+                container_log_max_size: "10m",
+                container_log_max_file: 3,
+                odoo_log_archive_days: 60,
+                log_download_max_mb: 64,
+                log_search_max_files: 60,
+                log_search_timeout_s: 30,
                 // GitHub
                 app_id: "",
                 installation_id: "",
@@ -95,6 +102,43 @@ export class Settings extends Component {
             ],
             github_event_truncate_days: [
                 nonNegativeInt(_t("Must be a positive integer")),
+            ],
+            // Docker's max-size grammar, one canonical spelling; the
+            // server lower-cases and trims, so "10M " is fine to type.
+            container_log_max_size: [
+                (v) => (/^[1-9]\d*[kmg]$/i.test(String(v ?? "").trim())
+                    ? null
+                    : _t("Use a positive integer followed by k, m or g (e.g. 10m)")),
+            ],
+            container_log_max_file: [
+                (v) => {
+                    const n = Number(v);
+                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1");
+                },
+            ],
+            odoo_log_archive_days: [
+                (v) => {
+                    const n = Number(v);
+                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1 day");
+                },
+            ],
+            log_download_max_mb: [
+                (v) => {
+                    const n = Number(v);
+                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1 MB");
+                },
+            ],
+            log_search_max_files: [
+                (v) => {
+                    const n = Number(v);
+                    return (Number.isInteger(n) && n >= 1) ? null : _t("Must be at least 1 day");
+                },
+            ],
+            log_search_timeout_s: [
+                (v) => {
+                    const n = Number(v);
+                    return (Number.isInteger(n) && n >= 5) ? null : _t("Must be at least 5 seconds");
+                },
             ],
         }));
 
@@ -179,6 +223,12 @@ export class Settings extends Component {
             this.state.form.default_backup_alert_threshold_pct = general.default_backup_alert_threshold_pct ?? 80;
             this.state.form.github_event_retention_days = general.github_event_retention_days ?? 90;
             this.state.form.github_event_truncate_days = general.github_event_truncate_days ?? 7;
+            this.state.form.container_log_max_size = general.container_log_max_size || "10m";
+            this.state.form.container_log_max_file = general.container_log_max_file || 3;
+            this.state.form.odoo_log_archive_days = general.odoo_log_archive_days || 60;
+            this.state.form.log_download_max_mb = general.log_download_max_mb || 64;
+            this.state.form.log_search_max_files = general.log_search_max_files || 60;
+            this.state.form.log_search_timeout_s = general.log_search_timeout_s || 30;
             this.state.backupBackends = backends?.items || backends || [];
             this._savedForm = JSON.stringify(this.state.form);
         } catch {
@@ -301,6 +351,12 @@ export class Settings extends Component {
                 default_backup_alert_threshold_pct: this.state.form.default_backup_alert_threshold_pct,
                 github_event_retention_days: this.state.form.github_event_retention_days,
                 github_event_truncate_days: this.state.form.github_event_truncate_days,
+                container_log_max_size: this.state.form.container_log_max_size,
+                container_log_max_file: this.state.form.container_log_max_file,
+                odoo_log_archive_days: this.state.form.odoo_log_archive_days,
+                log_download_max_mb: this.state.form.log_download_max_mb,
+                log_search_max_files: this.state.form.log_search_max_files,
+                log_search_timeout_s: this.state.form.log_search_timeout_s,
                 metrics_enabled: this.state.form.metrics_enabled,
                 metrics_central_url: this.state.form.metrics_central_url,
                 metrics_remote_write_url: this.state.form.metrics_remote_write_url,

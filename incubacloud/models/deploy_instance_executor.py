@@ -31,6 +31,24 @@ from .docker_prune_executor import PROTECT_LABEL
 
 _logger = logging.getLogger(__name__)
 
+#: Where the instance's Odoo log lives. ``logs/`` sits next to the
+#: compose files on the host and is bind-mounted into the container, so
+#: the log outlives the container that wrote it — a rebuild recreates
+#: the container by design and would otherwise take the only copy of
+#: yesterday's log with it.
+LOGS_DIRNAME = "logs"
+ODOO_LOG_DIR = "/var/log/odoo"
+ODOO_LOGFILE = f"{ODOO_LOG_DIR}/odoo.log"
+
+#: The command each environment's compose file gives the ``odoo``
+#: service, which the override *replaces* — so whatever the template
+#: put there has to be repeated here or it is silently lost. Verified
+#: against the pinned template (v9.6.1): ``prod.yaml`` sets none, so
+#: the image's CMD applies; ``test.yaml`` pins the two worker options
+#: below. Re-check both when bumping the template pin (RB-15).
+ODOO_COMMAND_PROD = ("/usr/local/bin/odoo",)
+ODOO_COMMAND_TEST = ("odoo", "--workers=3", "--max-cron-threads=1")
+
 # Path to the incubacloud_connect module.  Navigate from __file__ via
 # abspath (stays in auto/addons/) then realpath the result to resolve
 # the doodba symlink into the actual directory with real files — sftp.put
@@ -372,11 +390,77 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         """
         return self._inst().expected_services()
 
+    def _odoo_command(self):
+        """Return the ``command`` the override gives the odoo service.
+
+        The environment's own command plus ``--logfile``, so Odoo's log
+        lands on the host instead of inside the container. Passing the
+        flag here rather than in ``odoo.conf`` is deliberate: the panel
+        runs one-shot containers (module installs, ``click-odoo-update``
+        for the boot test) whose output has to keep reaching the job
+        log, and ``docker compose run`` replaces the command — so those
+        runs are untouched by construction, while a ``logfile`` in the
+        conf would have swallowed them.
+
+        :return: argv list for the compose ``command`` key
+        """
+        base = (
+            ODOO_COMMAND_PROD
+            if self._inst().environment == "production"
+            else ODOO_COMMAND_TEST
+        )
+        return [*base, f"--logfile={ODOO_LOGFILE}"]
+
+    def _log_archive_days(self):
+        """Days of Odoo log the host keeps for this instance."""
+        settings = self.env["cloud.settings"].sudo()._get()
+        return settings.odoo_log_archive_days
+
+    def _prepare_logs_step(self, d):
+        """Return the get_commands step that readies ``logs/`` on the host.
+
+        Must run before the stack starts: Docker creates a missing
+        bind-mount source itself, as root, and Odoo (uid 1000) would
+        then fail to write and fall back to stdout — the silent failure
+        this whole feature exists to remove.
+
+        :param str d: remote instance directory
+        :return: a ``(label, command)`` tuple
+        """
+        return (
+            "Prepare log directory",
+            self.run_script("instance_logs.sh", [
+                "install",
+                d,
+                self._inst().doodba_project_name,
+                str(self._log_archive_days()),
+            ]),
+        )
+
     def _resource_override_content(self):
-        """Generate docker-compose.override.yml with resource limits.
+        """Generate docker-compose.override.yml: limits, label, logs.
 
         Only includes services that actually exist in the target
         environment's compose file to avoid Docker Compose errors.
+
+        The ``odoo`` service additionally gets a ``command`` carrying
+        ``--logfile`` and a bind mount of the instance's ``logs/``
+        directory: Odoo's own log is archived per day on the host by
+        logrotate, which is the copy that survives a rebuild. See
+        :meth:`_odoo_command` for why the flag rides on the command.
+
+        Every service also carries a ``logging:`` block (``json-file``
+        with the ``max-size``/``max-file`` from ``cloud.settings``).
+        doodba's Odoo logs to stdout and the copier template sets no
+        logging driver, so a container's log grows until the disk is
+        full unless something limits it — and only hosts that ran
+        ``host_hardening`` have a ``daemon.json`` doing so. Emitting the
+        limit per service makes the rotation independent of how the
+        host was set up; on hardened hosts it merely restates the
+        daemon default. The values are read from settings at render
+        time and are deliberately absent from the per-instance config
+        snapshot: bumping the retention must not mark the fleet as
+        drifted, it simply lands on each instance's next rebuild.
 
         Every service carries ``PROTECT_LABEL`` so the daily
         ``docker_prune`` (``docker system prune -af --filter
@@ -427,8 +511,25 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                     entry["cpus"] = cpus
                 services[svc] = entry
         key, value = PROTECT_LABEL.split("=", 1)
+        settings = self.env["cloud.settings"].sudo()._get()
         for svc in allowed:
-            services.setdefault(svc, {}).setdefault("labels", {})[key] = value
+            entry = services.setdefault(svc, {})
+            entry.setdefault("labels", {})[key] = value
+            # A fresh mapping per service: PyYAML renders one dict
+            # referenced from several places as an anchor plus aliases,
+            # which compose reads fine but nobody wants to edit by hand.
+            entry["logging"] = {
+                "driver": "json-file",
+                "options": {
+                    "max-size": settings.container_log_max_size,
+                    "max-file": str(settings.container_log_max_file),
+                },
+            }
+        if "odoo" in allowed:
+            services["odoo"]["command"] = self._odoo_command()
+            services["odoo"]["volumes"] = [
+                f"./{LOGS_DIRNAME}:{ODOO_LOG_DIR}",
+            ]
         data = {"services": services}
         return yaml.dump(
             data,
@@ -833,10 +934,10 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 f' [ -f "$f" ] &&'
                 f' mv "$f" {d}/.docker/backup.env || true',
             ),
-            # 3b. Write docker-compose.override.yml with resource limits.
-            #     No-op if no resource limits are configured.
+            # 3b. Write docker-compose.override.yml: resource limits,
+            #     protect label and container log rotation.
             (
-                "Write resource limits",
+                "Write compose override",
                 f"f={self._tmp('override.yml')};"
                 f' [ -f "$f" ] &&'
                 f' mv "$f" {d}/docker-compose.override.yml || true',
@@ -930,7 +1031,10 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             ),
             # 13. Capture service list for on_success.
             ("List services", f"cd {d} && docker compose config --services"),
-            # 14. Bring the full stack up (odoo, proxy, …).
+            # 14. Ready ``logs/`` before anything starts: Docker would
+            #     otherwise create the missing bind-mount source as root.
+            self._prepare_logs_step(d),
+            # 15. Bring the full stack up (odoo, proxy, …).
             (
                 "Start instance",
                 f"cd {d} && docker compose up -d",

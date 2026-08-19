@@ -18,6 +18,8 @@ export class CoreRatesTab extends Component {
                 rate_limit_terminal_user_per_min: 10,
                 rate_limit_connect_per_min: 20,
                 rate_limit_connect_user_per_min: 10,
+                rate_limit_logs_per_min: 60,
+                rate_limit_log_search_per_min: 6,
             },
         });
 
@@ -46,6 +48,12 @@ export class CoreRatesTab extends Component {
                 ),
                 rate_limit_connect_user_per_min: Number(
                     d.rate_limit_connect_user_per_min || 10,
+                ),
+                rate_limit_logs_per_min: Number(
+                    d.rate_limit_logs_per_min || 60,
+                ),
+                rate_limit_log_search_per_min: Number(
+                    d.rate_limit_log_search_per_min || 6,
                 ),
             });
         } catch {
@@ -77,6 +85,10 @@ export class CoreRatesTab extends Component {
                     this.state.form.rate_limit_connect_per_min,
                 rate_limit_connect_user_per_min:
                     this.state.form.rate_limit_connect_user_per_min,
+                rate_limit_logs_per_min:
+                    this.state.form.rate_limit_logs_per_min,
+                rate_limit_log_search_per_min:
+                    this.state.form.rate_limit_log_search_per_min,
             },
         });
     }

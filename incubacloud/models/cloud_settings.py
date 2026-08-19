@@ -1,11 +1,12 @@
 import logging
 import os
+import re
 import uuid
 
 from psycopg2 import sql
 
 from odoo import _, api, fields, models, tools
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 from .encrypted_char import EncryptedChar
 from .password_utils import (
@@ -15,6 +16,25 @@ from .password_utils import (
 )
 
 _logger = logging.getLogger(__name__)
+
+#: Container log rotation shipped in every instance's compose override.
+#: Same figures as the ``daemon.json`` written by ``host_hardening``, so
+#: a stack rotates identically whether or not its host was hardened.
+CONTAINER_LOG_MAX_SIZE_DEFAULT = "10m"
+CONTAINER_LOG_MAX_FILE_DEFAULT = 3
+#: Days of Odoo's own log kept on the host as a dated archive
+#: (``logs/odoo.log.<date>.gz``), the window an operator can still open
+#: after noticing something days later.
+ODOO_LOG_ARCHIVE_DAYS_DEFAULT = 60
+#: Cost bounds for reading the archive back through the panel. They
+#: guard someone else's host, so the operator owns the numbers rather
+#: than discovering them baked into a release.
+LOG_DOWNLOAD_MAX_MB_DEFAULT = 64
+LOG_SEARCH_MAX_FILES_DEFAULT = 60
+LOG_SEARCH_TIMEOUT_S_DEFAULT = 30
+#: Docker's ``max-size`` grammar, restricted to one canonical spelling
+#: (lower-case unit) so the override reads the same on every host.
+_CONTAINER_LOG_MAX_SIZE_RE = re.compile(r"^[1-9]\d*[kmg]$")
 
 
 class CloudSettings(models.Model):
@@ -125,6 +145,66 @@ class CloudSettings(models.Model):
              'warning. The effective ref is recorded in the job log.',
     )
 
+    # ── Container log rotation ─────────────────────────────────────────────
+    # Emitted per service in the docker-compose.override.yml every deploy
+    # and rebuild writes (``_resource_override_content``). doodba logs
+    # to stdout and the template sets no ``logging:``, so without this a
+    # host that never ran host_hardening keeps json-file logs until the
+    # disk is full. Global on purpose: read at render time, outside the
+    # per-instance config snapshot, so changing it never marks the fleet
+    # as drifted — it lands on each instance's next rebuild.
+
+    container_log_max_size = fields.Char(
+        string="Container log max size",
+        default=CONTAINER_LOG_MAX_SIZE_DEFAULT,
+        required=True,
+        help="Size at which Docker rotates each container's log file, as "
+             "a positive integer followed by k, m or g (e.g. 10m). Applies "
+             "to every service of every instance from its next deploy or "
+             "rebuild.",
+    )
+    container_log_max_file = fields.Integer(
+        string="Container log files kept",
+        default=CONTAINER_LOG_MAX_FILE_DEFAULT,
+        required=True,
+        help="Number of rotated log files Docker keeps per container "
+             "(the current one included). Older files are deleted; the "
+             "retained history is at most size x files per container.",
+    )
+    log_download_max_mb = fields.Integer(
+        string="Log download cap (MB)",
+        default=LOG_DOWNLOAD_MAX_MB_DEFAULT,
+        required=True,
+        help="Largest compressed log download the panel will serve. A "
+             "day whose rotation stalled can be gigabytes, and the "
+             "whole answer is held in memory while it is sent.",
+    )
+    log_search_max_files = fields.Integer(
+        string="Log search: days swept",
+        default=LOG_SEARCH_MAX_FILES_DEFAULT,
+        required=True,
+        help="How many archived days a cross-day log search reads, "
+             "newest first. Each one is decompressed on the instance's "
+             "host, so this is a bound on that host's CPU.",
+    )
+    log_search_timeout_s = fields.Integer(
+        string="Log search timeout (s)",
+        default=LOG_SEARCH_TIMEOUT_S_DEFAULT,
+        required=True,
+        help="Seconds a cross-day log search may run on the host "
+             "before it is cut short. A search that is cut short says "
+             "so instead of reporting no matches.",
+    )
+    odoo_log_archive_days = fields.Integer(
+        string="Odoo log archive (days)",
+        default=ODOO_LOG_ARCHIVE_DAYS_DEFAULT,
+        required=True,
+        help="Days of Odoo's own log kept per instance on its host, as "
+             "one dated file per day (compressed from the day before "
+             "yesterday). Applied by logrotate on the host; a change "
+             "reaches an instance on its next deploy or rebuild.",
+    )
+
     # ── Rate limiting caps ────────────────────────────────────────────────
     # Read by ``cloud.rate.limit._get_cap`` when throttling the two
     # abuse-prone public/auth'd endpoints. All values are per-minute
@@ -163,6 +243,22 @@ class CloudSettings(models.Model):
         help='Max connect-as calls/min targeting the same cloud.instance, '
              'across all users. Each call opens an SSH connection and runs '
              'a script inside the tenant container.',
+    )
+    rate_limit_logs_per_min = fields.Integer(
+        string="Log reads per minute (per user)",
+        default=60,
+        help="Cap on log reads per user: the live tail, the day "
+             "listing and reading one archived day. The viewer polls "
+             "the live tail every 4 seconds, so a cap below ~15 breaks "
+             "a single open viewer. 0 falls back to the default.",
+    )
+    rate_limit_log_search_per_min = fields.Integer(
+        string="Log searches per minute (per user)",
+        default=6,
+        help="Cap on cross-day log searches and log downloads per user. "
+             "A search decompresses up to the configured number of days "
+             "on the instance's host; a download ships a whole day "
+             "through the panel. 0 falls back to the default.",
     )
     rate_limit_connect_user_per_min = fields.Integer(
         string='Connect as user (per user, per minute)',
@@ -477,6 +573,58 @@ class CloudSettings(models.Model):
         if not (token and account):
             return ('', '')
         return (account, token)
+
+    # ── Container log rotation ─────────────────────────────────────────────
+
+    @api.constrains(
+        "container_log_max_size",
+        "container_log_max_file",
+        "odoo_log_archive_days",
+        "log_download_max_mb",
+        "log_search_max_files",
+        "log_search_timeout_s",
+    )
+    def _check_container_log_rotation(self):
+        """Refuse log-rotation values Docker would reject or ignore.
+
+        A malformed ``max-size`` makes ``docker compose up`` fail on
+        every instance at its next rebuild, and ``max-file`` below 1
+        is not a valid json-file option — better to stop the write here
+        than to discover it stack by stack.
+        """
+        for rec in self:
+            size = rec.container_log_max_size or ""
+            if not _CONTAINER_LOG_MAX_SIZE_RE.match(size):
+                raise ValidationError(
+                    _(
+                        "Container log max size must be a positive integer "
+                        "followed by k, m or g (for example 10m), got %s.",
+                        size or "''",
+                    )
+                )
+            if rec.container_log_max_file < 1:
+                raise ValidationError(
+                    _("Container log files kept must be at least 1.")
+                )
+            if rec.odoo_log_archive_days < 1:
+                raise ValidationError(
+                    _("The Odoo log archive must keep at least 1 day.")
+                )
+            if rec.log_download_max_mb < 1:
+                raise ValidationError(
+                    _("The log download cap must be at least 1 MB.")
+                )
+            if rec.log_search_max_files < 1:
+                raise ValidationError(
+                    _("A log search must sweep at least 1 day.")
+                )
+            if rec.log_search_timeout_s < 5:
+                raise ValidationError(
+                    _(
+                        "The log search timeout must be at least 5 "
+                        "seconds, or no search can finish."
+                    )
+                )
 
     # ── Singleton constraint ───────────────────────────────────────────────
 

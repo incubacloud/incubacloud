@@ -26,7 +26,7 @@ the configuration so you can re-deploy later.
 
 - [Deploy your first instance](../getting-started/first-deploy.md)
 - Rebuild after pushing changes to your repo (Instance detail → Rebuild)
-- View live logs (Instance detail → Logs)
+- [View logs](logs.md) (Instance detail → Logs). Odoo's log is kept one file per day and survives rebuilds: pick a day, search every day at once, or download one
 - Open a shell on the container (Instance detail → Shell)
 - [Restore from a backup](../backups/restore.md)
 - [Refresh a staging with production data](#refresh-from-production)

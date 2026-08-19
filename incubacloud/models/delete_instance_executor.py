@@ -61,7 +61,17 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
                 "Stop and remove containers",
                 self.run_script("compose_op.sh", [d, "down"]),
             ),
-            # 2. Remove the instance directory (idempotent). Left inline
+            # 2. Drop the host's logrotate config for this instance.
+            #    The logs themselves go with the directory below; a
+            #    leftover config would point at a path that no longer
+            #    exists and make logrotate complain nightly forever.
+            (
+                "Remove log rotation config",
+                self.run_script("instance_logs.sh", [
+                    "remove", inst.doodba_project_name,
+                ]),
+            ),
+            # 3. Remove the instance directory (idempotent). Left inline
             #    on purpose: a lone ``rm -rf`` is not an operation worth
             #    a versioned script, and unquoted it lets the remote
             #    shell expand the ``~`` in the path.

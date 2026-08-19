@@ -1,5 +1,7 @@
 import re
+import shlex
 from contextlib import suppress
+from datetime import timedelta
 from datetime import timezone as tz
 from operator import itemgetter
 
@@ -15,6 +17,51 @@ _ERROR_LINES_HEAD = 600   # cap raw log lines fetched (headers + context)
 _ERROR_GROUPS_MAX = 10    # cap distinct fingerprints shipped in the payload
 _ERROR_SAMPLE_PER_GRP = 3 # raw lines kept per fingerprint for the payload
 _ERROR_CONTEXT_LINES = 25 # log lines captured after each ERROR header
+
+# ── Odoo log archive watchdog ─────────────────────────────────────────
+# Odoo writes its log to ``logs/odoo.log`` on the host (see
+# ``deploy_instance_executor._odoo_command``). The file has two silent
+# failure modes, and an instance suffering either looks perfectly
+# healthy from every other angle this probe measures.
+_LOG_STDOUT_LEAK_LINES = 5          # Odoo lines still on stdout ⇒ fallback
+_LOG_MAX_BYTES = 512 * 1024 * 1024  # a live log this big ⇒ nothing rotates it
+_LOG_ARCHIVE_TAIL = 5000            # lines read back from the newest archive
+_LOG_LIVE_TAIL = 20000              # lines read back from the live file
+_LOG_SINCE_GRACE_MIN = 5            # clock-skew margin on the cutoff
+
+#: Odoo's own line prefix: date, time with fractional seconds, pid.
+#: Used both to tell the probe's window apart and to spot Odoo output
+#: that is still going to the container instead of the file.
+_ODOO_LINE_GREP = (
+    r'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[.,]\d+\s+\d+\s'
+)
+
+#: Keep the lines logged at or after ``c``, and the lines that follow
+#: them without a timestamp of their own — a traceback belongs to the
+#: header above it, so filtering it out by timestamp would throw away
+#: exactly the context the alert exists to carry. Intervals are spelled
+#: out because mawk (Debian's default awk) is the one reading this.
+_AWK_SINCE_PROG = (
+    "match($0, /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] "
+    "[0-9][0-9]:[0-9][0-9]:[0-9][0-9]/) "
+    "{ keep = (substr($0, RSTART, RLENGTH) >= c) } keep"
+)
+
+#: The live file, and only as a regular file. ``logs/`` belongs to the
+#: container's uid and the probe runs on the host as the SSH user, so
+#: a symlink put in its place from inside the container must not be
+#: followed — by ``tail`` here nor by ``stat`` in the health reading.
+_LIVE_LOG_IS_REGULAR = "[ -f logs/odoo.log ] && [ ! -L logs/odoo.log ]"
+
+#: Newest archived day, chosen among regular files with logrotate's
+#: shapes only — the same reason: ``ls -1t logs/odoo.log.*`` would
+#: happily pick a planted link as "the newest" and ``zcat`` would read
+#: whatever host file it points at into the error sample.
+_NEWEST_ARCHIVE = (
+    "find logs -maxdepth 1 -type f -regextype posix-extended "
+    "-regex 'logs/odoo\\.log\\.[0-9]{4}-[0-9]{2}-[0-9]{2}(\\.gz)?' "
+    "-printf '%T@ %p\\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-"
+)
 _ERROR_CONTEXT_CHARS = 2000  # hard cap on the context stored per group
 
 # Hysteresis: how many consecutive cycles must stay above the CPU/memory
@@ -148,6 +195,75 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 "Resource and log readings would be meaningless."
             )
 
+    def _error_lines_command(self, d, since, cutoff):
+        """Return the command that samples ERROR lines for this cycle.
+
+        Reads the log file on the host — the copy that survives a
+        rebuild, which is what makes the sample still explain an error
+        an hour after the container that raised it was replaced — and
+        falls back to the container's output for an instance that has
+        not been rebuilt since file logging shipped.
+
+        The newest archive is read alongside the live file because
+        rotation happens at midnight and this window straddles it once
+        a day; both are bounded so a runaway log cannot blow up the
+        parse. Only regular files are read: ``logs/`` is writable from
+        inside the container, and a symlink planted there would
+        otherwise be followed on the host by this very command.
+
+        :param str d: remote instance directory
+        :param str since: ``docker compose logs --since`` value (fallback)
+        :param str cutoff: ``YYYY-MM-DD HH:MM:SS`` lower bound for the file
+        :return: the shell command
+        """
+        awk_since = (
+            f'awk -v c={shlex.quote(cutoff)} {shlex.quote(_AWK_SINCE_PROG)}'
+        )
+        grep = (
+            "grep -aP "
+            "'" + _ODOO_LINE_GREP.replace("^", "\\b").replace("\\s$", "")
+            + "(\\x1b\\[[0-9;]+m)*(ERROR|CRITICAL)(\\x1b\\[[0-9;]+m)*\\s' "
+            f"-A {_ERROR_CONTEXT_LINES}"
+        )
+        return (
+            f"cd {d} && "
+            f"{{ if {_LIVE_LOG_IS_REGULAR}; then "
+            f"{{ {_NEWEST_ARCHIVE} "
+            f"| xargs -r zcat -f 2>/dev/null | tail -n {_LOG_ARCHIVE_TAIL}; "
+            f"tail -n {_LOG_LIVE_TAIL} logs/odoo.log 2>/dev/null; }} "
+            f"| {awk_since}; "
+            f"else docker compose logs --no-color "
+            f"--since '{since}' odoo 2>&1; "
+            f"fi; }} "
+            f"| {grep} "
+            f"| sed -E 's/\\x1b\\[[0-9;]*m//g' "
+            f"| head -{_ERROR_LINES_HEAD} || true"
+        )
+
+    def _log_health_command(self, d):
+        """Return the command that reports the state of the log archive.
+
+        Three readings in one round trip: whether the instance has the
+        log mount at all, how big the live file is, and how many Odoo
+        lines still reach the container's output — which is where Odoo
+        goes when it cannot write to the file.
+
+        :param str d: remote instance directory
+        :return: the shell command
+        """
+        return (
+            f"cd {d} && "
+            f"if [ -d logs ]; then "
+            f"printf 'dir:1\\n'; "
+            f"printf 'size:%s\\n' "
+            f"\"$({{ {_LIVE_LOG_IS_REGULAR} && stat -c %s logs/odoo.log; }} "
+            f"2>/dev/null || echo 0)\"; "
+            f"printf 'stdout:%s\\n' "
+            f"\"$(docker compose logs --no-color --since 30m --tail 500 odoo "
+            f"2>/dev/null | grep -acP '{_ODOO_LINE_GREP}' || true)\"; "
+            f"else printf 'dir:0\\n'; fi"
+        )
+
     def get_commands(self):
         # If we are skipping this cycle, run a single cheap no-op so the
         # executor still produces results to traverse. Keeping the shape
@@ -162,8 +278,18 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         lhc = inst.last_health_check
         if lhc:
             since = lhc.replace(tzinfo=tz.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            window_start = lhc
         else:
             since = "10m"
+            window_start = odoo_fields.Datetime.now() - timedelta(minutes=10)
+        # The file has no ``--since``: its lines are filtered by the
+        # timestamp Odoo wrote, which is the container's clock. A few
+        # minutes of grace absorb the skew between it and ours; the
+        # cost of overlapping is a repeated alert (they are upserted by
+        # code), the cost of undershooting would be a missed error.
+        cutoff = (
+            window_start - timedelta(minutes=_LOG_SINCE_GRACE_MIN)
+        ).strftime('%Y-%m-%d %H:%M:%S')
 
         return [
             # 1. Container state. ``-a`` includes stopped containers so
@@ -216,16 +342,15 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             # in the alert payload render as plain text.
             (
                 "error_lines",
-                f"cd {d} && "
-                f"docker compose logs --no-color --since '{since}' odoo 2>&1 "
-                f"| grep -aP "
-                f"'\\b\\d{{4}}-\\d{{2}}-\\d{{2}}\\s+"
-                f"\\d{{2}}:\\d{{2}}:\\d{{2}}[.,]\\d+\\s+\\d+\\s+"
-                f"(\\x1b\\[[0-9;]+m)*(ERROR|CRITICAL)"
-                f"(\\x1b\\[[0-9;]+m)*\\s' "
-                f"-A {_ERROR_CONTEXT_LINES} "
-                f"| sed -E 's/\\x1b\\[[0-9;]*m//g' "
-                f"| head -{_ERROR_LINES_HEAD} || true",
+                self._error_lines_command(d, since, cutoff),
+            ),
+            # 5. State of the archive itself. Its two failure modes are
+            #    invisible to every other reading above: Odoo falling
+            #    back to the container's output (the mount is not
+            #    writable) and a log nothing ever rotates.
+            (
+                "log_health",
+                self._log_health_command(d),
             ),
         ]
 
@@ -277,7 +402,88 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         self._error_groups = self._dedupe_error_lines(err_out)
         self._error_total = sum(g['count'] for g in self._error_groups)
 
+        # 5. Log archive state. Absent for a probe that predates the
+        #    reading (one already in flight during an upgrade), which
+        #    must grade nothing rather than guess.
+        self._log_health = self._parse_log_health(
+            results.get("log_health", {}).get("stdout", ""),
+        )
+
         return []  # never hard-fail the job — report via status/alerts
+
+    # ── Log archive health ────────────────────────────────────────────────
+
+    def _parse_log_health(self, raw):
+        """Turn the ``log_health`` reading into a dict, or None.
+
+        :param str raw: ``dir:…/size:…/stdout:…`` lines from the host
+        :return: ``{'dir': bool, 'size': int, 'stdout': int}`` or None
+            when the command did not run (nothing to grade).
+        """
+        if not raw or 'dir:' not in raw:
+            return None
+        health = {'dir': False, 'size': 0, 'stdout': 0}
+        for line in raw.splitlines():
+            key, _sep, value = line.strip().partition(':')
+            if key not in health:
+                continue
+            with suppress(ValueError):
+                number = int(value.strip() or 0)
+                health[key] = bool(number) if key == 'dir' else number
+        return health
+
+    def _grade_log_health(self, inst):
+        """Alert on the two silent failures of the log archive.
+
+        *fallback* — the mount is there but Odoo's output is still
+        coming out of the container, so nothing is being archived and
+        the next rebuild will take the history with it. *rotation
+        stalled* — the live file grew past any sane daily size, so
+        logrotate is not running and the disk is filling up: the very
+        thing the archive was supposed to bound.
+        """
+        health = getattr(self, '_log_health', None)
+        if not health or not health['dir']:
+            # Nothing to grade: an instance not rebuilt since file
+            # logging shipped keeps its capped container output.
+            self._resolve_inst_alert('instance_logs_unhealthy')
+            return
+        if health['stdout'] >= _LOG_STDOUT_LEAK_LINES:
+            self._inst_alert(
+                'instance_logs_unhealthy',
+                (
+                    f"Odoo on '{inst.name}' is logging to the container "
+                    f"instead of logs/odoo.log, so nothing is archived and "
+                    f"its next rebuild will discard the history. Check that "
+                    f"logs/ exists and belongs to uid 1000."
+                ),
+                level='warning',
+                payload={
+                    'reason': 'fallback',
+                    'stdout_lines': health['stdout'],
+                },
+            )
+            self._sys(
+                "⚠ Odoo is logging to the container, not to logs/odoo.log."
+            )
+        elif health['size'] > _LOG_MAX_BYTES:
+            self._inst_alert(
+                'instance_logs_unhealthy',
+                (
+                    f"logs/odoo.log on '{inst.name}' is "
+                    f"{health['size'] // (1024 * 1024)} MB: nothing is "
+                    f"rotating it. Check logrotate on the host "
+                    f"(/etc/logrotate.d/incubacloud-*)."
+                ),
+                level='warning',
+                payload={
+                    'reason': 'rotation_stalled',
+                    'size': health['size'],
+                },
+            )
+            self._sys("⚠ logs/odoo.log is not being rotated.")
+        else:
+            self._resolve_inst_alert('instance_logs_unhealthy')
 
     # ── Error log dedupe ──────────────────────────────────────────────────
 
@@ -376,6 +582,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 'mem_over_threshold_streak': 0,
             })
             return
+
+        # The log archive is about files on the host, not about the
+        # container: grade it before any branch that returns early, so
+        # a sleeping or stopped instance is graded too.
+        self._grade_log_health(inst)
 
         # Who owns ``running``. Both this probe and the metrics cron can
         # tell whether an instance is up, and with observability on they

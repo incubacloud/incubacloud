@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the host toolchain for a full setup: git, Docker CE, Compose v2,
 # the Python toolchain (pip/venv/pipx) and the deployment tools
-# (copier, invoke, pre-commit), plus zip.
+# (copier, invoke, pre-commit), plus zip and logrotate.
 #
 # Usage: full_setup_install.sh
 #
@@ -71,5 +71,13 @@ done
 ic_log "Installing zip..."
 command -v zip >/dev/null 2>&1 || $APT install -y -qq zip \
     || ic_die "zip install failed"
+
+# Rotates each instance's Odoo log into the dated archive the panel
+# reads back (see scripts/instance_logs.sh). Installed here so a fresh
+# host is ready before the first deploy instead of pulling a package in
+# the middle of one.
+ic_log "Installing logrotate..."
+command -v logrotate >/dev/null 2>&1 || $APT install -y -qq logrotate \
+    || ic_warn "logrotate install failed: instance logs will not be archived"
 
 ic_log "Host toolchain installation complete."

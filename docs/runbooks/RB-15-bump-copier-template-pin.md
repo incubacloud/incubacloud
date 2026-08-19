@@ -8,6 +8,14 @@ Every instance deploy runs `copier copy` against the template pinned by
 currently `v9.6.1`). Pinning means upstream improvements arrive when
 *you* run this runbook — never as a surprise inside a tenant deploy.
 
+> **Also re-check the odoo service's `command`.** The compose override
+> replaces it to add `--logfile`, so it repeats whatever the template
+> puts there: none in `prod.yaml` (the image's CMD) and
+> `--workers=3 --max-cron-threads=1` in `test.yaml`. If the candidate
+> tag changes either, update `ODOO_COMMAND_PROD` / `ODOO_COMMAND_TEST`
+> in `deploy_instance_executor.py` — otherwise staging silently keeps
+> the old worker settings.
+
 ## 1. Pick the candidate tag
 
 ```bash

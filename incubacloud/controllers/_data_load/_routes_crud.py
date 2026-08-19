@@ -26,6 +26,13 @@ from ...models._repo_requirements import (
     merge_pip_requirements,
     repo_key_for_source_label,
 )
+from ...models.cloud_settings import (
+    CONTAINER_LOG_MAX_FILE_DEFAULT,
+    LOG_DOWNLOAD_MAX_MB_DEFAULT,
+    LOG_SEARCH_MAX_FILES_DEFAULT,
+    LOG_SEARCH_TIMEOUT_S_DEFAULT,
+    ODOO_LOG_ARCHIVE_DAYS_DEFAULT,
+)
 from .._safe_error import safe_error_response
 from ._helpers import (
     _LIST_MAX,
@@ -1315,6 +1322,13 @@ class CrudMixin:
             'github_event_truncate_days': (
                 settings.github_event_truncate_days or 0
             ),
+            # ── Container log rotation ─────────────────────────────────
+            'container_log_max_size': settings.container_log_max_size or '',
+            'container_log_max_file': settings.container_log_max_file or 0,
+            'odoo_log_archive_days': settings.odoo_log_archive_days or 0,
+            'log_download_max_mb': settings.log_download_max_mb or 0,
+            'log_search_max_files': settings.log_search_max_files or 0,
+            'log_search_timeout_s': settings.log_search_timeout_s or 0,
             # ── Observability ──────────────────────────────────────────
             # The remote-write token is write-only, like the GitHub PAT:
             # it is a fleet-wide write credential, so the browser only
@@ -1339,6 +1353,9 @@ class CrudMixin:
         metrics_enabled=None, metrics_central_url=None,
         metrics_remote_write_url=None, metrics_remote_write_token=None,
         metrics_retention_days=None, grafana_base_url=None,
+        container_log_max_size=None, container_log_max_file=None,
+        odoo_log_archive_days=None, log_download_max_mb=None,
+        log_search_max_files=None, log_search_timeout_s=None,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1389,6 +1406,38 @@ class CrudMixin:
                 0, _safe_int(github_event_truncate_days, 7),
             ),
         })
+
+        # ── Container log rotation ────────────────────────────────────
+        # Written only when the client sent them, so a caller that
+        # predates the knobs cannot blank them out. The size is
+        # normalised to the one spelling the model accepts; anything
+        # else is left to the model constraint, whose message names the
+        # expected format.
+        log_vals = {}
+        if container_log_max_size is not None:
+            log_vals['container_log_max_size'] = (
+                str(container_log_max_size or '').strip().lower()
+            )
+        if container_log_max_file is not None:
+            log_vals['container_log_max_file'] = _safe_int(
+                container_log_max_file, CONTAINER_LOG_MAX_FILE_DEFAULT,
+            )
+        if odoo_log_archive_days is not None:
+            log_vals['odoo_log_archive_days'] = _safe_int(
+                odoo_log_archive_days, ODOO_LOG_ARCHIVE_DAYS_DEFAULT,
+            )
+        for field, value, default in (
+            ('log_download_max_mb', log_download_max_mb,
+             LOG_DOWNLOAD_MAX_MB_DEFAULT),
+            ('log_search_max_files', log_search_max_files,
+             LOG_SEARCH_MAX_FILES_DEFAULT),
+            ('log_search_timeout_s', log_search_timeout_s,
+             LOG_SEARCH_TIMEOUT_S_DEFAULT),
+        ):
+            if value is not None:
+                log_vals[field] = _safe_int(value, default)
+        if log_vals:
+            request.env['cloud.settings'].sudo()._get().write(log_vals)
 
         # ── Observability ─────────────────────────────────────────────
         # Each field is written only when the client actually sent it, so
@@ -1461,6 +1510,10 @@ class CrudMixin:
             'rate_limit_connect_user_per_min': (
                 s.rate_limit_connect_user_per_min or 0
             ),
+            'rate_limit_logs_per_min': s.rate_limit_logs_per_min or 0,
+            'rate_limit_log_search_per_min': (
+                s.rate_limit_log_search_per_min or 0
+            ),
         }
 
     @http.route(['/cloud/save_core_rate_limits'], type='jsonrpc', auth='user')
@@ -1476,6 +1529,8 @@ class CrudMixin:
             'rate_limit_terminal_user_per_min',
             'rate_limit_connect_per_min',
             'rate_limit_connect_user_per_min',
+            'rate_limit_logs_per_min',
+            'rate_limit_log_search_per_min',
         }
         safe = {
             k: max(0, int(v or 0))

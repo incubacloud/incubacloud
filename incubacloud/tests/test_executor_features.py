@@ -44,6 +44,8 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
     # Reads cloud.settings in production; stubbed here like the other
     # environment reads so get_commands() works without a database.
     ex._copier_template = lambda: ("gh:Tecnativa/doodba-copier-template", "")
+    # Same reason: the log archive retention lives in cloud.settings.
+    ex._log_archive_days = lambda: 60
     ex.job = SimpleNamespace(id=42)
     ex._scripts_requested = False
     ex._scripts_uploaded = False
@@ -86,6 +88,8 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
     ex._backup_enabled = bool
     ex._backup_retention = lambda: '3M'
     ex._copier_template = lambda: ("gh:Tecnativa/doodba-copier-template", "")
+    # Same reason: the log archive retention lives in cloud.settings.
+    ex._log_archive_days = lambda: 60
     ex.job = SimpleNamespace(id=42)
     ex._scripts_requested = False
     ex._scripts_uploaded = False
@@ -564,13 +568,14 @@ class TestDeleteCommandsWhenInstanceIsGone(TransactionCase):
         )
 
     def test_live_instance_still_gets_torn_down(self):
-        self.assertEqual(len(self._executor().get_commands()), 2)
+        # compose down · drop the logrotate config · remove the directory
+        self.assertEqual(len(self._executor().get_commands()), 3)
 
     def test_archived_instance_still_gets_torn_down(self):
         """Archived is not gone: the directory is still on the host."""
         self.instance.write({'active': False})
         self.job.invalidate_recordset(['instance_id'])
-        self.assertEqual(len(self._executor().get_commands()), 2)
+        self.assertEqual(len(self._executor().get_commands()), 3)
 
     def test_unlinked_instance_yields_no_commands(self):
         self.instance.unlink()

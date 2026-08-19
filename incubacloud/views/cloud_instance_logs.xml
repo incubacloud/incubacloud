@@ -117,6 +117,54 @@
             flex-shrink: 0;
         }
         #status-text { transition: color 0.2s; }
+        /* ── Day picker (combobox) ──
+         * A plain dropdown stops working at 60 days: the operator
+         * has to scroll a list to find a date. This is the same
+         * type-to-filter widget the SPA uses for any set that grows. */
+        .day-picker { position: relative; display: flex; align-items: center; gap: 4px; }
+        #day-input { width: 190px; cursor: pointer; }
+        .day-menu {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            min-width: 250px;
+            max-height: 320px;
+            overflow-y: auto;
+            background: #252526;
+            border: 1px solid #555;
+            border-radius: 6px;
+            box-shadow: 0 6px 18px rgba(0,0,0,.45);
+            z-index: 30;
+            padding: 4px 0;
+        }
+        .day-menu[hidden] { display: none; }
+        .day-opt {
+            padding: 5px 10px;
+            cursor: pointer;
+            white-space: nowrap;
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+        }
+        .day-opt:hover, .day-opt.active { background: #37373d; }
+        .day-opt .meta { color: #888; }
+        .day-opt .hits { color: #e0c060; }
+        .day-empty { padding: 6px 10px; color: #888; }
+        .day-step {
+            background: #3a3a3a;
+            color: #d4d4d4;
+            border: 1px solid #555;
+            border-radius: 5px;
+            padding: 3px 7px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .day-step:disabled { opacity: .4; cursor: default; }
+        #search-hits {
+            color: #e0c060;
+            cursor: pointer;
+            text-decoration: underline dotted;
+        }
         #status-text.loading { color: #60b8e0; }
         #status-text.error   { color: #e06060; }
     </style>
@@ -138,9 +186,21 @@
             </t>
         </select>
 
+        <span id="archive-wrap" style="display:none;">
+            <span class="day-picker">
+                <button id="day-prev" class="day-step" title="Previous day">◀</button>
+                <input id="day-input" type="text" autocomplete="off"
+                       placeholder="Pick a day…"
+                       title="Type to filter the days kept on the host"/>
+                <button id="day-next" class="day-step" title="Next day">▶</button>
+                <div id="day-menu" class="day-menu" hidden="hidden"/>
+            </span>
+        </span>
+
         <input id="search-input" type="text" placeholder="🔍 filter logs…"/>
 
         <div class="hdr-right">
+            <button id="btn-download" class="btn" style="display:none;">⤓ Download</button>
             <button id="btn-live" class="btn btn-live-off">▶ Live</button>
             <span class="line-count" id="line-count">0 lines</span>
         </div>
@@ -153,6 +213,7 @@
     <div class="footer">
         <span id="status-text">Ready.</span>
         <span id="filter-info" style="display:none; color:#888;"></span>
+        <span id="search-hits" style="display:none;"></span>
     </div>
 
     <script type="text/javascript">
@@ -175,6 +236,24 @@
             var lineCountEl = document.getElementById('line-count');
             var emptyMsg    = document.getElementById('empty-msg');
             var filterInfo  = document.getElementById('filter-info');
+            var archiveWrap = document.getElementById('archive-wrap');
+            var dayInput    = document.getElementById('day-input');
+            var dayMenu     = document.getElementById('day-menu');
+            var dayPrev     = document.getElementById('day-prev');
+            var dayNext     = document.getElementById('day-next');
+            var btnDownload = document.getElementById('btn-download');
+            var searchHits  = document.getElementById('search-hits');
+
+            /* Every day the host keeps, newest first, plus the hit
+             * counts of the last cross-day search (day → count). */
+            var days = [];
+            var hits = {};
+            var menuIndex = -1;
+
+            /* Which file the viewer is showing: the live log (default)
+             * or one of the days logrotate archived on the host. */
+            var LIVE = 'odoo.log';
+            var archive = LIVE;
 
             /* ── RPC ── */
             function rpc(method, params) {
@@ -351,6 +430,248 @@
                 statusEl.textContent  = text;
             }
 
+            /* ── Odoo log archive ──
+             * Docker keeps a container's output only until the
+             * container is replaced, and a rebuild replaces it by
+             * design. Odoo therefore writes to a file on the host that
+             * logrotate turns into one dated file per day. Sixty days
+             * of those do not fit a dropdown, so the picker filters as
+             * you type and the filter box can sweep every day at once
+             * — "which day was it" is the question, and scrolling is
+             * not an answer to it. */
+            function humanSize(bytes) {
+                if (!bytes) return '0 B';
+                var units = ['B', 'KB', 'MB', 'GB'];
+                var i = 0;
+                while (bytes >= 1024 &amp;&amp; i &lt; units.length - 1) { bytes /= 1024; i++; }
+                return (i === 0 ? bytes : bytes.toFixed(1)) + ' ' + units[i];
+            }
+
+            function dayOf(name) {
+                return name === LIVE
+                    ? ''
+                    : name.replace(/^odoo\.log\./, '').replace(/\.gz$/, '');
+            }
+
+            function archiveLabel(entry) {
+                if (entry.name === LIVE) return 'Today (live)';
+                var day = dayOf(entry.name);
+                var yesterday = new Date(Date.now() - 86400000)
+                    .toISOString().slice(0, 10);
+                return day === yesterday ? day + ' (yesterday)' : day;
+            }
+
+            function showArchiveControls(show) {
+                archiveWrap.style.display = show ? '' : 'none';
+                btnDownload.style.display = show ? '' : 'none';
+            }
+
+            function currentEntry() {
+                return days.filter(function (d) { return d.name === archive; })[0];
+            }
+
+            function syncDayInput() {
+                var entry = currentEntry();
+                dayInput.value = entry ? archiveLabel(entry) : '';
+                var idx = days.map(function (d) { return d.name; }).indexOf(archive);
+                /* days[] is newest first, so "previous day" is further
+                 * down the list and "next" further up. */
+                dayPrev.disabled = idx &lt; 0 || idx >= days.length - 1;
+                dayNext.disabled = idx &lt;= 0;
+            }
+
+            function closeMenu() {
+                dayMenu.hidden = true;
+                menuIndex = -1;
+                syncDayInput();
+            }
+
+            function renderMenu(filter) {
+                var q = (filter || '').toLowerCase().trim();
+                var shown = days.filter(function (entry) {
+                    if (!q) return true;
+                    return archiveLabel(entry).toLowerCase().indexOf(q) !== -1;
+                });
+                while (dayMenu.firstChild) dayMenu.removeChild(dayMenu.firstChild);
+                if (!shown.length) {
+                    var none = document.createElement('div');
+                    none.className = 'day-empty';
+                    none.textContent = 'No day matches "' + q + '".';
+                    dayMenu.appendChild(none);
+                } else {
+                    shown.forEach(function (entry, i) {
+                        var row = document.createElement('div');
+                        row.className = 'day-opt' + (i === menuIndex ? ' active' : '');
+                        row.dataset.name = entry.name;
+                        var label = document.createElement('span');
+                        label.textContent = archiveLabel(entry);
+                        var meta = document.createElement('span');
+                        meta.className = 'meta';
+                        meta.textContent = humanSize(entry.size);
+                        if (hits[entry.name]) {
+                            var hit = document.createElement('span');
+                            hit.className = 'hits';
+                            hit.textContent = hits[entry.name] + ' hits';
+                            label.appendChild(document.createTextNode(' '));
+                            label.appendChild(hit);
+                        }
+                        row.appendChild(label);
+                        row.appendChild(meta);
+                        /* mousedown, not click: the input's blur closes
+                         * the menu and would beat a click to it. */
+                        row.addEventListener('mousedown', function (ev) {
+                            ev.preventDefault();
+                            selectDay(entry.name);
+                        });
+                        dayMenu.appendChild(row);
+                    });
+                }
+                dayMenu.hidden = false;
+                dayMenu._shown = shown;
+            }
+
+            function selectDay(name) {
+                archive = name;
+                closeMenu();
+                allLines = [];
+                render();
+                if (archive === LIVE) { fetchLogs(); } else { stopLive(); fetchArchive(); }
+            }
+
+            function stepDay(delta) {
+                var names = days.map(function (d) { return d.name; });
+                var idx = names.indexOf(archive);
+                if (idx &lt; 0) return;
+                var next = idx + delta;
+                if (next &lt; 0 || next >= names.length) return;
+                selectDay(names[next]);
+            }
+
+            function loadArchives() {
+                if (svcSelect.value !== 'odoo') {
+                    showArchiveControls(false);
+                    return Promise.resolve();
+                }
+                return fetchJson('/cloud/instance_log_archives', {
+                    instance_id: INSTANCE_ID,
+                }).then(function (res) {
+                    if (!res || !res.ok || !res.archived) {
+                        /* Not rebuilt since file logging shipped: the
+                         * container's own output is all there is. */
+                        showArchiveControls(false);
+                        return;
+                    }
+                    days = res.archives || [];
+                    hits = {};
+                    archive = LIVE;
+                    showArchiveControls(true);
+                    syncDayInput();
+                }).catch(function () { showArchiveControls(false); });
+            }
+
+            function fetchArchive() {
+                setStatus('loading', 'Loading ' + archive + '…');
+                fetchJson('/cloud/fetch_log_archive', {
+                    instance_id: INSTANCE_ID,
+                    name:        archive,
+                    lines:       LINES,
+                    /* Grep on the host: a day of logs is megabytes and
+                     * the answer is usually a handful of lines. */
+                    search:      query,
+                }).then(function (result) {
+                    if (!result) { setStatus('error', 'No response.'); return; }
+                    if (result.ok) {
+                        allLines = result.lines || [];
+                        render();
+                        setStatus('', archive + ' — last ' + allLines.length + ' matching lines');
+                    } else {
+                        setStatus('error', result.error || 'Error.');
+                    }
+                }).catch(function () { setStatus('error', 'Connection error.'); });
+            }
+
+            /* ── Search every day at once ──
+             * The filter box only sees what is loaded; this asks the
+             * host which days mention the term, so finding the day of
+             * an incident does not depend on guessing its date. */
+            function searchAllDays() {
+                if (!query || query.length &lt; 2) {
+                    setStatus('error', 'Type at least two characters to search all days.');
+                    return;
+                }
+                setStatus('loading', 'Searching every day for "' + query + '"…');
+                fetchJson('/cloud/search_log_archives', {
+                    instance_id: INSTANCE_ID,
+                    term:        query,
+                }).then(function (res) {
+                    if (!res || !res.ok) {
+                        setStatus('error', (res &amp;&amp; res.error) || 'Search failed.');
+                        return;
+                    }
+                    hits = {};
+                    (res.matches || []).forEach(function (m) { hits[m.name] = m.count; });
+                    var names = Object.keys(hits);
+                    if (!names.length) {
+                        searchHits.style.display = 'none';
+                        setStatus('', res.complete
+                            ? 'No day mentions "' + query + '".'
+                            : 'No match yet — the sweep timed out before finishing.');
+                        return;
+                    }
+                    searchHits.style.display = '';
+                    searchHits.textContent = names.length + ' day(s) match "' + query
+                        + '"' + (res.complete ? '' : ' (sweep cut short)')
+                        + ' — click to open the newest';
+                    searchHits.onclick = function () { selectDay(names[0]); };
+                    setStatus('', 'Matches: ' + names.map(function (n) {
+                        return (dayOf(n) || 'today') + ' (' + hits[n] + ')';
+                    }).join(', '));
+                    /* Reopen the picker so the counts are visible on
+                     * the days themselves. */
+                    renderMenu('');
+                }).catch(function () { setStatus('error', 'Connection error.'); });
+            }
+
+            dayInput.addEventListener('focus', function () { renderMenu(''); });
+            dayInput.addEventListener('click', function () {
+                if (dayMenu.hidden) { dayInput.value = ''; renderMenu(''); }
+            });
+            dayInput.addEventListener('input', function () {
+                menuIndex = -1;
+                renderMenu(dayInput.value);
+            });
+            dayInput.addEventListener('blur', function () {
+                /* Delay so a mousedown on an option is handled first. */
+                setTimeout(closeMenu, 160);
+            });
+            dayInput.addEventListener('keydown', function (ev) {
+                var shown = dayMenu._shown || [];
+                if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+                    ev.preventDefault();
+                    if (dayMenu.hidden) { renderMenu(dayInput.value); return; }
+                    menuIndex += (ev.key === 'ArrowDown' ? 1 : -1);
+                    if (menuIndex &lt; 0) menuIndex = 0;
+                    if (menuIndex >= shown.length) menuIndex = shown.length - 1;
+                    renderMenu(dayInput.value);
+                    var active = dayMenu.querySelector('.day-opt.active');
+                    if (active) active.scrollIntoView({ block: 'nearest' });
+                } else if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    var pick = shown[menuIndex >= 0 ? menuIndex : 0];
+                    if (pick) selectDay(pick.name);
+                } else if (ev.key === 'Escape') {
+                    closeMenu();
+                    dayInput.blur();
+                }
+            });
+            dayPrev.addEventListener('click', function () { stepDay(1); });
+            dayNext.addEventListener('click', function () { stepDay(-1); });
+
+            btnDownload.addEventListener('click', function () {
+                window.location = '/cloud/instance/' + INSTANCE_ID
+                    + '/log_archive/' + encodeURIComponent(archive);
+            });
+
             /* ── Live toggle ── */
             function startLive() {
                 if (liveTimer) return;
@@ -368,14 +689,23 @@
             }
 
             btnLive.addEventListener('click', function () {
-                if (liveTimer) { stopLive(); } else { startLive(); }
+                if (liveTimer) { stopLive(); return; }
+                /* Live means the live file; jump back to it first. */
+                if (archive !== LIVE) {
+                    archive = LIVE;
+                    syncDayInput();
+                }
+                startLive();
             });
 
             /* ── Service change ── */
             svcSelect.addEventListener('change', function () {
                 allLines = [];
+                archive = LIVE;
                 render();
-                fetchLogs();
+                /* Sequential on purpose: fired together, the two calls
+                 * race for the same rate-limit row. */
+                loadArchives().then(fetchLogs);
             });
 
             /* ── Search ── */
@@ -384,13 +714,26 @@
                 clearTimeout(searchTimer);
                 searchTimer = setTimeout(function () {
                     query = searchInput.value.toLowerCase().trim();
+                    searchHits.style.display = 'none';
+                    if (archive !== LIVE) { fetchArchive(); return; }
                     render();
                 }, 200);
             });
 
+            /* Enter in the filter box searches every archived day —
+             * the one gesture that turns "I do not know the date" into
+             * an answer. */
+            searchInput.addEventListener('keydown', function (ev) {
+                if (ev.key !== 'Enter') return;
+                ev.preventDefault();
+                query = searchInput.value.toLowerCase().trim();
+                if (archiveWrap.style.display === 'none') { render(); return; }
+                searchAllDays();
+            });
+
             /* ── Init ── */
             if (svcSelect.options.length) {
-                fetchLogs();
+                loadArchives().then(fetchLogs);
             }
         })();
     </script>
