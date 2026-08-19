@@ -287,16 +287,19 @@
   
   
   
-    <li class="md-tabs__item">
-      <a href="../../instances/" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../instances/" class="md-tabs__link">
+          
   
     
   
   Instances
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -628,16 +631,82 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../instances/" class="md-nav__link">
+    
+    
+      
         
+          
+        
+      
+        
+      
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../instances/" class="md-nav__link ">
+              
   
   <span class="md-ellipsis">
     Instances
   </span>
   
 
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Instances
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances/logs/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Logs
+  </span>
+  
+
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1362,7 +1431,7 @@ and request HTTPS automatically.</p>
 <h3 id="3-ssh-key-recommended-path">3. SSH key (recommended path)<a class="headerlink" href="#3-ssh-key-recommended-path" title="Permanent link">&para;</a></h3>
 <p>We generate an Ed25519 keypair for you. Copy the displayed public key.</p>
 <p>On the VPS, append it to the chosen user's <code>~/.ssh/authorized_keys</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;ssh-ed25519 AAAAC3...&quot;</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.ssh/authorized_keys
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">"ssh-ed25519 AAAAC3..."</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.ssh/authorized_keys
 </span></code></pre></div>
 <p>Click <strong>Test connection</strong>. Green = we got in.</p>
 <h3 id="4-run-check">4. Run <code>Check</code><a class="headerlink" href="#4-run-check" title="Permanent link">&para;</a></h3>

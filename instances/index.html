@@ -18,7 +18,7 @@
         <link rel="prev" href="../projects/">
       
       
-        <link rel="next" href="../hosts/">
+        <link rel="next" href="logs/">
       
       
       <link rel="icon" href="../assets/images/favicon.png">
@@ -289,16 +289,19 @@
     
   
   
-    <li class="md-tabs__item md-tabs__item--active">
-      <a href="./" class="md-tabs__link">
-        
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
   
     
   
   Instances
 
-      </a>
-    </li>
+        </a>
+      </li>
+    
   
 
       
@@ -630,107 +633,84 @@
   
   
   
-    <li class="md-nav__item md-nav__item--active">
+    
+    
       
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+        
+          
+        
+      
+        
+      
+    
+    
+      
+        
+        
       
       
         
       
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
-        <label class="md-nav__link md-nav__link--active" for="__toc">
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
           
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="./" class="md-nav__link md-nav__link--active">
+              
   
   <span class="md-ellipsis">
     Instances
   </span>
   
 
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+            </a>
+            
+              
+              <label class="md-nav__link md-nav__link--active" for="__nav_4" id="__nav_4_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Instances
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="logs/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Instances
+    Logs
   </span>
   
 
       </a>
-      
-        
+    </li>
+  
 
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#concepts" class="md-nav__link">
-    <span class="md-ellipsis">
-      Concepts
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#lifecycle" class="md-nav__link">
-    <span class="md-ellipsis">
-      Lifecycle
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#common-tasks" class="md-nav__link">
-    <span class="md-ellipsis">
-      Common tasks
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#refresh-from-production" class="md-nav__link">
-    <span class="md-ellipsis">
-      Refresh from production
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#auto-update" class="md-nav__link">
-    <span class="md-ellipsis">
-      Auto-update
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#see-also" class="md-nav__link">
-    <span class="md-ellipsis">
-      See also
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
+              
+            
+          </ul>
+        </nav>
       
     </li>
   
@@ -1271,7 +1251,7 @@ the configuration so you can re-deploy later.</p>
 <ul>
 <li><a href="../getting-started/first-deploy/">Deploy your first instance</a></li>
 <li>Rebuild after pushing changes to your repo (Instance detail → Rebuild)</li>
-<li>View live logs (Instance detail → Logs)</li>
+<li><a href="logs/">View logs</a> (Instance detail → Logs). Odoo's log is kept one file per day and survives rebuilds: pick a day, search every day at once, or download one</li>
 <li>Open a shell on the container (Instance detail → Shell)</li>
 <li><a href="../backups/restore/">Restore from a backup</a></li>
 <li><a href="#refresh-from-production">Refresh a staging with production data</a></li>
@@ -1373,13 +1353,13 @@ the same neutralization.</p>
         
         
           
-          <a href="../hosts/" class="md-footer__link md-footer__link--next" aria-label="Next: Hosts">
+          <a href="logs/" class="md-footer__link md-footer__link--next" aria-label="Next: Logs">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Hosts
+                Logs
               </div>
             </div>
             <div class="md-footer__button md-icon">
