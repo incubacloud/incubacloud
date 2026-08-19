@@ -154,9 +154,10 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 "Inject incubacloud.env in prod.yaml and test.yaml",
                 self.run_script("deploy.sh", ["inject-secret-env", d]),
             ),
-            # 4d. Write docker-compose.override.yml with resource limits.
+            # 4d. Write docker-compose.override.yml: resource limits,
+            #     protect label and container log rotation.
             (
-                "Write resource limits",
+                "Write compose override",
                 f"f={self._tmp('override.yml')};"
                 f" [ -f \"$f\" ] &&"
                 f" mv \"$f\" {d}/docker-compose.override.yml || true",
@@ -261,6 +262,11 @@ class RebuildInstanceExecutor(DeployInstanceExecutor):
                 f" -i incubacloud_connect"
                 f" --stop-after-init --no-http",
             ),
+            # 12b. Ready ``logs/`` (and its logrotate config) before the
+            #      stack comes back up: Docker creates a missing
+            #      bind-mount source as root, and Odoo could not write
+            #      to it.
+            self._prepare_logs_step(d),
             # 13. Restart all services with the new image.
             #     --remove-orphans drops containers no longer in the compose
             #     file (e.g. backup or smtp when the operator removes the

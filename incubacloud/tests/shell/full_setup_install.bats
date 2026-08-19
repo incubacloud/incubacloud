@@ -29,6 +29,7 @@ setup() {
     _stub pipx 'exit 0'
     _stub python3 'exit 0'
     _stub zip 'exit 0'
+    _stub logrotate 'exit 0'
     _stub groups 'echo "cloud docker"'
     _stub docker 'case "$*" in "--version") echo "Docker version 27";; "compose version") exit 0;; *) exit 0;; esac'
     _stub git 'case "$1" in "--version") echo "git version 2.4";; "config") exit 0;; *) exit 0;; esac'

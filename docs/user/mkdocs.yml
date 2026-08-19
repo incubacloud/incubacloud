@@ -102,7 +102,9 @@ nav:
     - Create your first project: getting-started/first-project.md
     - Deploy your first instance: getting-started/first-deploy.md
   - Projects: projects/index.md
-  - Instances: instances/index.md
+  - Instances:
+    - instances/index.md
+    - Logs: instances/logs.md
   - Hosts:
     - hosts/index.md
     - Connect your own VPS: hosts/connect.md

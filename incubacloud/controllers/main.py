@@ -8,12 +8,19 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 
+import asyncssh
+
 from odoo import http
 from odoo.http import Controller, request
 
 from odoo.addons.bus.websocket import WebsocketConnectionHandler
 
+from ._data_load._helpers import (
+    is_safe_log_archive,
+    log_archive_download_command,
+)
 from ._rate_limit import Rule, first_tripped
+from .async_utils import run_async
 
 _logger = logging.getLogger(__name__)
 
@@ -151,9 +158,87 @@ class CloudController(Controller):
             "csrf_token": request.csrf_token(None),
             "session_info": request.env["ir.http"].session_info(),
         }
+        # One row per opened viewer — not per poll: the live tail
+        # refreshes every 4 seconds, and a row for each would bury the
+        # question this answers ("who read this instance's logs").
+        request.env["cloud.audit.log"].sudo().create({
+            "action": "Viewed instance logs",
+            "instance_id": inst.id,
+        })
         response = request.render("incubacloud.cloud_instance_logs", context)
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @http.route(
+        ["/cloud/instance/<int:instance_id>/log_archive/<string:name>"],
+        auth="user",
+        type="http",
+    )
+    def cloud_instance_log_archive_download(self, instance_id, name, **k):
+        """Download one of an instance's archived Odoo logs, gzipped.
+
+        The viewer shows a bounded tail; this is how an operator takes
+        a whole day away to grep, diff or attach to a ticket.
+        """
+        if not request.env.user._is_internal():
+            return request.not_found()
+        request.env["cloud.security.mixin"]._check_can_view_logs()
+        inst = request.env["cloud.instance"].browse(instance_id)
+        if not inst.exists() or not inst.host_id:
+            return request.not_found()
+        if not is_safe_log_archive(name):
+            return request.not_found()
+        if first_tripped(Rule(
+            f"log_download_user:{request.env.user.id}",
+            cap_key="rate_limit_log_search_per_min",
+            log_tag=f"log_download user={request.env.user.id}",
+        )):
+            return request.make_json_response(
+                {"error": "Rate limit exceeded. Wait 60s and retry."},
+                status=429,
+            )
+        settings = request.env["cloud.settings"].sudo()._get_system()
+        command = log_archive_download_command(
+            inst.get_remote_dir(), name,
+            max_bytes=settings.log_download_max_mb * 1024 * 1024,
+        )
+
+        async def _run():
+            async with asyncssh.connect(
+                **inst.host_id.ssh_connect_kwargs(),
+            ) as conn:
+                result = await conn.run(command, check=False, encoding=None)
+                return result.stdout or b""
+
+        try:
+            payload = run_async(_run())
+        except Exception:
+            _logger.exception(
+                "Error downloading log archive %s of instance %s",
+                name, instance_id,
+            )
+            return request.not_found()
+        # Audited after the fetch, not before: a download takes a
+        # customer's log out of the platform and that is the act worth
+        # accounting for, while a failed attempt ends in ``not_found``
+        # — which rolls the request back and would have taken the row
+        # with it anyway.
+        request.env["cloud.audit.log"].sudo().create({
+            "action": "Downloaded instance log",
+            "instance_id": inst.id,
+            "details": name,
+        })
+        filename = f"{inst.name}-{name}"
+        if not filename.endswith(".gz"):
+            filename += ".gz"
+        return request.make_response(
+            payload,
+            headers=[
+                ("Content-Type", "application/gzip"),
+                ("Content-Disposition", f'attachment; filename="{filename}"'),
+                ("Cache-Control", "no-store"),
+            ],
+        )
 
     @http.route(
         ["/cloud/instance/<int:instance_id>/restore"],

@@ -149,6 +149,65 @@
                         </div>
                     </div>
 
+                    <!-- Instance Logs -->
+                    <div class="rl-saas-fsec">Instance Logs</div>
+                    <p class="rl-tabnote">
+                        Odoo writes its log to a file on the host, which is rotated daily
+                        into one dated file per day (Instance detail → Logs shows them, and
+                        can download one). That copy survives a rebuild, which recreates the
+                        container and would otherwise discard its history. The other
+                        containers (database, backup, mail) keep logging to Docker's
+                        json-file driver, capped below so they cannot fill the host's disk.
+                        Both settings reach an instance on its next deploy or rebuild.
+                    </p>
+                    <div class="rl-fgrid">
+                        <div class="rl-frow">
+                            <label>Odoo log archive (days)</label>
+                            <input type="number" min="1" style="width:120px;"
+                                   t-att-value="state.form.odoo_log_archive_days"
+                                   t-on-change="(ev) => this.onIntInput('odoo_log_archive_days', ev)"/>
+                        </div>
+                        <div class="rl-frow">
+                            <label>Max size per container log</label>
+                            <input type="text" style="width:120px;" placeholder="10m"
+                                   t-att-value="state.form.container_log_max_size"
+                                   t-on-change="(ev) => this.onInput('container_log_max_size', ev)"/>
+                        </div>
+                        <div class="rl-frow">
+                            <label>Container log files kept</label>
+                            <input type="number" min="1" style="width:120px;"
+                                   t-att-value="state.form.container_log_max_file"
+                                   t-on-change="(ev) => this.onIntInput('container_log_max_file', ev)"/>
+                        </div>
+                    </div>
+                    <p class="rl-tabnote">
+                        Reading logs back costs the instance's host: a search
+                        decompresses days of them and a download sends one through the
+                        panel. These bound that cost. A search that hits its timeout says
+                        so rather than reporting no matches. How often each operator may
+                        read or search lives on the Rates tab.
+                    </p>
+                    <div class="rl-fgrid">
+                        <div class="rl-frow">
+                            <label>Download cap (MB)</label>
+                            <input type="number" min="1" style="width:120px;"
+                                   t-att-value="state.form.log_download_max_mb"
+                                   t-on-change="(ev) => this.onIntInput('log_download_max_mb', ev)"/>
+                        </div>
+                        <div class="rl-frow">
+                            <label>Search: days swept</label>
+                            <input type="number" min="1" style="width:120px;"
+                                   t-att-value="state.form.log_search_max_files"
+                                   t-on-change="(ev) => this.onIntInput('log_search_max_files', ev)"/>
+                        </div>
+                        <div class="rl-frow">
+                            <label>Search timeout (s)</label>
+                            <input type="number" min="5" style="width:120px;"
+                                   t-att-value="state.form.log_search_timeout_s"
+                                   t-on-change="(ev) => this.onIntInput('log_search_timeout_s', ev)"/>
+                        </div>
+                    </div>
+
                     <!-- Backup Usage Alerts -->
                     <div class="rl-saas-fsec">Backup Usage Alerts</div>
                     <p class="rl-tabnote">

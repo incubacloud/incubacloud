@@ -8,6 +8,7 @@ import logging
 import re
 import shlex
 from contextlib import suppress
+from operator import itemgetter
 
 import asyncssh
 import yaml
@@ -16,12 +17,18 @@ from odoo import _, http
 from odoo.exceptions import UserError
 from odoo.http import request
 
+from .._rate_limit import Rule, rate_gate_json
 from .._safe_error import safe_error_response
 from ..async_utils import run_async
 from ._helpers import (
     _is_safe_remote_path,
     _job_response,
     _quote_remote_path,
+    is_safe_log_archive,
+    log_archive_list_command,
+    log_archive_search_command,
+    odoo_log_live_command,
+    odoo_log_read_command,
 )
 
 _logger = logging.getLogger(__name__)
@@ -1066,6 +1073,9 @@ class OpsMixin:
         calling this RPC directly.
         """
         self._sec()._check_can_view_logs()
+        limited = rate_gate_json(self._log_read_rule("tail"))
+        if limited:
+            return limited
 
         # No `.sudo()`: developers already see every instance via
         # `rule_instance_all` (Project Manager+ domain `[(1,'=',1)]`,
@@ -1083,10 +1093,15 @@ class OpsMixin:
         if not re.match(r"^[a-zA-Z0-9_-]+$", service):
             return {"ok": False, "error": _("Invalid service name")}
 
-        command = (
-            f"cd {inst_dir} && docker compose -f {yaml_file} "
-            f"logs --no-color --tail={tail} {service} 2>&1"
-        )
+        if service == "odoo":
+            # Odoo's log lives on the host now; the container's output
+            # is only the fallback for an instance not rebuilt yet.
+            command = odoo_log_live_command(inst_dir, yaml_file, tail)
+        else:
+            command = (
+                f"cd {inst_dir} && docker compose -f {yaml_file} "
+                f"logs --no-color --tail={tail} {service} 2>&1"
+            )
 
         async def _run():
             async with asyncssh.connect(**host.ssh_connect_kwargs()) as conn:
@@ -1104,6 +1119,191 @@ class OpsMixin:
                 "ok": False,
                 "error": _("An internal error occurred. Check server logs."),
             }
+
+    def _log_read_rule(self, kind):
+        """Per-user, per-endpoint cap for a plain read of an instance's logs.
+
+        One bucket per endpoint family rather than one shared bucket:
+        the viewer opens by calling the listing and the tail at the
+        same instant, and a single bucket makes those two upserts race
+        for the same row on every open — Postgres answers that with a
+        serialization failure, Odoo retries the request, and the user
+        sees nothing but the server log fills with it. Same cap for
+        all three, since they are the same kind of act.
+
+        :param str kind: endpoint family (``tail``, ``list``, ``day``)
+        """
+        return Rule(
+            f"logs_{kind}_user:{request.env.uid}",
+            _("Too many log reads recently. Try again in a minute."),
+            cap_key="rate_limit_logs_per_min",
+            log_tag=f"logs {kind} user={request.env.uid}",
+        )
+
+    def _log_settings(self):
+        """Settings that bound what a log read may cost the host."""
+        return request.env["cloud.settings"].sudo()._get_system()
+
+    @http.route(["/cloud/instance_log_archives"], type="jsonrpc", auth="user")
+    def cloud_instance_log_archives(self, instance_id):
+        """List the Odoo log files the host keeps for this instance.
+
+        Newest first, the live file at the top. An instance that has
+        not been rebuilt since file logging shipped simply has none —
+        reported as an empty list plus ``archived=False`` so the viewer
+        can say so instead of looking broken.
+        """
+        self._sec()._check_can_view_logs()
+        limited = rate_gate_json(self._log_read_rule("list"))
+        if limited:
+            return limited
+        inst = request.env["cloud.instance"].browse(instance_id)
+        if not inst.exists() or not inst.host_id:
+            return {"ok": False, "error": _("Instance not found")}
+        try:
+            stdout, _stderr = self._ssh_run(
+                inst.host_id, log_archive_list_command(inst.get_remote_dir()),
+            )
+        except Exception:
+            _logger.exception(
+                "Error listing log archives for instance %s", instance_id,
+            )
+            return {
+                "ok": False,
+                "error": _("An internal error occurred. Check server logs."),
+            }
+        live, dated = None, []
+        for line in stdout.splitlines():
+            name, _sep, rest = line.strip().partition("|")
+            size, _sep2, mtime = rest.partition("|")
+            if not is_safe_log_archive(name):
+                continue
+            entry = {
+                "name": name,
+                "size": int(size) if size.isdigit() else 0,
+                "mtime": int(mtime) if mtime.isdigit() else 0,
+                "compressed": name.endswith(".gz"),
+            }
+            if name == "odoo.log":
+                live = entry
+            else:
+                dated.append(entry)
+        dated.sort(key=itemgetter("name"), reverse=True)
+        return {
+            "ok": True,
+            "archived": bool(live or dated),
+            "archives": ([live] if live else []) + dated,
+        }
+
+    @http.route(["/cloud/fetch_log_archive"], type="jsonrpc", auth="user")
+    def cloud_fetch_log_archive(self, instance_id, name, lines=500, search=""):
+        """Return the tail of one archived Odoo log, optionally filtered.
+
+        The filter runs on the host: a day of logs is megabytes, and
+        the answer to "what happened on Tuesday" is usually a handful
+        of lines.
+        """
+        self._sec()._check_can_view_logs()
+        limited = rate_gate_json(self._log_read_rule("day"))
+        if limited:
+            return limited
+        inst = request.env["cloud.instance"].browse(instance_id)
+        if not inst.exists() or not inst.host_id:
+            return {"ok": False, "error": _("Instance not found")}
+        if not is_safe_log_archive(name):
+            return {"ok": False, "error": _("Unknown log file")}
+        tail = max(1, min(int(lines or 500), 5000))
+        try:
+            stdout, _stderr = self._ssh_run(
+                inst.host_id,
+                odoo_log_read_command(
+                    inst.get_remote_dir(), name, tail, (search or "").strip(),
+                ),
+            )
+        except Exception:
+            _logger.exception(
+                "Error reading log archive %s for instance %s",
+                name, instance_id,
+            )
+            return {
+                "ok": False,
+                "error": _("An internal error occurred. Check server logs."),
+            }
+        return {"ok": True, "lines": [ln for ln in stdout.splitlines() if ln]}
+
+    @http.route(["/cloud/search_log_archives"], type="jsonrpc", auth="user")
+    def cloud_search_log_archives(self, instance_id, term, max_files=60):
+        """Return the archived days whose log mentions *term*.
+
+        The day picker answers "show me the 17th"; this answers "which
+        day was it", which is the question an operator actually has
+        once the archive is two months deep.
+        """
+        self._sec()._check_can_view_logs()
+        limited = rate_gate_json(Rule(
+            f"log_search_user:{request.env.uid}",
+            _("Too many log searches recently. Try again in a minute."),
+            cap_key="rate_limit_log_search_per_min",
+            log_tag=f"log_search user={request.env.uid}",
+        ))
+        if limited:
+            return limited
+        inst = request.env["cloud.instance"].browse(instance_id)
+        if not inst.exists() or not inst.host_id:
+            return {"ok": False, "error": _("Instance not found")}
+        term = (term or "").strip()
+        if len(term) < 2:
+            # A one-character sweep matches every day and costs a full
+            # decompression of the archive to say nothing useful.
+            return {
+                "ok": False,
+                "error": _("Type at least two characters to search."),
+            }
+        settings = self._log_settings()
+        # Audited before the sweep runs: the row is the record that the
+        # search was asked for, and a search that dies on the host is
+        # exactly the one worth having a trace of.
+        request.env["cloud.audit.log"].sudo().create({
+            "action": "Searched instance logs",
+            "instance_id": inst.id,
+            "details": f"term: {term[:120]}",
+        })
+        try:
+            stdout, _stderr = self._ssh_run(
+                inst.host_id,
+                log_archive_search_command(
+                    inst.get_remote_dir(), term,
+                    max_files=max(1, min(
+                        int(max_files or 0) or settings.log_search_max_files,
+                        settings.log_search_max_files,
+                    )),
+                    timeout_s=settings.log_search_timeout_s,
+                ),
+            )
+        except Exception:
+            _logger.exception(
+                "Error searching log archives for instance %s", instance_id,
+            )
+            return {
+                "ok": False,
+                "error": _("An internal error occurred. Check server logs."),
+            }
+        matches = []
+        for line in stdout.splitlines():
+            name, _sep, count = line.strip().partition("|")
+            if not is_safe_log_archive(name):
+                continue
+            matches.append({
+                "name": name,
+                "count": int(count) if count.isdigit() else 0,
+            })
+        return {
+            "ok": True,
+            "matches": matches,
+            # False when the sweep was cut short by its own timeout, so
+            # the viewer can say "no match *so far*" instead of "none".
+            "complete": "IC_DONE" in stdout,
+        }
 
     # ── Monitoring (Fase 4 / A10) ─────────────────────────────────────────
 

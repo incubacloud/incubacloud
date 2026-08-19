@@ -48,6 +48,18 @@
                        t-att-value="state.form.rate_limit_connect_user_per_min"
                        t-on-change="(ev) => this.onIntInput('rate_limit_connect_user_per_min', ev)"/>
             </div>
+            <div class="rl-frow">
+                <label>Log reads (per user)</label>
+                <input type="number" min="1" style="width:120px;"
+                       t-att-value="state.form.rate_limit_logs_per_min"
+                       t-on-change="(ev) => this.onIntInput('rate_limit_logs_per_min', ev)"/>
+            </div>
+            <div class="rl-frow">
+                <label>Log searches and downloads (per user)</label>
+                <input type="number" min="1" style="width:120px;"
+                       t-att-value="state.form.rate_limit_log_search_per_min"
+                       t-on-change="(ev) => this.onIntInput('rate_limit_log_search_per_min', ev)"/>
+            </div>
         </div>
 
     </t>

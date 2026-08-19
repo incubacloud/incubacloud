@@ -27,6 +27,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-14](RB-14-restore-mailserver.md) | Restore the mail server | critical | Mail host lost or mail data corrupted; DKIM keys at risk |
 | [RB-15](RB-15-bump-copier-template-pin.md) | Bump the doodba template pin | planned | Adopting a newer doodba-copier-template release |
 | [RB-16](RB-16-tenant-sees-no-metrics.md) | A tenant sees no metrics | routine | Empty charts or missing Monitoring section for one tenant |
+| [RB-17](RB-17-instance-log-archive.md) | An instance's log archive is broken | warning | `instance_logs_unhealthy` alert, no days in the log viewer |
 
 ## Conventions
 

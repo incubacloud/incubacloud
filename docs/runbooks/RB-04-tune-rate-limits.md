@@ -7,7 +7,8 @@ slips past the current cap.
 
 `cloud.rate.limit` is a DB-backed **tumbling-window counter**: one row
 per bucket (e.g. `webhook_ip:1.2.3.4`, `terminal_user:42`,
-`terminal_instance:7`) per 60-second window, incremented with an atomic
+`terminal_instance:7`, `logs_tail_user:42`, `logs_list_user:42`,
+`logs_day_user:42`, `log_search_user:42`) per 60-second window, incremented with an atomic
 upsert. `hit()` returns `True`/`False` — it never raises. When it
 returns `False` the caller answers HTTP 429 (HTTP endpoints) or
 `{ok: false, error}` (JSON-RPC). Admin-tunable caps live as fields on
@@ -42,6 +43,19 @@ Then look at the current caps. The tunable ones are fields on the
 - `rate_limit_webhook_per_min` (300) — GitHub webhook, per IP
 - `rate_limit_terminal_per_min` (30) — terminal opens, per instance
 - `rate_limit_terminal_user_per_min` (10) — terminal opens, per user
+- `rate_limit_logs_per_min` (60) — log reads, per user, counted in a
+  separate bucket per endpoint family (`logs_tail_`, `logs_list_`,
+  `logs_day_`): the viewer calls two of them the instant it opens, and
+  one shared bucket makes those upserts contend for the same row on
+  every open — Postgres raises a serialization failure and Odoo
+  retries the request, visibly only in the server log. The viewer polls
+  the live tail every 4 s (~15/min per open viewer), so anything below
+  ~30 breaks normal use rather than abuse
+- `rate_limit_log_search_per_min` (6) — cross-day log searches and log
+  downloads, per user. Each search decompresses up to
+  `log_search_max_files` days on the instance's host; the per-search
+  cost itself is bounded by `log_search_timeout_s` and
+  `log_download_max_mb` (Settings → General → Instance Logs)
 
 ```sql
 db$ SELECT rate_limit_webhook_per_min,

@@ -188,6 +188,203 @@ def _quote_remote_path(p):
     return shlex.quote(p)
 
 
+# ── Odoo log archive (logs/odoo.log + logrotate) ─────────────────
+
+#: The shapes logrotate can produce for the Odoo log of an instance:
+#: the live file, yesterday's (kept plain by ``delaycompress``) and the
+#: compressed ones behind it. The name reaches a shell, so nothing else
+#: is accepted — no globbing, no traversal, no separators.
+_LOG_ARCHIVE_RE = re.compile(r'^odoo\.log(\.\d{4}-\d{2}-\d{2}(\.gz)?)?$')
+
+#: The same shapes, as the ``find -regex`` the host-side commands use
+#: to pick their candidates. Matched against ``./<name>`` from inside
+#: ``logs/``, and always paired with ``-type f``: a symlink planted in
+#: ``logs/`` from inside the container must neither be read nor take
+#: up one of the slots a bounded sweep has.
+_LOG_ARCHIVE_FIND_RE = r'\./odoo\.log(\.[0-9]{4}-[0-9]{2}-[0-9]{2}(\.gz)?)?'
+
+#: Where the instance's Odoo log lives, relative to its remote dir.
+LOG_DIRNAME = 'logs'
+LOG_BASENAME = 'odoo.log'
+
+
+def _log_files_newest_first(limit=None):
+    """Return the pipeline that names the archive's real files, newest first.
+
+    Runs from inside ``logs/``. Regular files only, logrotate's shapes
+    only, ordered by modification time; *limit* caps the list so a
+    bounded sweep reads the newest days.
+
+    :param limit: newest N names to keep, or None for all
+    :return: the shell pipeline, one file name per line
+    """
+    pipeline = (
+        "find . -maxdepth 1 -type f -regextype posix-extended "
+        f"-regex {shlex.quote(_LOG_ARCHIVE_FIND_RE)} "
+        "-printf '%T@ %f\\n' 2>/dev/null | sort -rn"
+    )
+    if limit is not None:
+        pipeline += f' | head -n {int(limit)}'
+    return pipeline + " | cut -d' ' -f2-"
+
+
+def _pick_log_file(name):
+    """Return the snippet that sets ``$f`` to the file to read for *name*.
+
+    A plain day (``odoo.log.<date>``) is what the viewer lists until
+    the next rotation compresses it; a viewer left open over midnight
+    then asks for a name that has become ``<name>.gz``. The plain name
+    therefore falls back to its compressed twin. Either way only a
+    regular file qualifies — a symlink is refused, not followed — and
+    the snippet fails when nothing does, so what follows it never runs.
+
+    :param str name: archive file name, already validated
+    :return: a shell snippet usable as an ``&&`` operand
+    """
+    candidates = [name] if name.endswith('.gz') else [name, f'{name}.gz']
+    paths = ' '.join(shlex.quote(f'{LOG_DIRNAME}/{c}') for c in candidates)
+    return (
+        f'f=; for c in {paths}; do '
+        'if [ -f "$c" ] && [ ! -L "$c" ]; then f="$c"; break; fi; done; '
+        '[ -n "$f" ]'
+    )
+
+
+def is_safe_log_archive(name):
+    """True iff *name* is a log file the panel is willing to read.
+
+    :param name: candidate file name coming from the browser
+    :return: bool
+    """
+    return bool(isinstance(name, str) and _LOG_ARCHIVE_RE.match(name))
+
+
+def odoo_log_live_command(inst_dir, yaml_file, lines):
+    """Return the command that tails an instance's current Odoo log.
+
+    Prefers the file on the host — the only copy that survives a
+    rebuild — and falls back to the container's output for an instance
+    that has not been rebuilt since file logging shipped, so the viewer
+    never goes blank during the transition.
+
+    :param str inst_dir: remote instance directory (may start with ~/)
+    :param str yaml_file: compose file of the instance's environment
+    :param int lines: how many trailing lines to return
+    :return: the shell command
+    """
+    qdir = _quote_remote_path(inst_dir)
+    n = int(lines)
+    live = f'{LOG_DIRNAME}/{LOG_BASENAME}'
+    return (
+        f'cd {qdir} && '
+        f'if [ -f {live} ] && [ ! -L {live} ]; then '
+        f'tail -n {n} {live}; '
+        f'else docker compose -f {shlex.quote(yaml_file)} '
+        f'logs --no-color --tail={n} odoo 2>&1; fi'
+    )
+
+
+def odoo_log_read_command(inst_dir, name, lines, search=''):
+    """Return the command that reads one archived Odoo log.
+
+    ``zcat -f`` covers both shapes the archive has (the compressed
+    files and the two plain ones), so the caller does not have to
+    branch on the extension — nor on whether the plain day it asked
+    for has been compressed since it was listed.
+
+    :param str inst_dir: remote instance directory (may start with ~/)
+    :param str name: archive file name, already validated
+    :param int lines: how many trailing lines to return
+    :param str search: optional fixed-string filter applied on the host
+    :return: the shell command
+    """
+    qdir = _quote_remote_path(inst_dir)
+    n = int(lines)
+    pipeline = 'zcat -f "$f" 2>/dev/null'
+    if search:
+        pipeline += f' | grep -aF -- {shlex.quote(search)}'
+    return (
+        f'cd {qdir} && {_pick_log_file(name)} && '
+        f'{{ {pipeline} | tail -n {n}; }} || true'
+    )
+
+
+def log_archive_list_command(inst_dir):
+    """Return the command that lists an instance's Odoo log archive.
+
+    One line per file as ``name|size|mtime``. Tolerates an instance
+    with no ``logs/`` at all (never rebuilt since file logging), which
+    is a state to report, not an error.
+
+    :param str inst_dir: remote instance directory (may start with ~/)
+    :return: the shell command
+    """
+    qdir = _quote_remote_path(inst_dir)
+    return (
+        f'cd {qdir}/{LOG_DIRNAME} 2>/dev/null && '
+        "find . -maxdepth 1 -type f -regextype posix-extended "
+        f"-regex {shlex.quote(_LOG_ARCHIVE_FIND_RE)} "
+        "-printf '%f|%s|%Ts\\n' 2>/dev/null || true"
+    )
+
+
+def log_archive_search_command(inst_dir, term, max_files=60, timeout_s=30):
+    """Return the command that finds which archived days mention *term*.
+
+    Newest day first, one ``name|count`` line per day that matches, and
+    a final ``IC_DONE`` marker: without it a sweep the timeout cut
+    short would be indistinguishable from one that found nothing,
+    which is the wrong answer to give someone hunting an incident.
+
+    The *max_files* budget is spent on real log files only: candidates
+    come from ``find -type f`` restricted to logrotate's shapes, so a
+    symlink or a junk file planted in ``logs/`` from inside the
+    container cannot push the real days out of the sweep.
+
+    :param str inst_dir: remote instance directory (may start with ~/)
+    :param str term: fixed string to look for
+    :param int max_files: newest N files to sweep
+    :param int timeout_s: seconds before the sweep is cut short
+    :return: the shell command
+    """
+    qdir = _quote_remote_path(inst_dir)
+    inner = (
+        f'for f in $({_log_files_newest_first(max_files)}); do '
+        f'[ -f "$f" ] || continue; [ -L "$f" ] && continue; '
+        f'n=$(zcat -f "$f" 2>/dev/null | grep -acF -- {shlex.quote(term)}); '
+        f'[ "$n" -gt 0 ] && printf "%s|%s\\n" "$f" "$n"; '
+        f'done; printf "IC_DONE\\n"'
+    )
+    return (
+        f'cd {qdir}/{LOG_DIRNAME} 2>/dev/null && '
+        f'timeout {int(timeout_s)} sh -c {shlex.quote(inner)} || true'
+    )
+
+
+def log_archive_download_command(inst_dir, name, max_bytes=64 * 1024 * 1024):
+    """Return the command that streams one archived log as gzip bytes.
+
+    Already-compressed files are sent as they are; the two plain ones
+    are compressed on the way out. Bounded, because a log whose
+    rotation stalled can reach sizes that would take the Odoo worker's
+    memory with it — the first *max_bytes* of an absurd log are a
+    better outcome than a dead worker, and the health probe alerts on
+    exactly that instance anyway. A plain day that was compressed since
+    it was listed is served from its ``.gz`` twin.
+
+    :param str inst_dir: remote instance directory (may start with ~/)
+    :param str name: archive file name, already validated
+    :param int max_bytes: cap on the bytes returned
+    :return: the shell command
+    """
+    qdir = _quote_remote_path(inst_dir)
+    return (
+        f'cd {qdir} && {_pick_log_file(name)} && '
+        '{ case "$f" in *.gz) cat "$f";; *) gzip -c "$f";; esac; } '
+        f'2>/dev/null | head -c {int(max_bytes)}'
+    )
+
+
 def _job_response(env, job_id):
     """Return a consistent dict for a deploy/rebuild job response.
 
