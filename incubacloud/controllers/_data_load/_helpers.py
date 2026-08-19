@@ -242,7 +242,7 @@ def _pick_log_file(name):
     :return: a shell snippet usable as an ``&&`` operand
     """
     candidates = [name] if name.endswith('.gz') else [name, f'{name}.gz']
-    paths = ' '.join(shlex.quote(f'{LOG_DIRNAME}/{c}') for c in candidates)
+    paths = shlex.join(f'{LOG_DIRNAME}/{c}' for c in candidates)
     return (
         f'f=; for c in {paths}; do '
         'if [ -f "$c" ] && [ ! -L "$c" ]; then f="$c"; break; fi; done; '
