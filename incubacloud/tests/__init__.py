@@ -95,3 +95,4 @@ from . import test_instance_log_archive
 from . import test_instance_log_health
 from . import test_instance_log_commands
 from . import test_session_cookie_hardening
+from . import test_host_build_lock

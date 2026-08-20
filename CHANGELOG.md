@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.79] — 2026-08-20
+
+### Fixed
+
+- **Two image builds on one host no longer collide.** Jobs serialise per *instance* — deliberately, so one tenant's deploy does not block another's — but every build on a host runs `docker compose build` against the same daemon, and upstream doodba's Dockerfile mounts the apt cache with a BuildKit id shared across the machine. Two builds reaching `apt-get install` together produce `Could not get lock /var/cache/apt/archives/lock` and one of them dies. Measured in production: the release rollout enqueued two rebuilds in the same second on the same host, one built for 456 s and the other failed 75 s in. `RebuildInstanceExecutor` now carries a per-host advisory lock, so at most one build runs per host and the loser is **deferred 30 s, not failed**
+- The distinction matters more than the collision. A failed rebuild is what the rollout's guard reads as "this release is not safe to spread", so a single unlucky pair of builds latched the whole fleet — core and tenant module alike — until an operator re-ran the job by hand. A deferral costs thirty seconds and the rollout never notices
+- The lock sits on `RebuildInstanceExecutor` because that is the only class in the codebase that issues `docker compose build`; every rebuild variant (manual, tenant, warm, apply-plan) subclasses it, so one placement covers all of them. It shares its namespace with the warm-pool lock that solved this for warm builds first — two lock families each holding their own would still collide — and `WarmHostLockMixin` is now an alias of it
+
+---
+
 ## [1.0.78] — 2026-08-20
 
 ### Security

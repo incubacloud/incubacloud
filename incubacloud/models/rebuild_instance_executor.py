@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from odoo import fields
 
 from odoo.addons.queue_job.exception import RetryableJobError
+from .host_build_lock import HostBuildLockMixin
 
 from .abstract_executor import sql_escape_literal
 from .deploy_instance_executor import DeployInstanceExecutor
@@ -31,8 +32,15 @@ from .deploy_instance_executor import DeployInstanceExecutor
 _EXIT_CRONS_BUSY = 75
 
 
-class RebuildInstanceExecutor(DeployInstanceExecutor):
-    """Rebuild a running doodba instance using copier update."""
+class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
+    """Rebuild a running doodba instance using copier update.
+
+    ``HostBuildLockMixin`` is first in the bases so its
+    ``pre_run_checks`` runs and chains: this is the only class in the
+    codebase that issues ``docker compose build``, and every rebuild
+    variant inherits from it, so putting the per-host build lock here
+    covers manual, tenant and warm rebuilds at once.
+    """
 
     _job_type = "rebuild_instance"
 

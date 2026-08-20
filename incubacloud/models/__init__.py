@@ -40,6 +40,7 @@ from . import cloud_job_type
 from . import cloud_instance_session
 from . import queue_job_ext
 
+from . import host_build_lock
 from . import registry
 from . import abstract_executor
 from . import ansible_executor
