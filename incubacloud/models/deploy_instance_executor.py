@@ -475,16 +475,26 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         ``None`` anymore — every consumer already tolerates both shapes.
 
         The project's ``default`` network is deliberately NOT labelled.
-        Docker keeps a network alive while any container — running or
-        stopped — still holds an endpoint on it, so protecting the
-        containers already protects the network; it was only swept back
-        when the containers went with it. Labelling it, on the other
-        hand, changes the network's definition, and ``docker compose``
-        answers that by recreating it: on an instance whose network
-        predates the label that means tearing the live stack down
-        mid-command, which failed outright ("has active endpoints"
+        Labelling it changes the network's definition, and ``docker
+        compose`` answers that by recreating it: on an instance whose
+        network predates the label that means tearing the live stack
+        down mid-command, which failed outright ("has active endpoints"
         during a rebuild's boot test, "is not connected to the network"
         on a plain ``up``) and left tenants stopped.
+
+        That used to be paired with the claim that protecting the
+        containers already protects the network, because Docker keeps a
+        network alive while any container — running or stopped — holds
+        an endpoint on it. **That claim is false.** Stopping a container
+        tears its sandbox down and releases the endpoint, so a stopped
+        stack's network counts as unused and ``docker system prune``
+        deletes it however well its containers are labelled. On
+        2026-08-20 it deleted the networks of both ``ready`` warm
+        spares: the containers survived, the post-prune check reported
+        every stack intact, and neither stack could start again —
+        a container that compose merely *starts* keeps the network id
+        it was created with. The prune therefore no longer touches
+        networks at all; see ``ansible/playbooks/host_maintenance.yml``.
         """
         inst = self._inst()
         allowed = (
