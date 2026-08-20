@@ -22,6 +22,21 @@ http:
         browserXssFilter: "true"
         # Don't leak full URLs to cross-origin destinations.
         referrerPolicy: "strict-origin-when-cross-origin"
+    # HSTS on its own, so it can be the default middleware of the https
+    # entrypoint without dragging the rest of `secure` along. `secure`
+    # sets frameDeny (X-Frame-Options: DENY), which would blank out the
+    # panel's Grafana iframes and break Odoo's own website editor, and it
+    # sets stsIncludeSubdomains/stsPreload, which must not be turned on
+    # until every subdomain is known to hold a valid certificate: with
+    # includeSubDomains, an expired tenant cert becomes unreachable with
+    # no click-through.
+    #
+    # forceSTSHeader alone emits nothing — Traefik only writes the header
+    # when stsSeconds is non-zero. That is the bug this middleware fixes.
+    hsts:
+      headers:
+        forceSTSHeader: "true"
+        stsSeconds: 31536000
     nocrawlers:
       headers:
         customResponseHeaders:

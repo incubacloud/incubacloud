@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.78] — 2026-08-20
+
+### Security
+
+- **The session cookie now carries `Secure` and `SameSite=Lax`.** Odoo emits it with `HttpOnly` and nothing else, which left two ways for it to escape: a user who types the bare domain makes one cleartext request before the redirect to HTTPS, and that request carries the cookie; and the cookie travels on cross-site requests. `Secure` is added only when the request itself is secure (`X-Forwarded-Proto` under `proxy_mode`), so a development instance over plain HTTP is untouched and keeps working. `SameSite=Lax` is added only to `session_id` — the livechat and website visitor cookies may legitimately need cross-site delivery, and `Lax` is safe for the OIDC flows here because the authorization endpoint is reached by a top-level GET navigation. Both wrappers only ever tighten: a caller that already asked for a value keeps it
+- **Traefik actually sends `Strict-Transport-Security` now.** It did not, anywhere — not on the panel and not on a single tenant. The `secure` middleware that carries the header is defined on every host, complete and correct, and referenced by no router: it hangs off the `doodba` chain, and the routers copier generates reference only their own per-project middlewares. Meanwhile the middleware that *is* applied to the panel set `forceSTSHeader` with `stsSeconds` at zero, and Traefik writes no header at all when the max-age is zero. Fixed in the only two places that reach everything: `stsSeconds` on the panel's own middleware, and a new minimal `hsts` middleware wired as the default middleware of the `https` entrypoint, which covers every router on a host — tenants, the catch-all, the metrics gateway — without editing a single generated compose file
+- **`secure` is deliberately *not* what the entrypoint defaults to.** It sets `frameDeny`, which would blank out the panel's two Grafana iframes and break Odoo's own website editor, and `stsIncludeSubdomains`/`stsPreload`, which would make an expired tenant certificate unreachable with no click-through. The `hsts` middleware carries a one-year max-age and nothing else; the remaining headers are a separate decision, taken one at a time
+- Both Traefik edits ship as idempotent retrofits on the stored per-host templates, in the same conservative style as the metrics and access-log ones: they add what is missing, they leave a hand-edited file alone, and they are a no-op on a shape they do not recognise. The two are **interlocked and fail closed**: the entrypoint reference is only written when the dynamic config actually defines the middleware, because a `hsts@file` that does not resolve is not a missing header — Traefik answers 500 on every router of that entrypoint, which is the whole host. The reverse order (a middleware nobody references) is harmless. `traefik_yml` is part of the config-drift snapshot, so touching it marks every host as needing a `full_setup` — which is accurate, because a static Traefik change only takes effect when the proxy restarts
+
+---
+
 ## [1.0.77] — 2026-08-19
 
 ### Added
