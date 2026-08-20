@@ -94,3 +94,4 @@ from . import test_deploy_override_logging
 from . import test_instance_log_archive
 from . import test_instance_log_health
 from . import test_instance_log_commands
+from . import test_session_cookie_hardening

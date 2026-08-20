@@ -1524,6 +1524,128 @@ class CloudHost(models.Model):
             + config_yml[match.end("body"):]
         )
 
+    # The HSTS middleware, kept apart from ``secure`` on purpose. See the
+    # comment carried by the seed ``config.yml``: attaching ``secure``
+    # wholesale would also set ``frameDeny`` and ``stsIncludeSubdomains``,
+    # neither of which is safe to turn on fleet-wide today.
+    # The HSTS middleware, kept apart from ``secure`` on purpose. See the
+    # comment carried by the seed ``config.yml``: attaching ``secure``
+    # wholesale would also set ``frameDeny`` and ``stsIncludeSubdomains``,
+    # neither of which is safe to turn on fleet-wide today.
+    #
+    # ``{i}`` is the indent of the ``middlewares:`` key it is inserted
+    # under, so a template written with a different indent still comes out
+    # as valid YAML.
+    _TRAEFIK_HSTS_MIDDLEWARE = (
+        "{i}  # HSTS on its own, so it can be the default middleware of "
+        "the https\n"
+        "{i}  # entrypoint without dragging the rest of `secure` along. "
+        "Auto-added\n"
+        "{i}  # by IncubaCloud; the seed template explains the reasoning "
+        "in full.\n"
+        "{i}  hsts:\n"
+        "{i}    headers:\n"
+        '{i}      forceSTSHeader: "true"\n'
+        "{i}      stsSeconds: 31536000\n"
+    )
+
+    @staticmethod
+    def _add_traefik_hsts_middleware(config_yml):
+        """Return ``config.yml`` with the standalone ``hsts`` middleware.
+
+        Inserted into the ``middlewares`` mapping under ``http:`` rather
+        than merged into ``secure``: ``secure`` is what an operator may
+        have tuned, and this one has to stay minimal because it becomes
+        the entrypoint default.
+
+        Anchored on ``http:`` so a ``middlewares:`` belonging to a router
+        further down the file is never the one extended, and indented from
+        the key it found so a differently indented template still parses.
+
+        Idempotent, and a no-op when the file does not have the mapping
+        this knows how to extend — the same stance as every other Traefik
+        retrofit here.
+        """
+        import re
+
+        if not config_yml:
+            return config_yml
+        if re.search(r"^[ \t]+hsts:[ \t]*$", config_yml, re.MULTILINE):
+            return config_yml
+        match = re.search(
+            r"^http:[ \t]*\n"
+            r"(?:[ \t]*\n)*"
+            r"(?P<indent>[ \t]+)middlewares:[ \t]*\n",
+            config_yml,
+            re.MULTILINE,
+        )
+        if not match:
+            return config_yml
+        block = CloudHost._TRAEFIK_HSTS_MIDDLEWARE.format(
+            i=match.group("indent"),
+        )
+        return config_yml[: match.end()] + block + config_yml[match.end():]
+
+    @staticmethod
+    def _add_traefik_entrypoint_hsts(traefik_yml, config_yml):
+        """Return ``traefik.yml`` with ``hsts@file`` on the https entrypoint.
+
+        This is the only place a response header can be added once and
+        reach every router on the host: the per-project routers come from
+        copier and reference nothing but their own middlewares.
+
+        Interlocked with the middleware on purpose. An entrypoint naming a
+        middleware the file provider does not define is not a missing
+        header — Traefik answers 500 on every router of that entrypoint,
+        which is the whole host. So *config_yml* is checked first, and a
+        file where the middleware retrofit did not apply gets no reference
+        either. The pair fails closed.
+
+        Only handles the shape the seed template ships — ``https:`` with an
+        ``http:`` child. A host whose entrypoint was hand-edited into
+        something else is left untouched, for the same reason.
+
+        :param traefik_yml: the host's stored static configuration.
+        :param config_yml: the host's stored dynamic configuration, the one
+            that has to define ``hsts``.
+        """
+        import re
+
+        if not traefik_yml:
+            return traefik_yml
+        if not config_yml or not re.search(
+            r"^[ \t]+hsts:[ \t]*$", config_yml, re.MULTILINE,
+        ):
+            return traefik_yml
+        match = re.search(
+            r"^[ \t]+https:[ \t]*\n"
+            r"(?P<hindent>[ \t]+)http:[ \t]*\n"
+            r"(?P<body>(?:(?P=hindent)[ \t]+\S.*\n)*)",
+            traefik_yml,
+            re.MULTILINE,
+        )
+        if not match:
+            return traefik_yml
+        body = match.group("body")
+        if not body or re.search(r"^[ \t]+middlewares:", body, re.MULTILINE):
+            return traefik_yml
+        child_indent = re.match(r"[ \t]*", body).group(0)
+        addition = (
+            f"{child_indent}# Auto-added by IncubaCloud: default middleware "
+            f"for every router\n"
+            f"{child_indent}# on this entrypoint. Without it no HSTS header "
+            f"reaches the\n"
+            f"{child_indent}# tenants, because their routers are generated "
+            f"by copier.\n"
+            f"{child_indent}middlewares:\n"
+            f"{child_indent}  - hsts@file\n"
+        )
+        return (
+            traefik_yml[: match.end("body")]
+            + addition
+            + traefik_yml[match.end("body"):]
+        )
+
     @staticmethod
     def _add_traefik_metrics_port(inverseproxy_yaml):
         """Publish the metrics port on loopback, if not already published.
@@ -1618,6 +1740,32 @@ class CloudHost(models.Model):
                 vals["traefik_config_yml"] = with_headers
                 _logger.info(
                     "Added Traefik security headers for host: %s", host.name,
+                )
+
+            # HSTS. Two edits that only work together: the middleware
+            # goes in the dynamic config, and the reference to it in the
+            # static one. A host that got only the first would keep
+            # serving without the header and look fixed.
+            with_hsts = self._add_traefik_hsts_middleware(
+                vals.get("traefik_config_yml", host.traefik_config_yml),
+            )
+            if with_hsts != (
+                vals.get("traefik_config_yml", host.traefik_config_yml)
+            ):
+                vals["traefik_config_yml"] = with_hsts
+                _logger.info(
+                    "Added Traefik hsts middleware for host: %s", host.name,
+                )
+
+            with_ep_hsts = self._add_traefik_entrypoint_hsts(
+                vals.get("traefik_yml", host.traefik_yml),
+                vals.get("traefik_config_yml", host.traefik_config_yml),
+            )
+            if with_ep_hsts != (vals.get("traefik_yml", host.traefik_yml)):
+                vals["traefik_yml"] = with_ep_hsts
+                _logger.info(
+                    "Added Traefik https entrypoint HSTS for host: %s",
+                    host.name,
                 )
 
             with_port = self._add_traefik_metrics_port(
