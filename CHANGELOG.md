@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.80] — 2026-08-20
+
+### Fixed
+
+- **The daily prune stopped deleting the warm pool's networks.** `docker system prune` also prunes networks, and a project's network is the one resource here that can be neither protected nor safely swept. Labelling it changes its definition, so `docker compose` recreates it and tears a live stack down mid-command — that was tried and it left tenants stopped. Leaving it unlabelled was justified by the claim that protecting the containers already protects the network, "because Docker keeps a network alive while any container, running or stopped, holds an endpoint on it". **That claim is false.** Stopping a container tears its sandbox down and releases the endpoint, so a stopped stack's network counts as unused and goes, however well its containers are labelled
+- Measured in production on 2026-08-20: the prune deleted `ic-tenant-d51130c9_default` and `ic-tenant-85b154fe_default`, the networks of the only two warm spares in `ready` — the ones handed to the next customer who signs up. Their containers survived, so the post-prune check reported `✓ All managed stacks intact` while neither stack could start. It surfaced five hours later as a failed free-pool backup, on the one instance whose backup path has to wake the stack
+- The failure is not obvious from the outside because compose *recreates* containers whose definition changed and merely *starts* the rest — and a started container keeps the network id it was created with. `db` is precisely such a container in both the claim and the backup flows, so the daemon answers `network <id> not found` and the whole `up` fails
+- The play now runs `docker container prune`, `docker image prune` and `docker builder prune` instead of `docker system prune`. Networks occupy no disk, so never touching them reclaims exactly as much as before — the 12.86 GB of the run that caused this were images and build cache
+- **The post-prune verification covers networks now.** It only ever inventoried containers, which is why it certified two broken stacks as intact. It checks `<project>_default` for every deployed instance, exempting those with an active job for the same reason the container check does: a rebuild's `compose down` legitimately takes the network with it
+- The reclaimed-space line is a sum now. Three prunes print three totals, and reading the output backwards would have reported whatever the build cache freed and called it the total
+
+---
+
 ## [1.0.79] — 2026-08-20
 
 ### Fixed

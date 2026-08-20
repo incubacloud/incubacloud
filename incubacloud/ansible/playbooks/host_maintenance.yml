@@ -18,9 +18,26 @@
     ic_protect_label: "incubacloud.protect=1"
 
   tasks:
-    - name: Run docker system prune
+    # Deliberately NOT ``docker system prune``: that prunes networks
+    # too, and a project's network cannot be protected the way its
+    # containers are. Labelling the network changes its definition, so
+    # ``docker compose`` recreates it and tears a live stack down
+    # mid-command; leaving it unlabelled lets the prune delete it the
+    # moment the stack is stopped, because a stopped container releases
+    # its endpoint and the network then counts as unused. That is not a
+    # theory: on 2026-08-20 this play deleted the networks of both
+    # ``ready`` warm spares, whose labelled containers survived intact,
+    # and neither stack could start again.
+    #
+    # Pruning only what actually occupies disk sidesteps the choice.
+    # Networks reclaim no space, so never touching them costs nothing.
+    - name: Prune stopped containers, unused images and build cache
       ansible.builtin.command:
-        cmd: docker system prune -af --filter "label!={{ ic_protect_label }}"
+        cmd: "{{ item }}"
+      loop:
+        - docker container prune -f --filter "label!={{ ic_protect_label }}"
+        - docker image prune -af --filter "label!={{ ic_protect_label }}"
+        - docker builder prune -af
       register: ic_prune
       changed_when: true
 
@@ -36,9 +53,23 @@
       register: ic_survivors
       changed_when: false
 
+    # Post-prune network inventory. The container check below cannot
+    # see this failure mode: the containers survive, the network does
+    # not, and the stack is unstartable until it is recreated. It
+    # surfaced days later as a failed backup, which is exactly what
+    # these checks exist to prevent.
+    - name: Inventory the surviving networks
+      ansible.builtin.command:
+        cmd: "docker network ls --format {% raw %}'{{.Name}}'{% endraw %}"
+      register: ic_networks
+      changed_when: false
+
     - name: Export the reclaimed-space summary
       ansible.builtin.set_stats:
         aggregate: false
         data:
-          ic_prune_stdout: "{{ ic_prune.stdout | default('') }}"
+          ic_prune_stdout: >-
+            {{ ic_prune.results | map(attribute='stdout')
+               | select('string') | join('\n') }}
           ic_containers_after: "{{ ic_survivors.stdout | default('') }}"
+          ic_networks_after: "{{ ic_networks.stdout | default('') }}"
