@@ -224,10 +224,29 @@ jobs:
 
       - name: Install addons at the BASE revision
         if: steps.base.outputs.skip != 'true'
+        # POSIX sh on purpose: this container ships no bash, so GitHub
+        # runs the step with ``sh -e``. No ``pipefail``, no ``${var//,/ }``.
         run: |
           git checkout -f "${{ steps.base.outputs.base }}"
           oca_install_addons
+          # ``oca_init_test_database`` installs the addons' DEPENDENCIES
+          # (``manifestoo list-depends``) and nothing else, so the addons
+          # under test stay uninstalled. Without the explicit ``-i`` below
+          # the ``-u`` step finds nothing installed to upgrade, skips every
+          # migration and still exits 0 -- which is what this job did from
+          # the day it was written until 2026-08-21.
           oca_init_test_database
+          # Discovered rather than hardcoded so that adding an addon does
+          # not silently drop it out of the upgrade exercise.
+          addons=$(
+            for dir in */; do
+              if [ -f "${dir}__manifest__.py" ]; then printf '%s\n' "${dir%/}"; fi
+            done | sort | tr '\n' ',' | sed 's/,$//'
+          )
+          echo "Installing at the base revision: $addons"
+          echo "$addons" > /tmp/base-addons.txt
+          odoo -d "$PGDATABASE" -i "$addons" \
+            --stop-after-init --workers=0 --max-cron-threads=0
 
       - name: Upgrade to the new code
         if: steps.base.outputs.skip != 'true'
@@ -236,8 +255,33 @@ jobs:
         # real deployment would have failed to boot.
         run: |
           git checkout -f "$GITHUB_SHA"
-          odoo -d "$PGDATABASE" -u incubacloud,incubacloud_connect \
-            --stop-after-init --workers=0 --max-cron-threads=0
+          addons=$(cat /tmp/base-addons.txt)
+          echo "Upgrading: $addons"
+          # Redirected rather than piped into ``tee``: this shell has no
+          # ``pipefail``, so the pipe would report the exit status of
+          # ``tee`` and a failed upgrade would read as a pass.
+          if ! odoo -d "$PGDATABASE" -u "$addons" \
+              --stop-after-init --workers=0 --max-cron-threads=0 \
+              > /tmp/upgrade.log 2>&1; then
+            cat /tmp/upgrade.log
+            exit 1
+          fi
+          cat /tmp/upgrade.log
+          # Odoo logs "Loading module X" at INFO only when X is actually
+          # being installed or upgraded, and at DEBUG when it is merely
+          # loaded (odoo/modules/loading.py). Its absence therefore proves
+          # the upgrade was a no-op and the migrations never ran, which is
+          # a silent pass -- exactly the failure this job is meant to catch.
+          missing=""
+          for addon in $(echo "$addons" | tr ',' ' '); do
+            if ! grep -q "Loading module $addon " /tmp/upgrade.log; then
+              missing="$missing $addon"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Not upgraded, so their migrations never ran:$missing"
+            exit 1
+          fi
 
   shellcheck:
     name: Lint (shellcheck)
