@@ -399,6 +399,7 @@ class TestHardeningExecutorWiring(TransactionCase):
         host.hardened = host_attrs.get("hardened", False)
         host.allowed_ssh_ips = host_attrs.get("allowed_ssh_ips", "203.0.113.7")
         host.auto_security_updates = host_attrs.get("auto_security_updates", True)
+        host.http_conn_rate = host_attrs.get("http_conn_rate", 0)
 
         ex = object.__new__(HostHardeningExecutor)
         ex.env = self.env
@@ -426,6 +427,15 @@ class TestHardeningExecutorWiring(TransactionCase):
         self.assertEqual(ev["ic_hardened_user"], "ubuntu")
         self.assertEqual(ev["ic_ssh_port"], 2222)
         self.assertFalse(ex._needs_user_creation)
+
+    def test_extra_vars_carries_the_http_conn_rate(self):
+        """The per-host conn-rate cap reaches the playbook, off by default."""
+        off = self._make(user="root", port=22).get_extra_vars()
+        self.assertEqual(off["ic_http_conn_rate"], 0)
+        on = self._make(
+            user="root", port=22, http_conn_rate=50,
+        ).get_extra_vars()
+        self.assertEqual(on["ic_http_conn_rate"], 50)
 
     def test_parse_results_gates_on_port_listening(self):
         """parse_results refuses to proceed unless the new port came up."""

@@ -391,6 +391,15 @@
                                         When checked, this host will not be selected automatically for new instances.
                                     </span>
                                 </div>
+                                <div class="rl-frow rl-full">
+                                    <label>HTTP connection-rate cap</label>
+                                    <input type="number" min="0" step="1"
+                                           t-att-value="state.form.http_conn_rate"
+                                           t-on-input="(ev) => this.onInput('http_conn_rate', ev)"/>
+                                    <span class="ic-form-note">
+                                        Per-source new-connection cap (per second) on ports 80/443, enforced by the host firewall. 0 disables it (default). Turn it on only after rehearsing on a throwaway VPS — see runbook RB-18. Applies on the next hardening run.
+                                    </span>
+                                </div>
                             </div>
                         </t>
 

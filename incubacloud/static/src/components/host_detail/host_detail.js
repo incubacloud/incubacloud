@@ -46,6 +46,7 @@ const EMPTY_FORM = () => ({
     traefik_inverseproxy_yaml: "",
     traefik_yml:              "",
     exclude_from_autoassign:  false,
+    http_conn_rate:           0,
     whitelist:                [...DEFAULT_WHITELIST],
     newWhitelistEntry:        "",
 });
@@ -247,6 +248,7 @@ export class HostDetail extends Component {
                 traefik_inverseproxy_yaml: host.traefik_inverseproxy_yaml || "",
                 traefik_yml:              host.traefik_yml || "",
                 exclude_from_autoassign:  host.exclude_from_autoassign || false,
+                http_conn_rate:           host.http_conn_rate || 0,
                 whitelist:                host.whitelist || [],
                 newWhitelistEntry:        "",
             };
@@ -502,6 +504,7 @@ export class HostDetail extends Component {
             delete vals.newWhitelistEntry;
             vals.whitelist = Array.from(this.state.form.whitelist || []);
             if (vals.port) vals.port = parseInt(vals.port, 10);
+            vals.http_conn_rate = parseInt(vals.http_conn_rate, 10) || 0;
             vals.tag_ids = this.state.selectedTags.map(t => t.id);
 
             if (this.isNew) {
