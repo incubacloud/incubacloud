@@ -9,6 +9,9 @@ from odoo import api, fields, models
 from odoo.exceptions import AccessError
 from odoo.tools import config as odoo_config
 
+from ..github.http_utils import safe_urlopen
+from ..net.outbound import post_json
+
 _logger = logging.getLogger(__name__)
 
 
@@ -461,7 +464,7 @@ class CloudAlert(models.Model):
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=10)  # nosec B310
+        safe_urlopen(req, timeout=10)  # nosec B310 — Telegram API, no redirects
 
     def _send_alert_webhook(self, user, resolved=False):
         """POST a signed JSON alert notification to the user's webhook URL.
@@ -503,12 +506,11 @@ class CloudAlert(models.Model):
                 hashlib.sha256,
             ).hexdigest()
             headers["X-IncubaCloud-Signature"] = "sha256=" + sig
-        req = urllib.request.Request(
-            user.cloud_webhook_url,
-            data=payload,
-            headers=headers,
-        )
-        urllib.request.urlopen(req, timeout=10)  # nosec B310
+        # User-chosen destination — see :mod:`..net.outbound`. The
+        # request leaves a machine that can reach the metadata service
+        # and the internal database, so the URL is re-resolved and the
+        # socket pinned to the address that passed.
+        post_json(user.cloud_webhook_url, payload, headers=headers)
 
     def _build_alert_email_body(self):
         """Render a simple HTML body for an alert email."""

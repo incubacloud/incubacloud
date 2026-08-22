@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.81] — 2026-08-22
+
+### Security
+
+- **Notification webhooks are the one outbound URL a user chooses, and they were guarded by a `startswith('https://')` check at save time.** The senders then handed the URL to a bare `urllib.request.urlopen`, which follows redirects by default and permits the https → http downgrade, so a single 302 left the checked destination. Nothing ever looked at where the hostname resolved, and a check at save time says nothing about where the name points minutes later when the notification is sent
+- Measured from the production manager container on 2026-08-22, with only a TCP connect and no request sent: `169.254.169.254:80` (cloud metadata), `127.0.0.1:8069` (its own Odoo) and `db:5432` (the internal Postgres) all answer. There is no egress filter behind the application check — the manager host has never been through the hardening playbook
+- Outbound webhook delivery now goes through a single guarded client (`net/outbound.py`): https only, no credentials in the URL, port 443, and every address the hostname resolves to must be public — loopback, RFC1918, link-local (which is where the metadata service lives), reserved, multicast, CGNAT and their IPv6 equivalents including IPv4-mapped forms are refused, and a name answering with a mix of public and private addresses is refused whole
+- **The socket is pinned to the address that passed validation.** Resolving, approving and then letting the stack resolve again is a TOCTOU, and DNS rebinding exists to exploit exactly that window; the hostname is kept for SNI, the `Host` header and certificate validation, so pinning does not weaken TLS
+- Redirects are refused outright rather than re-validated, matching what this codebase already did for its GitHub calls. The response is read up to a bound and discarded, so the channel stays blind: no body, no status, no error detail that could turn a webhook into a probe of the internal network
+- The three Telegram calls moved to the existing no-redirect opener. The host is fixed, but the URL carries a user-supplied bot token and the bare opener followed redirects
+- **`/cloud/save_user_preferences` now refuses share users.** The route is `auth='user'` with no group check, so a portal customer could store a webhook URL; it stayed inert only because both senders filter `share = False` in other files. The SPA that owns the form is internal-only, so no legitimate caller is affected — what this removes is a trap that any future widening of the notification audience would have sprung
+- Fixed-host GitHub calls were already using the no-redirect opener. The user-chosen destination — the only one that carries real risk — was the one left on the bare call
+
+---
+
 ## [1.0.80] — 2026-08-20
 
 ### Fixed

@@ -232,7 +232,7 @@ class TestAlertNotifyExternal(TransactionCase):
             .create(vals)
         )
 
-    @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
+    @patch("odoo.addons.incubacloud.models.cloud_alert.safe_urlopen")
     def test_job_failed_warning_telegram_to_failures_user(self, mock_open):
         """REGRESSION: 'failures' user with Telegram must get push for
         non-severe job_failed alerts too."""
@@ -240,7 +240,7 @@ class TestAlertNotifyExternal(TransactionCase):
         self._alert(code="job_failed", level="warning")
         mock_open.assert_called()
 
-    @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
+    @patch("odoo.addons.incubacloud.models.cloud_alert.safe_urlopen")
     def test_email_disabled_does_not_block_telegram(self, mock_open):
         """cloud_email_enabled is an email-only toggle — Telegram and
         other external channels must still deliver."""
@@ -252,7 +252,7 @@ class TestAlertNotifyExternal(TransactionCase):
         self._alert(code="disk_critical", level="critical")
         mock_open.assert_called()
 
-    @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
+    @patch("odoo.addons.incubacloud.models.cloud_alert.safe_urlopen")
     def test_external_notify_gated_in_test_mode(self, mock_open):
         """Without context flag, alert creation must not call Telegram."""
         self._user(
