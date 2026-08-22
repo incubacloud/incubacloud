@@ -759,6 +759,7 @@ class CrudMixin:
             'traefik_inverseproxy_yaml': host.traefik_inverseproxy_yaml or '',
             'traefik_yml': host.traefik_yml or '',
             'exclude_from_autoassign': host.exclude_from_autoassign,
+            'http_conn_rate': host.http_conn_rate,
             'allocated_cpus': round(host.allocated_cpus, 2),
             'allocated_ram_gb': round(host.allocated_ram_gb, 2),
             'available_cpus': round(host.available_cpus, 2),
@@ -782,7 +783,7 @@ class CrudMixin:
         'password', 'key_file', 'description', 'tag_ids',
         'wildcard_domain', 'traefik_panel_password',
         'traefik_config_yml', 'traefik_inverseproxy_yaml', 'traefik_yml',
-        'exclude_from_autoassign',
+        'exclude_from_autoassign', 'http_conn_rate',
     }
 
     @http.route(['/cloud/host_defaults'], type='jsonrpc', auth='user')

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.84] — 2026-08-23
+
+### Added
+
+- **The nftables connection-rate cap is now settable per host.** A new `http_conn_rate` field on the host (default 0 = off) is handed to the hardening playbook as `ic_http_conn_rate`, so the forward-hook meter added in 1.0.83 can be turned on for a single host from the panel (Host → Settings) and pushed with the next hardening run. It stays off until a real value is set; enable it only after rehearsing the change on a throwaway VPS (RB-18), since an unrehearsed drop on that hook can break Docker's published ports. The SaaS hardening executor inherits the wiring unchanged
+
+---
+
 ## [1.0.83] — 2026-08-22
 
 ### Security

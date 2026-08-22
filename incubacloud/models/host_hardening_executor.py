@@ -136,6 +136,7 @@ class HostHardeningExecutor(AnsibleExecutor):
             "ic_ssh_port": self._new_port,
             "ic_ssh_allowlist": self._ssh_allowlist,
             "ic_auto_reboot": bool(host.auto_security_updates),
+            "ic_http_conn_rate": host.http_conn_rate or 0,
         }
 
     def parse_results(self, results):

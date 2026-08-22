@@ -209,6 +209,17 @@ class CloudHost(models.Model):
              "the host (idempotent — updates the in-host nftables allowlist).",
     )
 
+    http_conn_rate = fields.Integer(
+        string="HTTP Connection-Rate Cap",
+        default=0,
+        help="Per-source new-connection cap (per second) on ports 80/443, "
+             "enforced on the nftables forward hook by host hardening. 0 "
+             "disables it (the default). Turn it on only after rehearsing the "
+             "change on a throwaway VPS — an unrehearsed drop on that hook "
+             "can break Docker's published ports (see runbook RB-18). Applies "
+             "on the next hardening run.",
+    )
+
     # ── Server specs + disk health (updated by cron every 5 min) ──────────
     cpu_cores = fields.Integer(string="CPU Cores", default=0)
     ram_total_gb = fields.Float(string="RAM Total (GB)", default=0, digits=(6, 1))
