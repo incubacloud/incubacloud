@@ -4,7 +4,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from ..github.credentials import GitHubAppCredentials
-from .encrypted_char import EncryptedChar
+from .encrypted_char import EncryptedChar, EncryptedText
 
 _logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class CloudGitHubApp(models.Model):
     """GitHub App configuration — system-level singleton.
 
     In BYO mode there is exactly one record in this model, shared across the
-    whole Odoo instance.  The private key is stored in the database but is
+    whole Odoo instance.  The private key is stored encrypted at rest and is
     never returned to front-end clients via JSON-RPC; instead, callers receive
     only a ``has_private_key`` boolean flag.
     """
@@ -36,13 +36,14 @@ class CloudGitHubApp(models.Model):
             " Auto-detected from the first installation webhook if left empty."
         ),
     )
-    private_key = fields.Text(
+    private_key = EncryptedText(
         string="Private Key (PEM)",
         required=True,
         groups="base.group_system",
         help=(
             "RSA private key in PEM format generated for this GitHub App."
-            " This value is never exposed in logs or API responses."
+            " Stored encrypted at rest; never exposed in logs or API"
+            " responses."
         ),
     )
     webhook_secret = EncryptedChar(

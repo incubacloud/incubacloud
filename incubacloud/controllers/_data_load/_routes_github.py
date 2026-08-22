@@ -262,7 +262,7 @@ class GitHubMixin:
             'app_id': app.app_id or '',
             'installation_id': app.installation_id or '',
             'has_webhook_secret': _has_encrypted(app, 'webhook_secret'),
-            'has_private_key': bool(app.sudo().private_key),
+            'has_private_key': _has_encrypted(app.sudo(), 'private_key'),
             'has_pat': _has_pat(request.env),
             'slug': slug,
             'install_url': f'https://github.com/apps/{slug}/installations/new' if slug else '',
