@@ -25,6 +25,10 @@ paths = [
     # Tier-2 test: uses the string ``fakekey...`` as a PEM body to
     # exercise the GitHub App credential parser. No real key.
     '''incubacloud/tests/test_cloud_github_app\.py''',
+    # Tier-2 test for the encrypted private_key field: needs a
+    # multi-line PEM-shaped literal to prove newlines survive the
+    # round trip through Fernet. No real key.
+    '''incubacloud/tests/test_encrypted_private_key\.py''',
     # Translations quote help text and error messages that include the
     # literal ``-----BEGIN PRIVATE KEY-----`` marker.
     '''incubacloud/i18n/.*\.po''',
