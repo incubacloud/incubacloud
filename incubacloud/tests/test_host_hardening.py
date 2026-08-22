@@ -303,7 +303,11 @@ class TestHardeningPreflight(TransactionCase):
         """
         from jinja2 import Environment
 
-        env = Environment(trim_blocks=True, lstrip_blocks=False)
+        # autoescape stays off on purpose: this renders an nftables ruleset,
+        # not HTML, and escaping would corrupt tokens like ``{ 80, 443 }``.
+        env = Environment(  # nosec B701
+            trim_blocks=True, lstrip_blocks=False, autoescape=False,
+        )
         base = {"ssh_port": 22222, "ic_effective_allowlist": "1.2.3.4"}
         base.update(extra)
         return env.from_string(self._ruleset_content()).render(**base)
