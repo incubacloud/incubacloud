@@ -1646,6 +1646,138 @@ class CloudHost(models.Model):
             + traefik_yml[match.end("body"):]
         )
 
+    # Per-source-IP rate limit, kept minimal because it becomes an
+    # entrypoint default alongside ``hsts``. ``{i}`` is the indent of the
+    # ``middlewares:`` key it is inserted under, so a template written with
+    # a different indent still comes out as valid YAML.
+    _TRAEFIK_RATELIMIT_MIDDLEWARE = (
+        "{i}  # Per-source-IP rate limit. Auto-added by IncubaCloud as an "
+        "https\n"
+        "{i}  # entrypoint default so it reaches every copier-generated "
+        "tenant\n"
+        "{i}  # router, throttling by client IP before a request hits "
+        "Odoo's\n"
+        "{i}  # pbkdf2 login. Direct traffic only: a host behind a trusted "
+        "CDN\n"
+        "{i}  # must set sourceCriterion.ipStrategy. Tunable live — this "
+        "file\n"
+        "{i}  # is watched by Traefik.\n"
+        "{i}  ratelimit:\n"
+        "{i}    rateLimit:\n"
+        "{i}      average: 300\n"
+        "{i}      period: 1m\n"
+        "{i}      burst: 100\n"
+    )
+
+    @staticmethod
+    def _add_traefik_ratelimit_middleware(config_yml):
+        """Return ``config.yml`` with the ``ratelimit`` middleware.
+
+        Inserted into the ``middlewares`` mapping under ``http:``, exactly
+        like the standalone ``hsts`` middleware, because it becomes the
+        second entrypoint default. Anchored on ``http:`` so a
+        ``middlewares:`` belonging to a router further down the file is
+        never the one extended, and indented from the key it found so a
+        differently indented template still parses.
+
+        Idempotent, and a no-op when the file does not have the mapping
+        this knows how to extend — the same stance as every other Traefik
+        retrofit here.
+
+        :param config_yml: the host's stored dynamic configuration.
+        :return: the configuration with ``ratelimit`` defined, or the input
+            untouched.
+        """
+        import re
+
+        if not config_yml:
+            return config_yml
+        if re.search(r"^[ \t]+ratelimit:[ \t]*$", config_yml, re.MULTILINE):
+            return config_yml
+        match = re.search(
+            r"^http:[ \t]*\n"
+            r"(?:[ \t]*\n)*"
+            r"(?P<indent>[ \t]+)middlewares:[ \t]*\n",
+            config_yml,
+            re.MULTILINE,
+        )
+        if not match:
+            return config_yml
+        block = CloudHost._TRAEFIK_RATELIMIT_MIDDLEWARE.format(
+            i=match.group("indent"),
+        )
+        return config_yml[: match.end()] + block + config_yml[match.end():]
+
+    @staticmethod
+    def _add_traefik_entrypoint_ratelimit(traefik_yml, config_yml):
+        """Return ``traefik.yml`` with ``ratelimit@file`` on https.
+
+        The second default middleware of the https entrypoint, appended to
+        the ``middlewares`` list the HSTS retrofit already put there. Same
+        reach as HSTS: the per-project routers come from copier and
+        reference nothing but their own middlewares, so an entrypoint
+        default is the only place a control can be added once and apply to
+        every instance on the host.
+
+        Interlocked with the middleware, and fails closed: an entrypoint
+        naming a middleware the file provider does not define makes Traefik
+        answer 500 on every router of that entrypoint — the whole host. So
+        *config_yml* is checked first, and a file where the middleware
+        retrofit did not apply gets no reference either.
+
+        Idempotent, and a no-op when the https entrypoint has no
+        ``middlewares`` list to extend (HSTS runs first and creates it, so
+        in practice it is always there) or the shape is not the seed's — an
+        operator's own chain is never appended to blind, the same stance as
+        the HSTS entrypoint retrofit.
+
+        :param traefik_yml: the host's stored static configuration.
+        :param config_yml: the host's stored dynamic configuration, the one
+            that has to define ``ratelimit``.
+        :return: the static configuration referencing ``ratelimit@file``, or
+            the input untouched.
+        """
+        import re
+
+        if not traefik_yml:
+            return traefik_yml
+        if not config_yml or not re.search(
+            r"^[ \t]+ratelimit:[ \t]*$", config_yml, re.MULTILINE,
+        ):
+            return traefik_yml
+        if re.search(
+            r"^[ \t]+-[ \t]+ratelimit@file[ \t]*$", traefik_yml, re.MULTILINE,
+        ):
+            return traefik_yml
+        match = re.search(
+            r"^[ \t]+https:[ \t]*\n"
+            r"(?P<hindent>[ \t]+)http:[ \t]*\n"
+            r"(?P<body>(?:(?P=hindent)[ \t]+\S.*\n)*)",
+            traefik_yml,
+            re.MULTILINE,
+        )
+        if not match:
+            return traefik_yml
+        body = match.group("body")
+        mw = re.search(
+            r"^(?P<mindent>[ \t]+)middlewares:[ \t]*\n"
+            r"(?P<items>(?:(?P=mindent)[ \t]+-[ \t]+\S.*\n)+)",
+            body,
+            re.MULTILINE,
+        )
+        if not mw:
+            return traefik_yml
+        if "hsts@file" not in mw.group("items"):
+            # Not the IncubaCloud-managed chain but an operator's own list
+            # (HSTS puts ``hsts@file`` on the one we manage). Appending to a
+            # hand-written chain blind is how a retrofit breaks a proxy, so
+            # it is left untouched — the same stance as the HSTS retrofit.
+            return traefik_yml
+        item_indent = re.match(r"[ \t]*", mw.group("items")).group(0)
+        addition = f"{item_indent}- ratelimit@file\n"
+        insert_at = match.start("body") + mw.end("items")
+        return traefik_yml[:insert_at] + addition + traefik_yml[insert_at:]
+
     @staticmethod
     def _add_traefik_metrics_port(inverseproxy_yaml):
         """Publish the metrics port on loopback, if not already published.
@@ -1765,6 +1897,33 @@ class CloudHost(models.Model):
                 vals["traefik_yml"] = with_ep_hsts
                 _logger.info(
                     "Added Traefik https entrypoint HSTS for host: %s",
+                    host.name,
+                )
+
+            # Rate limit. The same interlocked pair as HSTS: the
+            # middleware in the dynamic config, the reference to it on the
+            # https entrypoint. Throttles every instance on the host by
+            # client IP before a login flood can reach Odoo's pbkdf2.
+            with_rl = self._add_traefik_ratelimit_middleware(
+                vals.get("traefik_config_yml", host.traefik_config_yml),
+            )
+            if with_rl != (
+                vals.get("traefik_config_yml", host.traefik_config_yml)
+            ):
+                vals["traefik_config_yml"] = with_rl
+                _logger.info(
+                    "Added Traefik ratelimit middleware for host: %s",
+                    host.name,
+                )
+
+            with_ep_rl = self._add_traefik_entrypoint_ratelimit(
+                vals.get("traefik_yml", host.traefik_yml),
+                vals.get("traefik_config_yml", host.traefik_config_yml),
+            )
+            if with_ep_rl != (vals.get("traefik_yml", host.traefik_yml)):
+                vals["traefik_yml"] = with_ep_rl
+                _logger.info(
+                    "Added Traefik https entrypoint ratelimit for host: %s",
                     host.name,
                 )
 

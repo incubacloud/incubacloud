@@ -38,6 +38,7 @@ entryPoints:
       # without editing a single generated compose file.
       middlewares:
         - hsts@file
+        - ratelimit@file
     address: ":443"
 
 api:

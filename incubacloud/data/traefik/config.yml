@@ -1,5 +1,23 @@
 http:
   middlewares:
+    # Per-source-IP rate limit, added as the https entrypoint default
+    # so it reaches every copier-generated tenant router without editing
+    # a single generated compose file — the same mechanism as `hsts`.
+    # Throttles by client IP before a request can reach Odoo's pbkdf2
+    # login, so a flood from one source cannot burn the host CPU.
+    #
+    # Direct traffic only: sourceCriterion defaults to the real remote
+    # IP, correct when tenant domains resolve straight to the host. A
+    # host placed behind a trusted CDN/proxy must set
+    # sourceCriterion.ipStrategy so the limit keys on the real client
+    # and not on a handful of edge IPs. Values are generous on purpose
+    # and tunable live: this file is watched, Traefik reloads it with no
+    # image rebuild.
+    ratelimit:
+      rateLimit:
+        average: 300
+        period: 1m
+        burst: 100
     buffering:
       buffering:
         retryExpression: IsNetworkError() && Attempts() < 5
