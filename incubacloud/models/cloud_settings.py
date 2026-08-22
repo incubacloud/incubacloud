@@ -8,7 +8,7 @@ from psycopg2 import sql
 from odoo import _, api, fields, models, tools
 from odoo.exceptions import UserError, ValidationError
 
-from .encrypted_char import EncryptedChar
+from .encrypted_char import EncryptedChar, EncryptedFieldMixin
 from .password_utils import (
     generate_password,
     key_is_configured,
@@ -717,11 +717,13 @@ class CloudSettings(models.Model):
 
     @api.model
     def _rotate_all_secrets(self, batch_size=500):
-        """Re-encrypt every ``EncryptedChar`` value with the primary key.
+        """Re-encrypt every encrypted value with the primary key.
 
         Reads ciphertext with raw SQL so plain text is never materialised
         in Python memory. Iterates every model in the registry, picks up
-        any stored ``EncryptedChar`` field, and rotates row-by-row.
+        every stored field built on ``EncryptedFieldMixin`` (so both
+        ``EncryptedChar`` and ``EncryptedText``, and any shape added
+        later), and rotates row-by-row.
         Invalidates the ORM cache per field so subsequent reads in the
         same transaction return the freshly rotated value.
 
@@ -739,14 +741,14 @@ class CloudSettings(models.Model):
         stats = {}
         for Model in self.env.registry.values():
             # Abstract mixins (e.g. cloud.terminal.route.mixin) can carry
-            # an EncryptedChar field but have no table of their own — the
+            # an encrypted field but have no table of their own — the
             # concrete models that inherit them are rotated instead. Skip
             # them so we never query a non-existent relation.
             if Model._abstract or Model._transient:
                 continue
             enc_fields = [
                 name for name, f in Model._fields.items()
-                if isinstance(f, EncryptedChar) and f.store
+                if isinstance(f, EncryptedFieldMixin) and f.store
             ]
             if not enc_fields:
                 continue

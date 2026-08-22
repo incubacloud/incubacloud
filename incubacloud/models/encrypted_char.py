@@ -1,12 +1,19 @@
 """
-EncryptedChar — a fields.Char subclass that transparently encrypts its value
-before writing to the database and decrypts it when reading back into Python.
+Transparently encrypted field types: the value is encrypted before it is
+written to the database and decrypted when it is read back into Python.
 
-Usage:
-    from .encrypted_char import EncryptedChar
+Two shapes, differing only in their column type:
+
+    from .encrypted_char import EncryptedChar, EncryptedText
 
     class MyModel(models.Model):
-        secret = EncryptedChar(string="Secret")
+        secret = EncryptedChar(string="Secret")        # varchar, one line
+        pem = EncryptedText(string="Private Key")      # text, multi-line
+
+Both share ``EncryptedFieldMixin``, which is also what
+``cloud.settings._rotate_all_secrets`` tests against to decide what to
+rotate. Encrypting through anything else would produce ciphertext that
+key rotation silently skips.
 
 The raw database column always stores the ``enc:<token>`` form.
 Python code (executors, controllers) always sees plain text.
@@ -131,8 +138,14 @@ def _alert_unreadable(record, field_name):
         )
 
 
-class EncryptedChar(fields.Char):
-    """fields.Char that stores its value encrypted with Fernet."""
+class EncryptedFieldMixin:
+    """Fernet encryption for a stored textual field.
+
+    Mixed into a concrete ``fields`` class instead of being one,
+    because the encrypted shapes differ only in their column type.
+    Keeping the behaviour in a single place means a new shape cannot
+    drift from the others, and gives rotation one type to test for.
+    """
 
     def _decrypt_or_alert(self, value, record):
         """Decrypt *value*, flagging the record loudly if it cannot be."""
@@ -173,3 +186,16 @@ class EncryptedChar(fields.Char):
         if not value:
             return value
         return self._decrypt_or_alert(value, record)
+
+
+class EncryptedChar(EncryptedFieldMixin, fields.Char):
+    """fields.Char that stores its value encrypted with Fernet."""
+
+
+class EncryptedText(EncryptedFieldMixin, fields.Text):
+    """fields.Text that stores its value encrypted with Fernet.
+
+    Same behaviour as ``EncryptedChar`` on a ``text`` column. Use it
+    for secrets that are not one-liners — a PEM key in a ``varchar``
+    would also lose its multi-line widget in the form view.
+    """

@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.82] — 2026-08-22
+
+### Security
+
+- **The GitHub App's RSA private key was stored in clear**, in the same row whose `webhook_secret` was already encrypted — the `EncryptedChar` import sat four lines above the plaintext field. Verified against production: 1675 bytes of PEM readable with a plain `SELECT`. Anyone with a database dump, a filesystem backup or read access to the table could sign App JWTs and act as the installed App
+- The key is now an `EncryptedText` field, encrypted at rest with the same Fernet chain as every other secret. A post-migrate encrypts the existing row and is idempotent, so re-running it is harmless
+- **`EncryptedChar` and the new `EncryptedText` share one implementation** (`EncryptedFieldMixin`). A PEM is multi-line, so it needs a `text` column, but a separate class would have escaped `_rotate_all_secrets` — which discovers what to rotate by `isinstance` — leaving ciphertext that key rotation silently skips. Rotation now tests for the shared mixin, so any future shape is picked up automatically
+- The GitHub settings panel reports `has_private_key` through `_has_encrypted` instead of a bare truthiness read, so a key the current `INCUBACLOUD_SECRET_KEY` cannot open no longer takes the whole settings screen down with it
+
+---
+
 ## [1.0.81] — 2026-08-22
 
 ### Security
