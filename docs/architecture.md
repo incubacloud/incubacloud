@@ -365,6 +365,17 @@ The frontend cannot read encrypted values directly. `/cloud/get_secret` exposes 
 - **Rate limiting**: DB-backed counters protect the public endpoints (webhook, health), the restore upload and terminal opens. Caps are tunable in Settings → Rates.
 - **Web terminal**: PTY subprocesses are isolated per session with an encrypted routing token; only the owning user can attach. Idle sessions are reaped (see RB-03).
 
+### Host edge protection (network layers)
+
+A host serving tenant instances is reached **directly** — tenant domains resolve straight to the host's IP, not through a CDN — so its only defence against a flood is one applied on the box itself. The protection is layered, outermost first:
+
+1. **Provider L3/L4 anti-DDoS** — volumetric and protocol floods are absorbed upstream in the provider's network. Hetzner and OVH both include this free and automatically. It is an **assumed dependency, not our code**: a host on a provider without it loses the volumetric layer entirely, and such a provider should not front public instances (or must add one, e.g. Cloudflare Spectrum). See [RB-18](runbooks/RB-18-tune-host-edge-protection.md).
+2. **Host connection-rate cap (nftables)** — an optional per-source new-connection limit on 80/443 in the hardening ruleset (`ansible/playbooks/host_hardening.yml`), on the **forward** hook because tenant traffic is DNAT'd to the Traefik container and never touches the input chain. Off by default (`ic_http_conn_rate` unset); enabled per host only after a throwaway-VPS rehearsal, because an unrehearsed drop on that hook is what took the fleet down on 2026-08-14.
+3. **Proxy per-IP rate limit (Traefik)** — a `rateLimit` middleware attached as the https entrypoint default (`data/traefik/config.yml`), so it throttles every instance on the host by client IP before a request reaches Odoo's pbkdf2 login. This is the principal control against the asymmetric login-DoS of SEC-008 applied to the tenant sites: one middleware covers N instances because it keys on the source IP, not the instance. Tunable live (the host's `config.yml` is watched); see [RB-18](runbooks/RB-18-tune-host-edge-protection.md).
+4. **Application counters (`cloud.rate.limit`)** — DB-backed per-user/per-IP caps on the panel's own public endpoints (webhook, health, terminal, logs). See [RB-04](runbooks/RB-04-tune-rate-limits.md).
+
+Layers 1–3 protect the **instances**; layer 4 protects the **panel**. All of this is **core**: a partner hardening their own VPS inherits the same defaults, chosen to be safe for any host rather than tuned to our pool.
+
 ---
 
 ## GitHub integration

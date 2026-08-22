@@ -242,7 +242,7 @@ class TestTraefikHstsRetrofit(TransactionCase):
         parsed = yaml.safe_load(traefik)
         self.assertEqual(
             parsed['entryPoints']['https']['http']['middlewares'],
-            ['hsts@file'],
+            ['hsts@file', 'ratelimit@file'],
         )
 
     def test_entrypoint_reference_resolves_to_a_defined_middleware(self):

@@ -283,6 +283,103 @@ class TestHardeningPreflight(TransactionCase):
         ]
         self.assertTrue(gates, "the sudo probe result must be asserted on")
 
+    # ── Phase 4b: the per-source connection-rate cap (P2, SEC-008) ──────
+    def _ruleset_content(self):
+        """Return the raw ``/etc/nftables.conf`` template the playbook writes."""
+        rules = [
+            t for t in (self._playbook().get("tasks") or [])
+            if str(t.get("ansible.builtin.copy", {}).get("dest", ""))
+            == "/etc/nftables.conf"
+        ]
+        self.assertEqual(len(rules), 1)
+        return rules[0]["ansible.builtin.copy"]["content"]
+
+    def _render_ruleset(self, **extra):
+        """Render the ruleset template as Ansible would, with *extra* vars.
+
+        Ansible templates the ``copy`` content with ``trim_blocks`` on, so
+        the gate around the conn-rate meter is exercised exactly as it runs
+        on a host.
+        """
+        from jinja2 import Environment
+
+        env = Environment(trim_blocks=True, lstrip_blocks=False)
+        base = {"ssh_port": 22222, "ic_effective_allowlist": "1.2.3.4"}
+        base.update(extra)
+        return env.from_string(self._ruleset_content()).render(**base)
+
+    @staticmethod
+    def _active_lines(rendered):
+        """Rendered lines that are directives, not comments or blanks."""
+        return [
+            l for l in rendered.splitlines()
+            if l.strip() and not l.strip().startswith("#")
+        ]
+
+    def test_conn_rate_meter_is_off_by_default(self):
+        """The fleet ruleset must not change unless a rate is set.
+
+        ``ic_http_conn_rate`` defaults to 0, so the meter block is absent
+        and the rendered ruleset is the plain accept path every host
+        already runs. Shipping an enabled drop on the forward hook without
+        a throwaway-VPS rehearsal is the 2026-08-14 failure mode.
+        """
+        active = self._active_lines(self._render_ruleset())
+        self.assertFalse(
+            [l for l in active if "meter ic_http_conn" in l],
+            "the conn-rate meter must be gated off when ic_http_conn_rate "
+            "is unset",
+        )
+
+    def test_conn_rate_meter_targets_the_forward_hook_when_enabled(self):
+        """Set a rate and both families gain a per-source cap on 80/443.
+
+        Tenant traffic is DNAT'd to the Traefik container, so it crosses
+        the forward hook, not input — the meter has to live in the forward
+        chain or it never sees an instance request.
+        """
+        rendered = self._render_ruleset(ic_http_conn_rate=50)
+        active = "\n".join(self._active_lines(rendered))
+        # Both families, keyed on the real source address.
+        self.assertIn("meter ic_http_conn4", active)
+        self.assertIn("ip saddr limit rate over 50/second", active)
+        self.assertIn("meter ic_http_conn6", active)
+        self.assertIn("ip6 saddr limit rate over 50/second", active)
+        # Only NEW connections are metered, and the excess is dropped.
+        self.assertIn("ct state new", active)
+        self.assertIn("drop", active)
+        # …inside the forward chain, never input.
+        fwd = rendered.index("chain forward {")
+        out = rendered.index("chain output {")
+        meter = rendered.index("meter ic_http_conn4")
+        self.assertTrue(
+            fwd < meter < out,
+            "the meter must sit in the forward chain, between forward and "
+            "output",
+        )
+
+    def test_conn_rate_never_breaks_the_ruleset(self):
+        """On or off, the ruleset stays valid and Docker-safe.
+
+        Balanced braces (a swallowed brace is how a templating slip takes
+        the firewall down), never a host-wide ``flush``, and the
+        declare-then-delete idiom kept intact.
+        """
+        for extra in ({}, {"ic_http_conn_rate": 50}):
+            rendered = self._render_ruleset(**extra)
+            self.assertEqual(
+                rendered.count("{"), rendered.count("}"),
+                f"unbalanced braces with extra={extra}",
+            )
+            self.assertNotIn(
+                "flush ruleset", self._active_lines(rendered),
+                "a host-wide flush deletes Docker's chains along with ours",
+            )
+            self.assertIn(
+                "table inet filter\ndelete table inet filter", rendered,
+            )
+
+
 
 class TestHardeningExecutorWiring(TransactionCase):
     """Extra-vars, parse_results and the layer split."""

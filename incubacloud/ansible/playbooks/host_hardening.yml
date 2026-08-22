@@ -374,6 +374,22 @@
               }
               chain forward {
                   type filter hook forward priority filter; policy accept;
+                  # Per-source new-connection cap on the instances' 80/443.
+                  # Tenant traffic is DNAT'd to the Traefik container, so it
+                  # crosses the forward hook, not input — a limit in the
+                  # input chain above never sees it. OFF unless
+                  # ``ic_http_conn_rate`` is set (> 0): an unrehearsed drop
+                  # on this hook is how the fleet went down on 2026-08-14,
+                  # so it ships inert and is enabled per host only after a
+                  # throwaway-VPS rehearsal. Keyed per source address, v4
+                  # and v6 apart (``ip`` vs ``ip6 saddr``). Only NEW
+                  # connections OVER the rate are dropped; established and
+                  # under-rate traffic falls through to Docker's own
+                  # forward rules untouched.
+                  {% if (ic_http_conn_rate | default(0) | int) > 0 %}
+                  meta nfproto ipv4 tcp dport { 80, 443 } ct state new meter ic_http_conn4 { ip saddr limit rate over {{ ic_http_conn_rate | int }}/second burst {{ ic_http_conn_burst | default(ic_http_conn_rate) | int }} packets } drop
+                  meta nfproto ipv6 tcp dport { 80, 443 } ct state new meter ic_http_conn6 { ip6 saddr limit rate over {{ ic_http_conn_rate | int }}/second burst {{ ic_http_conn_burst | default(ic_http_conn_rate) | int }} packets } drop
+                  {% endif %}
               }
               chain output {
                   type filter hook output priority filter; policy accept;

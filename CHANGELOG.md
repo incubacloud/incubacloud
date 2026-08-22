@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.83] — 2026-08-22
+
+### Security
+
+- **Nothing throttled HTTP traffic to the instances.** Tenant domains resolve straight to their host, not through a CDN, so a login flood reached Odoo's pbkdf2 hasher directly — the same asymmetric CPU-DoS as SEC-008 on the panel, but against the tenant sites, and unbounded: a single source could saturate a host's workers
+- Traefik now carries a per-source-IP `rateLimit` middleware, attached as a default of the `https` entrypoint so it reaches every copier-generated tenant router without editing a single generated compose file — the same mechanism the HSTS header already uses. Requests are throttled by client IP before they can reach a worker (default 300/min, burst 100 per IP: generous for a human, a wall for a flood)
+- The threshold lives in the host's watched `config.yml`, so it is tunable live with no image rebuild. Existing hosts are retrofitted in place by `init_traefik_templates`: the middleware is added to the dynamic config and referenced on the entrypoint as an interlocked pair that fails closed, exactly like the HSTS retrofit — a reference to a middleware the file provider does not define would 500 the whole host, so the reference is only written once the middleware is, and only onto the entrypoint chain this project manages (the one HSTS marks), never an operator's own
+- Direct traffic only by design: `sourceCriterion` defaults to the real remote IP, correct when a host is reached directly. A host placed behind a trusted CDN (the panel behind Cloudflare, or a tenant fronting their own domain) must set `sourceCriterion.ipStrategy` so the limit keys on the real client and not a handful of edge IPs
+- **Defence in depth at the host layer**: the hardening ruleset gained an optional per-source new-connection cap on 80/443, on the nftables **forward** hook — the path tenant traffic actually takes, since it is DNAT'd to the Traefik container and never crosses the input chain. It ships **off** (`ic_http_conn_rate` unset renders the current byte-for-byte ruleset) and is enabled per host only after a throwaway-VPS rehearsal: an unrehearsed drop on that hook is what took the fleet down on 2026-08-14. Both rendered states validate under `nft -c`, keep balanced braces and never use `flush ruleset`
+- The layered model — provider L3/L4 anti-DDoS (assumed, e.g. Hetzner/OVH), host conn-rate, Traefik per-IP, app counters — is documented in `docs/architecture.md`, and the ops actions (tuning the Traefik limit live, the behind-CDN `ipStrategy`, rehearsing and enabling the nftables cap, the provider-without-anti-DDoS gap) in the new runbook RB-18
+
+---
+
 ## [1.0.82] — 2026-08-22
 
 ### Security
