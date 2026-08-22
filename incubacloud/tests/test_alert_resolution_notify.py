@@ -56,11 +56,11 @@ class TestAlertResolutionNotify(TransactionCase):
     @staticmethod
     def _events(mock_open):
         return [
-            json.loads(call.args[0].data.decode())["event"]
+            json.loads(call.args[1].decode())["event"]
             for call in mock_open.call_args_list
         ]
 
-    @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
+    @patch("odoo.addons.incubacloud.models.cloud_alert.post_json")
     def test_resolution_reaches_the_webhook(self, mock_open):
         self.Alert.raise_alert(
             "disk_critical", "disk almost full", level="critical",
@@ -71,7 +71,7 @@ class TestAlertResolutionNotify(TransactionCase):
         self.assertIn("alert", events)
         self.assertIn("alert_resolved", events)
 
-    @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
+    @patch("odoo.addons.incubacloud.models.cloud_alert.post_json")
     def test_manual_dismiss_stays_silent(self, mock_open):
         """An operator dismissing by hand is already looking at the
         panel; only automatic resolution announces closure."""
@@ -83,7 +83,7 @@ class TestAlertResolutionNotify(TransactionCase):
         alert.write({"state": "dismissed"})
         self.assertEqual(self._events(mock_open), [])
 
-    @patch("odoo.addons.incubacloud.models.cloud_alert.urllib.request.urlopen")
+    @patch("odoo.addons.incubacloud.models.cloud_alert.post_json")
     def test_resolving_nothing_sends_nothing(self, mock_open):
         self.Alert.resolve_alert("disk_critical", host=self.host)
         self.assertEqual(self._events(mock_open), [])

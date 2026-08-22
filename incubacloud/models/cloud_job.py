@@ -14,6 +14,8 @@ from odoo.tools import config as odoo_config
 from odoo.addons.queue_job.delay import chain as delay_chain
 from odoo.addons.queue_job.exception import JobError, RetryableJobError
 
+from ..github.http_utils import safe_urlopen
+from ..net.outbound import post_json
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .abstract_executor import (
     CONNECTION_RETRY_SECONDS,
@@ -1680,7 +1682,7 @@ class CloudJob(models.Model):
             data=payload,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=10)  # nosec B310 — only Telegram API (HTTPS)
+        safe_urlopen(req, timeout=10)  # nosec B310 — Telegram API, no redirects
 
     @api.model
     def _send_webhook(self, user, job, state, severe):
@@ -1721,12 +1723,12 @@ class CloudJob(models.Model):
                 hashlib.sha256,
             ).hexdigest()
             headers["X-IncubaCloud-Signature"] = "sha256=" + sig
-        req = urllib.request.Request(
-            user.cloud_webhook_url,
-            data=payload,
-            headers=headers,
-        )
-        urllib.request.urlopen(req, timeout=10)  # nosec B310 — only user-provided HTTPS URL
+        # The destination is the only one in this codebase a user picks,
+        # and this process can reach the metadata service, its own
+        # loopback and the internal database. ``post_json`` re-resolves
+        # and pins the address; see :mod:`..net.outbound` for why the
+        # https check at save time was never enough on its own.
+        post_json(user.cloud_webhook_url, payload, headers=headers)
 
     # ── Audit trail ───────────────────────────────────────────────────────
 

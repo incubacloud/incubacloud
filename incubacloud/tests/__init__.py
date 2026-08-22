@@ -1,5 +1,6 @@
 from . import (
     test_password_utils,
+    test_outbound_ssrf,
     test_executor_utils,
     test_executor_parse,
     test_github_utils,

@@ -10,6 +10,8 @@ from odoo import http, _
 from odoo.exceptions import AccessError
 from odoo.http import request
 
+from ..net.outbound import OutboundError, validate_url
+
 from ._rate_limit import Rule, rate_gate_json
 from .async_utils import run_async
 
@@ -415,6 +417,15 @@ class InstanceConnectController(http.Controller):
         restricts the caller's own notifications, so no visibility
         check is needed beyond existence.
         """
+        if not request.env.user._is_internal():
+            # The SPA that owns this form is internal-only (``/cloud``
+            # returns 404 to a share user), so no legitimate caller is
+            # turned away here. What this closes is the direct RPC: a
+            # portal customer could store a webhook URL that only stays
+            # inert because both senders filter ``share = False``
+            # elsewhere. Correct today by accident in another file is
+            # not a property worth keeping on an SSRF sink.
+            return {'ok': False, 'error': 'Not available for this account'}
         valid = {'all', 'failures', 'none'}
         if cloud_notification_level not in valid:
             return {'ok': False, 'error': 'Invalid notification level'}
@@ -439,8 +450,16 @@ class InstanceConnectController(http.Controller):
             vals['cloud_telegram_chat_id'] = cloud_telegram_chat_id.strip()
         if cloud_webhook_url is not None:
             url = cloud_webhook_url.strip()
-            if url and not url.startswith('https://'):
-                return {'ok': False, 'error': 'Webhook URL must start with https://'}
+            if url:
+                # Checked here so a typo is reported while the user is
+                # looking at the form. It is not the security boundary:
+                # DNS can change between now and the notification, so
+                # ``post_json`` validates again and pins the address it
+                # approved. See :mod:`..net.outbound`.
+                try:
+                    validate_url(url)
+                except OutboundError as exc:
+                    return {'ok': False, 'error': f'Webhook URL rejected: {exc}'}
             vals['cloud_webhook_url'] = url
         if cloud_webhook_secret:
             vals['cloud_webhook_secret'] = cloud_webhook_secret
