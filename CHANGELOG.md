@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.86] — 2026-08-23
+
+### Security
+
+- **The role gates protected the buttons, not the actions.** `cloud.job.enqueue` and `enqueue_chain` are public model methods: any internal user with create access on `cloud.job` can call them over JSON-RPC, and the panel itself calls them directly for several actions. The capability checks that decide who may deploy, back up or delete lived in the HTTP controllers and in the SPA, so a direct call skipped them. The only server-side check covered ten host-level job types; everything else was open to whoever could reach the model
+- Enqueueing is now authorised per job type against a minimum role, server-side, in `_check_job_type_allowed`: lifecycle and deploy jobs need Consultant; backups, restores and exports need Developer; host-level, observability and host-move jobs need Administrator. The gate covers every dispatch path — `enqueue`, `enqueue_chain`, **`retry_job` and `unblock_and_enqueue`** (a retry runs under the *retrying* user, so without it a Consultant could relaunch a failed higher-role job of their project). The map is **fail-closed** — an unmapped code demands Administrator — and a structural test forces every declared job type to be listed, so a new one cannot ship ungated by omission
+- This closes real escalations, not hypothetical ones. A Developer could enqueue `move_cutover` (which rewrites an instance's host with no further check) or `move_cleanup_source` (which runs the delete teardown — `compose down` plus `rm -rf` — on a host and never reaches the guarded `unlink`), and could start the remote teardown of a **production** instance: the manager check lived in `unlink()`, which runs *after* the instance is already gone from the host. Deleting a production instance is now refused at enqueue, before any command is sent
+- **Executors are trusted readers of the host connection material.** Jobs run under the environment of whoever enqueued them, while the SSH endpoint and credential are field-gated to Developer — so a Consultant-triggered deploy or rebuild failed with an access error inside the worker, and had done since those gates were introduced. The executor now reads the host record elevated when it opens the connection (constructor, transport, Ansible inventory), which is what the original hardening intended; everything else keeps the caller's environment, so ORM guards and audit attribution are unchanged. The elevation stays out of `ssh_connect_kwargs()`, which is public and returns the password
+
+### Removed
+
+- Dead job types `pause_instance` and `clone_data`: no executor, no caller, no jobs ever recorded. The `clone_to_staging` **feature** is untouched — it chains deploy, download and restore, and never used the `clone_data` type
+- The `delete_project` executor, orphaned since project deletion stopped queueing remote cleanup. Its job type record stays: historical jobs still reference it
+
+---
+
 ## [1.0.85] — 2026-08-23
 
 ### Security

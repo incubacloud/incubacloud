@@ -236,7 +236,11 @@ class HostHardeningExecutor(AnsibleExecutor):
         ``prohibit-password`` — so the operator can still recover).
         """
         host = self._host()
-        connect_kw = dict(host.ssh_connect_kwargs())
+        # Trusted reader, same pattern as ``get_transport``: the job was
+        # authorized at enqueue and the credential fields are gated for
+        # raw reads. Masked today (hardening is manager-mapped) but the
+        # elevation must not depend on the type's floor never changing.
+        connect_kw = dict(host.sudo().ssh_connect_kwargs())
         connect_kw["username"] = self._hardened_user
         connect_kw["port"] = self._new_port
         # The host key is unchanged but the port rotated; skip the pin for

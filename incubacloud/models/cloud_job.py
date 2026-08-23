@@ -159,7 +159,9 @@ class CloudJob(models.Model):
             # Same server-side role gate as ``enqueue`` — an arbitrary
             # chain of steps must not let a low-privilege caller smuggle a
             # manager-only job type through ``call_kw``.
-            self._check_job_type_allowed(step["job_type_code"])
+            self._check_job_type_allowed(
+                step["job_type_code"], step.get("instance_id"),
+            )
             inst_id = step.get("instance_id")
             if inst_id and inst_id not in seen_instance_ids:
                 self.env.cr.execute(
@@ -417,7 +419,7 @@ class CloudJob(models.Model):
         # Server-side role gate: the public entrypoint is reachable via
         # call_kw with only create-ACL, so enforce the per-type manager
         # requirement here, not only in the HTTP controllers.
-        self._check_job_type_allowed(job_type_code)
+        self._check_job_type_allowed(job_type_code, instance_id)
         # Block if there is already an active *user* job for this target.
         # Hidden system jobs (health checks, metrics, probes…) don't block.
         # Instance-scoped jobs serialise per instance; host-scoped jobs
@@ -693,31 +695,65 @@ class CloudJob(models.Model):
         }
     )
 
-    # Job types whose enqueue requires the manager role. ``enqueue`` and
-    # ``enqueue_chain`` are public @api.model methods reachable via the
-    # stock ``call_kw`` JSON-RPC endpoint by anyone with create-ACL on
-    # cloud.job (consultant+), so the manager gates that live only in the
-    # HTTP controllers would be bypassed by a direct RPC call. These are
-    # the host-level, destructive/administrative types whose only
-    # legitimate origin is a manager-gated controller/SPA page or a cron
-    # (which enqueues with sudo). Extend via _get_manager_job_types().
-    _manager_job_types = frozenset(
-        {
-            "delete_host",
-            "setup_whitelist",
-            "full_setup",
-            "host_probe",
-            "docker_prune",
-            "delete_project",
-            # Both deploy containers on the host — cAdvisor runs
-            # privileged with the root filesystem mounted, and the central
-            # brings up a whole metrics stack. The panel endpoints already
-            # gate on manager, but ``enqueue`` is reachable over RPC, and
-            # this set is the backstop that makes that route safe too.
-            "install_observability",
-            "deploy_metrics_central",
-        }
-    )
+    # Minimum cloud role required to enqueue each job type. ``enqueue``
+    # and ``enqueue_chain`` are public @api.model methods reachable via
+    # the stock ``call_kw`` JSON-RPC endpoint by anyone with create-ACL on
+    # cloud.job (consultant+) — and the SPA calls them directly for some
+    # actions — so the capability gates that live only in the HTTP
+    # controllers do not protect them. This map is the server-side
+    # authority for "who may ask for this action".
+    #
+    # Fail-closed: a code missing here requires the manager role, and a
+    # structural test forces every declared job type to be listed
+    # explicitly so nothing falls through silently. Extend via
+    # ``_get_job_type_min_group()``.
+    _job_type_min_group = {
+        # Lifecycle / deploy — what a consultant may do on their projects.
+        "deploy_instance": "group_cloud_consultant",
+        "rebuild_instance": "group_cloud_consultant",
+        "start_instance": "group_cloud_consultant",
+        "stop_instance": "group_cloud_consultant",
+        "restart_instance": "group_cloud_consultant",
+        # Non-production only at this level: production deletion is
+        # escalated to manager in ``_check_job_type_allowed``, so the
+        # remote teardown can never start for a caller who would not be
+        # allowed to delete the record afterwards.
+        "delete_instance": "group_cloud_consultant",
+        # Backups, restores and exports move customer data around.
+        "backup_list": "group_cloud_developer",
+        "backup_create": "group_cloud_developer",
+        "backup_download": "group_cloud_developer",
+        "backup_download_neutralized": "group_cloud_developer",
+        "backup_restore": "group_cloud_developer",
+        "restore_instance": "group_cloud_developer",
+        "export_instance": "group_cloud_developer",
+        # Host-level, destructive or administrative. Every one of these is
+        # enqueued by a manager-gated page, a cron or a sudo chain, so the
+        # gate costs no legitimate flow anything.
+        "host_probe": "group_cloud_manager",
+        "host_metrics": "group_cloud_manager",
+        "host_hardening": "group_cloud_manager",
+        "full_setup": "group_cloud_manager",
+        "setup_whitelist": "group_cloud_manager",
+        "delete_host": "group_cloud_manager",
+        "docker_prune": "group_cloud_manager",
+        "instance_health": "group_cloud_manager",
+        "sync_metrics_accounts": "group_cloud_manager",
+        # Both deploy containers on the host — cAdvisor runs privileged
+        # with the root filesystem mounted, and the central brings up a
+        # whole metrics stack.
+        "install_observability": "group_cloud_manager",
+        "deploy_metrics_central": "group_cloud_manager",
+        # The move chain rewrites host_id and wipes the source directory
+        # with no further guard of its own; only ``move_to_host`` (manager)
+        # legitimately produces these.
+        "move_cutover": "group_cloud_manager",
+        "move_cleanup_source": "group_cloud_manager",
+        "move_rollback_cleanup": "group_cloud_manager",
+        # Legacy: the executor is gone; the job type record is kept only
+        # because historical jobs still reference it.
+        "delete_project": "group_cloud_manager",
+    }
 
     def _get_hidden_job_types(self):
         """Return job type codes that should not appear in the UI job drawer.
@@ -851,32 +887,59 @@ class CloudJob(models.Model):
         return set(self._severe_job_types)
 
     @api.model
-    def _get_manager_job_types(self):
-        """Return job type codes that require the manager role to enqueue.
+    def _get_job_type_min_group(self):
+        """Return the job type -> minimum cloud group map for the enqueue gate.
 
         Override in child modules and call super() to extend, e.g. the
-        SaaS manager adds provisioning/hardening types::
+        SaaS manager adds its provisioning/tenant types::
 
-            def _get_manager_job_types(self):
-                return super()._get_manager_job_types() | {'provision_vps'}
+            def _get_job_type_min_group(self):
+                return super()._get_job_type_min_group() | {
+                    'provision_vps': 'group_cloud_manager',
+                }
         """
-        return set(self._manager_job_types)
+        return self._job_type_min_group.copy()
 
     @api.model
-    def _check_job_type_allowed(self, job_type_code):
+    def _check_job_type_allowed(self, job_type_code, instance_id=None):
         """Raise ``AccessError`` if the caller may not enqueue this type.
 
         Superuser/sudo internal callers (crons, executors chaining a
-        follow-up) bypass the check; everyone else must hold the manager
-        role for the privileged types. This is the server-side backstop
-        for the public ``enqueue``/``enqueue_chain`` entrypoints.
+        follow-up) bypass the check; everyone else must hold at least the
+        role mapped in ``_get_job_type_min_group()`` — manager when the
+        code is unknown, so a new type is gated until someone maps it.
+        ``delete_instance`` escalates to manager for production instances,
+        matching ``_check_can_delete_instance``: the remote teardown runs
+        before the record is unlinked, so gating only the unlink would let
+        a consultant destroy a production deployment.
+
+        This is the server-side backstop for the public ``enqueue`` and
+        ``enqueue_chain`` entrypoints, which the SPA and any RPC client
+        can call directly.
+
+        :param job_type_code: code of the ``cloud.job.type`` to enqueue.
+        :param instance_id: target instance id, when the job has one; used
+            for the per-record escalation above.
         """
         if self.env.su:
             return
-        if job_type_code in self._get_manager_job_types():
-            self.env["cloud.security.mixin"]._check_cloud_group(
-                "group_cloud_manager",
-            )
+        sec = self.env["cloud.security.mixin"]
+        min_group = self._get_job_type_min_group().get(
+            job_type_code, "group_cloud_manager",
+        )
+        sec._check_cloud_group(min_group)
+        if job_type_code == "delete_instance" and instance_id:
+            instance = self.env["cloud.instance"].browse(int(instance_id))
+            # Runs in the caller's env on purpose: an instance hidden by
+            # ``rule_instance_member`` reads as non-existing here and the
+            # escalation is skipped — which is safe ONLY because
+            # ``rule_job_member`` scopes cloud.job *creation* by the very
+            # same membership domain, so the job row cannot be created for
+            # a target the caller cannot see. Those two rule domains must
+            # stay aligned (pinned by
+            # ``test_foreign_production_instance_cannot_be_deleted``).
+            if instance.exists():
+                sec._check_can_delete_instance(instance)
 
     # Alert codes that block (re-)enqueueing a job until the operator
     # resolves them (see the pre-check in ``enqueue`` and
@@ -1232,6 +1295,14 @@ class CloudJob(models.Model):
             )
         if self.state != "failed":
             raise UserError(_("Only failed jobs can be retried."))
+        # Same role gate as ``enqueue``: the retry runs under the
+        # *retrying* user's env, so without this a consultant who can read
+        # a failed higher-role job of their project (e.g. a move step)
+        # could relaunch it as themselves.
+        self._check_job_type_allowed(
+            self.job_type_id.code,
+            self.instance_id.id if self.instance_id else None,
+        )
         # Same guard as ``enqueue``: a retry is a user-initiated job like
         # any other, and firing one while a deploy is already running on
         # the target means two SSH sessions mutating the same host. This
@@ -1344,6 +1415,14 @@ class CloudJob(models.Model):
         cannot block itself.
         """
         self.ensure_one()
+        # Same role gate as ``enqueue``: dispatching runs under the
+        # unblocking user's env. Blocked jobs are only pip-conflicted
+        # deploys/rebuilds today (consultant-level), so this is symmetry
+        # and RPC safety, not a behaviour change.
+        self._check_job_type_allowed(
+            self.job_type_id.code,
+            self.instance_id.id if self.instance_id else None,
+        )
         self._guard_no_active_job(
             self.host_id.id,
             self.instance_id.id if self.instance_id else False,

@@ -211,29 +211,222 @@ class TestEnqueueJobTypeGate(TransactionCase):
             self.env, login='ic_consultant_gate',
             groups='base.group_user,incubacloud.group_cloud_consultant',
         )
+        self.developer = new_test_user(
+            self.env, login='ic_developer_gate',
+            groups='base.group_user,incubacloud.group_cloud_developer',
+        )
         self.manager = new_test_user(
             self.env, login='ic_manager_gate',
             groups='base.group_user,incubacloud.group_cloud_manager',
         )
 
-    def test_consultant_blocked_from_manager_type(self):
+    #: What each role may ask for. Anything not listed for a role must
+    #: raise; the lists mirror ``_job_type_min_group``.
+    _CONSULTANT_OK = (
+        'deploy_instance', 'rebuild_instance',
+        'start_instance', 'stop_instance', 'restart_instance',
+    )
+    _DEVELOPER_ONLY = (
+        'backup_list', 'backup_create', 'backup_download',
+        'backup_download_neutralized', 'backup_restore',
+        'restore_instance', 'export_instance',
+    )
+    _MANAGER_ONLY = (
+        'delete_host', 'full_setup', 'delete_project', 'host_probe',
+        'host_hardening', 'docker_prune', 'setup_whitelist',
+        'move_cutover', 'move_cleanup_source', 'move_rollback_cleanup',
+        'install_observability', 'deploy_metrics_central',
+    )
+
+    def test_consultant_allowed_lifecycle_types(self):
         job = self.Job.with_user(self.consultant)
-        for code in ('delete_host', 'full_setup', 'delete_project'):
-            with self.assertRaises(self.AccessError):
+        for code in self._CONSULTANT_OK:
+            with self.subTest(code=code):
                 job._check_job_type_allowed(code)
 
-    def test_consultant_allowed_non_privileged_type(self):
+    def test_consultant_blocked_from_developer_types(self):
         job = self.Job.with_user(self.consultant)
-        # Must not raise for lifecycle/deploy types.
-        job._check_job_type_allowed('start_instance')
-        job._check_job_type_allowed('deploy_instance')
+        for code in self._DEVELOPER_ONLY:
+            with self.subTest(code=code), self.assertRaises(self.AccessError):
+                job._check_job_type_allowed(code)
 
-    def test_manager_allowed_privileged_type(self):
-        self.Job.with_user(self.manager)._check_job_type_allowed('delete_host')
+    def test_consultant_blocked_from_manager_types(self):
+        job = self.Job.with_user(self.consultant)
+        for code in self._MANAGER_ONLY:
+            with self.subTest(code=code), self.assertRaises(self.AccessError):
+                job._check_job_type_allowed(code)
+
+    def test_developer_allowed_developer_types(self):
+        job = self.Job.with_user(self.developer)
+        for code in self._DEVELOPER_ONLY + self._CONSULTANT_OK:
+            with self.subTest(code=code):
+                job._check_job_type_allowed(code)
+
+    def test_developer_blocked_from_manager_types(self):
+        # The move chain rewrites host_id / wipes the source directory
+        # with no guard of its own, so it must stay manager-only.
+        job = self.Job.with_user(self.developer)
+        for code in self._MANAGER_ONLY:
+            with self.subTest(code=code), self.assertRaises(self.AccessError):
+                job._check_job_type_allowed(code)
+
+    def test_manager_allowed_everything(self):
+        job = self.Job.with_user(self.manager)
+        for code in self._CONSULTANT_OK + self._DEVELOPER_ONLY + self._MANAGER_ONLY:
+            with self.subTest(code=code):
+                job._check_job_type_allowed(code)
+
+    def test_unknown_type_fails_closed(self):
+        # A job type nobody mapped must require the manager role rather
+        # than fall through unguarded.
+        with self.assertRaises(self.AccessError):
+            self.Job.with_user(self.developer)._check_job_type_allowed(
+                'no_such_job_type',
+            )
+        self.Job.with_user(self.manager)._check_job_type_allowed(
+            'no_such_job_type',
+        )
 
     def test_sudo_bypasses_gate(self):
         # Internal callers (crons, executors) use sudo and must pass.
         self.Job.sudo()._check_job_type_allowed('delete_host')
+        self.Job.sudo()._check_job_type_allowed('no_such_job_type')
+
+    # -- delete_instance: production escalates to manager ----------------
+
+    def _instance(self, environment):
+        project = self.env['cloud.project'].create({
+            'name': f'gate-proj-{environment}',
+            'member_ids': [(4, self.consultant.id), (4, self.developer.id)],
+        })
+        return self.env['cloud.instance'].create({
+            'name': f'gate-inst-{environment}',
+            'project_id': project.id,
+            'environment': environment,
+        })
+
+    def test_consultant_may_delete_non_production_instance(self):
+        inst = self._instance('staging')
+        self.Job.with_user(self.consultant)._check_job_type_allowed(
+            'delete_instance', inst.id,
+        )
+
+    def test_consultant_cannot_delete_production_instance(self):
+        # The remote teardown runs before the record is unlinked, so the
+        # gate has to fire here and not only in ``unlink``.
+        inst = self._instance('production')
+        with self.assertRaises(self.AccessError):
+            self.Job.with_user(self.consultant)._check_job_type_allowed(
+                'delete_instance', inst.id,
+            )
+
+    def test_developer_cannot_delete_production_instance(self):
+        inst = self._instance('production')
+        with self.assertRaises(self.AccessError):
+            self.Job.with_user(self.developer)._check_job_type_allowed(
+                'delete_instance', inst.id,
+            )
+
+    def test_manager_may_delete_production_instance(self):
+        inst = self._instance('production')
+        self.Job.with_user(self.manager)._check_job_type_allowed(
+            'delete_instance', inst.id,
+        )
+
+    def test_foreign_production_instance_cannot_be_deleted(self):
+        # End-to-end pin of the rule-alignment invariant: for an instance
+        # OUTSIDE the caller's projects, ``rule_instance_member`` hides it
+        # from the escalation check — the enqueue must still fail, because
+        # ``rule_job_member`` scopes job creation by the same membership.
+        # If someone ever widens one rule without the other, this test is
+        # what catches it.
+        project = self.env['cloud.project'].create({'name': 'foreign-proj'})
+        inst = self.env['cloud.instance'].create({
+            'name': 'foreign-prod',
+            'project_id': project.id,
+            'environment': 'production',
+        })
+        host = self.env['cloud.host'].create({
+            'name': 'foreign-host',
+            'ip_address': '10.0.0.78',
+            'user': 'root',
+            'wildcard_domain': 'foreign.example.com',
+        })
+        before = self.Job.sudo().search_count([])
+        with self.assertRaises(self.AccessError):
+            self.Job.with_user(self.consultant).enqueue(
+                host.id, inst.id, 'delete_instance',
+            )
+        self.assertEqual(self.Job.sudo().search_count([]), before)
+
+    def test_unblock_applies_the_same_gate(self):
+        # ``unblock_and_enqueue`` dispatches under the unblocking user's
+        # env, so it carries the same role gate as ``enqueue``.
+        inst = self._instance('staging')
+        host = self.env['cloud.host'].create({
+            'name': 'unblock-gate-host',
+            'ip_address': '10.0.0.79',
+            'user': 'root',
+            'wildcard_domain': 'unblock.example.com',
+        })
+        job_type = self.env['cloud.job.type'].search(
+            [('code', '=', 'backup_create')], limit=1,
+        )
+        job = self.Job.create({
+            'host_id': host.id,
+            'instance_id': inst.id,
+            'job_type_id': job_type.id,
+            'name': 'Create Backup',
+        })
+        # The gate is the first check, so no blocked-alert setup is needed.
+        with self.assertRaises(self.AccessError):
+            job.with_user(self.consultant).unblock_and_enqueue()
+
+    def test_retry_applies_the_same_gate(self):
+        # A failed higher-role job visible to a consultant (instance of
+        # their project) must not be relaunchable by them: the retry runs
+        # under the retrying user's env.
+        inst = self._instance('staging')
+        host = self.env['cloud.host'].create({
+            'name': 'retry-gate-host',
+            'ip_address': '10.0.0.77',
+            'user': 'root',
+            'wildcard_domain': 'retry.example.com',
+        })
+        job_type = self.env['cloud.job.type'].search(
+            [('code', '=', 'backup_create')], limit=1,
+        )
+        job = self.Job.create({
+            'host_id': host.id,
+            'instance_id': inst.id,
+            'job_type_id': job_type.id,
+            'name': 'Create Backup',
+        })
+        # ``state`` is a stored related — flush before raw SQL so the ORM
+        # does not overwrite the forced value afterwards.
+        job.flush_recordset(['state'])
+        self.env.cr.execute(
+            "UPDATE cloud_job SET state = 'failed' WHERE id = %s",
+            (job.id,),
+        )
+        job.invalidate_recordset(['state'])
+        with self.assertRaises(self.AccessError):
+            job.with_user(self.consultant).retry_job()
+        # The developer (the role that may ask for backups) can retry it.
+        job.invalidate_recordset(['state'])
+        retried = job.with_user(self.developer).retry_job()
+        self.assertTrue(retried)
+
+    def test_enqueue_refuses_before_creating_the_job(self):
+        # The gate must run before any record is written, so a refused
+        # call leaves no orphan cloud.job behind.
+        inst = self._instance('staging')
+        before = self.Job.sudo().search_count([])
+        with self.assertRaises(self.AccessError):
+            self.Job.with_user(self.consultant).enqueue(
+                inst.host_id.id, inst.id, 'backup_create',
+            )
+        self.assertEqual(self.Job.sudo().search_count([]), before)
 
 
 class TestCloudJobGetExecutor(TransactionCase):

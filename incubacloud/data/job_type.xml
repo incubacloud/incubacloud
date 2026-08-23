@@ -53,13 +53,6 @@
             <field name="description">Restarts a doodba instance (docker compose restart).</field>
         </record>
 
-        <record id="pause_instance" model="cloud.job.type">
-            <field name="name">Pause Instance</field>
-            <field name="code">pause_instance</field>
-            <field name="apply_to">instance</field>
-            <field name="description">Pauses a running doodba instance (docker compose pause).</field>
-        </record>
-
         <record id="rebuild_instance" model="cloud.job.type">
             <field name="name">Rebuild Instance</field>
             <field name="code">rebuild_instance</field>
@@ -218,13 +211,6 @@
             <field name="code">backup_restore</field>
             <field name="apply_to">instance</field>
             <field name="description">Restores a production instance from a duplicity backup (destructive operation).</field>
-        </record>
-
-        <record id="clone_to_staging" model="cloud.job.type">
-            <field name="name">Clone Data</field>
-            <field name="code">clone_data</field>
-            <field name="apply_to">instance</field>
-            <field name="description">Copies production database and filestore into a target instance.</field>
         </record>
 
         <record id="instance_health" model="cloud.job.type">

@@ -164,9 +164,13 @@ class TestPrivilegedJobTypes(TransactionCase):
         manager role, but that check does not protect a direct
         ``cloud.job.enqueue`` call.
         """
-        gated = self.env["cloud.job"]._get_manager_job_types()
-        self.assertIn("install_observability", gated)
-        self.assertIn("deploy_metrics_central", gated)
+        gated = self.env["cloud.job"]._get_job_type_min_group()
+        self.assertEqual(
+            gated.get("install_observability"), "group_cloud_manager",
+        )
+        self.assertEqual(
+            gated.get("deploy_metrics_central"), "group_cloud_manager",
+        )
 
 
 class TestRuleEvaluation(MetricRuleCase):

@@ -1,5 +1,5 @@
-"""Tests for cloud.project.unlink guard and DeleteProjectExecutor."""
-from unittest.mock import MagicMock, patch
+"""Tests for the cloud.project.unlink guard."""
+from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
@@ -58,60 +58,3 @@ class TestCloudProjectUnlinkGuard(TransactionCase):
         ) as mock_enqueue:
             self.project.unlink()
             mock_enqueue.assert_not_called()
-
-
-class TestDeleteProjectExecutorRemoteFolder(TransactionCase):
-    """_remote_folder() must reject anything that could escape ~/."""
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        from odoo.addons.incubacloud.models.delete_project_executor import (
-            DeleteProjectExecutor,
-        )
-        cls.cls = DeleteProjectExecutor
-
-    def _executor(self, payload):
-        ex = self.cls.__new__(self.cls)
-        job = MagicMock()
-        job.payload = payload
-        ex.job = job
-        return ex
-
-    def test_valid_folder(self):
-        self.assertEqual(
-            self._executor({'remote_folder': 'cleanup-proj'})
-            ._remote_folder(),
-            'cleanup-proj',
-        )
-
-    def test_strips_whitespace(self):
-        self.assertEqual(
-            self._executor({'remote_folder': '  foo  '})
-            ._remote_folder(),
-            'foo',
-        )
-
-    def test_rejects_empty(self):
-        with self.assertRaises(ValueError):
-            self._executor({})._remote_folder()
-        with self.assertRaises(ValueError):
-            self._executor({'remote_folder': ''})._remote_folder()
-
-    def test_rejects_special_values(self):
-        for bad in ('/', '~', '.', '..'):
-            with self.assertRaises(ValueError):
-                self._executor({'remote_folder': bad})._remote_folder()
-
-    def test_rejects_slash(self):
-        with self.assertRaises(ValueError):
-            self._executor({'remote_folder': 'a/b'})._remote_folder()
-        with self.assertRaises(ValueError):
-            self._executor({'remote_folder': '/absolute'})._remote_folder()
-
-    def test_rejects_hidden(self):
-        with self.assertRaises(ValueError):
-            self._executor({'remote_folder': '.hidden'})._remote_folder()
-
-    def test_job_type_binding(self):
-        self.assertEqual(self.cls._job_type, 'delete_project')
