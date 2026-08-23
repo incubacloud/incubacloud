@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.85] — 2026-08-23
+
+### Security
+
+- **ACLs granted read to the lowest cloud role without any record rule to scope it (SEC-009).** Every role inherits the Stakeholder (`group_cloud_user`) read grant, so a model whose only rule targeted a higher group left the low roles with unrestricted read: a stakeholder or consultant could `search([])` over the whole system by raw RPC and read infrastructure they were never meant to see — host SSH endpoints, backup-backend buckets/endpoints, GitHub webhook payloads (pusher identities, commit messages, contributor emails), and — on the SaaS side — VPS requests/reservations (provider VM and firewall IDs) and backup reservations. Latent today (only Administrators exist) but the lower roles are part of the product
+- `cloud.github.event` and `cloud.host.whitelist` lose the Stakeholder read ACL — both are now Administrator-only, closing the raw-RPC leak. The former's record rule only named the Project-Manager group, so it never restricted the lower roles it was written to protect; it is removed as dead
+- `cloud.instance.pending.push` keeps the ACL (its "pending pushes" panel is legitimately read by a project member) but gains a member-scoped record rule + a PM+ all rule, mirroring the other instance-child models: a stakeholder now sees pending pushes only for instances of projects they belong to, not every project's commit metadata
+- The host SSH endpoint (`ip_address`, `user`, `port`) is now field-gated at the ORM layer to **Developer** — the same gate the host credential (`password`/`key_file`) already carries, and the lowest role that opens SSH jobs: jobs run under the user who enqueued them, so a stricter gate would have failed every Developer-triggered deploy/rebuild/backup inside the executor. Roles below Developer get neither the endpoint nor the credential, by raw RPC or otherwise. `allowed_ssh_ips` (hardening configuration) and the backup-backend `s3_access_key_id` are gated to Administrator, like the S3 secret already was. The instance serializers (`get_instance`, `get_project_full`, `get_host_instances`, `get_project_instances`) redact the SSH endpoint below Developer (so a Developer's restore dialog still builds a working rsync command) and the bucket path below Administrator, as `get_hosts` already did
+- The backup-backend list endpoint (`/cloud/get_backup_backends`) was the one backend route missing its capability gate; it now checks `manage_settings` like all its siblings
+
+---
+
 ## [1.0.84] — 2026-08-23
 
 ### Added

@@ -42,7 +42,10 @@ class CloudBackupBackend(models.Model):
         string="Endpoint URL",
         help="Leave empty for AWS S3. Set for MinIO, Wasabi, Backblaze, etc.",
     )
-    s3_access_key_id = fields.Char(string="Access Key ID")
+    s3_access_key_id = fields.Char(
+        string="Access Key ID",
+        groups="incubacloud.group_cloud_manager",
+    )
     s3_secret_access_key = EncryptedChar(
         string="Secret Access Key",
         groups="incubacloud.group_cloud_manager",
