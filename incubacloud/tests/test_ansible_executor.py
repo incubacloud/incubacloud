@@ -47,6 +47,10 @@ class AnsibleExecutorCase(TransactionCase):
         self.host._get_ssh_private_key_bytes.return_value = (
             b"-----BEGIN OPENSSH PRIVATE KEY-----"
         )
+        # The executor reads the connection fields elevated (the job runs
+        # under the enqueuing user's env and those fields are
+        # developer-gated), so ``sudo()`` must hand back the same record.
+        self.host.sudo.return_value = self.host
         self.executor = self._make_executor()
 
     def _make_executor(self, cls=_PingExecutor):

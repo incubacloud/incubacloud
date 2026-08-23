@@ -197,9 +197,16 @@ class AbstractExecutor(ABC):
         self._log_buffer = []
         self._loop = None
         self._host_record = host_record
-        self.host = host_record.ip_address
-        self.port = host_record.port
-        self.username = host_record.user
+        # Trusted reader: the action was already authorized at enqueue
+        # (``cloud.job._check_job_type_allowed``), and the job runs under
+        # the enqueuing user's env — who may be a consultant, below the
+        # developer gate on the connection fields. Elevate just this read;
+        # everything else keeps the user's env so the ORM guards and the
+        # audit attribution still apply.
+        conn = host_record.sudo()
+        self.host = conn.ip_address
+        self.port = conn.port
+        self.username = conn.user
         self.sleep_interval = sleep_interval
         # Per-job log cap counters. ``_chunks_persisted`` is bumped
         # every time a chunk is written to ``cloud.job.log.chunk``;

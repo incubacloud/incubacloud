@@ -102,7 +102,10 @@ class AnsibleExecutor(AbstractExecutor):
         :param key_path: private key file, or None for password auth
         :param known_hosts_path: known_hosts file written for this run
         """
-        host = self._host_record
+        # Trusted reader, same rationale as ``AbstractExecutor.__init__``:
+        # the connection fields are developer-gated and the job may run
+        # under a lower role that was still allowed to enqueue it.
+        host = self._host_record.sudo()
         hostvars = {
             "ansible_host": host.ip_address,
             "ansible_port": host.port,

@@ -1106,7 +1106,11 @@ class CloudHost(models.Model):
         here to return the appropriate transport class.
         """
         self.ensure_one()
-        connect_kw = self.ssh_connect_kwargs()
+        # Trusted reader: the job that opens this transport was authorized
+        # at enqueue, and the credential fields are developer-gated for raw
+        # reads. Elevate here — never inside ``ssh_connect_kwargs`` itself,
+        # which is a public method that returns the password.
+        connect_kw = self.sudo().ssh_connect_kwargs()
         connect_kw.update(keepalive_interval=30, keepalive_count_max=10)
         async with asyncssh.connect(**connect_kw) as conn:
             yield SSHTransport(conn)
