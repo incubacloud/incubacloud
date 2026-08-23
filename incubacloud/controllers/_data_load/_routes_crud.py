@@ -1091,6 +1091,7 @@ class CrudMixin:
         host = request.env['cloud.host'].browse(host_id)
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
+        is_developer = self._sec()._has_cloud_group('group_cloud_developer')
         return {
             'host_name': host.name,
             'instances': [
@@ -1104,9 +1105,16 @@ class CrudMixin:
                     'running': i.running,
                     'host': i.host_id.name if i.host_id else '',
                     'host_id': i.host_id.id if i.host_id else None,
-                    'host_ip': i.host_id.ip_address if i.host_id else '',
-                    'host_user': i.host_id.user if i.host_id else '',
-                    'host_port': i.host_id.port if i.host_id else 22,
+                    'host_ip': (
+                        i.host_id.ip_address
+                        if (i.host_id and is_developer) else ''
+                    ),
+                    'host_user': (
+                        i.host_id.user if (i.host_id and is_developer) else ''
+                    ),
+                    'host_port': (
+                        i.host_id.port if (i.host_id and is_developer) else 22
+                    ),
                     'db_name': i.postgres_dbname or 'prod',
                     'domain': i.domain or '',
                     'compose_services': i.compose_services or 'odoo,db',
@@ -1124,6 +1132,7 @@ class CrudMixin:
         if not project.exists():
             return {'ok': False, 'error': _('Project not found')}
         CloudJob = request.env['cloud.job']
+        is_developer = self._sec()._has_cloud_group('group_cloud_developer')
         instances = []
         for i in project.instance_ids:
             latest = CloudJob.search(
@@ -1140,9 +1149,16 @@ class CrudMixin:
                 'running': i.running,
                 'host': i.host_id.name if i.host_id else '',
                 'host_id': i.host_id.id if i.host_id else None,
-                'host_ip': i.host_id.ip_address if i.host_id else '',
-                'host_user': i.host_id.user if i.host_id else '',
-                'host_port': i.host_id.port if i.host_id else 22,
+                'host_ip': (
+                    i.host_id.ip_address
+                    if (i.host_id and is_developer) else ''
+                ),
+                'host_user': (
+                    i.host_id.user if (i.host_id and is_developer) else ''
+                ),
+                'host_port': (
+                    i.host_id.port if (i.host_id and is_developer) else 22
+                ),
                 'db_name': i.postgres_dbname or 'prod',
                 'domain': i.domain or '',
                 'compose_services': i.compose_services or 'odoo,db',
@@ -1558,6 +1574,13 @@ class CrudMixin:
         ], order='id desc', limit=1)
         timeline = Job._get_instance_timeline(inst.id, max_visible=5)
         jobs_total = timeline['total']
+        # SSH endpoint (ip/user/port) is developer-gated at the ORM layer
+        # (same gate as the host credential) — redact it below that role.
+        # Reading it directly here would AccessError for a consultant; the
+        # guard keeps this serializer usable by project-member stakeholders
+        # while a Developer still gets the real endpoint (their restore
+        # dialog builds an rsync command from it).
+        is_developer = self._sec()._has_cloud_group('group_cloud_developer')
         return {
             'id': inst.id,
             'name': inst.name,
@@ -1593,9 +1616,16 @@ class CrudMixin:
             ],
             'host_id': inst.host_id.id if inst.host_id else None,
             'host': inst.host_id.name if inst.host_id else '',
-            'host_ip': inst.host_id.ip_address if inst.host_id else '',
-            'host_user': inst.host_id.user if inst.host_id else '',
-            'host_port': inst.host_id.port if inst.host_id else 22,
+            'host_ip': (
+                inst.host_id.ip_address
+                if (inst.host_id and is_developer) else ''
+            ),
+            'host_user': (
+                inst.host_id.user if (inst.host_id and is_developer) else ''
+            ),
+            'host_port': (
+                inst.host_id.port if (inst.host_id and is_developer) else 22
+            ),
             'move_origin_host_id': (
                 inst.move_origin_host_id.id
                 if inst.move_origin_host_id else None
@@ -1707,6 +1737,7 @@ class CrudMixin:
         project = request.env['cloud.project'].browse(project_id)
         if not project.exists():
             return {'ok': False, 'error': _('Project not found')}
+        is_manager = self._sec()._has_cloud_group('group_cloud_manager')
         instances = {}
         for inst in project.instance_ids:
             instances[inst.id] = self._serialize_instance(inst)
@@ -1732,7 +1763,10 @@ class CrudMixin:
             } for h in hosts],
             'backup_backends': [{
                 'id': b.id, 'name': b.name,
-                'backup_dst': b.backup_dst or '',
+                # backup_dst embeds the bucket path — manager-only, like
+                # the SSH endpoint above. Non-managers still get id/name so
+                # the instance form can label the effective backend.
+                'backup_dst': (b.backup_dst or '') if is_manager else '',
             } for b in backends],
         }
 

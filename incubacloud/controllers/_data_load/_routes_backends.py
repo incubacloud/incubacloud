@@ -48,6 +48,10 @@ class BackendsMixin:
 
     @http.route(["/cloud/get_backup_backends"], type="jsonrpc", auth="user")
     def cloud_get_backup_backends(self):
+        # Manager-gated like every other backend endpoint: the list leaks
+        # bucket / endpoint / backup_dst metadata that the ACL alone would
+        # expose to any stakeholder (SEC-009).
+        self._sec()._check_can_manage_settings()
         backends, total, truncated, limit = _capped_search(
             request.env["cloud.backup.backend"],
             order="name",

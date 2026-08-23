@@ -305,18 +305,37 @@
             ]"/>
         </record>
 
-        <!-- ── cloud.github.event ─────────────────────────────────── -->
+        <!-- ── cloud.instance.pending.push ────────────────────────── -->
 
-        <record id="rule_github_event_managers_only" model="ir.rule">
-            <field name="name">GitHub event: project managers and above</field>
-            <field name="model_id" ref="model_cloud_github_event"/>
+        <record id="rule_pending_push_member" model="ir.rule">
+            <field name="name">Pending push: project members only</field>
+            <field name="model_id" ref="model_cloud_instance_pending_push"/>
             <!--
-                Webhook payloads contain pusher identities, commit
-                messages and other contributor metadata. Limit read
-                access to project_manager+ — stakeholders/consultants
-                of one project would otherwise see commits / emails of
-                every other project's webhooks via the inherited ACL.
+                Pending-push rows carry commit/pusher metadata
+                (push_repo/branch/sha/message/by) mirrored from the
+                GitHub webhook. Without this rule, a stakeholder or
+                consultant of one project would read every project's
+                pending pushes via the inherited ACL. Scope them to
+                the instance's project members; project-managers+ go
+                through ``rule_pending_push_all``.
+
+                cloud.github.event itself is manager-only at the ACL
+                layer (no stakeholder grant), so this row is the only
+                path through which commit metadata reaches a
+                non-manager — and only for their own instances.
             -->
+            <field name="domain_force">[
+                ('instance_id.project_id.member_ids', 'in', [user.id])
+            ]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_user')),
+                (4, ref('group_cloud_consultant')),
+            ]"/>
+        </record>
+
+        <record id="rule_pending_push_all" model="ir.rule">
+            <field name="name">Pending push: all (PM+)</field>
+            <field name="model_id" ref="model_cloud_instance_pending_push"/>
             <field name="domain_force">[(1, '=', 1)]</field>
             <field name="groups" eval="[
                 (4, ref('group_cloud_project_manager')),

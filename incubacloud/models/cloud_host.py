@@ -68,15 +68,23 @@ class CloudHost(models.Model):
         default="self_hosted",
         help="Type of the cloud host. Other modules may extend this selection.",
     )
+    # ``ip_address``/``port``/``user`` share the ``password``/``key_file``
+    # gate (developer): whoever may read the SSH credential gains nothing
+    # from the endpoint being hidden, and jobs run as the user who enqueued
+    # them, so a stricter gate here would break every SSH job a Developer
+    # triggers. Roles below Developer get neither the endpoint nor the
+    # credential.
     ip_address = fields.Char(
         string="IP Address",
         required=True,
+        groups="incubacloud.group_cloud_developer",
         help="The IP address of the cloud host.",
     )
     port = fields.Integer(
         string="Port",
         required=True,
         default=22,
+        groups="incubacloud.group_cloud_developer",
         help="The port to connect to the cloud host.",
     )
     password = EncryptedChar(
@@ -117,6 +125,7 @@ class CloudHost(models.Model):
     user = fields.Char(
         string="User",
         required=True,
+        groups="incubacloud.group_cloud_developer",
         help="Username for accessing the cloud host.",
     )
     login_type = fields.Selection(
@@ -203,6 +212,7 @@ class CloudHost(models.Model):
     )
     allowed_ssh_ips = fields.Char(
         string="Allowed SSH IPs",
+        groups="incubacloud.group_cloud_manager",
         help="Comma-separated IPs/CIDRs allowed to SSH in addition to the "
              "operator IP (prefilled from the request that triggers "
              "hardening). Edit and re-run hardening to push the change to "

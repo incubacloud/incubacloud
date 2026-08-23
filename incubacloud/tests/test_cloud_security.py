@@ -5,7 +5,7 @@ Tests the cloud.security.mixin helpers, model-level create/write/unlink
 guards, and ir.rule record rules for project-scoped visibility.
 """
 from odoo.exceptions import AccessError
-from odoo.tests.common import TransactionCase, new_test_user
+from odoo.tests.common import TransactionCase, new_test_user, tagged
 
 
 class CloudSecurityBase(TransactionCase):
@@ -531,3 +531,323 @@ class TestInstanceRecordRules(CloudSecurityBase):
             ('id', 'in', (self.inst_member | self.inst_other).ids),
         ])
         self.assertEqual(len(instances), 2)
+
+
+# ── 4. SEC-009 — ACL lock-down, scoped rules and field-groups ───────────
+
+
+@tagged('post_install', '-at_install')
+class TestSec009AclLockdown(CloudSecurityBase):
+    """SEC-009: models whose only read ACL was the inherited Stakeholder
+    grant, with no rule to scope it, are locked down. Low roles can no
+    longer read them at all; the intended higher role still can.
+
+    post_install: the removed-ACL rows are orphan-cleaned only at the end
+    of the module load (``_process_end``), after at_install tests run, so
+    a mid-update at_install run would still see the stale grant.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.stakeholder = self._create_user('s9_stakeholder', 'group_cloud_user')
+        self.consultant = self._create_user('s9_consultant', 'group_cloud_consultant')
+        self.developer = self._create_user('s9_developer', 'group_cloud_developer')
+        self.manager = self._create_user('s9_manager', 'group_cloud_manager')
+        self.event = self.env['cloud.github.event'].create({
+            'event_type': 'push',
+            'delivery_id': 's9-delivery',
+            'payload': '{"pusher": {"email": "secret@example.com"}}',
+        })
+        self.host = self.env['cloud.host'].create({
+            'name': 'S9 Host',
+            'ip_address': '10.9.0.1',
+            'user': 'ubuntu',
+            'wildcard_domain': 's9.example.com',
+        })
+        self.whitelist = self.env['cloud.host.whitelist'].create({
+            'host_id': self.host.id,
+            'hostname': 'fonts.googleapis.com',
+        })
+
+    def test_github_event_stakeholder_denied(self):
+        with self.assertRaises(AccessError):
+            self.env['cloud.github.event'].with_user(self.stakeholder).search([])
+
+    def test_github_event_consultant_denied(self):
+        with self.assertRaises(AccessError):
+            self.env['cloud.github.event'].with_user(self.consultant).search([])
+
+    def test_github_event_manager_allowed(self):
+        events = self.env['cloud.github.event'].with_user(self.manager).search([
+            ('id', '=', self.event.id),
+        ])
+        self.assertEqual(events, self.event)
+
+    def test_whitelist_stakeholder_denied(self):
+        with self.assertRaises(AccessError):
+            self.env['cloud.host.whitelist'].with_user(self.stakeholder).search([])
+
+    def test_whitelist_consultant_denied(self):
+        with self.assertRaises(AccessError):
+            self.env['cloud.host.whitelist'].with_user(self.consultant).search([])
+
+    def test_whitelist_developer_still_allowed(self):
+        rows = self.env['cloud.host.whitelist'].with_user(self.developer).search([
+            ('id', '=', self.whitelist.id),
+        ])
+        self.assertEqual(rows, self.whitelist)
+
+
+class TestSec009PendingPushRules(CloudSecurityBase):
+    """SEC-009: cloud.instance.pending.push keeps its ACL (the panel is
+    read by project members) but is now scoped by a record rule — a
+    stakeholder sees pending pushes only for their own instances, PM+ all."""
+
+    def setUp(self):
+        super().setUp()
+        self.stakeholder = self._create_user('pp_stakeholder', 'group_cloud_user')
+        self.pm = self._create_user('pp_pm', 'group_cloud_project_manager')
+        self.project_member = self._create_project(
+            'PP Member', members=[self.stakeholder],
+        )
+        self.project_other = self._create_project('PP Other')
+        self.inst_member = self._create_instance(self.project_member)
+        self.inst_other = self._create_instance(
+            self.project_other, name='inst-other',
+        )
+        self.push_member = self.env['cloud.instance.pending.push'].create({
+            'instance_id': self.inst_member.id,
+            'skip_reason': 'cooldown',
+            'push_by': 'member-pusher',
+        })
+        self.push_other = self.env['cloud.instance.pending.push'].create({
+            'instance_id': self.inst_other.id,
+            'skip_reason': 'cooldown',
+            'push_by': 'other-pusher',
+        })
+
+    def test_stakeholder_sees_only_own_pending_push(self):
+        rows = self.env['cloud.instance.pending.push'].with_user(
+            self.stakeholder
+        ).search([('id', 'in', (self.push_member | self.push_other).ids)])
+        self.assertEqual(rows, self.push_member)
+
+    def test_pm_sees_all_pending_pushes(self):
+        rows = self.env['cloud.instance.pending.push'].with_user(
+            self.pm
+        ).search([('id', 'in', (self.push_member | self.push_other).ids)])
+        self.assertEqual(len(rows), 2)
+
+
+class TestSec009FieldGroups(CloudSecurityBase):
+    """SEC-009: the SSH endpoint (ip/port/user) is field-gated to Developer
+    at the ORM layer — the same gate as the host credential, and the role
+    that legitimately opens SSH jobs — while ``allowed_ssh_ips`` and the
+    backup access key are Administrator-only. A lower role that can still
+    read the record (name, for the picker/instance form) cannot reach the
+    sensitive columns even by raw RPC."""
+
+    def setUp(self):
+        super().setUp()
+        self.stakeholder = self._create_user('fg_stakeholder', 'group_cloud_user')
+        self.consultant = self._create_user('fg_consultant', 'group_cloud_consultant')
+        self.developer = self._create_user('fg_developer', 'group_cloud_developer')
+        self.manager = self._create_user('fg_manager', 'group_cloud_manager')
+        self.host = self.env['cloud.host'].create({
+            'name': 'FG Host',
+            'ip_address': '10.9.0.2',
+            'user': 'ubuntu',
+            'port': 2222,
+            'allowed_ssh_ips': '203.0.113.4',
+            'wildcard_domain': 'fg.example.com',
+        })
+        self.backend = self.env['cloud.backup.backend'].create({
+            'name': 'FG Backend',
+            'backend_type': 's3',
+            's3_bucket': 'fg-bucket',
+            's3_access_key_id': 'AKIAFAKE',
+        })
+
+    def test_stakeholder_can_read_host_name(self):
+        # The picker still needs id/name — only the SSH endpoint is gated.
+        rows = self.env['cloud.host'].with_user(self.stakeholder).search_read(
+            [('id', '=', self.host.id)], ['name'],
+        )
+        self.assertEqual(rows[0]['name'], 'FG Host')
+
+    def test_stakeholder_cannot_read_host_ip(self):
+        with self.assertRaises(AccessError):
+            self.host.with_user(self.stakeholder).read(['ip_address'])
+
+    def test_stakeholder_cannot_read_host_user_port(self):
+        with self.assertRaises(AccessError):
+            self.host.with_user(self.stakeholder).read(['user', 'port'])
+
+    def test_consultant_cannot_read_host_ssh_endpoint(self):
+        with self.assertRaises(AccessError):
+            self.host.with_user(self.consultant).read(
+                ['ip_address', 'user', 'port']
+            )
+
+    def test_developer_can_read_host_ssh_endpoint(self):
+        # Same gate as password/key_file: a Developer opens SSH jobs that
+        # run under their own user, so the endpoint must stay readable.
+        data = self.host.with_user(self.developer).read(
+            ['ip_address', 'user', 'port']
+        )[0]
+        self.assertEqual(data['ip_address'], '10.9.0.2')
+        self.assertEqual(data['port'], 2222)
+
+    def test_developer_reads_the_executor_connection_triplet(self):
+        # Jobs run under the enqueuing user's env and the executor reads
+        # ip/port/user by attribute (``abstract_executor.__init__``). A
+        # Developer-triggered job must not AccessError there — it did when
+        # these fields were manager-gated.
+        h = self.host.with_user(self.developer)
+        self.assertEqual(
+            (h.ip_address, h.port, h.user), ('10.9.0.2', 2222, 'ubuntu'),
+        )
+
+    def test_stakeholder_cannot_read_allowed_ssh_ips(self):
+        with self.assertRaises(AccessError):
+            self.host.with_user(self.stakeholder).read(['allowed_ssh_ips'])
+
+    def test_developer_cannot_read_allowed_ssh_ips(self):
+        # Hardening configuration stays Administrator-only.
+        with self.assertRaises(AccessError):
+            self.host.with_user(self.developer).read(['allowed_ssh_ips'])
+
+    def test_manager_can_read_host_ssh_endpoint(self):
+        data = self.host.with_user(self.manager).read(
+            ['ip_address', 'user', 'port', 'allowed_ssh_ips']
+        )[0]
+        self.assertEqual(data['ip_address'], '10.9.0.2')
+        self.assertEqual(data['port'], 2222)
+        self.assertEqual(data['allowed_ssh_ips'], '203.0.113.4')
+
+    def test_stakeholder_cannot_read_backend_access_key(self):
+        with self.assertRaises(AccessError):
+            self.backend.with_user(self.stakeholder).read(['s3_access_key_id'])
+
+    def test_manager_can_read_backend_access_key(self):
+        data = self.backend.with_user(self.manager).read(['s3_access_key_id'])[0]
+        self.assertEqual(data['s3_access_key_id'], 'AKIAFAKE')
+
+
+class TestSec009ControllerRedaction(CloudSecurityBase):
+    """SEC-009 at the SPA boundary: the instance serializers redact the
+    host SSH endpoint below Developer and the bucket path below
+    Administrator, without raising for the lower role — and the backup
+    backend list is manager-gated. Exercised through the real controller
+    methods with ``request`` bound to the role's env, the way the JSON-RPC
+    layer would."""
+
+    def setUp(self):
+        super().setUp()
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from odoo.addons.incubacloud.controllers.data_load import (
+            CloudDataLoadController,
+        )
+        self._SimpleNamespace = SimpleNamespace
+        self._patch = patch
+        self.ctrl = CloudDataLoadController()
+        self.consultant = self._create_user('cr_consultant', 'group_cloud_consultant')
+        self.developer = self._create_user('cr_developer', 'group_cloud_developer')
+        self.manager = self._create_user('cr_manager', 'group_cloud_manager')
+        self.host = self.env['cloud.host'].create({
+            'name': 'CR Host',
+            'ip_address': '10.9.0.3',
+            'user': 'deploy',
+            'port': 2200,
+            'wildcard_domain': 'cr.example.com',
+        })
+        self.backend = self.env['cloud.backup.backend'].create({
+            'name': 'CR Backend',
+            'backend_type': 's3',
+            's3_bucket': 'cr-bucket',
+        })
+        self.project = self._create_project(
+            'CR Project', members=[self.consultant, self.developer],
+        )
+        self.inst = self._create_instance(
+            self.project, host_id=self.host.id,
+            backup_backend_id=self.backend.id,
+        )
+
+    def _bound(self, user):
+        """Bind ``request`` to *user*'s env in every module the route touches."""
+        fake = self._SimpleNamespace(env=self.env(user=user))
+        base = 'odoo.addons.incubacloud.controllers.'
+        return (
+            self._patch(base + '_data_load._routes_crud.request', fake),
+            self._patch(base + '_data_load._routes_backends.request', fake),
+            self._patch(base + 'data_load.request', fake),
+            self._patch('odoo.http.request', fake),
+        )
+
+    def _with(self, user):
+        from contextlib import ExitStack
+        stack = ExitStack()
+        for p in self._bound(user):
+            stack.enter_context(p)
+        return stack
+
+    # -- instance serializer ---------------------------------------------
+
+    def test_consultant_gets_host_name_but_no_ssh_endpoint(self):
+        with self._with(self.consultant):
+            data = self.ctrl._serialize_instance(
+                self.inst.with_user(self.consultant)
+            )
+        self.assertEqual(data['host'], 'CR Host')
+        self.assertEqual(data['host_ip'], '')
+        self.assertEqual(data['host_user'], '')
+        self.assertEqual(data['host_port'], 22)
+        self.assertEqual(data['effective_backup_backend_name'], 'CR Backend')
+
+    def test_developer_gets_the_real_ssh_endpoint(self):
+        # The restore dialog builds its rsync command from these.
+        with self._with(self.developer):
+            data = self.ctrl._serialize_instance(
+                self.inst.with_user(self.developer)
+            )
+        self.assertEqual(data['host_ip'], '10.9.0.3')
+        self.assertEqual(data['host_user'], 'deploy')
+        self.assertEqual(data['host_port'], 2200)
+
+    def test_project_instances_redact_for_consultant(self):
+        with self._with(self.consultant):
+            data = self.ctrl.cloud_get_project_instances(self.project.id)
+        row = next(r for r in data['instances'] if r['id'] == self.inst.id)
+        self.assertEqual(row['host'], 'CR Host')
+        self.assertEqual((row['host_ip'], row['host_user'], row['host_port']),
+                         ('', '', 22))
+
+    def test_project_full_redacts_endpoint_and_bucket_below_manager(self):
+        with self._with(self.developer):
+            data = self.ctrl.cloud_get_project_full(self.project.id)
+        # Developer: endpoint yes, bucket path no (manager-only).
+        self.assertEqual(data['instances'][self.inst.id]['host_ip'], '10.9.0.3')
+        bb = next(b for b in data['backup_backends'] if b['id'] == self.backend.id)
+        self.assertEqual(bb['name'], 'CR Backend')
+        self.assertEqual(bb['backup_dst'], '')
+
+    def test_project_full_gives_manager_the_bucket_path(self):
+        with self._with(self.manager):
+            data = self.ctrl.cloud_get_project_full(self.project.id)
+        bb = next(b for b in data['backup_backends'] if b['id'] == self.backend.id)
+        self.assertIn('cr-bucket', bb['backup_dst'])
+
+    # -- backup backend list -----------------------------------------------
+
+    def test_backup_backends_list_denied_below_manager(self):
+        for user in (self.consultant, self.developer):
+            with self.subTest(user=user.login), self._with(user), \
+                    self.assertRaises(AccessError):
+                self.ctrl.cloud_get_backup_backends()
+
+    def test_backup_backends_list_allowed_for_manager(self):
+        with self._with(self.manager):
+            data = self.ctrl.cloud_get_backup_backends()
+        self.assertIn(self.backend.id, [b['id'] for b in data['items']])
