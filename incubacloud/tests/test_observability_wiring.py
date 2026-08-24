@@ -15,6 +15,7 @@ are worth pinning:
   installed. If nothing re-applies it, every instance deployed after
   Host Setup reports containers no rule can attribute.
 """
+import ast
 import json
 import pathlib
 import re
@@ -668,6 +669,121 @@ class TestTheAccountSyncSharesTheBoundary(BaseCase):
             list(orgs.parent.glob(globs[0])),
             "the glob matches no dashboard files from its own directory",
         )
+
+    _VAR = re.compile(r"\bic_[a-z0-9_]+")
+    _INCLUDE = re.compile(r"include_tasks:\s*(\S+)")
+    # A ``set_fact:`` or ``vars:`` mapping, with or without the FQCN
+    # prefix, and the indented block that belongs to it.
+    _DEFINING_BLOCK = re.compile(
+        r"^(\s+)(?:ansible\.builtin\.)?(?:set_fact|vars):\s*\n"
+        r"((?:\1\s+.*\n|\s*\n)+)",
+        re.MULTILINE,
+    )
+
+    def _playbook_files(self, playbook):
+        """Every file the play runs, following ``include_tasks``."""
+        seen, stack = set(), [playbook]
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            for include in self._INCLUDE.findall(current.read_text()):
+                # Bare names resolve against the including file; the
+                # playbook itself writes them as ``tasks/<name>``.
+                for candidate in (
+                    current.parent / include,
+                    playbook.parent / include,
+                ):
+                    if candidate.exists():
+                        stack.append(candidate)
+                        break
+                else:
+                    self.fail(
+                        f"{current.name} includes {include!r}, which does "
+                        f"not resolve; the walk would silently skip "
+                        f"whatever that file needs"
+                    )
+        return seen
+
+    def _undefined_vars(self, playbook):
+        """``ic_*`` names the play reads but never defines for itself.
+
+        Deliberately ignores anything the play gives a default: a var
+        with a default cannot raise, so it is the playbook's business.
+        What is left is what Ansible would resolve to undefined.
+        """
+        referenced, defined = set(), set()
+        for path in sorted(self._playbook_files(playbook)):
+            body = path.read_text()
+            for expression in re.findall(r"\{\{(.*?)\}\}", body, re.DOTALL):
+                referenced |= set(self._VAR.findall(expression))
+            for keyword in ("when", "until", "changed_when", "failed_when"):
+                for line in re.findall(rf"^\s*{keyword}:\s*(.+)$", body, re.MULTILINE):
+                    referenced |= set(self._VAR.findall(line))
+            for keyword in ("register", "loop_var"):
+                for name in re.findall(rf"^\s*{keyword}:\s*(\S+)", body, re.MULTILINE):
+                    defined |= set(self._VAR.findall(name))
+            for _indent, block in self._DEFINING_BLOCK.findall(body):
+                defined |= set(re.findall(r"^\s*(ic_[a-z0-9_]+):", block, re.MULTILINE))
+        return referenced - defined
+
+    def _extra_vars_keys(self, module, class_name):
+        """The keys THIS class's ``get_extra_vars`` returns.
+
+        Read off the override rather than off a live instance on
+        purpose: the parent's version is dead code for a subclass that
+        does not call ``super()``, and that is exactly the situation
+        under test.
+        """
+        tree = ast.parse((_ROOT / "models" / module).read_text())
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.ClassDef)
+                    and node.name == class_name):
+                continue
+            for member in node.body:
+                if not (isinstance(member, ast.FunctionDef)
+                        and member.name == "get_extra_vars"):
+                    continue
+                return {
+                    key.value
+                    for statement in ast.walk(member)
+                    if isinstance(statement, ast.Return)
+                    and isinstance(statement.value, ast.Dict)
+                    for key in statement.value.keys
+                    if isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)
+                }
+        self.fail(f"{class_name}.get_extra_vars not found in {module}")
+
+    def test_every_executor_supplies_the_vars_its_playbook_needs(self):
+        """An override that drops a var reads back as a broken boundary.
+
+        ``MetricsAclSyncExecutor`` overrides ``get_extra_vars`` without
+        calling ``super()`` — deliberately, because the parent's version
+        announces "Deploying the metrics central", which a sync must not
+        claim. The price is two dicts maintained by hand, and the first
+        thing that fell out of the child's was ``ic_operator_plain``:
+        the boundary probe then authenticated with no password at all,
+        vmauth answered 401, and the gateway looked broken rather than
+        the caller. Every account minted afterwards stayed ungranted.
+        """
+        for module, class_name, playbook in (
+            ("metrics_acl_sync_executor.py",
+             "MetricsAclSyncExecutor", self._SYNC_PLAYBOOK),
+            ("observability_central_executor.py",
+             "ObservabilityCentralExecutor", _CENTRAL_PLAYBOOK),
+        ):
+            with self.subTest(executor=class_name):
+                missing = self._undefined_vars(playbook) - (
+                    self._extra_vars_keys(module, class_name)
+                )
+                self.assertEqual(
+                    missing, set(),
+                    f"{class_name}.get_extra_vars does not supply "
+                    f"{sorted(missing)}, which {playbook.name} reads and "
+                    f"never defines; Ansible resolves those to undefined",
+                )
 
 
 class TestGrafanaIdentityIsNotInTheComposeFile(BaseCase):
