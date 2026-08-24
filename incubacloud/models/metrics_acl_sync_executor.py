@@ -73,6 +73,13 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
                 accounts, operator_token, grafana_admin_basic,
             ),
             "ic_accounts": new,
+            # The boundary probe and every Grafana call authenticate AS
+            # the operator, so the plaintext has to travel alongside the
+            # document that grants it. Left out, the probe authenticates
+            # with no password at all and vmauth answers 401 — which
+            # reads as the frontier being broken rather than the caller,
+            # and strands every account minted since the last sync.
+            "ic_operator_plain": operator_token,
             # The organisation mapping has to name every account, not
             # just the new ones: it replaces the setting rather than
             # adding to it, so a partial map would strand everyone

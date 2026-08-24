@@ -27,7 +27,11 @@
     url: "http://{{ ic_gateway_bind }}/admin-r/health"
     status_code: [200]
     url_username: operator
-    url_password: "{{ ic_operator_plain | default(omit, true) }}"
+    # No default on purpose: omitting the password turns a missing
+    # credential into a 401 from vmauth, which is indistinguishable
+    # from the boundary itself having broken. Undefined must fail as
+    # undefined.
+    url_password: "{{ ic_operator_plain }}"
     force_basic_auth: true
   register: ic_vm_health
   retries: 10
