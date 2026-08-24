@@ -51,6 +51,45 @@ ic_expand_home() {
     esac
 }
 
+# Keep the instance's live Odoo log out of the copier repo's index.
+#
+# instance_logs.sh puts ``logs/`` INSIDE the copier project directory,
+# which is a git repository, and Odoo writes ``odoo.log`` continuously.
+# Tracking it means the working tree goes dirty again between
+# ``git add -A`` and the moment ``copier update`` looks — and copier
+# refuses to run on a dirty tree, failing the whole rebuild after every
+# other step has already succeeded. Measured in production: only the
+# instance with live traffic failed; its idle sibling, rebuilt in the
+# same second, did not.
+#
+# Written to ``.git/info/exclude`` and not ``.gitignore`` because copier
+# owns ``.gitignore``: editing it would provoke the very template
+# conflict this exists to avoid.
+#
+# Nothing here is fatal. Failing to exclude leaves the pre-existing
+# race, which is worse than a rebuild but not worse than aborting one.
+ic_git_exclude_logs() {
+    local dir="$1" exclude
+    [ -d "$dir/.git" ] || return 0
+    exclude="$dir/.git/info/exclude"
+    mkdir -p "$dir/.git/info" 2>/dev/null || true
+    if ! grep -qxF '/logs/' "$exclude" 2>/dev/null; then
+        # A file not ending in a newline would glue the pattern onto
+        # whatever the last line happens to be.
+        if [ -s "$exclude" ] && [ -n "$(tail -c 1 "$exclude")" ]; then
+            printf '\n' >> "$exclude" 2>/dev/null || true
+        fi
+        printf '/logs/\n' >> "$exclude" 2>/dev/null \
+            || ic_warn "could not write $exclude: the log stays tracked"
+    fi
+    # Untrack what earlier rebuilds already committed. ``--cached``
+    # leaves every file on disk: this only takes them out of the index.
+    if git -C "$dir" ls-files --error-unmatch logs >/dev/null 2>&1; then
+        git -C "$dir" rm -r --cached --quiet logs \
+            || ic_warn "could not untrack $dir/logs: the tree may still go dirty mid-rebuild"
+    fi
+}
+
 # Abort unless a script received the arguments it needs.
 # Usage: ic_require_args <needed> "$#" "<usage line>"
 ic_require_args() {

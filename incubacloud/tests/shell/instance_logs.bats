@@ -153,3 +153,21 @@ STUB
     run bash "$SCRIPT" frobnicate inst
     [ "$status" -ne 0 ]
 }
+
+@test "install keeps the log directory out of the copier repo's index" {
+    # logs/ sits inside the copier project, which is a git repository.
+    # Tracked, it makes the tree dirty between the rebuild's commit and
+    # copier's own cleanliness check, and copier then refuses to run.
+    dir="$HOME/project/inst"
+    git -C "$dir" init -q
+    run bash "$SCRIPT" install "~/project/inst" inst 60
+    [ "$status" -eq 0 ]
+    grep -qxF '/logs/' "$dir/.git/info/exclude"
+}
+
+@test "install is harmless when the instance directory is not a git repo" {
+    run bash "$SCRIPT" install "~/project/inst" inst 60
+    [ "$status" -eq 0 ]
+    [ ! -e "$HOME/project/inst/.git" ]
+}
+
