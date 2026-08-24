@@ -81,6 +81,9 @@ case "$op" in
                 || ic_warn "could not chown $logs to $ODOO_UID: Odoo may fall back to container output"
         fi
         chmod 0755 "$logs" 2>/dev/null || true
+        # This directory sits inside the copier repo, so a tracked log
+        # would make every later rebuild race with Odoo's own writes.
+        ic_git_exclude_logs "$dir"
 
         if ! command -v logrotate >/dev/null 2>&1; then
             ic_log "Installing logrotate..."

@@ -31,6 +31,10 @@ case "$op" in
         # copier update needs a clean working tree. Commit anything dirty
         # with inline identity — the host may have no git user configured.
         ic_log "committing any dirty files before copier update"
+        # Before staging, not after: the live Odoo log lives inside this
+        # repo and would dirty the tree again between the commit and
+        # copier's own cleanliness check.
+        ic_git_exclude_logs "$dir"
         git add -A
         git diff --cached --quiet || git \
             -c user.email='system@incubacloud' \

@@ -266,3 +266,19 @@ STUB
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"--vcs-ref v3.2.1"* ]]
 }
+
+@test "commit-dirty excludes the live log before it stages anything" {
+    # Excluding after ``git add -A`` would still leave copier facing a
+    # tree Odoo had dirtied in between, so the order is the fix and not
+    # merely the exclusion. Production: the rebuild died on "Destination
+    # repository is dirty" after 26 later steps had already succeeded.
+    mkdir -p "$DIR/.git/info"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20260824T003439Z
+    [ "$status" -eq 0 ]
+    grep -qxF '/logs/' "$DIR/.git/info/exclude"
+    untrack_at="$(grep -n 'ls-files --error-unmatch logs' "$CALLS" | head -1 | cut -d: -f1)"
+    stage_at="$(grep -n 'add -A' "$CALLS" | head -1 | cut -d: -f1)"
+    [ -n "$untrack_at" ]
+    [ "$untrack_at" -lt "$stage_at" ]
+}
+

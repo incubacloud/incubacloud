@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.87] — 2026-08-24
+
+### Fixed
+
+- **The metrics account sync verified itself with a password it was never given.** `MetricsAclSyncExecutor` overrides `get_extra_vars` without calling `super()` — deliberately, because the parent announces "Deploying the metrics central", which a sync must not claim — and the one thing that fell out of the child's dict was `ic_operator_plain`. The playbook's boundary probe then authenticated as `operator` with no password at all, vmauth answered **401**, and the job failed *after* having already written and reloaded the access-control list. Two consequences, both silent: `on_success` never ran, so the granted list was never recorded, so the cron saw drift forever and re-enqueued every 30 minutes; and the play died before provisioning the new account's Grafana organisation and rewriting `orgMapping`, leaving that tenant's user landing in the default organisation. The sync only runs when there is an account to grant, so the bug shipped on 14 Aug and lay dormant until the next customer signed up
+- `tasks/vmauth_acl_apply.yml` no longer defaults the operator password to `omit`. That hedge is what turned a missing variable into a 401 indistinguishable from the frontier itself having broken; undefined now fails as undefined
+- A structural test walks each observability playbook (following `include_tasks`), collects every `ic_*` name it reads and never defines, and asserts the executor's own `get_extra_vars` supplies it — so an override that drops a variable fails in CI rather than at a customer's gateway
+
+- **A rebuild could fail because Odoo was writing its own log.** `instance_logs.sh` puts `logs/` *inside* the copier project directory, which is a git repository, and nothing excluded it. `rebuild.sh commit-dirty` staged and committed the live `odoo.log` — ~20k-line diffs, on every rebuild of every instance — but Odoo kept writing, so the tree went dirty again in the sub-second before `copier update` looked, and copier refuses to run on a dirty tree. The rebuild then ran its 26 remaining steps to completion and failed at the very end on the deferred error, leaving the instance rebuilt, restarted and healthy but flagged "Changes not deployed" and skipping the template update. Only the instance with live traffic hit it; its idle sibling, rebuilt in the same second, did not
+- `ic_git_exclude_logs` (new, in `scripts/lib/common.sh`) writes `/logs/` to `.git/info/exclude` and untracks whatever earlier rebuilds committed, leaving every file on disk. It runs from `commit-dirty` **before** staging, so it takes effect in the same rebuild rather than the next one, and from `instance_logs.sh install`, so a freshly deployed instance is born clean. `.git/info/exclude` and not `.gitignore` because copier owns the latter, and editing it would provoke the very template conflict this avoids
+
+---
+
 ## [1.0.86] — 2026-08-23
 
 ### Security
