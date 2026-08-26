@@ -4,6 +4,7 @@ from . import (
     test_executor_utils,
     test_executor_parse,
     test_github_utils,
+    test_github_webhook_cost,
     test_cloud_alert,
     test_alert_notify,
     test_bus_notifications,

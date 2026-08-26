@@ -23,6 +23,7 @@ retry as a duplicate).
 
 import json
 import logging
+import re
 
 from psycopg2 import errors as pg_errors
 
@@ -32,6 +33,22 @@ from odoo.http import request
 from ._rate_limit import Rule, first_tripped
 
 _logger = logging.getLogger(__name__)
+
+# GitHub caps a webhook payload at 25 MB, so nothing legitimate comes
+# close to Odoo's 128 MiB default. That headroom protects nobody and is
+# paid in full by whoever floods the endpoint: the body is read and
+# HMAC'd before its signature can be known to be false, and verifying a
+# signature *requires* hashing the whole body — there is no shortcut.
+# The cost cannot be removed here, only bounded, and this is the size
+# half of that bound (the per-IP limit below is the rate half).
+_MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
+
+# Shape of X-Hub-Signature-256: the literal prefix plus a SHA-256 digest
+# in hex. Checked from the headers alone, so a request that cannot
+# possibly carry a valid signature is refused before the body is read.
+# It does not stop an attacker who fakes the shape — nothing here can —
+# but it makes unshaped junk free to reject.
+_SIGNATURE_RE = re.compile(r'^sha256=[0-9a-f]{64}$')
 
 
 def _client_ip():
@@ -62,6 +79,11 @@ class GitHubWebhookController(http.Controller):
         csrf=False,
         methods=["POST"],
         save_session=False,
+        # Per route, not global: the restore upload next door declares
+        # 2 GiB and must keep it. Werkzeug enforces this from the
+        # Content-Length header, so an oversized delivery is answered
+        # 413 without a byte of the body being read.
+        max_content_length=_MAX_PAYLOAD_BYTES,
     )
     def github_webhook(self, **_kwargs):
         # Rate-limit by client IP *before* reading the body or doing
@@ -84,7 +106,11 @@ class GitHubWebhookController(http.Controller):
                 ],
             )
 
-        payload_bytes: bytes = request.httprequest.get_data()
+        # Headers first, body second. Both checks below are decided
+        # from the headers alone, and reading the body is the expensive
+        # part — it is what a flood is trying to make us do. Reversing
+        # this (as it was) meant every malformed request still cost a
+        # full read before being told it was malformed.
         event_type: str = request.httprequest.headers.get("X-GitHub-Event", "")
         delivery_id: str = request.httprequest.headers.get("X-GitHub-Delivery", "")
         signature: str = request.httprequest.headers.get("X-Hub-Signature-256", "")
@@ -104,6 +130,23 @@ class GitHubWebhookController(http.Controller):
                 status=400,
                 headers=[("Content-Type", "text/plain")],
             )
+
+        # A signature that is not even shaped like one cannot validate
+        # against any secret, so hashing the body to find that out is
+        # pure waste. Deliberately not a security boundary — the HMAC
+        # below is — just the cheapest possible refusal.
+        if not _SIGNATURE_RE.match(signature):
+            _logger.warning(
+                "GitHub webhook malformed X-Hub-Signature-256 "
+                "(delivery=%s, event=%s)", delivery_id, event_type,
+            )
+            return request.make_response(
+                "Signature validation failed.\n",
+                status=401,
+                headers=[("Content-Type", "text/plain")],
+            )
+
+        payload_bytes: bytes = request.httprequest.get_data()
 
         secret = request.env["cloud.github.credential.service"].sudo().resolve_webhook_secret(payload_bytes, signature)
 
