@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import re
-import tempfile
 from contextlib import suppress
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from odoo.http import Controller, request
 
 from odoo.addons.bus.websocket import WebsocketConnectionHandler
 
+from ..restore_staging import new_upload_path
 from ._data_load._helpers import (
     is_safe_log_archive,
     log_archive_download_command,
@@ -276,13 +276,16 @@ class CloudController(Controller):
         if not backup_file:
             return request.make_json_response({"error": "No file provided"}, status=400)
 
-        tmp_fd, tmp_path = tempfile.mkstemp(
-            suffix=".zip",
-            prefix=f"cloud_restore_{instance_id}_",
-        )
+        # Staged under the data dir, not /tmp: the executor that consumes
+        # this file runs in the job-runner container, which shares the
+        # data dir with this one and nothing else. See restore_staging.
+        tmp_path = str(new_upload_path(instance_id))
         try:
-            with os.fdopen(tmp_fd, "wb") as tmp_fh:
-                backup_file.save(tmp_fh)
+            # ``save`` streams through a 16 KiB buffer, so a 2 GiB archive
+            # never lands in the worker's memory — which matters, since
+            # limit_memory_hard is that same 2 GiB.
+            backup_file.save(tmp_path)
+            os.chmod(tmp_path, 0o600)
             # Sanitise filename: it travels in the job payload as
             # metadata and may surface in logs / UI / future shell
             # interpolation. Restrict to a conservative whitelist

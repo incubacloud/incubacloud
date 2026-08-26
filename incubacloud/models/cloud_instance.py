@@ -8,6 +8,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
+from ..restore_staging import purge_stale
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
 from ._repo_requirements import _normalize_url
@@ -1622,13 +1623,28 @@ class CloudInstance(models.Model):
         except Exception:
             _logger.exception("PR comment delete failed for %s", self.name)
 
+    @api.model
+    def _gc_restore_uploads(self):
+        """Delete browser-uploaded restore archives nobody will consume.
+
+        The executor removes the archive once it has sent it, but no
+        ``finally`` covers the upload whose job never runs at all —
+        cancelled before it started, or enqueued against an instance that
+        was removed since. At up to 2 GiB each those would sit on the
+        data volume until the container is recreated.
+
+        :return: number of files removed.
+        """
+        return purge_stale()
+
     def restore_db(self, payload):
         """Enqueue a restore_instance job with the given payload.
 
         ``payload['mode']`` selects the source of the backup zip:
 
         * ``browser``  — operator uploaded a zip via /cloud/instance/<id>/restore;
-                         the controller stored it under tempfile.mkstemp() and
+                         the controller staged it under the data dir (the one
+                         mount this container shares with the job runner) and
                          passes the resulting path as ``local_path``.
         * ``from_job`` — the zip is an ir.attachment of a previous cloud.job
                          (typically a backup_download); the executor pulls it
