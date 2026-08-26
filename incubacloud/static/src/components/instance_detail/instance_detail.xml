@@ -1588,7 +1588,7 @@
             <IcModal
         t-if="state.removeModal"
         title="'Remove instance'"
-        boxClass="'ic-confirm-box'"
+        boxClass="'ic-remove-box'"
         onClose="() => this.closeRemoveModal()"
       >
                 <h3 class="ic-confirm-title">Remove instance</h3>
@@ -1596,21 +1596,65 @@
                     Remove "<strong
             t-esc="state.removeModal.instance.name"
           />" from the host?
-                    Containers will be stopped and the directory deleted.
+                    Both options stop the containers and delete the instance
+                    directory, <strong>database and filestore included</strong>.
+                    They differ only in what is left in this panel.
                 </p>
+
+                <p
+          class="ic-remove-note"
+          t-if="state.removeModal.instance.effective_backup_backend_id"
+        >
+                    Backups already stored in
+                    <strong
+            t-esc="state.removeModal.instance.effective_backup_backend_name"
+          />
+                    are not deleted — but they stop being maintained, because
+                    the retention prune runs inside the backup container this
+                    removes. Delete them from the storage when you no longer
+                    need them.
+                </p>
+                <p class="ic-remove-note danger" t-else="">
+                    This instance has no backup destination, so what is
+                    destroyed here cannot be recovered.
+                </p>
+
+                <div class="ic-remove-options">
+                    <button
+            class="ic-remove-option"
+            t-on-click="() => this._removeFromHost(true)"
+          >
+                        <span class="ic-remove-option-title">Keep in panel</span>
+                        <span class="ic-remove-option-desc">
+                            The record stays as a draft, keeping its repos,
+                            dependencies, domains and resource limits, ready to
+                            deploy again here or on another host. It comes back
+                            empty.
+                        </span>
+                    </button>
+                    <button
+            class="ic-remove-option danger"
+            t-on-click="() => this._removeFromHost(false)"
+          >
+                        <span class="ic-remove-option-title">Delete completely</span>
+                        <span class="ic-remove-option-desc">
+                            The record and its configuration are removed from
+                            the panel too. Past job logs survive, no longer
+                            attached to any instance.
+                        </span>
+                    </button>
+                </div>
+
                 <div class="ic-confirm-actions">
+                    <!-- autofocus: IcModal honours it over the first
+                         focusable, so the Enter that lands here before
+                         the dialog is read cancels. Both options below
+                         destroy the data. -->
                     <button
             class="ic-confirm-btn-cancel"
+            autofocus="autofocus"
             t-on-click="closeRemoveModal"
           >Cancel</button>
-                    <button
-            class="ic-confirm-btn-ok"
-            t-on-click="() => this._removeFromHost(true)"
-          >Keep in panel</button>
-                    <button
-            class="ic-confirm-btn-ok danger"
-            t-on-click="() => this._removeFromHost(false)"
-          >Delete completely</button>
                 </div>
             </IcModal>
 

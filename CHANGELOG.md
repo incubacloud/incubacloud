@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.88] — 2026-08-26
+
+### Fixed
+
+- **Deleting a backup backend only looked at one of the three ways an instance reaches it.** An instance resolves its destination as `instance.backup_backend_id or project.backup_backend_id or <global default>`, but the guard searched only for direct assignments — so a backend used as a project default, or as the **global default inherited by the entire fleet**, could be deleted without a single warning. That search also ran with the default `active_test`, which hides archived instances: exactly the records whose backup chains are still sitting in the bucket. The guard now asks `_deletion_blockers()`, which reports all three routes at once and counts archived instances, and the refusal names what it is protecting — marking archived ones as such — instead of only saying no
+- The refusal no longer implies the backups themselves are at stake. Deleting the backend record never removes an object from the bucket; it removes the panel's only pointer to them, and the message now says exactly that
+
+### Changed
+
+- **A destructive confirmation dialog opens with Cancel focused, not Confirm.** `IcConfirmDialog` focused the confirm button on mount for muscle memory, which meant an Enter pressed before the dialog had been read confirmed the delete. `isDanger` dialogs now open on Cancel; ordinary confirmations keep Confirm, so the common flow stays one keypress and the extra Tab is spent only where it buys something
+- **The "Remove instance" dialog says what it actually does.** It read "Containers will be stopped and the directory deleted" — true, and misleading by omission: the teardown runs `docker compose down -v`, so **both** options destroy the database and the filestore and they differ only in whether the record survives. Each option now carries its own line — "Keep in panel" preserves repos, dependencies, domains and resource limits as a redeployable draft that comes back empty; "Delete completely" also removes the record and its configuration — and the dialog states what becomes of the backups: kept, but no longer maintained, because the retention prune runs inside the very backup container the teardown destroys. An instance with no backup destination is told that nothing here is recoverable
+
+---
+
 ## [1.0.87] — 2026-08-24
 
 ### Fixed

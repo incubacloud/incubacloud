@@ -163,21 +163,53 @@ class BackendsMixin:
         b = request.env["cloud.backup.backend"].browse(backend_id)
         if not b.exists():
             return {"ok": False, "error": _("Backend not found")}
-        instances = request.env["cloud.instance"].search(
-            [
-                ("backup_backend_id", "=", backend_id),
-            ]
-        )
+        # Every route an instance can reach this backend by, not just the
+        # direct assignment: a project default and the global default are
+        # backends too, and archived instances still have chains in the
+        # bucket. See ``_deletion_blockers``.
+        blockers = b._deletion_blockers()
+        reasons = []
+        instances = blockers["instances"]
         if instances:
-            names = ", ".join(instances.mapped("name"))
+            reasons.append(
+                _(
+                    "%(count)d instance(s) point at it directly: "
+                    "%(names)s.",
+                    count=len(instances),
+                    names=", ".join(
+                        inst.name if inst.active
+                        else _("%s (archived)", inst.name)
+                        for inst in instances
+                    ),
+                )
+            )
+        projects = blockers["projects"]
+        if projects:
+            reasons.append(
+                _(
+                    "%(count)d project(s) use it as their default: "
+                    "%(names)s.",
+                    count=len(projects),
+                    names=", ".join(projects.mapped("name")),
+                )
+            )
+        if blockers["is_global_default"]:
+            reasons.append(
+                _(
+                    "It is the global default backend, inherited by every "
+                    "instance without an assignment of its own."
+                )
+            )
+        if reasons:
             return {
                 "ok": False,
                 "error": _(
-                    "Cannot delete: this backend is used by %d "
-                    "instance(s): %s. Remove the backend assignment "
-                    "from those instances first.",
-                    len(instances),
-                    names,
+                    "Cannot delete: this backend is still the backup "
+                    "destination for existing records. %(reasons)s Clear "
+                    "those assignments first. Deleting the backend does "
+                    "not delete the backups it holds — it only makes them "
+                    "unreachable from the panel.",
+                    reasons=" ".join(reasons),
                 ),
             }
         # Externally-managed backend: hand the delete to the managing
