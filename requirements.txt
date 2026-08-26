@@ -6,7 +6,7 @@
 ansible-core==2.21.2
 ansible-runner==2.4.3
 # CN-012: >=2.20.0 required — fixes Terrapin (CVE-2023-46445/48795) and CVE-2025-22886.
-asyncssh==2.22.0
+asyncssh==2.23.1
 boto3==1.42.89
 # CN-018: >=44.0.1 required — fixes CVE-2023-49083, CVE-2024-6119, CVE-2024-12797.
 cryptography==46.0.7
