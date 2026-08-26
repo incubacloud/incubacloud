@@ -344,6 +344,83 @@ body,
     gap: 10px;
 }
 
+// ── Remove-instance dialog ──────────────────────────────────────
+// Wider than a plain confirm because the two outcomes need a line of
+// explanation each: both destroy the data and only one keeps the
+// record, which no pair of button labels can carry on its own.
+
+.ic-remove-box {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-xl;
+    padding: $space-6 $space-6 $space-5;
+    width: $modal-md;
+    max-width: calc(100% - 40px);
+}
+
+.ic-remove-note {
+    margin: 0 0 $space-5;
+    padding: $space-3 $space-4;
+    border-left: 3px solid $state-neutral;
+    border-radius: $radius-sm;
+    background: $surface-light;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: $text-secondary;
+
+    &.danger {
+        border-left-color: $state-error;
+        color: $text-primary;
+    }
+}
+
+.ic-remove-options {
+    display: flex;
+    flex-direction: column;
+    gap: $space-3;
+    margin-bottom: $space-5;
+}
+
+.ic-remove-option {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    width: 100%;
+    padding: $space-3 $space-4;
+    text-align: left;
+    background: transparent;
+    border: 1px solid $border;
+    border-radius: $radius-md;
+    cursor: pointer;
+    transition: border-color $duration-fast ease, background $duration-fast ease;
+
+    &:hover:not(:disabled) {
+        background: $surface-light;
+        border-color: $primary-blue;
+    }
+
+    &.danger:hover:not(:disabled) {
+        border-color: $state-error;
+    }
+
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.ic-remove-option-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: $text-primary;
+
+    .ic-remove-option.danger & { color: $state-error; }
+}
+
+.ic-remove-option-desc {
+    font-size: 0.75rem;
+    line-height: 1.55;
+    color: $text-secondary;
+}
+
 .ic-form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;

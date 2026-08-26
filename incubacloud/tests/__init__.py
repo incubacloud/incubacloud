@@ -15,6 +15,7 @@ from . import (
     test_chained_enqueue_invariant,
     test_cloud_backup,
     test_backup_backend_conn,
+    test_backup_backend_delete_guard,
     test_general_settings,
     test_cloud_instance,
     test_cloud_instance_move,

@@ -26,8 +26,10 @@
  * Accessibility:
  *   - ``role="dialog"`` + ``aria-modal="true"`` + ``aria-labelledby``
  *     pointing at the <h3>.
- *   - Initial focus on the confirm button (muscle-memory friendly —
- *     Enter confirms).
+ *   - Initial focus depends on the stakes: ``isDanger`` dialogs open
+ *     with Cancel focused so an Enter pressed on muscle memory
+ *     backs out, everything else focuses Confirm so the ordinary
+ *     flow stays one keypress.
  *   - Tab/Shift-Tab cycle between Cancel and Confirm only (focus
  *     trap).
  *   - Esc triggers ``onCancel``.
@@ -73,8 +75,8 @@ export class IcConfirmDialog extends Component {
             }
             if (ev.key === "Tab") {
                 // Focus trap between the two buttons. If neither is
-                // current (unlikely — we focus confirm on mount) the
-                // next Tab lands on Cancel.
+                // current (unlikely — we focus one of them on mount)
+                // the next Tab lands on Cancel.
                 const focusables = [
                     this.cancelBtnRef.el,
                     this.confirmBtnRef.el,
@@ -98,7 +100,11 @@ export class IcConfirmDialog extends Component {
             // Capture phase so we see Esc/Tab before any consumer
             // handler in the underlying page tries to swallow them.
             document.addEventListener("keydown", this._onKeyDown, true);
-            this.confirmBtnRef.el?.focus();
+            IcConfirmDialog.initialFocusTarget(
+                this.props.isDanger,
+                this.cancelBtnRef.el,
+                this.confirmBtnRef.el,
+            )?.focus();
         });
 
         onWillUnmount(() => {
@@ -117,6 +123,26 @@ export class IcConfirmDialog extends Component {
         // useState is only here so OWL warns if a consumer mutates
         // props directly. No internal state otherwise.
         this.state = useState({});
+    }
+
+    /**
+     * Which button the dialog opens focused on.
+     *
+     * The cheap mistake in a destructive dialog is not a mis-aimed
+     * click, it is an Enter that arrives before the dialog was read —
+     * so those open on Cancel and that keypress backs out. Everything
+     * else opens on Confirm, keeping the ordinary flow one keypress.
+     *
+     * Static and pure so the choice can be asserted without mounting
+     * the component (see ic_confirm_dialog.test.js).
+     *
+     * @param {boolean|undefined} isDanger destructive dialog?
+     * @param {Element|null} cancelEl the Cancel button.
+     * @param {Element|null} confirmEl the Confirm button.
+     * @returns {Element|null|undefined} the element to focus.
+     */
+    static initialFocusTarget(isDanger, cancelEl, confirmEl) {
+        return isDanger ? cancelEl : confirmEl;
     }
 
     get confirmButtonClass() {

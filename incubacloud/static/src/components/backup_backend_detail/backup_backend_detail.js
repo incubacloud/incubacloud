@@ -292,7 +292,7 @@ export class BackupBackendDetail extends Component {
     const confirmed = await this._confirm({
       title: _t("Delete Backup Backend"),
       message: _t(
-        "This will permanently delete this backup backend. It can only be deleted if no instances are using it."
+        "This will permanently delete this backup backend. It can only be deleted once nothing points at it — no instance (archived ones included), no project default, and not the global default. The backups already stored are not deleted, but they stop being reachable from the panel."
       ),
       confirmLabel: _t("Delete"),
       isDanger: true,

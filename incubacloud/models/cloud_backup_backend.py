@@ -6,6 +6,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from odoo import _, api, fields, models
 
+from .cloud_instance import _GLOBAL_BACKUP_PARAM
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
 
@@ -131,6 +132,51 @@ class CloudBackupBackend(models.Model):
                     rec.backup_dst = f"boto3+s3://{rec.s3_bucket}"
             else:
                 rec.backup_dst = ""
+
+    # ── Deletion guard ──────────────────────────────────────────────────────
+
+    def _deletion_blockers(self):
+        """Return everything that would lose its storage with this backend.
+
+        An instance resolves its backend as ``instance.backup_backend_id
+        or project.backup_backend_id or <global default>``, so asking only
+        about the direct assignment misses two entire routes: a project
+        default, and the global default that every unassigned instance in
+        the fleet inherits.
+
+        Archived instances count. Their chains are still in the bucket —
+        keeping them is the whole point of archiving rather than deleting
+        — and they are precisely what an ``active_test`` search cannot
+        see, so they are what a naive guard silently deletes the storage
+        out from under.
+
+        :return: dict with ``instances`` (recordset, archived included),
+            ``projects`` (recordset that defaults to this backend) and
+            ``is_global_default`` (bool).
+        """
+        self.ensure_one()
+        instances = (
+            self.env["cloud.instance"]
+            .sudo()
+            .with_context(active_test=False)
+            .search([("backup_backend_id", "=", self.id)])
+        )
+        projects = (
+            self.env["cloud.project"]
+            .sudo()
+            .search([("backup_backend_id", "=", self.id)])
+        )
+        global_id = int(
+            self.env["ir.config_parameter"]
+            .sudo()
+            .get_param(_GLOBAL_BACKUP_PARAM, 0)
+            or 0
+        )
+        return {
+            "instances": instances,
+            "projects": projects,
+            "is_global_default": global_id == self.id,
+        }
 
     # ── Usage tracking + quota alerts ──────────────────────────────────────
     # Universal feature: applies to every backend, BYO or managed. The
@@ -513,7 +559,7 @@ class CloudBackupBackend(models.Model):
             self.env["ir.config_parameter"]
             .sudo()
             .get_param(
-                "incubacloud.backup_backend_id",
+                _GLOBAL_BACKUP_PARAM,
                 0,
             )
             or 0
