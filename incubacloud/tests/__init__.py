@@ -57,6 +57,7 @@ from . import (
     test_responsive_css,
     test_github_setup,
     test_restore_backup_guard,
+    test_restore_staging,
     test_connect_as_guard,
     test_run_script,
     test_ansible_executor,

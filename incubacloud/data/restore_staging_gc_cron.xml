@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="cron_cloud_restore_staging_gc" model="ir.cron">
+        <field name="name">Garbage-collect abandoned restore uploads</field>
+        <field name="model_id" ref="model_cloud_instance"/>
+        <field name="state">code</field>
+        <field name="code">model._gc_restore_uploads()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

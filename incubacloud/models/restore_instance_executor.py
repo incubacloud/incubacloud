@@ -3,6 +3,7 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 
+from ..restore_staging import is_staged_upload
 from .abstract_executor import (
     AbstractSSHExecutor,
     handoff_archive_path,
@@ -78,34 +79,34 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
                     "Backup file not found on Odoo server. "
                     "Please re-upload and try again."
                 )
-            # Defense-in-depth: ``local_path`` must point to a file the
-            # /cloud/instance/<id>/restore controller created via
-            # ``tempfile.mkstemp(prefix='cloud_restore_<inst_id>_',
-            # suffix='.zip')``. Anything else (e.g. ``/etc/odoo/odoo.conf``
-            # passed directly via JSON-RPC) is rejected — the executor
-            # would otherwise both upload and unlink the target file.
-            # ``resolve()`` canonicalises symlinks and ``..`` traversal.
-            expected_prefix = (
-                f"{tempfile.gettempdir()}/"
-                f"cloud_restore_{self._inst().id}_"
-            )
-            resolved = str(Path(local_path).resolve())
-            if not resolved.startswith(expected_prefix):
+            # Defense-in-depth: ``local_path`` must name a file the
+            # /cloud/instance/<id>/restore controller staged for *this*
+            # instance. Anything else (e.g. ``/etc/odoo/odoo.conf`` passed
+            # directly via JSON-RPC) is rejected — the executor would
+            # otherwise both upload and unlink the target file.
+            if not is_staged_upload(local_path, self._inst().id):
                 raise ValueError(
-                    "local_path must be a temp file created by the "
-                    "upload controller (expected prefix %r, got %r)."
-                    % (expected_prefix, resolved)
+                    "local_path must be an upload staged by the restore "
+                    "controller for this instance (got %r)." % (local_path,)
                 )
+            resolved = str(Path(local_path).resolve())
             if not Path(resolved).exists():
                 raise ValueError(
                     "Backup file not found on Odoo server. "
                     "Please re-upload and try again."
                 )
-            self._sys("Uploading backup to remote host via SFTP...")
-            await transport.upload_file(resolved, self._remote_path())
-            self._sys("✓ Backup transferred to remote host.")
-            with suppress(Exception):
-                Path(resolved).unlink()
+            # ``finally``: the archive is up to 2 GiB and this is the only
+            # code that deletes it. Leaving it behind on a failed transfer
+            # (host down, disk full, connection dropped) would pin that
+            # much disk until the container is recreated, and the operator
+            # retries by uploading again anyway.
+            try:
+                self._sys("Uploading backup to remote host via SFTP...")
+                await transport.upload_file(resolved, self._remote_path())
+                self._sys("✓ Backup transferred to remote host.")
+            finally:
+                with suppress(OSError):
+                    Path(resolved).unlink()
 
         elif mode == 'from_job':
             source_job_id = payload.get('source_job_id')
@@ -127,12 +128,14 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
                 prefix=".incubacloud-restore-", suffix=".zip",
             )
             os.close(fd)
-            Path(local_path).write_bytes(data)
-            self._sys("Uploading backup to remote host via SFTP…")
-            await transport.upload_file(local_path, self._remote_path())
-            self._sys("✓ Backup transferred to remote host.")
-            with suppress(OSError):
-                Path(local_path).unlink()
+            try:
+                Path(local_path).write_bytes(data)
+                self._sys("Uploading backup to remote host via SFTP…")
+                await transport.upload_file(local_path, self._remote_path())
+                self._sys("✓ Backup transferred to remote host.")
+            finally:
+                with suppress(OSError):
+                    Path(local_path).unlink()
 
         elif mode == 'from_host':
             source = self._source_job()

@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.90] — 2026-08-27
+
+### Fixed
+
+- **A backup uploaded from the browser could never reach the host it was meant to restore.** The upload is served by `odoo` and consumed by `odoo_runner`, and since the job runner was split out those are separate containers sharing exactly one mount — the data directory. The archive was staged in `/tmp`, which is private to each, so the path handed across in the job payload named a file the executor could not open. It answered *"Backup file not found on Odoo server. Please re-upload and try again."* — advice that reproduces the same failure forever. Uploads now stage under the data dir, which both halves can reach; a test pins that the writer and the validator agree on that location
+- **Every one of those attempts also stranded up to 2 GiB.** The only `unlink` for a staged archive lives in the executor, so it ran in the container that could not see the file. Even within one container the deletion sat after the SFTP transfer with no `try/finally`, so any failed transfer — host down, disk full, connection dropped — left the archive behind. Both restore paths that stage locally (`browser` and `from_job`) now release the file in a `finally`, and a daily cron sweeps uploads whose job never ran at all, which no `finally` can cover
+- **The terminal GC cron was deciding liveness from PIDs belonging to another container.** `os.kill(pid, 0)` is meaningful only where the process was spawned; terminals come from `odoo`, crons run in `odoo_runner`. An unrelated live process there answers "alive" for a dead route, and a working terminal looks dead because its PID does not exist — and since both containers start their processes in the same low range, collisions are the common case. The cron now reaps by `last_seen`, refreshed by the controller that does own the PID; the inline check on the web side is unchanged. Affects `cloud.terminal.route` and `cloud.host.terminal.route`
+
 ## [1.0.89] — 2026-08-26
 
 ### Fixed

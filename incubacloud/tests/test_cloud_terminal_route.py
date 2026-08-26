@@ -2,13 +2,20 @@
 
 Covers the liveness check, the auto-GC path, and that ``_resolve``
 returns ``None`` (not raising) when the row's PID is dead.
+
+The GC half also pins *which* signal each side is allowed to trust. The
+controller may ask the kernel about a PID because it spawned the process;
+the cron may not, because it runs in the job-runner container where that
+PID belongs to somebody else entirely.
 """
 import os
 import signal
 import subprocess
 import time
 from contextlib import suppress
+from datetime import timedelta
 
+from odoo import fields
 from odoo.tests.common import TransactionCase
 
 
@@ -82,37 +89,106 @@ class TestCloudTerminalRouteLiveness(TransactionCase):
         )
         self.assertFalse(still_there)
 
-    def test_gc_unlinks_dead_rows_and_keeps_live_ones(self):
-        live_proc = self._make_dummy_process()
-        dead_proc = subprocess.Popen(
-            ['python3', '-c', 'pass'],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        dead_proc.wait(timeout=2)
-        self.Route.sudo().create([
+    def _stale(self, route):
+        """Backdate *route* past the GC's TTL."""
+        route.sudo().write({
+            'last_seen': fields.Datetime.now() - timedelta(
+                seconds=self.Route._ROUTE_TTL_SECONDS + 60,
+            ),
+        })
+
+    def test_gc_keeps_recently_seen_rows_and_reaps_the_rest(self):
+        fresh, stale = self.Route.sudo().create([
             {
-                'session_id': 'gc-live',
-                'pid': live_proc.pid,
+                'session_id': 'gc-fresh',
+                'pid': 0,
                 'port': 12347,
                 'auth_token': 'tok',
                 'user_id': self._user().id,
             },
             {
-                'session_id': 'gc-dead',
-                'pid': dead_proc.pid,
+                'session_id': 'gc-stale',
+                'pid': 0,
                 'port': 12348,
                 'auth_token': 'tok',
                 'user_id': self._user().id,
             },
         ])
-        time.sleep(0.1)
+        self._stale(stale)
         self.Route._gc()
         remaining = self.Route.sudo().search(
-            [('session_id', 'in', ['gc-live', 'gc-dead'])],
+            [('session_id', 'in', ['gc-fresh', 'gc-stale'])],
         ).mapped('session_id')
-        self.assertEqual(remaining, ['gc-live'])
+        self.assertEqual(remaining, ['gc-fresh'])
+        # ``pid`` is 0 on both — a dead PID by ``_is_process_alive``'s own
+        # reckoning. The fresh row surviving is the proof the cron no
+        # longer consults it.
+        self.assertFalse(fresh._is_process_alive())
+
+    def test_gc_reaps_a_stale_row_whose_pid_is_alive(self):
+        """The regression this whole change exists to prevent.
+
+        Crons run in the job-runner container; terminals are spawned by
+        the web one. A PID from over there either does not exist here —
+        and a working terminal gets dropped — or it collides with an
+        unrelated live process here, and a dead route is kept forever.
+        Both containers start their processes in the same low range, so
+        the collision is the common case.
+
+        A live PID must therefore not save a row the controller has not
+        confirmed in a long time.
+        """
+        proc = self._make_dummy_process()
+        route = self.Route.sudo().create({
+            'session_id': 'gc-live-pid-stale-row',
+            'pid': proc.pid,
+            'port': 12349,
+            'auth_token': 'tok',
+            'user_id': self._user().id,
+        })
+        self.assertTrue(
+            route._is_process_alive(),
+            'fixture is wrong: the PID must be alive for this to prove '
+            'anything',
+        )
+        self._stale(route)
+        self.Route._gc()
+        self.assertFalse(route.exists())
+
+    def test_resolving_a_route_refreshes_last_seen(self):
+        """``_resolve`` is the heartbeat: it runs on the web worker, on
+        every proxy call, which is the only place a PID means anything."""
+        proc = self._make_dummy_process()
+        route = self.Route.sudo().create({
+            'session_id': 'heartbeat',
+            'pid': proc.pid,
+            'port': 12350,
+            'auth_token': 'tok',
+            'user_id': self._user().id,
+        })
+        self._stale(route)
+        before = route.last_seen
+        self.assertTrue(self.Route._resolve('heartbeat'))
+        self.assertGreater(
+            route.last_seen, before,
+            'a resolved route must be kept alive for the GC in the other '
+            'container',
+        )
+
+    def test_last_seen_is_not_rewritten_on_every_poll(self):
+        """The frontend polls about once a second per open terminal."""
+        proc = self._make_dummy_process()
+        route = self.Route.sudo().create({
+            'session_id': 'throttle',
+            'pid': proc.pid,
+            'port': 12351,
+            'auth_token': 'tok',
+            'user_id': self._user().id,
+        })
+        self.Route._resolve('throttle')
+        first = route.last_seen
+        self.Route._resolve('throttle')
+        self.assertEqual(route.last_seen, first)
 
     def test_session_id_is_unique(self):
         proc = self._make_dummy_process()
