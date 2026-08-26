@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.89] — 2026-08-26
+
+### Fixed
+
+- **The GitHub webhook let an unsigned request cost more than it should.** The endpoint is public, POST and CSRF-exempt because GitHub cannot authenticate any other way — trust comes from an HMAC over the body — and deciding a signature is false *requires* hashing the whole body, so a forged-signature flood always costs something. What was wrong was how much. Odoo's default cap is 128 MiB while GitHub itself never sends more than 25 MB, so the endpoint accepted five times any legitimate delivery; measured, that is 147 ms of CPU per request spent on HMAC alone before the signature can be known to be false. The route now declares `max_content_length` of 32 MiB, which werkzeug enforces from `Content-Length` — an oversized delivery is answered 413 without a byte being read
+- **The body was read before anything decided from the headers.** A request missing the mandatory `X-GitHub-Delivery` still paid for a full read before being told it was malformed. Header checks now come first, and a `X-Hub-Signature-256` that is not shaped like one (`sha256=` plus 64 hex) is refused without reading the body. That is not the trust boundary — the HMAC still is — just the cheapest possible refusal
+- The cap is declared per route on purpose, and a test pins the restore upload's 2 GiB next door: a global limit, or a `maxRequestBodyBytes` on the Traefik `buffering` middleware (which hangs off the router for the whole host), would have broken file-upload restores
+
+---
+
 ## [1.0.88] — 2026-08-26
 
 ### Fixed
