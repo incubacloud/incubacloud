@@ -375,6 +375,33 @@ body,
     }
 }
 
+// Written confirmation for the irreversible half of the remove modal.
+// Deleting now takes the backups with it, so "Delete completely" stays
+// disabled until the typed name matches exactly.
+.ic-remove-typed-label {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+    margin-bottom: $space-4;
+    font-size: 0.75rem;
+    color: $text-secondary;
+}
+
+.ic-remove-typed {
+    padding: $space-2 $space-3;
+    border: 1px solid $border;
+    border-radius: $radius-sm;
+    background: $surface;
+    color: $text-primary;
+    font-family: $font-mono;
+    font-size: 0.8125rem;
+
+    &:focus {
+        outline: none;
+        border-color: $primary-blue;
+    }
+}
+
 .ic-remove-options {
     display: flex;
     flex-direction: column;

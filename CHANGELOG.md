@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.92] — 2026-08-27
+
+### Changed
+
+- **Deleting an instance now clears its backups first, or does not happen.** Nothing pruned them afterwards — the retention job runs inside the very container the teardown destroys — so every completely-deleted instance left a chain behind that no instance owned, and on a managed destination it kept consuming a quota the customer cannot reach from the panel. `Delete completely` now empties the instance's prefix before the containers come down, through the instance's own `backup` container: the only thing that holds the credentials, the endpoint and the destination, and the only moment anything can still reach the storage
+- **If the purge fails the instance is not deleted.** Tearing down first would strand the objects with nothing left able to delete them, so the step carries `stop_on_failure` and there is deliberately no "delete anyway". The failure raises an alert that names its own fix — `backup_purge_service_missing`, `backup_purge_unauthorized` or `backup_purge_failed` — classified from the script's exit code, never by matching duplicity's or boto's wording, which would silently downgrade every diagnosis to the catch-all the day either changes phrasing. An already-empty prefix answers 10 and is not a failure: the invariant already holds
+- **`Delete completely` asks for the instance name.** It is now irreversible in a way it was not, and the expensive mistake it guards against is deleting the wrong instance, not deleting by accident — so it asks for the name rather than a fixed word, matched exactly, with the name deliberately not selectable inside the dialog
+- The purge is gated on `_owns_instance_lifecycle`, so the two move cleanups that reuse these teardown commands against a host the instance has left never reach it — their instance is alive elsewhere and those backups are still its own. Free tenants are excluded by `_backup_enabled()`, the same gate that decides whether the container is deployed at all, with no branch naming them
+
 ## [1.0.91] — 2026-08-27
 
 ### Fixed
