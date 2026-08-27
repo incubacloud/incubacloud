@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.91] — 2026-08-27
+
+### Fixed
+
+- **A completed instance deletion reported as failed.** Observed in production: the teardown removed the containers, images, volumes, logrotate config and directory, logged `✓ Instance 'prod' removed from host`, and then raised `AttributeError: 'DeleteInstanceExecutor' object has no attribute '_host'`. `_host()` was a convention — six host-scoped executors each define it as `return self.job.host_id` — that `AbstractSSHExecutor` never provided, and two instance-scoped callers assumed. It is now defined once on the base class
+- **Every successful move between hosts ended with its cleanup job failed.** `MoveCleanupSourceExecutor.on_success` made the same call, but unconditionally rather than on a rare path, so the last step of a working move always raised. Besides the false failure, the source host's observability labels were never refreshed and kept advertising an instance that had left it
+- Both success handlers now have tests. Neither had any: the suite referenced `move_cleanup_source` only as a job-type string in the gate and chain tests, so no `on_success` in either executor was ever executed and the `AttributeError` sat there undetected
+
 ## [1.0.90] — 2026-08-27
 
 ### Fixed

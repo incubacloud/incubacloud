@@ -228,6 +228,24 @@ class AbstractExecutor(ABC):
         self._scripts_uploaded = False
         self._script_overlay_cache = None
 
+    def _host(self):
+        """Return the ``cloud.host`` record this job runs against.
+
+        Defined here rather than left to subclasses because it was a
+        convention several of them implemented with this exact line
+        while others simply called it. Two callers on the instance side
+        did the latter — ``DeleteInstanceExecutor.on_success`` on its
+        re-run path and ``MoveCleanupSourceExecutor.on_success`` on
+        every run — and raised ``AttributeError`` from inside a success
+        handler, which reports finished work as failed. A convention
+        that only some of the classes honour is not a convention.
+
+        ``job.host_id`` is required on ``cloud.job``, so this is always
+        a real record; it stays valid after the instance is unlinked,
+        which is the case that exposed the gap.
+        """
+        return self.job.host_id
+
     # ===============================
     # PUBLIC ENTRYPOINT
     # ===============================
