@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.93] — 2026-08-27
+
+### Added
+
+- **"Keep in panel" now means archived, not abandoned.** It takes a fresh full backup at that moment and prunes everything older, so exactly one restorable copy survives instead of a chain nobody maintains — the retention prune ran inside the very container the teardown removes, so what used to be left behind aged forever. The copy's location is frozen onto the record (`custom_backup_dst`) because the computed path is derived from the project and the name, either of which can move afterwards: a tenant deletion detaches the project and the computed path silently falls back to a shared `.../default/` prefix. Everything that touches the copy from then on — verification, revival, deletion — reads the frozen value
+- **An Archived tab on the project, with what each copy costs.** It appears only when the project has archived instances, and shows for each one where its copy is, how big it was at the last check and how long ago that check happened. The state comes from a nightly cron and never from the render: listing a bucket prefix per row would put a network call behind every page view, so the panel reports what it last saw and says how old that reading is rather than presenting a week-old check as current
+- **Reviving an archived instance.** It deploys again on any host — the original may be gone, full, or have been the reason for archiving — and restores the frozen copy into it. The copy is re-checked live at that moment, not read from the cron's stamp: a deploy that succeeds followed by a restore that finds nothing leaves an empty instance where the operator expected their data
+- **Deleting an archived instance takes its chain with it**, through a container created for that one command and thrown away. Reviving in order to delete would be a full deploy — domains, Traefik, minutes of host resources — with all of its own failure modes, to destroy something. The record is unlinked only once the prefix is verified empty, so an interruption leaves a record whose chain is gone (deletable again) rather than a chain with no record, which nothing could ever find. It asks for the instance name in writing, and refuses outright when there is no host left to run the container on
+- **A daily check that an archived copy is still there.** "The backend answers" is not "the copy is there": a provider lifecycle rule or a manual delete empties the prefix while the credentials and the bucket stay perfectly healthy, and every reachability check still passes. `unreachable` is kept apart from `missing` on purpose — one is waited out, the other means the data is gone — so a network blip never raises a false alarm about data loss. A copy that is really gone raises a critical alert immediately, rather than being discovered when someone presses revive
+
+### Changed
+
+- **Where an archived copy lives is manager-only.** The frozen destination and the backend's name are the same bucket metadata every other endpoint has been gated on since SEC-009, and in SaaS that storage is ours rather than the tenant's. Everyone who can see the project still sees that a copy exists, how big it is and when it was last verified — none of which says where it is
+- **An archived instance's name stays reserved in its project.** Creating a new instance with that name is refused with a message that names the archived one — otherwise the new instance would compute the same backup path and write into the copy the archived record was keeping
+- The purge program that empties a prefix now lives in one place (`scripts/lib/purge_prefix.sh`), shared by the deletion purge and the archived purge. Two copies would have been two chances to fix a bug in one and not the other, and the drift would only ever show up as objects surviving a deletion
+
 ## [1.0.92] — 2026-08-27
 
 ### Changed

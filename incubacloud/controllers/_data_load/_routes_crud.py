@@ -1177,6 +1177,124 @@ class CrudMixin:
             'instances': instances,
         }
 
+    @http.route(['/cloud/get_archived_instances'], type='jsonrpc',
+                auth='user')
+    def cloud_get_archived_instances(self, project_id):
+        """Archived instances of a project, with what their copy costs.
+
+        Archiving sets ``active = False``, so these are invisible to
+        every other listing — ``project.instance_ids`` skips them like
+        any one2many. Without a route of their own an archived instance
+        would be unreachable, which is why this ships together with the
+        flag rather than after it.
+
+        The size and the verification stamp are read from the record,
+        never measured here: listing a bucket prefix per row would put a
+        network call in the render path. A cron refreshes them and this
+        reports what it last saw, including how long ago that was, so a
+        stale figure is visible as stale rather than passing for current.
+
+        Where the copy lives is manager-only, the same rule SEC-009 set
+        for every other endpoint that could name a bucket: the frozen
+        destination and the backend's name are exactly the metadata the
+        backends list is gated on, and in SaaS that storage is ours, not
+        the tenant's. Everyone who can see the project still sees that
+        there is a copy, how big it is and when it was last checked —
+        none of which says where it is.
+        """
+        project = request.env['cloud.project'].browse(project_id)
+        if not project.exists():
+            return {'ok': False, 'error': _('Project not found')}
+        is_manager = self._sec()._has_cloud_group('group_cloud_manager')
+        archived = request.env['cloud.instance'].with_context(
+            active_test=False,
+        ).search([
+            ('project_id', '=', project_id),
+            ('active', '=', False),
+        ], order='name')
+        return {
+            'ok': True,
+            'project_name': project.name,
+            'instances': [{
+                'id': i.id,
+                'name': i.name,
+                'environment': i.environment,
+                'odoo_version': i.odoo_version or '',
+                'archived_on': i.archived_at or i.write_date,
+                'host_name': i.host_id.name or '',
+                # The frozen path: where the copy actually is, whatever
+                # the computed one would say now. Redacted below manager
+                # — it names a bucket.
+                'backup_dst': (
+                    i.custom_backup_dst or '' if is_manager else ''
+                ),
+                'backup_backend_name': (
+                    i.effective_backup_backend.name
+                    if is_manager and i.effective_backup_backend else ''
+                ),
+                # False when archiving found no destination: the teardown
+                # destroyed everything and there is nothing to revive
+                # from. The view must not offer the button.
+                'has_copy': bool(i.custom_backup_dst),
+                # The cron's last reading, shipped with its timestamp so
+                # the view can say how old it is instead of presenting a
+                # week-old check as the current state.
+                'copy_state': i.archive_copy_state or '',
+                'copy_bytes': i.archive_copy_bytes or 0.0,
+                'copy_checked_at': i.archive_copy_checked_at,
+            } for i in archived],
+        }
+
+    @http.route(['/cloud/revive_instance'], type='jsonrpc', auth='user')
+    def cloud_revive_instance(self, instance_id, host_id=None):
+        """Bring an archived instance back and restore its copy.
+
+        Gated as a deploy, not as a read: this builds an instance on a
+        host and restores a database into it. ``browse`` without sudo on
+        purpose, so the record rules that scope instances still apply —
+        the archived flag hides a record from lists, it does not make it
+        anyone's to revive.
+        """
+        self._sec()._check_can_deploy()
+        inst = request.env['cloud.instance'].with_context(
+            active_test=False,
+        ).browse(instance_id)
+        if not inst.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        try:
+            job_ids = inst.revive(host_id=host_id)
+        except UserError as exc:
+            return {'ok': False, 'error': str(exc)}
+        return {'ok': True, 'job_ids': job_ids}
+
+    @http.route(['/cloud/delete_archived_instance'], type='jsonrpc',
+                auth='user')
+    def cloud_delete_archived_instance(self, instance_id, confirm_name=None):
+        """Delete an archived instance and the copy it still owns.
+
+        Manager-gated, and it asks for the name in writing. There is no
+        undo behind this: the chain is emptied and the record removed,
+        and unlike a live instance there is not even a running system to
+        notice the mistake afterwards. The typing is checked here and
+        not only in the browser, so a direct RPC call faces the same
+        friction the dialog does.
+        """
+        self._sec()._check_cloud_group('group_cloud_manager')
+        inst = request.env['cloud.instance'].with_context(
+            active_test=False,
+        ).browse(instance_id)
+        if not inst.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        if (confirm_name or '').strip() != inst.name:
+            return {'ok': False, 'error': _(
+                'Type the instance name exactly to confirm.'
+            )}
+        try:
+            job_ids = inst.delete_archived()
+        except UserError as exc:
+            return {'ok': False, 'error': str(exc)}
+        return {'ok': True, 'job_ids': job_ids}
+
     _CREATE_INSTANCE_ALLOWED = {
         'name', 'project_id', 'host_id', 'environment',
         'odoo_version', 'odoo_commit_sha',

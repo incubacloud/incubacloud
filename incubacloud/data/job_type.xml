@@ -74,6 +74,13 @@
             <field name="description">Stops and removes a doodba instance from the host.</field>
         </record>
 
+        <record id="purge_archived_backups" model="cloud.job.type">
+            <field name="name">Delete Archived Copy</field>
+            <field name="code">purge_archived_backups</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Empties an archived instance's backup prefix from a throwaway container, then removes the record. Nothing is redeployed.</field>
+        </record>
+
         <record id="restore_instance" model="cloud.job.type">
             <field name="name">Restore Database</field>
             <field name="code">restore_instance</field>

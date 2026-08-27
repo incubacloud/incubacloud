@@ -105,6 +105,16 @@
                                     </t>
                                 </button>
                             </t>
+                            <!-- Only when there is something archived: an
+                                 always-present empty tab would be noise on
+                                 every project, which is nearly all of them. -->
+                            <t t-if="state.archived.length">
+                                <button t-att-class="state.tab === 'archived' ? 'rl-tab active' : 'rl-tab'"
+                                        t-on-click="() => this.setTab('archived')">
+                                    Archived
+                                    <span class="ic-tab-count" t-esc="state.archived.length"/>
+                                </button>
+                            </t>
                         </div>
 
                         <!-- Body -->
@@ -302,6 +312,82 @@
                                 </div>
                             </t>
 
+                            <!-- Archived tab -->
+                            <t t-if="state.tab === 'archived'">
+                                <div class="ic-archived-panel">
+                                    <p class="ic-archived-intro">
+                                        These instances were removed from their host but kept in the
+                                        panel. Nothing of them runs anywhere; what is left is the
+                                        backup copy below, and reviving one deploys it again and
+                                        restores that copy into it.
+                                    </p>
+                                    <t t-if="state.archivedError">
+                                        <div class="ic-archived-error" role="alert" t-esc="state.archivedError"/>
+                                    </t>
+                                    <div class="ic-archived-list">
+                                        <t t-foreach="state.archived" t-as="inst" t-key="inst.id">
+                                            <div class="ic-archived-row">
+                                                <div class="ic-archived-main">
+                                                    <span class="ic-archived-name" t-esc="inst.name"/>
+                                                    <span class="rl-tag" t-esc="inst.environment"/>
+                                                    <t t-if="inst.odoo_version">
+                                                        <span class="rl-tag" t-esc="'Odoo ' + inst.odoo_version"/>
+                                                    </t>
+                                                    <span class="ic-archived-when">
+                                                        archived <t t-esc="archivedOn(inst)"/>
+                                                        <t t-if="inst.host_name"> from <t t-esc="inst.host_name"/></t>
+                                                    </span>
+                                                </div>
+                                                <div class="ic-archived-copy">
+                                                    <t t-if="inst.has_copy">
+                                                        <span t-att-class="'rl-sb ' + archivedCopyClass(inst)">
+                                                            <span class="rl-d"/>
+                                                            <t t-esc="archivedCopyLabel(inst)"/>
+                                                        </span>
+                                                        <span class="ic-archived-size" t-esc="archivedSize(inst)"/>
+                                                        <span class="ic-archived-checked" t-esc="archivedCheckedAgo(inst)"/>
+                                                    </t>
+                                                    <t t-else="">
+                                                        <span class="rl-sb draft">
+                                                            <span class="rl-d"/>
+                                                            No copy
+                                                        </span>
+                                                        <span class="ic-archived-checked">
+                                                            archived without a backup destination
+                                                        </span>
+                                                    </t>
+                                                </div>
+                                                <div class="ic-archived-where">
+                                                    <t t-if="inst.backup_backend_name">
+                                                        <span class="ic-archived-backend" t-esc="inst.backup_backend_name"/>
+                                                    </t>
+                                                    <t t-if="inst.backup_dst">
+                                                        <code class="ic-archived-dst" t-esc="inst.backup_dst"/>
+                                                    </t>
+                                                </div>
+                                                <div class="ic-archived-actions">
+                                                    <t t-if="env.permissions?.can_deploy">
+                                                        <button class="rl-btn rl-btn-sm"
+                                                                t-att-disabled="!canRevive(inst)"
+                                                                t-att-title="canRevive(inst) ? 'Deploy it again and restore its copy' : 'There is no copy left to restore'"
+                                                                t-on-click="() => this.openRevive(inst)">
+                                                            <t t-out="env.icon('refresh', 14)"/> Revive
+                                                        </button>
+                                                    </t>
+                                                    <t t-if="env.permissions?.can_manage_hosts">
+                                                        <button class="rl-btn rl-btn-sm rl-btn-danger"
+                                                                title="Delete the record and erase its copy"
+                                                                t-on-click="() => this.openDeleteArchived(inst)">
+                                                            <t t-out="env.icon('trash', 14)"/> Delete
+                                                        </button>
+                                                    </t>
+                                                </div>
+                                            </div>
+                                        </t>
+                                    </div>
+                                </div>
+                            </t>
+
                             <!-- Repositories tab — kept mounted to preserve branch cache -->
                             <div class="rl-repolist ic-repos-list"
                                  t-att-style="state.tab !== 'repos' ? 'display:none' : ''">
@@ -409,6 +495,98 @@
                              isDanger="state.confirmDialog.isDanger"
                              onConfirm="state.confirmDialog.onConfirm"
                              onCancel="state.confirmDialog.onCancel"/>
+
+            <!-- Revive an archived instance -->
+            <IcModal t-if="state.reviveModal"
+                     title="'Revive instance'"
+                     boxClass="'ic-confirm-box'"
+                     onClose="() => this.closeRevive()">
+                <h3 class="ic-confirm-title">
+                    Revive <t t-esc="state.reviveModal.instance.name"/>
+                </h3>
+                <p class="ic-revive-sub">
+                    This deploys the instance again and then restores its archived
+                    copy into it. The copy is checked before anything is deployed,
+                    so if it is gone you get an error instead of an empty instance.
+                </p>
+                <div class="ic-revive-field">
+                    <label>Host</label>
+                    <t t-if="state.reviveModal.loading">
+                        <span class="ic-revive-loading">Loading hosts…</span>
+                    </t>
+                    <t t-elif="!reviveHostOptions.length">
+                        <span class="ic-revive-loading">
+                            No host can take an instance right now.
+                        </span>
+                    </t>
+                    <t t-else="">
+                        <RlSelect options="reviveHostOptions"
+                                  value="state.reviveModal.hostId"
+                                  ariaLabel="'Host to revive on'"
+                                  placeholder.translate="Pick a host"
+                                  onChange="(v) => this.setReviveHost(v)"/>
+                    </t>
+                </div>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel"
+                            t-on-click="closeRevive">Cancel</button>
+                    <button class="ic-confirm-btn-ok"
+                            t-att-disabled="state.reviveModal.submitting or !state.reviveModal.hostId"
+                            t-on-click="confirmRevive">
+                        <t t-if="state.reviveModal.submitting">Reviving…</t>
+                        <t t-else="">Revive</t>
+                    </button>
+                </div>
+            </IcModal>
+
+            <!-- Delete an archived instance, chain included -->
+            <IcModal t-if="state.deleteArchivedModal"
+                     title="'Delete archived instance'"
+                     boxClass="'ic-remove-box'"
+                     onClose="() => this.closeDeleteArchived()">
+                <h3 class="ic-confirm-title">Delete archived instance</h3>
+                <p class="ic-confirm-message">
+                    Delete "<strong t-esc="state.deleteArchivedModal.instance.name"/>"
+                    and the backup copy it still owns?
+                </p>
+                <p class="ic-remove-note danger"
+                   t-if="state.deleteArchivedModal.instance.has_copy">
+                    Its copy in
+                    <strong t-esc="state.deleteArchivedModal.instance.backup_backend_name or 'storage'"/>
+                    is erased first, and the record is removed only once that
+                    succeeded — nothing is left behind that no instance owns.
+                    There is no way back from this: the instance is not
+                    running anywhere, so the copy is all there is of it.
+                </p>
+                <p class="ic-remove-note danger" t-else="">
+                    This instance was archived without a backup destination,
+                    so there is nothing left of it but the record.
+                </p>
+
+                <!-- The name is asked for from memory or from the row
+                     behind the dialog: it is NOT rendered selectable in
+                     here, or the barrier would evaporate. -->
+                <label class="ic-remove-typed-label">
+                    To delete it, type the instance name:
+                    <input type="text"
+                           class="ic-remove-typed"
+                           autocomplete="off"
+                           spellcheck="false"
+                           t-att-value="state.deleteArchivedModal.typed"
+                           t-on-input="(ev) => this.onDeleteArchivedInput(ev)"/>
+                </label>
+
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel"
+                            t-on-click="closeDeleteArchived">Cancel</button>
+                    <button class="ic-confirm-btn-ok danger"
+                            t-att-disabled="!deleteArchivedConfirmed or state.deleteArchivedModal.submitting"
+                            t-on-click="confirmDeleteArchived">
+                        <t t-if="state.deleteArchivedModal.submitting">Deleting…</t>
+                        <t t-else="">Delete</t>
+                    </button>
+                </div>
+            </IcModal>
 
             <!-- Pip conflict resolve modal -->
             <IcModal t-if="state.pipConflictModal"

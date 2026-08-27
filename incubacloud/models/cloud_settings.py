@@ -32,6 +32,14 @@ ODOO_LOG_ARCHIVE_DAYS_DEFAULT = 60
 LOG_DOWNLOAD_MAX_MB_DEFAULT = 64
 LOG_SEARCH_MAX_FILES_DEFAULT = 60
 LOG_SEARCH_TIMEOUT_S_DEFAULT = 30
+
+# Image used by the ephemeral container that empties an archived
+# instance's backup prefix. The same image the doodba template renders
+# for the ``backup`` service, because it is what the credentials and the
+# destination were written for; the purge itself only needs boto3.
+ARCHIVED_PURGE_IMAGE_DEFAULT = (
+    "ghcr.io/tecnativa/docker-duplicity-postgres-s3:latest"
+)
 #: Docker's ``max-size`` grammar, restricted to one canonical spelling
 #: (lower-case unit) so the override reads the same on every host.
 _CONTAINER_LOG_MAX_SIZE_RE = re.compile(r"^[1-9]\d*[kmg]$")
@@ -143,6 +151,23 @@ class CloudSettings(models.Model):
              'default branch: deploys then track upstream automatically '
              'and an upstream change can alter the next deploy without '
              'warning. The effective ref is recorded in the job log.',
+    )
+
+    # ── Archived instances ─────────────────────────────────────────────────
+    # An archived instance has no stack left to purge its chain from, so
+    # the deletion runs one throwaway container on the host. The image is
+    # a setting rather than a constant because the template can move to
+    # another tag and this must be able to follow without a code deploy —
+    # and because the day it is wrong, the symptom is a purge that cannot
+    # start and a record that refuses to be deleted.
+
+    archived_purge_image = fields.Char(
+        string="Archived purge image",
+        default=ARCHIVED_PURGE_IMAGE_DEFAULT,
+        required=True,
+        help="Container image run once to empty an archived instance's "
+             "backup prefix. Must have boto3 available; the duplicity "
+             "image the backup service uses already does.",
     )
 
     # ── Container log rotation ─────────────────────────────────────────────

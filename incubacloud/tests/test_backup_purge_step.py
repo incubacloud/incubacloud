@@ -27,6 +27,8 @@ from unittest.mock import patch
 from odoo.tests.common import TransactionCase
 
 from ..models.delete_instance_executor import (
+    ARCHIVE_ALERT_BY_EXIT,
+    ARCHIVE_LABEL,
     PURGE_ALERT_BY_EXIT,
     PURGE_EXIT_ALREADY_EMPTY,
     PURGE_LABEL,
@@ -284,3 +286,108 @@ class TestPurgeAlerts(_PurgeBase):
         alert = self._active("backup_purge_unauthorized")
         self.assertEqual(alert.job_id, job)
         self.assertEqual(alert.host_id, self.host)
+
+
+class TestArchiveStep(_PurgeBase):
+    """Keeping the record takes a copy instead of destroying them.
+
+    The two paths are mirror images and share every gate: one leaves
+    exactly one chain behind, the other leaves none, and neither ever
+    leaves a chain without an instance that owns it.
+    """
+
+    def _archive_job(self):
+        return self._job(payload={"keep_in_panel": True})
+
+    def test_keeping_the_record_takes_the_archive_copy(self):
+        labels = self._labels(self._executor(self._archive_job()))
+        self.assertIn(ARCHIVE_LABEL, labels)
+        self.assertNotIn(PURGE_LABEL, labels)
+
+    def test_deleting_purges_and_does_not_archive(self):
+        labels = self._labels(self._executor(self._job()))
+        self.assertIn(PURGE_LABEL, labels)
+        self.assertNotIn(ARCHIVE_LABEL, labels)
+
+    def test_the_archive_runs_before_the_teardown(self):
+        """``compose down -v`` destroys the container that holds
+        duplicity, the credentials and the passphrase."""
+        labels = self._labels(self._executor(self._archive_job()))
+        self.assertLess(
+            labels.index(ARCHIVE_LABEL), labels.index(_TEARDOWN_FIRST_STEP),
+        )
+
+    def test_a_failed_archive_aborts_the_teardown(self):
+        """An archive that silently kept nothing is worse than one that
+        refused: the record would advertise a copy that is not there."""
+        steps = self._executor(self._archive_job()).get_commands()
+        archive = next(s for s in steps if s[0] == ARCHIVE_LABEL)
+        self.assertEqual(len(archive), 3)
+        self.assertTrue(archive[2].get("stop_on_failure"))
+
+    def test_a_staging_instance_is_never_archived(self):
+        self.instance.environment = "staging"
+        self.assertNotIn(
+            ARCHIVE_LABEL, self._labels(self._executor(self._archive_job())),
+        )
+
+    def test_the_move_cleanups_never_archive(self):
+        """Same gate as the purge: their instance is alive elsewhere."""
+        job = self._job(code="move_cleanup_source",
+                        payload={"keep_in_panel": True})
+        ex = self._executor(job, cls=MoveCleanupSourceExecutor)
+        self.assertNotIn(ARCHIVE_LABEL, self._labels(ex))
+
+    def test_each_archive_exit_code_raises_its_own_alert(self):
+        for code, (alert_code, _msg) in ARCHIVE_ALERT_BY_EXIT.items():
+            with self.subTest(exit=code):
+                ex = self._executor(self._archive_job())
+                ex._alert_on_purge_failure(
+                    {ARCHIVE_LABEL: {"stdout": "", "exit_status": code}},
+                    self.instance,
+                )
+                alert = self.env["cloud.alert"].sudo().search([
+                    ("code", "=", alert_code),
+                    ("instance_id", "=", self.instance.id),
+                    ("state", "=", "active"),
+                ])
+                self.assertTrue(alert, f"exit {code} raised no alert")
+
+
+class TestFrozenBackupPath(_PurgeBase):
+    """Archiving pins where the copy lives.
+
+    The computed path derives from the project's remote folder and the
+    instance name; once archived, that derivation can quietly become
+    false — deleting a tenant detaches its project and the computed path
+    falls back to a shared ``.../default/`` prefix. Everything that
+    touches the copy afterwards must read the frozen value.
+    """
+
+    def test_archiving_freezes_the_computed_path(self):
+        computed = self.instance.instance_backup_dst
+        self.assertTrue(computed)
+        self.instance._finalize_removal(keep_in_panel=True)
+        self.assertEqual(self.instance.custom_backup_dst, computed)
+
+    def test_the_frozen_path_survives_losing_the_project(self):
+        """The exact drift this defends against."""
+        self.instance._finalize_removal(keep_in_panel=True)
+        frozen = self.instance.custom_backup_dst
+        self.instance.project_id = False
+        self.instance.invalidate_recordset()
+        self.assertEqual(self.instance.instance_backup_dst, frozen)
+        self.assertNotIn("/default/", self.instance.instance_backup_dst)
+
+    def test_an_existing_override_is_never_overwritten(self):
+        """An imported instance carries its real location there."""
+        self.instance.custom_backup_dst = "boto3+s3://imported/elsewhere"
+        self.instance._finalize_removal(keep_in_panel=True)
+        self.assertEqual(
+            self.instance.custom_backup_dst, "boto3+s3://imported/elsewhere",
+        )
+
+    def test_deleting_does_not_freeze_anything(self):
+        """There is nothing left to point at."""
+        self.instance._finalize_removal(keep_in_panel=False)
+        self.assertFalse(self.instance.exists())

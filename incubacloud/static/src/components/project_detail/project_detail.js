@@ -11,6 +11,13 @@ import { useFormValidation } from "../../utils/use_form_validation";
 import { required } from "../../utils/validators";
 import { fetchOdooVersions } from "../../utils/odoo_versions";
 import { confirmVia } from "../../utils/use_confirm";
+import { parseUTC } from "../../utils/dates";
+import {
+    copyStateBadgeClass,
+    copyStateLabel,
+    formatBytes,
+    isRevivable,
+} from "../../utils/archive_copy";
 
 let _nextKey = 1;
 const newRepoKey = () => `new_${_nextKey++}`;
@@ -195,6 +202,16 @@ export class ProjectDetail extends Component {
             langOpen: false,
             langs: [],
             langsLoading: false,
+            // Archived instances: loaded with the project so the tab can
+            // hide itself when there are none, which is the normal case.
+            archived: [],
+            archivedError: null,
+            // { instance, hostId, hosts, loading, submitting } while the
+            // revive dialog is open, null otherwise.
+            reviveModal: null,
+            // { instance, typed, submitting } while the delete dialog is
+            // open. Typed confirmation, same as deleting a live one.
+            deleteArchivedModal: null,
         });
 
         this._savedForm = null;
@@ -235,9 +252,14 @@ export class ProjectDetail extends Component {
                 };
                 this._savedForm = JSON.stringify(this.state.form);
             } else {
-                const [p, backends] = await Promise.all([
+                const [p, backends, archived] = await Promise.all([
                     rpc("/cloud/get_project", { project_id: this.props.project_id }),
                     rpc("/cloud/get_backup_backends", {}),
+                    // Rides along with the project load rather than
+                    // firing when the tab is clicked: the tab only
+                    // exists if the answer is non-empty, so the list has
+                    // to be known before the tab bar renders.
+                    this._fetchArchived(),
                 ]);
                 this.state.project = p;
                 this.env.setProjectName?.(p.name || "");
@@ -265,6 +287,7 @@ export class ProjectDetail extends Component {
                 this.state.pipDeps = p.pip_dependencies || "";
                 this.state.aptDeps = p.apt_dependencies || "";
                 this.state.members = p.member_ids || [];
+                this.state.archived = archived;
                 this._savedForm = JSON.stringify(this.state.form);
             }
         } catch (e) {
@@ -555,6 +578,248 @@ export class ProjectDetail extends Component {
         this.state.members = this.state.members.filter(m => m.id !== userId);
 
         if (member) {
+        }
+    }
+
+    // ── Archived instances ────────────────────────────────────────────────────
+
+    /**
+     * Fetch this project's archived instances.
+     *
+     * Never rejects. It runs inside the ``Promise.all`` that loads the
+     * project, and an archived-instance listing failing is not a reason
+     * for the project page to show "Failed to load project" — the tab
+     * simply does not appear, and the error is kept for the banner.
+     *
+     * @returns {Promise<object[]>} rows, or an empty list on failure.
+     */
+    async _fetchArchived() {
+        if (this.isCreate || !this.props.project_id) return [];
+        try {
+            const res = await rpc("/cloud/get_archived_instances", {
+                project_id: this.props.project_id,
+            });
+            if (!res?.ok) {
+                this.state.archivedError = res?.error || _t("Failed to load archived instances.");
+                return [];
+            }
+            this.state.archivedError = null;
+            return res.instances || [];
+        } catch {
+            this.state.archivedError = _t("Failed to load archived instances.");
+            return [];
+        }
+    }
+
+    /** Re-read the archived list, e.g. after a revive was launched. */
+    async refreshArchived() {
+        this.state.archived = await this._fetchArchived();
+    }
+
+    /** Human-readable size of an archived chain. */
+    archivedSize(inst) { return formatBytes(inst.copy_bytes); }
+
+    /** Label for the copy-state badge of one archived row. */
+    archivedCopyLabel(inst) { return copyStateLabel(inst.copy_state); }
+
+    /** ``rl-sb`` modifier for the copy-state badge of one archived row. */
+    archivedCopyClass(inst) { return copyStateBadgeClass(inst.copy_state); }
+
+    /** Whether the Revive button should be offered for one archived row. */
+    canRevive(inst) { return isRevivable(inst); }
+
+    /**
+     * "checked 3h ago", or an explicit "never checked".
+     *
+     * The age is part of the claim, not decoration: a badge saying
+     * "Present" is only worth as much as the timestamp behind it, and a
+     * copy nothing has verified yet must not read as verified.
+     */
+    archivedCheckedAgo(inst) {
+        if (!inst.copy_checked_at) return _t("never checked");
+        const secs = Math.floor(
+            (Date.now() - parseUTC(inst.copy_checked_at).getTime()) / 1000
+        );
+        if (secs < 60) return _t("checked just now");
+        const mins = Math.floor(secs / 60);
+        if (mins < 60) return `${_t("checked")} ${mins}m ago`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${_t("checked")} ${hrs}h ago`;
+        return `${_t("checked")} ${Math.floor(hrs / 24)}d ago`;
+    }
+
+    /** Short local date for the archived-on column. */
+    archivedOn(inst) {
+        const d = parseUTC(inst.archived_on);
+        if (!d) return "—";
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    /**
+     * Open the revive dialog for one archived instance.
+     *
+     * The host list is fetched here and not on project load: reviving is
+     * rare, and every project view would otherwise pay for an RPC almost
+     * nobody uses.
+     */
+    async openRevive(inst) {
+        this.state.reviveModal = {
+            instance: inst,
+            hostId: null,
+            hosts: [],
+            loading: true,
+            submitting: false,
+        };
+        try {
+            const res = await rpc("/cloud/get_hosts", {});
+            // Same filter the create-instance form applies: reviving
+            // deploys a real instance, so a host that cannot receive one
+            // must not be offered here either.
+            const hosts = (res?.hosts || []).filter(
+                h => h.status === "compatible" && h.traefik_deployed
+            );
+            if (!this.state.reviveModal) return;   // closed while loading
+            this.state.reviveModal.hosts = hosts;
+            // Pre-select the host it was archived from when it is still
+            // around, so the common case is one click.
+            const previous = hosts.find(h => h.name === inst.host_name);
+            this.state.reviveModal.hostId = previous ? previous.id : null;
+        } catch {
+            this.env.toast?.error(_t("Failed to load hosts."));
+        } finally {
+            if (this.state.reviveModal) this.state.reviveModal.loading = false;
+        }
+    }
+
+    /** Close the revive dialog without doing anything. */
+    closeRevive() { this.state.reviveModal = null; }
+
+    /** Options for the host picker inside the revive dialog. */
+    get reviveHostOptions() {
+        const hosts = this.state.reviveModal?.hosts || [];
+        return hosts.map(h => ({
+            value: h.id,
+            label: `${h.name} (${h.available_cpus} CPU / ${h.available_ram_gb} GB free)`,
+        }));
+    }
+
+    /** Record the host chosen in the revive dialog. */
+    setReviveHost(value) {
+        if (this.state.reviveModal) this.state.reviveModal.hostId = value;
+    }
+
+    /**
+     * Launch the revive: redeploy on the chosen host, then restore.
+     *
+     * The server re-probes the copy before enqueuing anything, so a
+     * refusal here is a real answer about the storage and is surfaced
+     * verbatim rather than flattened into a generic failure.
+     */
+    async confirmRevive() {
+        const modal = this.state.reviveModal;
+        if (!modal || modal.submitting) return;
+        if (!modal.hostId) {
+            this.env.toast?.error(_t("Pick a host to revive this instance on."));
+            return;
+        }
+        modal.submitting = true;
+        try {
+            const res = await rpc("/cloud/revive_instance", {
+                instance_id: modal.instance.id,
+                host_id: modal.hostId,
+            });
+            if (!res?.ok) {
+                this.env.toast?.error(res?.error || _t("Failed to revive instance."));
+                modal.submitting = false;
+                return;
+            }
+            this.state.reviveModal = null;
+            this.env.toast?.success(
+                _t("Reviving %s: deploying, then restoring its copy.")
+                    .replace("%s", modal.instance.name)
+            );
+            await this.refreshArchived();
+            this.env.navigate("instance_detail", {
+                project_id: this.props.project_id,
+                instance_id: modal.instance.id,
+            });
+        } catch {
+            this.env.toast?.error(_t("Failed to revive instance."));
+            if (this.state.reviveModal) this.state.reviveModal.submitting = false;
+        }
+    }
+
+    /** Open the delete dialog for one archived instance. */
+    openDeleteArchived(inst) {
+        this.state.deleteArchivedModal = {
+            instance: inst,
+            typed: "",
+            submitting: false,
+        };
+    }
+
+    /** Close the delete dialog without deleting anything. */
+    closeDeleteArchived() { this.state.deleteArchivedModal = null; }
+
+    /** Record what the operator typed into the delete dialog. */
+    onDeleteArchivedInput(ev) {
+        if (this.state.deleteArchivedModal) {
+            this.state.deleteArchivedModal.typed = ev.target.value;
+        }
+    }
+
+    /**
+     * Whether what was typed unlocks the delete button.
+     *
+     * The name, and exactly the name — no trimming, no case folding.
+     * Same reasoning as deleting a live instance: the expensive mistake
+     * is not "I did not mean to delete", it is "I deleted the wrong
+     * one", and only typing the name catches that. A barrier that
+     * forgives is a barrier you clear on autopilot.
+     */
+    get deleteArchivedConfirmed() {
+        const modal = this.state.deleteArchivedModal;
+        return !!modal && modal.typed === modal.instance.name;
+    }
+
+    /**
+     * Delete an archived instance and the copy it owns.
+     *
+     * The server empties the prefix first and unlinks the record only
+     * once that succeeded, so a refusal here means the copy is still
+     * there — and so is the row.
+     */
+    async confirmDeleteArchived() {
+        const modal = this.state.deleteArchivedModal;
+        if (!modal || modal.submitting || !this.deleteArchivedConfirmed) return;
+        modal.submitting = true;
+        try {
+            const res = await rpc("/cloud/delete_archived_instance", {
+                instance_id: modal.instance.id,
+                confirm_name: modal.typed,
+            });
+            if (!res?.ok) {
+                this.env.toast?.error(
+                    res?.error || _t("Failed to delete archived instance.")
+                );
+                modal.submitting = false;
+                return;
+            }
+            this.state.deleteArchivedModal = null;
+            this.env.toast?.success(
+                res.job_ids?.length
+                    ? _t("Deleting %s: clearing its copy first.")
+                        .replace("%s", modal.instance.name)
+                    : _t("%s deleted.").replace("%s", modal.instance.name)
+            );
+            await this.refreshArchived();
+            if (!this.state.archived.length) this.setTab("general");
+        } catch {
+            this.env.toast?.error(_t("Failed to delete archived instance."));
+            if (this.state.deleteArchivedModal) {
+                this.state.deleteArchivedModal.submitting = false;
+            }
         }
     }
 

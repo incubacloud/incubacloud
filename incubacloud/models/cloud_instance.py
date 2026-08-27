@@ -1092,6 +1092,92 @@ class CloudInstance(models.Model):
             payload=payload,
         )
 
+    def revive(self, host_id=None):
+        """Bring an archived instance back: redeploy, then restore.
+
+        Both halves already exist — deploying an instance and restoring
+        the latest snapshot into it — so this only chains them, which is
+        exactly what the archived record was frozen to make possible.
+
+        The host is a choice, not a given. The original may be gone, or
+        full, or the whole reason for archiving may have been to move
+        off it; defaulting to the stored one when nothing is passed
+        keeps the common case one click.
+
+        Restoring reads ``latest`` from the frozen destination rather
+        than a timestamp: archiving pruned to a single chain, so
+        ``latest`` *is* the archive copy, and asking for a date would
+        mean storing one and keeping it true.
+
+        The copy is re-checked live here. The cron's stamp is good
+        enough to render a list, but this is the moment where being
+        wrong costs something: a deploy that succeeds and a restore that
+        finds nothing leaves an empty instance where the operator
+        expected their data.
+
+        :param host_id: host to redeploy on; defaults to the archived
+            ``host_id``.
+        :return: list of the enqueued job ids.
+        :raises UserError: if the instance is not archived, has no
+            frozen copy, or that copy is not there any more.
+        """
+        self.ensure_one()
+        if self.active:
+            raise UserError(_("This instance is not archived."))
+        if not self.custom_backup_dst:
+            raise UserError(
+                _(
+                    "%(name)s was archived without a backup destination, "
+                    "so there is nothing to restore. Its data was "
+                    "destroyed with the containers.",
+                    name=self.name,
+                )
+            )
+        state, _total = self._probe_archived_copy()
+        if state != "present":
+            raise UserError(
+                _(
+                    "The archived copy of %(name)s is not available at "
+                    "%(path)s (%(state)s), so reviving would leave an "
+                    "empty instance. Check the storage before retrying.",
+                    name=self.name,
+                    path=self.custom_backup_dst,
+                    state=state,
+                )
+            )
+        target_host = (
+            self.env["cloud.host"].browse(host_id) if host_id else self.host_id
+        )
+        if not target_host.exists():
+            raise UserError(_("Pick a host to revive this instance on."))
+        # Un-archive before enqueuing: the jobs address the instance by
+        # id and every downstream query filters on ``active``, so a
+        # still-archived record would have its own deploy skip it.
+        self.with_context(ic_archive_instance=True).write({
+            "active": True,
+            "host_id": target_host.id,
+            # Cleared with the flag it belongs to: a stamp left behind
+            # would make the next archiving look older than it is.
+            "archived_at": False,
+        })
+        return self.env["cloud.job"].enqueue_chain([
+            {
+                "host_id": target_host.id,
+                "instance_id": self.id,
+                "job_type_code": self._move_deploy_job_type(),
+            },
+            {
+                "host_id": target_host.id,
+                "instance_id": self.id,
+                "job_type_code": "backup_restore",
+                # No safety snapshot ahead of this one, unlike
+                # ``restore_backup``: the instance was just built empty,
+                # so there is nothing to protect and a snapshot of an
+                # empty database would only add a chain to pay for.
+                "payload": {"time": "latest"},
+            },
+        ])
+
     def restore_backup(self, payload):
         """Enqueue a backup_restore job for this instance.
 
@@ -1622,6 +1708,204 @@ class CloudInstance(models.Model):
             self.write({"pr_comment_id": 0})
         except Exception:
             _logger.exception("PR comment delete failed for %s", self.name)
+
+    archived_at = fields.Datetime(
+        copy=False,
+        readonly=True,
+        help="When this instance was archived. A field of its own and "
+             "not ``write_date``, which the daily copy check rewrites "
+             "on every archived record — the view would then report "
+             "the last verification as the archiving date.",
+    )
+    archive_copy_state = fields.Selection(
+        selection=[
+            ("present", "Present"),
+            ("missing", "Missing"),
+            ("unreachable", "Unreachable"),
+        ],
+        copy=False,
+        readonly=True,
+        help="What the last verification pass found at the frozen "
+             "backup path. Written by the archive-check cron, never "
+             "measured while rendering a list.",
+    )
+    archive_copy_bytes = fields.Float(
+        copy=False,
+        readonly=True,
+        help="Total size of the archived chain at the last check, so "
+             "what an archived instance costs stays visible.",
+    )
+    archive_copy_checked_at = fields.Datetime(
+        copy=False,
+        readonly=True,
+        help="When the archived copy was last verified. Shown alongside "
+             "the state so a stale reading is visible as stale instead "
+             "of passing for current.",
+    )
+
+    @api.model
+    def _cron_verify_archived_copies(self):
+        """Check that every archived instance still has its copy.
+
+        "The backend answers" is not the same as "the copy is there": a
+        provider lifecycle rule or a manual delete empties the prefix
+        while the credentials and the bucket stay perfectly healthy. The
+        only honest check is to list the frozen prefix and see objects.
+
+        Done on a schedule and stamped on the record, not on render: a
+        list of archived instances would otherwise make one network call
+        per row every time someone opened it. The view reads the stamp,
+        and ``revive`` re-checks live — there the single call is worth
+        it, because that is the moment being wrong actually costs
+        something.
+
+        An archived instance whose copy is gone is a record that lies.
+        Finding out when the operator presses "revive" is too late, so
+        this raises an alert as soon as it happens.
+        """
+        archived = self.with_context(active_test=False).search([
+            ("active", "=", False),
+            ("custom_backup_dst", "!=", False),
+        ])
+        Alert = self.env["cloud.alert"].sudo()
+        for inst in archived:
+            state, total = inst._probe_archived_copy()
+            inst.sudo().write({
+                "archive_copy_state": state,
+                "archive_copy_bytes": total,
+                "archive_copy_checked_at": fields.Datetime.now(),
+            })
+            if state == "present":
+                Alert.resolve_alert("archive_copy_lost", instance=inst)
+                continue
+            if state == "missing":
+                Alert.raise_alert(
+                    "archive_copy_lost",
+                    _(
+                        "The archived copy of %(name)s is gone from "
+                        "%(path)s. Nothing can be revived from it; the "
+                        "record no longer has anything behind it.",
+                        name=inst.name, path=inst.custom_backup_dst,
+                    ),
+                    level="critical",
+                    instance=inst,
+                )
+        return len(archived)
+
+    def _probe_archived_copy(self):
+        """Return ``(state, bytes)`` for this instance's frozen prefix.
+
+        ``unreachable`` is kept apart from ``missing`` on purpose. A
+        provider outage and a deleted chain look the same from a
+        distance and need opposite reactions: one is waited out, the
+        other means the copy is gone for good. Reporting a temporary
+        network failure as "missing" would raise a false alarm about
+        data loss, so anything that is not a clear empty listing stays
+        unreachable.
+        """
+        self.ensure_one()
+        backend = self.effective_backup_backend
+        if not backend:
+            return "unreachable", 0.0
+        try:
+            total, count = backend._measure_prefix(self.custom_backup_dst)
+        except Exception:
+            _logger.warning(
+                "archived copy check failed for %s at %s",
+                self.name, self.custom_backup_dst, exc_info=True,
+            )
+            return "unreachable", 0.0
+        return ("present" if count else "missing"), total
+
+    def delete_archived(self, payload=None):
+        """Delete an archived instance together with its backup chain.
+
+        The record and the chain go together or not at all. An archived
+        instance is the only thing that still knows where its objects
+        are — the path is frozen on it precisely because the computed
+        one stops being true — so unlinking it first would strand the
+        chain permanently, with no instance, no project and no path left
+        to find it by. That is the exact failure this whole feature was
+        built to make impossible.
+
+        The chain is emptied by a job (see
+        ``PurgeArchivedBackupsExecutor``) and the record is unlinked
+        there, on success only. Nothing is redeployed: the purge runs in
+        a container created for that one command.
+
+        Two shortcuts, both safe. An instance archived without a
+        destination has no chain to delete, so it unlinks here. And an
+        instance whose host is gone cannot run a container anywhere,
+        which is a refusal rather than a licence to unlink: the objects
+        would outlive it.
+
+        :param payload: extra job payload, for a caller that needs to
+            chain something onto the purge's success — the SaaS "start
+            from scratch" path provisions there and nowhere earlier.
+        :return: list of enqueued job ids, empty when it unlinked here.
+        :raises UserError: if the instance is not archived, or has a
+            chain but no host left to purge it from.
+        """
+        self.ensure_one()
+        if self.active:
+            raise UserError(_("This instance is not archived."))
+        if not self.custom_backup_dst:
+            # Archived with nothing behind it — the teardown destroyed
+            # its data and no copy was ever taken.
+            self.sudo().unlink()
+            return []
+        if not self.host_id:
+            raise UserError(
+                _(
+                    "%(name)s has an archived copy at %(path)s but no "
+                    "host left to delete it from. Assign a host to the "
+                    "instance and try again — deleting the record alone "
+                    "would leave the copy behind with nothing pointing "
+                    "at it.",
+                    name=self.name, path=self.custom_backup_dst,
+                )
+            )
+        # A list, so callers and the route see the same shape whether
+        # this enqueued something or unlinked here.
+        return [self.env["cloud.job"].enqueue(
+            self.host_id.id,
+            self.id,
+            "purge_archived_backups",
+            payload=payload or {},
+        )]
+
+    def _freeze_backup_dst(self):
+        """Pin the archived copy's location into ``custom_backup_dst``.
+
+        The computed path is derived from the project's remote folder and
+        the instance name, so it is only true while those stay put. Once
+        the instance is archived it stops being maintained and the
+        derivation can quietly become false — a tenant deletion detaches
+        the project and the computed path falls back to ``.../default/``,
+        which is both wrong and shared with everything else that lost its
+        project.
+
+        Everything that touches the copy afterwards — pruning, expiry,
+        restoring it back — reads the frozen value, never the computed
+        one. Without this the record would eventually point somewhere
+        that is not its own backups, which is worse than pointing
+        nowhere.
+
+        No-op when there is nothing to freeze (no destination resolves)
+        or when an explicit override is already set: an imported instance
+        carries its real location there and must not be overwritten.
+        """
+        self.ensure_one()
+        if self.custom_backup_dst:
+            return
+        computed = self.instance_backup_dst
+        if not computed:
+            return
+        self.write({"custom_backup_dst": computed})
+        _logger.info(
+            "instance %s archived: backup path frozen at %s",
+            self.name, computed,
+        )
 
     @api.model
     def _gc_restore_uploads(self):
@@ -2157,6 +2441,8 @@ class CloudInstance(models.Model):
         """
         self.ensure_one()
         self.write({"running": False})
+        if keep_in_panel:
+            self._freeze_backup_dst()
         if self.state == "deployed":
             # Normally the teardown job already marked 'deleting' in its
             # before_execute; step through it here so a caller that
@@ -2177,6 +2463,67 @@ class CloudInstance(models.Model):
             self._transition("draft")
         if not keep_in_panel:
             self.unlink()
+            return
+        # Archived: out of the daily operation, into the archived view.
+        # Done last so a failure above leaves the record where an
+        # operator can still see it — hiding a half-finalised instance
+        # would be the one outcome nobody could act on.
+        #
+        # ``ic_archive_instance`` says which of the two meanings of
+        # ``active = False`` this is. In core it only ever meant "hidden
+        # from the lists", but the SaaS layer reads it as "the tenant is
+        # gone" and cleans up on it: it deletes the Cloudflare record and
+        # unlinks the tenant and project. Archiving promises the exact
+        # opposite — the copy is kept and the instance can come back —
+        # so without this flag the new feature would quietly call the
+        # destructive path. Marked here, on the one archive route, rather
+        # than on each of the four removal callers: the fewer places have
+        # to be right, and a forgotten one there would skip a cleanup
+        # silently.
+        self.with_context(ic_archive_instance=True).write({
+            "active": False,
+            "archived_at": fields.Datetime.now(),
+        })
+
+    @api.model
+    def _check_name_not_held_by_an_archived(self, vals):
+        """Refuse a name an archived instance of the same project holds.
+
+        ``unique (project_id, name)`` already refuses it, and refusing is
+        right: the archived instance's backup chain lives at a path
+        derived from that pair, so a namesake would write into it. What
+        the constraint cannot do is explain itself — it raises a generic
+        integrity error naming a record that is invisible in every list,
+        which reads as a bug in the panel rather than as a decision.
+
+        Checked here rather than in a ``@api.constrains`` so the message
+        arrives before the INSERT: once Postgres raises, the transaction
+        is poisoned and the friendlier text would have to be recovered
+        from the exception.
+        """
+        name = (vals.get("name") or "").strip()
+        project_id = vals.get("project_id")
+        if not name or not project_id:
+            return
+        clash = self.with_context(active_test=False).search(
+            [
+                ("project_id", "=", project_id),
+                ("name", "=", name),
+                ("active", "=", False),
+            ],
+            limit=1,
+        )
+        if clash:
+            raise UserError(
+                _(
+                    "The name %(name)s is reserved by an archived instance "
+                    "of this project. Its backups live at a path built from "
+                    "that name, so reusing it would write into them. Revive "
+                    "that instance, or delete it if you no longer need what "
+                    "it holds.",
+                    name=name,
+                )
+            )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -2193,6 +2540,7 @@ class CloudInstance(models.Model):
                         "Pass 'state' instead."
                     )
                 )
+            self._check_name_not_held_by_an_archived(vals)
             for field in self._REQUIRED_PASSWORD_FIELDS:
                 if not vals.get(field):
                     vals[field] = generate_password()
