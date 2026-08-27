@@ -58,6 +58,7 @@ from . import (
     test_github_setup,
     test_restore_backup_guard,
     test_restore_staging,
+    test_teardown_success_handlers,
     test_connect_as_guard,
     test_run_script,
     test_ansible_executor,
