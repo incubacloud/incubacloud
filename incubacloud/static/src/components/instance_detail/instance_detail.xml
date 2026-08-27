@@ -1605,19 +1605,38 @@
           class="ic-remove-note"
           t-if="state.removeModal.instance.effective_backup_backend_id"
         >
-                    Backups already stored in
+                    <strong>Delete completely</strong> also erases every backup
+                    stored in
                     <strong
             t-esc="state.removeModal.instance.effective_backup_backend_name"
-          />
-                    are not deleted — but they stop being maintained, because
-                    the retention prune runs inside the backup container this
-                    removes. Delete them from the storage when you no longer
-                    need them.
+          />, so nothing is left behind that no instance owns. That runs before
+                    the containers come down — the only moment anything can
+                    still reach the storage — and if it fails the instance is
+                    not deleted at all.
+                    <strong>Keep in panel</strong> leaves the backups alone; for
+                    now they stop being maintained, because the retention prune
+                    runs inside the backup container this removes.
                 </p>
                 <p class="ic-remove-note danger" t-else="">
                     This instance has no backup destination, so what is
                     destroyed here cannot be recovered.
                 </p>
+
+                <!-- The name is asked for from memory or from the page
+                     header on purpose: it is NOT rendered selectable
+                     inside this box. If it could be copied from the
+                     dialog itself the barrier would evaporate. -->
+                <label class="ic-remove-typed-label">
+                    To delete completely, type the instance name:
+                    <input
+            type="text"
+            class="ic-remove-typed"
+            autocomplete="off"
+            spellcheck="false"
+            t-att-value="state.removeModal.typed"
+            t-on-input="(ev) => this.state.removeModal.typed = ev.target.value"
+          />
+                </label>
 
                 <div class="ic-remove-options">
                     <button
@@ -1634,13 +1653,14 @@
                     </button>
                     <button
             class="ic-remove-option danger"
+            t-att-disabled="!removeConfirmed"
             t-on-click="() => this._removeFromHost(false)"
           >
                         <span class="ic-remove-option-title">Delete completely</span>
                         <span class="ic-remove-option-desc">
                             The record and its configuration are removed from
-                            the panel too. Past job logs survive, no longer
-                            attached to any instance.
+                            the panel too, and its backups with them. Past job
+                            logs survive, no longer attached to any instance.
                         </span>
                     </button>
                 </div>

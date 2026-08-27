@@ -1187,7 +1187,7 @@ export class InstanceDetail extends JobsMixin(
   async deleteInstance() {
     const inst = this.state.inst;
     if (inst.deployed) {
-      this.state.removeModal = {instance: inst};
+      this.state.removeModal = {instance: inst, typed: ""};
       return;
     }
     const confirmed = await this._confirm({
@@ -1209,6 +1209,26 @@ export class InstanceDetail extends JobsMixin(
 
   closeRemoveModal() {
     this.state.removeModal = null;
+  }
+
+  /**
+   * Whether what the operator typed unlocks "Delete completely".
+   *
+   * Deleting now takes the backups with it, so there is no way back
+   * from this button and it asks for the instance name. The name — not
+   * a fixed word like DELETE — because the expensive mistake here is
+   * almost never "I did not mean to delete": it is "I deleted the wrong
+   * one", two similar instances, wrong tab. Typing the name catches
+   * that; a fixed word catches nothing.
+   *
+   * Exact match on purpose: no trimming, no case folding. A barrier
+   * that forgives is a barrier you clear on autopilot.
+   *
+   * @returns {boolean} true when the typed text unlocks the button.
+   */
+  get removeConfirmed() {
+    const modal = this.state.removeModal;
+    return !!modal && modal.typed === modal.instance.name;
   }
 
   /** Remove a deployed instance from the host; keepInPanel decides

@@ -57,6 +57,7 @@ from . import (
     test_responsive_css,
     test_github_setup,
     test_restore_backup_guard,
+    test_backup_purge_step,
     test_restore_staging,
     test_teardown_success_handlers,
     test_connect_as_guard,
