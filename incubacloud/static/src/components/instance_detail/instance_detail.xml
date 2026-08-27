@@ -1613,9 +1613,11 @@
                     the containers come down — the only moment anything can
                     still reach the storage — and if it fails the instance is
                     not deleted at all.
-                    <strong>Keep in panel</strong> leaves the backups alone; for
-                    now they stop being maintained, because the retention prune
-                    runs inside the backup container this removes.
+                    <strong>Keep in panel</strong> archives it instead: a fresh
+                    full backup is taken now and everything older is pruned, so
+                    exactly one restorable copy survives. The instance moves to
+                    the project's Archived tab, where it can be brought back on
+                    any host and restored from that copy.
                 </p>
                 <p class="ic-remove-note danger" t-else="">
                     This instance has no backup destination, so what is

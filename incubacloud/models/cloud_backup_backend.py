@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta
+from urllib.parse import urlparse
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -314,6 +315,55 @@ class CloudBackupBackend(models.Model):
         return min(default, 100)
 
     # ── Usage measurement (boto3 ListObjectsV2 + sum) ──────────────────────
+
+    def _measure_prefix(self, dst):
+        """Return ``(bytes, object_count)`` under the duplicity DST *dst*.
+
+        Used to tell an archived copy that is still there from one a
+        provider lifecycle rule or a manual delete removed — a
+        distinction ``test_backup_backend`` cannot make, because
+        credentials and bucket stay valid over an emptied prefix.
+
+        Takes the *frozen* path rather than recomputing one: the
+        computed path derives from the project and the instance name,
+        and an archived instance can lose its project, at which point
+        the derivation points at a shared fallback prefix and would
+        report someone else's objects as this instance's copy.
+
+        Errors are raised, not swallowed: the caller has to be able to
+        tell "the prefix is empty" from "the provider did not answer",
+        and returning zero for both would report a network blip as data
+        loss.
+
+        :param str dst: ``boto3+s3://bucket/path/...`` as stored in
+            ``custom_backup_dst``.
+        :return: tuple of total size in bytes and number of objects.
+        """
+        self.ensure_one()
+        if self.backend_type != "s3" or not dst:
+            return 0.0, 0
+        parsed = urlparse(dst.replace("boto3+s3://", "s3://"))
+        bucket = parsed.netloc
+        prefix = parsed.path.strip("/")
+        if not bucket or not prefix:
+            # A bare bucket would measure every instance that shares the
+            # destination and report the total as this one's copy.
+            return 0.0, 0
+        kwargs = {
+            "aws_access_key_id": self.s3_access_key_id,
+            "aws_secret_access_key": self.s3_secret_access_key,
+        }
+        if self.s3_endpoint_url:
+            kwargs["endpoint_url"] = self.s3_endpoint_url
+        client = boto3.client("s3", **kwargs)
+        total = 0
+        count = 0
+        paginator = client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=f"{prefix}/"):
+            for obj in page.get("Contents") or ():
+                total += obj.get("Size") or 0
+                count += 1
+        return float(total), count
 
     def _measure_usage(self):
         """Refresh ``last_measured_gb`` / ``last_measured_at`` for *self*.

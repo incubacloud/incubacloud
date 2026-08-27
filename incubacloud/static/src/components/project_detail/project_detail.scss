@@ -161,3 +161,132 @@
     from { opacity: 0; }
     to { opacity: 1; }
 }
+
+// ── Archived instances tab ───────────────────────────────────────────────────
+// A row is three claims side by side — what it was, what its copy is, and
+// where that copy lives — because an archived instance is only worth what
+// its chain is worth, and hiding the destination would make "Present" an
+// unverifiable statement.
+.ic-archived-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ic-archived-intro {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--rl-muted);
+    max-width: 70ch;
+}
+
+.ic-archived-error {
+    padding: 12px 16px;
+    background: rgba(var(--rl-red-rgb), 0.1);
+    border: 1px solid rgba(var(--rl-red-rgb), 0.3);
+    border-radius: 8px;
+    color: var(--rl-red);
+    font-size: 0.8125rem;
+}
+
+.ic-archived-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ic-archived-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 1fr) minmax(200px, 1.2fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--rl-surf);
+    border: 1px solid var(--rl-line);
+    border-radius: var(--rl-r);
+}
+
+@media (max-width: 900px) {
+    .ic-archived-row { grid-template-columns: 1fr; }
+}
+
+.ic-archived-main {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ic-archived-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.ic-archived-when,
+.ic-archived-checked {
+    font-size: 0.6875rem;
+    color: var(--rl-muted);
+}
+
+.ic-archived-copy {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ic-archived-size {
+    font-family: var(--rl-fm);
+    font-size: 0.6875rem;
+    color: var(--rl-muted);
+}
+
+.ic-archived-where {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.ic-archived-backend {
+    font-size: 0.6875rem;
+    color: var(--rl-muted);
+}
+
+.ic-archived-dst {
+    font-family: var(--rl-fm);
+    font-size: 0.625rem;
+    color: var(--rl-faint);
+    overflow-wrap: anywhere;
+}
+
+.ic-archived-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+// ── Revive modal ─────────────────────────────────────────────────────────────
+.ic-revive-sub {
+    margin: 0 0 14px;
+    font-size: 0.8125rem;
+    color: var(--rl-muted);
+}
+
+.ic-revive-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+
+    label {
+        font-size: 0.6875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--rl-muted);
+    }
+}
+
+.ic-revive-loading {
+    font-size: 0.8125rem;
+    color: var(--rl-muted);
+}

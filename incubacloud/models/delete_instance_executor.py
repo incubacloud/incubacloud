@@ -34,6 +34,28 @@ PURGE_ALERT_BY_EXIT = {
 #: already holds, so the teardown proceeds.
 PURGE_EXIT_ALREADY_EMPTY = 10
 
+#: Label of the archive step, for the same reason as ``PURGE_LABEL``.
+ARCHIVE_LABEL = "Take the archive copy"
+
+#: ``scripts/backup_archive.sh`` exit codes. Coarser than the purge's on
+#: purpose: duplicity sits in the middle there and its exit codes do not
+#: separate a wrong key from an unreadable chain in a way worth
+#: pretending to, so anything unattributable stays unknown rather than
+#: being guessed at.
+ARCHIVE_ALERT_BY_EXIT = {
+    20: (
+        "backup_archive_service_missing",
+        "The panel expects a backup container for %(name)s but the host's "
+        "compose does not declare one, so no archive copy could be taken. "
+        "Rebuild the instance, then archive it again.",
+    ),
+    22: (
+        "backup_archive_failed",
+        "Could not take the archive copy of %(name)s. See the job log for "
+        "what the backup container reported.",
+    ),
+}
+
 
 class DeleteInstanceExecutor(AbstractSSHExecutor):
     """Stop and remove a doodba instance from the remote host."""
@@ -55,6 +77,54 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
         """Whether this run leaves the instance in the panel as a draft."""
         return bool((self.job.payload or {}).get("keep_in_panel"))
 
+    def _backups_are_ours_to_touch(self, inst):
+        """Whether this run may act on the instance's backup chain.
+
+        Two gates, each guarding a different mistake.
+
+        ``_owns_instance_lifecycle`` — the move cleanups reuse these
+        teardown commands on a host the instance no longer lives on (the
+        abandoned source copy, or a rolled-back half-built target). The
+        instance is alive elsewhere and its backups are *its own*:
+        touching them there would destroy the backups of a running
+        instance.
+
+        ``expected_services()`` — the single source of truth for which
+        containers this instance renders, so we never chase one that was
+        never deployed. Stricter than ``_backup_enabled()`` alone: a
+        *staging* instance resolves a backup destination whenever a
+        global default exists, yet only production renders the
+        container. Gating on the flag alone would make every staging
+        instance impossible to delete. It is also what keeps Free tenants
+        out without a branch naming them — their plan disables the
+        container, so it is absent here for the same reason it is absent
+        on the host.
+        """
+        if not self._owns_instance_lifecycle:
+            return False
+        return "backup" in inst.expected_services()
+
+    def _archive_step(self, inst, inst_dir):
+        """Return the archive step, or nothing when there is none.
+
+        Archiving promises one restorable copy taken *now*, so the delta
+        since the last nightly is not lost. Like the purge it has to
+        happen before the teardown — the container that holds duplicity,
+        the credentials and the passphrase does not survive it — and
+        like the purge it aborts the teardown when it fails: an archive
+        that silently kept nothing is worse than one that refused, since
+        the record would then advertise a copy that is not there.
+        """
+        if not self._backups_are_ours_to_touch(inst):
+            return ()
+        if not self._keeps_the_record():
+            return ()
+        return ((
+            ARCHIVE_LABEL,
+            self.run_script("backup_archive.sh", [inst_dir]),
+            {"stop_on_failure": True},
+        ),)
+
     def _purge_step(self, inst, inst_dir):
         """Return the backup-purge step, or nothing when there is none.
 
@@ -66,36 +136,14 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
         ``stop_on_failure`` aborts before the teardown — otherwise the
         objects would be stranded with nothing left able to reach them.
 
-        Three gates, and each one guards a different mistake:
-
-        ``_owns_instance_lifecycle`` — the move cleanups reuse these
-        teardown commands on a host the instance no longer lives on (the
-        abandoned source copy, or a rolled-back half-built target). The
-        instance is alive elsewhere and its backups are *its own*:
-        purging there would destroy the backups of a running instance.
-
-        ``keep_in_panel`` — keeping the record is not a deletion, so
-        those backups still have an instance they belong to.
-
-        ``expected_services()`` — whether there is anything to purge is
-        decided here, never from what the host answers. It is the single
-        source of truth for which containers this instance renders, so
-        the purge cannot ask for one that was never deployed. Note it is
-        stricter than ``_backup_enabled()`` alone: a *staging* instance
-        resolves a backup destination whenever a global default exists,
-        yet only production ever renders the container — gating on the
-        flag alone would send the purge after a container that is not
-        there and make every staging instance impossible to delete.
-
-        It is also what keeps Free tenants out without a single branch
-        naming them: their plan disables the container, so it is absent
-        here for the same reason it is absent on the host.
+        Which instances it applies to is decided by
+        :meth:`_backups_are_ours_to_touch`; on top of that, keeping
+        the record is not a deletion, so those backups still have an
+        instance they belong to and are left alone.
         """
-        if not self._owns_instance_lifecycle:
+        if not self._backups_are_ours_to_touch(inst):
             return ()
         if self._keeps_the_record():
-            return ()
-        if "backup" not in inst.expected_services():
             return ()
         return ((
             PURGE_LABEL,
@@ -103,10 +151,14 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
             {"stop_on_failure": True},
         ),)
 
+    def _step_exit_status(self, results, label):
+        """Return *label*'s exit code, or None if that step did not run."""
+        data = (results or {}).get(label)
+        return data.get("exit_status") if data else None
+
     def _purge_exit_status(self, results):
         """Return the purge step's exit code, or None if it did not run."""
-        data = (results or {}).get(PURGE_LABEL)
-        return data.get("exit_status") if data else None
+        return self._step_exit_status(results, PURGE_LABEL)
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
@@ -147,6 +199,7 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
             return []
         d = self._inst_dir(inst)
         return [
+            *self._archive_step(inst, d),
             *self._purge_step(inst, d),
             # 1. Shut down containers (the script skips a missing dir)
             (
@@ -190,8 +243,17 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
         return super().parse_results(results)
 
     def _purge_alert_targets(self):
-        """Alert codes this executor owns, for raising and resolving."""
-        return [code for code, _msg in PURGE_ALERT_BY_EXIT.values()]
+        """Alert codes this executor owns, for raising and resolving.
+
+        Both families are cleared on any clean run: an instance that
+        failed to archive and is later deleted (or the reverse) should
+        not keep the older complaint lit.
+        """
+        return [
+            code
+            for table in (PURGE_ALERT_BY_EXIT, ARCHIVE_ALERT_BY_EXIT)
+            for code, _msg in table.values()
+        ]
 
     async def on_success(self, results):
         inst = self._inst()
@@ -237,10 +299,12 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
         catch-all, and nothing fails to announce it.
         """
         code_message = PURGE_ALERT_BY_EXIT.get(
-            self._purge_exit_status(results)
+            self._step_exit_status(results, PURGE_LABEL)
+        ) or ARCHIVE_ALERT_BY_EXIT.get(
+            self._step_exit_status(results, ARCHIVE_LABEL)
         )
         if not code_message:
-            # The purge is not what failed — the teardown itself did.
+            # Neither backup step is what failed — the teardown did.
             return
         code, template = code_message
         self.env["cloud.alert"].sudo().raise_alert(

@@ -50,6 +50,7 @@ from . import deploy_instance_executor
 from . import setup_whitelist_executor
 from . import full_setup_executor
 from . import delete_instance_executor
+from . import purge_archived_executor
 from . import delete_host_executor
 from . import stop_instance_executor
 from . import start_instance_executor

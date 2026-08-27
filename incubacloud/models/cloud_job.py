@@ -750,6 +750,10 @@ class CloudJob(models.Model):
         "move_cutover": "group_cloud_manager",
         "move_cleanup_source": "group_cloud_manager",
         "move_rollback_cleanup": "group_cloud_manager",
+        # Deletes a chain that nothing else can reach any more, and the
+        # record with it. Manager-only for the same reason production
+        # deletion is: there is no undo behind it.
+        "purge_archived_backups": "group_cloud_manager",
         # Legacy: the executor is gone; the job type record is kept only
         # because historical jobs still reference it.
         "delete_project": "group_cloud_manager",
