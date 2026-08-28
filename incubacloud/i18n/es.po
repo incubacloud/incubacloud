@@ -16,6 +16,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"\"\n"
+"                    and the backup copy it still owns?"
+msgstr ""
+"\"\n"
+"                    y la copia de seguridad que todavía le pertenece?"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "\" from the host?\n"
@@ -52,6 +62,29 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"%(name)s has an archived copy at %(path)s but no host left to delete it "
+"from. Assign a host to the instance and try again — deleting the record "
+"alone would leave the copy behind with nothing pointing at it."
+msgstr ""
+"%(name)s tiene una copia archivada en %(path)s pero ya no le queda ningún "
+"host desde el que borrarla. Asigne un host a la instancia y vuelva a "
+"intentarlo: borrar solo la ficha dejaría la copia atrás sin nada que apunte "
+"a ella."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"%(name)s was archived without a backup destination, so there is nothing to "
+"restore. Its data was destroyed with the containers."
+msgstr ""
+"%(name)s se archivó sin destino de copias, así que no hay nada que "
+"restaurar. Sus datos se destruyeron junto con los contenedores."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "%s (archived)"
 msgstr "%s (archivada)"
@@ -67,6 +100,12 @@ msgstr "%s alerta(s) descartada(s)"
 #: code:addons/incubacloud/static/src/app/app.js:0
 msgid "%s completed"
 msgstr "%s completado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "%s deleted."
+msgstr "%s eliminada."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -136,6 +175,20 @@ msgid ""
 msgstr ""
 ", no solo para usted.\n"
 "            Las alertas de conflicto que bloquean los despliegues se conservan."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+", so nothing is left behind that no instance owns. That runs before\n"
+"                    the containers come down — the only moment anything can\n"
+"                    still reach the storage — and if it fails the instance is\n"
+"                    not deleted at all."
+msgstr ""
+", de modo que no queda nada que no pertenezca a ninguna instancia. Eso ocurre antes\n"
+"                    de que caigan los contenedores —el único momento en que algo puede\n"
+"                    todavía llegar al almacenamiento— y si falla, la instancia\n"
+"                    no se elimina en absoluto."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -798,9 +851,40 @@ msgid "Archive"
 msgstr "Archivo"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__archive_copy_bytes
+msgid "Archive Copy Bytes"
+msgstr "Bytes de la copia archivada"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__archive_copy_checked_at
+msgid "Archive Copy Checked At"
+msgstr "Copia archivada comprobada el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__archive_copy_state
+msgid "Archive Copy State"
+msgstr "Estado de la copia archivada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Archived"
+msgstr "Archivadas"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__archived_at
+msgid "Archived At"
+msgstr "Archivada el"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__archived_until
 msgid "Archived Until"
 msgstr "Archivado hasta"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__archived_purge_image
+msgid "Archived purge image"
+msgstr "Imagen de purga de archivadas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1129,12 +1213,6 @@ msgid "Backups"
 msgstr "Copias de seguridad"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Backups already stored in"
-msgstr "Los backups ya guardados en"
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__grafana_base_url
 msgid ""
 "Base URL of the Grafana embedded in the panel, e.g. "
@@ -1304,6 +1382,7 @@ msgstr "CPUs"
 #: code:addons/incubacloud/static/src/components/ic_confirm_dialog/ic_confirm_dialog.xml:0
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Cancel"
@@ -2088,6 +2167,17 @@ msgid "Consultant"
 msgstr "Consultor"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__archived_purge_image
+msgid ""
+"Container image run once to empty an archived instance's backup prefix. Must"
+" have boto3 available; the duplicity image the backup service uses already "
+"does."
+msgstr ""
+"Imagen de contenedor que se ejecuta una sola vez para vaciar el prefijo de "
+"copias de una instancia archivada. Debe tener boto3 disponible; la imagen de"
+" duplicity que usa el servicio de copias ya lo tiene."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__container_log_max_file
@@ -2667,6 +2757,12 @@ msgstr "Eliminar"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Delete \""
+msgstr "Eliminar \""
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Delete Backup Backend"
 msgstr "Eliminar backend de backup"
@@ -2682,6 +2778,12 @@ msgstr "Eliminar Host"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Delete Instance"
 msgstr "Eliminar instancia"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Delete archived instance"
+msgstr "Eliminar instancia archivada"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2716,6 +2818,12 @@ msgstr "Eliminar proyecto"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Delete the record and erase its copy"
+msgstr "Eliminar la ficha y borrar su copia"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_audit.js:0
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
@@ -2729,7 +2837,14 @@ msgstr "Eliminando"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "Deleting %s: clearing its copy first."
+msgstr "Eliminando %s: primero se borra su copia."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Deleting…"
 msgstr "Eliminando…"
 
@@ -3453,6 +3568,12 @@ msgstr "Error al crear la sesión."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "Failed to delete archived instance."
+msgstr "No se pudo eliminar la instancia archivada."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Failed to delete backend."
 msgstr "Error al eliminar el backend."
@@ -3531,6 +3652,12 @@ msgstr "Falló al obtener requirements.txt"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "Failed to load archived instances."
+msgstr "No se pudieron cargar las instancias archivadas."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Failed to load backup backend."
 msgstr "Error al cargar el backend de backup."
@@ -3568,6 +3695,7 @@ msgstr "Error al cargar el host."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 msgid "Failed to load hosts."
 msgstr "No se pudieron cargar los hosts."
 
@@ -3644,6 +3772,12 @@ msgstr "Falló al reconstruir la instancia"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_backups.js:0
 msgid "Failed to refresh backups"
 msgstr "Falló al refrescar las copias de seguridad"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "Failed to revive instance."
+msgstr "No se pudo revivir la instancia."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3996,6 +4130,11 @@ msgstr "GNU AGPL 3.0 o posterior"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__lgpl-3_0-or-later
 msgid "GNU LGPL 3.0 or later"
 msgstr "GNU LGPL 3.0 o posterior"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_restore_staging_gc_ir_actions_server
+msgid "Garbage-collect abandoned restore uploads"
+msgstr "Recolectar subidas de restauración abandonadas"
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_rate_limit_gc_ir_actions_server
@@ -4364,6 +4503,7 @@ msgstr "Alta"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__host_id
@@ -5176,6 +5316,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Its copy in"
+msgstr "Su copia en"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__job_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_log_chunk__job_id
@@ -5397,6 +5543,12 @@ msgid "Last Rebuild Fingerprint"
 msgstr "Última huella de reconstrucción"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__last_seen
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__last_seen
+msgid "Last Seen"
+msgstr "Visto por última vez"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__last_probed
 msgid "Last Specs Probe"
 msgstr "Última verificación"
@@ -5616,6 +5768,7 @@ msgstr "Cargando directorio…"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Loading hosts…"
 msgstr "Cargando hosts…"
 
@@ -6014,6 +6167,13 @@ msgstr "Migrando desde"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
 msgid "Migration started."
 msgstr "Migración iniciada."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/archive_copy.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__archive_copy_state__missing
+msgid "Missing"
+msgstr "Ausente"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6424,6 +6584,12 @@ msgstr "No hay hosts compatibles disponibles."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "No copy"
+msgstr "Sin copia"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "No dashboards configured"
 msgstr "No hay paneles configurados"
@@ -6434,6 +6600,12 @@ msgstr "No hay paneles configurados"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "No entries found"
 msgstr "No se encontraron entradas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "No host can take an instance right now."
+msgstr "Ningún host puede aceptar una instancia ahora mismo."
 
 #. module: incubacloud
 #. odoo-python
@@ -6650,6 +6822,12 @@ msgstr "Ninguno"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__normal
 msgid "Normal"
 msgstr "Normal"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/archive_copy.js:0
+msgid "Not checked yet"
+msgstr "Aún sin comprobar"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7338,6 +7516,20 @@ msgstr "Elija un host de destino distinto."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Pick a host"
+msgstr "Elija un host"
+
+#. module: incubacloud
+#. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "Pick a host to revive this instance on."
+msgstr "Elija un host en el que revivir esta instancia."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Pick the host that should run it."
 msgstr "Elige el host que debe ejecutarlo."
@@ -7446,6 +7638,13 @@ msgstr "Pruebas de pre-producción"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Preparing…"
 msgstr "Preparando…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/archive_copy.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__archive_copy_state__present
+msgid "Present"
+msgstr "Presente"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7617,6 +7816,11 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_proxy
 msgid "Proxy"
 msgstr "Proxy"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__purge_cutoff_at
+msgid "Purge Cutoff At"
+msgstr "Corte de la purga"
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_purge_audit_logs_ir_actions_server
@@ -8292,6 +8496,24 @@ msgstr "Error al reintentar: "
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__retry_of_id
 msgid "Retry of"
 msgstr "Reintento de"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Revive"
+msgstr "Revivir"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "Reviving %s: deploying, then restoring its copy."
+msgstr "Reviviendo %s: se despliega y después se restaura su copia."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Reviving…"
+msgstr "Reviviendo…"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__revoked_key_fingerprint
@@ -9390,6 +9612,27 @@ msgstr ""
 "ámbito 'repo', o configura una GitHub App."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The archived copy of %(name)s is gone from %(path)s. Nothing can be revived "
+"from it; the record no longer has anything behind it."
+msgstr ""
+"La copia archivada de %(name)s ya no está en %(path)s. No se puede revivir "
+"nada a partir de ella; la ficha ya no tiene nada detrás."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The archived copy of %(name)s is not available at %(path)s (%(state)s), so "
+"reviving would leave an empty instance. Check the storage before retrying."
+msgstr ""
+"La copia archivada de %(name)s no está disponible en %(path)s (%(state)s), "
+"así que revivirla dejaría una instancia vacía. Revise el almacenamiento "
+"antes de reintentarlo."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
@@ -9408,6 +9651,22 @@ msgid ""
 msgstr ""
 "Los siguientes dominios ya están asignados a otra instancia: %s. Quítalos "
 "antes de la instancia existente y reintenta la importación."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__purge_cutoff_at
+msgid ""
+"The instant this instance's deletion was decided. The purge only removes "
+"objects older than it, so a retry — days or months later, by which time a "
+"new instance may hold the same name and therefore the same prefix — still "
+"deletes the old chain and nothing else. Stamped once and never refreshed: "
+"'now' on a retry would defeat the point."
+msgstr ""
+"El instante en que se decidió eliminar esta instancia. La purga solo borra "
+"objetos anteriores a él, de modo que un reintento —días o meses después, "
+"cuando ya puede haber una instancia nueva con el mismo nombre y por tanto el"
+" mismo prefijo— sigue borrando la cadena vieja y nada más. Se sella una sola"
+" vez y nunca se refresca: usar «ahora» en un reintento echaría por tierra el"
+" propósito."
 
 #. module: incubacloud
 #. odoo-python
@@ -9451,6 +9710,20 @@ msgstr ""
 "descarte esta alerta cuando haya confirmado el cambio."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"The name %(name)s is reserved by an archived instance of this project. Its "
+"backups live at a path built from that name, so reusing it would write into "
+"them. Revive that instance, or delete it if you no longer need what it "
+"holds."
+msgstr ""
+"El nombre %(name)s está reservado por una instancia archivada de este "
+"proyecto. Sus copias viven en una ruta construida a partir de ese nombre, "
+"así que reutilizarlo escribiría dentro de ellas. Reviva esa instancia, o "
+"elimínela si ya no necesita lo que guarda."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__port
 msgid "The port to connect to the cloud host."
 msgstr "El puerto para conectar al host cloud."
@@ -9460,12 +9733,12 @@ msgstr "El puerto para conectar al host cloud."
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "The record and its configuration are removed from\n"
-"                            the panel too. Past job logs survive, no longer\n"
-"                            attached to any instance."
+"                            the panel too, and its backups with them. Past job\n"
+"                            logs survive, no longer attached to any instance."
 msgstr ""
-"También se elimina del panel el registro y su\n"
-"                            configuración. Los logs de trabajos anteriores\n"
-"                            sobreviven, ya sin instancia asociada."
+"La ficha y su configuración se eliminan también del\n"
+"                            panel, y sus copias de seguridad con ellas. Los registros\n"
+"                            de trabajos pasados sobreviven, ya sin instancia asociada."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9532,6 +9805,20 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"These instances were removed from their host but kept in the\n"
+"                                        panel. Nothing of them runs anywhere; what is left is the\n"
+"                                        backup copy below, and reviving one deploys it again and\n"
+"                                        restores that copy into it."
+msgstr ""
+"Estas instancias se retiraron de su host pero se conservaron en el\n"
+"                                        panel. No queda nada de ellas en marcha; lo que queda es la\n"
+"                                        copia de seguridad de abajo, y revivir una la vuelve a desplegar y\n"
+"                                        restaura esa copia dentro."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "This action"
 msgstr "Esta acción"
@@ -9541,6 +9828,18 @@ msgstr "Esta acción"
 #: code:addons/incubacloud/models/cloud_security_mixin.py:0
 msgid "This action requires the '%s' role or higher."
 msgstr "Esta acción requiere el rol '%s' o superior."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"This deploys the instance again and then restores its archived\n"
+"                    copy into it. The copy is checked before anything is deployed,\n"
+"                    so if it is gone you get an error instead of an empty instance."
+msgstr ""
+"Esto vuelve a desplegar la instancia y después restaura su copia\n"
+"                    archivada dentro. La copia se comprueba antes de desplegar nada,\n"
+"                    así que si ya no está recibirá un error en vez de una instancia vacía."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9601,12 +9900,28 @@ msgstr "Esta instancia ya está importada."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "This instance is not archived."
+msgstr "Esta instancia no está archivada."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance_access_log.py:0
 msgid ""
 "This instance is not placed on a host yet, so there is no proxy log to read."
 msgstr ""
 "Esta instancia aún no está ubicada en un host, así que no hay registro del "
 "proxy que leer."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"This instance was archived without a backup destination,\n"
+"                    so there is nothing left of it but the record."
+msgstr ""
+"Esta instancia se archivó sin destino de copias,\n"
+"                    así que no queda nada de ella salvo la ficha."
 
 #. module: incubacloud
 #. odoo-python
@@ -9752,6 +10067,18 @@ msgstr "Para"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "To delete completely, type the instance name:"
+msgstr "Para eliminarla por completo, escriba el nombre de la instancia:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "To delete it, type the instance name:"
+msgstr "Para eliminarla, escriba el nombre de la instancia:"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Toggle auto-rebuild"
 msgstr "Activar/desactivar la reconstrucción automática"
 
@@ -9851,6 +10178,15 @@ msgstr "Clientes más activos"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Top paths"
 msgstr "Rutas más solicitadas"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_bytes
+msgid ""
+"Total size of the archived chain at the last check, so what an archived "
+"instance costs stays visible."
+msgstr ""
+"Tamaño total de la cadena archivada en la última comprobación, para que lo "
+"que cuesta una instancia archivada siga siendo visible."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9989,6 +10325,12 @@ msgid "Type of the cloud host. Other modules may extend this selection."
 msgstr "Tipo de host cloud. Otros módulos pueden extender esta selección."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "Type the instance name exactly to confirm."
+msgstr "Escriba el nombre de la instancia exactamente para confirmar."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Type the instance name to confirm:"
@@ -10107,6 +10449,13 @@ msgid "Unpin all repos — rebuilds will use branch tips"
 msgstr ""
 "Desfijar todos los repos — las reconstrucciones usarán las puntas de las "
 "ramas"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/archive_copy.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__archive_copy_state__unreachable
+msgid "Unreachable"
+msgstr "Inaccesible"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10274,6 +10623,11 @@ msgstr ""
 "exactamente cuando la serie no existe."
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_verify_archived_copies_ir_actions_server
+msgid "Verify archived instance copies"
+msgstr "Verificar las copias de instancias archivadas"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
@@ -10408,6 +10762,16 @@ msgstr ""
 "enterrada en la del host."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_state
+msgid ""
+"What the last verification pass found at the frozen backup path. Written by "
+"the archive-check cron, never measured while rendering a list."
+msgstr ""
+"Lo que encontró la última verificación en la ruta de copias congelada. Lo "
+"escribe el cron de comprobación de archivadas, nunca se mide al renderizar "
+"una lista."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "What to receive"
@@ -10509,6 +10873,40 @@ msgid "When set, this job is blocked waiting for the alert to be resolved."
 msgstr ""
 "Cuando se establece, esta tarea está bloqueada esperando que se resuelva la "
 "alerta."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_checked_at
+msgid ""
+"When the archived copy was last verified. Shown alongside the state so a "
+"stale reading is visible as stale instead of passing for current."
+msgstr ""
+"Cuándo se verificó por última vez la copia archivada. Se muestra junto al "
+"estado para que una lectura obsoleta se vea como obsoleta en vez de pasar "
+"por actual."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__last_seen
+#: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__last_seen
+msgid ""
+"When the controller last confirmed the subprocess alive. The only liveness "
+"signal that crosses the container boundary, so it is what the GC cron reaps "
+"by."
+msgstr ""
+"Cuándo confirmó el controlador por última vez que el subproceso seguía vivo."
+" Es la única señal de vida que cruza la frontera del contenedor, así que es "
+"por la que siega el cron de recolección."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__archived_at
+msgid ""
+"When this instance was archived. A field of its own and not ``write_date``, "
+"which the daily copy check rewrites on every archived record — the view "
+"would then report the last verification as the archiving date."
+msgstr ""
+"Cuándo se archivó esta instancia. Un campo propio y no ``write_date``, que "
+"la comprobación diaria de copias reescribe en cada ficha archivada: la vista"
+" informaría entonces de la última verificación como si fuera la fecha de "
+"archivado."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_res_users__cloud_email_enabled
@@ -10721,6 +11119,16 @@ msgstr "admin@example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"also erases every backup\n"
+"                    stored in"
+msgstr ""
+"borra también todas las copias de seguridad\n"
+"                    guardadas en"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "and install your app manually."
 msgstr "e instala tu aplicación manualmente."
@@ -10734,17 +11142,31 @@ msgstr "apt.txt — Sistema"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "archived"
+msgstr "archivada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "archived without a backup destination"
+msgstr "archivada sin destino de copias"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
-"are not deleted — but they stop being maintained, because\n"
-"                    the retention prune runs inside the backup container this\n"
-"                    removes. Delete them from the storage when you no longer\n"
-"                    need them."
+"archives it instead: a fresh\n"
+"                    full backup is taken now and everything older is pruned, so\n"
+"                    exactly one restorable copy survives. The instance moves to\n"
+"                    the project's Archived tab, where it can be brought back on\n"
+"                    any host and restored from that copy."
 msgstr ""
-"no se eliminan, pero dejan de mantenerse: la poda por\n"
-"                    antigüedad corre dentro del contenedor de backup que esto\n"
-"                    elimina. Elimínelos del almacenamiento cuando ya no los\n"
-"                    necesite."
+"la archiva en su lugar: se toma ahora una\n"
+"                    salva completa nueva y se poda todo lo anterior, de modo que\n"
+"                    sobrevive exactamente una copia restaurable. La instancia pasa a\n"
+"                    la pestaña Archivadas del proyecto, desde donde se puede recuperar en\n"
+"                    cualquier host y restaurar a partir de esa copia."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10817,6 +11239,12 @@ msgstr "cat /etc/backup.env"
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "cat /opt/odoo/auto/odoo.conf"
 msgstr "cat /opt/odoo/auto/odoo.conf"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "checked just now"
+msgstr "comprobada ahora mismo"
 
 #. module: incubacloud
 #. odoo-python
@@ -10959,6 +11387,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "from"
+msgstr "de"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "ghp_xxxxxxxxxxxx"
 msgstr "ghp_xxxxxxxxxxxx"
@@ -11083,6 +11517,20 @@ msgid "inverseproxy.yaml is required"
 msgstr "inverseproxy.yaml es obligatorio"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"is erased first, and the record is removed only once that\n"
+"                    succeeded — nothing is left behind that no instance owns.\n"
+"                    There is no way back from this: the instance is not\n"
+"                    running anywhere, so the copy is all there is of it."
+msgstr ""
+"se borra primero, y la ficha se elimina solo cuando eso\n"
+"                    ha terminado bien: no queda nada que no pertenezca a ninguna instancia.\n"
+"                    De esto no hay vuelta atrás: la instancia no está\n"
+"                    corriendo en ningún sitio, así que la copia es todo lo que queda de ella."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance_move.py:0
 msgid "its domain"
@@ -11111,6 +11559,12 @@ msgstr "my-backup-bucket"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "myproject-staging"
 msgstr "myproject-staging"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+msgid "never checked"
+msgstr "nunca comprobada"
 
 #. module: incubacloud
 #. odoo-javascript

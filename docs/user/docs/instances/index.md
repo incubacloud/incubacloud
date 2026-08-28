@@ -15,12 +15,45 @@ one filestore. It belongs to a project and runs on a host.
 ## Lifecycle
 
 ```
-deploy → running → rebuild → running → ... → archive
+deploy → running → rebuild → running → ... → archive or delete
 ```
 
 A rebuild updates the image and modules without downtime (production) or
-restarts the container (staging). An archive deletes the container but keeps
-the configuration so you can re-deploy later.
+restarts the container (staging).
+
+## Ending an instance
+
+Both endings remove the containers, the database and the files from the host.
+They differ in what happens to the **backups**.
+
+!!! warning "Deleting destroys the backups too"
+    An instance's backups belong to that instance. **Delete completely** empties
+    them before the containers come down — there is no option to keep them, and
+    nothing to restore from afterwards. If you might want the data later,
+    archive instead, or [download a backup](../backups/restore.md) first.
+
+    Because it cannot be undone, the panel asks you to type the instance name.
+
+**Archive** keeps one restorable copy. A fresh full backup is taken at that
+moment — not the last nightly one, so nothing since it is lost — and everything
+older is pruned, leaving exactly one copy. The instance moves to the
+**Archived** tab of its project, where you can see the size of that copy and
+when it was last verified.
+
+From there you can:
+
+- **Revive** it — deploy it again, on the original host or any other, and
+  restore the copy into it.
+- **Delete** it — which destroys the copy as well, and again asks for the name.
+
+An archived instance keeps its name reserved inside its project: creating a new
+instance with that name is refused, because it would compute the same backup
+path and write into the copy being kept.
+
+!!! note "Archiving without a backup destination"
+    An instance with no backup backend has no copy to keep, so archiving it
+    keeps only the record. The panel says so and asks you to confirm in
+    writing.
 
 ## Common tasks
 

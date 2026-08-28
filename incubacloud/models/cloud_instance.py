@@ -1159,6 +1159,12 @@ class CloudInstance(models.Model):
             # Cleared with the flag it belongs to: a stamp left behind
             # would make the next archiving look older than it is.
             "archived_at": False,
+            # Same reasoning, sharper consequence. A deletion that was
+            # decided, failed and then reverted by this revive must not
+            # bound a *future* purge: the cutoff would predate the chain
+            # written since, and that purge would delete nothing while
+            # reporting success.
+            "purge_cutoff_at": False,
         })
         return self.env["cloud.job"].enqueue_chain([
             {
@@ -1742,6 +1748,16 @@ class CloudInstance(models.Model):
              "the state so a stale reading is visible as stale instead "
              "of passing for current.",
     )
+    purge_cutoff_at = fields.Datetime(
+        copy=False,
+        readonly=True,
+        help="The instant this instance's deletion was decided. The "
+             "purge only removes objects older than it, so a retry — "
+             "days or months later, by which time a new instance may "
+             "hold the same name and therefore the same prefix — still "
+             "deletes the old chain and nothing else. Stamped once and "
+             "never refreshed: 'now' on a retry would defeat the point.",
+    )
 
     @api.model
     def _cron_verify_archived_copies(self):
@@ -1839,9 +1855,14 @@ class CloudInstance(models.Model):
         which is a refusal rather than a licence to unlink: the objects
         would outlive it.
 
+        The first call stamps ``purge_cutoff_at`` and every later one
+        reuses it, so a retry deletes exactly what the original call
+        would have. By then the name — and therefore the prefix — may
+        belong to a new instance, and "everything under the prefix"
+        would take its backups too.
+
         :param payload: extra job payload, for a caller that needs to
-            chain something onto the purge's success — the SaaS "start
-            from scratch" path provisions there and nowhere earlier.
+            chain something onto the purge's success.
         :return: list of enqueued job ids, empty when it unlinked here.
         :raises UserError: if the instance is not archived, or has a
             chain but no host left to purge it from.
@@ -1865,6 +1886,8 @@ class CloudInstance(models.Model):
                     name=self.name, path=self.custom_backup_dst,
                 )
             )
+        if not self.purge_cutoff_at:
+            self.sudo().write({"purge_cutoff_at": fields.Datetime.now()})
         # A list, so callers and the route see the same shape whether
         # this enqueued something or unlinked here.
         return [self.env["cloud.job"].enqueue(
