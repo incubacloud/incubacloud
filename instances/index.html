@@ -1171,6 +1171,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ending-an-instance" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ending an instance
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-tasks" class="md-nav__link">
     <span class="md-ellipsis">
       Common tasks
@@ -1242,11 +1251,41 @@ one filestore. It belongs to a project and runs on a host.</p>
   after a nap takes a few seconds).</li>
 </ul>
 <h2 id="lifecycle">Lifecycle<a class="headerlink" href="#lifecycle" title="Permanent link">&para;</a></h2>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>deploy → running → rebuild → running → ... → archive
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>deploy → running → rebuild → running → ... → archive or delete
 </span></code></pre></div>
 <p>A rebuild updates the image and modules without downtime (production) or
-restarts the container (staging). An archive deletes the container but keeps
-the configuration so you can re-deploy later.</p>
+restarts the container (staging).</p>
+<h2 id="ending-an-instance">Ending an instance<a class="headerlink" href="#ending-an-instance" title="Permanent link">&para;</a></h2>
+<p>Both endings remove the containers, the database and the files from the host.
+They differ in what happens to the <strong>backups</strong>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Deleting destroys the backups too</p>
+<p>An instance's backups belong to that instance. <strong>Delete completely</strong> empties
+them before the containers come down — there is no option to keep them, and
+nothing to restore from afterwards. If you might want the data later,
+archive instead, or <a href="../backups/restore/">download a backup</a> first.</p>
+<p>Because it cannot be undone, the panel asks you to type the instance name.</p>
+</div>
+<p><strong>Archive</strong> keeps one restorable copy. A fresh full backup is taken at that
+moment — not the last nightly one, so nothing since it is lost — and everything
+older is pruned, leaving exactly one copy. The instance moves to the
+<strong>Archived</strong> tab of its project, where you can see the size of that copy and
+when it was last verified.</p>
+<p>From there you can:</p>
+<ul>
+<li><strong>Revive</strong> it — deploy it again, on the original host or any other, and
+  restore the copy into it.</li>
+<li><strong>Delete</strong> it — which destroys the copy as well, and again asks for the name.</li>
+</ul>
+<p>An archived instance keeps its name reserved inside its project: creating a new
+instance with that name is refused, because it would compute the same backup
+path and write into the copy being kept.</p>
+<div class="admonition note">
+<p class="admonition-title">Archiving without a backup destination</p>
+<p>An instance with no backup backend has no copy to keep, so archiving it
+keeps only the record. The panel says so and asks you to confirm in
+writing.</p>
+</div>
 <h2 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../getting-started/first-deploy/">Deploy your first instance</a></li>

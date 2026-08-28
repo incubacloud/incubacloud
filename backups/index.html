@@ -1171,6 +1171,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-happens-to-backups-when-an-instance-ends" class="md-nav__link">
+    <span class="md-ellipsis">
+      What happens to backups when an instance ends
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#managed-backup-storage" class="md-nav__link">
     <span class="md-ellipsis">
       Managed Backup Storage
@@ -1276,6 +1285,41 @@ configure retention per backend.</p>
 </table>
 <p>Manual backups never expire. They count against your bucket storage,
 not against the retention window.</p>
+<h2 id="what-happens-to-backups-when-an-instance-ends">What happens to backups when an instance ends<a class="headerlink" href="#what-happens-to-backups-when-an-instance-ends" title="Permanent link">&para;</a></h2>
+<p>Backups belong to the instance that made them, and they never outlive it.</p>
+<table>
+<thead>
+<tr>
+<th>You choose</th>
+<th>The instance</th>
+<th>Its backups</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Delete completely</strong></td>
+<td>removed from the host and from the panel</td>
+<td><strong>all destroyed</strong>, before the containers come down</td>
+</tr>
+<tr>
+<td><strong>Archive</strong></td>
+<td>removed from the host, kept in the panel</td>
+<td><strong>exactly one copy kept</strong>, taken at that moment</td>
+</tr>
+</tbody>
+</table>
+<p>There is no third option, and no "delete the instance but leave the backups":
+a chain nobody owns is one nobody can find, restore or prune, while it keeps
+consuming your bucket.</p>
+<p>Archiving takes a <strong>fresh full backup first</strong> and prunes everything older, so
+the copy is from the moment you archived rather than from the last nightly run.
+That copy still counts against your bucket storage — you can see its size in the
+project's Archived tab — and it stays until you revive the instance or delete it.</p>
+<div class="admonition warning">
+<p class="admonition-title">Deleting cannot be undone</p>
+<p>Both deleting an instance and deleting an archived one destroy the objects
+in your bucket. Download a backup first if you might need the data.</p>
+</div>
 <h2 id="managed-backup-storage">Managed Backup Storage<a class="headerlink" href="#managed-backup-storage" title="Permanent link">&para;</a></h2>
 <div class="admonition info">
 <p class="admonition-title">IncubaCloud SaaS — paid add-on</p>
