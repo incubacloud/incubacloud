@@ -108,6 +108,69 @@ class TestDeleteArchivedGuards(_ArchivedPurgeBase):
         self.assertTrue(inst.exists())
 
 
+class TestPurgeCutoff(_ArchivedPurgeBase):
+    """The purge is bounded to the chain that existed when it was decided.
+
+    A prefix is derived from the instance name, so a new instance taking
+    that name inherits it. Everything here protects the same thing: that
+    a purge landing late never deletes the successor's backups.
+    """
+
+    def test_the_first_call_stamps_the_cutoff(self):
+        inst = self._archive()
+        self.assertFalse(inst.purge_cutoff_at)
+        inst.delete_archived()
+        self.assertTrue(inst.purge_cutoff_at)
+
+    def test_a_retry_keeps_the_original_cutoff(self):
+        """The whole mechanism. Re-stamping on retry would set the bound
+        to "now", by which time the successor's chain is older than it
+        and would be deleted.
+
+        The retry is reached the way production reaches it — the first
+        job failing and the purge being asked for again — because the
+        active-job guard refuses a second one while the first is alive.
+        """
+        inst = self._archive()
+        job = self.env["cloud.job"].browse(inst.delete_archived()[0])
+        first = inst.purge_cutoff_at
+        job.sudo().write({"state": "failed"})
+        inst.delete_archived()
+        self.assertEqual(inst.purge_cutoff_at, first)
+
+    def test_reviving_clears_the_cutoff(self):
+        """A deletion that was decided and then reverted must not bound a
+        future purge: that purge would predate the chain written since,
+        delete nothing, and report success."""
+        inst = self._archive()
+        inst.delete_archived()
+        self.assertTrue(inst.purge_cutoff_at)
+        inst.sudo().write({
+            "active": True, "archived_at": False, "purge_cutoff_at": False,
+        })
+        self.assertFalse(inst.purge_cutoff_at)
+
+    def test_an_instance_with_no_copy_is_not_stamped(self):
+        """It unlinks on the spot — there is no job to bound."""
+        self.instance.backup_backend_id = False
+        self.project.backup_backend_id = False
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.backup_backend_id", "0",
+        )
+        self.instance.invalidate_recordset()
+        inst = self._archive()
+        self.assertEqual(inst.delete_archived(), [])
+        self.assertFalse(inst.exists())
+
+    def test_the_environment_carries_the_cutoff(self):
+        inst = self._archive()
+        job = self.env["cloud.job"].browse(inst.delete_archived()[0])
+        env_text = self._executor(job)._env_content()
+        self.assertIn(
+            f"PURGE_BEFORE={inst.purge_cutoff_at.isoformat()}", env_text,
+        )
+
+
 class TestPurgeArchivedExecutor(_ArchivedPurgeBase):
 
     def _job(self):

@@ -82,10 +82,18 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         ``custom_backup_dst`` and not the computed path — the frozen
         value is the only one still true once the project can have moved
         underneath the record.
+
+        ``PURGE_BEFORE`` carries the instant the deletion was decided,
+        so the purge is bounded to the chain that existed then. Without
+        it a job that lands late — a retry, a queue that drained slowly —
+        would empty whatever holds the prefix by the time it runs, and
+        after "start from scratch" that is the customer's new instance.
         """
         inst = self._inst()
         backend = inst.effective_backup_backend.sudo()
         lines = [f"DST={inst.custom_backup_dst}"]
+        if inst.purge_cutoff_at:
+            lines.append(f"PURGE_BEFORE={inst.purge_cutoff_at.isoformat()}")
         if backend.s3_access_key_id:
             lines.append(f"AWS_ACCESS_KEY_ID={backend.s3_access_key_id}")
         if backend.s3_secret_access_key:

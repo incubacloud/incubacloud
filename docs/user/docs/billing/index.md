@@ -80,3 +80,19 @@ If you don't want to continue, downgrade to Free (keeps one instance, no
 automatic backups) or request cancellation from the
 [contact form](https://www.incubacloud.io/contactus). If you also want your data
 deleted, say so in the request.
+
+### Coming back
+
+When a paid instance is removed we keep **one copy of it for 30 days**. If you
+come back within that window, signing in and picking a plan offers you two
+paths:
+
+- **Recover my data** — we redeploy your instance and restore that copy into
+  it. Your subdomain, data and settings come back as they were at the moment of
+  removal.
+- **Start from scratch** — a new empty instance on the same subdomain. The copy
+  is deleted, so this one asks you to type your subdomain to confirm.
+
+After the 30 days the copy is destroyed and cannot be recovered. Plans without
+automatic backups (Free) have no copy to keep, so coming back always means
+starting fresh.

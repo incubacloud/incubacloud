@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.94] — 2026-08-28
+
+### Fixed
+
+- **A purge of an archived copy could delete a live instance's backups.** A backup prefix is derived from the instance name, so a new instance taking that name inherits the prefix — and the purge emptied everything under it. On the happy path the window was narrow, but the dangerous case was the retry: a purge that failed today and ran again next month would find a live instance in that prefix and empty it in silence, reporting success. The purge now carries `PURGE_BEFORE`, the instant the deletion was decided, and deletes only objects older than it. Whatever the successor writes is newer, so the purge is safe to land at any later time
+- The cutoff is stamped once, on the first `delete_archived`, and reused by every retry — taking "now" on a retry would reproduce exactly the bug it prevents. It is cleared when an instance is revived, because a deletion that was decided and then reverted must not bound a future purge: that one would predate the chain written since, delete nothing, and still report success
+- An unparseable `PURGE_BEFORE` is refused rather than ignored. Falling back to the unconditional purge is the one outcome the cutoff exists to prevent, so a bad value must never mean "carry on"
+
 ## [1.0.93] — 2026-08-27
 
 ### Added

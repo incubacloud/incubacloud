@@ -30,6 +30,28 @@ in an encrypted archive.
 Manual backups never expire. They count against your bucket storage,
 not against the retention window.
 
+## What happens to backups when an instance ends
+
+Backups belong to the instance that made them, and they never outlive it.
+
+| You choose | The instance | Its backups |
+| --- | --- | --- |
+| **Delete completely** | removed from the host and from the panel | **all destroyed**, before the containers come down |
+| **Archive** | removed from the host, kept in the panel | **exactly one copy kept**, taken at that moment |
+
+There is no third option, and no "delete the instance but leave the backups":
+a chain nobody owns is one nobody can find, restore or prune, while it keeps
+consuming your bucket.
+
+Archiving takes a **fresh full backup first** and prunes everything older, so
+the copy is from the moment you archived rather than from the last nightly run.
+That copy still counts against your bucket storage — you can see its size in the
+project's Archived tab — and it stays until you revive the instance or delete it.
+
+!!! warning "Deleting cannot be undone"
+    Both deleting an instance and deleting an archived one destroy the objects
+    in your bucket. Download a backup first if you might need the data.
+
 ## Managed Backup Storage
 
 !!! info "IncubaCloud SaaS — paid add-on"
