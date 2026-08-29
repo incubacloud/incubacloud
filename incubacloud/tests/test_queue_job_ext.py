@@ -607,3 +607,202 @@ class TestJobEmailScoping(TransactionCase):
         self.assertTrue(Alert._alert_muted_for(direct, self.member))
         self.assertTrue(Alert._alert_muted_for(via_inst, self.member))
         self.assertFalse(Alert._alert_muted_for(direct, self.manager))
+
+
+class TestJobFailedAlertDedup(TransactionCase):
+    """One broken thing is one alert, however many times it retries.
+
+    ``_create_job_failed_alert`` called ``create`` straight out, so a
+    cron job that kept failing stacked a row *and* a mail/Telegram/
+    webhook per attempt. On 2026-08-24 a broken metrics ACL sync failed
+    every thirty minutes for six and a half hours: fourteen identical
+    criticals, fourteen notifications, all dismissed together by the
+    same later success. Everything else in the panel was buried under
+    it.
+    """
+
+    def _job_type(self, code, apply_to='host'):
+        jt = self.env['cloud.job.type'].search([('code', '=', code)], limit=1)
+        if not jt:
+            jt = self.env['cloud.job.type'].create({
+                'name': code, 'code': code, 'apply_to': apply_to,
+            })
+        return jt
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'dedup-job-host',
+            'ip_address': '10.0.0.45',
+            'user': 'ubuntu',
+            'wildcard_domain': 'dedupjob.example.com',
+        })
+
+    def _fail(self, code, uuid, message='boom'):
+        jt = self._job_type(code)
+        cjob = self.env['cloud.job'].sudo().create({
+            'host_id': self.host.id,
+            'job_type_id': jt.id,
+            'name': f'Job {code}',
+            'queue_job_uuid': uuid,
+        })
+        qjob = self.env['queue.job'].sudo().create({
+            'uuid': uuid,
+            'name': f'qj-{code}',
+            'state': 'pending',
+            'method_name': 'noop',
+            'model_name': 'cloud.job',
+            'func_string': 'noop()',
+        })
+        qjob.write({'state': 'failed', 'exc_message': message})
+        return cjob
+
+    def _alerts(self, **extra):
+        domain = [
+            ('code', '=', 'job_failed'),
+            ('host_id', '=', self.host.id),
+            ('state', '=', 'active'),
+        ]
+        domain += [(k, '=', v) for k, v in extra.items()]
+        return self.env['cloud.alert'].search(domain)
+
+    def test_repeated_failure_refreshes_one_alert(self):
+        first = self._fail('sync_metrics_accounts', 'uuid-d1', 'rc=2')
+        second = self._fail('sync_metrics_accounts', 'uuid-d2', 'rc=2 again')
+        alerts = self._alerts()
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts.occurrences, 2)
+        # The row points at the newest failure, so "open the log" lands
+        # on the attempt that is still failing.
+        self.assertEqual(alerts.job_id, second)
+        self.assertNotEqual(alerts.job_id, first)
+        self.assertIn('rc=2 again', alerts.message)
+        self.assertIn('×2', alerts.message)
+
+    def test_a_different_job_type_is_a_different_incident(self):
+        self._fail('sync_metrics_accounts', 'uuid-d3')
+        self._fail('host_probe', 'uuid-d4')
+        self.assertEqual(len(self._alerts()), 2)
+
+    def test_success_dismisses_and_the_next_failure_starts_over(self):
+        self._fail('sync_metrics_accounts', 'uuid-d5')
+        self._fail('sync_metrics_accounts', 'uuid-d6')
+        self.assertEqual(self._alerts().occurrences, 2)
+
+        jt = self._job_type('sync_metrics_accounts')
+        cjob = self.env['cloud.job'].sudo().create({
+            'host_id': self.host.id,
+            'job_type_id': jt.id,
+            'name': 'Job ok',
+            'queue_job_uuid': 'uuid-d7',
+        })
+        qjob = self.env['queue.job'].sudo().create({
+            'uuid': 'uuid-d7',
+            'name': 'qj-ok',
+            'state': 'pending',
+            'method_name': 'noop',
+            'model_name': 'cloud.job',
+            'func_string': 'noop()',
+        })
+        qjob.write({'state': 'done'})
+        self.assertFalse(self._alerts())
+        self.assertTrue(cjob)
+
+        self._fail('sync_metrics_accounts', 'uuid-d8')
+        reopened = self._alerts()
+        self.assertEqual(len(reopened), 1)
+        self.assertEqual(reopened.occurrences, 1)
+
+
+class TestHostUnreachableOnTerminalState(TransactionCase):
+    """``host_unreachable`` belongs to the job that actually gave up.
+
+    ``execute`` used to raise it on the attempt it judged to be the
+    last, from the retry counter. The runner can hand a job one more
+    attempt than the budget, so that judgement was wrong: on
+    2026-08-29 three critical alerts fired for jobs that connected
+    seconds later and finished ``done``. Hanging it off the terminal
+    state makes "it gave up" a fact.
+    """
+
+    def _job_type(self, code, apply_to='host'):
+        jt = self.env['cloud.job.type'].search([('code', '=', code)], limit=1)
+        if not jt:
+            jt = self.env['cloud.job.type'].create({
+                'name': code, 'code': code, 'apply_to': apply_to,
+            })
+        return jt
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'unreach-host',
+            'ip_address': '10.0.0.46',
+            'user': 'ubuntu',
+            'wildcard_domain': 'unreach.example.com',
+        })
+
+    def _terminal(self, code, uuid, state, exc_message, retry=10):
+        jt = self._job_type(code)
+        cjob = self.env['cloud.job'].sudo().create({
+            'host_id': self.host.id,
+            'job_type_id': jt.id,
+            'name': f'Job {code}',
+            'queue_job_uuid': uuid,
+        })
+        qjob = self.env['queue.job'].sudo().create({
+            'uuid': uuid,
+            'name': f'qj-{code}',
+            'state': 'pending',
+            'method_name': 'noop',
+            'model_name': 'cloud.job',
+            'func_string': 'noop()',
+        })
+        qjob.write({
+            'state': state, 'exc_message': exc_message, 'retry': retry,
+        })
+        return cjob
+
+    def _alert(self):
+        return self.env['cloud.alert'].search([
+            ('code', '=', 'host_unreachable'),
+            ('host_id', '=', self.host.id),
+            ('state', '=', 'active'),
+        ])
+
+    def test_exhausted_connection_retries_alert(self):
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            CONNECTION_RETRY_MARKER,
+        )
+        self._terminal(
+            'host_metrics', 'uuid-u1', 'failed',
+            f'Max. retries (10) reached: {CONNECTION_RETRY_MARKER} 10/10: '
+            f'TimeoutError: ',
+        )
+        alert = self._alert()
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, 'critical')
+        self.assertIn('10 consecutive', alert.message)
+        # The operator reads the exception, not queue_job's wrapper.
+        self.assertTrue(alert.message.endswith('Last error: TimeoutError:'))
+        self.assertNotIn('Max. retries', alert.message)
+
+    def test_failure_for_another_reason_says_nothing_about_the_host(self):
+        self._terminal(
+            'host_metrics', 'uuid-u2', 'failed', 'KeyError: no such thing',
+        )
+        self.assertFalse(self._alert())
+
+    def test_a_job_type_that_does_not_retry_connections_never_alerts(self):
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            CONNECTION_RETRY_MARKER,
+        )
+        self._terminal(
+            'deploy_instance', 'uuid-u3', 'failed',
+            f'Max. retries (1) reached: {CONNECTION_RETRY_MARKER} 1/1: x',
+        )
+        self.assertFalse(self._alert())
+
+    def test_a_job_that_finished_never_alerts(self):
+        self._terminal('host_metrics', 'uuid-u4', 'done', False)
+        self.assertFalse(self._alert())

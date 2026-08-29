@@ -1533,12 +1533,49 @@ class TestConnectionRetryAndNotify(TransactionCase):
             def run(self):
                 raise asyncssh.ConnectionLost('Connection lost')
 
+        from psycopg2 import OperationalError, errorcodes
+
+        # ``pgcode`` is read-only on a psycopg2 error — only the driver
+        # sets it — so a subclass carrying the code is how you build the
+        # error PostgreSQL would have raised.
+        class _SerializationFailure(OperationalError):
+            pgcode = errorcodes.SERIALIZATION_FAILURE
+
+        class _ConnectionFailure(OperationalError):
+            pgcode = '08006'  # connection_failure — not a retry code
+
+        class _SerializationExecutor(AbstractSSHExecutor):
+            """Loses a row race the way two crons on one row do."""
+            _job_type = None
+
+            def get_commands(self):
+                return []
+
+            def run(self):
+                raise _SerializationFailure('could not serialize access')
+
+        class _PgFailureExecutor(AbstractSSHExecutor):
+            """An OperationalError that is nobody's transient race."""
+            _job_type = None
+
+            def get_commands(self):
+                return []
+
+            def run(self):
+                raise _ConnectionFailure('connection to server was lost')
+
         executor_registry._executors['test_conn_retry'] = _ConnLostExecutor
         executor_registry._executors['test_conn_plain'] = _PlainExecutor
-        cls.addClassCleanup(
-            executor_registry._executors.pop, 'test_conn_retry', None)
-        cls.addClassCleanup(
-            executor_registry._executors.pop, 'test_conn_plain', None)
+        executor_registry._executors['test_serialization'] = (
+            _SerializationExecutor
+        )
+        executor_registry._executors['test_pg_failure'] = _PgFailureExecutor
+        for code in (
+            'test_conn_retry', 'test_conn_plain',
+            'test_serialization', 'test_pg_failure',
+        ):
+            cls.addClassCleanup(
+                executor_registry._executors.pop, code, None)
 
     def setUp(self):
         super().setUp()
@@ -1553,57 +1590,82 @@ class TestConnectionRetryAndNotify(TransactionCase):
         _ensure_job_type(self.env, 'host_metrics', apply_to='host')
         _ensure_job_type(self.env, 'test_conn_retry', apply_to='host')
         _ensure_job_type(self.env, 'test_conn_plain', apply_to='host')
+        _ensure_job_type(self.env, 'test_serialization', apply_to='host')
+        _ensure_job_type(self.env, 'test_pg_failure', apply_to='host')
 
     def _enqueue(self, code):
         jid = self.env['cloud.job'].enqueue(self.host.id, False, code)
         return self.env['cloud.job'].browse(jid)
 
-    def test_opt_in_job_type_enqueues_with_three_retries(self):
+    def test_opt_in_job_type_enqueues_with_ten_retries(self):
         # Real wiring: the production host_metrics executor opts in.
+        # Ten attempts ~30 s apart is the ~10 min tolerance that keeps a
+        # host's own maintenance reboot from paging anyone.
         job = self._enqueue('host_metrics')
-        self.assertEqual(job.queue_job_id.max_retries, 3)
+        self.assertEqual(job.queue_job_id.max_retries, 10)
 
     def test_plain_job_type_enqueues_with_single_retry(self):
         job = self._enqueue('test_conn_plain')
         self.assertEqual(job.queue_job_id.max_retries, 1)
 
-    def test_transient_error_retries_while_attempts_remain(self):
-        # ``notify_host_unreachable`` is patched out: its real body writes the
-        # alert through a fresh cursor, which a TransactionCase host (never
-        # committed) can't satisfy. We only assert the execute() decision.
-        from unittest.mock import patch
-        from odoo.addons.queue_job.exception import RetryableJobError
-        from odoo.addons.incubacloud.models.abstract_executor import (
-            AbstractSSHExecutor,
-        )
-        job = self._enqueue('test_conn_retry')
-        # Fresh job → queue_job_id.retry == 0 → this is attempt 1 of 3.
-        with patch.object(
-            AbstractSSHExecutor, 'notify_host_unreachable',
-        ) as notify, self.assertRaises(RetryableJobError):
-            job.execute()
-        # A single blip must never notify anyone.
-        notify.assert_not_called()
+    def test_transient_error_always_asks_for_a_retry(self):
+        """Whether a retry is the last one is queue_job's decision.
 
-    def test_transient_error_notifies_on_last_attempt(self):
-        from unittest.mock import patch
-        from odoo.addons.queue_job.exception import JobError
-        from odoo.addons.incubacloud.models.abstract_executor import (
-            AbstractSSHExecutor,
-        )
+        ``execute`` used to work it out from the retry counter and
+        alert on what it judged to be the final attempt. It judged
+        wrong: the runner can hand a job one more attempt than the
+        budget, so the alert fired on jobs that then connected and
+        finished ``done``. Now every transient failure asks for a
+        retry, and ``Job.perform`` converts the last one into a
+        ``FailedJobError`` by itself.
+        """
+        from odoo.addons.queue_job.exception import RetryableJobError
         job = self._enqueue('test_conn_retry')
-        # set_started stores retry pre-increment, so retry=2 makes the next
-        # run attempt 3 of 3 — the last one.
+        # Fresh job → queue_job_id.retry == 0 → this is attempt 1.
+        with self.assertRaises(RetryableJobError):
+            job.execute()
+
+    def test_transient_error_on_last_attempt_still_asks_for_a_retry(self):
+        """Even at the end of the budget, execute() does not decide.
+
+        The counter says this is the final attempt, but the answer is
+        the same ``RetryableJobError``: it is ``Job.perform`` that
+        compares ``retry`` against ``max_retries``, and only its verdict
+        is trustworthy enough to alert on.
+        """
+        from odoo.addons.queue_job.exception import RetryableJobError
+        job = self._enqueue('test_conn_retry')
         self.env.cr.execute(
             "UPDATE queue_job SET retry = 2 WHERE id = %s",
             (job.queue_job_id.id,),
         )
         job.queue_job_id.invalidate_recordset(['retry'])
-        with patch.object(
-            AbstractSSHExecutor, 'notify_host_unreachable',
-        ) as notify, self.assertRaises(JobError):
+        with self.assertRaises(RetryableJobError) as caught:
             job.execute()
-        notify.assert_called_once()
-        # Notified with the attempt number (3) — the exhausted last try.
-        self.assertEqual(notify.call_args.args[1], 3)
+        # The message carries the marker the terminal-state hook keys on.
+        from odoo.addons.incubacloud.models.abstract_executor import (
+            CONNECTION_RETRY_MARKER,
+        )
+        self.assertIn(CONNECTION_RETRY_MARKER, str(caught.exception))
+
+    def test_serialization_failure_is_left_to_queue_job(self):
+        """A lost row race must not become a permanently failed job.
+
+        queue_job already postpones and retries serialisation failures.
+        Wrapping one in ``JobError`` made it terminal *and* printed a
+        traceback that the tenant log scraper reported back as an
+        ``instance_error_logs`` alert — an outage report for two crons
+        stamping the same row.
+        """
+        from psycopg2 import OperationalError
+        job = self._enqueue('test_serialization')
+        with self.assertRaises(OperationalError):
+            job.execute()
+
+    def test_other_operational_error_still_fails_the_job(self):
+        """Only the concurrency codes are handed back to queue_job."""
+        from odoo.addons.queue_job.exception import JobError
+        job = self._enqueue('test_pg_failure')
+        with self.assertRaises(JobError):
+            job.execute()
 

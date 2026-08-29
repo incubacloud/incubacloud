@@ -2141,6 +2141,22 @@ msgstr ""
 "razonable."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__http_fail_streak
+msgid ""
+"Consecutive instance_health cycles where the container was running but Odoo "
+"did not answer on 8069. The critical instance_unresponsive alert waits for "
+"the same hysteresis depth as CPU and memory: a container that is up but not "
+"listening yet is what every boot looks like from outside, so a single failed"
+" probe is not an incident."
+msgstr ""
+"Ciclos consecutivos de instance_health en los que el contenedor estaba en "
+"marcha pero Odoo no respondió en el 8069. La alerta crítica "
+"instance_unresponsive espera la misma histéresis que la CPU y la memoria: un"
+" contenedor levantado que todavía no escucha es el aspecto que tiene "
+"cualquier arranque visto desde fuera, así que un único sondeo fallido no es "
+"una incidencia."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__cpu_over_threshold_streak
 msgid ""
 "Consecutive instance_health cycles with CPU above the warning threshold. "
@@ -4649,9 +4665,29 @@ msgstr ""
 "acota la CPU de ese host."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__occurrences
+msgid ""
+"How many times this alert has been raised while it stayed active. Only "
+"``job_failed`` counts today: a cron job that keeps failing every 30 minutes "
+"is one incident, not one per attempt, and stacking a row (and a "
+"notification) per attempt is how a single broken thing buries every other "
+"alert in the panel."
+msgstr ""
+"Cuántas veces se ha levantado esta alerta mientras seguía activa. Hoy solo "
+"cuenta ``job_failed``: una tarea programada que falla cada 30 minutos es una"
+" sola incidencia, no una por intento, y apilar una fila (y una notificación)"
+" por intento es como un único problema sepulta todas las demás alertas del "
+"panel."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__comparator
 msgid "How the returned value is compared with the threshold."
 msgstr "Cómo se compara el valor devuelto con el umbral."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__http_fail_streak
+msgid "Http Fail Streak"
+msgstr "Racha de fallos HTTP"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__id
@@ -6994,6 +7030,11 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Observability is not enabled"
 msgstr "La observabilidad no está activada"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__occurrences
+msgid "Occurrences"
+msgstr "Repeticiones"
 
 #. module: incubacloud
 #. odoo-javascript

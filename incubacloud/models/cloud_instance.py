@@ -464,6 +464,18 @@ class CloudInstance(models.Model):
             "cpu_over_threshold_streak."
         ),
     )
+    http_fail_streak = fields.Integer(
+        default=0,
+        readonly=True,
+        help=(
+            "Consecutive instance_health cycles where the container was "
+            "running but Odoo did not answer on 8069. The critical "
+            "instance_unresponsive alert waits for the same hysteresis "
+            "depth as CPU and memory: a container that is up but not "
+            "listening yet is what every boot looks like from outside, "
+            "so a single failed probe is not an incident."
+        ),
+    )
 
     compose_services = fields.Char(
         string="Compose Services",

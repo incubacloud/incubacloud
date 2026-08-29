@@ -32,6 +32,11 @@ class InstanceLivenessCase(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The cron stamps on a cursor of its own so it can run at READ
+        # COMMITTED (see ``models/_concurrency``). Without test mode
+        # that cursor is a real one: its writes would commit for good
+        # and leak into the next test.
+        self.registry_enter_test_mode()
         self.settings = self.env["cloud.settings"].sudo()._get_system()
         self.settings.write({
             "metrics_enabled": True,
@@ -44,6 +49,12 @@ class InstanceLivenessCase(TransactionCase):
         })
 
     def _run(self, payload=None, exc=None):
+        # The cron stamps on a cursor of its own, so it reads what is in
+        # the database rather than what is pending in this env's cache —
+        # which is exactly what happens in production, where the cron
+        # opens a clean transaction of its own. Flush first, or the cron
+        # grades a row whose ``running`` the test only *intends* to set.
+        self.env.flush_all()
         resp = MagicMock(spec=requests.Response)
         resp.json.return_value = payload or _samples()
         resp.raise_for_status.return_value = None

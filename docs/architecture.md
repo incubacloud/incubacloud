@@ -185,7 +185,7 @@ All remote operations are modelled as `cloud.job` records and executed asynchron
 ### Reliability guarantees
 
 - **Serialization** — two advisory-lock namespaces (instance-scoped and host-scoped) plus a running-job guard at enqueue time prevent concurrent jobs on the same target. Monitoring job types (`host_metrics`, `docker_prune`, `instance_health`) are *hidden*: they skip the guard and the UI.
-- **Transient connection retry** — executors that opt in retry SSH connection failures up to 3 attempts (30 s backoff via `RetryableJobError`); only the final failure raises a critical `host_unreachable` alert.
+- **Transient connection retry** — executors that opt in (the monitoring probes) retry SSH connection failures up to 10 attempts (30 s backoff via `RetryableJobError`, ~10 min in all — sized to outlast a host's own maintenance reboot). Whether an attempt was the last is queue_job's decision, not the executor's: the critical `host_unreachable` alert is raised from the job's **terminal** `failed` state, never mid-flight, because the runner can hand a job one more attempt than its budget.
 - **Chains** — `enqueue_chain(steps)` builds an OCA DelayableChain. Payloads may reference earlier steps with `__chain_job_N__` placeholders (0-indexed), resolved to real job ids at enqueue. When a step fails, dependent jobs stuck in `wait_dependencies` are cancelled at both the `cloud.job` and `queue.job` level.
 - **Cancel** — not-yet-started jobs are cancelled through the queue; started jobs get a cooperative cancel flag that the executor polls between commands on a separate cursor.
 - **Cross-host move** — `cloud.instance.move_to_host()` chains deploy(target) → stop `odoo` only (source) → fresh backup → download → restore(target) → cutover → cleanup(source). `host_id` flips only on successful cutover; a watchdog cron recovers instances stranded by a chain that died before cutover (restarts the source, raises a `move_stuck` alert), and `rollback_move` does the same on demand.
@@ -377,6 +377,14 @@ A host serving tenant instances is reached **directly** — tenant domains resol
 
 Layers 1–3 protect the **instances**; layer 4 protects the **panel**. All of this is **core**: a partner hardening their own VPS inherits the same defaults, chosen to be safe for any host rather than tuned to our pool.
 
+### Host maintenance window (04:00 UTC)
+
+Hardening enables `unattended-upgrades` on every host it touches, and when the host has `auto_security_updates` set it also allows an automatic reboot, pinned to **`Automatic-Reboot-Time "04:00"`** (`ansible/playbooks/host_hardening.yml`). So a host that needed a kernel or `openssh-server` update disappears for a minute or two just before 04:00 UTC — sshd restarts mid-upgrade, then the box reboots — and comes back on its own. Tenants1 did this on 23 Jul, 30 Jul, 6 Aug, 9 Aug and 29 Aug 2026.
+
+This is normal maintenance, not an incident, and the monitoring is sized for it: the SSH probes retry a transient connection failure ten times about thirty seconds apart (`AbstractExecutor._connection_retry_attempts`), so ~10 minutes of unreachability pass without alerting anyone. `host_unreachable` is raised only once a probe has actually exhausted that budget and reached a terminal state — never from a mid-flight guess about which attempt was the last.
+
+When planning around it: the window is per host and only fires when an update demands a reboot, so it is not a schedule you can count on, only one you must not be surprised by. To move it, change the pin in the playbook and re-run hardening; to disable the reboot entirely, clear `auto_security_updates` on the host and patch it on your own schedule.
+
 ---
 
 ## GitHub integration
@@ -415,7 +423,7 @@ All webhook events are stored in `cloud.github.event` (immutable audit log). The
 
 ### Alerts
 
-`cloud.alert` rows target a host, instance or project (or none = global) with a machine `code`, a `warning`/`critical` level and an `active`/`dismissed` state. One active alert per (target, code): creators re-use the existing row. Health and metrics executors **auto-resolve** their alerts when the condition clears, and a job success dismisses stale `job_failed` alerts for the same type and target. Dismissed alerts are garbage-collected after 60 days (cron); active ones never expire.
+`cloud.alert` rows target a host, instance or project (or none = global) with a machine `code`, a `warning`/`critical` level and an `active`/`dismissed` state. One active alert per (target, code): creators re-use the existing row, and a partial unique index (`cloud_alert_active_target_uidx`) enforces it against two producers racing under snapshot isolation — the loser's insert is refused and treated as success. `job_failed` is keyed by job type as well and is exempt from the index; a repeat failure of the same type and target refreshes the open alert and bumps its `occurrences` instead of stacking a row per attempt. Health and metrics executors **auto-resolve** their alerts when the condition clears, and a job success dismisses stale `job_failed` alerts for the same type and target. Dismissed alerts are garbage-collected after 60 days (cron); active ones never expire.
 
 Alert codes in use: `job_failed`, `disk_critical`, `host_unreachable`, `instance_down`, `instance_unresponsive`, `instance_high_cpu`, `instance_high_memory`, per-service container-down codes, `instance_error_logs`, `pip_conflict`, `addon_conflict`, `move_stuck`, `secret_rotation_stranded:<field>`. `pip_conflict`/`addon_conflict` are *actionable*: they block re-enqueue of the affected operation and are excluded from bulk dismiss.
 
