@@ -22,6 +22,7 @@ import logging
 
 from odoo import api, fields, models
 
+from ._concurrency import read_committed_cursor
 from .cloud_metric_rule import promql_query
 
 _logger = logging.getLogger(__name__)
@@ -139,21 +140,28 @@ class CloudInstance(models.Model):
             return
 
         now = fields.Datetime.now()
-        instances = self.sudo().browse(list(seen)).exists()
-        for inst in instances:
-            running = seen[inst.id] <= _SEEN_WINDOW_SECONDS
-            vals = {"metrics_last_seen": now}
-            if inst.running != running:
-                vals["running"] = running
-                _logger.info(
-                    "[metrics] instance %s running: %s → %s",
-                    inst.name, not running, running,
-                )
-            # ``metrics_last_seen`` is stamped even when nothing changed:
-            # it is what tells the SSH health probe that liveness is
-            # already covered here, and "no change" is exactly the
-            # steady state where that matters most.
-            inst.write(vals)
+        # The stamping runs on its own READ COMMITTED cursor, opened
+        # only now that the HTTP query is done: these are the very rows
+        # the SSH health probe writes ``last_health_check`` on, and
+        # under the default snapshot isolation whichever of the two
+        # arrived second lost the row outright. See ``_concurrency``.
+        with read_committed_cursor(self.env.registry) as cr:
+            env = self.env(cr=cr)
+            instances = env["cloud.instance"].sudo().browse(list(seen)).exists()
+            for inst in instances:
+                running = seen[inst.id] <= _SEEN_WINDOW_SECONDS
+                vals = {"metrics_last_seen": now}
+                if inst.running != running:
+                    vals["running"] = running
+                    _logger.info(
+                        "[metrics] instance %s running: %s → %s",
+                        inst.name, not running, running,
+                    )
+                # ``metrics_last_seen`` is stamped even when nothing
+                # changed: it is what tells the SSH health probe that
+                # liveness is already covered here, and "no change" is
+                # exactly the steady state where that matters most.
+                inst.write(vals)
 
     @api.model
     def _metrics_liveness_window(self):

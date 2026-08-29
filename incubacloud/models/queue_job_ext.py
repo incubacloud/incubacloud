@@ -131,6 +131,13 @@ class QueueJob(models.Model):
             # real-time toast has disappeared.
             CJob = self.env['cloud.job']
             if new_state == 'failed':
+                # A monitoring probe that burned its whole retry budget
+                # against an unreachable host is the one failure that
+                # means something about the *host* rather than the job.
+                # It is raised here, on the terminal state, because
+                # that is the only place where "it gave up" is a fact
+                # rather than a prediction.
+                CJob._create_host_unreachable_alert(cjob, qjob)
                 CJob._create_job_failed_alert(
                     cjob, exc_message=qjob.exc_message,
                 )

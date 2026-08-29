@@ -7,6 +7,8 @@ Tests cover:
   - instance_id relation on cloud.instance.alert_ids
   - cascade delete behaviour
 """
+from unittest.mock import patch
+
 from odoo.tests.common import TransactionCase
 
 
@@ -241,3 +243,147 @@ class TestCloudAlertDismissAll(TransactionCase):
 
         self.assertEqual(crit.state, 'dismissed')
         self.assertEqual(warn.state, 'active')
+
+
+class TestCloudAlertDedupIndex(TransactionCase):
+    """The dedup rule is enforced by the database, not only in Python.
+
+    ``raise_alert`` searches and then creates, and Odoo cursors are
+    REPEATABLE READ: two producers firing in the same instant each read
+    a snapshot without the other's row, so both inserted. On 2026-08-29
+    the host-metrics probe and the instance-health probe raised
+    ``host_unreachable`` for the same host 142 ms apart and the panel
+    showed one incident twice. A lock cannot fix that — under snapshot
+    isolation the loser still cannot see the winner's row — so a unique
+    index decides it instead.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'Dedup Host',
+            'ip_address': '10.0.0.44',
+            'user': 'ubuntu', 'wildcard_domain': 'dedup.example.com',
+        })
+
+    def test_partial_unique_index_exists(self):
+        self.env.cr.execute(
+            "SELECT 1 FROM pg_indexes WHERE tablename = 'cloud_alert'"
+            "   AND indexname = 'cloud_alert_active_target_uidx'"
+        )
+        self.assertTrue(
+            self.env.cr.fetchone(),
+            "the active-alert dedup index must exist in the database",
+        )
+
+    def test_raise_alert_is_idempotent(self):
+        first = self.env['cloud.alert'].raise_alert(
+            'disk_critical', 'first', host=self.host,
+        )
+        second = self.env['cloud.alert'].raise_alert(
+            'disk_critical', 'second', level='critical', host=self.host,
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(first.message, 'second')
+        self.assertEqual(first.level, 'critical')
+
+    def test_duplicate_active_row_is_refused_by_the_database(self):
+        """The guarantee the Python search cannot give."""
+        from psycopg2 import errors
+        self.env['cloud.alert'].raise_alert(
+            'disk_critical', 'first', host=self.host,
+        )
+        self.env.flush_all()
+        with self.assertRaises(errors.UniqueViolation):
+            with self.env.cr.savepoint():
+                self.env['cloud.alert'].create({
+                    'code': 'disk_critical',
+                    'host_id': self.host.id,
+                    'message': 'smuggled past the search',
+                })
+                self.env.flush_all()
+
+    def test_losing_the_race_returns_empty_without_raising(self):
+        """A concurrent producer filing first is a success, not an error.
+
+        Simulated by inserting the row behind the ORM's back so the
+        search above ``create`` cannot see it — the same blind spot a
+        second transaction has under snapshot isolation.
+        """
+        self.env.cr.execute(
+            "INSERT INTO cloud_alert"
+            " (code, host_id, message, level, state, occurrences,"
+            "  create_date, write_date, create_uid, write_uid)"
+            " VALUES ('disk_critical', %s, 'winner', 'warning', 'active', 1,"
+            "         now(), now(), 1, 1)",
+            (self.host.id,),
+        )
+        self.env['cloud.alert'].invalidate_model()
+        with patch.object(
+            type(self.env['cloud.alert']), 'search', return_value=self.env['cloud.alert'],
+        ):
+            result = self.env['cloud.alert'].raise_alert(
+                'disk_critical', 'loser', host=self.host,
+            )
+        self.assertFalse(result, "the loser must report nothing, not crash")
+        self.env.cr.execute(
+            "SELECT count(*) FROM cloud_alert"
+            " WHERE code = 'disk_critical' AND host_id = %s"
+            "   AND state = 'active'",
+            (self.host.id,),
+        )
+        self.assertEqual(self.env.cr.fetchone()[0], 1)
+
+    def test_losing_the_race_notifies_nobody(self):
+        """The property that makes the index worth having.
+
+        Deduplicating the *row* but still sending the mail, the
+        Telegram message and the webhook would leave the noise exactly
+        where it was. This holds because Odoo issues the INSERT inside
+        ``create``, so the constraint fires before the dispatch below
+        it — worth pinning, since a future batching change upstream
+        would break it silently.
+        """
+        self.env['cloud.alert'].raise_alert(
+            'disk_critical', 'first', host=self.host,
+        )
+        self.env.flush_all()
+        with patch.object(
+            type(self.env['cloud.alert']), '_dispatch_notifications',
+        ) as dispatch, patch.object(
+            type(self.env['cloud.alert']), 'search',
+            return_value=self.env['cloud.alert'],
+        ):
+            self.env['cloud.alert'].raise_alert(
+                'disk_critical', 'loser', host=self.host,
+            )
+        dispatch.assert_not_called()
+
+    def test_job_failed_is_exempt_from_the_index(self):
+        """Two different jobs failing on one host are two incidents."""
+        for i in range(2):
+            self.env['cloud.alert'].create({
+                'code': 'job_failed',
+                'host_id': self.host.id,
+                'message': f'job {i} failed',
+            })
+        self.env.flush_all()
+        found = self.env['cloud.alert'].search([
+            ('code', '=', 'job_failed'),
+            ('host_id', '=', self.host.id),
+            ('state', '=', 'active'),
+        ])
+        self.assertEqual(len(found), 2)
+
+    def test_targetless_alerts_are_exempt(self):
+        """Global platform events have no natural dedup key."""
+        for i in range(2):
+            self.env['cloud.alert'].create({
+                'code': 'oidc_code_reuse',
+                'message': f'event {i}',
+            })
+        self.env.flush_all()
+        found = self.env['cloud.alert'].search([
+            ('code', '=', 'oidc_code_reuse'), ('state', '=', 'active'),
+        ])
+        self.assertEqual(len(found), 2)

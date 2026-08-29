@@ -5,6 +5,8 @@ import logging
 import urllib.request
 from datetime import timedelta
 
+import psycopg2
+
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
 from odoo.tools import config as odoo_config
@@ -73,6 +75,18 @@ class CloudAlert(models.Model):
         default="active",
         required=True,
     )
+    occurrences = fields.Integer(
+        default=1,
+        readonly=True,
+        help=(
+            "How many times this alert has been raised while it stayed "
+            "active. Only ``job_failed`` counts today: a cron job that "
+            "keeps failing every 30 minutes is one incident, not one "
+            "per attempt, and stacking a row (and a notification) per "
+            "attempt is how a single broken thing buries every other "
+            "alert in the panel."
+        ),
+    )
     create_date = fields.Datetime(readonly=True)
 
     @api.model_create_multi
@@ -83,6 +97,63 @@ class CloudAlert(models.Model):
         ):
             record._dispatch_notifications()
         return records
+
+    def init(self):
+        """Enforce the dedup rule in the database, not just in Python.
+
+        ``raise_alert`` was a search-then-create with nothing holding
+        the gap open, and Odoo cursors run at REPEATABLE READ: two
+        producers that fire in the same instant each read a snapshot
+        where the other's row does not exist, so both insert. That is
+        not theoretical — on 2026-08-29 the host-metrics probe and the
+        instance-health probe both raised ``host_unreachable`` for the
+        same host 142 ms apart, and the panel showed the same incident
+        twice. A lock would not have helped: under snapshot isolation
+        the loser still cannot see the winner's row. Only a unique
+        index can decide this, so it decides it here.
+
+        Two carve-outs, both deliberate:
+
+        * ``job_failed`` is keyed by *job type* as well as target (see
+          ``cloud.job._job_failed_domain``), so several may legitimately
+          be active on one host at once — a failing backup and a failing
+          rebuild are two incidents, not one.
+        * targetless rows (global platform events) are left alone: they
+          are rare, hand-written, and have no natural dedup key.
+
+        The DELETE is a one-shot dedupe keeping the newest row per key
+        — newest because its message is the freshest description of a
+        situation that is still open. It is idempotent: on later
+        upgrades there is nothing left to collapse.
+        """
+        cr = self.env.cr
+        cr.execute(
+            """
+            UPDATE cloud_alert a
+               SET state = 'dismissed'
+              FROM cloud_alert b
+             WHERE a.state = 'active'
+               AND b.state = 'active'
+               AND a.code = b.code
+               AND a.code <> 'job_failed'
+               AND COALESCE(a.host_id, 0) = COALESCE(b.host_id, 0)
+               AND COALESCE(a.instance_id, 0) = COALESCE(b.instance_id, 0)
+               AND (a.host_id IS NOT NULL OR a.instance_id IS NOT NULL)
+               AND a.id < b.id
+            """
+        )
+        cr.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                cloud_alert_active_target_uidx
+            ON cloud_alert (
+                code, COALESCE(host_id, 0), COALESCE(instance_id, 0)
+            )
+            WHERE state = 'active'
+              AND code <> 'job_failed'
+              AND (host_id IS NOT NULL OR instance_id IS NOT NULL)
+            """
+        )
 
     # ===============================
     # RAISE / RESOLVE (model-level API)
@@ -113,12 +184,21 @@ class CloudAlert(models.Model):
 
     @api.model
     def raise_alert(self, code, message, level="warning",
-                    host=None, instance=None, job=None):
+                    host=None, instance=None, job=None, payload=None):
         """Create or refresh the active alert for (code, target).
 
         Idempotent: a repeated call updates the message/level of the
         existing alert instead of creating a second one, so a cron that
         re-evaluates every few minutes does not flood the operator.
+
+        The insert runs inside a savepoint because the search above
+        cannot see a row another transaction has just written (Odoo
+        cursors are REPEATABLE READ). When that happens the unique
+        index from ``init`` rejects the second insert, and losing that
+        race is a *success*: the alert exists, raised by the producer
+        that got there first. The savepoint is what keeps the rejection
+        from poisoning the caller's transaction — without it the whole
+        job would roll back over an alert that was already filed.
 
         :param str code: machine-readable dedup identifier
         :param str message: human-readable text shown in the panel
@@ -126,7 +206,9 @@ class CloudAlert(models.Model):
         :param host: ``cloud.host`` this alert is about, if any
         :param instance: ``cloud.instance`` this alert is about, if any
         :param job: ``cloud.job`` that produced it, if any
-        :returns: the active ``cloud.alert`` record
+        :param payload: structured detail stored on ``payload``, if any
+        :returns: the active ``cloud.alert`` record, or an empty
+            recordset when a concurrent producer filed it first
         """
         existing = self.search(
             self._dedup_domain(code, host=host, instance=instance), limit=1,
@@ -134,15 +216,27 @@ class CloudAlert(models.Model):
         vals = {"message": message, "level": level}
         if job:
             vals["job_id"] = job.id
+        if payload is not None:
+            vals["payload"] = payload
         if existing:
             existing.write(vals)
             return existing
-        return self.create({
-            "code": code,
-            "host_id": host.id if host else False,
-            "instance_id": instance.id if instance else False,
-            **vals,
-        })
+        try:
+            with self.env.cr.savepoint():
+                return self.create({
+                    "code": code,
+                    "host_id": host.id if host else False,
+                    "instance_id": instance.id if instance else False,
+                    **vals,
+                })
+        except psycopg2.errors.UniqueViolation:
+            _logger.info(
+                "cloud.alert: %s for host=%s instance=%s was raised "
+                "concurrently; keeping the first one",
+                code, host.id if host else None,
+                instance.id if instance else None,
+            )
+            return self.browse()
 
     @api.model
     def resolve_alert(self, code, host=None, instance=None):

@@ -7,8 +7,11 @@ import re
 import urllib.request
 from datetime import timedelta
 
+from psycopg2 import OperationalError
+
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessError, UserError
+from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.tools import config as odoo_config
 
 from odoo.addons.queue_job.delay import chain as delay_chain
@@ -18,6 +21,7 @@ from ..github.http_utils import safe_urlopen
 from ..net.outbound import post_json
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .abstract_executor import (
+    CONNECTION_RETRY_MARKER,
     CONNECTION_RETRY_SECONDS,
     is_transient_connection_error,
 )
@@ -558,29 +562,47 @@ class CloudJob(models.Model):
             # queue_job applies its retry semantics; wrapping it as
             # JobError would mark the job permanently failed instead.
             raise
+        except OperationalError as e:
+            # Serialisation failures belong to queue_job, which already
+            # postpones and retries them (``_runjob`` matches the same
+            # PG_CONCURRENCY_ERRORS_TO_RETRY list). Wrapping one in
+            # JobError turned a routine lost race — this probe and the
+            # metrics cron stamping the same ``cloud_instance`` row —
+            # into a permanently failed job plus a queue_job traceback,
+            # which the log scraper then reported straight back to us
+            # as an ``instance_error_logs`` alert. Let it through.
+            if e.pgcode in PG_CONCURRENCY_ERRORS_TO_RETRY:
+                raise
+            raise JobError(str(e)) from e
         except Exception as e:
             # Transient connection failures on opt-in executors (the host
             # monitoring probes) are retried instead of failing on the
-            # first blip. queue_job stored the pre-increment retry count in
-            # set_started, so inside execute() ``queue_job_id.retry`` is the
-            # number of *prior* attempts → this attempt is ``retry + 1``.
+            # first blip.
+            #
+            # Whether this attempt was the *last* one is queue_job's
+            # call, not ours: ``Job.perform`` increments the counter and
+            # turns the final RetryableJobError into a FailedJobError
+            # by itself. We used to decide it here, and got it wrong —
+            # the runner can hand a job one more attempt than the
+            # budget, so the alert fired on a job that then connected
+            # and finished ``done``. Every ``host_unreachable`` on
+            # 2026-08-29 was one of those. The alert now hangs off the
+            # terminal state instead (see ``queue_job_ext``).
             if getattr(
                 ssh_executor, "_retry_on_connection_loss", False
             ) and is_transient_connection_error(e):
                 qj = self.queue_job_id
                 attempt = (qj.retry or 0) + 1
                 max_retries = qj.max_retries or 0
-                if not max_retries or attempt < max_retries:
-                    # Not the last attempt — reschedule quietly. A single
-                    # momentary blip must never notify anyone.
-                    raise RetryableJobError(
-                        f"Transient connection error on attempt {attempt}"
-                        f"{f'/{max_retries}' if max_retries else ''}: {e}",
-                        seconds=CONNECTION_RETRY_SECONDS,
-                    ) from e
-                # Last attempt still couldn't connect → the host is
-                # genuinely unreachable. Notify, then fail permanently.
-                ssh_executor.notify_host_unreachable(e, attempt)
+                # The marker first, then the exception *type*: ``str()``
+                # of a bare TimeoutError is empty, and this text is what
+                # the terminal-state alert will show as the last error.
+                raise RetryableJobError(
+                    f"{CONNECTION_RETRY_MARKER} {attempt}"
+                    f"{f'/{max_retries}' if max_retries else ''}: "
+                    f"{type(e).__name__}: {e}",
+                    seconds=CONNECTION_RETRY_SECONDS,
+                ) from e
             raise JobError(str(e)) from e
         finally:
             # After a long-running SSH job, the ORM environment used
@@ -1017,21 +1039,81 @@ class CloudJob(models.Model):
         if cjob.host_id:
             vals["host_id"] = cjob.host_id.id
 
-        return self.env["cloud.alert"].sudo().create(vals)
+        # One incident, not one row per attempt. A failing cron job
+        # re-enqueues on its own schedule, and every attempt used to
+        # stack another alert *and* another mail/Telegram/webhook: on
+        # 2026-08-24 a broken metrics ACL sync produced fourteen of
+        # them in six hours, all dismissed by the same later success.
+        # Refresh the open one instead, so the panel shows the latest
+        # failure of a problem that is still open and the count says
+        # how long it has been going.
+        Alert = self.env["cloud.alert"].sudo()
+        existing = Alert.search(self._job_failed_domain(cjob), limit=1)
+        if existing:
+            count = existing.occurrences + 1
+            since = fields.Datetime.to_string(existing.create_date)
+            vals["occurrences"] = count
+            vals["message"] = f"{msg} (×{count} since {since} UTC)"
+            existing.write(vals)
+            return existing
+        return Alert.create(vals)
 
     @api.model
-    def _dismiss_job_failed_alerts(self, cjob):
-        """Mark stale active ``job_failed`` alerts as dismissed when a
-        job reaches ``done``.
+    def _create_host_unreachable_alert(self, cjob, qjob):
+        """Raise ``host_unreachable`` when a probe used up its retries.
 
-        ``retry_job`` always creates a *fresh* cloud.job (linked via
-        ``retry_of_id``), so matching only ``job_id == cjob.id`` would
-        leave the original failure's alert active forever. Instead we
-        dismiss every active ``job_failed`` alert whose originating job
-        has the same type and target: if a rebuild now succeeds on this
-        instance, earlier rebuild failures are resolved history. Keeps
-        the Alerts panel tidy — nobody wants to see fixed failures
-        stacked.
+        Hangs off the *terminal state*, deliberately. ``execute`` used
+        to decide "this was the last attempt" from the retry counter
+        and alert on the spot, but the runner can hand a job one more
+        attempt than the budget — so every alert raised that way was
+        followed, seconds later, by the same job connecting and
+        finishing ``done``. Fired that way on 2026-08-29 while the host
+        was rebooting for security updates: three critical alerts, no
+        incident. Here the job really has given up.
+
+        Only opt-in executors qualify, and only when the failure is the
+        one we ourselves marked as a connection retry — a probe that
+        failed for any other reason is not evidence about the host.
+        """
+        executor_cls = executor_registry.get(cjob.job_type_id.code)
+        if not getattr(executor_cls, "_retry_on_connection_loss", False):
+            return None
+        message = qjob.exc_message or ""
+        if CONNECTION_RETRY_MARKER not in message:
+            return None
+        if not cjob.host_id:
+            return None
+        attempts = qjob.retry or qjob.max_retries or 0
+        # queue_job wraps our text as "Max. retries (N) reached: <marker>
+        # <attempt>/<budget>: <type>: <detail>". The operator wants the
+        # part after the attempt counter — the exception itself.
+        tail = message.partition(CONNECTION_RETRY_MARKER)[2]
+        last_error = tail.partition(": ")[2].strip() or tail.strip()
+        return (
+            self.env["cloud.alert"]
+            .sudo()
+            .raise_alert(
+                "host_unreachable",
+                f"Host unreachable: {attempts} consecutive connection "
+                f"attempts failed. Last error: {last_error}",
+                level="critical",
+                host=cjob.host_id,
+                job=cjob,
+            )
+        )
+
+    @api.model
+    def _job_failed_domain(self, cjob):
+        """Return the domain identifying *cjob*'s open ``job_failed`` alert.
+
+        Identity is (job type, target) rather than the job id, because
+        ``retry_job`` creates a fresh ``cloud.job`` for every retry:
+        keyed by id, a retry would file a second alert for the same
+        incident and the original would never be dismissed.
+
+        Shared with ``_dismiss_job_failed_alerts`` on purpose — raising
+        and clearing must agree on what "the same incident" means, and
+        two copies of that rule is precisely how they stop agreeing.
         """
         domain = [
             ("code", "=", "job_failed"),
@@ -1047,7 +1129,25 @@ class CloudJob(models.Model):
                 ("host_id", "=", cjob.host_id.id),
                 ("instance_id", "=", False),
             ]
-        stale = self.env["cloud.alert"].sudo().search(domain)
+        return domain
+
+    @api.model
+    def _dismiss_job_failed_alerts(self, cjob):
+        """Mark stale active ``job_failed`` alerts as dismissed when a
+        job reaches ``done``.
+
+        ``retry_job`` always creates a *fresh* cloud.job (linked via
+        ``retry_of_id``), so matching only ``job_id == cjob.id`` would
+        leave the original failure's alert active forever. Instead we
+        dismiss every active ``job_failed`` alert whose originating job
+        has the same type and target: if a rebuild now succeeds on this
+        instance, earlier rebuild failures are resolved history. Keeps
+        the Alerts panel tidy — nobody wants to see fixed failures
+        stacked.
+        """
+        stale = self.env["cloud.alert"].sudo().search(
+            self._job_failed_domain(cjob),
+        )
         if stale:
             stale.write({"state": "dismissed"})
         return stale

@@ -580,7 +580,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             inst.write({
                 'cpu_over_threshold_streak': 0,
                 'mem_over_threshold_streak': 0,
+                'http_fail_streak': 0,
             })
+            self._resolve_inst_alert('instance_unresponsive')
             return
 
         # The log archive is about files on the host, not about the
@@ -610,11 +612,19 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 vals = {
                     'cpu_over_threshold_streak': 0,
                     'mem_over_threshold_streak': 0,
+                    'http_fail_streak': 0,
                 }
                 if owns_running:
                     vals['running'] = False
                 inst.write(vals)
                 self._resolve_inst_alert('instance_down')
+                # A stopped container cannot be "not answering on 8069":
+                # the HTTP track only means anything while odoo is up.
+                # Without this the probe that caught a tenant mid-wake
+                # left a *critical* alert standing for as long as the
+                # tenant then slept — measured at ten hours on a Free
+                # tenant that was behaving exactly as designed.
+                self._resolve_inst_alert('instance_unresponsive')
                 issues = []
                 self._check_other_services(inst, issues)
                 inst.write({'status': 'warning' if issues else 'ok'})
@@ -624,10 +634,16 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 'status': 'error',
                 'cpu_over_threshold_streak': 0,
                 'mem_over_threshold_streak': 0,
+                'http_fail_streak': 0,
             }
             if owns_running:
                 vals['running'] = False
             inst.write(vals)
+            # ``instance_down`` is the incident here, and it is already
+            # critical. Leaving ``instance_unresponsive`` standing too
+            # would report one outage twice, with the weaker of the two
+            # descriptions surviving the longest.
+            self._resolve_inst_alert('instance_unresponsive')
             if odoo_present:
                 message = f"Container 'odoo' is not running on '{inst.name}'."
                 log = f"✗ Container down — '{inst.name}' is not running."
@@ -651,16 +667,31 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         issues = []
 
-        # HTTP health
+        # HTTP health — with hysteresis, exactly like CPU and memory
+        # below. A container that is up but not yet listening is what
+        # every single boot looks like from out here (curl exits 7 or
+        # 56), and Free tenants boot several times a day: Sablier wakes
+        # them, and a core release rebuilds them. Alerting on the first
+        # failed probe made "Odoo is starting" indistinguishable from
+        # "Odoo is down", at critical severity.
         if not self._http_ok:
+            new_http_streak = inst.http_fail_streak + 1
+            inst.write({'http_fail_streak': new_http_streak})
             issues.append('unresponsive')
-            self._inst_alert(
-                'instance_unresponsive',
-                f"Odoo HTTP health check failed on '{inst.name}' (port 8069 not responding).",
-                level='critical',
+            if new_http_streak >= _STREAK_REQUIRED:
+                self._inst_alert(
+                    'instance_unresponsive',
+                    f"Odoo HTTP health check failed on '{inst.name}' "
+                    f"for {new_http_streak} consecutive checks "
+                    f"(port 8069 not responding).",
+                    level='critical',
+                )
+            self._sys(
+                f"✗ HTTP health check failed — Odoo not responding "
+                f"(streak {new_http_streak}/{_STREAK_REQUIRED})."
             )
-            self._sys("✗ HTTP health check failed — Odoo not responding.")
         else:
+            inst.write({'http_fail_streak': 0})
             self._resolve_inst_alert('instance_unresponsive')
 
         # Memory — with hysteresis
@@ -788,36 +819,37 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     # ── Instance-scoped alert helpers ─────────────────────────────────────
 
     def _inst_alert(self, code, message, level='warning', payload=None):
+        """Raise (or refresh) the instance-scoped alert for *code*.
+
+        Delegates to ``cloud.alert.raise_alert`` rather than repeating
+        the dedup rule: this used to be a second search-then-create,
+        which is exactly how two copies of one recipe drift apart — and
+        this copy was the one missing the unique-index savepoint. The
+        private cursor stays, for the same reason ``_alert`` has one:
+        an alert about a failure must survive the rollback of the
+        transaction that failed.
+        """
         inst = self._inst()
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            Alert = env['cloud.alert']
-            existing = Alert.search([
-                ('instance_id', '=', inst.id),
-                ('code', '=', code),
-                ('state', '=', 'active'),
-            ], limit=1)
-            vals = {
-                'message': message,
-                'level': level,
-                'job_id': self.job.id,
-                'payload': payload,
-            }
-            if existing:
-                existing.write(vals)
-            else:
-                Alert.create({
-                    'instance_id': inst.id,
-                    'code': code,
-                    **vals,
-                })
+            env['cloud.alert'].raise_alert(
+                code, message, level=level,
+                instance=env['cloud.instance'].browse(inst.id),
+                job=env['cloud.job'].browse(self.job.id),
+                payload=payload,
+            )
 
     def _resolve_inst_alert(self, code):
+        """Dismiss the active instance-scoped alert for *code*.
+
+        Goes through ``resolve_alert`` so the closure reaches the
+        on-call channels too: a hand-rolled ``write`` dismissed the row
+        silently, leaving every incident that had toasted Telegram
+        looking permanently open there.
+        """
         inst = self._inst()
         with self.job.env.registry.cursor() as cr:
             env = self.job.env(cr=cr)
-            env['cloud.alert'].search([
-                ('instance_id', '=', inst.id),
-                ('code', '=', code),
-                ('state', '=', 'active'),
-            ]).write({'state': 'dismissed'})
+            env['cloud.alert'].resolve_alert(
+                code, instance=env['cloud.instance'].browse(inst.id),
+            )

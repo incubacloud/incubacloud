@@ -75,7 +75,7 @@ class TestHealthProbeClassification(TransactionCase):
                 states[svc] = state
         return "\n".join(f"{svc}\t{state}" for svc, state in states.items())
 
-    def _probe(self, executor_cls, container_state):
+    def _probe(self, executor_cls, container_state, http_exit=1):
         job = self.env["cloud.job"].create({
             "name": "Health",
             "host_id": self.host.id,
@@ -87,7 +87,7 @@ class TestHealthProbeClassification(TransactionCase):
         results = {
             "container_state": {"stdout": container_state},
             "cpu_mem_snapshot": {"stdout": "0.0\t0.0"},
-            "http_health": {"stdout": "exit:1"},
+            "http_health": {"stdout": f"exit:{http_exit}"},
             "error_lines": {"stdout": ""},
         }
         executor.parse_results(results)
@@ -147,3 +147,144 @@ class TestHealthProbeClassification(TransactionCase):
         self.assertTrue(self._down_alert())
         self._probe(_SleepAwareProbe, self._states(odoo="exited"))
         self.assertFalse(self._down_alert())
+
+
+class TestUnresponsiveHysteresis(TransactionCase):
+    """``instance_unresponsive`` needs two failures, and dies with the container.
+
+    A running container whose Odoo is not listening yet is what every
+    single boot looks like from the probe's side (``curl`` exits 7 or
+    56). Free tenants boot several times a day — Sablier wakes them, a
+    core release rebuilds them — so alerting on the first failed probe,
+    at *critical*, made "starting" indistinguishable from "down".
+
+    The second half matters more. The alert used to survive the
+    instance going back to sleep, because the sleep branch returned
+    early after resolving only ``instance_down``. A tenant caught
+    mid-wake and then slept for the night kept a critical alert open
+    the whole time: ten hours and forty minutes, measured on a Free
+    tenant that behaved exactly as designed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.project = self.env["cloud.project"].create({"name": "Hyst Proj"})
+        self.host = self.env["cloud.host"].create({
+            "name": "hyst-host",
+            "ip_address": "192.0.2.64",
+            "user": "ubuntu",
+            "wildcard_domain": "hyst.example.com",
+        })
+        self.instance = self.env["cloud.instance"].create({
+            "name": "hystinst",
+            "project_id": self.project.id,
+            "environment": "production",
+            "host_id": self.host.id,
+        })
+        self.job_type = self.env["cloud.job.type"].search(
+            [("code", "=", "instance_health")], limit=1,
+        )
+
+    def _states(self, **overrides):
+        states = dict.fromkeys(self.instance.expected_services(), "running")
+        for svc, state in overrides.items():
+            if state is None:
+                states.pop(svc, None)
+            else:
+                states[svc] = state
+        return "\n".join(f"{svc}\t{state}" for svc, state in states.items())
+
+    def _probe(self, executor_cls, container_state, http_exit):
+        job = self.env["cloud.job"].create({
+            "name": "Health",
+            "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.job_type.id,
+        })
+        executor = executor_cls(job, self.host)
+        executor._skipped = False
+        results = {
+            "container_state": {"stdout": container_state},
+            "cpu_mem_snapshot": {"stdout": "0.0\t0.0"},
+            "http_health": {"stdout": f"exit:{http_exit}"},
+            "error_lines": {"stdout": ""},
+        }
+        executor.parse_results(results)
+        asyncio.run(executor.on_success(results))
+        return executor
+
+    def _alert(self):
+        return self.env["cloud.alert"].search([
+            ("instance_id", "=", self.instance.id),
+            ("code", "=", "instance_unresponsive"),
+            ("state", "=", "active"),
+        ])
+
+    def test_one_failed_probe_does_not_alert(self):
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self.assertFalse(self._alert())
+        self.assertEqual(self.instance.http_fail_streak, 1)
+        # Still visible in the panel — just not worth waking anyone.
+        self.assertEqual(self.instance.status, "error")
+
+    def test_second_consecutive_failure_alerts(self):
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=56)
+        alert = self._alert()
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("2 consecutive", alert.message)
+        self.assertEqual(self.instance.http_fail_streak, 2)
+
+    def test_success_resolves_and_resets_the_streak(self):
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self.assertTrue(self._alert())
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=0)
+        self.assertFalse(self._alert())
+        self.assertEqual(self.instance.http_fail_streak, 0)
+
+    def test_going_to_sleep_resolves_an_open_alert(self):
+        """The ten-hour critical. A stopped container is not unresponsive."""
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self.assertTrue(self._alert())
+        self._probe(
+            _SleepAwareProbe, self._states(odoo="exited"), http_exit=1,
+        )
+        self.assertFalse(self._alert())
+        self.assertEqual(self.instance.http_fail_streak, 0)
+        self.assertEqual(self.instance.status, "ok")
+
+    def test_container_down_resolves_it_too(self):
+        """``instance_down`` owns that outage; reporting it twice helps nobody."""
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        self.assertTrue(self._alert())
+        self._probe(
+            InstanceHealthExecutor, self._states(odoo="exited"), http_exit=1,
+        )
+        self.assertFalse(self._alert())
+        down = self.env["cloud.alert"].search([
+            ("instance_id", "=", self.instance.id),
+            ("code", "=", "instance_down"),
+            ("state", "=", "active"),
+        ])
+        self.assertEqual(len(down), 1)
+
+    def test_alert_carries_the_shared_dedup_rule(self):
+        """``_inst_alert`` must not re-implement dedup: one row, refreshed.
+
+        It used to be a second search-then-create, and the copy that
+        drifted was this one — it never got the unique-index savepoint
+        the model-level rule has.
+        """
+        for _ in range(4):
+            self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
+        alerts = self.env["cloud.alert"].search([
+            ("instance_id", "=", self.instance.id),
+            ("code", "=", "instance_unresponsive"),
+        ])
+        self.assertEqual(len(alerts), 1)
+        self.assertIn("4 consecutive", alerts.message)

@@ -12,13 +12,22 @@ import asyncssh
 
 from odoo.tools import file_path
 
-from .registry import executor_registry
+from ._concurrency import read_committed_cursor
 from ._repo_requirements import has_pip_conflicts
+from .registry import executor_registry
 
 # Delay before queue_job re-runs a job that failed to connect to its host.
 # Short enough that a momentary blip recovers quickly, long enough that we
 # don't hammer a host that is briefly rebooting.
 CONNECTION_RETRY_SECONDS = 30
+
+#: Marker embedded in the ``RetryableJobError`` message raised for a
+#: transient connection failure. queue_job keeps the text when it gives
+#: up (``FailedJobError("Max. retries (N) reached: <original>")``), so
+#: this is how the terminal-state hook recognises "the host stayed
+#: unreachable for the whole retry budget" without having to guess from
+#: the exception class alone. Ours, so safe to match on.
+CONNECTION_RETRY_MARKER = "Transient connection error on attempt"
 
 # Errnos that mark a transient, retryable connection problem (host
 # momentarily unreachable / refused / reset / rebooting), as opposed to a
@@ -179,12 +188,23 @@ class AbstractExecutor(ABC):
     # (see ``is_transient_connection_error``) does not fail the job on the
     # first try: ``cloud.job.execute`` raises ``RetryableJobError`` so
     # queue_job reschedules it, up to ``_connection_retry_attempts`` total
-    # attempts. Only when the *last* attempt still cannot connect is a
-    # ``host_unreachable`` alert raised. This keeps momentary blips from
-    # spamming notifications while still surfacing a genuinely down host.
-    # Any non-connection error still fails permanently on the first try.
+    # attempts. The ``host_unreachable`` alert is raised only once the
+    # job has actually given up — see
+    # ``cloud.job._create_host_unreachable_alert``. This keeps momentary
+    # blips from spamming notifications while still surfacing a genuinely
+    # down host. Any non-connection error still fails permanently on the
+    # first try.
+    #
+    # Ten attempts, ~30 s apart, is a deliberate ~10 minute tolerance.
+    # Three (~90 s) was shorter than the routine maintenance of the very
+    # hosts being probed: unattended-upgrades reboots them inside its
+    # 04:00 window, which took Tenants1 out for two minutes, and a
+    # network blip on the same day took it out for four. Both paged.
+    # A host that is genuinely gone is still critical ten minutes later,
+    # and ``metrics_host_absent`` covers the same ground from the other
+    # side in the meantime.
     _retry_on_connection_loss = False
-    _connection_retry_attempts = 3
+    _connection_retry_attempts = 10
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -416,7 +436,11 @@ class AbstractExecutor(ABC):
             "[_dispatch_outcome] %s START job_id=%s errors=%s",
             hook.__name__, self.job.id, errors,
         )
-        with self.job.env.registry.cursor() as cr:
+        # READ COMMITTED: this is where ``on_success`` stamps
+        # ``cloud_instance``, the same rows the metrics cron stamps on
+        # its own schedule. See ``_concurrency`` for why losing that
+        # race is worse than waiting for it.
+        with read_committed_cursor(self.job.env.registry) as cr:
             _orig_job, _orig_env = self.job, self.env
             self.job = self.job.env(cr=cr)['cloud.job'].browse(self.job.id)
             self.env = self.job.env
@@ -610,25 +634,6 @@ class AbstractExecutor(ABC):
                 host=env['cloud.host'].browse(self.job.host_id.id),
                 job=env['cloud.job'].browse(self.job.id),
             )
-
-    def notify_host_unreachable(self, exc, attempts):
-        """Raise a host-scoped alert after connection retries are exhausted.
-
-        Called by ``cloud.job.execute`` on the final failed attempt of a
-        connection-retrying job. Creates (or refreshes) a single
-        ``host_unreachable`` alert for this job's host — deduped by
-        ``_alert`` — which broadcasts to the operator overview. A later
-        successful probe clears it via ``_resolve_alert``.
-
-        :param exc: the connection exception from the last attempt
-        :param attempts: how many attempts were made before giving up
-        """
-        self._alert(
-            'host_unreachable',
-            f"Host unreachable: {attempts} consecutive connection attempts "
-            f"failed. Last error: {type(exc).__name__}: {exc}",
-            level='critical',
-        )
 
     def _resolve_alert(self, code):
         """Dismiss any active alert with the given code for this job's host."""

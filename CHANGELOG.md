@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.95] — 2026-08-30
+
+### Fixed
+
+- **One broken thing produced one alert per attempt.** `job_failed` alerts were created outright, skipping the dedup rule every other producer goes through, so a cron job that kept failing stacked a row *and* a mail/Telegram/webhook per attempt — fourteen identical criticals in six and a half hours on 2026-08-24, burying everything else in the panel. A repeat now refreshes the open alert and counts on it (`occurrences`), keyed by job type and target through a domain shared with the dismissal path so raising and clearing cannot drift apart. Failures of *different* job types on one host stay separate incidents
+- **The same alert could be filed twice.** `raise_alert` searched and then created, and Odoo cursors are REPEATABLE READ: two producers firing together each read a snapshot without the other's row and both inserted — the host-metrics and instance-health probes did exactly that 142 ms apart on 2026-08-29. A partial unique index on `(code, host, instance) WHERE state='active'` now decides it, since a lock cannot: under snapshot isolation the loser still cannot see the winner's row. Losing that race is treated as success, inside a savepoint, so the job that lost it does not roll back over an alert that already exists
+- The health probe's `_inst_alert`/`_resolve_inst_alert` were a second copy of that rule and the one that had drifted; both now delegate to the model. Resolutions of instance-scoped alerts consequently reach Telegram and webhooks too, which the hand-rolled dismissal never did
+- **`instance_unresponsive` fired on instances that were merely starting, and outlived the container.** A running container whose Odoo is not listening yet is what every boot looks like from outside (`curl` exits 7 or 56), and Free tenants boot several times a day. It now needs the same two consecutive failures CPU and memory already required. It is also resolved on every branch where the container is not running — asleep, down, missing or skipped — because a stopped container cannot be failing to answer: an alert raised just before a tenant went back to sleep used to stay critical for as long as the tenant slept, measured at ten hours and forty minutes
+- **`host_unreachable` fired on jobs that then succeeded.** `execute` judged from the retry counter which attempt was the last and alerted there, but the runner can hand a job one more attempt than the budget — so every such alert on 2026-08-29 was followed by the same job connecting and finishing `done`. Deciding when to stop retrying is now queue_job's alone; the alert hangs off the terminal state, where "it gave up" is a fact
+- **A lost row race became a failed job and an alert.** The SSH probe stamps `last_health_check` on `cloud_instance` while the metrics cron stamps `metrics_last_seen` on the same rows, and under snapshot isolation the second one was aborted outright even though the columns are disjoint. Both writers now run on their own READ COMMITTED cursor — the liveness cron's stamp, and the private cursor every executor's `on_success`/`on_failure` already used — so the loser waits for the row instead of losing it. The same hazard could have failed a deploy *after* it had succeeded, if the cron stamped the row while the deploy's outcome hook was open. Retrying would not have been enough: PostgreSQL's error reaches Odoo's SQL layer, which logs `bad query` at ERROR before any Python can catch it, and the tenant log scraper reported those lines straight back as an `instance_error_logs` alert. Serialisation failures that still escape are handed to queue_job, which already retries them, instead of being wrapped as permanent failures
+
+### Changed
+
+- Connection-retry budget for the monitoring probes raised from 3 attempts to 10 (~90 s to ~10 min). Three was shorter than the routine maintenance of the hosts being probed: `unattended-upgrades` reboots them inside its 04:00 window, which took Tenants1 out for two minutes, and a network blip on the same day took it out for four — both paged. A host that is genuinely gone is still critical ten minutes later, and `metrics_host_absent` covers the same ground meanwhile
+- `docs/architecture.md` documents the 04:00 UTC host maintenance window and how the monitoring is sized around it
+
 ## [1.0.94] — 2026-08-28
 
 ### Fixed
