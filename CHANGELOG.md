@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.96] — 2026-08-30
+
+### Fixed
+
+- **A test could leave the process decrypting with the wrong key.** `test_password_utils` swaps `INCUBACLOUD_SECRET_KEY` for a throwaway one inside `patch.dict`, which restores the environment variable on exit but not the Fernet cached in the module global. Every later reader in that process then decrypted real ciphertext with a key that never wrote it, and the symptom — a CRITICAL naming a production row as unreadable — points at data corruption that is not there. The cached instance is now cleared after each of those tests, so the next reader re-initialises from the real environment; a test exercises the guarantee through `doCleanups` rather than assuming it
+
 ## [1.0.95] — 2026-08-30
 
 ### Fixed
