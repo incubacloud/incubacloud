@@ -59,6 +59,16 @@ class TestEncryptDecrypt(BaseCase):
     def setUp(self):
         # Reset the lazy-loaded Fernet instance before every test
         pw_mod._fernet = None
+        # The reset above is not enough on its own. ``patch.dict``
+        # restores the environment variable when the block exits, but
+        # the Fernet built from the throwaway key stays cached in the
+        # module global — so every later reader in the same process
+        # decrypts real ciphertext with a key that never wrote it. The
+        # symptom is a CRITICAL naming a production row, which sends
+        # you looking for corruption that is not there. Cost half an
+        # investigation on 2026-08-29. Clearing it on the way out makes
+        # the next reader re-initialise from the real environment.
+        self.addCleanup(setattr, pw_mod, '_fernet', None)
 
     def _fresh_key(self):
         from cryptography.fernet import Fernet
@@ -162,10 +172,43 @@ class TestMultiFernetRotation(BaseCase):
 
     def setUp(self):
         pw_mod._fernet = None
+        # The reset above is not enough on its own. ``patch.dict``
+        # restores the environment variable when the block exits, but
+        # the Fernet built from the throwaway key stays cached in the
+        # module global — so every later reader in the same process
+        # decrypts real ciphertext with a key that never wrote it. The
+        # symptom is a CRITICAL naming a production row, which sends
+        # you looking for corruption that is not there. Cost half an
+        # investigation on 2026-08-29. Clearing it on the way out makes
+        # the next reader re-initialise from the real environment.
+        self.addCleanup(setattr, pw_mod, '_fernet', None)
 
     def _fresh_key(self):
         from cryptography.fernet import Fernet
         return Fernet.generate_key().decode()
+
+    def test_a_throwaway_key_never_outlives_its_test(self):
+        """The leak this file used to have, pinned.
+
+        Exercised through ``doCleanups`` — the same call the runner
+        makes after every test method here — so the guarantee is
+        asserted rather than assumed. Without the cleanup registered in
+        ``setUp`` the module global would still be holding the
+        throwaway key when the next test starts.
+        """
+        with patch.dict(
+            os.environ, {"INCUBACLOUD_SECRET_KEY": self._fresh_key()},
+        ):
+            pw_mod._fernet = None
+            pw_mod.encrypt_value("throwaway")
+            self.assertIsNotNone(
+                pw_mod._fernet, "the swapped key should be cached here",
+            )
+        self.doCleanups()
+        self.assertIsNone(
+            pw_mod._fernet,
+            "a throwaway key must not survive the test that installed it",
+        )
 
     def test_multifernet_decrypts_old_key_ciphertext(self):
         old_key = self._fresh_key()
