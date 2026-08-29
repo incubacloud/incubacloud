@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!--
+            Ships disabled and without credentials: an administrator
+            registers an OAuth App at
+            https://github.com/settings/developers with the callback URL
+            <your-odoo>/auth_oauth/github/callback, pastes the Client ID
+            and Client Secret here, and ticks Allowed.
+
+            ``noupdate="1"`` so a module upgrade never overwrites the
+            credentials or re-enables a provider somebody turned off.
+
+            ``validation_endpoint`` is required by the model and is set to
+            the GitHub user API for completeness, but the flow does not
+            read it: every server-side call in this module goes to a fixed
+            URL held in the controller, so a mistyped endpoint cannot
+            redirect a request elsewhere.
+        -->
+        <record id="provider_github" model="auth.oauth.provider">
+            <field name="name">GitHub</field>
+            <field name="github_flow" eval="True"/>
+            <field name="enabled" eval="False"/>
+            <field name="auth_endpoint">https://github.com/login/oauth/authorize</field>
+            <field name="validation_endpoint">https://api.github.com/user</field>
+            <field name="scope">read:user user:email</field>
+            <field name="body">Sign in with GitHub</field>
+            <field name="css_class">fa fa-fw fa-github</field>
+            <field name="sequence">15</field>
+        </record>
+
+    </data>
+</odoo>

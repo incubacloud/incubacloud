@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Configuration stays in the stock OAuth Providers form (Settings >
+        Users & Companies > OAuth Providers), the same place Google and
+        Odoo.com are configured. This module only adds the two fields the
+        code flow needs; it deliberately ships no menu, action or screen
+        of its own so the module drops into any Odoo without bringing a
+        UI opinion with it.
+    -->
+    <record id="view_oauth_provider_form_github" model="ir.ui.view">
+        <field name="name">auth.oauth.provider.form.github</field>
+        <field name="model">auth.oauth.provider</field>
+        <field name="inherit_id" ref="auth_oauth.view_oauth_provider_form"/>
+        <field name="arch" type="xml">
+            <field name="client_id" position="after">
+                <field name="client_secret" password="True"/>
+                <field name="github_flow"/>
+            </field>
+        </field>
+    </record>
+
+</odoo>
