@@ -39,7 +39,7 @@ docker run --rm -it \
   -e AWS_ENDPOINT_URL=…  -e PASSPHRASE=… \
   -v /root/Mailserver:/mnt/backup/src \
   ghcr.io/tecnativa/docker-duplicity:latest \
-  dup restore boto3+s3://incubacloud-backups/backups/incubacloud/mailserver /mnt/backup/src
+  dup restore boto3+s3://incubacloud-platform-backups/backups/incubacloud/mailserver /mnt/backup/src
 ```
 
 For a partial restore (e.g. only DKIM keys), add
