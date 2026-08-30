@@ -86,7 +86,17 @@ def _htpasswd_hash(password):
 
 
 def _build_inverseproxy(content, wildcard_domain, panel_password):
-    """Substitute domain and password hash in inverseproxy.yaml content."""
+    """Substitute domain and password hash in inverseproxy.yaml content.
+
+    Both substitutions pass a *function* to ``re.sub`` rather than a
+    replacement string. In a replacement string Python interprets
+    backslashes, so a domain carrying ``\\1`` used to splice in a capture
+    group and one carrying ``\\d`` raised ``re.error: bad escape`` — killing
+    the setup job halfway through, on nothing worse than an operator typo.
+    A function's return value is used verbatim. ``cloud.host`` now refuses
+    such a domain outright; this is the layer that makes it harmless
+    regardless of what reaches it.
+    """
     traefik_domain = (
         f"traefik.{wildcard_domain.removeprefix('*.')}"
         if wildcard_domain else "traefik.localhost"
@@ -94,7 +104,7 @@ def _build_inverseproxy(content, wildcard_domain, panel_password):
     # Replace the Host() rule
     content = re.sub(
         r'Host\(`[^`]+`\)',
-        f"Host(`{traefik_domain}`)",
+        lambda _match: f"Host(`{traefik_domain}`)",
         content,
     )
     # Replace the basicauth.users label value
@@ -102,7 +112,10 @@ def _build_inverseproxy(content, wildcard_domain, panel_password):
         label_value = _htpasswd_hash(panel_password)
         content = re.sub(
             r'traefik\.http\.middlewares\.auth\.basicauth\.users=[^\n"]+',
-            f"traefik.http.middlewares.auth.basicauth.users={label_value}",
+            lambda _match: (
+                "traefik.http.middlewares.auth.basicauth.users="
+                f"{label_value}"
+            ),
             content,
         )
     return content

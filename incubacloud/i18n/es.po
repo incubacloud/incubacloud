@@ -5336,6 +5336,13 @@ msgid "Invalid user_id"
 msgstr "user_id inválido"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "Invalid wildcard domain '%(domain)s' on host '%(host)s': %(reason)s"
+msgstr ""
+"Dominio wildcard no válido '%(domain)s' en el host '%(host)s': %(reason)s"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__is_primary
 msgid "Is Primary"
 msgstr "Es primario"

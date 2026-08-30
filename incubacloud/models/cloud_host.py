@@ -9,9 +9,10 @@ import asyncssh
 import yaml
 
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tools import file_open
 
+from ..net.hostname import InvalidHostname, validate_wildcard_domain
 from . import _config_snapshot_diff as _snapshot_diff
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
@@ -741,6 +742,36 @@ class CloudHost(models.Model):
                 for field, paths in drift.items()
                 for path in paths
             )
+
+    @api.constrains("wildcard_domain")
+    def _check_wildcard_domain(self):
+        """Refuse a wildcard domain that is not a DNS hostname.
+
+        The field feeds generated configuration nobody reads back — the
+        Traefik rule, the certificate request, every instance subdomain — so
+        a malformed value does not surface as a bad value, it surfaces as a
+        setup job dying on ``re.error`` or a router that matches the wrong
+        thing. This is the floor under both BYOD doors: a value that reaches
+        the ORM without passing either of them still cannot land here.
+
+        Shape only. ``check_internal`` and the reserved list belong to the
+        callers where the value means "a public DNS name a tenant chose";
+        this table also holds hosts an operator named, and ``h.local`` on an
+        internal network is a fair name for one.
+        """
+        for host in self:
+            try:
+                validate_wildcard_domain(host.wildcard_domain)
+            except InvalidHostname as exc:
+                raise ValidationError(
+                    _(
+                        "Invalid wildcard domain '%(domain)s' on host "
+                        "'%(host)s': %(reason)s",
+                        domain=host.wildcard_domain or "",
+                        host=host.display_name,
+                        reason=str(exc),
+                    ),
+                ) from exc
 
     def _subdomain_suffix(self):
         """Return the wildcard domain ready to suffix an instance subdomain.

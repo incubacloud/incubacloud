@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.97] — 2026-08-30
+
+### Fixed
+
+- **A hostname could stop a host setup halfway through, with no attacker involved.** `_build_inverseproxy` splices `wildcard_domain` into the Traefik router rule through the *replacement* argument of `re.sub`, where Python interprets backslashes: a domain carrying `\1` spliced in a capture group and one carrying `\d` raised `re.error: bad escape`, killing `full_setup` mid-run. A backtick closed the rule early and turned the dashboard router into a catch-all. Both substitutions now pass a function, whose return value is used verbatim
+- **`cloud.host.wildcard_domain` was `required=True` and nothing else** — no shape, no length, no character set — even though the value is read back by everything the platform generates for that machine. A constraint now refuses anything that is not an RFC 1123 hostname. Shape only, deliberately: that table also holds hosts an operator named, where `h.local` on an internal network is a fair name. Comparison is case-insensitive and the stored value is never rewritten, so the production row recorded as `Tenants1.incubacloud.io` stays writable and nobody's typing is silently canonicalised
+
+### Changed
+
+- Wildcard-domain rules move to `incubacloud/net/hostname.py` and are now the single source for every door that accepts one. The internal-address blocklist and the platform-reserved list are opt-in flags there, applied only where the value means "a public DNS name a tenant chose"
+
 ## [1.0.96] — 2026-08-30
 
 ### Fixed
