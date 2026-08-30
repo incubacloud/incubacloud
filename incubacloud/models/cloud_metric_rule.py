@@ -136,9 +136,28 @@ class CloudMetricRule(models.Model):
              "raising an unattributable alert.",
     )
 
-    _sql_constraints = [
-        ("code_uniq", "unique (code)", "A metric rule code must be unique."),
-    ]
+    # Partial on ``active``, not a plain UNIQUE (code): only active rules
+    # are evaluated (``_cron_evaluate`` searches with the default
+    # ``active_test``), so the damage this prevents exists only among
+    # them — and a total UNIQUE would burn an archived rule's code
+    # forever, a restriction nobody asked for. Same shape as
+    # ``cloud_alert_active_target_uidx``.
+    #
+    # This was a ``_sql_constraints`` list until 1.0.98. Odoo 19 never
+    # reads that attribute — ``_add_sql_constraints`` iterates
+    # ``_table_objects``, which only descriptors like this one populate —
+    # so the uniqueness silently did not exist, and the database
+    # confirmed it: no unique index on ``code`` at all. The message is a
+    # plain string on purpose: it is reflected into
+    # ``ir.model.constraint.message`` (``translate=True``) and
+    # translated from there, not through gettext at runtime.
+    _code_uniq = models.UniqueIndex(
+        "(code) WHERE active IS TRUE",
+        "A metric rule code must be unique among active rules. The code "
+        "is the alert's dedup key, so two active rules sharing one would "
+        "fight over the same alert: whichever does not fire resolves the "
+        "other's. Archive the old rule or give this one its own code.",
+    )
 
     # ===============================
     # EVALUATION
