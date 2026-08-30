@@ -9,9 +9,11 @@ outage of the metrics stack into an all-green panel.
 """
 from unittest.mock import MagicMock, patch
 
+import psycopg2
 import requests
 
 from odoo.tests.common import TransactionCase
+from odoo.tools import mute_logger
 
 from odoo.addons.incubacloud.models.cloud_metric_rule import (
     BACKEND_UNREACHABLE_CODE,
@@ -454,3 +456,102 @@ class TestInstanceScopedRules(MetricRuleCase):
         )
         self.rule._sync_alerts(self._sample(600.0))
         self.assertFalse(self._alerts())
+
+
+class TestRuleCodeUniqueness(TransactionCase):
+    """BUG-002 — ``code`` is the alert's identity, so it has to be unique.
+
+    The model declared ``_sql_constraints = [("code_uniq", ...)]``, an
+    attribute Odoo 19 never reads: ``_add_sql_constraints`` applies
+    ``_table_objects``, which only ``models.Constraint``/``Index``
+    descriptors populate. Nothing failed and nothing warned at runtime —
+    the uniqueness simply was not there, in any database.
+
+    That is not cosmetic. ``_cron_evaluate`` calls
+    ``raise_alert(self.code, ...)`` and ``resolve_alert(self.code, ...)``,
+    and ``cloud.alert`` dedups on ``(code, host, instance)``. Two active
+    rules on one code share a single alert row: each cron pass, the rule
+    that is not breaching resolves the alert the breaching one just
+    raised. A real alert that switches itself off, in an alerting system.
+    """
+
+    def _make(self, code, **kw):
+        """Create an active rule with sane defaults; ``kw`` overrides any."""
+        vals = {
+            "name": kw.pop("name", f"Rule {code}"),
+            "code": code,
+            "expression": "some_metric",
+            "comparator": "gt",
+            "threshold": 1,
+            "level": "warning",
+            "message": "breached",
+        }
+        vals.update(kw)
+        return self.env["cloud.metric.rule"].sudo().create(vals)
+
+    def test_two_active_rules_cannot_share_a_code(self):
+        """The core case: the second active rule on a code is refused."""
+        self._make("bug002_dup")
+        with self.assertRaises(psycopg2.IntegrityError), \
+                mute_logger("odoo.sql_db"), self.env.cr.savepoint():
+            self._make("bug002_dup", name="Impostor")
+            self.env.flush_all()
+
+    def test_renaming_onto_a_taken_code_is_refused(self):
+        """The write path has to be covered too, not just create.
+
+        A quota that only holds while nobody edits an existing row is not
+        a quota — an index covers both by construction, which is half the
+        reason to push this down to the database.
+        """
+        self._make("bug002_taken")
+        other = self._make("bug002_free")
+        with self.assertRaises(psycopg2.IntegrityError), \
+                mute_logger("odoo.sql_db"), self.env.cr.savepoint():
+            other.code = "bug002_taken"
+            self.env.flush_all()
+
+    def test_an_archived_rule_does_not_reserve_its_code(self):
+        """Why the index is partial rather than a plain UNIQUE (code).
+
+        Only active rules are evaluated, so only they can fight over an
+        alert. Letting an archived rule hold its code hostage forever
+        would be a new restriction nobody asked for.
+        """
+        old = self._make("bug002_recycled")
+        old.active = False
+        # Flush the archive before inserting the replacement: inside one
+        # transaction the INSERT can reach the database ahead of the
+        # pending UPDATE and collide with the row it is replacing. In the
+        # panel these are two separate requests, so this only bites code
+        # that archives and re-creates without a flush in between.
+        self.env.flush_all()
+        fresh = self._make("bug002_recycled", name="Replacement")
+        self.env.flush_all()
+        self.assertTrue(fresh.exists())
+        self.assertNotEqual(fresh.id, old.id)
+
+    def test_reviving_an_archived_duplicate_is_refused(self):
+        """The exit the pre-migration leaves behind must stay closed.
+
+        1.0.98 archives duplicates instead of deleting them, so the
+        operator keeps the row. Re-enabling it without fixing the code
+        has to fail — otherwise the migration just defers the collision.
+        """
+        self._make("bug002_revive")
+        archived = self._make("bug002_revive_tmp")
+        archived.write({"active": False, "code": "bug002_revive"})
+        self.env.flush_all()
+        with self.assertRaises(psycopg2.IntegrityError), \
+                mute_logger("odoo.sql_db"), self.env.cr.savepoint():
+            archived.active = True
+            self.env.flush_all()
+
+    def test_the_seeded_rules_have_distinct_codes(self):
+        """The shipped data must satisfy the constraint it now lives under."""
+        codes = self.env["cloud.metric.rule"].sudo().search([]).mapped("code")
+        self.assertEqual(
+            len(codes), len(set(codes)),
+            "two shipped rules share an alert code; they would resolve "
+            "each other's alerts",
+        )

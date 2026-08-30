@@ -409,6 +409,20 @@ msgid "A log search must sweep at least 1 day."
 msgstr "Una búsqueda de logs debe recorrer al menos 1 día."
 
 #. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_metric_rule_code_uniq
+msgid ""
+"A metric rule code must be unique among active rules. The code is the "
+"alert's dedup key, so two active rules sharing one would fight over the same"
+" alert: whichever does not fire resolves the other's. Archive the old rule "
+"or give this one its own code."
+msgstr ""
+"El código de una regla de métrica debe ser único entre las reglas activas. "
+"El código es la clave de deduplicación de la alerta, así que dos reglas "
+"activas que lo compartan pelearían por la misma alerta: la que no se dispara"
+" resuelve la de la otra. Archive la regla antigua o asigne a esta un código "
+"propio."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "A move is already in progress for this instance."
@@ -5537,7 +5551,7 @@ msgstr ""
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__odoo_initial_lang
 msgid "Language installed via odoo -i base -l <code> on first deploy."
-msgstr "Idioma instalado via odoo -i base -l <code> en el primer despliegue."
+msgstr "Idioma instalado vía odoo -i base -l <code> en el primer despliegue."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__log_download_max_mb

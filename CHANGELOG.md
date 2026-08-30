@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.98] — 2026-08-30
+
+### Fixed
+
+- **The uniqueness of a metric rule's code never existed.** `cloud.metric.rule` declared it as `_sql_constraints`, an attribute Odoo 19 does not read: `_add_sql_constraints` applies `_table_objects`, which only `models.Constraint`/`models.Index` descriptors populate. Nothing failed and nothing warned, and the database agreed — no unique index on `code` in any environment. It matters because `code` is the alert's dedup key, as the field's own help says: `_cron_evaluate` raises and resolves through `raise_alert(rule.code, ...)` / `resolve_alert(rule.code, ...)`, and `cloud.alert` dedups on `(code, host, instance)`. Two active rules on one code therefore share a single alert row, and on every cron pass the rule that is not breaching resolves the alert the breaching one just raised — a genuine alert that switches itself off
+
+### Changed
+
+- The rule-code uniqueness is now a partial unique index over **active** rules. Only active rules are evaluated, so only among them can two rules fight over an alert; a plain `UNIQUE (code)` would also reserve an archived rule's code for ever, which nobody asked for. Same shape as `cloud_alert_active_target_uidx`
+- Migration `1.0.98` **archives** — never deletes — any active rule whose code another active rule already holds, keeping the one that carries an xmlid (or the oldest). The rows are operator configuration: they stay visible and reversible, and re-enabling one without fixing its code now hits the constraint and is told why. Our own databases are clean (devel and production: 6 rules, 6 codes); the migration is there for the tenant databases that cannot be surveyed from here
+
 ## [1.0.97] — 2026-08-30
 
 ### Fixed
