@@ -109,3 +109,4 @@ from . import test_session_cookie_hardening
 from . import test_host_build_lock
 from . import test_encrypted_private_key
 from . import test_concurrency_isolation
+from . import test_wildcard_domain_validation
