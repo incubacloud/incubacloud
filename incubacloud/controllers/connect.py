@@ -382,12 +382,19 @@ class InstanceConnectController(http.Controller):
                 methods=['POST'])
     def get_user_preferences(self):
         user = request.env.user
-        # sudo for the muted names only: the user chose these projects
-        # while they were visible; a later membership change must not
-        # break the preferences modal.
+        # Names come back through the caller's own env, never through
+        # ``user.cloud_muted_project_ids``: ``env.user`` is sudoed, so
+        # reading the m2m off it hands out the name of every project on
+        # the platform. ``_filtered_access`` drops what the caller may
+        # not read instead of raising, so a membership lost since the
+        # mute was stored quietly disappears from the modal rather than
+        # breaking it.
+        Project = request.env['cloud.project']
         muted = [
             {'id': p.id, 'name': p.name}
-            for p in user.cloud_muted_project_ids.sudo()
+            for p in Project.browse(
+                user.cloud_muted_project_ids.ids
+            )._filtered_access('read')
         ]
         return {
             'ok': True,
@@ -413,9 +420,9 @@ class InstanceConnectController(http.Controller):
                               cloud_webhook_secret=None):
         """Persist the caller's notification preferences.
 
-        Muted ids are sanitised to existing projects; muting only
-        restricts the caller's own notifications, so no visibility
-        check is needed beyond existence.
+        Muted ids are sanitised to the projects the caller may read;
+        ids beyond that are dropped silently, since muting a project
+        you cannot see has no observable effect anyway.
         """
         if not request.env.user._is_internal():
             # The SPA that owns this form is internal-only (``/cloud``
@@ -442,7 +449,16 @@ class InstanceConnectController(http.Controller):
                 ids = [int(i) for i in cloud_muted_project_ids]
             except (TypeError, ValueError):
                 return {'ok': False, 'error': 'Invalid muted project ids'}
-            projects = request.env['cloud.project'].sudo().browse(ids).exists()
+            # Record rules decide what may be muted. Browsing with sudo
+            # accepted any id on the platform, and the read side then
+            # returned its name — the two together were an id-to-name
+            # oracle over every project. ``_filtered_access`` returns the
+            # allowed subset without raising, so a caller with no cloud
+            # ACL at all still saves the rest of the form.
+            projects = (
+                request.env['cloud.project']
+                .browse(ids).exists()._filtered_access('read')
+            )
             vals['cloud_muted_project_ids'] = [(6, 0, projects.ids)]
         if cloud_telegram_bot_token:
             vals['cloud_telegram_bot_token'] = cloud_telegram_bot_token
