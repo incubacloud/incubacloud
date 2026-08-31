@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.99] — 2026-08-31
+
+### Fixed
+
+- **The preferences modal was an id-to-name oracle over every project on the platform.** `/cloud/save_user_preferences` sanitised the personal mute list with `cloud.project.sudo().browse(ids).exists()` — sudo skips ACLs *and* record rules, so any id that existed anywhere was accepted — and `/cloud/get_user_preferences` then read the list back and returned each project's `name`. Write anything, read the name. The docstring's reasoning ("muting only restricts the caller's own notifications, so no visibility check is needed beyond existence") holds for the *effect* of a mute and fails for what the read side hands back. Reach was every internal user: `/cloud` renders on `_is_internal()` alone with no cloud role required, and because the whole path went through sudo it worked even for someone with no `ir.model.access` on `cloud.project` at all. Both ends now go through `_filtered_access('read')`, which returns the permitted subset instead of raising, so an id beyond the caller's record rules is dropped silently and a caller with no cloud role still saves the rest of the form. The read side also stops reading the m2m off `env.user`, which is sudoed by construction (`Environment.user` returns `self(su=True)`) — the explicit `.sudo()` there had been a no-op sitting on top of an implicit one.
+- **`_capped_search` counted with sudo what it listed without it.** `total` came from `Model.sudo().search_count(dom)` while `records` came from a plain `search`, so `/cloud/get_projects` — which has no role gate — told a stakeholder scoped by `rule_project_member` to a single project how many projects exist on the whole platform, and computed `truncated` from that same number, firing the truncation banner on a list that was never clipped. The count now honours record rules, matching `cloud_get_config` and `cloud_get_dashboard`, which already did the same counts correctly a few dozen lines away. No behaviour change for the other three call sites: the backup-backend routes are manager-gated and `cloud.host` carries no `ir.rule`.
+
+Metadata disclosure only — no record, credential or job was ever reachable through either path. Audit point BUG-004; its third bullet (the portal's global tenant count) died with the portal team pages in `incubacloud_website` 19.0.1.24.0.
+
+---
+
 ## [1.0.98] — 2026-08-30
 
 ### Fixed

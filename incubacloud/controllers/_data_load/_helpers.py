@@ -149,13 +149,17 @@ def _capped_search(Model, domain=None, order=None, limit=None):
     """Return (records, total, truncated, limit) with a hard cap.
 
     ``total`` is a separate search_count so the UI can render
-    "showing N of TOTAL" banners. ``truncated`` is True when the
-    cap actually clipped the result; a WARNING is logged whenever
-    that happens so ops can raise the cap or add real pagination.
+    "showing N of TOTAL" banners. It honours record rules, exactly
+    like the ``records`` search beside it: counted with sudo it
+    reported the whole platform's inventory to a caller who may only
+    see part of it, and made ``truncated`` fire on a list that was
+    never clipped. ``truncated`` is True when the cap actually
+    clipped the result; a WARNING is logged whenever that happens so
+    ops can raise the cap or add real pagination.
     """
     dom = domain or []
     eff_limit = limit or _LIST_MAX
-    total = Model.sudo().search_count(dom)
+    total = Model.search_count(dom)
     records = Model.search(dom, order=order, limit=eff_limit)
     truncated = total > eff_limit
     if truncated:
