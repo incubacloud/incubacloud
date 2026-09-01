@@ -125,22 +125,45 @@ def spawn_subprocess(session_id, auth_token, config, *,
     ``subprocess_path`` is the absolute path to the concrete subprocess
     script (it differs per addon); ``core_dir`` is the core addon directory
     exported to the child as ``INCUBACLOUD_CORE_DIR`` so its flat imports
-    resolve. The SSH private key is passed through a short-lived temp file
-    (mode 0600) — never a CLI argument, since args are world-visible in
-    ``ps aux`` — and the child deletes the file immediately after reading.
+    resolve. SSH material and the loopback Bearer token are passed through a
+    short-lived temp file (mode 0600), never a CLI argument, since args are
+    visible in ``ps aux``. The child deletes the file immediately after
+    reading; this parent also removes it if spawning cannot complete.
     """
     # The config file lives only long enough for the subprocess to read
     # it. ``delete=False`` because ``NamedTemporaryFile`` would otherwise
     # try to close+unlink while we still need the path.
+    tmp_path = None
+
+    def _remove_temp_config():
+        """Remove the credential file, regardless of how spawn failed."""
+        if tmp_path:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(tmp_path)
+
+    def _stop_failed_process(proc):
+        """Reap a child that did not complete the startup protocol."""
+        with contextlib.suppress(OSError):
+            proc.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=1)
+        with contextlib.suppress(Exception):
+            proc.stdout.close()
+
+    config = dict(config, auth_token=auth_token)
     tmp = tempfile.NamedTemporaryFile(
         mode='w', suffix='.json',
         prefix=tmp_prefix,
         delete=False,
     )
+    tmp_path = tmp.name
     try:
         os.chmod(tmp.name, 0o600)
         json.dump(config, tmp)
         tmp.flush()
+    except Exception:
+        _remove_temp_config()
+        raise
     finally:
         tmp.close()
 
@@ -151,7 +174,6 @@ def spawn_subprocess(session_id, auth_token, config, *,
     argv = [
         sys.executable, '-u', subprocess_path,
         '--session-id', session_id,
-        '--auth-token', auth_token,
         '--config-file', tmp.name,
     ]
     env = os.environ | {'INCUBACLOUD_CORE_DIR': core_dir}
@@ -159,29 +181,35 @@ def spawn_subprocess(session_id, auth_token, config, *,
     # group so the subprocess survives worker restarts — the entire point
     # of this design. stdin is closed so any accidental ``input()`` inside
     # the subprocess fails fast instead of hanging.
-    proc = subprocess.Popen(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=None,              # inherit Odoo's stderr for logs
-        start_new_session=True,
-        close_fds=True,
-        env=env,
-    )
+    try:
+        proc = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=None,              # inherit Odoo's stderr for logs
+            start_new_session=True,
+            close_fds=True,
+            env=env,
+        )
+    except Exception:
+        _remove_temp_config()
+        raise
 
     # The subprocess prints its port on the first line of stdout and then
     # starts serving. If it dies before printing, readline returns b'' and
     # we treat it as a spawn failure.
     first_line = _readline_with_timeout(proc, SPAWN_TIMEOUT)
     if not first_line:
-        proc.kill()
+        _stop_failed_process(proc)
+        _remove_temp_config()
         raise RuntimeError(f"{fail_label} failed to start")
 
     try:
         port = int(first_line.strip())
     except ValueError:
-        proc.kill()
+        _stop_failed_process(proc)
+        _remove_temp_config()
         raise RuntimeError(
             f"{fail_label} printed invalid port: {first_line!r}"
-        )
+        ) from None
     return port, proc.pid

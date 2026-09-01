@@ -20,11 +20,11 @@ so ``terminal_session`` / ``terminal_subprocess_base`` import as flat
 top-level modules and the package init is skipped entirely.
 
     python3 -u terminal_subprocess.py \\
-        --session-id <sid> --auth-token <hex> --config-file <json>
+        --session-id <sid> --config-file <json>
 
 The config file is read and deleted immediately so no secrets (the SSH
-private key) persist on disk beyond the first millisecond. CLI args are
-visible in ``ps aux`` which is why the SSH key does NOT go there.
+private key or Bearer token) persist on disk beyond the first millisecond.
+CLI args are visible in ``ps aux``, so neither secret goes there.
 """
 import argparse
 import json
@@ -55,7 +55,7 @@ def main() -> int:
     """Read the config, build the instance ``TerminalSession``, serve it."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--session-id", required=True)
-    parser.add_argument("--auth-token", required=True)
+    parser.add_argument("--auth-token")
     parser.add_argument("--config-file", required=True,
                         help="Path to JSON config. File is deleted "
                              "immediately after reading.")
@@ -63,9 +63,11 @@ def main() -> int:
 
     # Read the config and delete the file before doing anything else so
     # secrets live on disk for as short as possible.
-    with open(args.config_file, "r", encoding="utf-8") as fh:
-        config = json.load(fh)
-    Path(args.config_file).unlink(missing_ok=True)
+    try:
+        with open(args.config_file, "r", encoding="utf-8") as fh:
+            config = json.load(fh)
+    finally:
+        Path(args.config_file).unlink(missing_ok=True)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -83,7 +85,10 @@ def main() -> int:
         user_id=config.get("user_id"),
         welcome_banner=config.get("welcome_banner", ""),
     )
-    return run_server(session, args.auth_token)
+    auth_token = config.get("auth_token") or args.auth_token
+    if not auth_token:
+        parser.error("the config must include an auth token")
+    return run_server(session, auth_token)
 
 
 if __name__ == "__main__":
