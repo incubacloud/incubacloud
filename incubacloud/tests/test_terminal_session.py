@@ -26,6 +26,7 @@ import base64
 import json
 import os
 import sys
+import tempfile
 import threading
 from pathlib import Path
 import urllib.error
@@ -38,6 +39,9 @@ import asyncssh
 
 from odoo.modules.module import get_module_path
 from odoo.tests.common import BaseCase
+from odoo.addons.incubacloud.controllers.terminal_proxy_mixin import (
+    spawn_subprocess,
+)
 
 _CORE_DIR = get_module_path('incubacloud')
 if _CORE_DIR not in sys.path:
@@ -282,3 +286,83 @@ class TestRehydrateSshKwargs(BaseCase):
             'known_hosts_text': '',
         })
         self.assertNotIn('known_hosts', out)
+
+
+class TestTerminalSpawnSecrets(BaseCase):
+    """The parent passes terminal secrets only through its protected file."""
+
+    @staticmethod
+    def _script(path, body):
+        """Write a short child script used to exercise the real spawn path."""
+        path.write_text(body, encoding='utf-8')
+
+    def test_token_is_not_in_argv_and_is_available_to_the_child(self):
+        """The child gets the token from config rather than its argv."""
+        token = 'terminal-token-that-must-not-be-in-ps'
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            result = directory / 'result.json'
+            script = directory / 'child.py'
+            self._script(
+                script,
+                'import json\n'
+                'import sys\n'
+                'from pathlib import Path\n'
+                'config_index = sys.argv.index("--config-file")\n'
+                'config_path = Path(sys.argv[config_index + 1])\n'
+                'config = json.loads(config_path.read_text())\n'
+                f'result = Path({str(result)!r})\n'
+                'result.write_text(json.dumps({"argv": sys.argv, '
+                '"token": config["auth_token"]}))\n'
+                'print("32123", flush=True)\n',
+            )
+            port, process_id = spawn_subprocess(
+                'session-id', token, {'inst_dir': '/tmp/instance'},
+                subprocess_path=str(script), core_dir=str(directory),
+                tmp_prefix='ic-terminal-test-', fail_label='Terminal',
+            )
+            payload = json.loads(result.read_text(encoding='utf-8'))
+            os.kill(process_id, 9)
+
+        self.assertEqual(port, 32123)
+        self.assertEqual(payload['token'], token)
+        self.assertNotIn(token, payload['argv'])
+        self.assertNotIn('--auth-token', payload['argv'])
+
+    def test_unserializable_config_is_removed_before_spawn(self):
+        """A JSON failure does not leave a credential file behind."""
+        prefix = f'ic-terminal-test-json-{os.getpid()}-'
+        temp_dir = Path(tempfile.gettempdir())
+        self.assertEqual(list(temp_dir.glob(f'{prefix}*.json')), [])
+
+        with self.assertRaises(TypeError):
+            spawn_subprocess(
+                'session-id', 'token', {'value': object()},
+                subprocess_path='not-reached.py', core_dir='/tmp',
+                tmp_prefix=prefix, fail_label='Terminal',
+            )
+
+        self.assertEqual(list(temp_dir.glob(f'{prefix}*.json')), [])
+
+    def test_failed_child_does_not_leave_credential_file(self):
+        """A child that misses the startup protocol triggers cleanup."""
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            marker = directory / 'config-path'
+            script = directory / 'child.py'
+            self._script(
+                script,
+                'import sys\n'
+                'from pathlib import Path\n'
+                'config_index = sys.argv.index("--config-file")\n'
+                f'Path({str(marker)!r}).write_text(sys.argv[config_index + 1])\n',
+            )
+            with self.assertRaisesRegex(RuntimeError, 'failed to start'):
+                spawn_subprocess(
+                    'session-id', 'token', {'inst_dir': '/tmp/instance'},
+                    subprocess_path=str(script), core_dir=str(directory),
+                    tmp_prefix='ic-terminal-test-', fail_label='Terminal',
+                )
+
+            config_path = Path(marker.read_text(encoding='utf-8'))
+            self.assertFalse(config_path.exists())
