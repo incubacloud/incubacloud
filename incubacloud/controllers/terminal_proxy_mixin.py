@@ -21,6 +21,7 @@ import tempfile
 import threading
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from odoo import _
 from odoo.http import request
@@ -139,7 +140,7 @@ def spawn_subprocess(session_id, auth_token, config, *,
         """Remove the credential file, regardless of how spawn failed."""
         if tmp_path:
             with contextlib.suppress(FileNotFoundError):
-                os.unlink(tmp_path)
+                Path(tmp_path).unlink()
 
     def _stop_failed_process(proc):
         """Reap a child that did not complete the startup protocol."""
@@ -150,7 +151,7 @@ def spawn_subprocess(session_id, auth_token, config, *,
         with contextlib.suppress(Exception):
             proc.stdout.close()
 
-    config = dict(config, auth_token=auth_token)
+    config = config | {'auth_token': auth_token}
     tmp = tempfile.NamedTemporaryFile(
         mode='w', suffix='.json',
         prefix=tmp_prefix,

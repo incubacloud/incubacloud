@@ -13,6 +13,7 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.tools import file_open
 
 from ..net.hostname import InvalidHostname, validate_wildcard_domain
+from ..net.trusted_proxies import parse_ranges
 from . import _config_snapshot_diff as _snapshot_diff
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
@@ -508,6 +509,26 @@ class CloudHost(models.Model):
         help="Content of the traefik.yml file.",
     )
 
+    trusted_proxy_ranges = fields.Text(
+        string="Trusted Proxy Ranges",
+        help="CIDR ranges of the proxies in front of this host, one per "
+             "line. Traefik believes X-Forwarded-For only on connections "
+             "from these, and strips it from every other — which is what "
+             "makes the header unspoofable and lets the per-client rate "
+             "limit key on the real caller instead of a handful of edge "
+             "addresses. Leave empty when the host answers its visitors "
+             "directly; the connecting address is then used as-is.",
+    )
+    block_direct_access = fields.Boolean(
+        string="Only Accept Traffic From Trusted Proxies",
+        default=False,
+        help="Refuse HTTPS requests that did not come through one of the "
+             "trusted proxy ranges above, so the origin cannot be reached "
+             "by its address to bypass the edge. Requires trusted proxy "
+             "ranges to be set — with none, this would lock the host out "
+             "of its own visitors, so it is ignored.",
+    )
+
     # ── Config drift: saved host config vs what full_setup shipped ────────
     # Same mechanism as on cloud.instance: full_setup records the hash of
     # what it actually uploaded; the compute compares it against the
@@ -569,6 +590,8 @@ class CloudHost(models.Model):
             "traefik_yml",
             "traefik_inverseproxy_yaml",
             "traefik_panel_password",
+            "trusted_proxy_ranges",
+            "block_direct_access",
         ]
 
     def _render_config_snapshot(self):
@@ -1833,6 +1856,309 @@ class CloudHost(models.Model):
         addition = f"{item_indent}- ratelimit@file\n"
         insert_at = match.start("body") + mw.end("items")
         return traefik_yml[:insert_at] + addition + traefik_yml[insert_at:]
+
+    # Every block written by the trusted-proxy retrofits carries this
+    # marker, so re-rendering can remove exactly what it wrote before and
+    # nothing else. These lists move — a CDN publishes new ranges — so the
+    # retrofit has to *set* the value, not merely add it once, and it has
+    # to be able to take it back out when the feature is turned off.
+    _TRUSTED_PROXY_MARK = "# incubacloud:trusted-proxies"
+
+    #: File-provider middleware that refuses connections which did not
+    #: come through a trusted proxy. Referenced from the https entrypoint.
+    _TRUSTED_PROXY_MIDDLEWARE = "trusted-proxies-only"
+
+    @staticmethod
+    def _strip_trusted_proxy_blocks(text):
+        """Remove every block a previous trusted-proxy render wrote.
+
+        A marked line takes the lines nested under it with it, so a
+        multi-line ``forwardedHeaders`` mapping disappears whole. A blank
+        line ends a block: nothing written here contains one, so an empty
+        line that follows belonged to the document already.
+
+        :param text: a Traefik configuration document
+        :return: the document without any marked block
+        :rtype: str
+        """
+        if not text or CloudHost._TRUSTED_PROXY_MARK not in text:
+            return text
+        lines = text.splitlines(keepends=True)
+        kept = []
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+            if CloudHost._TRUSTED_PROXY_MARK not in line:
+                kept.append(line)
+                index += 1
+                continue
+            indent = len(line) - len(line.lstrip())
+            index += 1
+            while index < len(lines) and lines[index].strip():
+                nested = len(lines[index]) - len(lines[index].lstrip())
+                if nested <= indent:
+                    break
+                index += 1
+        return "".join(kept)
+
+    @staticmethod
+    def _patch_traefik_yml_trusted_proxies(
+        traefik_yml, ranges, block_direct=False,
+    ):
+        """Return ``traefik.yml`` declaring which proxies may be believed.
+
+        Traefik discards every inbound ``X-Forwarded-For`` unless the
+        connection came from an address listed under
+        ``entryPoints.<name>.forwardedHeaders.trustedIPs``. That one
+        setting is what separates a header the client wrote from one our
+        own edge appended, and therefore what every per-client control
+        downstream rests on. Without it, an allowlist reading the
+        forwarded chain matches nothing and rejects all traffic — so this
+        is rendered before anything that reads that chain.
+
+        This is static configuration: Traefik reads it at start-up only,
+        so a change here needs the proxy restarted, unlike the dynamic
+        documents it watches.
+
+        Idempotent by replacement rather than by addition — the ranges
+        move, and a stale list is exactly the failure this must not
+        produce. An empty *ranges* removes the declaration and returns the
+        host to believing nothing.
+
+        :param traefik_yml: the host's stored static configuration
+        :param ranges: CIDR strings of the proxies in front of this host
+        :param bool block_direct: also refuse requests that did not come
+            through one of those proxies. Ignored when *ranges* is empty,
+            where it would reject every visitor the host has.
+        :return: the patched configuration, or the input untouched when
+            the entrypoints are not the shape this knows
+        :rtype: str
+        """
+        import re
+
+        if not traefik_yml:
+            return traefik_yml
+        text = CloudHost._strip_trusted_proxy_blocks(traefik_yml)
+        entries = [
+            str(item).strip() for item in (ranges or []) if str(item).strip()
+        ]
+        if not entries:
+            return text
+        mark = CloudHost._TRUSTED_PROXY_MARK
+
+        # Anchored on the port, which appears once each and cannot be
+        # confused with the nested ``http:`` key the https entrypoint
+        # carries under it.
+        def _declare(match):
+            indent = match.group("indent")
+            listed = "".join(
+                indent + '    - "' + entry + '"\n' for entry in entries
+            )
+            return (
+                match.group(0) + "\n"
+                + indent + "forwardedHeaders:  " + mark + "\n"
+                + indent + "  trustedIPs:\n"
+                + listed.rstrip("\n")
+            )
+
+        patched, count = re.subn(
+            r'^(?P<indent>[ \t]+)address:[ \t]*"(?::80|:443)"[ \t]*$',
+            _declare,
+            text,
+            flags=re.MULTILINE,
+        )
+        if not count:
+            return text
+        if not block_direct:
+            return patched
+        return CloudHost._add_traefik_entrypoint_trusted_only(patched)
+
+    @staticmethod
+    def _add_traefik_entrypoint_trusted_only(traefik_yml):
+        """Return ``traefik.yml`` refusing traffic that skipped the edge.
+
+        Prepends the allowlist middleware to the https entrypoint chain so
+        it runs before the rest: a request that did not come through a
+        trusted proxy is refused without HSTS, rate-limit accounting or a
+        backend lookup. It goes on the entrypoint because the per-project
+        routers come from copier and reference only their own middlewares,
+        so this is the one place a control reaches every instance.
+
+        The http entrypoint is left alone on purpose — it only redirects
+        to https, and a redirect leaks nothing.
+
+        Same conservative stance as the other entrypoint retrofits: only
+        the chain we manage (the one carrying ``hsts@file``) is touched.
+
+        :param traefik_yml: static configuration, already carrying the
+            trusted ranges
+        :return: the patched configuration, or the input untouched
+        :rtype: str
+        """
+        import re
+
+        name = CloudHost._TRUSTED_PROXY_MIDDLEWARE
+        if not traefik_yml or (name + "@file") in traefik_yml:
+            return traefik_yml
+        match = re.search(
+            r"^[ \t]+https:[ \t]*\n"
+            r"(?P<hindent>[ \t]+)http:[ \t]*\n"
+            r"(?P<body>(?:(?P=hindent)[ \t]+\S.*\n)*)",
+            traefik_yml,
+            re.MULTILINE,
+        )
+        if not match:
+            return traefik_yml
+        mw = re.search(
+            r"^(?P<mindent>[ \t]+)middlewares:[ \t]*\n"
+            r"(?P<items>(?:(?P=mindent)[ \t]+-[ \t]+\S.*\n)+)",
+            match.group("body"),
+            re.MULTILINE,
+        )
+        if not mw or "hsts@file" not in mw.group("items"):
+            return traefik_yml
+        item_indent = re.match(r"[ \t]*", mw.group("items")).group(0)
+        addition = (
+            item_indent + "- " + name + "@file  "
+            + CloudHost._TRUSTED_PROXY_MARK + "\n"
+        )
+        insert_at = match.start("body") + mw.start("items")
+        return traefik_yml[:insert_at] + addition + traefik_yml[insert_at:]
+
+    @staticmethod
+    def _patch_config_yml_trusted_proxies(
+        config_yml, ranges, block_direct=False,
+    ):
+        """Return ``config.yml`` keyed on the client behind the proxy.
+
+        Two edits, both conditional on a trusted proxy being declared:
+
+        * the per-source rate limit starts keying on the forwarded client
+          instead of the connecting address, so a whole CDN edge stops
+          being one bucket shared by everyone behind it;
+        * with *block_direct*, the allowlist middleware the entrypoint
+          references is defined.
+
+        Both are deliberately skipped when no proxy is declared. A
+        forwarded-chain strategy on a host that answers its visitors
+        directly reads an absent header, and Traefik then keys every one
+        of those visitors under the same empty value — one shared bucket
+        for the whole internet, which is worse than the address-keyed
+        limit it replaced.
+
+        :param config_yml: the host's stored dynamic configuration
+        :param ranges: CIDR strings of the proxies in front of this host
+        :param bool block_direct: also define the allowlist middleware
+        :return: the patched configuration
+        :rtype: str
+        """
+        import re
+
+        if not config_yml:
+            return config_yml
+        text = CloudHost._strip_trusted_proxy_blocks(config_yml)
+        entries = [
+            str(item).strip() for item in (ranges or []) if str(item).strip()
+        ]
+        if not entries:
+            return text
+        mark = CloudHost._TRUSTED_PROXY_MARK
+
+        # Rate limit: key on the forwarded client.
+        match = re.search(
+            r"^(?P<indent>[ \t]+)ratelimit:[ \t]*\n"
+            r"(?P=indent)[ \t]+rateLimit:[ \t]*\n"
+            r"(?P<body>(?:(?P=indent)[ \t]{2,}\S.*\n)+)",
+            text,
+            re.MULTILINE,
+        )
+        if match:
+            # Indent taken from the block's own first line, not computed
+            # from the key above it: a template written with a different
+            # step still comes out as valid YAML.
+            body_indent = re.match(r"[ \t]*", match.group("body")).group(0)
+            addition = (
+                body_indent + "sourceCriterion:  " + mark + "\n"
+                + body_indent + "  ipStrategy:\n"
+                # depth 1 reads the rightmost forwarded entry: the address
+                # the trusted proxy saw and appended itself. Anything the
+                # caller wrote sits to the left of it and is never read.
+                + body_indent + "    depth: 1\n"
+            )
+            text = (
+                text[: match.end("body")] + addition
+                + text[match.end("body"):]
+            )
+        if not block_direct:
+            return text
+
+        # Allowlist middleware for the https entrypoint to reference.
+        name = CloudHost._TRUSTED_PROXY_MIDDLEWARE
+        mw_match = re.search(
+            r"^http:[ \t]*\n"
+            r"(?:[ \t]*\n)*"
+            r"(?P<indent>[ \t]+)middlewares:[ \t]*\n",
+            text,
+            re.MULTILINE,
+        )
+        if not mw_match:
+            return text
+        indent = mw_match.group("indent")
+        source_range = "".join(
+            indent + '        - "' + entry + '"\n' for entry in entries
+        )
+        block = (
+            indent + "  " + name + ":  " + mark + "\n"
+            + indent + "    ipWhiteList:\n"
+            # No ipStrategy on this one: it must read the address the
+            # connection was actually opened from. Reading the forwarded
+            # chain here would let a caller hand us the value being
+            # checked, and every direct visitor would share one empty key.
+            + indent + "      sourceRange:\n"
+            + source_range
+        )
+        return text[: mw_match.end()] + block + text[mw_match.end():]
+
+    def _shipped_traefik_yml(self):
+        """Return the static configuration a setup run should upload.
+
+        The stored template plus whatever this host's proxy posture adds.
+        Executors render through here instead of reading the field, so a
+        host whose trusted ranges moved ships the new ones on its next run
+        without the stored copy ever being rewritten behind the operator.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        ranges = self._effective_trusted_proxy_ranges()
+        return self._patch_traefik_yml_trusted_proxies(
+            self.traefik_yml or "", ranges, self.block_direct_access,
+        )
+
+    def _shipped_config_yml(self):
+        """Return the dynamic configuration a setup run should upload.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        ranges = self._effective_trusted_proxy_ranges()
+        return self._patch_config_yml_trusted_proxies(
+            self.traefik_config_yml or "", ranges, self.block_direct_access,
+        )
+
+    def _effective_trusted_proxy_ranges(self):
+        """Return the ranges whose ``X-Forwarded-For`` this host believes.
+
+        The host's own field wins, so an operator can always pin a single
+        host. Otherwise nothing: core imposes no proxy on anybody. Modules
+        that know the platform's own hosts answer behind a CDN override
+        this and supply that list, which is what keeps a self-hosted host
+        from inheriting a policy written for ours.
+
+        :rtype: list
+        """
+        self.ensure_one()
+        return parse_ranges(self.trusted_proxy_ranges)
 
     @staticmethod
     def _add_traefik_metrics_port(inverseproxy_yaml):

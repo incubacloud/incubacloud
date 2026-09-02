@@ -18,6 +18,7 @@ from . import cloud_backup_backend
 from . import cloud_project
 from . import cloud_github_app
 from . import cloud_github_event
+from . import github_webhook_edge
 from . import cloud_github_credential_service
 from . import cloud_project_repo
 from . import cloud_instance_repo
@@ -49,6 +50,8 @@ from . import host_metrics_executor
 from . import deploy_instance_executor
 from . import setup_whitelist_executor
 from . import full_setup_executor
+from . import github_webhook_edge_executor
+from . import push_trusted_proxies_executor
 from . import delete_instance_executor
 from . import purge_archived_executor
 from . import delete_host_executor

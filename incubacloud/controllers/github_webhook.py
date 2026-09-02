@@ -30,6 +30,7 @@ from psycopg2 import errors as pg_errors
 from odoo import http
 from odoo.http import request
 
+from ._client_ip import client_ip
 from ._rate_limit import Rule, first_tripped
 
 _logger = logging.getLogger(__name__)
@@ -49,25 +50,6 @@ _MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
 # It does not stop an attacker who fakes the shape — nothing here can —
 # but it makes unshaped junk free to reject.
 _SIGNATURE_RE = re.compile(r'^sha256=[0-9a-f]{64}$')
-
-
-def _client_ip():
-    """Best-effort client IP.
-
-    Relies on Odoo's ``--proxy-mode`` to translate ``X-Forwarded-For``
-    into ``remote_addr`` correctly. Reading XFF manually and taking the
-    leftmost entry would let any client spoof their IP via the header,
-    defeating the per-IP rate limit on /cloud/github/webhook.
-
-    Note: when this stack runs with ``PROXY_MODE=false`` (Doodba
-    common.yaml), ``remote_addr`` is the Traefik container IP and the
-    bucket collapses to one global cap. That is over-restrictive but
-    not spoofable — the operationally safe degradation.
-    """
-    try:
-        return request.httprequest.remote_addr or "unknown"
-    except Exception:
-        return "unknown"
 
 
 class GitHubWebhookController(http.Controller):
@@ -91,7 +73,7 @@ class GitHubWebhookController(http.Controller):
         # hash every request before we can reject it. GitHub itself
         # tolerates the 429 by backing off and re-delivering, so
         # legitimate traffic is not lost.
-        ip = _client_ip()
+        ip = client_ip()
         if first_tripped(Rule(
             f'webhook_ip:{ip}',
             cap_key='rate_limit_webhook_per_min',

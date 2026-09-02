@@ -15,6 +15,12 @@ _AUTO_REBUILD_COOLDOWN = timedelta(seconds=60)
 # on the same code.
 GITHUB_APP_REVOKED_CODE = 'github_app_revoked'
 
+# Alert raised when deliveries stop arriving while an App is configured.
+# An edge allowlist that has fallen behind the provider's published
+# source ranges fails by dropping requests before they reach us, so the
+# absence of traffic is the only signal that reaches this process.
+GITHUB_WEBHOOK_SILENT_CODE = 'github_webhook_silent'
+
 
 class CloudGitHubEvent(models.Model):
     """Log of received GitHub App webhook events.
@@ -100,6 +106,48 @@ class CloudGitHubEvent(models.Model):
         )
 
     @api.model
+    @api.model
+    def _cron_check_delivery_silence(self):
+        """Alert when no webhook has arrived for longer than configured.
+
+        Only meaningful once an App exists: without one the platform is
+        not expecting deliveries, and the webhook secret lookup returns
+        before hashing anything. The check therefore stays quiet on an
+        install that never wired GitHub up.
+
+        Silence is measured against the newest event of any kind rather
+        than against processed ones, so a run of failures still counts as
+        "traffic is arriving" — the failure has its own alert.
+
+        :return: the raised alert, or an empty recordset when quiet
+        """
+        Alert = self.env['cloud.alert'].sudo()
+        settings = self.env['cloud.settings'].sudo()._get()
+        hours = settings.github_webhook_silence_hours
+        configured = self.env['cloud.github.app'].sudo().search_count([])
+        if hours <= 0 or not configured:
+            Alert.resolve_alert(GITHUB_WEBHOOK_SILENT_CODE)
+            return Alert.browse()
+        cutoff = fields.Datetime.now() - timedelta(hours=hours)
+        if self.sudo().search_count([('create_date', '>=', cutoff)]):
+            Alert.resolve_alert(GITHUB_WEBHOOK_SILENT_CODE)
+            return Alert.browse()
+        latest = self.sudo().search([], order='create_date desc', limit=1)
+        last_seen = (
+            fields.Datetime.to_string(latest.create_date) if latest
+            else _('never')
+        )
+        return Alert.raise_alert(
+            GITHUB_WEBHOOK_SILENT_CODE,
+            _("No GitHub webhook delivery has been recorded in the last "
+              "%(hours)s hours (last seen: %(last_seen)s). Repository pushes "
+              "are not reaching the platform, so automatic rebuilds have "
+              "stopped. Check the App installation and any source-address "
+              "allowlist in front of /cloud/github/webhook.",
+              hours=hours, last_seen=last_seen),
+            level='warning',
+        )
+
     def _purge_old(self):
         """Two-stage retention run from the daily cron.
 

@@ -19,6 +19,7 @@ from ._data_load._helpers import (
     is_safe_log_archive,
     log_archive_download_command,
 )
+from ._client_ip import client_ip
 from ._rate_limit import Rule, first_tripped
 from .async_utils import run_async
 
@@ -332,7 +333,7 @@ class CloudController(Controller):
         # Per-IP rate limit. 60/min comfortably covers Docker (1/30s),
         # Kubernetes (every 10s) and Traefik (5s) healthchecks while
         # bounding the cost of a public-endpoint flood.
-        ip = request.httprequest.remote_addr or "unknown"
+        ip = client_ip()
         if first_tripped(Rule(
             f"health_ip:{ip}",
             max_per_window=60,

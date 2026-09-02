@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Daily. GitHub's published source ranges move rarely, and a
+         range added and not mirrored here stops deliveries with no
+         error anywhere — so the interval is set by how long that
+         silence may last, not by how often the list actually changes.
+         The hourly silence check next door is what makes a longer gap
+         visible if this ever stops running. -->
+    <record id="cron_refresh_github_hook_ranges" model="ir.cron">
+        <field name="name">GitHub: Refresh the Webhook Source Allowlist</field>
+        <field name="model_id" ref="model_cloud_host"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_refresh_github_hook_ranges()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

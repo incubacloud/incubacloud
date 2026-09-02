@@ -1,5 +1,9 @@
 import { describe, expect, test } from "@odoo/hoot";
 import { Settings } from "@incubacloud/components/settings/settings";
+import {
+    CORE_RATE_DEFAULTS,
+    CoreRatesTab,
+} from "@incubacloud/components/core_rates_tab/core_rates_tab";
 
 /**
  * Settings pure-logic tests.
@@ -189,5 +193,19 @@ describe("Settings — method existence", () => {
 
     test("has _confirm method", () => {
         expect(typeof proto._confirm).toBe("function");
+    });
+});
+
+describe("Settings — bounded GitHub import rates", () => {
+    test("preview and import defaults are separate hourly caps", () => {
+        expect(CORE_RATE_DEFAULTS.rate_limit_github_previews_per_hour).toBe(10);
+        expect(CORE_RATE_DEFAULTS.rate_limit_github_imports_per_hour).toBe(5);
+    });
+
+    test("rates component keeps load, clamp and save behavior", () => {
+        expect(CoreRatesTab.template).toBe("incubacloud.CoreRatesTab");
+        expect(typeof CoreRatesTab.prototype.load).toBe("function");
+        expect(typeof CoreRatesTab.prototype.onIntInput).toBe("function");
+        expect(typeof CoreRatesTab.prototype._save).toBe("function");
     });
 });

@@ -400,6 +400,27 @@
                                         Per-source new-connection cap (per second) on ports 80/443, enforced by the host firewall. 0 disables it (default). Turn it on only after rehearsing on a throwaway VPS — see runbook RB-18. Applies on the next hardening run.
                                     </span>
                                 </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Trusted proxy ranges</label>
+                                    <textarea rows="3"
+                                              t-att-value="state.form.trusted_proxy_ranges"
+                                              t-on-input="(ev) => this.onInput('trusted_proxy_ranges', ev)"/>
+                                    <span class="ic-form-note">
+                                        CIDR ranges of the proxy or CDN in front of this host, one per line. Only connections from these have their X-Forwarded-For believed, which is what makes the per-client rate limit key on the real visitor instead of a handful of edge addresses. Leave empty when the host answers its visitors directly. Applies on the next setup run.
+                                    </span>
+                                </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Direct access</label>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox"
+                                               t-att-checked="state.form.block_direct_access"
+                                               t-on-change="(ev) => { this.state.form.block_direct_access = ev.target.checked; }"/>
+                                        <span>Only accept traffic from the trusted proxies above</span>
+                                    </div>
+                                    <span class="ic-form-note">
+                                        Refuses HTTPS requests that reached this host without going through the edge, so its address cannot be used to bypass it. Ignored while no trusted range is set, where it would lock out every visitor.
+                                    </span>
+                                </div>
                             </div>
                         </t>
 

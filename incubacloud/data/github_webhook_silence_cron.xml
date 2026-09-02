@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Hourly, because the failure it watches for is silent by
+         construction: an edge allowlist that has fallen behind the
+         provider's published source ranges drops deliveries before they
+         reach this process, so nothing else in the system notices.
+         Checking often costs one indexed count and turns a silent stop
+         into a visible alert within the hour. -->
+    <record id="cron_check_github_webhook_silence" model="ir.cron">
+        <field name="name">Alert When GitHub Webhooks Stop Arriving</field>
+        <field name="model_id" ref="model_cloud_github_event"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_check_delivery_silence()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

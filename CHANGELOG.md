@@ -6,6 +6,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.102] — 2026-09-02
+
+### Added
+
+- **Hosts can declare the proxies in front of them, and core acts on it.** A host now carries `trusted_proxy_ranges`, and a full setup renders them into `entryPoints.forwardedHeaders.trustedIPs` on both entrypoints. That one setting is what separates an `X-Forwarded-For` a client wrote from one our own edge appended: Traefik discards the header on every connection that is not from a declared range. Everything that keys on client identity rests on it — measured against Traefik v2.11, an allowlist reading the forwarded chain without it matches nothing and rejects 100% of traffic. Empty by default, which leaves a host behaving exactly as before.
+- **The per-source rate limit keys on the visitor, not the edge.** With trusted ranges declared, `ratelimit` gains `sourceCriterion.ipStrategy.depth: 1`, so a CDN edge stops being one bucket shared by everyone behind it. Deliberately not applied without them: measured, a forwarded-chain strategy on a host that answers its visitors directly reads an absent header and Traefik keys every visitor under the same empty value — one bucket for the whole internet, worse than the address-keyed limit it replaced.
+- **`block_direct_access` — refuse traffic that skipped the edge.** Prepends an allowlist middleware to the https entrypoint chain, so a request that did not arrive through a trusted proxy is refused before HSTS, rate-limit accounting or a backend lookup. Off by default, and ignored while no trusted range is set, where it would lock out every visitor the host has. The http entrypoint is left alone: it only redirects, and a redirect leaks nothing.
+- **`push_trusted_proxies` — apply that without a full setup run.** `trustedIPs` is static configuration: Traefik reads it once at start-up, so a change needs the proxy restarted rather than a file drop. The job ships both documents together because they are interlocked — a host whose entrypoint names a middleware its file provider does not define answers 500 on every router it serves.
+- **`push_github_webhook_edge` and the routes it publishes.** A Traefik router per hostname of every deployed instance on the host, restricting the webhook path to GitHub's published source ranges. Verifying an HMAC signature means hashing the whole body, so inside the endpoint a forged signature can only be bounded, never made free; refused at the edge it costs nothing. The allowlist reads the forwarded chain on a host that declared a trusted proxy and the connecting address on one that did not, because an unproven forwarded header is written by whoever is calling. Removal runs first and always: a stale allowlist rejects deliveries silently, while no allowlist merely leaves them unfiltered.
+- **`client_ip()` — one answer to "who is asking", used by every limit.** Odoo's `--proxy-mode` applies `ProxyFix(x_for=1)`, which takes the last entry of the forwarded chain. That is correct with one proxy in front and wrong with two, and a host behind a CDN always has two: the CDN, and the reverse proxy on the host. Confirmed against the shipped werkzeug 3.0.1 — a chain of `<client>, <edge>` resolves to the edge. The helper walks the chain from the right, discarding hops inside the declared ranges, and returns the connecting address when none are declared.
+
+### Changed
+
+- **The webhook allowlist moved from the SaaS layer into core.** It is a capability of any installation that receives GitHub deliveries, not a property of this platform, so core owns the ranges, the refresh and the executor, and the SaaS layer keeps only the policy: which of *our* hosts get it and what sits in front of them. The migration re-points the external identifiers rather than letting core insert a second `cloud.job.type` with a code the SaaS copy already holds — the unique index would have refused it, and core updates first.
+- **The refresh republishes a host whose routes moved, not only one whose ranges did.** Each host's rendered document is compared against a digest of what it last received, so a host that gained or lost an instance is republished on the next daily run.
+
+## [1.0.101] — 2026-09-02
+
+### Added
+
+- **An alert for GitHub webhook deliveries going quiet.** The webhook endpoint is about to sit behind a source-address allowlist at the edge, and that allowlist has a failure mode nothing else in the system can see: a range GitHub adds and we never mirror stops deliveries with no error anywhere — pushes simply stop triggering rebuilds. An hourly cron now raises `github_webhook_silent` when no delivery has been recorded for `github_webhook_silence_hours` (default 48) while a GitHub App is configured, and resolves it as soon as traffic returns. Silence is measured against the newest event of any kind, so a run of processing failures still counts as "the edge is letting GitHub through" — those have their own alert. An install that never wired GitHub up stays quiet, matching `resolve_webhook_secret`, which returns before hashing anything when no App exists.
+- **`github/meta.py` — the published webhook source ranges, read defensively.** `fetch_hook_ranges()` reads the `hooks` key of `api.github.com/meta` through the existing no-redirect opener, bounded to 1 MiB, and refuses the whole document unless every entry parses as a network and the list is a plausible length. Half-understanding that document would mean building an allowlist that silently drops deliveries, so partial trust is not an option: it either fully parses or it raises.
+
+## [1.0.100] — 2026-09-01
+
+### Fixed
+
+- **The GitHub project import let any authorised user pin the workers indefinitely.** `/cloud/import_project` and `/cloud/fetch_odoojs_submodules` cloned the remote repository — plus every submodule — into a temporary directory and then ran `git show` over it, synchronously, inside the HTTP request. There was no per-user quota, no global concurrency limit and no ceiling on how much the operation could download or how long it could take, so anyone able to create a project could occupy every worker with repeated imports of a large repository. The import no longer runs Git at all: it reads trees and blobs through the GitHub API under a shared budget of 250 requests, 32 MiB and 120 seconds, with explicit ceilings on tree entries, repositories, submodules, `conf.d` files, domains, manifests and YAML nodes/depth. Manifests get their own 128 KiB cap and their AST is bounded to 10.000 nodes and depth 50 before `literal_eval`, because `ast.parse` cannot be interrupted once started. The deadline is re-checked around every HTTP call, during YAML walking and between ORM writes; a savepoint drops any partially created project if it expires mid-creation.
+- **The App and PAT tokens travelled in the process command line.** Authenticating a clone means embedding the credential in the remote URL, which leaves it in `argv`, in `origin` and potentially in error output. Now both credentials only ever appear in an `Authorization` header, and no authenticated remote is created.
+
+### Added
+
+- **Configurable hourly quotas for the two GitHub operations.** `cloud.settings` gains `rate_limit_github_previews_per_hour` (default 10) and `rate_limit_github_imports_per_hour` (default 5), both editable from the Rates tab and validated as positive. Preview and import share a single non-blocking global advisory lock so only one costly GitHub operation runs per manager at a time; that limit stays fixed because raising it changes worker capacity directly. The quota hit is committed in a short independent cursor *after* the lock is granted, so an admitted attempt still counts even if the request later rolls back, and the row is never held during the remote access.
+- **`try_advisory_xact_lock` in `models/_concurrency.py`.** A transaction-scoped, non-blocking advisory lock whose key is hashed together with the current database OID, since PostgreSQL advisory locks are cluster-global rather than database-local. Used here for the import lock and consumed by `incubacloud_website` to serialise Free signups per user.
+
 ## [1.0.99] — 2026-08-31
 
 ### Fixed

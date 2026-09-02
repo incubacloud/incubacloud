@@ -170,7 +170,7 @@ class TestGeneralSettingsLogBounds(TransactionCase):
 
 
 class TestCoreRateLimitsCoverLogAccess(TransactionCase):
-    """The two log caps live with the other caps, on the Rates tab."""
+    """Log and GitHub import caps live together on the Rates tab."""
 
     def setUp(self):
         super().setUp()
@@ -183,12 +183,14 @@ class TestCoreRateLimitsCoverLogAccess(TransactionCase):
         return fake_req
 
     def test_get_returns_the_log_caps(self):
+        """GET exposes both minute-based log caps."""
         with patch.object(_routes_crud, 'request', self._fake_request()):
             data = self.controller.cloud_get_core_rate_limits()
         self.assertIn('rate_limit_logs_per_min', data)
         self.assertIn('rate_limit_log_search_per_min', data)
 
     def test_save_persists_the_log_caps(self):
+        """Save persists both minute-based log caps."""
         with patch.object(_routes_crud, 'request', self._fake_request()):
             self.controller.cloud_save_core_rate_limits({
                 'rate_limit_logs_per_min': 45,
@@ -197,3 +199,21 @@ class TestCoreRateLimitsCoverLogAccess(TransactionCase):
         settings = self.env['cloud.settings'].sudo()._get()
         self.assertEqual(settings.rate_limit_logs_per_min, 45)
         self.assertEqual(settings.rate_limit_log_search_per_min, 3)
+
+    def test_get_returns_the_hourly_github_caps(self):
+        """GET exposes preview and import as separate hourly values."""
+        with patch.object(_routes_crud, 'request', self._fake_request()):
+            data = self.controller.cloud_get_core_rate_limits()
+        self.assertEqual(data['rate_limit_github_previews_per_hour'], 10)
+        self.assertEqual(data['rate_limit_github_imports_per_hour'], 5)
+
+    def test_save_persists_the_hourly_github_caps(self):
+        """Both hourly thresholds are configurable without redeploying."""
+        with patch.object(_routes_crud, 'request', self._fake_request()):
+            self.controller.cloud_save_core_rate_limits({
+                'rate_limit_github_previews_per_hour': 17,
+                'rate_limit_github_imports_per_hour': 8,
+            })
+        settings = self.env['cloud.settings'].sudo()._get()
+        self.assertEqual(settings.rate_limit_github_previews_per_hour, 17)
+        self.assertEqual(settings.rate_limit_github_imports_per_hour, 8)

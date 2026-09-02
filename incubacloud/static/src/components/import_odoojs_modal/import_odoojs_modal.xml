@@ -111,6 +111,12 @@
                                 </div>
                             </t>
                         </div>
+                        <t t-if="state.result?.sha_warning">
+                            <div class="ic-alert ic-alert--warning mt-3" role="alert">
+                                <span class="ic-alert__icon"><t t-out="env.icon('alert', 15)"/></span>
+                                <span t-esc="state.result.sha_warning"/>
+                            </div>
+                        </t>
                     </section>
                     <footer class="ic-modal__footer">
                         <button class="ic-btn ic-btn--primary" t-on-click="goToInstance">

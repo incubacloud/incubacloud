@@ -32,6 +32,20 @@
             <field name="description">Full host setup: checks OS/disk, installs all tools, deploys Traefik.</field>
         </record>
 
+        <record id="push_github_webhook_edge" model="cloud.job.type">
+            <field name="name">Publish GitHub Webhook Allowlist</field>
+            <field name="code">push_github_webhook_edge</field>
+            <field name="apply_to">host</field>
+            <field name="description">Writes the Traefik dynamic config that restricts the GitHub webhook path to GitHub's published source ranges, so a forged signature is refused before its body is read.</field>
+        </record>
+
+        <record id="push_trusted_proxies" model="cloud.job.type">
+            <field name="name">Push Trusted Proxy Settings</field>
+            <field name="code">push_trusted_proxies</field>
+            <field name="apply_to">host</field>
+            <field name="description">Re-ships the Traefik configuration that says which proxies in front of this host may be believed, and restarts the proxy so the static setting takes effect.</field>
+        </record>
+
         <record id="start_instance" model="cloud.job.type">
             <field name="name">Start Instance</field>
             <field name="code">start_instance</field>
