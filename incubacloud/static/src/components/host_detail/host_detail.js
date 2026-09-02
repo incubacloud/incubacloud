@@ -47,6 +47,8 @@ const EMPTY_FORM = () => ({
     traefik_yml:              "",
     exclude_from_autoassign:  false,
     http_conn_rate:           0,
+    trusted_proxy_ranges:     "",
+    block_direct_access:      false,
     whitelist:                [...DEFAULT_WHITELIST],
     newWhitelistEntry:        "",
 });
@@ -249,6 +251,8 @@ export class HostDetail extends Component {
                 traefik_yml:              host.traefik_yml || "",
                 exclude_from_autoassign:  host.exclude_from_autoassign || false,
                 http_conn_rate:           host.http_conn_rate || 0,
+                trusted_proxy_ranges:     host.trusted_proxy_ranges || "",
+                block_direct_access:      host.block_direct_access || false,
                 whitelist:                host.whitelist || [],
                 newWhitelistEntry:        "",
             };

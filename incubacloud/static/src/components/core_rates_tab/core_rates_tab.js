@@ -4,6 +4,18 @@ import { Component, useState, useEnv, onWillStart, onWillUnmount } from "@odoo/o
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 
+export const CORE_RATE_DEFAULTS = Object.freeze({
+    rate_limit_webhook_per_min: 300,
+    rate_limit_terminal_per_min: 30,
+    rate_limit_terminal_user_per_min: 10,
+    rate_limit_connect_per_min: 20,
+    rate_limit_connect_user_per_min: 10,
+    rate_limit_logs_per_min: 60,
+    rate_limit_log_search_per_min: 6,
+    rate_limit_github_previews_per_hour: 10,
+    rate_limit_github_imports_per_hour: 5,
+});
+
 export class CoreRatesTab extends Component {
     static template = "incubacloud.CoreRatesTab";
     static props = {};
@@ -12,15 +24,7 @@ export class CoreRatesTab extends Component {
         this.env = useEnv();
         this.state = useState({
             loading: true,
-            form: {
-                rate_limit_webhook_per_min: 300,
-                rate_limit_terminal_per_min: 30,
-                rate_limit_terminal_user_per_min: 10,
-                rate_limit_connect_per_min: 20,
-                rate_limit_connect_user_per_min: 10,
-                rate_limit_logs_per_min: 60,
-                rate_limit_log_search_per_min: 6,
-            },
+            form: { ...CORE_RATE_DEFAULTS },
         });
 
         this.env.registerSettingsSave?.("CoreRates", () => this._save());
@@ -54,6 +58,12 @@ export class CoreRatesTab extends Component {
                 ),
                 rate_limit_log_search_per_min: Number(
                     d.rate_limit_log_search_per_min || 6,
+                ),
+                rate_limit_github_previews_per_hour: Number(
+                    d.rate_limit_github_previews_per_hour || 10,
+                ),
+                rate_limit_github_imports_per_hour: Number(
+                    d.rate_limit_github_imports_per_hour || 5,
                 ),
             });
         } catch {
@@ -89,6 +99,10 @@ export class CoreRatesTab extends Component {
                     this.state.form.rate_limit_logs_per_min,
                 rate_limit_log_search_per_min:
                     this.state.form.rate_limit_log_search_per_min,
+                rate_limit_github_previews_per_hour:
+                    this.state.form.rate_limit_github_previews_per_hour,
+                rate_limit_github_imports_per_hour:
+                    this.state.form.rate_limit_github_imports_per_hour,
             },
         });
     }

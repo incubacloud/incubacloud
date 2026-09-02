@@ -760,6 +760,8 @@ class CrudMixin:
             'traefik_yml': host.traefik_yml or '',
             'exclude_from_autoassign': host.exclude_from_autoassign,
             'http_conn_rate': host.http_conn_rate,
+            'trusted_proxy_ranges': host.trusted_proxy_ranges or '',
+            'block_direct_access': host.block_direct_access,
             'allocated_cpus': round(host.allocated_cpus, 2),
             'allocated_ram_gb': round(host.allocated_ram_gb, 2),
             'available_cpus': round(host.available_cpus, 2),
@@ -784,6 +786,7 @@ class CrudMixin:
         'wildcard_domain', 'traefik_panel_password',
         'traefik_config_yml', 'traefik_inverseproxy_yaml', 'traefik_yml',
         'exclude_from_autoassign', 'http_conn_rate',
+        'trusted_proxy_ranges', 'block_direct_access',
     }
 
     @http.route(['/cloud/host_defaults'], type='jsonrpc', auth='user')
@@ -1631,7 +1634,7 @@ class CrudMixin:
     def cloud_get_core_rate_limits(self):
         """Return the configured caps for the core-owned rate limits.
 
-        Mirrored on the Rates tab in Settings. Values are per-minute.
+        Mirrored on the Rates tab in Settings. Units are encoded in each key.
         """
         self._sec()._check_can_manage_hosts()
         s = request.env['cloud.settings'].sudo()._get()
@@ -1648,6 +1651,12 @@ class CrudMixin:
             'rate_limit_logs_per_min': s.rate_limit_logs_per_min or 0,
             'rate_limit_log_search_per_min': (
                 s.rate_limit_log_search_per_min or 0
+            ),
+            'rate_limit_github_previews_per_hour': (
+                s.rate_limit_github_previews_per_hour or 0
+            ),
+            'rate_limit_github_imports_per_hour': (
+                s.rate_limit_github_imports_per_hour or 0
             ),
         }
 
@@ -1666,6 +1675,8 @@ class CrudMixin:
             'rate_limit_connect_user_per_min',
             'rate_limit_logs_per_min',
             'rate_limit_log_search_per_min',
+            'rate_limit_github_previews_per_hour',
+            'rate_limit_github_imports_per_hour',
         }
         safe = {
             k: max(0, int(v or 0))

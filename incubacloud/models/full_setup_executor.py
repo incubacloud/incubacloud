@@ -145,10 +145,14 @@ class FullSetupExecutor(AbstractSSHExecutor):
             host.wildcard_domain,
             host.traefik_panel_password,
         )
+        # Rendered, not read straight from the fields: a host that
+        # declares a proxy in front of it ships the matching Traefik
+        # settings here, and they have to be interlocked — the static
+        # file may name a middleware the dynamic file must define.
         await transport.upload_text_files({
             f"{_TMP}-inverseproxy.yaml": inverseproxy,
-            f"{_TMP}-traefik.yml":       host.traefik_yml or "",
-            f"{_TMP}-config.yml":        host.traefik_config_yml or "",
+            f"{_TMP}-traefik.yml":       host._shipped_traefik_yml(),
+            f"{_TMP}-config.yml":        host._shipped_config_yml(),
         })
         self._sys("✓ Traefik configuration files uploaded.")
 

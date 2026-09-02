@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 from .credentials import GitHubAppCredentials
-from .http_utils import safe_urlopen
+from .http_utils import read_json_limited, read_response_limited, safe_urlopen
 from .jwt_utils import generate_github_app_jwt
 from . import token_cache
 
@@ -28,6 +28,7 @@ _BASE_URL = "https://api.github.com"
 _GITHUB_API_VERSION = "2022-11-28"
 _ACCEPT_JSON = "application/vnd.github+json"
 _TIMEOUT = 15  # seconds
+_AUTH_RESPONSE_BYTES = 256 * 1024
 
 
 class GitHubPATClient:
@@ -36,7 +37,9 @@ class GitHubPATClient:
     def __init__(self, pat: str):
         self._pat = pat
 
-    def _request(self, method: str, endpoint: str) -> dict:
+    def _request(self, method: str, endpoint: str, *, budget=None,
+                 max_bytes=None) -> dict:
+        """Perform one authenticated request with optional shared limits."""
         url = f"{_BASE_URL}{endpoint}"
         req = urllib.request.Request(
             url,
@@ -47,14 +50,29 @@ class GitHubPATClient:
                 "X-GitHub-Api-Version": _GITHUB_API_VERSION,
             },
         )
+        if budget is not None:
+            budget.begin_request()
+            timeout = budget.remaining_timeout(_TIMEOUT)
+        else:
+            timeout = _TIMEOUT
         try:
-            with safe_urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 — hardcoded https://api.github.com
-                return json.loads(resp.read())
+            with safe_urlopen(req, timeout=timeout) as resp:  # nosec B310 — hardcoded https://api.github.com
+                return read_json_limited(
+                    resp, budget=budget, max_bytes=max_bytes,
+                )
         except urllib.error.HTTPError as exc:
-            raise GitHubAPIError(exc.code, exc.read().decode()) from exc
+            raw = read_response_limited(
+                exc, budget=budget, max_bytes=max_bytes,
+            )
+            raise GitHubAPIError(
+                exc.code, raw.decode(errors="replace"),
+            ) from exc
 
-    def get(self, endpoint: str) -> dict:
-        return self._request("GET", endpoint)
+    def get(self, endpoint: str, *, budget=None, max_bytes=None) -> dict:
+        """Fetch a GitHub API endpoint with optional shared limits."""
+        return self._request(
+            "GET", endpoint, budget=budget, max_bytes=max_bytes,
+        )
 
     def get_installation_token(self) -> str:
         """PAT is used directly as the clone token."""
@@ -77,7 +95,7 @@ class GitHubAppClient:
 
     # ── Internal helpers ───────────────────────────────────────────────────────
 
-    def _installation_token(self) -> str:
+    def _installation_token(self, *, budget=None, max_bytes=None) -> str:
         """Return a valid installation access token (from cache or freshly issued)."""
         cached = token_cache.get_token(self._creds.installation_id)
         if cached:
@@ -98,11 +116,29 @@ class GitHubAppClient:
             },
             data=b"",
         )
+        if budget is not None:
+            budget.begin_request()
+            timeout = budget.remaining_timeout(_TIMEOUT)
+        else:
+            timeout = _TIMEOUT
+        auth_max_bytes = (
+            min(max_bytes, _AUTH_RESPONSE_BYTES)
+            if max_bytes is not None else (
+                _AUTH_RESPONSE_BYTES if budget is not None else None
+            )
+        )
         try:
-            with safe_urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 — hardcoded https://api.github.com
-                data = json.loads(resp.read())
+            with safe_urlopen(req, timeout=timeout) as resp:  # nosec B310 — hardcoded https://api.github.com
+                data = read_json_limited(
+                    resp, budget=budget, max_bytes=auth_max_bytes,
+                )
         except urllib.error.HTTPError as exc:
-            raise GitHubAPIError(exc.code, exc.read().decode()) from exc
+            raw = read_response_limited(
+                exc, budget=budget, max_bytes=auth_max_bytes,
+            )
+            raise GitHubAPIError(
+                exc.code, raw.decode(errors="replace"),
+            ) from exc
 
         token = data["token"]
         expires_str = data.get("expires_at", "")
@@ -119,8 +155,12 @@ class GitHubAppClient:
         )
         return token
 
-    def _request(self, method: str, endpoint: str, data: dict | None = None) -> dict:
-        token = self._installation_token()
+    def _request(self, method: str, endpoint: str, data: dict | None = None,
+                 *, budget=None, max_bytes=None) -> dict:
+        """Perform one installation request with optional shared limits."""
+        token = self._installation_token(
+            budget=budget, max_bytes=max_bytes,
+        )
         url = f"{_BASE_URL}{endpoint}"
         body = json.dumps(data).encode() if data is not None else None
         req = urllib.request.Request(
@@ -134,21 +174,35 @@ class GitHubAppClient:
             },
             data=body,
         )
+        if budget is not None:
+            budget.begin_request()
+            timeout = budget.remaining_timeout(_TIMEOUT)
+        else:
+            timeout = _TIMEOUT
         try:
-            with safe_urlopen(req, timeout=_TIMEOUT) as resp:  # nosec B310 — hardcoded https://api.github.com
-                raw = resp.read()
-                return json.loads(raw) if raw else {}
+            with safe_urlopen(req, timeout=timeout) as resp:  # nosec B310 — hardcoded https://api.github.com
+                return read_json_limited(
+                    resp, budget=budget, max_bytes=max_bytes,
+                )
         except urllib.error.HTTPError as exc:
             if exc.code == 401:
                 token_cache.invalidate(self._creds.installation_id)
             if exc.code == 204:  # No Content (e.g. DELETE success)
                 return {}
-            raise GitHubAPIError(exc.code, exc.read().decode()) from exc
+            raw = read_response_limited(
+                exc, budget=budget, max_bytes=max_bytes,
+            )
+            raise GitHubAPIError(
+                exc.code, raw.decode(errors="replace"),
+            ) from exc
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def get(self, endpoint: str) -> dict:
-        return self._request("GET", endpoint)
+    def get(self, endpoint: str, *, budget=None, max_bytes=None) -> dict:
+        """Fetch a GitHub API endpoint with optional shared limits."""
+        return self._request(
+            "GET", endpoint, budget=budget, max_bytes=max_bytes,
+        )
 
     def post(self, endpoint: str, data: dict | None = None) -> dict:
         return self._request("POST", endpoint, data)
@@ -241,3 +295,42 @@ class GitHubAppClient:
             return {"ok": False, "error": str(exc)}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+
+
+class GitHubAnonymousClient:
+    """Read-only GitHub API client for public repositories."""
+
+    def _request(self, endpoint: str, *, budget=None, max_bytes=None) -> dict:
+        """Perform one anonymous request with optional shared limits."""
+        req = urllib.request.Request(
+            f"{_BASE_URL}{endpoint}",
+            method="GET",
+            headers={
+                "Accept": _ACCEPT_JSON,
+                "X-GitHub-Api-Version": _GITHUB_API_VERSION,
+                "User-Agent": "incubacloud/1.0",
+            },
+        )
+        if budget is not None:
+            budget.begin_request()
+            timeout = budget.remaining_timeout(_TIMEOUT)
+        else:
+            timeout = _TIMEOUT
+        try:
+            with safe_urlopen(req, timeout=timeout) as resp:  # nosec B310 — hardcoded https://api.github.com
+                return read_json_limited(
+                    resp, budget=budget, max_bytes=max_bytes,
+                )
+        except urllib.error.HTTPError as exc:
+            raw = read_response_limited(
+                exc, budget=budget, max_bytes=max_bytes,
+            )
+            raise GitHubAPIError(
+                exc.code, raw.decode(errors="replace"),
+            ) from exc
+
+    def get(self, endpoint: str, *, budget=None, max_bytes=None) -> dict:
+        """Fetch a public GitHub API endpoint with optional shared limits."""
+        return self._request(
+            endpoint, budget=budget, max_bytes=max_bytes,
+        )

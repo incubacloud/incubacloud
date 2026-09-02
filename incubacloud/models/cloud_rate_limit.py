@@ -13,6 +13,8 @@ Settings → Rates without redeploying:
   * ``rate_limit_terminal_user_per_min``  (default 10)
   * ``rate_limit_connect_per_min``        (default 20)
   * ``rate_limit_connect_user_per_min``   (default 10)
+  * ``rate_limit_github_previews_per_hour`` (default 10)
+  * ``rate_limit_github_imports_per_hour``  (default 5)
 
 Inheriting modules can ship their own rate-limit model (with their
 own caps, buckets and GC cadence) as a sibling rather than reusing
@@ -46,6 +48,8 @@ RATE_LIMIT_DEFAULTS = {
     # of logs on the customer's host — and gets a much tighter one.
     'rate_limit_logs_per_min': 60,
     'rate_limit_log_search_per_min': 6,
+    'rate_limit_github_previews_per_hour': 10,
+    'rate_limit_github_imports_per_hour': 5,
 }
 
 

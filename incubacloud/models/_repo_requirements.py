@@ -435,6 +435,52 @@ def prune_pip_sources(text, sources):
     }
 
 
+def apply_requirements_content(owner, content, repo_url, repo_branch):
+    """Merge already-fetched requirements into a project or instance.
+
+    This is the no-network counterpart of a repo line's normal
+    ``_apply_requirements`` hook.  Import inspection can fetch the file under
+    its shared HTTP budget, create the repo with that hook disabled and then
+    apply exactly those bytes without a second request.
+
+    :param owner: ``cloud.project`` or ``cloud.instance`` singleton
+    :param str content: decoded ``requirements.txt`` content
+    :param str repo_url: source repository URL used for provenance
+    :param str repo_branch: source branch used for provenance
+    :return: merge result, or ``None`` when content is empty
+    """
+    if not content:
+        return None
+    from ._pip_apt_map import resolve_apt_dependencies
+
+    old_sources = owner.pip_dependency_sources or {}
+    result = merge_pip_requirements(
+        owner.pip_dependencies,
+        content,
+        repo_url=repo_url,
+        repo_branch=repo_branch,
+        sources=old_sources,
+    )
+    values = {}
+    if result["content"] != (owner.pip_dependencies or ""):
+        values["pip_dependencies"] = result["content"]
+        needed = resolve_apt_dependencies(result["content"])
+        if needed:
+            existing = set((owner.apt_dependencies or "").split())
+            new_apt = needed - existing
+            if new_apt:
+                values["apt_dependencies"] = (
+                    (owner.apt_dependencies or "").rstrip()
+                    + "\n"
+                    + "\n".join(sorted(new_apt))
+                ).strip()
+    if result["sources"] != old_sources:
+        values["pip_dependency_sources"] = result["sources"]
+    if values:
+        owner.with_context(pip_provenance_managed=True).write(values)
+    return result
+
+
 def repo_key_for_source_label(repos, label):
     """Return the provenance key of the repo line matching *label*.
 

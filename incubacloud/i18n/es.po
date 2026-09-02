@@ -440,6 +440,17 @@ msgid "A rollback is already in progress."
 msgstr "Ya hay una reversión en curso."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"A submodule branch could not be verified within the safety budget and was "
+"normalized to the project version. Review it before deploying."
+msgstr ""
+"Una rama de submódulo no se pudo verificar dentro del presupuesto de "
+"seguridad y se normalizó a la versión del proyecto. Revísala antes de "
+"desplegar."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_access_key_id
@@ -665,6 +676,11 @@ msgid "Alert Threshold (%)"
 msgstr "Umbral de aviso (%)"
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_check_github_webhook_silence_ir_actions_server
+msgid "Alert When GitHub Webhooks Stop Arriving"
+msgstr "Avisar cuando dejen de llegar webhooks de GitHub"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__code
 msgid ""
 "Alert code raised by this rule. Also the dedup key, so two rules sharing a "
@@ -772,6 +788,16 @@ msgstr "Un backup de archivo no puede pertenecer a una cadena de duplicity."
 #: code:addons/incubacloud/controllers/connect.py:0
 msgid "An internal error occurred. Check server logs."
 msgstr "Se ha producido un error interno. Revise los logs del servidor."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"Another GitHub preview or import is already running. Try again when it "
+"finishes."
+msgstr ""
+"Ya hay otra vista previa o importación de GitHub en curso. Inténtalo de "
+"nuevo cuando termine."
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__apache-2_0
@@ -1364,6 +1390,59 @@ msgstr "Construyendo..."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__action_icon
 msgid "Button Icon"
 msgstr "Icono del botón"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__trusted_proxy_ranges
+msgid ""
+"CIDR ranges of the proxies in front of this host, one per line. Traefik "
+"believes X-Forwarded-For only on connections from these, and strips it from "
+"every other — which is what makes the header unspoofable and lets the per-"
+"client rate limit key on the real caller instead of a handful of edge "
+"addresses. Leave empty when the host answers its visitors directly; the "
+"connecting address is then used as-is."
+msgstr ""
+"Rangos CIDR de los proxies que hay delante de este anfitrión, uno por línea."
+" Traefik solo cree la cabecera X-Forwarded-For en conexiones que vengan de "
+"estos rangos, y la elimina en cualquier otra: eso es lo que hace que no se "
+"pueda falsificar y permite que el límite de peticiones por cliente cuente al"
+" visitante real en lugar de a unas pocas direcciones del borde. Déjelo vacío"
+" cuando el anfitrión atienda directamente a sus visitantes; entonces se usa "
+"la dirección de la conexión tal cual."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__trusted_proxy_ranges
+msgid ""
+"CIDR ranges of the proxies in front of this installation, one per line. Only"
+" when a request arrives from one of them is its X-Forwarded-For header "
+"believed, so this is what makes every per-client control here — rate limits,"
+" allowlists, audit lines — key on the real caller instead of the proxy. "
+"Leave empty when nothing fronts this installation: the connecting address is"
+" then used as-is, which is over-restrictive but never spoofable."
+msgstr ""
+"Rangos CIDR de los proxies que hay delante de esta instalación, uno por "
+"línea. Solo cuando una petición llega desde uno de ellos se cree su cabecera"
+" X-Forwarded-For, así que esto es lo que hace que cada control por cliente "
+"de aquí (límites de peticiones, listas de permitidos, líneas de auditoría) "
+"identifique a quien llama y no al proxy. Déjelo vacío cuando no haya nada "
+"delante de esta instalación: entonces se usa la dirección de la conexión tal"
+" cual, lo cual es más restrictivo pero nunca falsificable."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"CIDR ranges of the proxy or CDN in front of this host, one per line. Only "
+"connections from these have their X-Forwarded-For believed, which is what "
+"makes the per-client rate limit key on the real visitor instead of a handful"
+" of edge addresses. Leave empty when the host answers its visitors directly."
+" Applies on the next setup run."
+msgstr ""
+"Rangos CIDR del proxy o CDN que hay delante de este anfitrión, uno por "
+"línea. Solo las conexiones que vengan de estos rangos tienen su cabecera "
+"X-Forwarded-For creída, que es lo que hace que el límite de peticiones por "
+"cliente cuente al visitante real en lugar de a unas pocas direcciones del "
+"borde. Déjelo vacío cuando el anfitrión atienda directamente a sus "
+"visitantes. Se aplica en la próxima configuración del anfitrión."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2298,17 +2377,26 @@ msgstr ""
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"Could not access the repository. Check the URL and your GitHub credentials."
+msgid "Could not access a repository declared by the project."
 msgstr ""
-"No se pudo acceder al repositorio. Comprueba la URL y tus credenciales de "
+"No se pudo acceder a uno de los repositorios declarados por el proyecto."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Could not access the repository. Check the URL and GitHub credentials."
+msgstr ""
+"No se pudo acceder al repositorio. Revisa la URL y las credenciales de "
 "GitHub."
 
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid "Could not clone repository. Check the URL and credentials."
-msgstr "No se pudo clonar el repositorio. Verifica la URL y las credenciales."
+msgid ""
+"Could not access the repository. Check the URL and your GitHub credentials."
+msgstr ""
+"No se pudo acceder al repositorio. Comprueba la URL y tus credenciales de "
+"GitHub."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2319,12 +2407,8 @@ msgstr "No se pudo detectar el ID de chat"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"Could not fetch repository data. Check the URL and configure GitHub "
-"credentials for private repos."
-msgstr ""
-"No se pudieron obtener datos del repositorio. Verifica la URL y configura "
-"las credenciales de GitHub para repos privados."
+msgid "Could not inspect the repository safely."
+msgstr "No se pudo inspeccionar el repositorio de forma segura."
 
 #. module: incubacloud
 #. odoo-python
@@ -2351,10 +2435,29 @@ msgid "Could not load projects"
 msgstr "No se pudieron cargar los proyectos"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Could not parse repository configuration."
+msgstr "No se pudo interpretar la configuración del repositorio."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Could not queue it."
 msgstr "No se pudo encolar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/github_webhook_edge.py:0
+msgid ""
+"Could not read GitHub's published webhook source ranges (%s). The edge "
+"allowlist keeps the ranges it already has; if GitHub has since added one, "
+"deliveries from it are being rejected."
+msgstr ""
+"No se pudieron leer los rangos de origen que GitHub publica para sus "
+"webhooks (%s). La lista del borde conserva los rangos que ya tenía; si "
+"GitHub ha añadido alguno desde entonces, las entregas que vengan de él están"
+" siendo rechazadas."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3004,6 +3107,24 @@ msgstr ""
 #: model:res.groups,name:incubacloud.group_cloud_developer
 msgid "Developer"
 msgstr "Desarrollador"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__github_webhook_edge_hash
+msgid ""
+"Digest of the webhook allowlist document last published to this host. "
+"Compared against a fresh render so the refresh only ships a host whose "
+"document actually moved."
+msgstr ""
+"Huella del documento de la lista de permitidos del webhook publicado por "
+"última vez en este anfitrión. Se compara con un renderizado nuevo para que "
+"el refresco solo envíe a un anfitrión cuyo documento haya cambiado de "
+"verdad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Direct access"
+msgstr "Acceso directo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4347,6 +4468,17 @@ msgid "GitHub Webhook Events"
 msgstr "Eventos webhook de GitHub"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/github_webhook_edge.py:0
+msgid ""
+"GitHub changed its published webhook source ranges (was: %(before)s; now: "
+"%(after)s). The edge allowlists are being republished to match."
+msgstr ""
+"GitHub cambió los rangos de origen que publica para sus webhooks (antes: "
+"%(before)s; ahora: %(after)s). Las listas de permitidos del borde se están "
+"republicando para reflejarlo."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_event_truncate_days
 msgid "GitHub event payload truncation (days)"
 msgstr "Truncado de payload de eventos GitHub (días)"
@@ -4355,6 +4487,33 @@ msgstr "Truncado de payload de eventos GitHub (días)"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_event_retention_days
 msgid "GitHub event retention (days)"
 msgstr "Retención de eventos GitHub (días)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "GitHub import limit reached. Try again later."
+msgstr "Se alcanzó el límite de importaciones de GitHub. Inténtalo más tarde."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__rate_limit_github_previews_per_hour
+msgid "GitHub import previews (per user, per hour)"
+msgstr "Vistas previas de importación de GitHub (por usuario y hora)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "GitHub preview limit reached. Try again later."
+msgstr ""
+"Se alcanzó el límite de vistas previas de GitHub. Inténtalo más tarde."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__rate_limit_github_imports_per_hour
+msgid "GitHub project imports (per user, per hour)"
+msgstr "Importaciones de proyectos de GitHub (por usuario y hora)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4372,6 +4531,21 @@ msgstr "Webhook de GitHub (por IP, por minuto)"
 #: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
 msgid "GitHub webhook (per client IP)"
 msgstr "Webhook de GitHub (por IP del cliente)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_webhook_silence_hours
+msgid "GitHub webhook silence alert (hours)"
+msgstr "Aviso por silencio de webhooks de GitHub (horas)"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_refresh_github_hook_ranges_ir_actions_server
+msgid "GitHub: Refresh the Webhook Source Allowlist"
+msgstr "GitHub: refrescar la lista de orígenes permitidos del webhook"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__github_webhook_edge_hash
+msgid "Github Webhook Edge Hash"
+msgstr "Huella de la lista del webhook de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4870,6 +5044,18 @@ msgid "Import project from GitHub"
 msgstr "Importar proyecto desde GitHub"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Imported YAML configuration is too complex."
+msgstr "La configuración YAML importada es demasiado compleja."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Imported YAML configuration is too deeply nested."
+msgstr "La configuración YAML importada tiene demasiados niveles."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Importing instance…"
@@ -5282,6 +5468,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid addons.yaml structure."
+msgstr "La estructura de addons.yaml no es válida."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid "Invalid alert id"
 msgstr "ID de alerta no válido"
@@ -5289,8 +5481,8 @@ msgstr "ID de alerta no válido"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid "Invalid branch name"
-msgstr "Nombre de rama no válido"
+msgid "Invalid branch name."
+msgstr "Nombre de rama no válido."
 
 #. module: incubacloud
 #. odoo-python
@@ -5301,6 +5493,12 @@ msgid ""
 msgstr ""
 "Nombre de bucket inválido \"%s\": no puede contener barras. Pon solo el "
 "nombre del bucket aquí y el prefijo en el campo Ruta."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid copier answers structure."
+msgstr "La estructura de respuestas de Copier no es válida."
 
 #. module: incubacloud
 #. odoo-python
@@ -5327,8 +5525,32 @@ msgstr ""
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid production domains configuration."
+msgstr "La configuración de dominios de producción no es válida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid repos.yaml structure."
+msgstr "La estructura de repos.yaml no es válida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Invalid repository URL"
 msgstr "URL de repositorio no válida"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid repository URL."
+msgstr "URL de repositorio no válida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid repository content encoding."
+msgstr "La codificación del contenido del repositorio no es válida."
 
 #. module: incubacloud
 #. odoo-python
@@ -5342,6 +5564,18 @@ msgstr "Modo de restauración no válido."
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Invalid service name"
 msgstr "Nombre de servicio inválido"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid submodule URL."
+msgstr "URL de submódulo no válida."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Invalid submodule path."
+msgstr "Ruta de submódulo no válida."
 
 #. module: incubacloud
 #. odoo-python
@@ -6064,6 +6298,28 @@ msgstr ""
 "tormenta de debug multi-operador."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__rate_limit_github_previews_per_hour
+msgid ""
+"Max bounded GitHub preview operations per panel user and hour. A busy global"
+" import lock is rejected before consuming this quota. 0 falls back to the "
+"default (10)."
+msgstr ""
+"Máximo de vistas previas acotadas de GitHub por usuario del panel y hora. Un"
+" lock global de importación ocupado se rechaza antes de consumir esta cuota."
+" 0 vuelve al valor por defecto (10)."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__rate_limit_github_imports_per_hour
+msgid ""
+"Max bounded GitHub project imports per panel user and hour. An admitted "
+"attempt counts even if GitHub or parsing fails later. 0 falls back to the "
+"default (5)."
+msgstr ""
+"Máximo de importaciones acotadas de proyectos de GitHub por usuario del "
+"panel y hora. Un intento admitido cuenta aunque GitHub o el análisis fallen "
+"después. 0 vuelve al valor por defecto (5)."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__rate_limit_connect_user_per_min
 msgid ""
 "Max connect-as calls/min from a single panel user. Caps a compromised "
@@ -6555,6 +6811,21 @@ msgid ""
 msgstr ""
 "No hay credenciales de GitHub configuradas. Configura una GitHub App o un "
 "Token de Acceso Personal (PAT) para acceder a repositorios privados."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_github_event.py:0
+msgid ""
+"No GitHub webhook delivery has been recorded in the last %(hours)s hours "
+"(last seen: %(last_seen)s). Repository pushes are not reaching the platform,"
+" so automatic rebuilds have stopped. Check the App installation and any "
+"source-address allowlist in front of /cloud/github/webhook."
+msgstr ""
+"No se ha registrado ninguna entrega de webhook de GitHub en las últimas "
+"%(hours)s horas (última vez: %(last_seen)s). Los cambios subidos a los "
+"repositorios no están llegando a la plataforma, así que las reconstrucciones"
+" automáticas se han detenido. Revisa la instalación de la App y cualquier "
+"lista de direcciones de origen permitidas delante de /cloud/github/webhook."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7168,6 +7439,17 @@ msgstr "Una fila por bucket de rate-limit."
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_terminal_route_session_id_uniq
 msgid "One row per terminal session."
 msgstr "Una fila por sesión de terminal."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__block_direct_access
+msgid "Only Accept Traffic From Trusted Proxies"
+msgstr "Aceptar tráfico solo de los proxies de confianza"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Only accept traffic from the trusted proxies above"
+msgstr "Aceptar tráfico solo de los proxies de confianza indicados arriba"
 
 #. module: incubacloud
 #. odoo-python
@@ -7860,17 +8142,19 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
 msgid ""
 "Protect the GitHub webhook, the terminal opener and\n"
-"            connect-as against CPU DoS and resource exhaustion. All values\n"
-"            are requests per minute, tumbling window. Changes\n"
+"            connect-as and GitHub imports against CPU DoS and resource\n"
+"            exhaustion. Unless a field says \"per hour\", values are requests\n"
+"            per minute in a tumbling window. Changes\n"
 "            apply immediately — no redeploy needed. Set any\n"
 "            field to a non-positive number and the model will\n"
 "            fall back to the documented default."
 msgstr ""
-"Protege el webhook de GitHub, la apertura de terminal y la conexión-como "
-"frente a DoS de CPU y agotamiento de recursos. Todos los valores son "
-"peticiones por minuto, en ventana fija. Los cambios se aplican de inmediato,"
-" sin redespliegue. Si pone un valor no positivo, el modelo usará el valor "
-"por defecto documentado."
+"Protege el webhook de GitHub, la apertura de terminal, el acceso como\n"
+"            usuario y las importaciones de GitHub frente a ataques de CPU y\n"
+"            agotamiento de recursos. Salvo que un campo indique «por hora»,\n"
+"            los valores son solicitudes por minuto en una ventana fija. Los\n"
+"            cambios se aplican de inmediato, sin redespliegue. Si un campo\n"
+"            tiene un valor no positivo, se usa el predeterminado documentado."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7878,6 +8162,22 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_proxy
 msgid "Proxy"
 msgstr "Proxy"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__github_webhook_allowlist
+msgid ""
+"Publish a Traefik router that only lets GitHub's own published address "
+"ranges reach /cloud/github/webhook, so a forged signature is refused before "
+"its body is read. Off by default because it is only correct for deliveries "
+"from github.com: an installation served by GitHub Enterprise delivers from "
+"its own addresses and would be locked out."
+msgstr ""
+"Publica un enrutador de Traefik que solo permite que los rangos de "
+"direcciones publicados por GitHub lleguen a /cloud/github/webhook, de modo "
+"que una firma falsificada se rechaza antes de leer su cuerpo. Desactivado "
+"por defecto porque solo es correcto para entregas de github.com: una "
+"instalación servida por GitHub Enterprise entrega desde sus propias "
+"direcciones y quedaría bloqueada."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__purge_cutoff_at
@@ -8018,6 +8318,22 @@ msgstr ""
 "Clave privada RSA en formato PEM generada para esta App de GitHub. Se "
 "almacena cifrada en reposo; nunca se expone en los logs ni en las respuestas"
 " de la API."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__github_webhook_silence_hours
+msgid ""
+"Raise an alert when no webhook delivery has been recorded for this many "
+"hours while a GitHub App is configured. An edge allowlist that has fallen "
+"behind GitHub's published ranges fails by dropping deliveries silently, so "
+"the only way to notice is to watch for the silence itself. Set to 0 to "
+"disable the check."
+msgstr ""
+"Levanta una alerta cuando no se haya registrado ninguna entrega de webhook "
+"durante estas horas y haya una App de GitHub configurada. Una lista de "
+"direcciones permitidas en el borde que se haya quedado atrás respecto a los "
+"rangos publicados por GitHub falla descartando entregas en silencio, así que"
+" la única forma de notarlo es vigilar el propio silencio. Ponlo a 0 para "
+"desactivar la comprobación."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8260,6 +8576,33 @@ msgid "Refreshing…"
 msgstr "Actualizando…"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__block_direct_access
+msgid ""
+"Refuse HTTPS requests that did not come through one of the trusted proxy "
+"ranges above, so the origin cannot be reached by its address to bypass the "
+"edge. Requires trusted proxy ranges to be set — with none, this would lock "
+"the host out of its own visitors, so it is ignored."
+msgstr ""
+"Rechaza las peticiones HTTPS que no hayan pasado por uno de los rangos de "
+"proxy de confianza de arriba, para que no se pueda llegar al origen por su "
+"dirección y saltarse el borde. Requiere que haya rangos de proxy de "
+"confianza: sin ninguno se ignora, porque dejaría al anfitrión sin ninguno de"
+" sus visitantes."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Refuses HTTPS requests that reached this host without going through the "
+"edge, so its address cannot be used to bypass it. Ignored while no trusted "
+"range is set, where it would lock out every visitor."
+msgstr ""
+"Rechaza las peticiones HTTPS que llegaron a este anfitrión sin pasar por el "
+"borde, para que no se pueda usar su dirección para saltárselo. Se ignora "
+"mientras no haya ningún rango de confianza definido, porque entonces dejaría"
+" fuera a todos los visitantes."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__remote_folder
 msgid "Remote Folder"
 msgstr "Carpeta remota"
@@ -8406,14 +8749,109 @@ msgstr ""
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid "Repository clone timed out. Check the URL and try again."
-msgstr ""
-"El clonado del repositorio expiró. Verifica la URL e intenta de nuevo."
+msgid "Repository branch has no valid commit."
+msgstr "La rama del repositorio no tiene un commit válido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository configuration file is too large."
+msgstr "El archivo de configuración del repositorio es demasiado grande."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository configuration is not UTF-8."
+msgstr "La configuración del repositorio no está codificada en UTF-8."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository configuration is not a regular file."
+msgstr "La configuración del repositorio no es un archivo regular."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository configuration is too large."
+msgstr "La configuración del repositorio es demasiado grande."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository contains too many manifests."
+msgstr "El repositorio contiene demasiados manifiestos."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository content size is invalid."
+msgstr "El tamaño del contenido del repositorio no es válido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository declares too many addon aliases."
+msgstr "El repositorio declara demasiados alias de addons."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository declares too many config files."
+msgstr "El repositorio declara demasiados archivos de configuración."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository declares too many domains."
+msgstr "El repositorio declara demasiados dominios."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository declares too many repositories."
+msgstr "El repositorio declara demasiados repositorios."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository declares too many submodules."
+msgstr "El repositorio declara demasiados submódulos."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository inspection exceeded its safety budget."
+msgstr "La inspección del repositorio superó su presupuesto de seguridad."
 
 #. module: incubacloud
 #: model:ir.model,name:incubacloud.model_cloud_repo_mixin
 msgid "Repository line (shared base)"
 msgstr "Línea de repositorio (base compartida)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository manifest is too complex."
+msgstr "El manifest del repositorio es demasiado complejo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository manifest is too large."
+msgstr "El manifest del repositorio es demasiado grande."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository requirements file is too large."
+msgstr "El archivo de requisitos del repositorio es demasiado grande."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Repository tree is too large."
+msgstr "El árbol del repositorio es demasiado grande."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8503,6 +8941,11 @@ msgstr "Falló la restauración"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Restoring…"
 msgstr "Restaurando…"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_webhook_allowlist
+msgid "Restrict the GitHub webhook at the edge"
+msgstr "Restringir el webhook de GitHub en el borde"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__result
@@ -10342,6 +10785,18 @@ msgid "Trusted"
 msgstr "De confianza"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__trusted_proxy_ranges
+msgid "Trusted Proxy Ranges"
+msgstr "Rangos de proxy de confianza"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__trusted_proxy_ranges
+msgid "Trusted proxy ranges"
+msgstr "Rangos de proxy de confianza"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
@@ -10535,6 +10990,12 @@ msgstr "Cambios sin guardar"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__status__unsupported
 msgid "Unsupported"
 msgstr "No soportado"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Unsupported repository content encoding."
+msgstr "La codificación del contenido del repositorio no es compatible."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11119,6 +11580,12 @@ msgstr ""
 "                            sha256=<hex>"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "YAML aliases are not supported in imported configuration."
+msgstr "Los alias YAML no se admiten en la configuración importada."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid ""
@@ -11621,6 +12088,12 @@ msgstr "my-backup-bucket"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "myproject-staging"
 msgstr "myproject-staging"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_github_event.py:0
+msgid "never"
+msgstr "nunca"
 
 #. module: incubacloud
 #. odoo-javascript

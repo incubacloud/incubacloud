@@ -27,6 +27,38 @@ from contextlib import contextmanager
 from odoo.sql_db import Cursor
 
 
+def try_advisory_xact_lock(cr, namespace, scope=""):
+    """Try a transaction-scoped advisory lock isolated by database.
+
+    PostgreSQL advisory locks are cluster-global, not database-local.  The
+    hashed key therefore includes the current database OID, a caller-owned
+    namespace and an optional scope such as a user ID.  The non-blocking call
+    lets HTTP workers reject contention instead of waiting for another long
+    operation to finish.
+
+    :param cr: active Odoo cursor whose transaction will own the lock
+    :param str namespace: stable feature-specific lock namespace
+    :param scope: stable resource identifier within the namespace
+    :return: whether this transaction acquired the lock
+    :rtype: bool
+    """
+    cr.execute(
+        """
+        SELECT pg_try_advisory_xact_lock(
+            hashtextextended(
+                (SELECT oid::text
+                   FROM pg_database
+                  WHERE datname = current_database())
+                || ':' || %s || ':' || %s,
+                0
+            )
+        )
+        """,
+        (str(namespace), str(scope)),
+    )
+    return bool(cr.fetchone()[0])
+
+
 @contextmanager
 def read_committed_cursor(registry):
     """Yield a fresh cursor running at READ COMMITTED.

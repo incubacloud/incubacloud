@@ -10,8 +10,9 @@
         <div class="rl-saas-fsec">Rate limits for core endpoints</div>
         <p class="rl-tabnote">
             Protect the GitHub webhook, the terminal opener and
-            connect-as against CPU DoS and resource exhaustion. All values
-            are requests per minute, tumbling window. Changes
+            connect-as and GitHub imports against CPU DoS and resource
+            exhaustion. Unless a field says "per hour", values are requests
+            per minute in a tumbling window. Changes
             apply immediately — no redeploy needed. Set any
             field to a non-positive number and the model will
             fall back to the documented default.
@@ -59,6 +60,18 @@
                 <input type="number" min="1" style="width:120px;"
                        t-att-value="state.form.rate_limit_log_search_per_min"
                        t-on-change="(ev) => this.onIntInput('rate_limit_log_search_per_min', ev)"/>
+            </div>
+            <div class="rl-frow">
+                <label>GitHub import previews (per user, per hour)</label>
+                <input type="number" min="1" style="width:120px;"
+                       t-att-value="state.form.rate_limit_github_previews_per_hour"
+                       t-on-change="(ev) => this.onIntInput('rate_limit_github_previews_per_hour', ev)"/>
+            </div>
+            <div class="rl-frow">
+                <label>GitHub project imports (per user, per hour)</label>
+                <input type="number" min="1" style="width:120px;"
+                       t-att-value="state.form.rate_limit_github_imports_per_hour"
+                       t-on-change="(ev) => this.onIntInput('rate_limit_github_imports_per_hour', ev)"/>
             </div>
         </div>
 

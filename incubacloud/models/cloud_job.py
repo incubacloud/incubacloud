@@ -756,6 +756,10 @@ class CloudJob(models.Model):
         "host_metrics": "group_cloud_manager",
         "host_hardening": "group_cloud_manager",
         "full_setup": "group_cloud_manager",
+        # Both rewrite what the host's proxy does with every request that
+        # reaches it, so they sit with the other host-level operations.
+        "push_trusted_proxies": "group_cloud_manager",
+        "push_github_webhook_edge": "group_cloud_manager",
         "setup_whitelist": "group_cloud_manager",
         "delete_host": "group_cloud_manager",
         "docker_prune": "group_cloud_manager",

@@ -98,6 +98,20 @@ class TestCloudRateLimitCap(TransactionCase):
             self.rl._get_cap('rate_limit_terminal_user_per_min'), 10,
         )
 
+    def test_github_hourly_caps_have_independent_defaults(self):
+        """Preview and import use their documented separate thresholds."""
+        settings = self.env['cloud.settings']._get_system()
+        settings.write({
+            'rate_limit_github_previews_per_hour': 0,
+            'rate_limit_github_imports_per_hour': 0,
+        })
+        self.assertEqual(
+            self.rl._get_cap('rate_limit_github_previews_per_hour'), 10,
+        )
+        self.assertEqual(
+            self.rl._get_cap('rate_limit_github_imports_per_hour'), 5,
+        )
+
 
 class TestCloudRateLimitGc(TransactionCase):
     """``_gc`` removes buckets whose window has fully aged out."""
@@ -151,7 +165,7 @@ class TestWebhookRateLimit(TransactionCase):
             f'webhook_ip:{ip}',
             cap_key='rate_limit_webhook_per_min',
         ))
-        # The controller's ``_client_ip`` helper is independent of
-        # this behavior; validate it returns something sensible when
-        # no request is bound (falls back to the "unknown" string).
-        self.assertEqual(gw._client_ip(), 'unknown')
+        # The shared ``client_ip`` helper is independent of this
+        # behavior; validate it returns something sensible when no
+        # request is bound (falls back to the "unknown" string).
+        self.assertEqual(gw.client_ip(), 'unknown')

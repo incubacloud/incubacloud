@@ -17,6 +17,11 @@ hcloud==2.17.1
 bcrypt==5.0.0
 ansible-core==2.21.2
 ansible-runner==2.4.3
+# Baked into the same image even though no core addon imports them: the
+# SaaS addons that run on this image do. Listed here so pip-audit covers
+# every runtime pin, not only the ones this repo's own code reaches.
+joserfc==1.6.8
+ovh==1.2.0
 
 # Test-only pins (matched by the CI ``test`` job)
 PyYAML==6.0.3

@@ -23,7 +23,10 @@ from unittest.mock import patch
 
 from odoo.tests.common import TransactionCase
 
-from odoo.addons.incubacloud.models._concurrency import read_committed_cursor
+from odoo.addons.incubacloud.models._concurrency import (
+    read_committed_cursor,
+    try_advisory_xact_lock,
+)
 from odoo.addons.incubacloud.models.abstract_executor import AbstractSSHExecutor
 
 _METRICS = "odoo.addons.incubacloud.models.cloud_instance_metrics"
@@ -55,6 +58,26 @@ class TestReadCommittedCursor(TransactionCase):
         with read_committed_cursor(self.env.registry) as cr:
             cr.execute("SELECT 1")
             self.assertEqual(cr.fetchone()[0], 1)
+
+
+class TestAdvisoryTransactionLock(TransactionCase):
+    """The shared advisory helper is non-blocking and transaction scoped."""
+
+    def test_same_database_namespace_and_scope_contend(self):
+        """A second real connection fails immediately on the same key."""
+        with self.env.registry.cursor() as first, \
+                self.env.registry.cursor() as second:
+            self.assertTrue(try_advisory_xact_lock(first, "test", 7))
+            self.assertFalse(try_advisory_xact_lock(second, "test", 7))
+            first.rollback()
+            self.assertTrue(try_advisory_xact_lock(second, "test", 7))
+
+    def test_distinct_scopes_do_not_contend(self):
+        """Different users can hold their feature locks concurrently."""
+        with self.env.registry.cursor() as first, \
+                self.env.registry.cursor() as second:
+            self.assertTrue(try_advisory_xact_lock(first, "test", 7))
+            self.assertTrue(try_advisory_xact_lock(second, "test", 8))
 
 
 class TestLivenessCronIsolation(TransactionCase):

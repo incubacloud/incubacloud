@@ -8,6 +8,7 @@ from psycopg2 import sql
 from odoo import _, api, fields, models, tools
 from odoo.exceptions import UserError, ValidationError
 
+from ..net.trusted_proxies import parse_ranges
 from .encrypted_char import EncryptedChar, EncryptedFieldMixin
 from .password_utils import (
     generate_password,
@@ -116,6 +117,38 @@ class CloudSettings(models.Model):
              'Unprocessed/error rows are never auto-deleted. Set to 0 to '
              'disable deletion entirely.',
     )
+    github_webhook_silence_hours = fields.Integer(
+        string='GitHub webhook silence alert (hours)',
+        default=48,
+        help='Raise an alert when no webhook delivery has been recorded '
+             'for this many hours while a GitHub App is configured. An '
+             'edge allowlist that has fallen behind GitHub\'s published '
+             'ranges fails by dropping deliveries silently, so the only '
+             'way to notice is to watch for the silence itself. Set to 0 '
+             'to disable the check.',
+    )
+    github_webhook_allowlist = fields.Boolean(
+        string='Restrict the GitHub webhook at the edge',
+        default=False,
+        help="Publish a Traefik router that only lets GitHub's own "
+             "published address ranges reach /cloud/github/webhook, so a "
+             "forged signature is refused before its body is read. Off by "
+             "default because it is only correct for deliveries from "
+             "github.com: an installation served by GitHub Enterprise "
+             "delivers from its own addresses and would be locked out.",
+    )
+    trusted_proxy_ranges = fields.Text(
+        string='Trusted proxy ranges',
+        help="CIDR ranges of the proxies in front of this installation, "
+             "one per line. Only when a request arrives from one of them "
+             "is its X-Forwarded-For header believed, so this is what "
+             "makes every per-client control here — rate limits, "
+             "allowlists, audit lines — key on the real caller instead of "
+             "the proxy. Leave empty when nothing fronts this "
+             "installation: the connecting address is then used as-is, "
+             "which is over-restrictive but never spoofable.",
+    )
+
     github_event_truncate_days = fields.Integer(
         string='GitHub event payload truncation (days)',
         default=7,
@@ -232,8 +265,9 @@ class CloudSettings(models.Model):
 
     # ── Rate limiting caps ────────────────────────────────────────────────
     # Read by ``cloud.rate.limit._get_cap`` when throttling the two
-    # abuse-prone public/auth'd endpoints. All values are per-minute
-    # tumbling windows. Setting any of them to 0 falls back to the
+    # abuse-prone public/auth'd endpoints. Values ending in ``per_min``
+    # use minute windows; GitHub import values use hour windows. Setting
+    # any of them to 0 falls back to the
     # documented default so a misconfigured 0 can't accidentally
     # lock every request out.
 
@@ -291,6 +325,20 @@ class CloudSettings(models.Model):
         help='Max connect-as calls/min from a single panel user. Caps a '
              'compromised account from enumerating tenant users or minting '
              'impersonation tokens in bulk.',
+    )
+    rate_limit_github_previews_per_hour = fields.Integer(
+        string='GitHub import previews (per user, per hour)',
+        default=10,
+        help='Max bounded GitHub preview operations per panel user and hour. '
+             'A busy global import lock is rejected before consuming this '
+             'quota. 0 falls back to the default (10).',
+    )
+    rate_limit_github_imports_per_hour = fields.Integer(
+        string='GitHub project imports (per user, per hour)',
+        default=5,
+        help='Max bounded GitHub project imports per panel user and hour. '
+             'An admitted attempt counts even if GitHub or parsing fails '
+             'later. 0 falls back to the default (5).',
     )
 
     # ── Backup usage alert default ────────────────────────────────────────
@@ -696,6 +744,22 @@ class CloudSettings(models.Model):
         if not rec:
             rec = self.sudo().create({})
         return rec
+
+    @api.model
+    def _effective_trusted_proxy_ranges(self):
+        """Return the CIDR ranges whose ``X-Forwarded-For`` is believed.
+
+        Reads the operator-entered field. Modules that know the proxy in
+        front of this installation — the SaaS manager knows the platform
+        answers behind a CDN — override this and supply the ranges
+        themselves, so operators never have to keep a moving list of
+        somebody else's addresses up to date by hand.
+
+        :return: CIDR strings; empty means "believe nothing", which is
+            the pre-existing behaviour
+        :rtype: list
+        """
+        return parse_ranges(self._get_system().trusted_proxy_ranges)
 
     # ── Startup check: INCUBACLOUD_SECRET_KEY ──────────────────────────────
 
