@@ -60,6 +60,18 @@ class PushTrustedProxiesExecutor(AbstractSSHExecutor):
         ]
 
     async def on_success(self, results):
+        """Record what the host is now running, so nothing publishes early.
+
+        Everything downstream that has to agree with the host's proxy
+        posture — the webhook allowlist above all — reads this rather
+        than what the panel intends, because the two differ for as long
+        as a change is queued.
+        """
+        host = self.job.host_id
+        host.write({
+            'trusted_proxies_shipped':
+                '\n'.join(host._effective_trusted_proxy_ranges()),
+        })
         self._sys('✓ Traefik restarted with the new proxy trust settings.')
 
     async def on_failure(self, results, errors):

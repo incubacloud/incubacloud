@@ -10234,6 +10234,20 @@ msgid "The port to connect to the cloud host."
 msgstr "El puerto para conectar al host cloud."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__trusted_proxies_shipped
+msgid ""
+"The proxy ranges this host's Traefik was last given. Written by the jobs "
+"that ship them, and compared against what the panel currently intends, so "
+"nothing downstream is published against a posture the host is not running "
+"yet."
+msgstr ""
+"Los rangos de proxy que se le dieron por última vez al Traefik de este "
+"anfitrión. Los escriben los trabajos que los envían, y se comparan con lo "
+"que el panel pretende ahora mismo, para que nada de lo que va por detrás se "
+"publique contra una configuración que el anfitrión todavía no está "
+"ejecutando."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
@@ -10783,6 +10797,11 @@ msgstr "Confiar clave SSH"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Trusted"
 msgstr "De confianza"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__trusted_proxies_shipped
+msgid "Trusted Proxies Shipped"
+msgstr "Proxies de confianza enviados"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__trusted_proxy_ranges
