@@ -18,6 +18,7 @@ import logging
 from odoo import _, api, fields, models
 
 from ..github.edge import build_webhook_edge_yaml
+from ..net.trusted_proxies import parse_ranges
 from ..github.meta import GitHubMetaError, fetch_hook_ranges
 
 _logger = logging.getLogger(__name__)
@@ -79,6 +80,15 @@ class CloudInstanceWebhookService(models.Model):
 
 class CloudHostGitHubWebhookEdge(models.Model):
     _inherit = 'cloud.host'
+
+    trusted_proxies_shipped = fields.Text(
+        copy=False,
+        readonly=True,
+        help="The proxy ranges this host's Traefik was last given. Written "
+             "by the jobs that ship them, and compared against what the "
+             "panel currently intends, so nothing downstream is published "
+             "against a posture the host is not running yet.",
+    )
 
     github_webhook_edge_hash = fields.Char(
         copy=False,
@@ -173,9 +183,23 @@ class CloudHostGitHubWebhookEdge(models.Model):
         ranges = self._github_hook_ranges()
         if not (routes and ranges):
             return ''
+        intended = self._effective_trusted_proxy_ranges()
+        shipped = parse_ranges(self.trusted_proxies_shipped)
+        if intended != shipped:
+            # The allowlist has to compare against whatever this host's
+            # Traefik is *actually* running, and it is not running what
+            # the panel currently intends. Publishing early is the exact
+            # failure this exists to prevent: a forwarded-chain allowlist
+            # on a host that still strips the header rejects every
+            # delivery, and so does an address-based one on a host that
+            # is already behind a CDN.
+            _logger.info(
+                'Host %s has not been shipped its proxy ranges yet; '
+                'holding the webhook allowlist back.', self.display_name,
+            )
+            return ''
         return build_webhook_edge_yaml(
-            routes, ranges,
-            trusted_proxy=bool(self._effective_trusted_proxy_ranges()),
+            routes, ranges, trusted_proxy=bool(shipped),
         )
 
     @staticmethod

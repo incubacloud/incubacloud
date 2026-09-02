@@ -313,6 +313,10 @@ class FullSetupExecutor(AbstractSSHExecutor):
         host.write({
             'status': 'compatible',
             'traefik_deployed': True,
+            # This run shipped the rendered Traefik configuration, so the
+            # host is now running the proxy posture the panel intends.
+            'trusted_proxies_shipped':
+                '\n'.join(host._effective_trusted_proxy_ranges()),
             # Config-drift anchor: this setup just shipped exactly the
             # current snapshot, so the saved host config is applied.
             **host._applied_config_vals(),

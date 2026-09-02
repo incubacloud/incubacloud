@@ -193,6 +193,42 @@ class TestWebhookEdgeRoutes(TransactionCase):
         self.assertEqual(self.instance._traefik_service_name(), "")
         self.assertEqual(self.host._github_webhook_routes(), [])
 
+    def test_nothing_publishes_until_the_host_runs_the_intended_posture(self):
+        """A queued proxy change must not be published against early.
+
+        Measured on Traefik v2.11: a forwarded-chain allowlist on a host
+        that still strips the header matches nothing and refuses every
+        delivery, and an address-based one on a host already behind a
+        CDN refuses them too. Either way the failure is silent, so the
+        allowlist waits for the host to actually be running what the
+        panel intends.
+        """
+        self.env["cloud.instance.domain"].create({
+            "instance_id": self.instance.id,
+            "hostname": "acme.example.com",
+        })
+        # Nothing intended, nothing shipped: the ordinary direct host.
+        self.assertTrue(self.host._github_webhook_document())
+        # A proxy is now intended but has not reached the host yet.
+        self.host.trusted_proxy_ranges = "\n".join(EDGE_PROXY)
+        self.assertEqual(self.host._github_webhook_document(), "")
+        # Once shipped, it publishes -- and against the forwarded chain.
+        self.host.trusted_proxies_shipped = "\n".join(EDGE_PROXY)
+        rendered = yaml.safe_load(self.host._github_webhook_document())
+        self.assertEqual(
+            rendered["http"]["middlewares"]["github-hooks-only"]
+            ["ipWhiteList"]["ipStrategy"],
+            {"depth": 1},
+        )
+
+    def test_a_proxy_removed_but_still_running_also_holds_it_back(self):
+        self.env["cloud.instance.domain"].create({
+            "instance_id": self.instance.id,
+            "hostname": "acme.example.com",
+        })
+        self.host.trusted_proxies_shipped = "\n".join(EDGE_PROXY)
+        self.assertEqual(self.host._github_webhook_document(), "")
+
     def test_the_document_needs_both_routes_and_ranges(self):
         self.env["cloud.instance.domain"].create({
             "instance_id": self.instance.id,
@@ -215,7 +251,10 @@ class TestWebhookEdgeRoutes(TransactionCase):
             "ipStrategy",
             direct["http"]["middlewares"]["github-hooks-only"]["ipWhiteList"],
         )
-        self.host.trusted_proxy_ranges = "\n".join(EDGE_PROXY)
+        self.host.write({
+            "trusted_proxy_ranges": "\n".join(EDGE_PROXY),
+            "trusted_proxies_shipped": "\n".join(EDGE_PROXY),
+        })
         behind = yaml.safe_load(self.host._github_webhook_document())
         self.assertEqual(
             behind["http"]["middlewares"]["github-hooks-only"]

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.103] — 2026-09-03
+
+### Fixed
+
+- **The webhook allowlist no longer publishes against a posture the host is not running.** Two daily crons decide this between them — one learns the CDN's ranges, the other publishes the allowlist — and nothing ordered them. Whichever ran first won, and one of the two orderings is broken: an allowlist published before the host has been told about the CDN compares against the connecting address, which behind a CDN is always an edge and never GitHub, so it refuses every delivery. Silently, which is the whole reason this control needed a silence alarm in the first place. A host now records the proxy ranges its Traefik was actually given, and the allowlist is held back whenever that differs from what the panel intends — which also closes the narrower race where the ranges are known but the proxy has not restarted with them yet.
+
 ## [1.0.102] — 2026-09-02
 
 ### Added
