@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.104] — 2026-09-03
+
+### Added
+
+- **The panel can protect its own webhook endpoint.** The allowlist walked a host's deployed instances, which for an installation that is not this platform means it protected the customers' instances — which do not serve the endpoint — and left unprotected the one thing that does: the panel itself, which is not a `cloud.instance` and so was invisible to anything looking for one. Four settings now describe it (host, hostname, backend URL, optional wildcard) and only the named host publishes the router. A layer that already knows the answer fills them in instead of making an operator type them, which is the difference between core being usable alone and core being a component of something else.
+- **The host form shows the ranges actually applied, not just the override.** The box on the form is an override; on a host where a policy supplies the list, it is empty by design and said nothing about what was in force. It now sits above a read-only line naming the effective ranges and where they come from, and warns when the host's Traefik is still running the previous list. The direct-access note was reasoning about the box rather than the applied list, which is exactly backwards for the one control that can lock an origin out of its own visitors.
+- **`push_trusted_proxies` is a button on the host.** Applying a proxy change otherwise needed a full setup run, which reinstalls tooling this has nothing to do with. The job also re-anchors the config-drift indicator, but only when the proxy fields are the sole difference — it ships two documents where a full setup ships five, so claiming more would hide a real pending change.
+
+### Fixed
+
+- **A mistyped range is refused instead of silently dropped.** The read path skips entries it cannot parse, which is right on a request path but meant a typo narrowed who we believe with nothing said about it — the same silent narrowing this whole mechanism exists to prevent. Both the host field and the settings field now reject the write, naming the entries at fault. The docstring claiming the UI already validated has been corrected; it never did.
+
 ## [1.0.103] — 2026-09-03
 
 ### Fixed

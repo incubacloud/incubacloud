@@ -8,7 +8,7 @@ from psycopg2 import sql
 from odoo import _, api, fields, models, tools
 from odoo.exceptions import UserError, ValidationError
 
-from ..net.trusted_proxies import parse_ranges
+from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from .encrypted_char import EncryptedChar, EncryptedFieldMixin
 from .password_utils import (
     generate_password,
@@ -137,6 +137,38 @@ class CloudSettings(models.Model):
              "github.com: an installation served by GitHub Enterprise "
              "delivers from its own addresses and would be locked out.",
     )
+    #: Where this installation serves its own panel from. Empty by
+    #: default: core cannot know its public name, and guessing it from
+    #: ``web.base.url`` is unsafe — Odoo rewrites that on an admin login
+    #: unless it has been frozen. An installation that wants its own
+    #: webhook endpoint protected fills these in; a layer that already
+    #: knows the answer supplies them instead.
+    panel_host_id = fields.Many2one(
+        comodel_name='cloud.host',
+        string='Panel Host',
+        ondelete='set null',
+        help="The host whose Traefik serves this panel. Only that host "
+             "publishes a router for the panel's own webhook endpoint.",
+    )
+    panel_hostname = fields.Char(
+        string='Panel Hostname',
+        help="Public hostname this panel answers on, e.g. "
+             "panel.example.com. Used to route its own GitHub webhook "
+             "endpoint through the source allowlist.",
+    )
+    panel_service_url = fields.Char(
+        string='Panel Backend URL',
+        help="Where the host's Traefik reaches this panel, e.g. "
+             "http://odoo:8069. It is a container name on the host's own "
+             "network, not a public address.",
+    )
+    panel_tls_domain = fields.Char(
+        string='Panel Wildcard Certificate',
+        help="Optional. Serve the panel's webhook router from an "
+             "existing wildcard certificate, e.g. *.example.com, instead "
+             "of asking for one issued for the hostname itself.",
+    )
+
     trusted_proxy_ranges = fields.Text(
         string='Trusted proxy ranges',
         help="CIDR ranges of the proxies in front of this installation, "
@@ -744,6 +776,93 @@ class CloudSettings(models.Model):
         if not rec:
             rec = self.sudo().create({})
         return rec
+
+    @api.constrains('trusted_proxy_ranges')
+    def _check_trusted_proxy_ranges(self):
+        """Refuse a range list carrying an entry that is not a network.
+
+        Same reasoning as the host-level check: a typo narrows who we
+        believe without saying so, and the request path skips what it
+        cannot read.
+
+        :raise ValidationError: naming the unusable entries
+        """
+        for settings in self:
+            bad = invalid_ranges(settings.trusted_proxy_ranges)
+            if bad:
+                raise ValidationError(_(
+                    "These are not address ranges: %(entries)s. Write one "
+                    "CIDR range per line, for example 198.51.100.0/24 or "
+                    "2001:db8::/32.",
+                    entries=", ".join(bad),
+                ))
+
+    @api.model
+    def _trusted_proxy_source(self):
+        """Return where the effective proxy ranges come from.
+
+        :return: ``'settings'`` when the field here is set, ``'none'``
+            when nothing applies
+        :rtype: str
+        """
+        raw = self._get_system().trusted_proxy_ranges
+        return 'settings' if parse_ranges(raw) else 'none'
+
+    @api.model
+    def _github_panel_route(self):
+        """Return the webhook route for this panel's own endpoint.
+
+        The panel is not a ``cloud.instance``, so nothing walking a
+        host's instances can find it — yet it is the one thing that
+        certainly serves the endpoint. It is described here instead, and
+        a layer that already knows the answer fills these fields in
+        rather than making an operator type them.
+
+        :return: a route mapping, or ``{}`` when not configured
+        :rtype: dict
+        """
+        settings = self._get_system()
+        hostname = (settings.panel_hostname or '').strip()
+        service_url = (settings.panel_service_url or '').strip()
+        if not (hostname and service_url):
+            return {}
+        route = {'hostname': hostname, 'service_url': service_url}
+        tls_domain = (settings.panel_tls_domain or '').strip()
+        if tls_domain:
+            route['tls_domain'] = tls_domain
+        return route
+
+    @api.model
+    def _github_panel_host(self):
+        """Return the host whose Traefik should publish the panel's route.
+
+        Read through a method rather than the field so a layer that
+        already knows which host serves the panel can answer without an
+        operator having to name it.
+
+        :rtype: recordset
+        """
+        return self._get_system().panel_host_id
+
+    @api.model
+    def _panel_route_source(self):
+        """Return where the panel's own webhook route comes from.
+
+        Reads the fields rather than calling
+        :meth:`_github_panel_route`, which resolves to whichever layer
+        answers last: asking it here would report a derived route as
+        though an operator had typed it.
+
+        :return: ``'settings'`` when described by the fields here,
+            ``'none'`` when it is not described at all
+        :rtype: str
+        """
+        settings = self._get_system()
+        described = bool(
+            (settings.panel_hostname or '').strip()
+            and (settings.panel_service_url or '').strip()
+        )
+        return 'settings' if described else 'none'
 
     @api.model
     def _effective_trusted_proxy_ranges(self):

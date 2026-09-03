@@ -13,7 +13,7 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.tools import file_open
 
 from ..net.hostname import InvalidHostname, validate_wildcard_domain
-from ..net.trusted_proxies import parse_ranges
+from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from . import _config_snapshot_diff as _snapshot_diff
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
@@ -2145,6 +2145,42 @@ class CloudHost(models.Model):
         return self._patch_config_yml_trusted_proxies(
             self.traefik_config_yml or "", ranges, self.block_direct_access,
         )
+
+    @api.constrains("trusted_proxy_ranges")
+    def _check_trusted_proxy_ranges(self):
+        """Refuse a range list carrying an entry that is not a network.
+
+        A typo here narrows who we believe without saying so, and the
+        request path skips what it cannot read. That is the same silent
+        failure the whole mechanism exists to prevent, so it is refused
+        where somebody can still fix it.
+
+        :raise ValidationError: naming the unusable entries
+        """
+        for host in self:
+            bad = invalid_ranges(host.trusted_proxy_ranges)
+            if bad:
+                raise ValidationError(_(
+                    "These are not address ranges: %(entries)s. Write one "
+                    "CIDR range per line, for example 198.51.100.0/24 or "
+                    "2001:db8::/32.",
+                    entries=", ".join(bad),
+                ))
+
+    def _trusted_proxy_source(self):
+        """Return where this host's effective proxy ranges come from.
+
+        Shown next to the override field so an operator can see whether
+        the list being applied is the one in front of them or one a
+        policy supplies. Modules that supply ranges override this
+        alongside :meth:`_effective_trusted_proxy_ranges`.
+
+        :return: ``'host'`` when the host's own field is set, ``'none'``
+            when nothing applies
+        :rtype: str
+        """
+        self.ensure_one()
+        return "host" if parse_ranges(self.trusted_proxy_ranges) else "none"
 
     def _effective_trusted_proxy_ranges(self):
         """Return the ranges whose ``X-Forwarded-For`` this host believes.

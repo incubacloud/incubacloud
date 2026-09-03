@@ -10,7 +10,7 @@ import logging
 import asyncssh
 
 from odoo import _, fields, http
-from odoo.exceptions import AccessError, UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
 from ...github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
@@ -762,6 +762,13 @@ class CrudMixin:
             'http_conn_rate': host.http_conn_rate,
             'trusted_proxy_ranges': host.trusted_proxy_ranges or '',
             'block_direct_access': host.block_direct_access,
+            # The list the host is actually filtered against, and where
+            # it comes from. The field above is only the override, so
+            # showing it alone would say nothing about what applies.
+            'effective_trusted_proxy_ranges':
+                host._effective_trusted_proxy_ranges(),
+            'trusted_proxy_source': host._trusted_proxy_source(),
+            'trusted_proxies_shipped': host.trusted_proxies_shipped or '',
             'allocated_cpus': round(host.allocated_cpus, 2),
             'allocated_ram_gb': round(host.allocated_ram_gb, 2),
             'available_cpus': round(host.available_cpus, 2),
@@ -1440,7 +1447,8 @@ class CrudMixin:
         bb_id = int(ICP.get_param(
             'incubacloud.backup_backend_id', 0,
         ) or 0)
-        settings = request.env['cloud.settings'].sudo()._get()
+        Settings = request.env['cloud.settings'].sudo()
+        settings = Settings._get()
         return {
             'autoassign_enabled': ICP.get_param(
                 'incubacloud.host_autoassign', '0',
@@ -1479,6 +1487,27 @@ class CrudMixin:
             ),
             'metrics_retention_days': settings.metrics_retention_days or 0,
             'grafana_base_url': settings.grafana_base_url or '',
+            # ── Edge ───────────────────────────────────────────────────
+            # The override plus what actually applies and where it comes
+            # from, because the field alone says nothing about the list
+            # in force when a layer above supplies one.
+            'trusted_proxy_ranges': settings.trusted_proxy_ranges or '',
+            'effective_trusted_proxy_ranges': Settings
+            ._effective_trusted_proxy_ranges(),
+            'trusted_proxy_source': Settings._trusted_proxy_source(),
+            'github_webhook_allowlist': bool(settings.github_webhook_allowlist),
+            'panel_host_id': settings.panel_host_id.id or None,
+            'panel_hostname': settings.panel_hostname or '',
+            'panel_service_url': settings.panel_service_url or '',
+            'panel_tls_domain': settings.panel_tls_domain or '',
+            # Derived when a layer above knows the answer; the client
+            # renders those read-only rather than inviting an edit that
+            # the next pass would overwrite.
+            'panel_route': Settings._github_panel_route(),
+            'panel_route_source': Settings._panel_route_source(),
+            'panel_route_host_id': (
+                Settings._github_panel_host().id or None
+            ),
         }
 
     @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
@@ -1494,6 +1523,9 @@ class CrudMixin:
         container_log_max_size=None, container_log_max_file=None,
         odoo_log_archive_days=None, log_download_max_mb=None,
         log_search_max_files=None, log_search_timeout_s=None,
+        trusted_proxy_ranges=None, github_webhook_allowlist=None,
+        panel_host_id=None, panel_hostname=None, panel_service_url=None,
+        panel_tls_domain=None,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1544,6 +1576,41 @@ class CrudMixin:
                 0, _safe_int(github_event_truncate_days, 7),
             ),
         })
+
+        # ── Edge ──────────────────────────────────────────────────────
+        # Written only when the client sent them, so a caller that
+        # predates these knobs cannot blank them out. The range list goes
+        # through the model constraint on purpose: a typo there narrows
+        # who we believe without saying so, and the caller is told which
+        # entries were rejected instead of having them dropped.
+        edge_vals = {}
+        if trusted_proxy_ranges is not None:
+            edge_vals['trusted_proxy_ranges'] = str(
+                trusted_proxy_ranges or '',
+            ).strip()
+        if github_webhook_allowlist is not None:
+            edge_vals['github_webhook_allowlist'] = bool(
+                github_webhook_allowlist,
+            )
+        for name, value in (
+            ('panel_hostname', panel_hostname),
+            ('panel_service_url', panel_service_url),
+            ('panel_tls_domain', panel_tls_domain),
+        ):
+            if value is not None:
+                edge_vals[name] = str(value or '').strip()
+        if panel_host_id is not None:
+            host_id = _safe_int(panel_host_id, 0)
+            if host_id and not request.env['cloud.host'].sudo().browse(
+                host_id,
+            ).exists():
+                return {'ok': False, 'error': _('Unknown host.')}
+            edge_vals['panel_host_id'] = host_id or False
+        if edge_vals:
+            try:
+                request.env['cloud.settings'].sudo()._get().write(edge_vals)
+            except ValidationError as exc:
+                return {'ok': False, 'error': exc.args[0] if exc.args else str(exc)}
 
         # ── Container log rotation ────────────────────────────────────
         # Written only when the client sent them, so a caller that

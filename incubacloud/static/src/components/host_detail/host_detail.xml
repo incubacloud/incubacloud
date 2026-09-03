@@ -401,12 +401,29 @@
                                     </span>
                                 </div>
                                 <div class="rl-frow rl-full">
-                                    <label>Trusted proxy ranges</label>
+                                    <label>Trusted proxy ranges (override)</label>
                                     <textarea rows="3"
                                               t-att-value="state.form.trusted_proxy_ranges"
                                               t-on-input="(ev) => this.onInput('trusted_proxy_ranges', ev)"/>
                                     <span class="ic-form-note">
-                                        CIDR ranges of the proxy or CDN in front of this host, one per line. Only connections from these have their X-Forwarded-For believed, which is what makes the per-client rate limit key on the real visitor instead of a handful of edge addresses. Leave empty when the host answers its visitors directly. Applies on the next setup run.
+                                        One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32. Leave empty to use whatever the platform supplies; fill it in only to pin this host to a different proxy than the rest. Traefik believes X-Forwarded-For only on connections from the ranges applied below, and strips it from every other, which is what makes the header unspoofable and lets the per-client rate limit key on the real visitor instead of a handful of edge addresses.
+                                    </span>
+                                </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Applied to this host</label>
+                                    <div t-if="state.effectiveProxyRanges.length">
+                                        <code t-esc="state.effectiveProxyRanges.join(', ')"/>
+                                    </div>
+                                    <div t-else="">
+                                        <em>No proxy is trusted. This host is treated as answering its visitors directly.</em>
+                                    </div>
+                                    <span class="ic-form-note">
+                                        <t t-if="state.effectiveProxyRanges.length">
+                                            Source: <t t-esc="proxySourceLabel()"/>.
+                                        </t>
+                                        <t t-if="proxyChangePending()">
+                                            <strong>Not applied yet.</strong> Traefik on this host is still running the previous list; use Push Trusted Proxy Settings, or a full setup run, to ship it.
+                                        </t>
                                     </span>
                                 </div>
                                 <div class="rl-frow rl-full">
@@ -415,10 +432,10 @@
                                         <input type="checkbox"
                                                t-att-checked="state.form.block_direct_access"
                                                t-on-change="(ev) => { this.state.form.block_direct_access = ev.target.checked; }"/>
-                                        <span>Only accept traffic from the trusted proxies above</span>
+                                        <span>Only accept traffic from the proxies applied above</span>
                                     </div>
                                     <span class="ic-form-note">
-                                        Refuses HTTPS requests that reached this host without going through the edge, so its address cannot be used to bypass it. Ignored while no trusted range is set, where it would lock out every visitor.
+                                        Refuses HTTPS requests that reached this host without going through one of them, so its address cannot be used to bypass the edge. Ignored while no range is applied above, where it would lock out every visitor — the override box being empty does not mean that, since the platform may be supplying the list.
                                     </span>
                                 </div>
                             </div>
