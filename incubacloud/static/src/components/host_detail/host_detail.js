@@ -452,7 +452,7 @@ export class HostDetail extends Component {
             cloudflare: _t("the platform's CDN, refreshed daily"),
             settings: _t("the general settings"),
         }[this.state.trustedProxySource] || "";
-    },
+    }
 
     /**
      * Whether the host is running the proxy settings currently saved.
@@ -465,7 +465,7 @@ export class HostDetail extends Component {
             .split("\n").map((r) => r.trim()).filter(Boolean).join(",");
         const applied = (this.state.effectiveProxyRanges || []).join(",");
         return shipped !== applied;
-    },
+    }
 
     async hostAction(code) {
         try {

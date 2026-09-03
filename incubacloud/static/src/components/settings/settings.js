@@ -206,7 +206,7 @@ export class Settings extends Component {
             settings: _t("the override below"),
             cloudflare: _t("the platform's CDN, refreshed daily"),
         }[this.state.trustedProxySource] || "";
-    },
+    }
 
     /**
      * Whether the panel's webhook route is derived rather than typed.
@@ -216,7 +216,7 @@ export class Settings extends Component {
      */
     panelRouteDerived() {
         return this.state.panelRouteSource === "catchall";
-    },
+    }
 
     async loadConfig() {
         this.state.loading = true;

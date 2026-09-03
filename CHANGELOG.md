@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.105] — 2026-09-03
+
+### Fixed
+
+- **The panel rendered a blank page.** Two methods added to the host form and the settings screen were written with a trailing comma, which separates entries in an object literal and is a syntax error between class methods. Odoo bundles this JavaScript at runtime rather than building it here, so nothing failed until the bundle was parsed in a browser: one console message, a white page, and everything upstream green — the boot test, the suite, the health check. CI now parses every front-end file as an ES module, which is the cheapest check that would have caught it and needs no toolchain. It was missing entirely: nothing in this repo looked at JavaScript before.
+
 ## [1.0.104] — 2026-09-03
 
 ### Added
