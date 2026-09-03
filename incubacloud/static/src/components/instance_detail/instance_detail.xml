@@ -319,14 +319,15 @@
                   t-key="action.code"
                 >
                                     <button
-                    class="rl-iconbtn"
+                    class="rl-btn rl-btn-ghost"
                     t-att-title="action.name"
                     t-att-aria-label="action.name"
-                    t-on-click="() => this.instanceAction(action.code)"
+                    t-on-click="() => this.instanceAction(action)"
                   >
                                         <i
                       t-att-class="'fa ' + (action.action_icon || 'fa-cog')"
                     />
+                                        <t t-esc="action.name" />
                                     </button>
                                 </t>
                             </t>

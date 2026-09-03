@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.106] — 2026-09-03
+
+### Added
+
+- **A disruptive action warns before it runs.** `push_trusted_proxies` ends by restarting Traefik, and on the host that serves the panel that takes the panel's own requests and its bus connection down for a few seconds — so the operator's reward for pressing it was a "connection interrupted" error and no explanation. Job types can now carry a confirmation notice, which the host and instance action bars show before enqueueing anything; the one on this action says what is about to happen. The mechanism belongs to the job type so an extension can warn without touching the front end.
+
+### Fixed
+
+- **A pluggable action gave no sign it had been triggered.** `enqueue` only creates the job and hands it to the worker, so the acknowledgement was a row appearing in Recent Activity 300 ms later via the bus, at the bottom of the page, while the operator watched the button at the top. Pressing again looked like the only option — and on this action the second press lands exactly in the window where the proxy is restarting, which is how a job that succeeded came to look like a button that was broken twice over. The host bar now reports the queueing, refreshes the activity list eagerly rather than waiting for a bus event it is about to lose, and refuses a second press while the first is in flight. The instance bar had the guard and the eager refresh already; only the host was missing them.
+- **The extension actions were unlabelled icons.** Every other button in those bars carries its name, so a shield with no text next to a shield with text ("Re-trust Key") was unreadable — the operator could not find the action at all. They now render like their neighbours, with the icon, the name, and a spinner while the job is being queued.
+
 ## [1.0.105] — 2026-09-03
 
 ### Fixed

@@ -594,3 +594,105 @@ describe("HostDetail — method existence", () => {
         expect(typeof HostDetail.prototype.openLog).toBe("function");
     });
 });
+
+describe("HostDetail — hostAction", () => {
+    /**
+     * Build the minimum `this` the method touches.
+     *
+     * The real component needs a mounted OWL tree, so the method is
+     * called against a stand-in; every collaborator it reaches for is
+     * recorded so the test can assert on the calls rather than on the
+     * DOM.
+     *
+     * @param {object} [opts]
+     * @param {boolean} [opts.confirm] What the dialog answers.
+     * @param {boolean} [opts.fail] Make the enqueue call reject.
+     * @returns {object} the stand-in, with a `calls` log.
+     */
+    function harness({ confirm = true, fail = false } = {}) {
+        const calls = { enqueue: [], success: [], error: [], refresh: 0, confirm: [] };
+        return {
+            calls,
+            props: { host_id: 7 },
+            state: { actionBusy: "" },
+            orm: {
+                call(model, method, args) {
+                    calls.enqueue.push([model, method, args]);
+                    return fail ? Promise.reject(new Error("boom")) : Promise.resolve(11);
+                },
+            },
+            env: {
+                toast: {
+                    success: (msg) => calls.success.push(msg),
+                    error: (msg) => calls.error.push(msg),
+                },
+            },
+            _confirm(opts) {
+                calls.confirm.push(opts);
+                return Promise.resolve(confirm);
+            },
+            _silentRefresh() {
+                calls.refresh += 1;
+            },
+            hostAction: HostDetail.prototype.hostAction,
+        };
+    }
+
+    test("queues the job and says so", async () => {
+        const h = harness();
+        await h.hostAction({ code: "push_trusted_proxies", name: "Push Trusted Proxy Settings" });
+        expect(h.calls.enqueue).toHaveLength(1);
+        expect(h.calls.enqueue[0][2]).toEqual([7, false, "push_trusted_proxies"]);
+        expect(h.calls.success).toHaveLength(1);
+        expect(h.calls.error).toHaveLength(0);
+    });
+
+    test("refreshes at once instead of waiting for the bus", async () => {
+        const h = harness();
+        await h.hostAction({ code: "a", name: "A" });
+        expect(h.calls.refresh).toBe(1);
+    });
+
+    test("a second press while one is in flight queues nothing", async () => {
+        const h = harness();
+        h.state.actionBusy = "a";
+        await h.hostAction({ code: "a", name: "A" });
+        expect(h.calls.enqueue).toHaveLength(0);
+    });
+
+    test("releases the guard so the next press works", async () => {
+        const h = harness();
+        await h.hostAction({ code: "a", name: "A" });
+        expect(h.state.actionBusy).toBe("");
+        await h.hostAction({ code: "a", name: "A" });
+        expect(h.calls.enqueue).toHaveLength(2);
+    });
+
+    test("releases the guard after a failure too", async () => {
+        const h = harness({ fail: true });
+        await h.hostAction({ code: "a", name: "A" });
+        expect(h.calls.error).toHaveLength(1);
+        expect(h.state.actionBusy).toBe("");
+    });
+
+    test("an action carrying a notice asks before queueing", async () => {
+        const h = harness();
+        await h.hostAction({ code: "a", name: "A", action_confirm: "Traefik restarts." });
+        expect(h.calls.confirm).toHaveLength(1);
+        expect(h.calls.confirm[0].message).toBe("Traefik restarts.");
+        expect(h.calls.enqueue).toHaveLength(1);
+    });
+
+    test("declining the notice queues nothing", async () => {
+        const h = harness({ confirm: false });
+        await h.hostAction({ code: "a", name: "A", action_confirm: "Traefik restarts." });
+        expect(h.calls.enqueue).toHaveLength(0);
+        expect(h.state.actionBusy).toBe("");
+    });
+
+    test("an action without a notice asks nothing", async () => {
+        const h = harness();
+        await h.hostAction({ code: "a", name: "A" });
+        expect(h.calls.confirm).toHaveLength(0);
+    });
+});

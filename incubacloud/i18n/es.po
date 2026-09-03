@@ -114,6 +114,12 @@ msgid "%s failed — check the job log"
 msgstr "%s falló — revise el registro del trabajo"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "%s queued."
+msgstr "%s en cola."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "'deployed' is derived from the lifecycle state. Pass 'state' instead."
@@ -2099,6 +2105,11 @@ msgstr "Configurar manualmente"
 #: code:addons/incubacloud/static/src/utils/use_confirm.js:0
 msgid "Confirm"
 msgstr "Confirmar"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__action_confirm
+msgid "Confirmation Notice"
+msgstr "Aviso de confirmación"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__conflict_data
@@ -9249,6 +9260,13 @@ msgid "Rotate Encrypted Secrets (MultiFernet)"
 msgstr "Rotar secretos cifrados (MultiFernet)"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Run"
+msgstr "Ejecutar"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__auto_update
 msgid ""
 "Run click-odoo-update during rebuild to apply module schema/data changes. "
@@ -11484,6 +11502,19 @@ msgstr "Esperando"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__status__warning
 msgid "Warning"
 msgstr "Advertencia"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_type__action_confirm
+msgid ""
+"Warning to confirm before the action runs. Leave empty for actions that need"
+" no confirmation. Set it on anything disruptive — an action that restarts "
+"the proxy serving this panel looks like a failure when it is not, so the "
+"operator has to be told before, not after."
+msgstr ""
+"Aviso que hay que confirmar antes de que la acción se ejecute. Déjalo vacío "
+"para las acciones que no necesitan confirmación. Ponlo en todo lo que sea "
+"disruptivo: una acción que reinicia el proxy que sirve este panel parece un "
+"fallo sin serlo, así que hay que avisar al operador antes, no después."
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_job_duration_watch_ir_actions_server

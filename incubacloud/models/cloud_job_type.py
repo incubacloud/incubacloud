@@ -45,6 +45,16 @@ class CloudJobType(models.Model):
         default=100,
         help="Lower values appear first in the custom actions bar.",
     )
+    action_confirm = fields.Text(
+        string="Confirmation Notice",
+        help=(
+            "Warning to confirm before the action runs. Leave empty for"
+            " actions that need no confirmation. Set it on anything"
+            " disruptive — an action that restarts the proxy serving"
+            " this panel looks like a failure when it is not, so the"
+            " operator has to be told before, not after."
+        ),
+    )
     priority_tier = fields.Selection(
         [('high', 'High'), ('normal', 'Normal'), ('low', 'Low')],
         string="Priority Tier",

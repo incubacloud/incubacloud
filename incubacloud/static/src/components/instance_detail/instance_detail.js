@@ -1152,14 +1152,31 @@ export class InstanceDetail extends JobsMixin(
     );
   }
 
+  /**
+   * Run one of the pluggable instance actions.
+   *
+   * @param {{code: string, name: string, action_confirm?: string}} action
+   *   The action as served in ``inst.custom_actions``.
+   */
   async instanceAction(action) {
     const inst = this.state.inst;
     if (!inst?.host_id) return;
+    // A disruptive action warns before it runs, not after: the job
+    // type carries the notice so an extension can add one without
+    // touching this component.
+    if (action.action_confirm) {
+      const confirmed = await this._confirm({
+        title: action.name,
+        message: action.action_confirm,
+        confirmLabel: _t("Run"),
+      });
+      if (!confirmed) return;
+    }
     await this._enqueueJob(() =>
       this.orm.call("cloud.job", "enqueue", [
         inst.host_id,
         this.props.instance_id,
-        action,
+        action.code,
       ])
     );
   }
