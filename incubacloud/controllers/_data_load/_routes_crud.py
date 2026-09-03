@@ -779,6 +779,7 @@ class CrudMixin:
                     'code': jt.code,
                     'name': jt.name,
                     'action_icon': jt.action_icon or 'fa-cog',
+                    'action_confirm': jt.action_confirm or '',
                 }
                 for jt in request.env['cloud.job.type'].search([
                     ('show_as_action', '=', True),
@@ -1912,6 +1913,7 @@ class CrudMixin:
                     'code': jt.code,
                     'name': jt.name,
                     'action_icon': jt.action_icon or 'fa-cog',
+                    'action_confirm': jt.action_confirm or '',
                 }
                 for jt in request.env['cloud.job.type'].search([
                     ('show_as_action', '=', True),

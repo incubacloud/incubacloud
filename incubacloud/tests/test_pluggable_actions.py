@@ -174,3 +174,41 @@ class TestCustomActionsHost(TransactionCase):
         first_idx = list(result.ids).index(jt_first.id)
         last_idx = list(result.ids).index(jt_last.id)
         self.assertLess(first_idx, last_idx)
+
+
+class TestDisruptiveActionsWarn(TransactionCase):
+    """The notice an action shows before it runs.
+
+    ``push_trusted_proxies`` restarts Traefik, and on the host serving
+    the panel that kills the panel's own requests and its bus
+    connection for a few seconds. That looked like a broken button
+    until the action started saying so, so the notice is pinned here
+    rather than left to whoever next edits the data file.
+    """
+
+    def test_action_confirm_empty_by_default(self):
+        jt = _job_type(self.env, 'test_default_confirm')
+        self.assertFalse(jt.action_confirm)
+
+    def test_proxy_push_warns_before_running(self):
+        jt = self.env.ref('incubacloud.push_trusted_proxies')
+        self.assertTrue(
+            jt.action_confirm,
+            "An action that restarts the proxy must warn first.",
+        )
+        self.assertIn('restart', jt.action_confirm.lower())
+
+    def test_serialized_action_carries_the_notice(self):
+        """Mirror the payload both custom_actions serializers build."""
+        jt = _job_type(
+            self.env, 'test_serialized_confirm',
+            apply_to='host', show_as_action=True,
+            action_confirm='This bites.',
+        )
+        payload = {
+            'code': jt.code,
+            'name': jt.name,
+            'action_icon': jt.action_icon or 'fa-cog',
+            'action_confirm': jt.action_confirm or '',
+        }
+        self.assertEqual(payload['action_confirm'], 'This bites.')

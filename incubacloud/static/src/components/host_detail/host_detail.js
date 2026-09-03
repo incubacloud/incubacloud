@@ -91,6 +91,8 @@ export class HostDetail extends Component {
             has_known_hosts_key:       false,
             has_traefik_panel_password: false,
             trusting_host_key:         false,
+            // Code of the pluggable action being enqueued, "" when idle.
+            actionBusy: "",
             // Tags
             selectedTags: [],
             allTags: [],
@@ -467,11 +469,47 @@ export class HostDetail extends Component {
         return shipped !== applied;
     }
 
-    async hostAction(code) {
+    /**
+     * Run one of the pluggable host actions.
+     *
+     * ``enqueue`` only creates the job and hands it to the worker, so
+     * the RPC returns long before anything happens on the host. The
+     * only thing the panel used to show was a new row down in Recent
+     * Activity, 300 ms later via the bus — invisible to whoever is
+     * looking at the button they just pressed, which is how a working
+     * action came to look like a dead one. Hence the toast, and the
+     * in-flight guard so a second press cannot double-queue.
+     *
+     * @param {{code: string, name: string, action_confirm?: string}} action
+     *   The action as served in ``host.custom_actions``.
+     */
+    async hostAction(action) {
+        if (this.state.actionBusy) return;
+        // Actions that disrupt the host say so up front: this one
+        // restarts the proxy this panel is served through, so the
+        // "connection interrupted" that follows is expected, not a
+        // failure to explain afterwards.
+        if (action.action_confirm) {
+            const confirmed = await this._confirm({
+                title: action.name,
+                message: action.action_confirm,
+                confirmLabel: _t("Run"),
+            });
+            if (!confirmed) return;
+        }
+        this.state.actionBusy = action.code;
         try {
-            await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, code]);
+            await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, action.code]);
+            this.env.toast?.success(_t("%s queued.", action.name));
+            // Don't wait for the bus event for the row to show up: on a
+            // job that restarts this host's proxy the bus connection is
+            // the next casualty, and instance_detail already refreshes
+            // eagerly here for the same reason.
+            this._silentRefresh();
         } catch (e) {
             this.env.toast?.error(e.data?.message || e.message || _t("Failed to enqueue host action."));
+        } finally {
+            this.state.actionBusy = "";
         }
     }
 

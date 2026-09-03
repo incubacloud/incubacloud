@@ -50,6 +50,12 @@
             <field name="show_as_action">True</field>
             <field name="action_icon">fa-shield</field>
             <field name="action_order">40</field>
+            <!-- The last step restarts Traefik, and on the host that
+                 serves this panel that means the panel's own requests
+                 and its bus connection die for a few seconds. Without
+                 this notice the operator reads the resulting
+                 "connection interrupted" as a broken action. -->
+            <field name="action_confirm">Traefik will restart on this host. The panel and every instance it serves will be unreachable for a few seconds, and this page may report a lost connection while it comes back.</field>
         </record>
 
         <record id="start_instance" model="cloud.job.type">

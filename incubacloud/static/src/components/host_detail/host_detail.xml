@@ -94,11 +94,14 @@
                         <t t-if="state.host.custom_actions?.length">
                             <span class="rl-asep"/>
                             <t t-foreach="state.host.custom_actions" t-as="action" t-key="action.code">
-                                <button class="rl-iconbtn"
+                                <button class="rl-btn rl-btn-ghost"
                                         t-att-title="action.name"
                                         t-att-aria-label="action.name"
-                                        t-on-click="() => this.hostAction(action.code)">
-                                    <i t-att-class="'fa ' + (action.action_icon || 'fa-cog')"/>
+                                        t-att-disabled="state.actionBusy ? true : null"
+                                        t-on-click="() => this.hostAction(action)">
+                                    <i t-if="state.actionBusy === action.code" class="fa fa-spinner fa-spin"/>
+                                    <i t-else="" t-att-class="'fa ' + (action.action_icon || 'fa-cog')"/>
+                                    <t t-esc="action.name"/>
                                 </button>
                             </t>
                         </t>
