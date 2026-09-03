@@ -8,8 +8,12 @@ when they actually moved, since every push costs the host a proxy
 restart and the connections in flight through it.
 """
 
+from . import _config_snapshot_diff as _snapshot_diff
 from .abstract_executor import AbstractSSHExecutor
 from .full_setup_executor import _TMP
+
+#: Snapshot keys this job is allowed to declare applied.
+_PROXY_KEYS = {'trusted_proxy_ranges', 'block_direct_access'}
 
 
 class PushTrustedProxiesExecutor(AbstractSSHExecutor):
@@ -68,10 +72,21 @@ class PushTrustedProxiesExecutor(AbstractSSHExecutor):
         as a change is queued.
         """
         host = self.job.host_id
-        host.write({
+        vals = {
             'trusted_proxies_shipped':
                 '\n'.join(host._effective_trusted_proxy_ranges()),
-        })
+        }
+        # Re-anchor the drift indicator, but only when the proxy fields
+        # are the *only* thing that moved since the last full setup.
+        # This job ships two documents; a full setup ships those plus the
+        # compose file, the panel password and the whitelist, so claiming
+        # all of it was applied would hide a real pending change.
+        moved = set(_snapshot_diff.diff_keys(
+            host.applied_config_snapshot or {}, host._render_config_snapshot(),
+        ))
+        if moved and not moved - _PROXY_KEYS:
+            vals.update(host._applied_config_vals())
+        host.write(vals)
         self._sys('✓ Traefik restarted with the new proxy trust settings.')
 
     async def on_failure(self, results, errors):

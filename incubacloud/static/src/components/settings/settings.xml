@@ -125,6 +125,43 @@
                         </div>
                     </div>
 
+                    <!-- Edge -->
+                    <div class="rl-saas-fsec">Edge</div>
+                    <p class="rl-tabnote">
+                        Everything that keys on who is asking — rate limits, allowlists, audit
+                        lines — reads an address that belongs to the proxy, not the caller,
+                        whenever something sits in front. Declaring that proxy is what makes
+                        the forwarded header worth reading: it is believed only on connections
+                        coming from these ranges, and stripped from every other. Leave it empty
+                        when nothing fronts this installation; the connecting address is then
+                        used as-is, which is over-restrictive but never spoofable.
+                    </p>
+                    <div class="rl-fgrid">
+                        <div class="rl-frow rl-full">
+                            <label>Trusted proxy ranges (override)</label>
+                            <textarea rows="3"
+                                      t-att-value="state.form.trusted_proxy_ranges"
+                                      t-on-input="(ev) => this.onInput('trusted_proxy_ranges', ev)"/>
+                            <span class="ic-form-note">
+                                One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32.
+                                An entry that is not a range is refused on save rather than
+                                dropped quietly.
+                            </span>
+                        </div>
+                        <div class="rl-frow rl-full">
+                            <label>Applied</label>
+                            <div t-if="state.effectiveProxyRanges.length">
+                                <code t-esc="state.effectiveProxyRanges.join(', ')"/>
+                                <span class="ic-form-note">
+                                    Source: <t t-esc="proxySourceLabel()"/>.
+                                </span>
+                            </div>
+                            <div t-else="">
+                                <em>No proxy is trusted. The connecting address is used as-is.</em>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- GitHub Event Retention -->
                     <div class="rl-saas-fsec">GitHub Event Retention</div>
                     <p class="rl-tabnote">
@@ -231,6 +268,80 @@
 
                 <!-- ── GitHub tab ─────────────────────────────────────────── -->
                 <t t-if="state.tab === 'github'">
+
+                    <!-- Webhook source allowlist -->
+                    <div class="rl-saas-fsec">Webhook Source Allowlist</div>
+                    <p class="rl-tabnote">
+                        Verifying a signature means hashing the whole request body, so inside
+                        the endpoint the cost of a forged one can only be bounded, never
+                        removed. Refused at the edge it costs nothing. When enabled, a Traefik
+                        router restricts the webhook path to the address ranges GitHub
+                        publishes, refreshed daily. Leave it off for an installation fed by a
+                        self-hosted GitHub Enterprise: it delivers from its own addresses and
+                        would be locked out.
+                    </p>
+                    <div class="rl-fgrid">
+                        <div class="rl-frow rl-full">
+                            <label>Restrict at the edge</label>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox"
+                                       t-att-checked="state.form.github_webhook_allowlist"
+                                       t-on-change="(ev) => { this.state.form.github_webhook_allowlist = ev.target.checked; }"/>
+                                <span>Only let GitHub's published ranges reach the webhook</span>
+                            </div>
+                        </div>
+                        <t t-if="panelRouteDerived()">
+                            <div class="rl-frow rl-full">
+                                <label>This panel's endpoint</label>
+                                <div t-if="state.panelRoute.hostname">
+                                    <code t-esc="state.panelRoute.hostname"/> →
+                                    <code t-esc="state.panelRoute.service_url"/>
+                                </div>
+                                <div t-else="">
+                                    <em>Not resolved yet.</em>
+                                </div>
+                                <span class="ic-form-note">
+                                    Set automatically from the catch-all host; nothing to fill in.
+                                </span>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <div class="rl-frow">
+                                <label>Panel hostname</label>
+                                <input type="text" placeholder="panel.example.com"
+                                       t-att-value="state.form.panel_hostname"
+                                       t-on-input="(ev) => this.onInput('panel_hostname', ev)"/>
+                            </div>
+                            <div class="rl-frow">
+                                <label>Panel backend URL</label>
+                                <input type="text" placeholder="http://odoo:8069"
+                                       t-att-value="state.form.panel_service_url"
+                                       t-on-input="(ev) => this.onInput('panel_service_url', ev)"/>
+                            </div>
+                            <div class="rl-frow">
+                                <label>Wildcard certificate (optional)</label>
+                                <input type="text" placeholder="*.example.com"
+                                       t-att-value="state.form.panel_tls_domain"
+                                       t-on-input="(ev) => this.onInput('panel_tls_domain', ev)"/>
+                            </div>
+                            <div class="rl-frow">
+                                <label>Panel host</label>
+                                <RlSelect options="centralHostOptions"
+                                          value="state.form.panel_host_id"
+                                          placeholder.translate="Host serving this panel…"
+                                          onChange="(v) => this.state.form.panel_host_id = v"/>
+                            </div>
+                            <div class="rl-frow rl-full">
+                                <span class="ic-form-note">
+                                    Where this panel answers, and how the host's Traefik reaches
+                                    it. The panel is not one of the instances a host serves, so
+                                    nothing can find it otherwise — and it is the one thing that
+                                    certainly receives the webhook. Only the host picked
+                                    here publishes the router.
+                                </span>
+                            </div>
+                        </t>
+                    </div>
 
                     <div class="rl-saas-fsec">GitHub App</div>
                     <p class="rl-tabnote">

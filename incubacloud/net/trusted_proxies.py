@@ -23,30 +23,66 @@ bucket) rather than spoofable.
 import ipaddress
 
 
+def _entries(raw):
+    """Split a stored field into its non-empty entries.
+
+    Newlines and commas both separate, so a value pasted from a
+    provider's documentation works whichever way it was written.
+
+    :param raw: the stored field value, or None
+    :rtype: list
+    """
+    if not raw:
+        return []
+    return [
+        chunk.strip()
+        for chunk in str(raw).replace(",", "\n").splitlines()
+        if chunk.strip()
+    ]
+
+
 def parse_ranges(raw):
     """Return the CIDR strings in a newline- or comma-separated field.
 
-    Entries that are not networks are dropped rather than raised on: the
-    value reaches here from a settings field an operator types into, and
-    a single typo must not take out the request path that reads it. The
-    UI validates on write; this is the read side.
+    Entries that are not networks are skipped rather than raised on:
+    this runs on the request path, where an exception would turn a
+    rate-limit check into a 500. Writing such a value is refused at the
+    model instead — see :func:`invalid_ranges` — so what reaches here
+    has already been checked.
 
     :param raw: the stored field value, or None
     :return: normalised CIDR strings
     :rtype: list
     """
-    if not raw:
-        return []
     ranges = []
-    for chunk in str(raw).replace(",", "\n").splitlines():
-        entry = chunk.strip()
-        if not entry:
-            continue
+    for entry in _entries(raw):
         try:
             ranges.append(str(ipaddress.ip_network(entry, strict=False)))
         except ValueError:
             continue
     return ranges
+
+
+def invalid_ranges(raw):
+    """Return the entries of *raw* that are not networks.
+
+    The write-side counterpart of :func:`parse_ranges`. A range dropped
+    for a typo is exactly the failure this whole mechanism exists to
+    avoid — narrower trust than intended, with nothing said about it —
+    so the value is refused at the point where somebody can still fix
+    it rather than silently trimmed later.
+
+    :param raw: the value about to be stored
+    :return: the unusable entries, in the order they were written
+    :rtype: list
+    """
+    bad = []
+    for entry in _entries(raw):
+        try:
+            ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            bad.append(entry)
+    return bad
 
 
 def networks(ranges):

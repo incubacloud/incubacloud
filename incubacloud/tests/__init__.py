@@ -9,6 +9,7 @@ from . import (
     test_github_webhook_edge,
     test_webhook_edge_routing,
     test_trusted_proxies,
+    test_edge_configuration,
     test_edge_executor_commands,
     test_client_ip_helper,
     test_github_webhook_cost,

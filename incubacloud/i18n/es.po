@@ -150,6 +150,12 @@ msgstr "(proyecto)"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "*.example.com"
+msgstr "*.ejemplo.com"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/module_selector/module_selector.xml:0
 msgid "+ Add \""
 msgstr "+ Añadir \""
@@ -829,6 +835,12 @@ msgid "App name"
 msgstr "Nombre de la aplicación"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Applied"
+msgstr "Aplicado"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__applied_config_hash
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__applied_config_hash
 msgid "Applied Config Hash"
@@ -839,6 +851,12 @@ msgstr "Hash de configuración aplicada"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__applied_config_snapshot
 msgid "Applied Config Snapshot"
 msgstr "Instantánea de la configuración aplicada"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Applied to this host"
+msgstr "Aplicado a este anfitrión"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1426,23 +1444,6 @@ msgstr ""
 "identifique a quien llama y no al proxy. Déjelo vacío cuando no haya nada "
 "delante de esta instalación: entonces se usa la dirección de la conexión tal"
 " cual, lo cual es más restrictivo pero nunca falsificable."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid ""
-"CIDR ranges of the proxy or CDN in front of this host, one per line. Only "
-"connections from these have their X-Forwarded-For believed, which is what "
-"makes the per-client rate limit key on the real visitor instead of a handful"
-" of edge addresses. Leave empty when the host answers its visitors directly."
-" Applies on the next setup run."
-msgstr ""
-"Rangos CIDR del proxy o CDN que hay delante de este anfitrión, uno por "
-"línea. Solo las conexiones que vengan de estos rangos tienen su cabecera "
-"X-Forwarded-For creída, que es lo que hace que el límite de peticiones por "
-"cliente cuente al visitante real en lugar de a unas pocas direcciones del "
-"borde. Déjelo vacío cuando el anfitrión atienda directamente a sus "
-"visitantes. Se aplica en la próxima configuración del anfitrión."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3380,6 +3381,12 @@ msgstr "Duración"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Edge"
+msgstr "Borde"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
@@ -3553,6 +3560,27 @@ msgstr "Tipo de evento"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Everything is in sync."
 msgstr "Todo está sincronizado."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"Everything that keys on who is asking — rate limits, allowlists, audit\n"
+"                        lines — reads an address that belongs to the proxy, not the caller,\n"
+"                        whenever something sits in front. Declaring that proxy is what makes\n"
+"                        the forwarded header worth reading: it is believed only on connections\n"
+"                        coming from these ranges, and stripped from every other. Leave it empty\n"
+"                        when nothing fronts this installation; the connecting address is then\n"
+"                        used as-is, which is over-restrictive but never spoofable."
+msgstr ""
+"Todo lo que se apoya en quién está preguntando — límites de peticiones, "
+"listas de permitidos, líneas de auditoría — lee una dirección que es la del "
+"proxy y no la de quien llama, siempre que haya algo delante. Declarar ese "
+"proxy es lo que hace que valga la pena leer la cabecera reenviada: solo se "
+"cree en conexiones que vengan de estos rangos, y se elimina en cualquier "
+"otra. Déjelo vacío cuando no haya nada delante de esta instalación; entonces"
+" se usa la dirección de la conexión tal cual, lo cual es más restrictivo "
+"pero nunca falsificable."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4783,6 +4811,12 @@ msgstr "El nombre del host es obligatorio"
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Host not found"
 msgstr "Host no encontrado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Host serving this panel…"
+msgstr "Anfitrión que sirve este panel…"
 
 #. module: incubacloud
 #. odoo-python
@@ -7061,6 +7095,23 @@ msgid "No projects yet"
 msgstr "No hay proyectos aún"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "No proxy is trusted. The connecting address is used as-is."
+msgstr ""
+"No se confía en ningún proxy. Se usa tal cual la dirección de la conexión."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"No proxy is trusted. This host is treated as answering its visitors "
+"directly."
+msgstr ""
+"No se confía en ningún proxy. Se considera que este anfitrión atiende "
+"directamente a sus visitantes."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/observability_agents_executor.py:0
 msgid ""
@@ -7153,6 +7204,12 @@ msgstr "Normal"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Not applied yet."
+msgstr "Todavía sin aplicar."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/archive_copy.js:0
 msgid "Not checked yet"
 msgstr "Aún sin comprobar"
@@ -7175,6 +7232,12 @@ msgstr "No desplegado"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Not enrolled yet"
 msgstr "Sin enrolar todavía"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Not resolved yet."
+msgstr "Todavía sin resolver."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7429,6 +7492,33 @@ msgid "On, but no query endpoint is set — nothing can be read back."
 msgstr "Activada, pero sin URL de consulta — no se puede leer nada."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32.\n"
+"                                An entry that is not a range is refused on save rather than\n"
+"                                dropped quietly."
+msgstr ""
+"Un rango CIDR por línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32. Una "
+"entrada que no sea un rango se rechaza al guardar, en vez de descartarse en "
+"silencio."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"One CIDR range per line, e.g. 198.51.100.0/24 or 2001:db8::/32. Leave empty "
+"to use whatever the platform supplies; fill it in only to pin this host to a"
+" different proxy than the rest. Traefik believes X-Forwarded-For only on "
+"connections from the ranges applied below, and strips it from every other, "
+"which is what makes the header unspoofable and lets the per-client rate "
+"limit key on the real visitor instead of a handful of edge addresses."
+msgstr ""
+"Un rango CIDR por línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32. Una "
+"entrada que no sea un rango se rechaza al guardar, en vez de descartarse en "
+"silencio."
+
+#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_rate_limit_bucket_uniq
 msgid "One row per rate-limit bucket."
 msgstr "Una fila por bucket de rate-limit."
@@ -7448,8 +7538,8 @@ msgstr "Aceptar tráfico solo de los proxies de confianza"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
-msgid "Only accept traffic from the trusted proxies above"
-msgstr "Aceptar tráfico solo de los proxies de confianza indicados arriba"
+msgid "Only accept traffic from the proxies applied above"
+msgstr "Aceptar tráfico solo de los proxies aplicados arriba"
 
 #. module: incubacloud
 #. odoo-python
@@ -7462,6 +7552,12 @@ msgstr "Solo las tareas activas pueden cancelarse."
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "Only failed jobs can be retried."
 msgstr "Solo las tareas fallidas pueden reintentarse."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Only let GitHub's published ranges reach the webhook"
+msgstr "Permitir que solo los rangos publicados por GitHub lleguen al webhook"
 
 #. module: incubacloud
 #. odoo-python
@@ -7561,6 +7657,17 @@ msgid ""
 msgstr ""
 "Sobrescritura opcional del destinatario para los avisos de uso. Si está "
 "vacío, usa el campo ``Notificación a``."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_tls_domain
+msgid ""
+"Optional. Serve the panel's webhook router from an existing wildcard "
+"certificate, e.g. *.example.com, instead of asking for one issued for the "
+"hostname itself."
+msgstr ""
+"Opcional. Sirve el enrutador del webhook del panel desde un certificado "
+"comodín existente, por ejemplo *.ejemplo.com, en lugar de pedir uno emitido "
+"para el propio nombre de host."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__job_id
@@ -7674,10 +7781,48 @@ msgid "PR Repository"
 msgstr "Repositorio del PR"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_service_url
+msgid "Panel Backend URL"
+msgstr "URL interna del panel"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_host_id
+msgid "Panel Host"
+msgstr "Anfitrión del panel"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_hostname
+msgid "Panel Hostname"
+msgstr "Nombre de host del panel"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Panel Password"
 msgstr "Contraseña del panel"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_tls_domain
+msgid "Panel Wildcard Certificate"
+msgstr "Certificado comodín del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Panel backend URL"
+msgstr "URL interna del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Panel host"
+msgstr "Anfitrión del panel"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Panel hostname"
+msgstr "Nombre de host del panel"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8164,6 +8309,16 @@ msgid "Proxy"
 msgstr "Proxy"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_hostname
+msgid ""
+"Public hostname this panel answers on, e.g. panel.example.com. Used to route"
+" its own GitHub webhook endpoint through the source allowlist."
+msgstr ""
+"Nombre de host público con el que responde este panel, por ejemplo "
+"panel.ejemplo.com. Se usa para enrutar su propio punto de entrada de "
+"webhooks de GitHub a través de la lista de orígenes permitidos."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__github_webhook_allowlist
 msgid ""
 "Publish a Traefik router that only lets GitHub's own published address "
@@ -8593,14 +8748,17 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid ""
-"Refuses HTTPS requests that reached this host without going through the "
-"edge, so its address cannot be used to bypass it. Ignored while no trusted "
-"range is set, where it would lock out every visitor."
+"Refuses HTTPS requests that reached this host without going through one of "
+"them, so its address cannot be used to bypass the edge. Ignored while no "
+"range is applied above, where it would lock out every visitor — the override"
+" box being empty does not mean that, since the platform may be supplying the"
+" list."
 msgstr ""
-"Rechaza las peticiones HTTPS que llegaron a este anfitrión sin pasar por el "
-"borde, para que no se pueda usar su dirección para saltárselo. Se ignora "
-"mientras no haya ningún rango de confianza definido, porque entonces dejaría"
-" fuera a todos los visitantes."
+"Rechaza las peticiones HTTPS que llegaron a este anfitrión sin pasar por "
+"ninguno de ellos, para que no se pueda usar su dirección para saltarse el "
+"borde. Se ignora mientras no haya ningún rango aplicado arriba, porque "
+"entonces dejaría fuera a todos los visitantes: que la caja de excepción esté"
+" vacía no significa eso, ya que la lista puede aportarla la plataforma."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__remote_folder
@@ -8941,6 +9099,12 @@ msgstr "Falló la restauración"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Restoring…"
 msgstr "Restaurando…"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Restrict at the edge"
+msgstr "Restringir en el borde"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_webhook_allowlist
@@ -9581,6 +9745,14 @@ msgid "Session not found"
 msgstr "Sesión no encontrada"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Set automatically from the catch-all host; nothing to fill in."
+msgstr ""
+"Se fija automáticamente desde el anfitrión catch-all; no hay nada que "
+"rellenar."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__hardened
 msgid ""
 "Set by host_hardening_executor on success. When True the host is reached as "
@@ -9776,6 +9948,13 @@ msgstr "Instancia origen no encontrada."
 msgid "Source webhook event; cleared if the row is purged later."
 msgstr ""
 "Evento de webhook de origen; se limpia si la fila se purga más adelante."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Source:"
+msgstr "Origen:"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10158,6 +10337,15 @@ msgstr ""
 "antes de la instancia existente y reintenta la importación."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_host_id
+msgid ""
+"The host whose Traefik serves this panel. Only that host publishes a router "
+"for the panel's own webhook endpoint."
+msgstr ""
+"El anfitrión cuyo Traefik sirve este panel. Solo ese anfitrión publica un "
+"enrutador para el punto de entrada de webhooks del propio panel."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__purge_cutoff_at
 msgid ""
 "The instant this instance's deletion was decided. The purge only removes "
@@ -10323,6 +10511,17 @@ msgstr ""
 "Los ajustes concretos de la plantilla que le faltan a la copia guardada."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"These are not address ranges: %(entries)s. Write one CIDR range per line, "
+"for example 198.51.100.0/24 or 2001:db8::/32."
+msgstr ""
+"Esto no son rangos de direcciones: %(entries)s. Escriba un rango CIDR por "
+"línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
@@ -10480,6 +10679,12 @@ msgid ""
 msgstr ""
 "Esto sobrescribe la base de datos y el filestore de esta instancia. Su "
 "código (repositorios y ramas) no se toca."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "This panel's endpoint"
+msgstr "El punto de entrada de este panel"
 
 #. module: incubacloud
 #. odoo-python
@@ -10726,6 +10931,17 @@ msgstr "Contraseña del panel Traefik"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Traefik on this host is still running the previous list; use Push Trusted "
+"Proxy Settings, or a full setup run, to ship it."
+msgstr ""
+"El Traefik de este anfitrión sigue ejecutando la lista anterior; use Enviar "
+"ajustes de proxy de confianza, o una configuración completa del anfitrión, "
+"para enviarla."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "Triggers a duplicity backup to S3. The chain is incremental:\n"
@@ -10809,11 +11025,16 @@ msgid "Trusted Proxy Ranges"
 msgstr "Rangos de proxy de confianza"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__trusted_proxy_ranges
 msgid "Trusted proxy ranges"
 msgstr "Rangos de proxy de confianza"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Trusted proxy ranges (override)"
+msgstr "Rangos de proxy de confianza (excepción)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10970,6 +11191,12 @@ msgstr "Fuente de datos desconocida: %s"
 #: code:addons/incubacloud/models/cloud_github_app.py:0
 msgid "Unknown error."
 msgstr "Error desconocido."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "Unknown host."
+msgstr "Anfitrión desconocido."
 
 #. module: incubacloud
 #. odoo-python
@@ -11173,6 +11400,27 @@ msgstr "Verificar las copias de instancias archivadas"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
+"Verifying a signature means hashing the whole request body, so inside\n"
+"                        the endpoint the cost of a forged one can only be bounded, never\n"
+"                        removed. Refused at the edge it costs nothing. When enabled, a Traefik\n"
+"                        router restricts the webhook path to the address ranges GitHub\n"
+"                        publishes, refreshed daily. Leave it off for an installation fed by a\n"
+"                        self-hosted GitHub Enterprise: it delivers from its own addresses and\n"
+"                        would be locked out."
+msgstr ""
+"Verificar una firma implica calcular el hash del cuerpo entero de la "
+"petición, así que dentro del punto de entrada el coste de una firma "
+"falsificada solo se puede acotar, nunca eliminar. Rechazada en el borde no "
+"cuesta nada. Cuando está activado, un enrutador de Traefik restringe la ruta"
+" del webhook a los rangos de direcciones que publica GitHub, refrescados a "
+"diario. Déjelo apagado en una instalación alimentada por un GitHub "
+"Enterprise autoalojado: entrega desde sus propias direcciones y quedaría "
+"bloqueada."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
 "VictoriaMetrics, Grafana and a gateway, deployed as a job\n"
 "                            on the host you pick. Co-locating on the panel host is the\n"
 "                            usual start; re-run it against another host to move it."
@@ -11262,6 +11510,12 @@ msgstr "Secreto del webhook"
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_webhook_secret
 msgid "Webhook Signing Secret"
 msgstr "Secreto de firma del webhook"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Webhook Source Allowlist"
+msgstr "Lista de orígenes permitidos del webhook"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11479,6 +11733,16 @@ msgid "Where the central runs"
 msgstr "Dónde corre el central"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_service_url
+msgid ""
+"Where the host's Traefik reaches this panel, e.g. http://odoo:8069. It is a "
+"container name on the host's own network, not a public address."
+msgstr ""
+"Por dónde llega el Traefik del anfitrión a este panel, por ejemplo "
+"http://odoo:8069. Es un nombre de contenedor en la red del propio anfitrión,"
+" no una dirección pública."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__state
 msgid ""
 "Where the instance is in its lifecycle. Written only by ``_transition()``, "
@@ -11489,6 +11753,21 @@ msgstr ""
 "``_transition()``, que rechaza los saltos no permitidos. Reconstruir, "
 "restaurar, mover, iniciar y detener ocurren *dentro* de 'deployed': son "
 "operaciones, no estados."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"Where this panel answers, and how the host's Traefik reaches\n"
+"                                    it. The panel is not one of the instances a host serves, so\n"
+"                                    nothing can find it otherwise — and it is the one thing that\n"
+"                                    certainly receives the webhook. Only the host picked\n"
+"                                    here publishes the router."
+msgstr ""
+"Dónde responde este panel, y cómo llega hasta él el Traefik del anfitrión. "
+"El panel no es una de las instancias que sirve un anfitrión, así que no hay "
+"otra forma de encontrarlo, y es lo único que con certeza recibe el webhook. "
+"Solo el anfitrión elegido aquí publica el enrutador."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__traefik_deployed
@@ -11551,6 +11830,12 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__wildcard_domain
 msgid "Wildcard Domain"
 msgstr "Dominio comodín"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Wildcard certificate (optional)"
+msgstr "Certificado comodín (opcional)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11983,6 +12268,12 @@ msgstr "http://172.17.0.1:8428/r/"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "http://odoo:8069"
+msgstr "http://odoo:8069"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
 msgid "https://github.com/org/repo"
 msgstr "https://github.com/org/repo"
@@ -12160,6 +12451,12 @@ msgstr "ops@example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "panel.example.com"
+msgstr "panel.ejemplo.com"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "pending"
 msgstr "pendiente"
@@ -12297,10 +12594,35 @@ msgstr ""
 "                    y reemplazarla con el backup de"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "the general settings"
+msgstr "los ajustes generales"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance_move.py:0
 msgid "the new host IP"
 msgstr "la IP del nuevo host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "the override below"
+msgstr "la excepción de abajo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "the platform's CDN, refreshed daily"
+msgstr "el CDN de la plataforma, refrescado a diario"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "this host's own override, below"
+msgstr "la excepción propia de este anfitrión, abajo"
 
 #. module: incubacloud
 #. odoo-javascript

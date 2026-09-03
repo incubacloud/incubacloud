@@ -140,11 +140,11 @@ class CloudHostGitHubWebhookEdge(models.Model):
     def _github_webhook_routes(self):
         """Return the routers this host should carry for the webhook.
 
-        One per hostname of every deployed instance on the host, because
-        an instance running this module answers the webhook path on each
-        of its own domains. Modules that put something else in front of
-        the same path — the SaaS manager serves the panel itself from
-        the catch-all host — extend this.
+        Two sources. The panel's own endpoint, when settings say which
+        host serves it and under what name -- it is not an instance, so
+        nothing else here can find it. And one route per hostname of
+        every deployed instance on the host, because an instance running
+        this module answers the webhook path on each of its own domains.
 
         Empty while the feature is off, which is what keeps a plain
         installation's routing exactly as it was.
@@ -156,6 +156,15 @@ class CloudHostGitHubWebhookEdge(models.Model):
         if not settings.github_webhook_allowlist:
             return []
         routes = []
+        # The panel itself is not a cloud.instance, so nothing walking
+        # this host's instances would ever find it -- and it is the one
+        # thing that certainly serves the endpoint. It is described in
+        # settings instead, and only its own host publishes it.
+        panel_host = settings._github_panel_host()
+        if panel_host and panel_host.id == self.id:
+            panel = settings._github_panel_route()
+            if panel:
+                routes.append(panel)
         for instance in self.instance_ids:
             if instance.state != 'deployed':
                 continue

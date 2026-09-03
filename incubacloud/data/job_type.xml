@@ -44,6 +44,12 @@
             <field name="code">push_trusted_proxies</field>
             <field name="apply_to">host</field>
             <field name="description">Re-ships the Traefik configuration that says which proxies in front of this host may be believed, and restarts the proxy so the static setting takes effect.</field>
+            <!-- Shown in the host action bar: applying a change to the
+                 proxy settings otherwise needs a full setup run, which
+                 reinstalls tooling this has nothing to do with. -->
+            <field name="show_as_action">True</field>
+            <field name="action_icon">fa-shield</field>
+            <field name="action_order">40</field>
         </record>
 
         <record id="start_instance" model="cloud.job.type">

@@ -71,6 +71,13 @@ export class HostDetail extends Component {
 
         this.state = useState({
             tab: this.isNew ? "general" : "overview",
+            // Derived server-side and read-only: the ranges the host is
+            // actually filtered against, where they come from, and what
+            // its Traefik was last given. Kept out of `form` so they are
+            // never sent back on save.
+            effectiveProxyRanges: [],
+            trustedProxySource: "none",
+            trustedProxiesShipped: "",
             traefik_file: "traefik_config_yml",
             loading: !this.isNew,
             saving: false,
@@ -256,6 +263,12 @@ export class HostDetail extends Component {
                 whitelist:                host.whitelist || [],
                 newWhitelistEntry:        "",
             };
+            // Read-only, derived server-side: what the host is actually
+            // filtered against, versus the override box above it.
+            this.state.effectiveProxyRanges =
+                host.effective_trusted_proxy_ranges || [];
+            this.state.trustedProxySource = host.trusted_proxy_source || "none";
+            this.state.trustedProxiesShipped = host.trusted_proxies_shipped || "";
             this.state.selectedTags = [...(host.tags || [])];
             this.state.allTags = [...(host.all_tags || [])];
             this._snapshotForm();
@@ -426,6 +439,33 @@ export class HostDetail extends Component {
             this.env.toast?.error(e.data?.message || e.message || _t("Failed to start full setup."));
         }
     }
+
+    /**
+     * Describe where this host's effective proxy ranges come from.
+     *
+     * @returns {string} a phrase for the read-only line under the
+     *   override box, or "" when nothing applies.
+     */
+    proxySourceLabel() {
+        return {
+            host: _t("this host's own override, below"),
+            cloudflare: _t("the platform's CDN, refreshed daily"),
+            settings: _t("the general settings"),
+        }[this.state.trustedProxySource] || "";
+    },
+
+    /**
+     * Whether the host is running the proxy settings currently saved.
+     *
+     * @returns {boolean} true when a run is still needed for them to
+     *   take effect.
+     */
+    proxyChangePending() {
+        const shipped = (this.state.trustedProxiesShipped || "")
+            .split("\n").map((r) => r.trim()).filter(Boolean).join(",");
+        const applied = (this.state.effectiveProxyRanges || []).join(",");
+        return shipped !== applied;
+    },
 
     async hostAction(code) {
         try {
