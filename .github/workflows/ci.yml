@@ -65,6 +65,36 @@ jobs:
             exit 1
           fi
 
+  js-syntax:
+    name: Lint (JS syntax)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # CN-009: Pinned to commit SHA to prevent mutable-tag supply-chain attacks.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Parse every front-end file as an ES module
+        # The panel's JS is bundled by Odoo at runtime, not built here,
+        # so a syntax error surfaces as a blank page with one console
+        # message -- after deployment, with nothing before it failing.
+        # A stray comma between two class methods (valid inside an
+        # object literal, not inside a class body) reached production
+        # exactly that way. Node's parser is the cheapest thing that
+        # would have caught it, and it needs no toolchain: --input-type
+        # is what makes it read `import` as a module rather than a
+        # script, which is the check that was missing.
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r -d '' file; do
+            if ! node --input-type=module --check < "$file"; then
+              echo "::error file=$file::does not parse as an ES module"
+              failed=1
+            fi
+          done < <(find . -path ./node_modules -prune -o -name '*.js' -print0)
+          exit "$failed"
+
   test:
     name: Tests
     runs-on: ubuntu-22.04
