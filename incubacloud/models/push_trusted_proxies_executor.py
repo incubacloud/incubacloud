@@ -31,10 +31,16 @@ class PushTrustedProxiesExecutor(AbstractSSHExecutor):
         """Upload the rendered static and dynamic Traefik documents."""
         host = self.job.host_id
         ranges = host._effective_trusted_proxy_ranges()
-        await transport.upload_text_files({
+        cert, key = host._effective_tls_default()
+        files = {
             f'{_TMP}-traefik.yml': host._shipped_traefik_yml(),
             f'{_TMP}-config.yml': host._shipped_config_yml(),
-        })
+            f'{_TMP}-tls.yml': host._shipped_tls_default_yml(),
+        }
+        if cert and key:
+            files[f'{_TMP}-default.crt'] = cert
+            files[f'{_TMP}-default.key'] = key
+        await transport.upload_text_files(files)
         self._sys(
             f'✓ Trusted proxy configuration prepared ({len(ranges)} '
             f'range{"" if len(ranges) == 1 else "s"}'
@@ -55,6 +61,22 @@ class PushTrustedProxiesExecutor(AbstractSSHExecutor):
                 'Refresh the dynamic configuration',
                 'mkdir -p ~/traefik/dynamic'
                 ' && cp ~/traefik/config.yml ~/traefik/dynamic/config.yml',
+            ),
+            (
+                # A host given its own certificate serves it as the
+                # default; one without gets the document removed, since a
+                # store naming files that are not there makes Traefik
+                # answer every handshake with a throwaway certificate.
+                'Install the default certificate',
+                'mkdir -p ~/traefik/certs;'
+                f' if [ -s {_TMP}-default.crt ]; then'
+                f' mv {_TMP}-default.crt ~/traefik/certs/default.crt'
+                f' && mv {_TMP}-default.key ~/traefik/certs/default.key'
+                ' && chmod 600 ~/traefik/certs/default.key'
+                f' && mv {_TMP}-tls.yml ~/traefik/dynamic/tls-default.yml;'
+                ' else rm -f ~/traefik/dynamic/tls-default.yml'
+                ' ~/traefik/certs/default.crt ~/traefik/certs/default.key;'
+                f' rm -f {_TMP}-tls.yml; fi',
             ),
             (
                 'Restart Traefik',

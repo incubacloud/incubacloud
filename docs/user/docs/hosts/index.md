@@ -25,6 +25,31 @@ Once a host is registered and you run **Full Setup**, we deploy:
 The host stays under your control — root access is yours. VPS ordered through
 the platform are billed on your IncubaCloud subscription invoice.
 
+## Hosts behind a CDN
+
+A host can be reached by its visitors directly, or through a CDN or reverse
+proxy that answers for it. The **General** tab has a switch for this, and it
+decides three things:
+
+- **Who counts as a visitor.** With the switch on, the rate limit counts the
+  client the CDN forwards; with it off, the address that opened the connection.
+  Setting it on a host the world reaches directly is the mistake that costs
+  most: a direct request carries no forwarded chain, so every visitor is
+  counted as the same one and they all share a single limit.
+- **Whether the origin may be reached at all.** With trusted proxy ranges set,
+  *Only accept traffic from the proxies applied above* refuses anything that
+  did not come through them, so the host's address cannot be used to go around
+  the edge.
+- **Where the certificate comes from.** A CDN terminates TLS, so the challenge
+  a host uses to obtain its own certificate never reaches it. Such a host is
+  given a certificate instead — an origin certificate covering the whole
+  domain, which only ever has to satisfy the CDN.
+
+!!! warning "Order matters"
+    Give the host its certificate and its trusted ranges *before* pointing the
+    domain at the CDN, and refuse direct traffic only once traffic is actually
+    arriving through it. The other order leaves the host answering nobody.
+
 ## Common tasks
 
 - [Connect your own VPS](connect.md)

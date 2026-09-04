@@ -370,7 +370,20 @@
                   meta l4proto icmp limit rate 10/second accept
                   meta l4proto ipv6-icmp limit rate 10/second accept
                   tcp dport {{ ssh_port }} ip saddr { {{ ic_effective_allowlist }} } accept
+                  {% if ic_http_allowed_ranges | default('') | trim %}
+                  # The host is reached through a CDN, so its origin has
+                  # no business answering anyone else. Written as an
+                  # explicit set rather than a rate limit: behind a proxy
+                  # every visitor arrives from the same handful of edge
+                  # addresses, so a per-source cap would throttle the CDN
+                  # itself and protect nobody.
+                  tcp dport { 80, 443 } ip saddr { {{ ic_http_allowed_ranges_v4 }} } accept
+                  {% if ic_http_allowed_ranges_v6 | default('') | trim %}
+                  tcp dport { 80, 443 } ip6 saddr { {{ ic_http_allowed_ranges_v6 }} } accept
+                  {% endif %}
+                  {% else %}
                   tcp dport { 80, 443 } accept
+                  {% endif %}
               }
               chain forward {
                   type filter hook forward priority filter; policy accept;

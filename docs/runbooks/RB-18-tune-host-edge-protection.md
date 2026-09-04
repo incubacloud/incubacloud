@@ -6,9 +6,15 @@ proxy; a host is being flooded and you want the connection-rate cap on;
 or you are onboarding a provider without L3/L4 anti-DDoS.
 **Who runs it:** ops.
 
-A host serving tenant instances is reached **directly** — tenant
-domains resolve straight to the host, not through a CDN — so it is
-protected by **rate**, on the box itself, in layers. See
+A host serving tenant instances has historically been reached
+**directly** — tenant domains resolve straight to the host, not through
+a CDN — so it is protected by **rate**, on the box itself, in layers.
+Whether that is still true of a given host is written on the host
+itself (`behind_cdn`), and it changes two of the layers below: read
+[architecture.md → Host edge protection](../architecture.md) before
+tuning anything on a host that sits behind a CDN, where the per-source
+cap becomes an allowlist and the rate limit keys on the forwarded
+chain. See
 [architecture.md → Host edge protection](../architecture.md) for the
 full model. This runbook is how you tune each layer.
 

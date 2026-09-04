@@ -56,6 +56,8 @@ from . import (
     test_host_autoassign,
     test_pluggable_actions,
     test_action_bar_labels,
+    test_behind_cdn,
+    test_restore_upload_paths,
     test_transport,
     test_delete_project,
     test_health_endpoint,

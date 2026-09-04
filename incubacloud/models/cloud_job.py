@@ -20,6 +20,7 @@ from odoo.addons.queue_job.exception import JobError, RetryableJobError
 from ..github.http_utils import safe_urlopen
 from ..net.outbound import post_json
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
+from .encrypted_char import EncryptedChar
 from .abstract_executor import (
     CONNECTION_RETRY_MARKER,
     CONNECTION_RETRY_SECONDS,
@@ -96,6 +97,16 @@ class CloudJob(models.Model):
     )
     result = fields.Serialized()
     payload = fields.Serialized(string="Job Payload")
+    # A credential the job needs while it runs, kept out of ``payload``
+    # on purpose: the payload is read back into the UI, echoed in
+    # notifications and dumped when a job is inspected, and none of those
+    # should ever carry a password. Encrypted at rest like every other
+    # secret this module holds.
+    secret_payload = EncryptedChar(
+        string="Job Secret",
+        copy=False,
+        help="Credential this job needs at run time. Never shown.",
+    )
     queue_job_uuid = fields.Char(string="Queue Job UUID", copy=False, index=True)
     queue_job_id = fields.Many2one(
         "queue.job",
@@ -748,6 +759,14 @@ class CloudJob(models.Model):
         "backup_download_neutralized": "group_cloud_developer",
         "backup_restore": "group_cloud_developer",
         "restore_instance": "group_cloud_developer",
+        # The upload key writes into one directory on the host and
+        # nothing else, and only a restore consumes what it delivers —
+        # so it sits with the restore it serves, not with the host-level
+        # operations. Revocation is deliberately no higher: making it
+        # harder to close a door than to open one would be backwards.
+        "grant_restore_upload_key": "group_cloud_developer",
+        "verify_restore_upload": "group_cloud_developer",
+        "revoke_restore_upload_key": "group_cloud_developer",
         "export_instance": "group_cloud_developer",
         # Host-level, destructive or administrative. Every one of these is
         # enqueued by a manager-gated page, a cron or a sudo chain, so the
@@ -1238,6 +1257,30 @@ class CloudJob(models.Model):
             }
             for job in self
         ]
+
+    def _restore_url_credential(self):
+        """Return the credential a from-URL restore must authenticate with.
+
+        Stored encrypted and apart from the payload, so the password
+        never reaches the job list, a notification or the log. Returns
+        the three values the host needs to write a netrc line.
+
+        :return: ``(machine, login, password)``, or ``None``.
+        """
+        self.ensure_one()
+        raw = self.secret_payload
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        machine = data.get("machine")
+        login = data.get("login")
+        password = data.get("password")
+        if not (machine and login):
+            return None
+        return machine, login, password or ""
 
     def _get_last_system_message(self):
         system_chunks = self.log_chunk_ids.filtered(lambda c: c.source == "system")

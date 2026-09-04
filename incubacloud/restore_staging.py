@@ -14,6 +14,7 @@ Both halves import from here, so the writer and the validator cannot
 drift apart — a test pins that they agree.
 """
 import logging
+import re
 import secrets
 import time
 from pathlib import Path
@@ -31,6 +32,13 @@ _STAGING_DIRNAME = "incubacloud-restore"
 #: purpose: production forces a full backup of the target before the
 #: restore, so a legitimate archive can wait hours for its turn.
 STALE_AFTER_HOURS = 24
+
+#: Extension every staged upload carries.
+_SUFFIX = ".zip"
+
+#: Shape of the random token in a staged upload's name. Matched before
+#: the token is joined to a path, so it can never carry a separator.
+_TOKEN_RE = re.compile(r"^[0-9a-f]{16}$")
 
 
 def staging_dir():
@@ -59,7 +67,41 @@ def new_upload_path(instance_id):
     :return: ``Path`` that does not exist yet.
     """
     return staging_dir() / (
-        f"{_name_prefix(instance_id)}{secrets.token_hex(8)}.zip"
+        f"{_name_prefix(instance_id)}{secrets.token_hex(8)}{_SUFFIX}"
+    )
+
+
+def upload_id_of(path):
+    """Return the random token identifying a staged upload.
+
+    :param path: path produced by :func:`new_upload_path`.
+    :return: the token, or ``""`` when the name is not one of ours.
+    :rtype: str
+    """
+    name = Path(path).name
+    if not name.endswith(_SUFFIX):
+        return ""
+    stem = name[: -len(_SUFFIX)]
+    _, _, token = stem.rpartition("_")
+    return token if _TOKEN_RE.match(token) else ""
+
+
+def path_for_upload(instance_id, upload_id):
+    """Return the staged path a chunked upload is appending to.
+
+    The token is the capability: whoever began the upload holds it and
+    nobody else can name the file. It is matched against a strict shape
+    before it is ever joined to a directory, so a caller cannot walk out
+    of the staging area with it.
+
+    :param instance_id: instance the upload belongs to.
+    :param upload_id: token returned when the upload began.
+    :return: ``Path``, or ``None`` when the token is malformed.
+    """
+    if not upload_id or not _TOKEN_RE.match(str(upload_id)):
+        return None
+    return staging_dir() / (
+        f"{_name_prefix(instance_id)}{upload_id}{_SUFFIX}"
     )
 
 

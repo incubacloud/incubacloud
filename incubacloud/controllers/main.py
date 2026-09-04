@@ -14,7 +14,11 @@ from odoo.http import Controller, request
 
 from odoo.addons.bus.websocket import WebsocketConnectionHandler
 
-from ..restore_staging import new_upload_path
+from ..restore_staging import (
+    new_upload_path,
+    path_for_upload,
+    upload_id_of,
+)
 from ._data_load._helpers import (
     is_safe_log_archive,
     log_archive_download_command,
@@ -24,6 +28,24 @@ from ._rate_limit import Rule, first_tripped
 from .async_utils import run_async
 
 _logger = logging.getLogger(__name__)
+
+#: Largest archive a restore upload may rebuild, unless
+#: ``incubacloud.restore_upload_max_bytes`` says otherwise. The staged
+#: file sits on the panel's data volume until the executor sends it, so
+#: this is a disk budget as much as a limit.
+_RESTORE_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+
+#: Size the browser is told to cut pieces at. Chosen well under the 100 MB
+#: a CDN typically allows per request, and small enough that re-sending
+#: one after a dropped connection is cheap.
+_RESTORE_UPLOAD_CHUNK_BYTES = 32 * 1024 * 1024  # 32 MiB
+
+#: Ceiling for a single piece, with room for the multipart envelope.
+_RESTORE_UPLOAD_PART_MAX_BYTES = 40 * 1024 * 1024  # 40 MiB
+
+#: Read granularity while appending a piece: the archive never lands in
+#: the worker's memory, same reason the one-shot route streams.
+_RESTORE_UPLOAD_BLOCK_BYTES = 64 * 1024
 
 
 class CloudController(Controller):
@@ -307,6 +329,207 @@ class CloudController(Controller):
             _logger.exception("restore_instance_upload failed")
             return request.make_json_response(
                 {"error": "An internal error occurred. Check server logs."}, status=500
+            )
+
+    # ── Chunked restore upload ────────────────────────────────────────────
+    # A reverse proxy or CDN in front of the panel caps how large a single
+    # request may be — Cloudflare at 100 MB, nginx at whatever
+    # ``client_max_body_size`` says — and the cap applies long before Odoo
+    # sees the request, so the one-shot route above answers 413 to any
+    # backup bigger than that no matter what ``max_content_length`` allows.
+    # Sending the archive in pieces keeps every request small; the file
+    # they rebuild is the same staged upload the executor already knows how
+    # to consume, so nothing downstream changes.
+
+    def _restore_upload_guard(self, instance_id, rate_limited=False):
+        """Authorise a restore-upload request and resolve its instance.
+
+        :param instance_id: instance being restored.
+        :param rate_limited: apply the per-user upload limit (the calls
+            that start work, not the ones that continue it — a large
+            archive is many parts and they must not trip it).
+        :return: ``(instance, None)`` when allowed, ``(None, response)``
+            when the caller must be turned away.
+        """
+        request.env["cloud.security.mixin"]._check_can_manage_backups()
+        if not request.env.user._is_internal():
+            return None, request.make_json_response(
+                {"error": "Forbidden"}, status=403,
+            )
+        if rate_limited and first_tripped(Rule(
+            f"restore_upload_user:{request.env.user.id}",
+            max_per_window=2,
+            log_tag=f"restore_upload user={request.env.user.id}",
+        )):
+            return None, request.make_json_response(
+                {"error": "Rate limit exceeded. Wait 60s and retry."},
+                status=429,
+            )
+        inst = request.env["cloud.instance"].browse(instance_id)
+        if not inst.exists() or not inst.host_id:
+            return None, request.make_json_response(
+                {"error": "Instance not found"}, status=404,
+            )
+        return inst, None
+
+    def _restore_upload_limit(self):
+        """Return the largest archive an upload may rebuild, in bytes."""
+        raw = request.env["ir.config_parameter"].sudo().get_param(
+            "incubacloud.restore_upload_max_bytes",
+        )
+        with suppress(TypeError, ValueError):
+            value = int(raw)
+            if value > 0:
+                return value
+        return _RESTORE_UPLOAD_MAX_BYTES
+
+    @http.route(
+        ["/cloud/instance/<int:instance_id>/restore/begin"],
+        methods=["POST"],
+        auth="user",
+        type="http",
+    )
+    def restore_upload_begin(self, instance_id, **k):
+        """Open a staged upload and return the token that continues it."""
+        inst, refused = self._restore_upload_guard(
+            instance_id, rate_limited=True,
+        )
+        if refused:
+            return refused
+        path = new_upload_path(instance_id)
+        try:
+            path.touch(mode=0o600)
+        except OSError:
+            _logger.exception("restore_upload_begin failed")
+            return request.make_json_response(
+                {"error": "An internal error occurred. Check server logs."},
+                status=500,
+            )
+        return request.make_json_response({
+            "upload_id": upload_id_of(path),
+            "max_bytes": self._restore_upload_limit(),
+            "chunk_bytes": _RESTORE_UPLOAD_CHUNK_BYTES,
+        })
+
+    @http.route(
+        ["/cloud/instance/<int:instance_id>/restore/part"],
+        methods=["POST"],
+        auth="user",
+        type="http",
+        max_content_length=_RESTORE_UPLOAD_PART_MAX_BYTES,
+    )
+    def restore_upload_part(self, instance_id, upload_id=None, offset=None,
+                            **k):
+        """Append one piece to a staged upload.
+
+        ``offset`` is what makes a retry safe: it must equal the size the
+        file already has. A piece that arrives twice names an offset
+        behind the end and is acknowledged without being written again; a
+        piece that arrives out of order names one past the end and is
+        refused, because appending it would leave a hole no reader could
+        detect.
+        """
+        inst, refused = self._restore_upload_guard(instance_id)
+        if refused:
+            return refused
+        path = path_for_upload(instance_id, upload_id)
+        if not path or not path.exists():
+            return request.make_json_response(
+                {"error": "Unknown upload"}, status=404,
+            )
+        chunk = request.httprequest.files.get("chunk")
+        if not chunk:
+            return request.make_json_response(
+                {"error": "No chunk provided"}, status=400,
+            )
+        try:
+            offset = int(offset)
+        except (TypeError, ValueError):
+            return request.make_json_response(
+                {"error": "Invalid offset"}, status=400,
+            )
+        size = path.stat().st_size
+        if offset < size:
+            return request.make_json_response({"size": size, "resent": True})
+        if offset > size:
+            return request.make_json_response(
+                {"error": "Out-of-order chunk", "size": size}, status=409,
+            )
+        limit = self._restore_upload_limit()
+        try:
+            with open(path, "ab") as target:
+                while True:
+                    block = chunk.stream.read(_RESTORE_UPLOAD_BLOCK_BYTES)
+                    if not block:
+                        break
+                    size += len(block)
+                    if size > limit:
+                        target.truncate(offset)
+                        return request.make_json_response(
+                            {"error": "Upload exceeds the maximum size"},
+                            status=413,
+                        )
+                    target.write(block)
+        except OSError:
+            _logger.exception("restore_upload_part failed")
+            return request.make_json_response(
+                {"error": "An internal error occurred. Check server logs."},
+                status=500,
+            )
+        return request.make_json_response({"size": size})
+
+    @http.route(
+        ["/cloud/instance/<int:instance_id>/restore/finish"],
+        methods=["POST"],
+        auth="user",
+        type="http",
+    )
+    def restore_upload_finish(self, instance_id, upload_id=None,
+                              filename=None, total_size=None, **k):
+        """Close a staged upload and enqueue the restore that consumes it."""
+        inst, refused = self._restore_upload_guard(instance_id)
+        if refused:
+            return refused
+        path = path_for_upload(instance_id, upload_id)
+        if not path or not path.exists():
+            return request.make_json_response(
+                {"error": "Unknown upload"}, status=404,
+            )
+        size = path.stat().st_size
+        if not size:
+            with suppress(OSError):
+                path.unlink()
+            return request.make_json_response(
+                {"error": "No file provided"}, status=400,
+            )
+        with suppress(TypeError, ValueError):
+            if int(total_size) != size:
+                with suppress(OSError):
+                    path.unlink()
+                return request.make_json_response(
+                    {"error": "Incomplete upload"}, status=400,
+                )
+        try:
+            os.chmod(path, 0o600)
+            safe_name = re.sub(
+                r"[^A-Za-z0-9._-]", "_", filename or "restore.zip",
+            )[:255]
+            job_id = inst.restore_db({
+                "mode": "browser",
+                "local_path": str(path),
+                "filename": safe_name or "restore.zip",
+                "backup_before_restore": (
+                    k.get("backup_before_restore") == "true"
+                ),
+            })
+            return request.make_json_response({"job_id": job_id})
+        except Exception:
+            with suppress(OSError):
+                path.unlink()
+            _logger.exception("restore_upload_finish failed")
+            return request.make_json_response(
+                {"error": "An internal error occurred. Check server logs."},
+                status=500,
             )
 
     @http.route(["/cloud/ping"], type="jsonrpc", auth="user")

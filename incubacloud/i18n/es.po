@@ -812,6 +812,12 @@ msgstr ""
 "nuevo cuando termine."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Any size. We lend you a temporary key"
+msgstr "Cualquier tamaño. Te prestamos una clave temporal"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_project__project_license__apache-2_0
 msgid "Apache 2.0"
 msgstr "Apache 2.0"
@@ -955,6 +961,12 @@ msgstr "Imagen de purga de archivadas"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
 msgid "Are you sure you want to delete \"%s\"? This action cannot be undone."
 msgstr "¿Seguro que quiere eliminar \"%s\"? Esta acción no se puede deshacer."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid "Ask for an upload key first."
+msgstr "Pide primero una clave de subida."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1721,6 +1733,18 @@ msgstr "Verificar instalación"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Check what arrived"
+msgstr "Comprobar qué llegó"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid "Check what arrived before restoring it."
+msgstr "Comprueba qué llegó antes de restaurarlo."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__status__checking
@@ -2412,6 +2436,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid "Could not check the upload."
+msgstr "No se pudo comprobar la subida."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
 msgid "Could not detect chat ID"
 msgstr "No se pudo detectar el ID de chat"
@@ -2451,6 +2481,12 @@ msgstr "No se pudieron cargar los proyectos"
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Could not parse repository configuration."
 msgstr "No se pudo interpretar la configuración del repositorio."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid "Could not prepare the upload."
+msgstr "No se pudo preparar la subida."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2624,6 +2660,7 @@ msgstr "Crea tu primer proyecto para comenzar a gestionar instancias de Odoo."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_uid
@@ -2651,6 +2688,7 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_date
@@ -2672,6 +2710,11 @@ msgstr "Creando…"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Credential"
 msgstr "Credencial"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__secret_payload
+msgid "Credential this job needs at run time. Never shown."
+msgstr "Credencial que este trabajo necesita al ejecutarse. Nunca se muestra."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2822,9 +2865,38 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Decides how a visitor is identified here. On: the rate limit counts the "
+"forwarded client, so one CDN edge is not one bucket shared by everyone "
+"behind it. Off: it counts the address that opened the connection. Turning "
+"this on for a host the world reaches directly is the worse mistake of the "
+"two — a direct request carries no forwarded chain, so every visitor "
+"collapses into a single shared bucket."
+msgstr ""
+"Decide cómo se identifica aquí a un visitante. Activado: el límite de "
+"peticiones cuenta al cliente que reenvía el CDN, así un borde del CDN no es "
+"un único cubo compartido por todos los que hay detrás. Desactivado: cuenta "
+"la dirección que abrió la conexión. Activarlo en un host al que el mundo "
+"llega directo es el peor de los dos errores: una petición directa no lleva "
+"cadena reenviada, así que todos los visitantes se cuentan como el mismo y "
+"comparten un único límite."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Default Backup Destination"
 msgstr "Destino de copia por defecto"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__tls_default_cert
+msgid "Default TLS Certificate"
+msgstr "Certificado TLS por defecto"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__tls_default_key
+msgid "Default TLS Private Key"
+msgstr "Clave privada del certificado TLS"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__default_backup_alert_threshold_pct
@@ -3271,6 +3343,7 @@ msgstr "Descarta esta alerta para todos los usuarios"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__display_name
@@ -3657,6 +3730,11 @@ msgstr "Certificado existente (almacén de Traefik)"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Exit"
 msgstr "Salir"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__expires_at
+msgid "Expires At"
+msgstr "Caduca el"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4100,18 +4178,8 @@ msgstr "Campo no permitido"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
-msgid "File exceeds 2 GB — switched to SSH / rsync mode."
-msgstr "El archivo supera 2 GB — cambiado a modo SSH / rsync."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
-msgid ""
-"File too large for browser upload. Please use the SSH / rsync method "
-"instead."
-msgstr ""
-"Archivo demasiado grande para subirlo desde el navegador. Use el método SSH "
-"/ rsync en su lugar."
+msgid "File exceeds 2 GB — switched to SSH upload."
+msgstr "El archivo supera los 2 GB: se cambió a subida por SSH."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4139,6 +4207,11 @@ msgstr "Filtrar repositorios"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Filter repos…"
 msgstr "Filtrar repos…"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__fingerprint
+msgid "Fingerprint"
+msgstr "Huella"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__revoked_key_fingerprint
@@ -4200,12 +4273,6 @@ msgstr ""
 "Grafana ya existente."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "For larger databases"
-msgstr "Para bases de datos grandes"
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance_backup__attachment_id
 msgid "For non-production backups: the ZIP attachment (2h TTL)."
 msgstr "Para backups no productivos: el adjunto ZIP (TTL de 2h)."
@@ -4239,6 +4306,12 @@ msgstr "Congelar todos"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "From"
 msgstr "Desde"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "From a link"
+msgstr "Desde un enlace"
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_backup__backup_type__full
@@ -4588,6 +4661,12 @@ msgstr "Huella de la lista del webhook de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Give me an upload key"
+msgstr "Dame una clave de subida"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/app/app.xml:0
 msgid "Global navigation"
 msgstr "Navegación global"
@@ -4635,6 +4714,16 @@ msgstr ""
 "pasarela autentica al llamante con la credencial del operador y sustituye "
 "por ésta antes de reenviar, así que rotarla es un redespliegue y no un "
 "cambio en todo lo que habla con Grafana."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_restore_upload_grant_token_uniq
+msgid "Grant token must be unique."
+msgstr "El identificador de la concesión debe ser único."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_restore_upload_grant__state__granted
+msgid "Granted"
+msgstr "Concedida"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_res_users__cloud_webhook_secret
@@ -4751,6 +4840,7 @@ msgstr "Alta"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__host_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__host_id
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_metric_rule__scope__host
 msgid "Host"
 msgstr "Host"
@@ -4949,6 +5039,7 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_security_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__id
@@ -5262,6 +5353,7 @@ msgstr "Instalados"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__instance_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__instance_id
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_metric_rule__scope__instance
 msgid "Instance"
 msgstr "Instancia"
@@ -5353,6 +5445,7 @@ msgstr "La instancia no tiene host"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/models/cloud_restore_upload_grant.py:0
 msgid "Instance has no host assigned."
 msgstr "La instancia no tiene host asignado."
 
@@ -5710,6 +5803,11 @@ msgid "Job Retention"
 msgstr "Retención de jobs"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__secret_payload
+msgid "Job Secret"
+msgstr "Secreto del trabajo"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__job_type_id
 msgid "Job Type"
 msgstr "Tipo de tarea"
@@ -5911,6 +6009,7 @@ msgstr "Última verificación"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_uid
@@ -5939,6 +6038,7 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_tag__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__write_date
@@ -6059,6 +6159,12 @@ msgstr "Estado del ciclo de vida"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Light theme"
 msgstr "Tema claro"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Link to the backup"
+msgstr "Enlace a la salva"
 
 #. module: incubacloud
 #. odoo-python
@@ -6729,6 +6835,12 @@ msgid "Name is required"
 msgstr "El nombre es requerido"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__token
+msgid "Names the directory on the host and the key line that writes into it."
+msgstr ""
+"Da nombre al directorio en el host y a la línea de clave que escribe en él."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid ""
@@ -7265,6 +7377,16 @@ msgstr "No de confianza"
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Nothing has been uploaded yet, or the upload has not been checked. Check "
+"what arrived before restoring it."
+msgstr ""
+"Todavía no se ha subido nada, o la subida no se ha comprobado. Comprueba qué"
+" llegó antes de restaurarlo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "Nothing to roll back."
 msgstr "Nada que revertir."
 
@@ -7771,6 +7893,22 @@ msgstr ""
 "cifrado — nunca expuesto en logs o respuestas API."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__tls_default_cert
+msgid ""
+"PEM certificate chain Traefik serves when nothing else matches. Behind a CDN"
+" this is what the CDN connects to, and it can be a long-lived origin "
+"certificate rather than one obtained per hostname — a challenge cannot reach"
+" a host whose visitors arrive through a proxy that terminates TLS. Leave "
+"empty to keep obtaining certificates on the host itself."
+msgstr ""
+"Cadena de certificados PEM que Traefik sirve cuando no encaja ningún otro. "
+"Detrás de un CDN es a lo que se conecta el CDN, y puede ser un certificado "
+"de origen de larga duración en vez de uno obtenido por cada nombre: un reto "
+"no puede llegar a un host cuyos visitantes entran por un proxy que termina "
+"el TLS. Déjalo vacío para seguir obteniendo los certificados en el propio "
+"host."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "PR #"
@@ -7894,6 +8032,12 @@ msgstr ""
 "Pega la URL de GitHub de tu proyecto. Detectaremos automáticamente\n"
 "                            el tipo de proyecto (doodba / odoo.sh / simple), importaremos\n"
 "                            todos los repositorios y crearemos una instancia de producción."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
+msgid "Paste the link to your backup first."
+msgstr "Pega primero el enlace a tu salva."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8176,6 +8320,15 @@ msgid "Private key"
 msgstr "Clave privada"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__tls_default_key
+msgid ""
+"Private key for the certificate above. Stored encrypted and written to the "
+"host with owner-only permissions."
+msgstr ""
+"Clave privada del certificado de arriba. Se guarda cifrada y se escribe en "
+"el host con permisos solo para su propietario."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Private key is required for the initial setup."
@@ -8318,6 +8471,11 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_proxy
 msgid "Proxy"
 msgstr "Proxy"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__public_key
+msgid "Public Key"
+msgstr "Clave pública"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_hostname
@@ -8525,6 +8683,17 @@ msgid "Re-trust Key"
 msgstr "Volver a confiar en la clave"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__behind_cdn
+msgid "Reached Through a CDN"
+msgstr "Se llega a través de un CDN"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Reached through a CDN"
+msgstr "Se llega a través de un CDN"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Read from the proxy on this host. Nothing is stored."
@@ -8604,10 +8773,27 @@ msgstr ""
 "                            las cargas útiles incluyen una"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model_terms:ir.ui.view,arch_db:incubacloud.view_cloud_github_event_form
 #: model_terms:ir.ui.view,arch_db:incubacloud.view_cloud_github_event_list
 msgid "Received"
 msgstr "Recibido"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__received_bytes
+msgid "Received Bytes"
+msgstr "Bytes recibidos"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__received_filename
+msgid "Received Filename"
+msgstr "Nombre del archivo recibido"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__received_sha256
+msgid "Received Sha256"
+msgstr "SHA-256 recibido"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9196,6 +9382,16 @@ msgid "Reviving…"
 msgstr "Reviviendo…"
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_restore_upload_grant_gc_ir_actions_server
+msgid "Revoke expired restore upload keys"
+msgstr "Revocar las claves de subida de restauración caducadas"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_restore_upload_grant__state__revoked
+msgid "Revoked"
+msgstr "Revocada"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__revoked_key_fingerprint
 msgid "Revoked Key Fingerprint"
 msgstr "Huella de la clave revocada"
@@ -9282,6 +9478,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Run this on your computer. It writes the key with private permissions, sends"
+" the backup, and removes the key afterwards. Valid until"
+msgstr ""
+"Ejecuta esto en tu ordenador. Escribe la clave con permisos privados, envía "
+"la salva y borra la clave al terminar. Válida hasta"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__running
@@ -9312,6 +9518,12 @@ msgid "S3 error %(code)s: %(msg)s"
 msgstr "Error S3 %(code)s: %(msg)s"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "SHA-256"
+msgstr "SHA-256"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__known_hosts_fingerprint
 msgid ""
 "SHA256 fingerprint of the trusted host key, in the same form 'ssh-keygen "
@@ -9321,6 +9533,15 @@ msgstr ""
 "Huella SHA256 de la clave de host confiada, en el mismo formato que imprime "
 "'ssh-keygen -lf', para poder compararla con lo que cualquier otra "
 "herramienta reporte de esta máquina."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__fingerprint
+msgid ""
+"SHA256 fingerprint, so a grant can be recognised in the host's "
+"authorized_keys without holding the key itself."
+msgstr ""
+"Huella SHA256, para poder reconocer una concesión en el authorized_keys del "
+"host sin tener la clave."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10019,6 +10240,7 @@ msgstr "Iniciando…"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__state
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__state
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__state
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__state
 msgid "State"
 msgstr "Estado"
 
@@ -10195,6 +10417,11 @@ msgid "Template Drift Details"
 msgstr "Detalles de la desviación de plantilla"
 
 #. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_restore_upload_grant
+msgid "Temporary SSH access to upload one restore archive"
+msgstr "Acceso SSH temporal para subir un archivo de restauración"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
 msgid "Terminal open (per instance)"
@@ -10265,6 +10492,18 @@ msgstr "Probando…"
 msgid "Text shown in the alert. '%(host)s' and '%(value)s' are substituted."
 msgstr ""
 "Texto que se muestra en la alerta. Se sustituyen '%(host)s' y '%(value)s'."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "That link cannot be used: %s."
+msgstr "Ese enlace no se puede usar: %s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid "That upload grant does not exist."
+msgstr "Esa concesión de subida no existe."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_github_event__action
@@ -10353,6 +10592,33 @@ msgid ""
 msgstr ""
 "Los siguientes dominios ya están asignados a otra instancia: %s. Quítalos "
 "antes de la instancia existente y reintenta la importación."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__public_key
+msgid ""
+"The half installed on the host. The private half is shown to the caller once"
+" and never stored."
+msgstr ""
+"La mitad que se instala en el host. La mitad privada se muestra una sola vez"
+" a quien la pide y no se guarda nunca."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "The host downloads it. https, sftp or ftp"
+msgstr "La descarga el host. https, sftp o ftp"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"The host downloads the archive itself, so nothing is limited by your "
+"connection or by ours. Links with a user and password are accepted; the "
+"password is stored encrypted and never shown again."
+msgstr ""
+"El host descarga el archivo por su cuenta, así que nada queda limitado por "
+"tu conexión ni por la nuestra. Se aceptan enlaces con usuario y contraseña; "
+"la contraseña se guarda cifrada y no se vuelve a mostrar."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_host_id
@@ -10596,6 +10862,25 @@ msgid "This dismisses every listed non-conflict alert"
 msgstr "Esto descarta todas las alertas listadas que no son de conflicto"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__behind_cdn
+msgid ""
+"This host answers its visitors through a CDN or reverse proxy rather than "
+"directly. It changes what is rendered for it: the rate limit keys on the "
+"forwarded chain instead of the connecting address, the real-client header is"
+" honoured, and certificates are expected to be supplied rather than obtained"
+" from the host itself. Leave off for a host the world reaches directly — "
+"turning it on there collapses every visitor into one rate-limit bucket, "
+"because a direct request carries no forwarded chain to read."
+msgstr ""
+"Este host atiende a sus visitantes a través de un CDN o proxy inverso en vez"
+" de directamente. Cambia lo que se genera para él: el límite de peticiones "
+"cuenta la cadena reenviada, se respeta la cabecera del cliente real y se "
+"espera que los certificados se le entreguen en lugar de obtenerlos él mismo."
+" Déjalo desactivado en un host al que el mundo llega directo: activarlo ahí "
+"mete a todos los visitantes en un único cubo de límite, porque una petición "
+"directa no lleva cadena reenviada que leer."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
@@ -10771,8 +11056,8 @@ msgstr "Umbral"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Through SSH / rsync"
-msgstr "A través de SSH / rsync"
+msgid "Through SSH"
+msgstr "Por SSH"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10859,6 +11144,11 @@ msgstr "Activar o desactivar la observabilidad"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Toggle off to stop receiving cloud alerts by email"
 msgstr "Desactive para dejar de recibir alertas de la nube por correo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__token
+msgid "Token"
+msgstr "Identificador"
 
 #. module: incubacloud
 #. odoo-python
@@ -11126,6 +11416,12 @@ msgstr "UTC"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "UTC — copy it now, it is not shown again."
+msgstr "UTC. Cópiala ahora: no se vuelve a mostrar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Unavailable: this production has no backup destination"
 msgstr "No disponible: esta producción no tiene destino de backup"
 
@@ -11264,12 +11560,6 @@ msgstr "La codificación del contenido del repositorio no es compatible."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "Upload your backup to the server, then click"
-msgstr "Sube tu backup al servidor, luego haz clic"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Uploading…"
 msgstr "Subiendo…"
 
@@ -11343,6 +11633,11 @@ msgid "Use project values"
 msgstr "Usar valores de proyecto"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_restore_upload_grant__state__used
+msgid "Used"
+msgstr "Usada"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Useful commands:"
@@ -11357,6 +11652,7 @@ msgstr "Comandos útiles:"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__user
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__user_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__user_id
 msgid "User"
@@ -11481,6 +11777,12 @@ msgid "View the generated Odoo config (addons_path, workers, limits)"
 msgstr "Ver la configuración Odoo generada (addons_path, workers, límites)"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Visitors reach this host through a CDN or reverse proxy"
+msgstr "Los visitantes llegan a este host por un CDN o proxy inverso"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__volumes
 msgid "Volumes"
 msgstr "Volúmenes"
@@ -11529,6 +11831,17 @@ msgid ""
 msgstr ""
 "Marca de agua de la ventana del resumen diario. Avanza tras cada ejecución, "
 "también cuando la ventana quedó vacía."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"We install a temporary key on the host that can only write your backup into "
+"one directory, and expires by itself. You do not need an account on the "
+"machine."
+msgstr ""
+"Instalamos en el host una clave temporal que solo puede escribir tu salva en"
+" un directorio y que caduca sola. No necesitas cuenta en la máquina."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12083,6 +12396,12 @@ msgstr "por"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "bytes."
+msgstr "bytes."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "cannot be undone"
 msgstr "no se puede deshacer"
 
@@ -12338,6 +12657,12 @@ msgstr "https://metrics.example.com/w/"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "https://s3.us-east-1.amazonaws.com"
 msgstr "https://s3.us-east-1.amazonaws.com"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "https://… , sftp://user:password@… , ftp://…"
+msgstr "https://… , sftp://usuario:contraseña@… , ftp://…"
 
 #. module: incubacloud
 #. odoo-javascript

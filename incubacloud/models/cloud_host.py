@@ -16,7 +16,7 @@ from ..net.hostname import InvalidHostname, validate_wildcard_domain
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from . import _config_snapshot_diff as _snapshot_diff
 from .cloud_host_whitelist import DEFAULT_WHITELIST
-from .encrypted_char import EncryptedChar
+from .encrypted_char import EncryptedChar, EncryptedText
 from .password_utils import generate_password
 from .transport import SSHTransport
 
@@ -509,6 +509,36 @@ class CloudHost(models.Model):
         help="Content of the traefik.yml file.",
     )
 
+    tls_default_cert = fields.Text(
+        string="Default TLS Certificate",
+        help="PEM certificate chain Traefik serves when nothing else "
+             "matches. Behind a CDN this is what the CDN connects to, "
+             "and it can be a long-lived origin certificate rather than "
+             "one obtained per hostname — a challenge cannot reach a "
+             "host whose visitors arrive through a proxy that terminates "
+             "TLS. Leave empty to keep obtaining certificates on the "
+             "host itself.",
+    )
+    tls_default_key = EncryptedText(
+        string="Default TLS Private Key",
+        help="Private key for the certificate above. Stored encrypted "
+             "and written to the host with owner-only permissions.",
+    )
+
+    behind_cdn = fields.Boolean(
+        string="Reached Through a CDN",
+        default=False,
+        help="This host answers its visitors through a CDN or reverse "
+             "proxy rather than directly. It changes what is rendered "
+             "for it: the rate limit keys on the forwarded chain instead "
+             "of the connecting address, the real-client header is "
+             "honoured, and certificates are expected to be supplied "
+             "rather than obtained from the host itself. Leave off for a "
+             "host the world reaches directly — turning it on there "
+             "collapses every visitor into one rate-limit bucket, "
+             "because a direct request carries no forwarded chain to "
+             "read.",
+    )
     trusted_proxy_ranges = fields.Text(
         string="Trusted Proxy Ranges",
         help="CIDR ranges of the proxies in front of this host, one per "
@@ -592,6 +622,8 @@ class CloudHost(models.Model):
             "traefik_panel_password",
             "trusted_proxy_ranges",
             "block_direct_access",
+            "behind_cdn",
+            "tls_default_cert",
         ]
 
     def _render_config_snapshot(self):
@@ -2027,28 +2059,34 @@ class CloudHost(models.Model):
 
     @staticmethod
     def _patch_config_yml_trusted_proxies(
-        config_yml, ranges, block_direct=False,
+        config_yml, ranges, block_direct=False, behind_cdn=False,
     ):
         """Return ``config.yml`` keyed on the client behind the proxy.
 
-        Two edits, both conditional on a trusted proxy being declared:
+        Two independent edits:
 
-        * the per-source rate limit starts keying on the forwarded client
-          instead of the connecting address, so a whole CDN edge stops
-          being one bucket shared by everyone behind it;
-        * with *block_direct*, the allowlist middleware the entrypoint
-          references is defined.
+        * with *behind_cdn*, the per-source rate limit starts keying on
+          the forwarded client instead of the connecting address, so a
+          whole CDN edge stops being one bucket shared by everyone
+          behind it;
+        * with *block_direct* and ranges, the allowlist middleware the
+          entrypoint references is defined.
 
-        Both are deliberately skipped when no proxy is declared. A
+        The rate-limit edit turns on *behind_cdn* rather than on ranges
+        being present, and that distinction is the whole point: a
         forwarded-chain strategy on a host that answers its visitors
         directly reads an absent header, and Traefik then keys every one
         of those visitors under the same empty value — one shared bucket
         for the whole internet, which is worse than the address-keyed
-        limit it replaced.
+        limit it replaced. Declaring trusted ranges on such a host is
+        still meaningful (it decides which forwarded headers are
+        stripped); keying the limit on them is not.
 
         :param config_yml: the host's stored dynamic configuration
         :param ranges: CIDR strings of the proxies in front of this host
         :param bool block_direct: also define the allowlist middleware
+        :param bool behind_cdn: the host is reached through those proxies,
+            so every request carries a chain the limit can key on
         :return: the patched configuration
         :rtype: str
         """
@@ -2065,7 +2103,7 @@ class CloudHost(models.Model):
         mark = CloudHost._TRUSTED_PROXY_MARK
 
         # Rate limit: key on the forwarded client.
-        match = re.search(
+        match = behind_cdn and re.search(
             r"^(?P<indent>[ \t]+)ratelimit:[ \t]*\n"
             r"(?P=indent)[ \t]+rateLimit:[ \t]*\n"
             r"(?P<body>(?:(?P=indent)[ \t]{2,}\S.*\n)+)",
@@ -2144,6 +2182,45 @@ class CloudHost(models.Model):
         ranges = self._effective_trusted_proxy_ranges()
         return self._patch_config_yml_trusted_proxies(
             self.traefik_config_yml or "", ranges, self.block_direct_access,
+            self.behind_cdn,
+        )
+
+    def _effective_tls_default(self):
+        """Return the certificate this host serves by default.
+
+        The host's own pair wins. Modules that hold one certificate for
+        a whole zone override this and hand it to every host they know
+        sits behind their CDN, which is what keeps a self-hosted host
+        from being given somebody else's.
+
+        :return: ``(certificate, private key)``, both possibly empty.
+        :rtype: tuple
+        """
+        self.ensure_one()
+        return (self.tls_default_cert or "", self.tls_default_key or "")
+
+    def _shipped_tls_default_yml(self):
+        """Return the dynamic document naming the default certificate.
+
+        Empty when there is nothing to serve, which is also the signal
+        to remove the file: a store pointing at files that are not there
+        makes Traefik answer every TLS handshake with its own throwaway
+        certificate.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        cert, key = self._effective_tls_default()
+        if not (cert and key):
+            return ""
+        return (
+            "# Auto-generated by IncubaCloud. Do not edit by hand.\n"
+            "tls:\n"
+            "  stores:\n"
+            "    default:\n"
+            "      defaultCertificate:\n"
+            "        certFile: /etc/certs/default.crt\n"
+            "        keyFile: /etc/certs/default.key\n"
         )
 
     @api.constrains("trusted_proxy_ranges")

@@ -64,7 +64,65 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
             source = self._source_job()
             if source and source.host_id == self.job.host_id:
                 return handoff_archive_path(source.id)
+        if payload.get('mode') == 'ssh_upload':
+            grant = self._grant()
+            if grant:
+                # Inside the grant's own directory: that is the only
+                # place its key could have written, so reading anywhere
+                # else would mean reading something it did not put there.
+                return grant._remote_path(
+                    grant.received_filename or 'restore.zip',
+                )
         return f"/tmp/incubacloud-restore-{self._inst().id}.zip"
+
+    def _download_command(self, remote):
+        """Return the step that fetches the archive onto the host.
+
+        Three deliberate choices. ``-C -`` resumes, because this exists
+        for archives too big to send twice. Redirects are *not* followed:
+        the address was validated and pinned here, and a redirect is
+        precisely how that validation would be escaped. And the
+        credentials, if any, go in a netrc file created and removed
+        inside the same step — a password in the command line would be
+        readable in ``ps`` by anyone on the host.
+
+        :param remote: path the archive must land on.
+        :return: an executor command tuple.
+        """
+        payload = self.job.payload or {}
+        url = payload.get('url') or ''
+        pin = payload.get('resolve') or ''
+        netrc = f"{remote}.netrc"
+        credential = self.job._restore_url_credential()
+        pin_arg = f" --resolve {pin}" if pin else ""
+        if credential:
+            machine, user, password = credential
+            write_netrc = (
+                f"umask 077; printf '%s\\n'"
+                f" 'machine {machine} login {user} password {password}'"
+                f" > {netrc}; "
+            )
+            netrc_arg = f" --netrc-file {netrc}"
+            cleanup = f"; rc=$?; rm -f {netrc}; exit $rc"
+        else:
+            write_netrc = ""
+            netrc_arg = ""
+            cleanup = ""
+        return (
+            "Download the archive",
+            f"{write_netrc}curl -fsS -C - --max-time 86400"
+            f"{pin_arg}{netrc_arg} -o {remote} '{url}'{cleanup}",
+            {"stop_on_failure": True},
+        )
+
+    def _grant(self):
+        """Return the upload grant this job consumes, if it names one."""
+        grant_id = (self.job.payload or {}).get('grant_id')
+        if not grant_id:
+            return self.env['cloud.restore.upload.grant'].browse()
+        return self.env['cloud.restore.upload.grant'].browse(
+            int(grant_id),
+        ).exists()
 
     # ── AbstractSSHExecutor hooks ──────────────────────────────────────────
 
@@ -177,6 +235,32 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
             self._sys(
                 f"Using pre-uploaded file at {self._remote_path()}..."
             )
+
+        elif mode == 'ssh_upload':
+            grant = self._grant()
+            if not grant:
+                raise ValueError(
+                    "The upload grant for this restore no longer exists."
+                )
+            self._sys(
+                f"Using the archive uploaded through the temporary key "
+                f"({grant.received_filename or 'restore.zip'})…"
+            )
+            # The key has done its job. Closing it here rather than at the
+            # end means a restore that fails still leaves no door open —
+            # the archive is already on the host, so a retry needs no
+            # second upload.
+            grant._mark_used()
+            self.env['cloud.job'].enqueue(
+                grant.host_id.id, grant.instance_id.id,
+                'revoke_restore_upload_key',
+                payload={'grant_id': grant.id, 'keep_directory': True},
+                bypass_running_check=True,
+            )
+
+        elif mode == 'from_url':
+            self._sys("Downloading the archive on the host…")
+
         else:
             raise ValueError(f"Unknown restore mode: {mode!r}")
 
@@ -188,7 +272,10 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
         payload = self.job.payload or {}
         neutralize = "1" if payload.get('neutralize') else "0"
 
-        cmds = [
+        cmds = []
+        if payload.get('mode') == 'from_url':
+            cmds.append(self._download_command(remote))
+        cmds += [
             (
                 "Verify backup file",
                 self.run_script("restore.sh", ["verify-file", d, remote]),

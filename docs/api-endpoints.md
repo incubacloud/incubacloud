@@ -109,7 +109,17 @@ Deploy/rebuild endpoints include data-race prevention: if a job is already runni
 | `/cloud/download_backup_neutralized` | manage backups | Same, but neutralized (crons off, mail servers archived, credentials scrubbed). |
 | `/cloud/restore_backup` | manage backups | Enqueue in-place restore job. |
 
-Uploading an external ZIP goes through the HTTP endpoint `POST /cloud/instance/<id>/restore` (multipart, ≤ 2 GiB, rate-limited, CSRF-protected).
+Uploading an external ZIP goes through three plain-HTTP endpoints, all multipart, CSRF-protected and gated on *manage backups*:
+
+| Path | Description |
+|---|---|
+| `POST /cloud/instance/<id>/restore/begin` | Open a staged upload; returns `{upload_id, max_bytes, chunk_bytes}`. Rate-limited per user (2/min). |
+| `POST /cloud/instance/<id>/restore/part` | Append one piece (`upload_id`, `offset`, `chunk`). `offset` must equal the current size: a piece behind it is acknowledged without rewriting (safe retry), one past it is refused 409 (a hole no reader could detect). Capped at 40 MiB per request. |
+| `POST /cloud/instance/<id>/restore/finish` | Close the upload and enqueue the restore. |
+
+Pieces rather than one request because a CDN or reverse proxy in front of the panel caps a single body long before Odoo sees it — Cloudflare at 100 MB — so the one-shot route (`POST /cloud/instance/<id>/restore`, still accepted) answered 413 to anything larger. The total is capped by `incubacloud.restore_upload_max_bytes` (default 2 GiB), which is a disk budget: the rebuilt file waits under the data directory until the executor sends it.
+
+Two JSON-RPC routes cover the archives that never pass through the panel: `cloud.instance.grant_restore_upload` (installs a one-use, directory-confined, expiring SSH key and returns the private half once) and `cloud.instance.restore_from_url` (has the host fetch it over `https`/`sftp`/`ftp`, with the address validated and pinned here). See [RB-19](runbooks/RB-19-restore-large-backup.md).
 
 ## Backup backends
 

@@ -368,7 +368,11 @@ The frontend cannot read encrypted values directly. `/cloud/get_secret` exposes 
 
 ### Host edge protection (network layers)
 
-A host serving tenant instances is reached **directly** — tenant domains resolve straight to the host's IP, not through a CDN — so its only defence against a flood is one applied on the box itself. The protection is layered, outermost first:
+How a host is reached decides what can defend it, and that is a **property of the host** (`cloud.host.behind_cdn`), not an assumption. A host reached **directly** — its domains resolve straight to its address — can only be defended on the box itself, and that is how the tenant hosts have always run, because a proxied name cannot answer the TLS challenge a host uses to obtain its own certificate. A host reached **through a CDN** is defended at the edge instead, and its own layers change shape accordingly.
+
+Getting this wrong in either direction is expensive, and both mistakes have been made here. Shipping CDN ranges to a host reached directly turned its per-visitor rate limit into a single bucket shared by every instance on it, because `ipStrategy` reads a forwarded chain that direct traffic does not carry (2026-09-03). Refusing direct traffic on a host whose visitors arrive directly would take it off the internet outright.
+
+The protection is layered, outermost first:
 
 1. **Provider L3/L4 anti-DDoS** — volumetric and protocol floods are absorbed upstream in the provider's network. Hetzner and OVH both include this free and automatically. It is an **assumed dependency, not our code**: a host on a provider without it loses the volumetric layer entirely, and such a provider should not front public instances (or must add one, e.g. Cloudflare Spectrum). See [RB-18](runbooks/RB-18-tune-host-edge-protection.md).
 2. **Host connection-rate cap (nftables)** — an optional per-source new-connection limit on 80/443 in the hardening ruleset (`ansible/playbooks/host_hardening.yml`), on the **forward** hook because tenant traffic is DNAT'd to the Traefik container and never touches the input chain. Off by default (`ic_http_conn_rate` unset); enabled per host only after a throwaway-VPS rehearsal, because an unrehearsed drop on that hook is what took the fleet down on 2026-08-14.
@@ -376,6 +380,10 @@ A host serving tenant instances is reached **directly** — tenant domains resol
 4. **Application counters (`cloud.rate.limit`)** — DB-backed per-user/per-IP caps on the panel's own public endpoints (webhook, health, terminal, logs). See [RB-04](runbooks/RB-04-tune-rate-limits.md).
 
 Layers 1–3 protect the **instances**; layer 4 protects the **panel**. All of this is **core**: a partner hardening their own VPS inherits the same defaults, chosen to be safe for any host rather than tuned to our pool.
+
+**Behind a CDN, layers 2 and 3 change rather than stack.** Layer 2 becomes an explicit allowlist of the CDN's ranges on 80/443 instead of a per-source cap — behind a proxy every visitor arrives from a handful of edge addresses, so a per-source cap would throttle the CDN and protect nobody. Layer 3 keeps the same middleware but keys it on the forwarded chain (`sourceCriterion.ipStrategy.depth: 1`), which is only correct *because* the chain is now always present and always written by a proxy Traefik has been told to believe (`forwardedHeaders.trustedIPs`). Neither switch is inferred: they turn on `behind_cdn`, and the firewall half additionally waits for `block_direct_access`, so the two cannot be enabled in an order that leaves the host answering nobody.
+
+**Certificates follow the same fork.** A host reached directly obtains its own through ACME. A host behind a CDN is *given* one — `tls_default_cert` / `tls_default_key`, served as Traefik's default certificate — because the challenge cannot reach it. In this platform that is one origin certificate for the whole zone, held in settings and handed to every host marked as being behind the CDN; in core it is simply a pair of fields, so a partner can supply a certificate from any source.
 
 ### Host maintenance window (04:00 UTC)
 

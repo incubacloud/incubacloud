@@ -1036,22 +1036,41 @@
                                 </div>
                             </label>
                             <label
-            t-att-class="'ic-restore-mode' + (state.restoreDialog.mode === 'rsync' ? ' active' : '')"
+            t-att-class="'ic-restore-mode' + (state.restoreDialog.mode === 'ssh' ? ' active' : '')"
           >
                                 <input
               type="radio"
               name="restore_mode"
-              value="rsync"
-              t-att-checked="state.restoreDialog.mode === 'rsync'"
-              t-on-change="() => { state.restoreDialog.mode = 'rsync'; }"
+              value="ssh"
+              t-att-checked="state.restoreDialog.mode === 'ssh'"
+              t-on-change="() => { state.restoreDialog.mode = 'ssh'; }"
             />
                                 <div class="ic-restore-mode-body">
                                     <span
                 class="ic-restore-mode-title"
-              >Through SSH / rsync</span>
+              >Through SSH</span>
                                     <span
                 class="ic-restore-mode-hint"
-              >For larger databases</span>
+              >Any size. We lend you a temporary key</span>
+                                </div>
+                            </label>
+                            <label
+            t-att-class="'ic-restore-mode' + (state.restoreDialog.mode === 'url' ? ' active' : '')"
+          >
+                                <input
+              type="radio"
+              name="restore_mode"
+              value="url"
+              t-att-checked="state.restoreDialog.mode === 'url'"
+              t-on-change="() => { state.restoreDialog.mode = 'url'; }"
+            />
+                                <div class="ic-restore-mode-body">
+                                    <span
+                class="ic-restore-mode-title"
+              >From a link</span>
+                                    <span
+                class="ic-restore-mode-hint"
+              >The host downloads it. https, sftp or ftp</span>
                                 </div>
                             </label>
                         </div>
@@ -1076,25 +1095,62 @@
                                 </t>
                             </label>
                         </t>
-                        <t t-if="state.restoreDialog.mode === 'rsync'">
-                            <p class="ic-restore-rsync-hint">
-                                Upload your backup to the server, then click <strong
-            >Import</strong>.
-                            </p>
-                            <div class="ic-restore-rsync-wrap">
-                                <div class="ic-restore-rsync-cmd">
-                                    <code t-esc="rsyncCommand()" />
-                                </div>
-                                <button
-              class="ic-restore-copy-btn"
-              t-on-click="() => this.copyRsyncCmd()"
-              t-att-title="state.restoreDialog.copied ? 'Copied!' : 'Copy'"
-            >
-                                    <i
-                t-att-class="state.restoreDialog.copied ? 'fa fa-check' : 'fa fa-clipboard'"
-              />
-                                </button>
+                        <t t-if="state.restoreDialog.mode === 'browser' and state.restoreDialog.uploading">
+                            <div class="ic-restore-rsync-hint">
+                                Uploading… <t t-esc="state.restoreDialog.progress"/>%
                             </div>
+                        </t>
+                        <t t-if="state.restoreDialog.mode === 'ssh'">
+                            <t t-if="!state.restoreDialog.grant">
+                                <p class="ic-restore-rsync-hint">
+                                    We install a temporary key on the host that can only write your backup into one directory, and expires by itself. You do not need an account on the machine.
+                                </p>
+                                <div class="ic-confirm-actions">
+                                    <button class="ic-confirm-btn-ok"
+                                            t-att-disabled="state.restoreDialog.granting"
+                                            t-on-click="() => this.requestUploadKey()">
+                                        <t t-if="state.restoreDialog.granting"><i class="fa fa-spinner fa-spin"/> Preparing…</t>
+                                        <t t-else="">Give me an upload key</t>
+                                    </button>
+                                </div>
+                            </t>
+                            <t t-else="">
+                                <p class="ic-restore-rsync-hint">
+                                    Run this on your computer. It writes the key with private permissions, sends the backup, and removes the key afterwards. Valid until <strong t-esc="state.restoreDialog.grant.expires_at"/> UTC — copy it now, it is not shown again.
+                                </p>
+                                <div class="ic-restore-rsync-wrap">
+                                    <div class="ic-restore-rsync-cmd">
+                                        <code t-esc="uploadCommand()"/>
+                                    </div>
+                                    <button class="ic-restore-copy-btn"
+                                            t-on-click="() => this.copyUploadCmd()"
+                                            t-att-title="state.restoreDialog.copied ? 'Copied!' : 'Copy'">
+                                        <i t-att-class="state.restoreDialog.copied ? 'fa fa-check' : 'fa fa-clipboard'"/>
+                                    </button>
+                                </div>
+                                <div class="ic-confirm-actions">
+                                    <button class="ic-confirm-btn-cancel"
+                                            t-on-click="() => this.checkUpload()">Check what arrived</button>
+                                </div>
+                                <t t-if="state.restoreDialog.received">
+                                    <p class="ic-restore-rsync-hint">
+                                        Received <strong t-esc="state.restoreDialog.received.filename"/> — <t t-esc="state.restoreDialog.received.bytes"/> bytes.<br/>
+                                        SHA-256 <code t-esc="state.restoreDialog.received.sha256"/>
+                                    </p>
+                                </t>
+                            </t>
+                        </t>
+                        <t t-if="state.restoreDialog.mode === 'url'">
+                            <p class="ic-restore-rsync-hint">
+                                The host downloads the archive itself, so nothing is limited by your connection or by ours. Links with a user and password are accepted; the password is stored encrypted and never shown again.
+                            </p>
+                            <label class="ic-refresh-field">
+                                <span>Link to the backup</span>
+                                <input type="text"
+                                       placeholder="https://… , sftp://user:password@… , ftp://…"
+                                       t-att-value="state.restoreDialog.url"
+                                       t-on-input="(ev) => { state.restoreDialog.url = ev.target.value; }"/>
+                            </label>
                         </t>
                         <t t-if="state.inst.environment !== 'production'">
                             <label class="ic-restore-backup-checkbox">
