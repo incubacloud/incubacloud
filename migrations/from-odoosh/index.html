@@ -1382,8 +1382,9 @@ SSH needs the platform's deploy key added to your repo.</p>
    project, with the same Odoo version. Don't worry about the data — you're
    about to overwrite it.</li>
 <li>Open the instance → <strong>Restore Database</strong>.</li>
-<li><strong>Upload</strong> the ZIP if it's under 2 GB, or <strong>rsync</strong> it to the host first
-   (see the <a href="../../backups/restore/#push-rsync">restore docs</a>).</li>
+<li>Send the ZIP through your browser, and for a large database use the
+   temporary upload key or paste a link to it instead
+   (see the <a href="../../backups/restore/#restore-from-an-external-zip">restore docs</a>).</li>
 <li>The restore job runs and replaces the empty database with your real one.</li>
 </ol>
 <h2 id="step-3-cut-over">Step 3 — cut over<a class="headerlink" href="#step-3-cut-over" title="Permanent link">&para;</a></h2>

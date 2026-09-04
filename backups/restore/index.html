@@ -973,18 +973,27 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#upload-web" class="md-nav__link">
+  <a href="#from-your-browser" class="md-nav__link">
     <span class="md-ellipsis">
-      Upload (web)
+      From your browser
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#push-rsync" class="md-nav__link">
+  <a href="#from-your-computer-without-a-size-limit" class="md-nav__link">
     <span class="md-ellipsis">
-      Push (rsync)
+      From your computer, without a size limit
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#from-a-link" class="md-nav__link">
+    <span class="md-ellipsis">
+      From a link
     </span>
   </a>
   
@@ -1317,18 +1326,27 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#upload-web" class="md-nav__link">
+  <a href="#from-your-browser" class="md-nav__link">
     <span class="md-ellipsis">
-      Upload (web)
+      From your browser
     </span>
   </a>
   
 </li>
         
           <li class="md-nav__item">
-  <a href="#push-rsync" class="md-nav__link">
+  <a href="#from-your-computer-without-a-size-limit" class="md-nav__link">
     <span class="md-ellipsis">
-      Push (rsync)
+      From your computer, without a size limit
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#from-a-link" class="md-nav__link">
+    <span class="md-ellipsis">
+      From a link
     </span>
   </a>
   
@@ -1428,15 +1446,46 @@ If you need a forensic copy with original credentials and crons, <strong>downloa
 that backup's timestamp is lost. Take a fresh manual backup first if in doubt.</p>
 </div>
 <h2 id="restore-from-an-external-zip">Restore from an external ZIP<a class="headerlink" href="#restore-from-an-external-zip" title="Permanent link">&para;</a></h2>
-<p>You can also upload a ZIP from your laptop or push it via rsync to the host.</p>
-<h3 id="upload-web">Upload (web)<a class="headerlink" href="#upload-web" title="Permanent link">&para;</a></h3>
-<p>Open the instance → <strong>Restore Database</strong> → drop or select the ZIP. Maximum 2 GB.
-Larger files time out — use rsync instead.</p>
-<h3 id="push-rsync">Push (rsync)<a class="headerlink" href="#push-rsync" title="Permanent link">&para;</a></h3>
-<p>For dumps larger than 2 GB:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>rsync<span class="w"> </span>-P<span class="w"> </span>your-dump.zip<span class="w"> </span>user@host:/var/lib/incubacloud/incoming/
-</span></code></pre></div>
-<p>Then in the instance UI, <strong>Restore Database → From host file</strong> and pick the file.</p>
+<p>A backup that did not come from here — an export from your previous provider, a
+dump a colleague sent you — can be restored the same way. Three routes, and the
+right one depends on where the file is and how big it is.</p>
+<h3 id="from-your-browser">From your browser<a class="headerlink" href="#from-your-browser" title="Permanent link">&para;</a></h3>
+<p>Open the instance → <strong>Restore Database</strong> → <strong>Through your browser</strong>, and pick the
+ZIP. Nothing to install: the file is sent in pieces, so it is not limited by the
+size a single request may carry, and a piece that fails is re-sent on its own. A
+progress figure tells you where it is.</p>
+<p>The ceiling here is disk, not the network: the file waits on the panel's own
+storage until it is sent to the host. 2 GB by default; your administrator can
+raise it.</p>
+<h3 id="from-your-computer-without-a-size-limit">From your computer, without a size limit<a class="headerlink" href="#from-your-computer-without-a-size-limit" title="Permanent link">&para;</a></h3>
+<p>For a 20 GB database, or when you would rather not send it through the panel at
+all, use <strong>Through SSH</strong>. You do not need an account on the machine and you do
+not need to have a key of your own:</p>
+<ol>
+<li>Click <strong>Give me an upload key</strong>. We generate a key pair, install the public
+   half on the host, and show you the private half <strong>once</strong>.</li>
+<li>Copy the command shown and run it. It writes the key with private
+   permissions, sends your file, and removes the key afterwards.</li>
+<li>Click <strong>Check what arrived</strong>. The host reports the name, the size and the
+   SHA-256 of the file it actually received — check it is yours.</li>
+<li>Click <strong>Import</strong>.</li>
+</ol>
+<p>The key can only write into one directory on the host, cannot open a shell, and
+stops being accepted after twelve hours whether or not anyone remembers to
+remove it. The restore removes it as soon as it starts.</p>
+<div class="admonition note">
+<p class="admonition-title">Windows</p>
+<p>The command uses <code>rsync</code>, which Windows does not ship. On Windows use the
+browser route, or <strong>From a link</strong> below.</p>
+</div>
+<h3 id="from-a-link">From a link<a class="headerlink" href="#from-a-link" title="Permanent link">&para;</a></h3>
+<p>If the backup already lives somewhere reachable — your previous provider's
+download URL, an FTP or SFTP server, a pre-signed link from object storage —
+use <strong>From a link</strong> and paste the address. The host downloads it itself, so
+nothing passes through your connection or through the panel, and there is no
+size limit. <code>https://</code>, <code>sftp://</code> and <code>ftp://</code> are accepted, and a link carrying
+a user and password works too; the password is stored encrypted and never shown
+again.</p>
 <h2 id="verify-it-worked">Verify it worked<a class="headerlink" href="#verify-it-worked" title="Permanent link">&para;</a></h2>
 <p>For downloads:</p>
 <ul class="task-list">
@@ -1460,6 +1509,18 @@ rotated passphrases, you need the original to read older backups.</p>
 <p>The backup was taken from a different Odoo version than the instance you're
 restoring to. Deploy a fresh instance with the matching Odoo version, then
 restore there.</p>
+</details>
+<details class="note">
+<summary>The upload key expired before I finished</summary>
+<p>Ask for another one — they are single-use and cost nothing. If the previous
+upload got part of the way, the command resumes rather than starting over.</p>
+</details>
+<details class="note">
+<summary>The link was refused</summary>
+<p>We only fetch from <code>https</code>, <code>sftp</code> and <code>ftp</code>, and only from an address that
+is reachable from the public internet. A link pointing at a private or
+internal address is refused on purpose: otherwise "restore from a link"
+would be a way to make our hosts read things they should not.</p>
 </details>
 <details class="note">
 <summary>I want to restore to a different instance, not the source</summary>

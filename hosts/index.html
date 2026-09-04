@@ -1171,6 +1171,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#hosts-behind-a-cdn" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hosts behind a CDN
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-tasks" class="md-nav__link">
     <span class="md-ellipsis">
       Common tasks
@@ -1225,6 +1234,31 @@ your own VPS or order one through the platform.</p>
 </ul>
 <p>The host stays under your control — root access is yours. VPS ordered through
 the platform are billed on your IncubaCloud subscription invoice.</p>
+<h2 id="hosts-behind-a-cdn">Hosts behind a CDN<a class="headerlink" href="#hosts-behind-a-cdn" title="Permanent link">&para;</a></h2>
+<p>A host can be reached by its visitors directly, or through a CDN or reverse
+proxy that answers for it. The <strong>General</strong> tab has a switch for this, and it
+decides three things:</p>
+<ul>
+<li><strong>Who counts as a visitor.</strong> With the switch on, the rate limit counts the
+  client the CDN forwards; with it off, the address that opened the connection.
+  Setting it on a host the world reaches directly is the mistake that costs
+  most: a direct request carries no forwarded chain, so every visitor is
+  counted as the same one and they all share a single limit.</li>
+<li><strong>Whether the origin may be reached at all.</strong> With trusted proxy ranges set,
+  <em>Only accept traffic from the proxies applied above</em> refuses anything that
+  did not come through them, so the host's address cannot be used to go around
+  the edge.</li>
+<li><strong>Where the certificate comes from.</strong> A CDN terminates TLS, so the challenge
+  a host uses to obtain its own certificate never reaches it. Such a host is
+  given a certificate instead — an origin certificate covering the whole
+  domain, which only ever has to satisfy the CDN.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Order matters</p>
+<p>Give the host its certificate and its trusted ranges <em>before</em> pointing the
+domain at the CDN, and refuse direct traffic only once traffic is actually
+arriving through it. The other order leaves the host answering nobody.</p>
+</div>
 <h2 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="connect/">Connect your own VPS</a></li>
