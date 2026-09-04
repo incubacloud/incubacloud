@@ -119,14 +119,14 @@ class TestDefaultCertificate(TransactionCase):
     def test_the_key_is_not_stored_in_the_clear(self):
         self.host.write({
             "tls_default_cert": "-----BEGIN CERTIFICATE-----",
-            "tls_default_key": "-----BEGIN PRIVATE KEY-----secret",
+            "tls_default_key": "not-a-real-key-canary",
         })
         self.env.cr.execute(
             "SELECT tls_default_key FROM cloud_host WHERE id = %s",
             (self.host.id,),
         )
         stored = self.env.cr.fetchone()[0]
-        self.assertNotIn("secret", stored or "")
+        self.assertNotIn("canary", stored or "")
 
     def test_the_certificate_is_part_of_the_drift_snapshot(self):
         self.assertIn("tls_default_cert", self.host._config_snapshot_fields())
