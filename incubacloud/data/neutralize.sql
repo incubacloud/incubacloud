@@ -12,7 +12,10 @@ UPDATE cloud_backup_backend SET s3_secret_access_key = NULL, passphrase = NULL;
 UPDATE cloud_github_app SET webhook_secret = NULL, private_key = '';
 UPDATE cloud_instance SET odoo_admin_password = NULL, odoo_admin_user_password = NULL,
     postgres_password = NULL, smtp_relay_password = NULL;
-UPDATE cloud_settings SET github_pat = NULL;
+UPDATE cloud_settings SET github_pat = NULL, metrics_remote_write_token = NULL,
+    metrics_operator_token = NULL, grafana_admin_password = NULL;
+UPDATE cloud_host SET tls_default_key = NULL, tls_default_cert = NULL;
+UPDATE cloud_job SET secret_payload = NULL;
 UPDATE res_users SET cloud_telegram_bot_token = NULL, cloud_webhook_secret = NULL;
 
 -- 2. Clear known_hosts fingerprints (prod-specific)
@@ -24,6 +27,7 @@ UPDATE cloud_instance SET active = false;
 
 -- 4. Delete ephemeral session data
 DELETE FROM cloud_terminal_route;
+DELETE FROM cloud_restore_upload_grant;
 DELETE FROM cloud_rate_limit;
 DELETE FROM mail_mail;
 

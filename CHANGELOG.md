@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.108] — 2026-09-04
+
+### Fixed
+
+- **Neutralization was aborting, so restored copies stayed armed.** A copy of production restored for development holds the SSH keys that open every host and the tokens that create and destroy servers, and `odoo neutralize` is what removes them. It runs as a single transaction, and this one named `cloud_settings.vps_restore_public_key` — a column removed some time ago. Postgres rejected the statement, the whole script rolled back including Odoo's own half, and the log line saying so scrolled past. Copies believed to be neutralized were fully capable of reaching production, and one did.
+- **Six secrets survived neutralization even when it succeeded.** The list of what to clear is written by hand, so it drifted behind the fields: the host's default TLS key, a job's secret payload, the metrics and Grafana credentials, the OVH API keys, the origin certificate, a tenant's metrics token, the backup request credential buffer, and the host terminal sessions. Restore upload grants are now dropped as well, since they name hosts that the copy must not reach.
+
+### Added
+
+- **The list is checked against the registry instead of by hand.** `TestNeutralize` reads every encrypted field of every installed module and requires some module's script to clear it, and separately refuses any script naming a column the database no longer has — the failure that made the whole mechanism a no-op. Both halves were verified to fail before they were left passing.
+- **[RB-20](docs/runbooks/RB-20-neutralize-restored-copy.md)** — restoring a copy of production without arming it, and how to confirm it worked rather than assume it did, including the trap that a module update reloads cron data and switches them all back on.
+
+---
+
 ## [1.0.107] — 2026-09-04
 
 ### Added
