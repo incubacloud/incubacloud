@@ -29,6 +29,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-16](RB-16-tenant-sees-no-metrics.md) | A tenant sees no metrics | routine | Empty charts or missing Monitoring section for one tenant |
 | [RB-17](RB-17-instance-log-archive.md) | An instance's log archive is broken | warning | `instance_logs_unhealthy` alert, no days in the log viewer |
 | [RB-18](RB-18-tune-host-edge-protection.md) | Tune host edge protection | planned | Proxy 429s on an instance, enabling the host conn-rate cap, provider without anti-DDoS |
+| [RB-19](RB-19-restore-large-backup.md) | Get a large backup onto a host and restore it | planned | A dump too large for the browser, or a host nobody holds credentials for |
 
 ## Conventions
 

@@ -192,9 +192,9 @@ class TestTraefikDynamicRetrofit(TransactionCase):
         super().setUp()
         self.template = _read_traefik_template("config.yml")
 
-    def _patched(self, ranges=EDGE, block=False):
+    def _patched(self, ranges=EDGE, block=False, behind_cdn=True):
         return CloudHost._patch_config_yml_trusted_proxies(
-            self.template, ranges, block,
+            self.template, ranges, block, behind_cdn,
         )
 
     def test_the_rate_limit_keys_on_the_forwarded_client(self):
@@ -207,6 +207,19 @@ class TestTraefikDynamicRetrofit(TransactionCase):
         # The limits themselves must not have moved.
         self.assertEqual(limit["average"], 300)
         self.assertEqual(limit["burst"], 100)
+
+    def test_a_host_reached_directly_keeps_the_address_keyed_limit(self):
+        """The measured hazard, now impossible to reach by accident.
+
+        Behind nothing, the forwarded chain is absent and Traefik keys
+        every visitor under the same empty value — one bucket for the
+        whole internet. Declaring ranges is no longer enough to turn
+        that on; the host has to say a CDN answers for it.
+        """
+        limit = yaml.safe_load(
+            self._patched(behind_cdn=False),
+        )["http"]["middlewares"]["ratelimit"]["rateLimit"]
+        self.assertNotIn("sourceCriterion", limit)
 
     def test_without_a_proxy_the_rate_limit_is_left_alone(self):
         # Measured: a forwarded-chain strategy with no header present
@@ -242,13 +255,16 @@ class TestTraefikDynamicRetrofit(TransactionCase):
     def test_rendering_twice_changes_nothing(self):
         once = self._patched(block=True)
         self.assertEqual(
-            CloudHost._patch_config_yml_trusted_proxies(once, EDGE, True), once,
+            CloudHost._patch_config_yml_trusted_proxies(
+                once, EDGE, True, True,
+            ),
+            once,
         )
 
     def test_re_rendering_replaces_the_ranges(self):
         once = self._patched(block=True)
         twice = CloudHost._patch_config_yml_trusted_proxies(
-            once, ["203.0.113.0/24"], True,
+            once, ["203.0.113.0/24"], True, True,
         )
         allow = yaml.safe_load(twice)["http"]["middlewares"]
         self.assertEqual(
@@ -296,12 +312,25 @@ class TestHostShipsWhatItDeclares(TransactionCase):
         )
 
     def test_declared_ranges_reach_both_shipped_documents(self):
+        """Declaring proxies always strips their forwarded headers…
+
+        …but keying the rate limit on the chain they append is a
+        separate decision, taken by ``behind_cdn``. On a host reached
+        directly the chain is absent, and keying on it would put every
+        visitor in one bucket — so the ranges alone must not do it.
+        """
         self.host.trusted_proxy_ranges = "\n".join(EDGE)
         static = yaml.safe_load(self.host._shipped_traefik_yml())
         self.assertEqual(
             static["entryPoints"]["https"]["forwardedHeaders"]["trustedIPs"],
             EDGE,
         )
+        dynamic = yaml.safe_load(self.host._shipped_config_yml())
+        self.assertNotIn(
+            "sourceCriterion",
+            dynamic["http"]["middlewares"]["ratelimit"]["rateLimit"],
+        )
+        self.host.behind_cdn = True
         dynamic = yaml.safe_load(self.host._shipped_config_yml())
         self.assertIn(
             "sourceCriterion",

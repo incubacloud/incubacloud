@@ -149,11 +149,17 @@ class FullSetupExecutor(AbstractSSHExecutor):
         # declares a proxy in front of it ships the matching Traefik
         # settings here, and they have to be interlocked — the static
         # file may name a middleware the dynamic file must define.
-        await transport.upload_text_files({
+        cert, key = host._effective_tls_default()
+        files = {
             f"{_TMP}-inverseproxy.yaml": inverseproxy,
             f"{_TMP}-traefik.yml":       host._shipped_traefik_yml(),
             f"{_TMP}-config.yml":        host._shipped_config_yml(),
-        })
+            f"{_TMP}-tls.yml":           host._shipped_tls_default_yml(),
+        }
+        if cert and key:
+            files[f"{_TMP}-default.crt"] = cert
+            files[f"{_TMP}-default.key"] = key
+        await transport.upload_text_files(files)
         self._sys("✓ Traefik configuration files uploaded.")
 
         # Upload whitelist compose file (Phase 4)
@@ -187,6 +193,22 @@ class FullSetupExecutor(AbstractSSHExecutor):
                 " ~/traefik/inverseproxy.yaml"
                 f" && mv {_TMP}-traefik.yml ~/traefik/traefik.yml"
                 f" && mv {_TMP}-config.yml ~/traefik/config.yml",
+            ),
+            (
+                # Same interlock as the proxy-settings push: a host with
+                # its own certificate serves it as the default, one
+                # without has the document removed rather than left
+                # pointing at files that are not there.
+                "Install the default certificate",
+                "mkdir -p ~/traefik/certs ~/traefik/dynamic;"
+                f" if [ -s {_TMP}-default.crt ]; then"
+                f" mv {_TMP}-default.crt ~/traefik/certs/default.crt"
+                f" && mv {_TMP}-default.key ~/traefik/certs/default.key"
+                " && chmod 600 ~/traefik/certs/default.key"
+                f" && mv {_TMP}-tls.yml ~/traefik/dynamic/tls-default.yml;"
+                " else rm -f ~/traefik/dynamic/tls-default.yml"
+                " ~/traefik/certs/default.crt ~/traefik/certs/default.key;"
+                f" rm -f {_TMP}-tls.yml; fi",
             ),
             (
                 "Start Traefik",

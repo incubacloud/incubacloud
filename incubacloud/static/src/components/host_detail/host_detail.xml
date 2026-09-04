@@ -404,6 +404,18 @@
                                     </span>
                                 </div>
                                 <div class="rl-frow rl-full">
+                                    <label>Reached through a CDN</label>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <input type="checkbox"
+                                               t-att-checked="state.form.behind_cdn"
+                                               t-on-change="(ev) => { this.state.form.behind_cdn = ev.target.checked; }"/>
+                                        <span>Visitors reach this host through a CDN or reverse proxy</span>
+                                    </div>
+                                    <span class="ic-form-note">
+                                        Decides how a visitor is identified here. On: the rate limit counts the forwarded client, so one CDN edge is not one bucket shared by everyone behind it. Off: it counts the address that opened the connection. Turning this on for a host the world reaches directly is the worse mistake of the two — a direct request carries no forwarded chain, so every visitor collapses into a single shared bucket.
+                                    </span>
+                                </div>
+                                <div class="rl-frow rl-full">
                                     <label>Trusted proxy ranges (override)</label>
                                     <textarea rows="3"
                                               t-att-value="state.form.trusted_proxy_ranges"

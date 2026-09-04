@@ -137,6 +137,36 @@ class HostHardeningExecutor(AnsibleExecutor):
             "ic_ssh_allowlist": self._ssh_allowlist,
             "ic_auto_reboot": bool(host.auto_security_updates),
             "ic_http_conn_rate": host.http_conn_rate or 0,
+            # Filtering 80/443 to the CDN's ranges replaces the per-source
+            # rate cap; both at once would count the edge as one visitor.
+            # Deliberately gated on the host also refusing direct access
+            # at the proxy: enabling the firewall half on its own is how
+            # a host stops answering anybody without the panel saying so.
+            **self._http_allowlist_vars(),
+        }
+
+    def _http_allowlist_vars(self):
+        """Return the firewall variables for a host behind a CDN.
+
+        Empty — the pre-existing behaviour, 80/443 open to the world —
+        unless the host both sits behind a CDN and has been told to
+        refuse traffic that skipped it. Split by address family because
+        nftables needs ``ip saddr`` and ``ip6 saddr`` in separate rules.
+
+        :rtype: dict
+        """
+        host = self.job.host_id
+        if not (host.behind_cdn and host.block_direct_access):
+            return {}
+        ranges = host._effective_trusted_proxy_ranges()
+        v4 = [r for r in ranges if ":" not in r]
+        v6 = [r for r in ranges if ":" in r]
+        if not v4:
+            return {}
+        return {
+            "ic_http_allowed_ranges": ", ".join(ranges),
+            "ic_http_allowed_ranges_v4": ", ".join(v4),
+            "ic_http_allowed_ranges_v6": ", ".join(v6),
         }
 
     def parse_results(self, results):

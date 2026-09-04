@@ -8,6 +8,13 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
+from ..net.outbound import OutboundError
+from ..net.restore_source import (
+    curl_resolve_argument,
+    masked as masked_restore_url,
+    split_credentials,
+    validate as validate_restore_url,
+)
 from ..restore_staging import purge_stale
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
@@ -1956,6 +1963,125 @@ class CloudInstance(models.Model):
         """
         return purge_stale()
 
+    # ── Large restores: temporary upload key, and fetch-by-URL ────────────
+
+    def grant_restore_upload(self):
+        """Open a one-use SSH door for uploading a restore archive here.
+
+        Returns the private half of a freshly generated key, which is
+        never stored: the panel installs the public half on the host,
+        restricted to one directory in write-only mode and with a
+        deadline OpenSSH enforces by itself. Whoever called this is the
+        only holder, and losing it costs another grant, not access.
+
+        :return: dict with the key, where to send the archive, and the
+            job installing it.
+        """
+        self.ensure_one()
+        self.env["cloud.security.mixin"]._check_can_manage_backups()
+        if not self.host_id:
+            raise UserError(_("Instance has no host assigned."))
+        grant, private_key = self.env["cloud.restore.upload.grant"]._open(self)
+        job_id = self.env["cloud.job"].enqueue(
+            self.host_id.id,
+            self.id,
+            "grant_restore_upload_key",
+            payload={"grant_id": grant.id},
+        )
+        self.env["cloud.audit.log"].sudo().create({
+            "action": "Granted a temporary restore upload key",
+            "instance_id": self.id,
+            "host_id": self.host_id.id,
+            "job_id": job_id,
+            "details": grant.fingerprint or "",
+        })
+        return {
+            "grant_id": grant.id,
+            "job_id": job_id,
+            "private_key": private_key,
+            "fingerprint": grant.fingerprint,
+            "expires_at": grant.expires_at,
+            "user": self.host_id.user or "root",
+            "host": self.host_id.ip_address or "",
+            "port": self.host_id.port or 22,
+            "directory": grant._directory(),
+        }
+
+    def verify_restore_upload(self, grant_id):
+        """Ask the host what actually arrived through a grant.
+
+        The answer — name, size and SHA-256, all computed on the host —
+        is what the operator confirms before anything is restored. It is
+        also the only defence that matters if the key leaked inside its
+        window: a file nobody recognises does not get restored.
+
+        :param grant_id: the grant to inspect.
+        :return: id of the job that reports back.
+        """
+        self.ensure_one()
+        self.env["cloud.security.mixin"]._check_can_manage_backups()
+        grant = self.env["cloud.restore.upload.grant"].browse(
+            int(grant_id)
+        ).exists()
+        if not grant or grant.instance_id != self:
+            raise UserError(_("That upload grant does not exist."))
+        return self.env["cloud.job"].enqueue(
+            grant.host_id.id, self.id, "verify_restore_upload",
+            payload={"grant_id": grant.id},
+        )
+
+    def revoke_restore_upload(self, grant_id):
+        """Close a grant early, removing its key and directory."""
+        self.ensure_one()
+        self.env["cloud.security.mixin"]._check_can_manage_backups()
+        grant = self.env["cloud.restore.upload.grant"].browse(
+            int(grant_id)
+        ).exists()
+        if not grant or grant.instance_id != self:
+            raise UserError(_("That upload grant does not exist."))
+        return grant._revoke()
+
+    def restore_from_url(self, url, backup_before_restore=False):
+        """Have the host download an archive and restore from it.
+
+        The URL is checked here rather than on the host: allowed scheme,
+        a name that resolves to a public address, and no credentials
+        left inside it. The address it resolved to is pinned into the
+        download command, so the name cannot answer differently by the
+        time the host dials it.
+
+        :param url: ``https``, ``sftp`` or ``ftp`` source, which may
+            carry ``user:password@``.
+        :param backup_before_restore: take a safety backup first.
+        :return: id of the restore job.
+        """
+        self.ensure_one()
+        self.env["cloud.security.mixin"]._check_can_manage_backups()
+        clean, username, password = split_credentials(url)
+        try:
+            parts, address, port = validate_restore_url(clean)
+        except OutboundError as exc:
+            raise UserError(_("That link cannot be used: %s.", exc)) from exc
+        job_id = self.restore_db({
+            "mode": "from_url",
+            "url": clean,
+            "url_display": masked_restore_url(url),
+            "resolve": curl_resolve_argument(parts, address, port),
+            "backup_before_restore": bool(backup_before_restore),
+        })
+        if username:
+            # Written after the job exists and outside the payload: the
+            # payload is read back into the UI and notifications, and a
+            # password has no business in either.
+            self.env["cloud.job"].browse(job_id).sudo().secret_payload = (
+                json.dumps({
+                    "machine": parts.hostname,
+                    "login": username,
+                    "password": password,
+                })
+            )
+        return job_id
+
     def restore_db(self, payload):
         """Enqueue a restore_instance job with the given payload.
 
@@ -1987,8 +2113,21 @@ class CloudInstance(models.Model):
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
         payload = payload or {}
-        if payload.get("mode") not in ("browser", "from_job", "rsync"):
+        if payload.get("mode") not in (
+            "browser", "from_job", "rsync", "ssh_upload", "from_url",
+        ):
             raise UserError(_("Invalid restore mode."))
+        if payload.get("mode") == "ssh_upload":
+            grant = self.env["cloud.restore.upload.grant"].browse(
+                int(payload.get("grant_id") or 0)
+            ).exists()
+            if not grant or grant.instance_id != self:
+                raise UserError(_("That upload grant does not exist."))
+            if not grant.received_filename:
+                raise UserError(_(
+                    "Nothing has been uploaded yet, or the upload has not "
+                    "been checked. Check what arrived before restoring it."
+                ))
 
         backup_first = self.environment == "production" or bool(
             payload.get("backup_before_restore")

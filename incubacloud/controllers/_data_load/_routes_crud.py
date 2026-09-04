@@ -760,6 +760,7 @@ class CrudMixin:
             'traefik_yml': host.traefik_yml or '',
             'exclude_from_autoassign': host.exclude_from_autoassign,
             'http_conn_rate': host.http_conn_rate,
+            'behind_cdn': host.behind_cdn,
             'trusted_proxy_ranges': host.trusted_proxy_ranges or '',
             'block_direct_access': host.block_direct_access,
             # The list the host is actually filtered against, and where
@@ -794,7 +795,7 @@ class CrudMixin:
         'wildcard_domain', 'traefik_panel_password',
         'traefik_config_yml', 'traefik_inverseproxy_yaml', 'traefik_yml',
         'exclude_from_autoassign', 'http_conn_rate',
-        'trusted_proxy_ranges', 'block_direct_access',
+        'trusted_proxy_ranges', 'block_direct_access', 'behind_cdn',
     }
 
     @http.route(['/cloud/host_defaults'], type='jsonrpc', auth='user')

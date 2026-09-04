@@ -39,8 +39,9 @@ from the backup ZIP you download from Odoo.sh. Each step is straightforward.
    project, with the same Odoo version. Don't worry about the data — you're
    about to overwrite it.
 3. Open the instance → **Restore Database**.
-4. **Upload** the ZIP if it's under 2 GB, or **rsync** it to the host first
-   (see the [restore docs](../backups/restore.md#push-rsync)).
+4. Send the ZIP through your browser, and for a large database use the
+   temporary upload key or paste a link to it instead
+   (see the [restore docs](../backups/restore.md#restore-from-an-external-zip)).
 5. The restore job runs and replaces the empty database with your real one.
 
 ## Step 3 — cut over

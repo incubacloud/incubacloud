@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.107] — 2026-09-04
+
+### Added
+
+- **A host says whether a CDN answers for it.** What defends a host depends on how it is reached, and that was inferred rather than recorded: declaring trusted proxy ranges was enough to make the rate limit key on the forwarded chain. On a host reached directly that chain is absent, so Traefik keyed every visitor under the same empty value — one bucket shared by everyone, measured against a real Traefik 2.11 rather than reasoned about. The two facts are now separate: ranges decide whose forwarded headers are believed, `behind_cdn` decides whether the limit reads them. A host that declared ranges by hand keeps its behaviour through the upgrade.
+- **A host can be given its certificate instead of obtaining one.** Behind a CDN the challenge never arrives — the proxy terminates TLS first — so ACME cannot work there. Traefik now serves a certificate supplied on the host record as its default, shipped and removed by the same jobs that ship the proxy settings. Generic on purpose: an origin certificate from a CDN, an internal CA or a purchased wildcard all fit.
+- **The firewall knows the difference too.** On a host behind a CDN the per-source connection cap on 80/443 becomes an allowlist of the CDN's ranges, because behind a proxy every visitor arrives from a handful of edge addresses and a per-source cap would throttle the CDN and protect nobody. It waits for the host to also be refusing direct traffic at the proxy, so the two halves cannot be enabled in an order that leaves the host answering no one.
+- **Backups too large for one request can be uploaded from the browser.** The archive is sent in 32 MiB pieces and rebuilt on the staging path the restore already used, so no proxy in front of the panel caps it. An interrupted piece is re-sent on its own: the server keys on the offset, acknowledges one that already landed, and refuses one that would leave a hole. The ceiling is now the panel's disk, and configurable (`incubacloud.restore_upload_max_bytes`).
+- **A one-use SSH key for archives that should not pass through the panel at all.** The old rsync flow printed a command and assumed the operator could authenticate to the host — true on a machine they own, false on a managed one, which left no route at all for a large archive there. The platform now lends its access instead of sharing it: a generated key confined by `rrsync -wo` to a single directory, `restrict`, and an expiry OpenSSH enforces by itself. The private half is shown once and never stored. Before anything is restored, the host reports the name, size and SHA-256 of what actually arrived — the control that makes a file somebody else could have placed there useless.
+- **Restore from a link.** `https`, `sftp` or `ftp`: the host downloads the archive itself, resumably, with no size limit and nothing crossing the operator's connection. The address is validated here, not there — allowed scheme, every resolved address public, no redirects followed — and pinned into the download so the name cannot answer differently by the time the host dials it. Credentials are split off the URL, stored encrypted apart from the job payload, and delivered as a `netrc` file rather than a command line `ps` would show.
+
+### Fixed
+
+- **The proxy ranges reached a host that has no proxy in front of it.** The SaaS policy treated every host the platform operates as one the CDN answers for. That is true of the panel host and false of the hosts serving tenants, whose DNS records are created unproxied on purpose — a fact this repository's own host-protection plan measured in August and this one's changelog stated in the same release that shipped `ipStrategy`. The policy now turns on the host's own flag.
+
 ## [1.0.106] — 2026-09-03
 
 ### Added

@@ -114,6 +114,27 @@
             <field name="description">Restores a doodba instance database from a .zip backup file.</field>
         </record>
 
+        <record id="grant_restore_upload_key" model="cloud.job.type">
+            <field name="name">Grant Restore Upload Key</field>
+            <field name="code">grant_restore_upload_key</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Installs a one-use SSH key on the host, restricted to writing one directory, so a backup archive can be uploaded without anybody being given access to the machine.</field>
+        </record>
+
+        <record id="verify_restore_upload" model="cloud.job.type">
+            <field name="name">Check Uploaded Archive</field>
+            <field name="code">verify_restore_upload</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Reports the name, size and SHA-256 of what arrived through an upload key, computed on the host, so it can be confirmed before it is restored.</field>
+        </record>
+
+        <record id="revoke_restore_upload_key" model="cloud.job.type">
+            <field name="name">Revoke Restore Upload Key</field>
+            <field name="code">revoke_restore_upload_key</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Removes a one-use upload key from the host, and its directory unless a restore is about to read it.</field>
+        </record>
+
         <record id="move_cutover" model="cloud.job.type">
             <field name="name">Move Cutover</field>
             <field name="code">move_cutover</field>
