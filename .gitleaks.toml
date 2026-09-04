@@ -33,6 +33,10 @@ paths = [
     # literal ``-----BEGIN PRIVATE KEY-----`` marker.
     '''incubacloud/i18n/.*\.po''',
     '''incubacloud/i18n/.*\.pot''',
+    # Tier-2 test for the host's default TLS certificate: the fixture
+    # needs a PEM-shaped literal to prove the key is encrypted at rest
+    # and never reaches the drift snapshot. No real key.
+    '''incubacloud/tests/test_behind_cdn\.py''',
     # Settings form textarea ``placeholder=""`` attribute showing the
     # expected PEM shape.
     '''incubacloud/static/src/components/settings/settings\.xml''',
