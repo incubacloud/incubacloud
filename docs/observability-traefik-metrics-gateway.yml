@@ -7,8 +7,22 @@
 # Two backends on the Docker bridge (verified reachable from a container
 # on this host, 2026-08-10): vmauth on :8428 (the account boundary for
 # data) and Grafana on :3000 (the browser, which vmauth cannot proxy
-# because of websockets). Priority beats the .incubacloud.io catchall
-# (priority 1). Cert: the already-issued *.incubacloud.io wildcard.
+# because of websockets). Priority beats the catchall, which sits at a
+# negative priority so anything explicit outranks it.
+#
+# Certificate: none is asked for. `tls: {}` turns TLS on and leaves the
+# certificate to the host's default store, which is where the panel
+# installs the one it holds for the zone. Naming a resolver instead
+# makes Traefik ignore that store and ask a certificate authority — and
+# behind a CDN that challenge reaches the CDN and never the host, so it
+# can never succeed. Worse, it keeps the obtained certificate alive in
+# Traefik's own store, where it outranks the default one: this file
+# pinned `*.incubacloud.io` and was, on its own, the reason Cloud 1 kept
+# serving Let's Encrypt after every router had stopped asking for it.
+#
+# A host reached directly is the other case: there ACME works and is
+# better, because a CDN's origin certificate is trusted by that CDN and
+# by no browser. Use `certResolver: letsencrypt` there.
 http:
   routers:
     # Operator-only paths must NOT be public. Their only consumers — the
@@ -23,10 +37,7 @@ http:
       service: metrics-vmauth
       middlewares:
         - metrics-deny-public
-      tls:
-        certResolver: letsencrypt
-        domains:
-          - main: '*.incubacloud.io'
+      tls: {}
 
     # Grafana in the browser: websockets (Grafana Live), and NO basic auth
     # in front — Grafana authenticates the person itself through OIDC.
@@ -36,10 +47,7 @@ http:
       entryPoints:
         - https
       service: metrics-grafana
-      tls:
-        certResolver: letsencrypt
-        domains:
-          - main: '*.incubacloud.io'
+      tls: {}
 
     # The data plane (/w/ /r/ /lw/ /lr/). vmauth enforces the account
     # boundary and returns 401 to a credential-less request, so this is
@@ -50,10 +58,7 @@ http:
       entryPoints:
         - https
       service: metrics-vmauth
-      tls:
-        certResolver: letsencrypt
-        domains:
-          - main: '*.incubacloud.io'
+      tls: {}
 
   services:
     metrics-vmauth:
