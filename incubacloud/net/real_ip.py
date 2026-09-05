@@ -129,6 +129,18 @@ def rewrite(environ, header, networks):
     return client
 
 
+def uninstalled(proxy_fix):
+    """Return *proxy_fix* as it was before this module wrapped it.
+
+    The identity when nothing wrapped it, so a caller does not have to
+    know whether the correction is installed — which depends on the
+    configuration of whichever installation it is running on.
+
+    :rtype: callable
+    """
+    return getattr(proxy_fix, "_incubacloud_wrapped", proxy_fix)
+
+
 def install(config, http_module):
     """Have Odoo read the visitor's address instead of the proxy's.
 
@@ -166,6 +178,12 @@ def install(config, http_module):
         return apply
 
     proxy_fix_reading_the_real_client._incubacloud_real_ip = True
+    # What was replaced, kept on the replacement. Installing happens once
+    # per process, at import, so anything that needs the original back —
+    # a test asserting on the uncorrected behaviour, above all — has no
+    # other way to reach it, and guessing at Odoo's own definition would
+    # drift the day Odoo changes it.
+    proxy_fix_reading_the_real_client._incubacloud_wrapped = original
     http_module.ProxyFix = proxy_fix_reading_the_real_client
     _logger.info(
         "[real-ip] honouring %s from %d trusted network(s)",
