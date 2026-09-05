@@ -146,8 +146,17 @@ class TestInstallingItInOdoo(BaseCase):
         super().setUp()
         import odoo.http
         self.http = odoo.http
-        self._original = odoo.http.ProxyFix
-        self.addCleanup(setattr, odoo.http, "ProxyFix", self._original)
+        current = odoo.http.ProxyFix
+        self.addCleanup(setattr, odoo.http, "ProxyFix", current)
+        # Start from the uncorrected one, whatever this installation is
+        # running. On a panel that *is* behind a CDN the correction is
+        # already installed by the time any test runs — it happens at
+        # import — so asserting on the uncorrected behaviour, or on
+        # installing, would be asserting against a state this file never
+        # created. That is how these first passed everywhere and failed
+        # on the one installation that had it configured.
+        self._original = real_ip.uninstalled(current)
+        odoo.http.ProxyFix = self._original
 
     def _config(self, header=HEADER, trusted=TRUSTED):
         return {
@@ -181,6 +190,19 @@ class TestInstallingItInOdoo(BaseCase):
         self.assertFalse(real_ip.install(self._config(header=""), self.http))
         self.assertFalse(real_ip.install(self._config(trusted=""), self.http))
         self.assertIs(self.http.ProxyFix, self._original)
+
+    def test_the_wrapper_says_what_it_replaced(self):
+        """The only way back to the original: installing happens once,
+        at import, and nothing else keeps a reference."""
+        self.assertTrue(real_ip.install(self._config(), self.http))
+        self.assertIs(
+            real_ip.uninstalled(self.http.ProxyFix), self._original,
+        )
+
+    def test_uninstalled_is_the_identity_for_anything_else(self):
+        self.assertIs(
+            real_ip.uninstalled(self._original), self._original,
+        )
 
     def test_installing_twice_wraps_once(self):
         self.assertTrue(real_ip.install(self._config(), self.http))
