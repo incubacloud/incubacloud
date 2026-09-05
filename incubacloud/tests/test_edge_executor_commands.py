@@ -123,6 +123,50 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
         self.assertIn("-p inverseproxy", restart)
         self.assertIn("restart proxy", restart)
 
+    # ── Installing the certificate must not depend on who owns the
+    # directory ──────────────────────────────────────────────────────
+    #
+    # Traefik runs as root inside its container and owns ``certs/`` on
+    # any host it has already written an ACME store into. A host whose
+    # jobs run as the unprivileged operator the hardening playbook
+    # creates therefore cannot move a file in there — measured on a
+    # real host, where every other step of this job succeeded and this
+    # one died on ``Permission denied``.
+
+    _INSTALL = "Install the default certificate"
+
+    def test_the_certificate_lands_in_the_traefik_store(self):
+        command = self._cmds()[self._INSTALL]
+        self.assertIn("~/traefik/certs/default.crt", command)
+        self.assertIn("~/traefik/certs/default.key", command)
+
+    def test_the_plain_move_is_tried_before_reaching_for_sudo(self):
+        """A host without sudo has to keep working exactly as it did."""
+        command = self._cmds()[self._INSTALL]
+        plain = command.index('mv "$1" "$2" 2>/dev/null')
+        escalated = command.index('sudo mv "$1" "$2"')
+        self.assertLess(plain, escalated)
+
+    def test_every_write_into_that_directory_can_escalate(self):
+        """Creating it, both moves, the mode, and the removal."""
+        command = self._cmds()[self._INSTALL]
+        self.assertIn("|| sudo mkdir -p ~/traefik/certs", command)
+        self.assertIn("|| sudo chmod 600 ~/traefik/certs/default.key", command)
+        self.assertIn("|| sudo rm -f ~/traefik/certs/default.crt", command)
+
+    def test_the_private_key_is_owner_only(self):
+        self.assertIn(
+            "chmod 600 ~/traefik/certs/default.key",
+            self._cmds()[self._INSTALL],
+        )
+
+    def test_a_host_given_nothing_has_the_store_emptied(self):
+        """A store naming files that are not there makes Traefik answer
+        every handshake with a throwaway certificate."""
+        command = self._cmds()[self._INSTALL]
+        self.assertIn("rm -f ~/traefik/dynamic/tls-default.yml", command)
+        self.assertIn("~/traefik/certs/default.crt", command.split("else")[1])
+
     # ── The firewall has to believe the same list as the proxy ───────
     #
     # The proxy gets its list from this job. The firewall got its from

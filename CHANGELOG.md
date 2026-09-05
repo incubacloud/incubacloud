@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.110] — 2026-09-05
+
+### Fixed
+
+- **Installing the host's certificate failed on every hardened host.** Traefik runs as root inside its container and owns `certs/` on any host it has already written an ACME store into, so a host whose jobs run as the unprivileged operator the hardening playbook creates could not move a file in there. Measured on a real host: every other step of the job succeeded and this one died on `Permission denied`, leaving the host with the CDN's ranges and without the certificate it is supposed to serve — the exact half-state that makes a proxy answer handshakes with a throwaway. The plain move is still tried first, so a host without sudo behaves exactly as before; only the fallback is new. Exercised against real shells with the directory owned both ways, and on the removal path.
+
+---
+
 ## [1.0.109] — 2026-09-05
 
 ### Added

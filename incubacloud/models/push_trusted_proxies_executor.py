@@ -126,14 +126,30 @@ class PushTrustedProxiesExecutor(AbstractSSHExecutor):
                 # store naming files that are not there makes Traefik
                 # answer every handshake with a throwaway certificate.
                 'Install the default certificate',
-                'mkdir -p ~/traefik/certs;'
+                # ``sudo`` only as a fallback, and only for this
+                # directory. Traefik runs as root inside its container
+                # and owns ``certs/`` on any host it has already
+                # written an ACME store into, so a host whose jobs run
+                # as the unprivileged operator the hardening playbook
+                # creates cannot move a file in there — measured on
+                # Tenants1, where every other step of this job
+                # succeeded. Trying the plain move first keeps a host
+                # without sudo working exactly as it did.
+                'ic_put() { mv "$1" "$2" 2>/dev/null'
+                ' || sudo mv "$1" "$2"; };'
+                ' mkdir -p ~/traefik/certs 2>/dev/null'
+                ' || sudo mkdir -p ~/traefik/certs;'
                 f' if [ -s {_TMP}-default.crt ]; then'
-                f' mv {_TMP}-default.crt ~/traefik/certs/default.crt'
-                f' && mv {_TMP}-default.key ~/traefik/certs/default.key'
-                ' && chmod 600 ~/traefik/certs/default.key'
-                f' && mv {_TMP}-tls.yml ~/traefik/dynamic/tls-default.yml;'
-                ' else rm -f ~/traefik/dynamic/tls-default.yml'
-                ' ~/traefik/certs/default.crt ~/traefik/certs/default.key;'
+                f' ic_put {_TMP}-default.crt ~/traefik/certs/default.crt'
+                f' && ic_put {_TMP}-default.key ~/traefik/certs/default.key'
+                ' && { chmod 600 ~/traefik/certs/default.key 2>/dev/null'
+                ' || sudo chmod 600 ~/traefik/certs/default.key; }'
+                f' && ic_put {_TMP}-tls.yml ~/traefik/dynamic/tls-default.yml;'
+                ' else rm -f ~/traefik/dynamic/tls-default.yml;'
+                ' rm -f ~/traefik/certs/default.crt'
+                ' ~/traefik/certs/default.key 2>/dev/null'
+                ' || sudo rm -f ~/traefik/certs/default.crt'
+                ' ~/traefik/certs/default.key;'
                 f' rm -f {_TMP}-tls.yml; fi',
             ),
             (
