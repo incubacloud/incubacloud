@@ -29,21 +29,30 @@ class CloudInstanceDomain(models.Model):
     redirect_to = fields.Char(
         help='Redirect this hostname to another (e.g. example.com → www.example.com)',
     )
-    # The three options map onto the three shapes doodba's Traefik macro
-    # accepts (see macros/_traefik2_labels.yml.jinja): a resolver *name*
-    # emits ACME, boolean true serves whatever certificate the host's
-    # Traefik already holds, false leaves the router without TLS config.
-    # A closed Selection rather than a free Char: the only ACME resolver
-    # our hosts define is ``letsencrypt``, and this value flows into the
-    # tenant's copier answers file, so an open domain would be both a way
-    # to break the tenant's routing and a needless injection surface.
+    # The explicit options map onto the three shapes doodba's Traefik
+    # macro accepts (see macros/_traefik2_labels.yml.jinja): a resolver
+    # *name* emits ACME, boolean true serves whatever certificate the
+    # host's Traefik already holds, false leaves the router without TLS
+    # config. A closed Selection rather than a free Char: the only ACME
+    # resolver our hosts define is ``letsencrypt``, and this value flows
+    # into the tenant's copier answers file, so an open domain would be
+    # both a way to break the tenant's routing and a needless injection
+    # surface.
+    #
+    # ``auto`` is the default because the right answer is a property of
+    # the host, not of the domain: asking a certificate authority only
+    # works while the authority can still reach the host, and once a CDN
+    # answers for the name it cannot. Leaving that to be maintained by
+    # hand means every row has to be revisited whenever a host moves,
+    # and the failure for missing one is silent.
     cert_resolver = fields.Selection(
         selection=[
+            ('auto', "Automatic (decided by the host)"),
             ('letsencrypt', "Let's Encrypt"),
             ('custom', "Existing certificate (Traefik store)"),
             ('none', "No TLS"),
         ],
-        default='letsencrypt',
+        default='auto',
         required=True,
     )
     redirect_permanent = fields.Boolean(
@@ -53,8 +62,10 @@ class CloudInstanceDomain(models.Model):
     )
     sequence = fields.Integer(default=10)
 
-    # Value emitted to copier for each Selection option. Kept next to the
-    # field so the mapping and the domain can never drift apart.
+    # Value emitted to copier for each explicit Selection option. Kept
+    # next to the field so the mapping and the domain can never drift
+    # apart. ``auto`` is absent on purpose: it resolves per host, and a
+    # constant here would be a second answer able to disagree.
     _CERT_RESOLVER_ANSWERS = {
         'letsencrypt': 'letsencrypt',
         'custom': True,
@@ -64,13 +75,26 @@ class CloudInstanceDomain(models.Model):
     def _cert_resolver_answer(self):
         """Return the ``cert_resolver`` value for this domain's copier entry.
 
+        An explicit choice is honoured as typed — including ``none``,
+        which is how somebody turns TLS off for a hostname on purpose.
+        ``auto`` asks the host serving this domain, which is the only
+        place that knows whether a certificate authority can still reach
+        this name and whether the certificate already on disk covers it.
+
         Falls back to Let's Encrypt for a missing value so a row written
         before the Selection existed still deploys the way it used to.
+
+        :rtype: str | bool
         """
         self.ensure_one()
-        return self._CERT_RESOLVER_ANSWERS.get(
-            self.cert_resolver or 'letsencrypt', 'letsencrypt',
-        )
+        choice = self.cert_resolver or 'letsencrypt'
+        if choice != 'auto':
+            return self._CERT_RESOLVER_ANSWERS.get(choice, 'letsencrypt')
+        host = self.instance_id.host_id
+        if host and host._router_tls_mode(self.hostname) == 'default':
+            return True
+        return 'letsencrypt'
+
 
     @api.constrains('hostname', 'redirect_to')
     def _check_hostname_format(self):

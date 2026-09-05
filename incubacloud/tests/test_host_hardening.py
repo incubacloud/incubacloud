@@ -320,6 +320,66 @@ class TestHardeningPreflight(TransactionCase):
             if l.strip() and not l.strip().startswith("#")
         ]
 
+    _CDN = {
+        "ic_http_allowed_ranges": "203.0.113.0/24, 2001:db8::/32",
+        "ic_http_allowed_ranges_v4": "203.0.113.0/24",
+        "ic_http_allowed_ranges_v6": "2001:db8::/32",
+    }
+
+    def test_a_host_reached_directly_declares_no_set(self):
+        """The pre-existing shape: 80/443 open, nothing named."""
+        active = "\n".join(self._active_lines(self._render_ruleset()))
+        self.assertNotIn("ic_cdn_v4", active)
+        self.assertIn("tcp dport { 80, 443 } accept", active)
+
+    def test_a_filtered_host_declares_a_set_per_family(self):
+        active = "\n".join(
+            self._active_lines(self._render_ruleset(**self._CDN)),
+        )
+        self.assertIn("set ic_cdn_v4 {", active)
+        self.assertIn("type ipv4_addr", active)
+        self.assertIn("set ic_cdn_v6 {", active)
+        self.assertIn("type ipv6_addr", active)
+
+    def test_the_ranges_are_intervals_not_addresses(self):
+        """Without the flag nftables refuses a CIDR in the set."""
+        active = "\n".join(
+            self._active_lines(self._render_ruleset(**self._CDN)),
+        )
+        self.assertEqual(active.count("flags interval"), 2)
+
+    def test_the_rule_names_the_set_rather_than_the_ranges(self):
+        """The whole point: a named set can be refreshed later without
+        rewriting the ruleset, so the daily job that notices the CDN
+        published new ranges has something it can update. Inlined
+        ranges left the firewall on whatever list the host was handed
+        the day it was hardened."""
+        active = "\n".join(
+            self._active_lines(self._render_ruleset(**self._CDN)),
+        )
+        self.assertIn("tcp dport { 80, 443 } ip saddr @ic_cdn_v4", active)
+        self.assertIn("tcp dport { 80, 443 } ip6 saddr @ic_cdn_v6", active)
+        rule = [l for l in active.splitlines() if "@ic_cdn_v4" in l][0]
+        self.assertNotIn("203.0.113.0/24", rule)
+
+    def test_a_host_with_no_ipv6_range_declares_no_ipv6_set(self):
+        """A rule naming a set that does not exist refuses to load, and
+        an empty one would match nobody."""
+        active = "\n".join(self._active_lines(self._render_ruleset(
+            ic_http_allowed_ranges="203.0.113.0/24",
+            ic_http_allowed_ranges_v4="203.0.113.0/24",
+            ic_http_allowed_ranges_v6="",
+        )))
+        self.assertIn("set ic_cdn_v4 {", active)
+        self.assertNotIn("ic_cdn_v6", active)
+
+    def test_the_set_is_declared_before_the_chain_that_uses_it(self):
+        rendered = self._render_ruleset(**self._CDN)
+        self.assertLess(
+            rendered.index("set ic_cdn_v4 {"),
+            rendered.index("chain input {"),
+        )
+
     def test_conn_rate_meter_is_off_by_default(self):
         """The fleet ruleset must not change unless a rate is set.
 

@@ -57,6 +57,8 @@ from . import (
     test_pluggable_actions,
     test_action_bar_labels,
     test_behind_cdn,
+    test_tls_names,
+    test_real_ip,
     test_restore_upload_paths,
     test_transport,
     test_delete_project,

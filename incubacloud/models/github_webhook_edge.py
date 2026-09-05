@@ -175,6 +175,12 @@ class CloudHostGitHubWebhookEdge(models.Model):
                 {'hostname': hostname, 'service': service}
                 for hostname in instance._github_webhook_hostnames()
             )
+        # Decided here rather than in the renderer so every route on
+        # this host answers the question the same way, the panel's own
+        # included -- it is served by the same proxy and reached the
+        # same way as everything else here.
+        for route in routes:
+            route['tls_mode'] = self._router_tls_mode(route.get('hostname'))
         return routes
 
     def _github_webhook_document(self):

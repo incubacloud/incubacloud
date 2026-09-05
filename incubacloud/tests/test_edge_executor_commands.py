@@ -122,3 +122,75 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
         restart = self._cmds()["Restart Traefik"]
         self.assertIn("-p inverseproxy", restart)
         self.assertIn("restart proxy", restart)
+
+    # ── The firewall has to believe the same list as the proxy ───────
+    #
+    # The proxy gets its list from this job. The firewall got its from
+    # the hardening playbook, which runs on Ansible at host creation and
+    # then effectively never — so a range the CDN published afterwards
+    # was accepted by the proxy and dropped before reaching it, and the
+    # daily job that noticed had nothing it could update.
+
+    _FIREWALL = "Refresh the firewall allowlist"
+
+    def _filtering_host(self, ranges="203.0.113.0/24\n2001:db8::/32"):
+        self.host.write({
+            "behind_cdn": True,
+            "block_direct_access": True,
+            "trusted_proxy_ranges": ranges,
+        })
+
+    def test_a_host_that_filters_nothing_is_left_alone(self):
+        self.assertNotIn(self._FIREWALL, self._cmds())
+
+    def test_declaring_ranges_without_refusing_direct_access_does_not(self):
+        """The firewall half only exists once the proxy refuses too."""
+        self.host.write({
+            "behind_cdn": True,
+            "trusted_proxy_ranges": "203.0.113.0/24",
+        })
+        self.assertNotIn(self._FIREWALL, self._cmds())
+
+    def test_a_filtering_host_gets_todays_ranges(self):
+        self._filtering_host()
+        command = self._cmds()[self._FIREWALL]
+        self.assertIn("203.0.113.0/24", command)
+        self.assertIn("2001:db8::/32", command)
+
+    def test_the_two_families_go_to_their_own_sets(self):
+        """nftables cannot hold both in one set."""
+        self._filtering_host()
+        command = self._cmds()[self._FIREWALL]
+        self.assertIn("ic_cdn_v4 { 203.0.113.0/24 }", command)
+        self.assertIn("ic_cdn_v6 { 2001:db8::/32 }", command)
+
+    def test_it_is_applied_as_one_transaction(self):
+        """Flushing and refilling in two commands leaves a window in
+        which the set is empty and the rule matches nobody."""
+        self._filtering_host()
+        command = self._cmds()[self._FIREWALL]
+        self.assertEqual(command.count("nft -f -"), 1)
+        self.assertNotIn("nft flush set", command)
+
+    def test_it_does_nothing_on_a_host_without_the_set(self):
+        """One hardened before the sets existed. Its inlined ranges keep
+        working until the next hardening run replaces them."""
+        self._filtering_host()
+        command = self._cmds()[self._FIREWALL]
+        self.assertIn("nft list set inet filter ic_cdn_v4", command)
+        self.assertIn("else echo", command)
+
+    def test_a_host_with_no_ipv4_range_is_left_alone(self):
+        """What the playbook treats as "no allowlist at all". Flushing
+        to empty would take the host off the network."""
+        self._filtering_host(ranges="2001:db8::/32")
+        self.assertNotIn(self._FIREWALL, self._cmds())
+
+    def test_the_firewall_is_refreshed_after_the_proxy_restarts(self):
+        """Order matters only in that neither half may be skipped; the
+        proxy owns the connection, so it goes first."""
+        self._filtering_host()
+        labels = list(self._cmds())
+        self.assertLess(
+            labels.index("Restart Traefik"), labels.index(self._FIREWALL),
+        )

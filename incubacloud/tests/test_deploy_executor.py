@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import BaseCase, TransactionCase
 
+from ._certs import make_pair
+
 # ── Tier 1: _github_authed_url ───────────────────────────────────────────────
 
 
@@ -257,6 +259,42 @@ class TestBuildAnswersDomains(TransactionCase):
     # accepts, and the mapping is the whole point of the feature: a wrong
     # value here silently changes a tenant's TLS on the next rebuild.
 
+    def _host(self, **vals):
+        """Return a host an instance can be placed on."""
+        base = {
+            "name": "auto-tls-host",
+            "ip_address": "198.51.100.77",
+            "user": "root",
+            "wildcard_domain": "example.com",
+        }
+        base.update(vals)
+        return self.env["cloud.host"].create(base)
+
+    def _entry_on_host(self, host, **domain_vals):
+        """Return the copier entry for one domain served by *host*.
+
+        A project of its own per call, because a project accepts only
+        one production instance and these entries only exist on a
+        production one. The name and hostname are unique for the same
+        reason: a test asking twice should fail on what it asserts, not
+        on the fixture.
+        """
+        self._seq = getattr(self, "_seq", 0) + 1
+        vals = {"cert_resolver": "auto"} | domain_vals
+        project = self.env["cloud.project"].create(
+            {"name": f"DomTest-{self._seq}"},
+        )
+        inst = self.env["cloud.instance"].create({
+            "name": f"dom-host-{self._seq}",
+            "project_id": project.id,
+            "environment": "production",
+            "host_id": host.id,
+            "domain_ids": [
+                (0, 0, {"hostname": f"c{self._seq}.example.com"} | vals),
+            ],
+        })
+        return self._make_executor(inst)._build_answers()["domains_prod"][0]
+
     def _entry_for(self, **domain_vals):
         """Return the single copier entry produced for one domain."""
         inst = self._create_instance(
@@ -289,6 +327,49 @@ class TestBuildAnswersDomains(TransactionCase):
         tenant's TLS on their next rebuild with nothing to show for it.
         """
         self.assertIn("cert_resolver", self._entry_for())
+
+    def test_auto_falls_back_to_a_ca_without_a_host(self):
+        """A domain on an instance nobody has placed yet still deploys
+        the way it used to."""
+        entry = self._entry_for(cert_resolver="auto")
+        self.assertEqual(entry["cert_resolver"], "letsencrypt")
+
+    def test_auto_asks_a_ca_while_visitors_still_arrive_directly(self):
+        entry = self._entry_on_host(self._host())
+        self.assertEqual(entry["cert_resolver"], "letsencrypt")
+
+    def test_auto_serves_the_held_certificate_once_a_cdn_answers(self):
+        cert, key = make_pair(["example.com", "*.example.com"])
+        entry = self._entry_on_host(self._host(
+            behind_cdn=True, tls_default_cert=cert, tls_default_key=key,
+        ))
+        self.assertIs(entry["cert_resolver"], True)
+
+    def test_auto_keeps_asking_for_a_name_the_certificate_misses(self):
+        """A customer's own domain on a host behind our CDN: ours covers
+        our zone and not theirs, so there is nothing to serve."""
+        cert, key = make_pair(["other.test", "*.other.test"])
+        entry = self._entry_on_host(self._host(
+            behind_cdn=True, tls_default_cert=cert, tls_default_key=key,
+        ))
+        self.assertEqual(entry["cert_resolver"], "letsencrypt")
+
+    def test_an_explicit_choice_is_not_overridden_by_the_host(self):
+        """``none`` is how somebody turns TLS off on purpose."""
+        cert, key = make_pair(["example.com", "*.example.com"])
+        host = self._host(
+            behind_cdn=True, tls_default_cert=cert, tls_default_key=key,
+        )
+        self.assertIs(
+            self._entry_on_host(host, cert_resolver="none")["cert_resolver"],
+            False,
+        )
+        self.assertEqual(
+            self._entry_on_host(
+                host, cert_resolver="letsencrypt",
+            )["cert_resolver"],
+            "letsencrypt",
+        )
 
     def test_redirect_permanent_only_when_redirecting(self):
         """301 is meaningless without a redirect target — don't emit it."""

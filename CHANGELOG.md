@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.109] — 2026-09-05
+
+### Added
+
+- **A host can say whether a router should ask for a certificate or serve the one it holds.** Asking a certificate authority for a name that now answers through a CDN can never succeed — the challenge reaches the CDN, not the host — and nothing reports it: the proxy keeps serving the certificate it already obtained until that one expires, then starts answering handshakes with a throwaway. Serving the held certificate too early is worse and faster, because a certificate issued for a CDN's benefit is trusted by that CDN and by no browser. `cloud.host._router_tls_mode` answers both at once, and only says `default` when a CDN stands in front of the name *and* the held certificate covers it. Coverage is read from the certificate's own subject alternative names rather than derived from a base domain, so the answer stays right for a purchased wildcard or an internal CA as much as for a CDN's origin certificate.
+- **A domain's certificate now follows its host by default.** `cert_resolver` gains `auto`, which asks the host serving the domain instead of being maintained row by row — the previous default meant every domain had to be revisited by hand whenever a host moved behind a CDN, and forgetting one failed silently months later. Existing rows sitting on the old default are moved to `auto`, which resolves to exactly what they did before on every host reached directly. An explicit `letsencrypt`, `custom` or `none` is still honoured as typed.
+- **The firewall and the proxy stay on the same list.** Both have to trust the same CDN ranges, and only one of them was being kept current: the proxy is re-shipped by a daily job over SSH, while the firewall's copy was written by the hardening playbook, which runs on Ansible at host creation and then effectively never. A range the CDN published afterwards was accepted by the proxy and dropped before reaching it. The ranges now live in named nftables sets rather than written into the rule, and `push_trusted_proxies` refreshes them — as one `nft -f` document, because flushing and refilling in two commands leaves a window where the set is empty and the rule matches nobody. A host whose ruleset predates the sets is left alone, and its inlined ranges keep working until the next hardening run. Both paths and both rulesets were exercised against a real `nft`.
+- **Odoo records the visitor again, not the proxy in front of them.** Odoo reads the last entry of the forwarded chain, with `x_for=1` fixed in its own source. A reverse proxy appends the address it was reached from before passing the request on — and does so *after* its middlewares run, measured on a real Traefik v2.11, so nothing configurable inside the proxy can change what ends up last. Behind a CDN the chain therefore reads `<visitor>, <edge>` and every session is recorded against one of the CDN's own addresses, with nothing to say so: the site works. A `post_load` hook now corrects the chain from the header the proxy states the visitor in, and only when the connection came from an address configured as trustworthy — an unproven header is written by whoever is calling. Off unless both are configured, so an installation reached directly is untouched. Traefik's own middlewares were measured too and turned out to be *correct* already: they read the chain before that append, so the rate limit and the allowlists were keying on the visitor all along.
+- **The webhook routers follow it too.** A route may carry `tls_mode`; `default` renders an empty TLS section, which turns TLS on and leaves the certificate to the host's default store. Verified against a real Traefik v2.11 rather than reasoned about, because a resolver named in that section makes Traefik ignore the store it was just given a certificate in.
+
+### Changed
+
+- `cloud.instance.domain.cert_resolver` defaults to `auto` instead of `letsencrypt`. No router changes on this release: `auto` resolves to Let's Encrypt for every host that is not behind a CDN holding a certificate covering the name.
+
+---
+
 ## [1.0.108] — 2026-09-04
 
 ### Fixed

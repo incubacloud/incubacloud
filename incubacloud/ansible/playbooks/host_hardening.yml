@@ -362,6 +362,30 @@
           delete table inet filter
 
           table inet filter {
+              {% if ic_http_allowed_ranges | default('') | trim %}
+              # Named sets rather than the ranges written straight into
+              # the rule below. Both accept the same traffic, but only a
+              # named set can be refreshed without rewriting the
+              # ruleset: the CDN publishes its ranges and changes them,
+              # and the job that notices runs over SSH, not Ansible.
+              # With the ranges inlined, that job had nothing it could
+              # update, so the firewall kept whatever list it was given
+              # the day the host was hardened while Traefik got the new
+              # one -- and a range added by the CDN would be accepted by
+              # the proxy and dropped before reaching it.
+              set ic_cdn_v4 {
+                  type ipv4_addr
+                  flags interval
+                  elements = { {{ ic_http_allowed_ranges_v4 }} }
+              }
+              {% if ic_http_allowed_ranges_v6 | default('') | trim %}
+              set ic_cdn_v6 {
+                  type ipv6_addr
+                  flags interval
+                  elements = { {{ ic_http_allowed_ranges_v6 }} }
+              }
+              {% endif %}
+              {% endif %}
               chain input {
                   type filter hook input priority filter; policy drop;
                   iif "lo" accept
@@ -377,9 +401,9 @@
                   # every visitor arrives from the same handful of edge
                   # addresses, so a per-source cap would throttle the CDN
                   # itself and protect nobody.
-                  tcp dport { 80, 443 } ip saddr { {{ ic_http_allowed_ranges_v4 }} } accept
+                  tcp dport { 80, 443 } ip saddr @ic_cdn_v4 accept
                   {% if ic_http_allowed_ranges_v6 | default('') | trim %}
-                  tcp dport { 80, 443 } ip6 saddr { {{ ic_http_allowed_ranges_v6 }} } accept
+                  tcp dport { 80, 443 } ip6 saddr @ic_cdn_v6 accept
                   {% endif %}
                   {% else %}
                   tcp dport { 80, 443 } accept

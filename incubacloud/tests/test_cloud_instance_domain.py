@@ -58,7 +58,7 @@ class TestCloudInstanceDomainConstraint(TransactionCase):
 
     def test_default_cert_resolver(self):
         d = self._domain(self.inst_a, "secure.example.com")
-        self.assertEqual(d.cert_resolver, "letsencrypt")
+        self.assertEqual(d.cert_resolver, "auto")
 
     def test_archived_instance_does_not_reserve_hostname(self):
         """An archived instance's domain must not block hostname reuse.
@@ -190,14 +190,16 @@ class TestCertResolverDomain(TransactionCase):
             {"instance_id": self.inst.id, "hostname": "x.example.com"} | kw
         )
 
-    def test_default_is_letsencrypt(self):
-        self.assertEqual(self._domain().cert_resolver, "letsencrypt")
+    def test_the_default_defers_to_the_host(self):
+        """Whether a certificate authority can still reach a name is a
+        property of the host, not something to maintain row by row."""
+        self.assertEqual(self._domain().cert_resolver, "auto")
 
     def test_redirect_permanent_defaults_to_temporary(self):
         self.assertFalse(self._domain().redirect_permanent)
 
     def test_every_option_is_accepted(self):
-        for value in ("letsencrypt", "custom", "none"):
+        for value in ("auto", "letsencrypt", "custom", "none"):
             domain = self._domain(hostname=f"{value}.example.com",
                                   cert_resolver=value)
             self.assertEqual(domain.cert_resolver, value)
@@ -207,16 +209,25 @@ class TestCertResolverDomain(TransactionCase):
         with self.assertRaises(ValueError):
             self._domain(cert_resolver="acme-evil")
 
-    def test_the_answer_mapping_covers_the_whole_selection(self):
-        """Every option must have a copier value, or a deploy would crash.
+    def test_every_option_produces_an_answer(self):
+        """Every option must produce a copier value, or a deploy crashes.
 
-        Guards the pair: adding an option to the Selection without adding
-        it to ``_CERT_RESOLVER_ANSWERS`` would silently fall back to
-        Let's Encrypt for that option instead of doing what it says.
+        Guards the pair: adding an option to the Selection without
+        teaching ``_cert_resolver_answer`` about it would silently fall
+        back to Let's Encrypt instead of doing what the option says.
+
+        ``auto`` is the one option answered by asking the host rather
+        than by looking it up, so it is the one option allowed to be
+        missing from the table — and it is checked by calling.
         """
-        options = dict(
-            self.Domain._fields["cert_resolver"].selection
-        )
-        self.assertEqual(
-            set(options), set(self.Domain._CERT_RESOLVER_ANSWERS),
-        )
+        options = set(dict(self.Domain._fields["cert_resolver"].selection))
+        table = set(self.Domain._CERT_RESOLVER_ANSWERS)
+        self.assertEqual(options - table, {"auto"})
+        for value in options:
+            domain = self._domain(
+                hostname=f"answer-{value}.example.com", cert_resolver=value,
+            )
+            self.assertIn(
+                domain._cert_resolver_answer(),
+                ("letsencrypt", True, False),
+            )

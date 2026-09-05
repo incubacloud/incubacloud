@@ -83,6 +83,9 @@ def build_webhook_edge_yaml(routes, ranges, trusted_proxy=False):
         load-balancer service is declared here). ``tls_domain`` is
         optional and asks for the router to be served from a wildcard
         certificate rather than one issued for the hostname itself.
+        ``tls_mode`` is optional and defaults to ``'acme'``; ``'default'``
+        serves the certificate the host already holds and ignores
+        ``tls_domain``, since neither names a certificate to ask for.
     :param ranges: CIDR strings allowed to reach the webhook
     :param bool trusted_proxy: whether a declared, trusted proxy sits in
         front of this host. When it does, the allowlist reads the
@@ -127,14 +130,23 @@ def build_webhook_edge_yaml(routes, ranges, trusted_proxy=False):
             "service": service,
             "middlewares": [ALLOW_MIDDLEWARE, BODY_MIDDLEWARE],
         }
-        tls_domain = str(route.get("tls_domain") or "").strip()
-        if tls_domain:
-            router["tls"] = {
-                "certResolver": "letsencrypt",
-                "domains": [{"main": tls_domain}],
-            }
+        # An empty TLS section is not "no TLS": it turns TLS on and
+        # leaves the certificate to the host's default store. That is
+        # the only usable answer once a CDN answers for the name,
+        # because the challenge behind ``certResolver`` reaches the CDN
+        # and never the host — and a resolver named here would make
+        # Traefik ignore the store it was given a certificate in.
+        if str(route.get("tls_mode") or "acme") == "default":
+            router["tls"] = {}
         else:
-            router["tls"] = {"certResolver": "letsencrypt"}
+            tls_domain = str(route.get("tls_domain") or "").strip()
+            if tls_domain:
+                router["tls"] = {
+                    "certResolver": "letsencrypt",
+                    "domains": [{"main": tls_domain}],
+                }
+            else:
+                router["tls"] = {"certResolver": "letsencrypt"}
         routers[key] = router
     if not routers:
         return ""
