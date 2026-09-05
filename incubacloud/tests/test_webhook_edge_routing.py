@@ -67,6 +67,46 @@ class TestWebhookEdgeDocument(TransactionCase):
         ]["tls"]
         self.assertEqual(tls["domains"], [{"main": "*.example.com"}])
 
+    def test_a_proxied_route_serves_the_certificate_already_held(self):
+        """Measured on Traefik v2.11: an empty TLS section turns TLS on
+        and falls back to the default certificate store. A resolver
+        named here would make Traefik ignore that store and chase a
+        challenge the CDN answers instead of the host."""
+        rendered = yaml.safe_load(edge.build_webhook_edge_yaml(
+            [{
+                "hostname": "acme.example.com",
+                "service": "acme-19-0-prod-main@docker",
+                "tls_mode": "default",
+            }],
+            RANGES,
+        ))
+        router = rendered["http"]["routers"]["github-webhook-acme-example-com"]
+        self.assertEqual(router["tls"], {})
+
+    def test_a_proxied_route_ignores_a_wildcard_to_ask_for(self):
+        """Neither field names a certificate to obtain any more."""
+        rendered = yaml.safe_load(edge.build_webhook_edge_yaml(
+            [{
+                "hostname": "www.example.com",
+                "service_url": "http://odoo:8069",
+                "tls_domain": "*.example.com",
+                "tls_mode": "default",
+            }],
+            RANGES,
+        ))
+        tls = rendered["http"]["routers"][
+            edge.route_key("www.example.com")
+        ]["tls"]
+        self.assertEqual(tls, {})
+
+    def test_a_route_saying_nothing_still_asks_a_ca(self):
+        """Absence must not be read as "serve whatever is on disk"."""
+        rendered = yaml.safe_load(
+            edge.build_webhook_edge_yaml(self._routes(), RANGES),
+        )
+        router = rendered["http"]["routers"]["github-webhook-acme-example-com"]
+        self.assertEqual(router["tls"], {"certResolver": "letsencrypt"})
+
     def test_behind_a_trusted_proxy_the_allowlist_reads_the_chain(self):
         # Measured on Traefik v2.11: this is the only shape that accepts
         # a delivery arriving through a CDN.
@@ -148,6 +188,38 @@ class TestWebhookEdgeRoutes(TransactionCase):
         self.instance._transition("deleting")
         self.instance._transition("draft")
         self.assertEqual(self.host._github_webhook_routes(), [])
+
+    def test_every_route_carries_how_to_get_its_certificate(self):
+        """Decided per host so the panel's own route answers the same
+        way as the tenants beside it — it is served by the same proxy
+        and reached the same way."""
+        self.env["cloud.instance.domain"].create({
+            "instance_id": self.instance.id,
+            "hostname": "acme.example.com",
+        })
+        routes = self.host._github_webhook_routes()
+        self.assertTrue(routes)
+        self.assertTrue(all("tls_mode" in route for route in routes))
+        self.assertEqual({r["tls_mode"] for r in routes}, {"acme"})
+
+    def test_behind_the_cdn_the_routes_stop_asking_a_ca(self):
+        from ._certs import make_pair
+        cert, key = make_pair(["example.com", "*.example.com"])
+        self.host.write({
+            "behind_cdn": True,
+            "tls_default_cert": cert,
+            "tls_default_key": key,
+        })
+        self.env["cloud.instance.domain"].create({
+            "instance_id": self.instance.id,
+            "hostname": "acme.example.com",
+        })
+        modes = {
+            route["tls_mode"]
+            for route in self.host._github_webhook_routes()
+            if route["hostname"] == "acme.example.com"
+        }
+        self.assertEqual(modes, {"default"})
 
     def test_the_service_follows_the_compose_project_name(self):
         self.env["cloud.instance.domain"].create({

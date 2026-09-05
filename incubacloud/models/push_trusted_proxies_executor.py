@@ -8,6 +8,8 @@ when they actually moved, since every push costs the host a proxy
 restart and the connections in flight through it.
 """
 
+import shlex
+
 from . import _config_snapshot_diff as _snapshot_diff
 from .abstract_executor import AbstractSSHExecutor
 from .full_setup_executor import _TMP
@@ -47,8 +49,64 @@ class PushTrustedProxiesExecutor(AbstractSSHExecutor):
             f'{", direct access refused" if host.block_direct_access else ""}).'
         )
 
+    def _refresh_firewall_sets(self):
+        """Return the command that puts today's ranges in the firewall.
+
+        Traefik and the firewall have to believe the same list. Traefik
+        gets it from the documents this job uploads; the firewall gets
+        it from the hardening playbook, which runs on Ansible and only
+        at host creation or a deliberate re-hardening. So the list the
+        firewall enforced was whatever it was handed the day the host
+        was hardened, and a range the CDN added afterwards was accepted
+        by the proxy and dropped before reaching it. This closes that
+        gap without needing Ansible.
+
+        Written as one ``nft -f`` document because nftables applies a
+        file as a single transaction: flushing and refilling in two
+        commands leaves a window, however short, in which the set is
+        empty and the rule referring to it matches nobody.
+
+        Skips on a host whose ruleset has no such set — one hardened
+        before the sets existed, or one not filtering at all. The next
+        hardening run creates them; until then the inline ranges it
+        already has keep working.
+
+        :return: a ``(label, command)`` pair, or ``None`` when this host
+            has no allowlist to refresh
+        :rtype: tuple | None
+        """
+        host = self.job.host_id
+        if not (host.behind_cdn and host.block_direct_access):
+            return None
+        ranges = host._effective_trusted_proxy_ranges()
+        v4 = [r for r in ranges if ':' not in r]
+        v6 = [r for r in ranges if ':' in r]
+        # An empty v4 list is what the hardening playbook treats as "no
+        # allowlist at all", so there is no set to refresh either, and
+        # flushing to empty would take the host off the network.
+        if not v4:
+            return None
+        lines = [
+            'flush set inet filter ic_cdn_v4',
+            'add element inet filter ic_cdn_v4 { %s }' % ', '.join(v4),
+        ]
+        if v6:
+            lines += [
+                'flush set inet filter ic_cdn_v6',
+                'add element inet filter ic_cdn_v6 { %s }' % ', '.join(v6),
+            ]
+        document = shlex.quote('\n'.join(lines) + '\n')
+        return (
+            'Refresh the firewall allowlist',
+            'if sudo nft list set inet filter ic_cdn_v4 >/dev/null 2>&1;'
+            ' then printf %s ' + document + ' | sudo nft -f -'
+            ' && echo "firewall allowlist refreshed";'
+            ' else echo "no allowlist set on this host; the next'
+            ' hardening run creates it"; fi',
+        )
+
     def get_commands(self):
-        return [
+        commands = [
             (
                 'Move Traefik configuration',
                 f'mv {_TMP}-traefik.yml ~/traefik/traefik.yml'
@@ -84,6 +142,10 @@ class PushTrustedProxiesExecutor(AbstractSSHExecutor):
                 ' -f inverseproxy.yaml restart proxy',
             ),
         ]
+        firewall = self._refresh_firewall_sets()
+        if firewall:
+            commands.append(firewall)
+        return commands
 
     async def on_success(self, results):
         """Record what the host is now running, so nothing publishes early.

@@ -12,6 +12,7 @@ import yaml
 
 from ..controllers._data_load._helpers import _parse_github_repo_path
 from ..github.client import GitHubAppClient
+from ..net import real_ip
 from ..github.http_utils import safe_urlopen
 from ._pip_apt_map import resolve_apt_dependencies
 from ._repo_requirements import (
@@ -548,7 +549,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         )
 
     def _conf_content(self):
-        """Return Odoo conf with proxy_mode forced True.
+        """Return Odoo conf with the proxy settings the platform owns.
 
         Every instance we deploy is fronted by Traefik (the host's
         traefik service per ``data/traefik/``). Without proxy_mode,
@@ -566,6 +567,21 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         if not cp.has_section("options"):
             cp.add_section("options")
         cp.set("options", "proxy_mode", "True")
+        # Which header states the visitor, and whose word to take for
+        # it. Both or neither: a header believed from anywhere is one
+        # any visitor can write. Cleared rather than left behind when
+        # the host stops declaring one, so moving an instance to a host
+        # reached directly does not leave it believing a header nobody
+        # sets.
+        host = self._inst().host_id
+        header = host._effective_client_ip_header() if host else ""
+        trusted = host._effective_trusted_proxy_ranges() if host else []
+        if header and trusted:
+            cp.set("options", real_ip.HEADER_OPTION, header)
+            cp.set("options", real_ip.TRUSTED_OPTION, ", ".join(trusted))
+        else:
+            cp.remove_option("options", real_ip.HEADER_OPTION)
+            cp.remove_option("options", real_ip.TRUSTED_OPTION)
         out = io.StringIO()
         cp.write(out)
         return out.getvalue()

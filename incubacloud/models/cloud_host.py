@@ -13,6 +13,7 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.tools import file_open
 
 from ..net.hostname import InvalidHostname, validate_wildcard_domain
+from ..net import tls_names
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from . import _config_snapshot_diff as _snapshot_diff
 from .cloud_host_whitelist import DEFAULT_WHITELIST
@@ -523,6 +524,17 @@ class CloudHost(models.Model):
         string="Default TLS Private Key",
         help="Private key for the certificate above. Stored encrypted "
              "and written to the host with owner-only permissions.",
+    )
+
+    client_ip_header = fields.Char(
+        string="Real Client IP Header",
+        help="Header a proxy in front of this host states the visitor's "
+             "address in, e.g. CF-Connecting-IP. Odoo reads the last "
+             "entry of the forwarded chain, and a proxy appends its own "
+             "peer to that chain — so behind a second proxy the address "
+             "recorded against every session is the nearer proxy's, not "
+             "the visitor's. Only honoured from the trusted ranges "
+             "below. Empty leaves the chain alone.",
     )
 
     behind_cdn = fields.Boolean(
@@ -2198,6 +2210,75 @@ class CloudHost(models.Model):
         """
         self.ensure_one()
         return (self.tls_default_cert or "", self.tls_default_key or "")
+
+    def _effective_client_ip_header(self):
+        """Return the header this host states the visitor's address in.
+
+        The host's own field wins. Modules that know a CDN answers for
+        a host, and therefore which header that CDN writes, override
+        this so nobody has to type it per host.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        return (self.client_ip_header or "").strip()
+
+    def _tls_default_covers(self, hostname):
+        """Return whether this host's default certificate serves *name*.
+
+        Asked of the certificate, not of the base domain, so the answer
+        stays right when the certificate changes shape: a wildcard for
+        one zone today, a purchased certificate covering two zones
+        tomorrow, an internal CA on a self-hosted host.
+
+        :param str hostname: the name a router on this host serves
+        :rtype: bool
+        """
+        self.ensure_one()
+        cert, key = self._effective_tls_default()
+        if not (cert and key):
+            return False
+        return tls_names.covers(hostname, tls_names.certificate_names(cert))
+
+    def _name_is_proxied(self, hostname):
+        """Return whether requests for *name* reach this host via a CDN.
+
+        The host-wide flag is the whole answer here: a host declared to
+        be reached through a CDN is reached that way for everything it
+        serves. Modules that decide name by name — because they own the
+        zone and move it in batches — narrow this.
+
+        :param str hostname: the name a router on this host serves
+        :rtype: bool
+        """
+        self.ensure_one()
+        return bool(self.behind_cdn)
+
+    def _router_tls_mode(self, hostname):
+        """Return how a router for *hostname* should obtain its cert.
+
+        ``acme`` asks a certificate authority, which needs the authority
+        to reach this host — so it is the answer whenever visitors still
+        do. ``default`` serves the certificate the host already holds,
+        and is the answer only once a CDN stands in front of the name
+        *and* that certificate covers it.
+
+        The pair matters. A proxied name whose certificate does not
+        cover it gets ``acme`` even though ACME cannot succeed either:
+        there is no third answer, and leaving the request in place keeps
+        the failure where the logs already look for it rather than
+        silently serving a certificate for somebody else's name.
+
+        :param str hostname: the name the router serves
+        :return: ``'default'`` or ``'acme'``
+        :rtype: str
+        """
+        self.ensure_one()
+        if self._name_is_proxied(hostname) and self._tls_default_covers(
+            hostname
+        ):
+            return "default"
+        return "acme"
 
     def _shipped_tls_default_yml(self):
         """Return the dynamic document naming the default certificate.

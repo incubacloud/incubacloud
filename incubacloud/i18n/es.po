@@ -1058,6 +1058,11 @@ msgid "Auto-update modules on rebuild"
 msgstr "Auto-actualizar módulos al reconstruir"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_domain__cert_resolver__auto
+msgid "Automatic (decided by the host)"
+msgstr "Automático (lo decide el host)"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
@@ -4801,6 +4806,24 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_head_branch
 msgid "Head branch of the PR."
 msgstr "Rama HEAD del PR."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__client_ip_header
+msgid ""
+"Header a proxy in front of this host states the visitor's address in, e.g. "
+"CF-Connecting-IP. Odoo reads the last entry of the forwarded chain, and a "
+"proxy appends its own peer to that chain — so behind a second proxy the "
+"address recorded against every session is the nearer proxy's, not the "
+"visitor's. Only honoured from the trusted ranges below. Empty leaves the "
+"chain alone."
+msgstr ""
+"Cabecera en la que un proxy situado delante de este host indica la dirección"
+" del visitante, por ejemplo CF-Connecting-IP. Odoo lee la última entrada de "
+"la cadena reenviada, y un proxy añade a esa cadena la dirección desde la que"
+" recibió la conexión, así que detrás de un segundo proxy la dirección que "
+"queda registrada en cada sesión es la del proxy más cercano y no la del "
+"visitante. Solo se hace caso a esta cabecera desde los rangos de confianza "
+"de abajo. Vacío deja la cadena tal cual."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__status
@@ -8726,6 +8749,11 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Reading…"
 msgstr "Leyendo…"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__client_ip_header
+msgid "Real Client IP Header"
+msgstr "Cabecera con la IP real del cliente"
 
 #. module: incubacloud
 #. odoo-javascript
