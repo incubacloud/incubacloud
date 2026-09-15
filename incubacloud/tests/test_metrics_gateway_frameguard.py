@@ -9,6 +9,11 @@ because a frame blocked by CSP still fires ``load``.
 The policy now lives on Grafana's own router in
 ``docs/observability-traefik-metrics-gateway.yml``, the file installed on
 the central's host. These pin what that file has to keep saying.
+
+They need the repository checkout, which CI has. The production image does
+not: its build removes every directory of this repository that is not an
+addon, ``docs/`` included, so the deploy's boot test skips them there
+rather than erroring on a file that was never meant to ship.
 """
 import pathlib
 import re
@@ -50,6 +55,20 @@ def _frame_ancestors(headers):
 
 class TestMetricsGatewayFrameguard(BaseCase):
     """The gateway lets panels anywhere in the zone frame Grafana."""
+
+    def setUp(self):
+        """Skip where the repository's ``docs/`` was stripped out.
+
+        Only the whole directory being absent skips: a checkout that has
+        ``docs/`` but lost the fragment is a rename nobody followed up,
+        and reading it fails loudly below.
+        """
+        super().setUp()
+        if not _GATEWAY.parent.is_dir():
+            self.skipTest(
+                "docs/ is not in this build (the production image keeps "
+                "addons only); CI checks the gateway fragment."
+            )
 
     def _grafana_headers(self):
         """Return every headers middleware the Grafana router applies.

@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.124] — 2026-09-15
+
+### Fixed
+
+- **1.0.123 could not be deployed: its new test errored in the boot test.**
+  `tests/test_metrics_gateway_frameguard.py` reads the metrics gateway
+  fragment from the repository's `docs/`, and the production image has no
+  `docs/`: the build keeps only this repository's addons. Devel and CI both
+  use the full checkout, so neither saw it; the deploy's boot test did, and
+  refused the release before the downtime window with production untouched.
+  The tests now skip when `docs/` is absent and still fail when `docs/` is
+  there but the fragment is not.
+
 ## [1.0.123] — 2026-09-15
 
 ### Fixed
