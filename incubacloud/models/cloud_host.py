@@ -559,9 +559,12 @@ class CloudHost(models.Model):
              "is sent, which is the default because a tenant's own site "
              "may legitimately be embedded by its customers. Beware that "
              "this is an entrypoint-wide control: it reaches every router "
-             "on the host, so anything else served here — a metrics "
-             "dashboard the panel embeds, say — has to appear in the list "
-             "or it stops rendering. ``X-Frame-Options`` is deliberately "
+             "on the host and overrides any policy a router or the "
+             "application sets. So when two things served here need "
+             "different lists — a panel only it may frame, next to a "
+             "dashboard that panels on other origins embed — leave this "
+             "empty and give each router its own policy instead: no single "
+             "list can say both. ``X-Frame-Options`` is deliberately "
              "not sent alongside: it cannot express \"self and that other "
              "origin\", so pairing them would undo the exception.",
     )
