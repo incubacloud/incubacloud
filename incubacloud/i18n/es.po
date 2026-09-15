@@ -970,6 +970,12 @@ msgstr "Pide primero una clave de subida."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Asleep"
+msgstr "Durmiendo"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Audit Log Retention"
 msgstr "Retención del log de auditoría"
@@ -1490,6 +1496,35 @@ msgstr "Núcleos CPU"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "CPUs"
 msgstr "CPUs"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__frame_ancestors
+msgid ""
+"CSP ``frame-ancestors`` source list for every router on this host, e.g. "
+"\"'self' https://panel.example.com\". Sets who may put these pages inside an"
+" iframe; leave empty and no header is sent, which is the default because a "
+"tenant's own site may legitimately be embedded by its customers. Beware that"
+" this is an entrypoint-wide control: it reaches every router on the host and"
+" overrides any policy a router or the application sets. So when two things "
+"served here need different lists — a panel only it may frame, next to a "
+"dashboard that panels on other origins embed — leave this empty and give "
+"each router its own policy instead: no single list can say both. ``X-Frame-"
+"Options`` is deliberately not sent alongside: it cannot express \"self and "
+"that other origin\", so pairing them would undo the exception."
+msgstr ""
+"Lista de orígenes CSP ``frame-ancestors`` para todos los routers de este "
+"host, p. ej. \"'self' https://panel.example.com\". Define quién puede "
+"mostrar estas páginas dentro de un iframe; si se deja vacía no se envía "
+"ninguna cabecera, que es lo predeterminado porque los clientes de un "
+"inquilino pueden incrustar legítimamente su sitio. Atención: es un control "
+"de todo el punto de entrada. Alcanza a todos los routers del host y anula "
+"cualquier política que fije un router o la aplicación. Por eso, cuando dos "
+"cosas servidas aquí necesitan listas distintas —un panel que solo él puede "
+"enmarcar, junto a un dashboard que incrustan paneles de otros orígenes—, "
+"déjela vacía y dé a cada router su propia política: ninguna lista única "
+"puede expresar ambas. ``X-Frame-Options`` no se envía a propósito: no puede "
+"expresar \"yo mismo y ese otro origen\", así que combinarlas anularía la "
+"excepción."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4294,6 +4329,11 @@ msgstr ""
 "auto-aprovisionamiento."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__frame_ancestors
+msgid "Frame Ancestors"
+msgstr "Orígenes autorizados a enmarcar"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__disk_free_gb
 msgid "Free Disk (GB)"
 msgstr "Disco libre (GB)"
@@ -4847,6 +4887,12 @@ msgstr "Ocultar"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Hide advanced"
 msgstr "Ocultar avanzado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "Hide earlier history"
+msgstr "Ocultar el historial anterior"
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__priority_tier__high
@@ -6000,6 +6046,7 @@ msgid "Last Rebuild Fingerprint"
 msgstr "Última huella de reconstrucción"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__last_raised_at
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__last_seen
 msgid "Last Seen"
@@ -9983,6 +10030,11 @@ msgid "Service"
 msgstr "Servicio"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__service_states
+msgid "Service States"
+msgstr "Estado de los servicios"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Service:"
@@ -10124,8 +10176,20 @@ msgstr "Mostrar como botón de acción"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "Show earlier history"
+msgstr "Mostrar el historial anterior"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Show last 7 days"
 msgstr "Mostrar últimos 7 días"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "Showing"
+msgstr "Mostrando"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10318,6 +10382,11 @@ msgstr "Detener instancia"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Stopped"
 msgstr "Detenido"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__stop_is_expected
+msgid "Stopped On Purpose"
+msgstr "Detenida a propósito"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11316,6 +11385,20 @@ msgstr ""
 "la última preparación completa; volver a ejecutarla la aplica."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__stop_is_expected
+msgid ""
+"True when this instance being down is normal rather than an incident. Always"
+" False here: base knows no reason for a deployed instance to be stopped. A "
+"layer above may — a plan that puts an idle instance to sleep — and answers "
+"by overriding ``_stop_is_expected``."
+msgstr ""
+"Verdadero cuando es normal que esta instancia esté caída, y no una "
+"incidencia. Aquí siempre es Falso: la base no conoce ningún motivo para que "
+"una instancia desplegada esté detenida. Una capa superior sí puede conocerlo"
+" —un plan que duerme una instancia inactiva— y lo indica sobrescribiendo "
+"``_stop_is_expected``."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__move_rollback_in_progress
 msgid ""
 "True while a rollback is running. Distinguishes \"migrating\" from \"rolling"
@@ -11918,6 +12001,22 @@ msgstr ""
 "                        eliminan automáticamente. Ponga cualquiera de los dos en 0 para desactivarlo."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__service_states
+msgid ""
+"What each container of the stack was doing when the health probe last "
+"looked, e.g. {'odoo': 'running', 'db': 'running'}. The probe has always "
+"known this and only ever raised alerts with it; the panel painted one dot "
+"per service from the single ``running`` flag instead, so every service "
+"always showed the same state. Empty until the first probe lands."
+msgstr ""
+"Qué hacía cada contenedor de la pila la última vez que miró la sonda de "
+"salud, p. ej. {'odoo': 'running', 'db': 'running'}. La sonda siempre lo supo"
+" y solo lo usaba para levantar alertas; el panel pintaba un punto por "
+"servicio a partir del único indicador ``running``, así que todos los "
+"servicios mostraban siempre el mismo estado. Vacío hasta que llega la "
+"primera sonda."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__scope
 msgid ""
 "What each sample of this rule describes. Instance-scoped rules resolve "
@@ -12051,6 +12150,20 @@ msgstr ""
 "Cuándo se verificó por última vez la copia archivada. Se muestra junto al "
 "estado para que una lectura obsoleta se vea como obsoleta en vez de pasar "
 "por actual."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__last_raised_at
+msgid ""
+"When the condition behind this alert was last observed. Refreshed on every "
+"raise, so an alert that keeps being re-raised shows how recent the problem "
+"is rather than when it first appeared. Nullable: rows written before this "
+"field existed fall back to ``create_date``."
+msgstr ""
+"Cuándo se observó por última vez la condición que originó esta alerta. Se "
+"actualiza en cada nuevo aviso, así que una alerta que se sigue levantando "
+"muestra lo reciente que es el problema y no cuándo apareció por primera vez."
+" Admite vacío: las filas escritas antes de que existiera este campo usan "
+"``create_date``."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__last_seen
@@ -12563,6 +12676,12 @@ msgstr "ej. api.example.com"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "earlier job"
+msgstr "tarea"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "enabled"
 msgstr "activado"
@@ -12631,6 +12750,12 @@ msgstr ""
 "cabecera para que su endpoint la\n"
 "                            verifique con HMAC-SHA256.\n"
 "                            Consulte"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "hidden — logged before this instance was handed over on"
+msgstr "sin mostrar, de antes de que esta instancia se entregara el"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12761,6 +12886,12 @@ msgstr "su dominio"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "job"
+msgstr "tarea"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "just now"
 msgstr "justo ahora"
@@ -12770,6 +12901,12 @@ msgstr "justo ahora"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "latest"
 msgstr "latest"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
+msgid "logged before this instance was handed over on"
+msgstr "de antes de que esta instancia se entregara el"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12943,6 +13080,7 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backends_list.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 #: code:addons/incubacloud/static/src/components/project_card/project_card.xml:0
 #: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0

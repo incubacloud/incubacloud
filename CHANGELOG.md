@@ -6,6 +6,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.123] — 2026-09-15
+
+### Fixed
+
+- **Tenant panels can show their dashboards again.** Since 8-sep every
+  tenant's Monitoring page and instance Metrics tab showed "refused to
+  connect" where the charts belong. Cloud 1 had gained a
+  `frame-ancestors` list through `cloud.host.frame_ancestors`, and that
+  field is an https-entrypoint default: it reaches every router on the
+  host, Grafana included. The list named the operator's panel only, and a
+  tenant panel frames Grafana from its own origin. Nothing reported it,
+  because a frame blocked by CSP still fires `load`.
+
+  Measured on Traefik v2.11 before choosing the fix: an entrypoint header
+  overrides whatever a router or the application sets. So no single list
+  on the entrypoint could keep the panel strict and let tenants in. The
+  host field goes back to empty on Cloud 1 and each router carries its
+  own policy. The metrics gateway fragment gives Grafana's router
+  `frame-ancestors 'self' https://*.incubacloud.io`, so a tenant created
+  tomorrow works without re-shipping anything. The panel's own routers,
+  in the panel's deployment rather than here, keep `'self'` and gain
+  `X-Frame-Options: SAMEORIGIN`.
+
+  The price of the wildcard is written next to it: any site in the zone,
+  a tenant's own included, can frame Grafana signed in as whoever views
+  it. Tenant users are Viewers there. Listing tenants one by one would
+  not avoid it, since each would be on the list.
+
+  `tests/test_metrics_gateway_frameguard.py` pins the fragment, the
+  help of `frame_ancestors` now says when to leave it empty, and RB-16
+  gains the step that would have found this in a minute: look at the
+  frame, not at the page holding it.
+
 ## [1.0.122] — 2026-09-10
 
 ### Added

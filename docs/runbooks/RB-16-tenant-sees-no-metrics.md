@@ -88,7 +88,38 @@ A tenant who lands in the wrong organisation sees an empty dashboard
 rather than somebody else's data: the datasource of an organisation can
 only read that account. That is the boundary working, not a leak.
 
-## 6. If they see nothing at all
+## 6. Does the browser draw the frame at all?
+
+The charts are Grafana inside an iframe, and the tenant's panel frames
+it **from its own origin** (`<slug>.<domain>` framing `metrics.<domain>`).
+A frame the browser refuses to draw looks like every other empty chart:
+a "refused to connect" box, or nothing, and **no alert** — a frame blocked
+by Content-Security-Policy still fires `load`, so nothing in the panel can
+tell. This is how every tenant lost its dashboards for a week in
+September 2026.
+
+**Check:** open the tenant's Monitoring page with the browser console
+open. A line naming `Framing 'https://metrics.<domain>/'` and a
+`frame-ancestors` list is this case, and the list it prints is the one
+being enforced. Confirm from outside:
+
+```bash
+curl -sI https://metrics.<domain>/grafana/login | grep -i content-security-policy
+```
+
+The Grafana router's own list must name the tenants' zone
+(`https://*.<domain>`). If the header shows a list that names only the
+operator's panel, the host running the central has `frame_ancestors`
+set on `cloud.host`: that is an https-entrypoint default and it
+**overrides** the router's list on every response the host serves.
+
+**Fix:** clear `frame_ancestors` on that host and run *Push trusted
+proxies* on it (the proxy restarts, a few seconds of 521). The Grafana
+router keeps its own list in the metrics gateway fragment; the panel keeps
+its own strict one on its routers. Never widen the host-wide list to let
+tenants in: the same list would let their sites frame the panel.
+
+## 7. If they see nothing at all
 
 The Monitoring entry is hidden while observability is off for that panel,
 and the whole Metrics tab requires the `developer` role. A tenant user
@@ -98,5 +129,5 @@ answer, not an infrastructure one.
 ## Related
 
 - `docs/observability-operations.md` — the account boundary and how
-  vmauth imposes it
+  vmauth imposes it; *Who may frame Grafana* for step 6
 - RB-11 — the central itself is unreachable

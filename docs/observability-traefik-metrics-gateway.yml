@@ -23,6 +23,16 @@
 # A host reached directly is the other case: there ACME works and is
 # better, because a CDN's origin certificate is trusted by that CDN and
 # by no browser. Use `certResolver: letsencrypt` there.
+#
+# Framing: Grafana is the one thing here meant to be put in a frame, and
+# by panels on OTHER origins — the operator's at www, each tenant's at its
+# own subdomain. So it carries its own `frame-ancestors`, and the host's
+# `cloud.host.frame_ancestors` must stay EMPTY: that one is an entrypoint
+# default, and an entrypoint header overrides every router's (measured on
+# Traefik v2.11), so any list set there would replace this one. The panel
+# keeps its strict `'self'` on its own routers, in `prod.yaml`. No
+# `X-Frame-Options` here: it cannot name another origin, so it would block
+# exactly the frames this exists to allow.
 http:
   routers:
     # Operator-only paths must NOT be public. Their only consumers — the
@@ -47,6 +57,8 @@ http:
       entryPoints:
         - https
       service: metrics-grafana
+      middlewares:
+        - metrics-grafana-frameguard
       tls: {}
 
     # The data plane (/w/ /r/ /lw/ /lr/). vmauth enforces the account
@@ -71,6 +83,23 @@ http:
           - url: 'http://172.17.0.1:3000'
 
   middlewares:
+    # Any name in the zone may frame Grafana: the operator's panel and
+    # every tenant's, including one created tomorrow. Naming each tenant
+    # instead would mean re-shipping this file on every sign-up, and a
+    # tenant missed there gets blank charts and no error.
+    #
+    # The cost, stated: a tenant controls what its own site serves, so it
+    # can frame Grafana too. Grafana's session cookie is SameSite=Lax and
+    # every name here is the same site, so that frame is signed in as
+    # whoever looks at it. Tenant users are Viewers and have nothing to
+    # click; the operator is Editor on its own organisation's dashboards.
+    # Listing tenants one by one would not remove this, since each tenant
+    # would be on the list. The panel itself is not reachable this way:
+    # it answers with its own 'self'.
+    metrics-grafana-frameguard:
+      headers:
+        contentSecurityPolicy: "frame-ancestors 'self' https://*.incubacloud.io"
+
     metrics-deny-public:
       ipWhitelist:
         sourceRange:

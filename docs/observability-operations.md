@@ -219,7 +219,10 @@ the proxy down. A reference copy lives beside this guide; the shape is:
   and Grafana's datasource — reach vmauth over the bridge, never through
   Traefik.
 - `Host(metrics.<domain>)` and `/grafana/` → Grafana's bridge port
-  (websockets pass through; Grafana authenticates via OIDC).
+  (websockets pass through; Grafana authenticates via OIDC). This router
+  carries its own `frame-ancestors` — see *Who may frame Grafana* below —
+  because panels on other origins embed it, and the host-wide
+  `frame_ancestors` field would override it.
 - `Host(metrics.<domain>)` (everything else: `/w/ /r/ /lw/ /lr/`) →
   vmauth's bridge port, which returns 401 without a credential.
 
@@ -459,3 +462,39 @@ Switch the toggle on for one tenant with a live VPS first: pause the
 hand, look at the panel, then resume. Note that `search()` hides inactive
 records — re-activating that cron needs
 `with_context(active_test=False)`, or the write silently finds nothing.
+
+### Who may frame Grafana (15-sep-2026)
+
+Tenant dashboards went blank for a week without anyone noticing, and the
+cause was not Grafana. On 8-sep Cloud 1 gained a `frame-ancestors` list
+through `cloud.host.frame_ancestors`, which Traefik applies as an
+https-entrypoint default. That list named the operator's panel, and an
+entrypoint header reaches every router on the host — Grafana included.
+A tenant panel frames Grafana from its own origin, which was not on the
+list, so the browser refused it. Nothing in the panel can see that: a
+frame blocked by CSP still fires `load`.
+
+Two measurements decide the shape of the fix, both on Traefik v2.11:
+
+| Where the policy is set | What the browser receives |
+|---|---|
+| Entrypoint and router both | the entrypoint's, always |
+| Router, application sends its own | the router's, one header |
+
+So one entrypoint list cannot keep the panel strict while letting tenant
+panels frame Grafana. The host field stays **empty** on Cloud 1, and each
+router carries its own policy:
+
+| Router | `frame-ancestors` | Defined in |
+|---|---|---|
+| The panel, `www` | `'self'`, plus `X-Frame-Options: SAMEORIGIN` | `prod.yaml`, middleware `panel-privacy` |
+| Grafana, `metrics…/grafana/` | `'self' https://*.incubacloud.io` | `observability-traefik-metrics-gateway.yml` |
+| vmauth, the rest of `metrics…` | none | JSON and 401s, never framed |
+
+The cost of the wildcard is written next to it in the gateway file:
+any site in the zone, a tenant's own included, can frame Grafana signed
+in as its viewer. Tenant users are Viewers there; the operator is Editor
+on its own dashboards. The panel is not reachable that way.
+
+When checking this by hand, look at the frame, not at the page holding
+it: the console names the framed URL and the list it was refused by.
