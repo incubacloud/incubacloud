@@ -587,6 +587,14 @@ class CloudHost(models.Model):
              "ranges to be set — with none, this would lock the host out "
              "of its own visitors, so it is ignored.",
     )
+    trusted_proxies_shipped = fields.Text(
+        copy=False,
+        readonly=True,
+        help="The proxy ranges this host's Traefik was last given. Written "
+             "by the jobs that ship them, and compared against what the "
+             "panel currently intends, so nothing downstream is published "
+             "against a posture the host is not running yet.",
+    )
 
     # ── Config drift: saved host config vs what full_setup shipped ────────
     # Same mechanism as on cloud.instance: full_setup records the hash of

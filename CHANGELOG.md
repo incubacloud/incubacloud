@@ -6,6 +6,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.125] — 2026-09-18
+
+### Changed
+
+- **The webhook source allowlist goes back to the SaaS layer, and the
+  panel-route settings go with it.** What the allowlist protects is
+  decided by walking a host's deployed instances and treating each one as
+  a panel that answers `/cloud/github/webhook`. That is true of the
+  platform, where every instance a host serves *is* a panel, and of
+  nothing else: a plain installation serves its customers' Odoo projects,
+  which never answer that path, and its own panel sits behind a proxy
+  core neither deploys nor describes. The four settings 1.0.104 added to
+  work around that — host, hostname, backend URL, wildcard — fit one
+  topology only, were shown to tenant panels where they could protect
+  nothing, and on the platform itself were shadowed by the instance walk
+  (the manager is one of its catch-all's instances, so the route built
+  from the fields was rendered and then overwritten by the same
+  hostname's instance route). Core keeps what every installation uses:
+  the trusted-proxy ranges, the record of what each host's Traefik was
+  last given, and the alert when deliveries go quiet. The SaaS module's
+  migration re-homes the job type, the cron and the stored ranges before
+  the orphan cleanup at the end of the upgrade would delete them, and
+  the rendered documents are unchanged, so no host is republished.
+
+### Removed
+
+- `cloud.settings.github_webhook_allowlist`, `panel_host_id`,
+  `panel_hostname`, `panel_service_url`, `panel_tls_domain`;
+  `cloud.host.github_webhook_edge_hash`; the `push_github_webhook_edge`
+  job type; the *GitHub: Refresh the Webhook Source Allowlist* cron; the
+  *Webhook Source Allowlist* section of Settings → GitHub. The upgrade
+  drops their columns by itself; where the SaaS module is installed it
+  declares the switch and the digest again, so those two keep their
+  values there. The job type is the exception: `cloud.job.job_type_id`
+  restricts deletes, so on a database holding any job of that type the
+  end-of-upgrade cleanup would abort the whole upgrade. A pre-migrate
+  flags its identifier `noupdate` while jobs still use it, which keeps
+  it out of the cleanup; unused, it is deleted as before.
+
 ## [1.0.124] — 2026-09-15
 
 ### Fixed

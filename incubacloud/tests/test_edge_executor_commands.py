@@ -12,19 +12,13 @@ from unittest.mock import MagicMock
 
 from odoo.tests.common import TransactionCase
 
-from ..github.edge import EDGE_CONFIG_FILENAME
 from ..models import acme_store
 from ..models.full_setup_executor import FullSetupExecutor
-from ..models.github_webhook_edge import RANGES_PARAM
-from ..models.github_webhook_edge_executor import (
-    PushGitHubWebhookEdgeExecutor,
-)
 from ..models.push_trusted_proxies_executor import PushTrustedProxiesExecutor
 from ..models.transport import CommandResult, SSHTransport
 
 from ._certs import make_pair
 
-RANGES = ["192.30.252.0/22"]
 EDGE_PROXY = ["198.51.100.0/24"]
 
 
@@ -74,55 +68,6 @@ class EdgeExecutorCase(TransactionCase):
 
     def _commands(self, cls, code):
         return dict(self._executor(cls, code).get_commands())
-
-
-class TestWebhookEdgeCommands(EdgeExecutorCase):
-
-    def _cmds(self):
-        return self._commands(
-            PushGitHubWebhookEdgeExecutor, "push_github_webhook_edge",
-        )
-
-    def test_a_host_with_nothing_to_publish_still_removes(self):
-        commands = self._cmds()
-        self.assertEqual(
-            list(commands), ["Remove stale GitHub webhook allowlist"],
-        )
-        self.assertIn(EDGE_CONFIG_FILENAME, commands[
-            "Remove stale GitHub webhook allowlist"
-        ])
-
-    def test_removal_runs_before_installation(self):
-        self._publish_something()
-        labels = list(self._cmds())
-        self.assertEqual(labels[0], "Remove stale GitHub webhook allowlist")
-        self.assertEqual(labels[1], "Install GitHub webhook allowlist")
-
-    def test_the_document_lands_in_the_watched_directory(self):
-        self._publish_something()
-        install = self._cmds()["Install GitHub webhook allowlist"]
-        self.assertIn(f"~/traefik/dynamic/{EDGE_CONFIG_FILENAME}", install)
-        # Moved into place, never written there directly: Traefik would
-        # parse a half-written document and drop the routers.
-        self.assertIn("mv ", install)
-
-    def _publish_something(self):
-        """Give the host one deployed instance and a source range."""
-        settings = self.env["cloud.settings"].sudo()._get_system()
-        settings.github_webhook_allowlist = True
-        self.env["ir.config_parameter"].sudo().set_param(
-            RANGES_PARAM, "\n".join(RANGES),
-        )
-        project = self.env["cloud.project"].create({"name": "Edge Exec Proj"})
-        instance = self.env["cloud.instance"].create({
-            "name": "exec",
-            "project_id": project.id,
-            "environment": "production",
-            "host_id": self.host.id,
-            "odoo_version": "19.0",
-        })
-        instance._transition("deployed")
-        self.assertTrue(self.host._github_webhook_document())
 
 
 class TestTrustedProxyCommands(EdgeExecutorCase):

@@ -1502,19 +1502,6 @@ class CrudMixin:
             'effective_trusted_proxy_ranges': Settings
             ._effective_trusted_proxy_ranges(),
             'trusted_proxy_source': Settings._trusted_proxy_source(),
-            'github_webhook_allowlist': bool(settings.github_webhook_allowlist),
-            'panel_host_id': settings.panel_host_id.id or None,
-            'panel_hostname': settings.panel_hostname or '',
-            'panel_service_url': settings.panel_service_url or '',
-            'panel_tls_domain': settings.panel_tls_domain or '',
-            # Derived when a layer above knows the answer; the client
-            # renders those read-only rather than inviting an edit that
-            # the next pass would overwrite.
-            'panel_route': Settings._github_panel_route(),
-            'panel_route_source': Settings._panel_route_source(),
-            'panel_route_host_id': (
-                Settings._github_panel_host().id or None
-            ),
         }
 
     @http.route(['/cloud/save_general_settings'], type='jsonrpc', auth='user')
@@ -1530,9 +1517,7 @@ class CrudMixin:
         container_log_max_size=None, container_log_max_file=None,
         odoo_log_archive_days=None, log_download_max_mb=None,
         log_search_max_files=None, log_search_timeout_s=None,
-        trusted_proxy_ranges=None, github_webhook_allowlist=None,
-        panel_host_id=None, panel_hostname=None, panel_service_url=None,
-        panel_tls_domain=None,
+        trusted_proxy_ranges=None,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1595,24 +1580,6 @@ class CrudMixin:
             edge_vals['trusted_proxy_ranges'] = str(
                 trusted_proxy_ranges or '',
             ).strip()
-        if github_webhook_allowlist is not None:
-            edge_vals['github_webhook_allowlist'] = bool(
-                github_webhook_allowlist,
-            )
-        for name, value in (
-            ('panel_hostname', panel_hostname),
-            ('panel_service_url', panel_service_url),
-            ('panel_tls_domain', panel_tls_domain),
-        ):
-            if value is not None:
-                edge_vals[name] = str(value or '').strip()
-        if panel_host_id is not None:
-            host_id = _safe_int(panel_host_id, 0)
-            if host_id and not request.env['cloud.host'].sudo().browse(
-                host_id,
-            ).exists():
-                return {'ok': False, 'error': _('Unknown host.')}
-            edge_vals['panel_host_id'] = host_id or False
         if edge_vals:
             try:
                 request.env['cloud.settings'].sudo()._get().write(edge_vals)

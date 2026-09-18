@@ -156,12 +156,6 @@ msgstr "(proyecto)"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "*.example.com"
-msgstr "*.ejemplo.com"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/module_selector/module_selector.xml:0
 msgid "+ Add \""
 msgstr "+ Añadir \""
@@ -2535,19 +2529,6 @@ msgid "Could not queue it."
 msgstr "No se pudo encolar."
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/github_webhook_edge.py:0
-msgid ""
-"Could not read GitHub's published webhook source ranges (%s). The edge "
-"allowlist keeps the ranges it already has; if GitHub has since added one, "
-"deliveries from it are being rejected."
-msgstr ""
-"No se pudieron leer los rangos de origen que GitHub publica para sus "
-"webhooks (%s). La lista del borde conserva los rangos que ya tenía; si "
-"GitHub ha añadido alguno desde entonces, las entregas que vengan de él están"
-" siendo rechazadas."
-
-#. module: incubacloud
 #. odoo-javascript
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
@@ -3231,18 +3212,6 @@ msgstr ""
 #: model:res.groups,name:incubacloud.group_cloud_developer
 msgid "Developer"
 msgstr "Desarrollador"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_host__github_webhook_edge_hash
-msgid ""
-"Digest of the webhook allowlist document last published to this host. "
-"Compared against a fresh render so the refresh only ships a host whose "
-"document actually moved."
-msgstr ""
-"Huella del documento de la lista de permitidos del webhook publicado por "
-"última vez en este anfitrión. Se compara con un renderizado nuevo para que "
-"el refresco solo envíe a un anfitrión cuyo documento haya cambiado de "
-"verdad."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4625,17 +4594,6 @@ msgid "GitHub Webhook Events"
 msgstr "Eventos webhook de GitHub"
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/github_webhook_edge.py:0
-msgid ""
-"GitHub changed its published webhook source ranges (was: %(before)s; now: "
-"%(after)s). The edge allowlists are being republished to match."
-msgstr ""
-"GitHub cambió los rangos de origen que publica para sus webhooks (antes: "
-"%(before)s; ahora: %(after)s). Las listas de permitidos del borde se están "
-"republicando para reflejarlo."
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_event_truncate_days
 msgid "GitHub event payload truncation (days)"
 msgstr "Truncado de payload de eventos GitHub (días)"
@@ -4693,16 +4651,6 @@ msgstr "Webhook de GitHub (por IP del cliente)"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_webhook_silence_hours
 msgid "GitHub webhook silence alert (hours)"
 msgstr "Aviso por silencio de webhooks de GitHub (horas)"
-
-#. module: incubacloud
-#: model:ir.actions.server,name:incubacloud.cron_refresh_github_hook_ranges_ir_actions_server
-msgid "GitHub: Refresh the Webhook Source Allowlist"
-msgstr "GitHub: refrescar la lista de orígenes permitidos del webhook"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__github_webhook_edge_hash
-msgid "Github Webhook Edge Hash"
-msgstr "Huella de la lista del webhook de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4981,12 +4929,6 @@ msgstr "El nombre del host es obligatorio"
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Host not found"
 msgstr "Host no encontrado"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Host serving this panel…"
-msgstr "Anfitrión que sirve este panel…"
 
 #. module: incubacloud
 #. odoo-python
@@ -7429,12 +7371,6 @@ msgstr "Sin enrolar todavía"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Not resolved yet."
-msgstr "Todavía sin resolver."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Not set"
 msgstr "No establecido"
 
@@ -7757,12 +7693,6 @@ msgid "Only failed jobs can be retried."
 msgstr "Solo las tareas fallidas pueden reintentarse."
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Only let GitHub's published ranges reach the webhook"
-msgstr "Permitir que solo los rangos publicados por GitHub lleguen al webhook"
-
-#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_github_app.py:0
 msgid "Only one GitHub App configuration is allowed per system."
@@ -7860,17 +7790,6 @@ msgid ""
 msgstr ""
 "Sobrescritura opcional del destinatario para los avisos de uso. Si está "
 "vacío, usa el campo ``Notificación a``."
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_tls_domain
-msgid ""
-"Optional. Serve the panel's webhook router from an existing wildcard "
-"certificate, e.g. *.example.com, instead of asking for one issued for the "
-"hostname itself."
-msgstr ""
-"Opcional. Sirve el enrutador del webhook del panel desde un certificado "
-"comodín existente, por ejemplo *.ejemplo.com, en lugar de pedir uno emitido "
-"para el propio nombre de host."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__job_id
@@ -8000,48 +7919,10 @@ msgid "PR Repository"
 msgstr "Repositorio del PR"
 
 #. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_service_url
-msgid "Panel Backend URL"
-msgstr "URL interna del panel"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_host_id
-msgid "Panel Host"
-msgstr "Anfitrión del panel"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_hostname
-msgid "Panel Hostname"
-msgstr "Nombre de host del panel"
-
-#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Panel Password"
 msgstr "Contraseña del panel"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__panel_tls_domain
-msgid "Panel Wildcard Certificate"
-msgstr "Certificado comodín del panel"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Panel backend URL"
-msgstr "URL interna del panel"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Panel host"
-msgstr "Anfitrión del panel"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Panel hostname"
-msgstr "Nombre de host del panel"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8546,32 +8427,6 @@ msgstr "Proxy"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__public_key
 msgid "Public Key"
 msgstr "Clave pública"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_hostname
-msgid ""
-"Public hostname this panel answers on, e.g. panel.example.com. Used to route"
-" its own GitHub webhook endpoint through the source allowlist."
-msgstr ""
-"Nombre de host público con el que responde este panel, por ejemplo "
-"panel.ejemplo.com. Se usa para enrutar su propio punto de entrada de "
-"webhooks de GitHub a través de la lista de orígenes permitidos."
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__github_webhook_allowlist
-msgid ""
-"Publish a Traefik router that only lets GitHub's own published address "
-"ranges reach /cloud/github/webhook, so a forged signature is refused before "
-"its body is read. Off by default because it is only correct for deliveries "
-"from github.com: an installation served by GitHub Enterprise delivers from "
-"its own addresses and would be locked out."
-msgstr ""
-"Publica un enrutador de Traefik que solo permite que los rangos de "
-"direcciones publicados por GitHub lleguen a /cloud/github/webhook, de modo "
-"que una firma falsificada se rechaza antes de leer su cuerpo. Desactivado "
-"por defecto porque solo es correcto para entregas de github.com: una "
-"instalación servida por GitHub Enterprise entrega desde sus propias "
-"direcciones y quedaría bloqueada."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__purge_cutoff_at
@@ -9373,17 +9228,6 @@ msgid "Restoring…"
 msgstr "Restaurando…"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Restrict at the edge"
-msgstr "Restringir en el borde"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_webhook_allowlist
-msgid "Restrict the GitHub webhook at the edge"
-msgstr "Restringir el webhook de GitHub en el borde"
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__result
 msgid "Result"
 msgstr "Resultado"
@@ -10064,14 +9908,6 @@ msgid "Session not found"
 msgstr "Sesión no encontrada"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Set automatically from the catch-all host; nothing to fill in."
-msgstr ""
-"Se fija automáticamente desde el anfitrión catch-all; no hay nada que "
-"rellenar."
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__hardened
 msgid ""
 "Set by host_hardening_executor on success. When True the host is reached as "
@@ -10718,15 +10554,6 @@ msgstr ""
 "la contraseña se guarda cifrada y no se vuelve a mostrar."
 
 #. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_host_id
-msgid ""
-"The host whose Traefik serves this panel. Only that host publishes a router "
-"for the panel's own webhook endpoint."
-msgstr ""
-"El anfitrión cuyo Traefik sirve este panel. Solo ese anfitrión publica un "
-"enrutador para el punto de entrada de webhooks del propio panel."
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__purge_cutoff_at
 msgid ""
 "The instant this instance's deletion was decided. The purge only removes "
@@ -11079,12 +10906,6 @@ msgid ""
 msgstr ""
 "Esto sobrescribe la base de datos y el filestore de esta instancia. Su "
 "código (repositorios y ramas) no se toca."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "This panel's endpoint"
-msgstr "El punto de entrada de este panel"
 
 #. module: incubacloud
 #. odoo-python
@@ -11619,12 +11440,6 @@ msgstr "Error desconocido."
 
 #. module: incubacloud
 #. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
-msgid "Unknown host."
-msgstr "Anfitrión desconocido."
-
-#. module: incubacloud
-#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Unknown log file"
 msgstr "Fichero de log desconocido"
@@ -11825,27 +11640,6 @@ msgstr "Verificar las copias de instancias archivadas"
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
-"Verifying a signature means hashing the whole request body, so inside\n"
-"                        the endpoint the cost of a forged one can only be bounded, never\n"
-"                        removed. Refused at the edge it costs nothing. When enabled, a Traefik\n"
-"                        router restricts the webhook path to the address ranges GitHub\n"
-"                        publishes, refreshed daily. Leave it off for an installation fed by a\n"
-"                        self-hosted GitHub Enterprise: it delivers from its own addresses and\n"
-"                        would be locked out."
-msgstr ""
-"Verificar una firma implica calcular el hash del cuerpo entero de la "
-"petición, así que dentro del punto de entrada el coste de una firma "
-"falsificada solo se puede acotar, nunca eliminar. Rechazada en el borde no "
-"cuesta nada. Cuando está activado, un enrutador de Traefik restringe la ruta"
-" del webhook a los rangos de direcciones que publica GitHub, refrescados a "
-"diario. Déjelo apagado en una instalación alimentada por un GitHub "
-"Enterprise autoalojado: entrega desde sus propias direcciones y quedaría "
-"bloqueada."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid ""
 "VictoriaMetrics, Grafana and a gateway, deployed as a job\n"
 "                            on the host you pick. Co-locating on the panel host is the\n"
 "                            usual start; re-run it against another host to move it."
@@ -11965,12 +11759,6 @@ msgstr "Secreto del webhook"
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_webhook_secret
 msgid "Webhook Signing Secret"
 msgstr "Secreto de firma del webhook"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Webhook Source Allowlist"
-msgstr "Lista de orígenes permitidos del webhook"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12218,16 +12006,6 @@ msgid "Where the central runs"
 msgstr "Dónde corre el central"
 
 #. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_settings__panel_service_url
-msgid ""
-"Where the host's Traefik reaches this panel, e.g. http://odoo:8069. It is a "
-"container name on the host's own network, not a public address."
-msgstr ""
-"Por dónde llega el Traefik del anfitrión a este panel, por ejemplo "
-"http://odoo:8069. Es un nombre de contenedor en la red del propio anfitrión,"
-" no una dirección pública."
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__state
 msgid ""
 "Where the instance is in its lifecycle. Written only by ``_transition()``, "
@@ -12238,21 +12016,6 @@ msgstr ""
 "``_transition()``, que rechaza los saltos no permitidos. Reconstruir, "
 "restaurar, mover, iniciar y detener ocurren *dentro* de 'deployed': son "
 "operaciones, no estados."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid ""
-"Where this panel answers, and how the host's Traefik reaches\n"
-"                                    it. The panel is not one of the instances a host serves, so\n"
-"                                    nothing can find it otherwise — and it is the one thing that\n"
-"                                    certainly receives the webhook. Only the host picked\n"
-"                                    here publishes the router."
-msgstr ""
-"Dónde responde este panel, y cómo llega hasta él el Traefik del anfitrión. "
-"El panel no es una de las instancias que sirve un anfitrión, así que no hay "
-"otra forma de encontrarlo, y es lo único que con certeza recibe el webhook. "
-"Solo el anfitrión elegido aquí publica el enrutador."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__traefik_deployed
@@ -12315,12 +12078,6 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__wildcard_domain
 msgid "Wildcard Domain"
 msgstr "Dominio comodín"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "Wildcard certificate (optional)"
-msgstr "Certificado comodín (opcional)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12771,12 +12528,6 @@ msgstr "http://172.17.0.1:8428/r/"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "http://odoo:8069"
-msgstr "http://odoo:8069"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
 msgid "https://github.com/org/repo"
 msgstr "https://github.com/org/repo"
@@ -12969,12 +12720,6 @@ msgstr "de"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "ops@example.com"
 msgstr "ops@example.com"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
-msgid "panel.example.com"
-msgstr "panel.ejemplo.com"
 
 #. module: incubacloud
 #. odoo-javascript

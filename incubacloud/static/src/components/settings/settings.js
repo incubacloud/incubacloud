@@ -59,11 +59,6 @@ export class Settings extends Component {
                 log_search_timeout_s: 30,
                 // Edge
                 trusted_proxy_ranges: "",
-                github_webhook_allowlist: false,
-                panel_host_id: null,
-                panel_hostname: "",
-                panel_service_url: "",
-                panel_tls_domain: "",
                 // GitHub
                 app_id: "",
                 installation_id: "",
@@ -71,14 +66,11 @@ export class Settings extends Component {
                 private_key: "",
                 github_pat: "",
             },
-            // Read-only, derived server-side: what the proxy ranges and
-            // the panel route actually resolve to, and where from. Kept
-            // out of `form` so they are never sent back on save.
+            // Read-only, derived server-side: what the proxy ranges
+            // actually resolve to, and where from. Kept out of `form` so
+            // they are never sent back on save.
             effectiveProxyRanges: [],
             trustedProxySource: "none",
-            panelRoute: {},
-            panelRouteSource: "none",
-            panelRouteHostId: null,
             // Inline feedback for GitHub action buttons (test, detect)
             ghActionMsg: null,
             confirmDialog: null,
@@ -208,16 +200,6 @@ export class Settings extends Component {
         }[this.state.trustedProxySource] || "";
     }
 
-    /**
-     * Whether the panel's webhook route is derived rather than typed.
-     *
-     * @returns {boolean} true when an upper layer supplies it, in which
-     *   case the fields are shown read-only.
-     */
-    panelRouteDerived() {
-        return this.state.panelRouteSource === "catchall";
-    }
-
     async loadConfig() {
         this.state.loading = true;
         try {
@@ -241,17 +223,9 @@ export class Settings extends Component {
             this.state.form.grafana_base_url = general.grafana_base_url || "";
             this.state.hasMetricsToken = !!general.has_metrics_remote_write_token;
             this.state.form.trusted_proxy_ranges = general.trusted_proxy_ranges || "";
-            this.state.form.github_webhook_allowlist = !!general.github_webhook_allowlist;
-            this.state.form.panel_host_id = general.panel_host_id || null;
-            this.state.form.panel_hostname = general.panel_hostname || "";
-            this.state.form.panel_service_url = general.panel_service_url || "";
-            this.state.form.panel_tls_domain = general.panel_tls_domain || "";
             this.state.effectiveProxyRanges =
                 general.effective_trusted_proxy_ranges || [];
             this.state.trustedProxySource = general.trusted_proxy_source || "none";
-            this.state.panelRoute = general.panel_route || {};
-            this.state.panelRouteSource = general.panel_route_source || "none";
-            this.state.panelRouteHostId = general.panel_route_host_id || null;
             // Hosts for the central's destination picker. Non-fatal: the
             // rest of Settings must still work if this one call fails.
             try {
@@ -413,17 +387,6 @@ export class Settings extends Component {
                 metrics_retention_days: this.state.form.metrics_retention_days,
                 grafana_base_url: this.state.form.grafana_base_url,
                 trusted_proxy_ranges: this.state.form.trusted_proxy_ranges,
-                github_webhook_allowlist: this.state.form.github_webhook_allowlist,
-                // Only sent when this installation describes its own
-                // panel. Where a layer above derives the route, the
-                // fields are read-only and echoing them back would
-                // freeze a value that is meant to keep following it.
-                ...(this.panelRouteDerived() ? {} : {
-                    panel_host_id: this.state.form.panel_host_id,
-                    panel_hostname: this.state.form.panel_hostname,
-                    panel_service_url: this.state.form.panel_service_url,
-                    panel_tls_domain: this.state.form.panel_tls_domain,
-                }),
             });
             if (res && res.ok === false) {
                 // The range list is refused by a model constraint rather
