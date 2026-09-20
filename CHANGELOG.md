@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.127] — 2026-09-20
 
+### Added
+
+- User docs: a card-by-card reference for the monitoring dashboards
+  (`reference/monitoring-panels.md`) covering Fleet, Hosts, Instances and an
+  instance's Metrics tab — what each chart shows and in which unit, what a
+  healthy one looks like, what to check when it is not, and which shipped alert
+  rule already watches that symptom
+
 ### Fixed
 
 - **A teardown's unlink now waits for the job's commit, so a successful
