@@ -1806,6 +1806,15 @@ class CloudInstance(models.Model):
              "on every archived record — the view would then report "
              "the last verification as the archiving date.",
     )
+    removal_finalized = fields.Boolean(
+        default=False,
+        copy=False,
+        help="The teardown finished and the record only awaits its "
+             "unlink, which runs once the job's own transaction has "
+             "committed (see AbstractExecutor._unlink_after_job_commit). "
+             "A re-run of the teardown that finds this set has nothing "
+             "left to do on the host.",
+    )
     archive_copy_state = fields.Selection(
         selection=[
             ("present", "Present"),
@@ -2668,7 +2677,7 @@ class CloudInstance(models.Model):
             )
         return super().unlink()
 
-    def _finalize_removal(self, keep_in_panel):
+    def _finalize_removal(self, keep_in_panel, unlink=True):
         """Apply the outcome of a successful ``delete_instance`` job.
 
         Called by the executor once the remote host has been torn
@@ -2676,6 +2685,13 @@ class CloudInstance(models.Model):
         the instance stays visible as a re-deployable draft, otherwise
         the record is unlinked now that it is a draft again and the
         :meth:`unlink` guard no longer applies.
+
+        ``unlink=False`` stops one step short and marks the record
+        ``removal_finalized`` instead. The executor uses it: an unlink
+        from a job's success hook cascades onto the job's own row and
+        makes the job's transaction fail to commit, so the executor
+        defers the unlink until after that commit
+        (``AbstractExecutor._unlink_after_job_commit``).
         """
         self.ensure_one()
         self.write({"running": False})
@@ -2700,7 +2716,10 @@ class CloudInstance(models.Model):
             # tick forever. Finalising an already-draft record is a no-op.
             self._transition("draft")
         if not keep_in_panel:
-            self.unlink()
+            if unlink:
+                self.unlink()
+            else:
+                self.write({"removal_finalized": True})
             return
         # Archived: out of the daily operation, into the archived view.
         # Done last so a failure above leaves the record where an

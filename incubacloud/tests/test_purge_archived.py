@@ -13,9 +13,11 @@ other way round) and the refusals: nothing here is allowed to remove a
 record while its copy still exists.
 """
 import asyncio
+from unittest.mock import MagicMock
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
+from odoo.tools.misc import Callbacks
 
 from odoo.addons.incubacloud.models.purge_archived_executor import (
     PURGE_ARCHIVED_ALERT_BY_EXIT,
@@ -223,18 +225,37 @@ class TestPurgeArchivedExecutor(_ArchivedPurgeBase):
         )
 
     def test_success_unlinks_the_record(self):
+        """After the job commits, not from the hook: an unlink there
+        cascades onto the job's own row and costs the job its commit
+        (see ``_unlink_after_job_commit``)."""
         job = self._job()
         inst = job.with_context(active_test=False).instance_id
         inst_id = inst.id
         executor = self._executor(job)
-        asyncio.run(executor.on_success({
-            PURGE_ARCHIVED_LABEL: {"exit_status": 0, "stdout": ""},
-        }))
-        self.assertFalse(
-            self.env["cloud.instance"].with_context(
-                active_test=False,
-            ).browse(inst_id).exists()
-        )
+        # ``Callbacks`` has ``__slots__``: swap the cursor's postcommit
+        # for a recorder rather than patching its ``add``.
+        armed = []
+        recorder = MagicMock(spec=Callbacks)
+        recorder.add.side_effect = armed.append
+        cr = job.env.cr
+        original = cr.postcommit
+        cr.postcommit = recorder
+        try:
+            asyncio.run(executor.on_success({
+                PURGE_ARCHIVED_LABEL: {"exit_status": 0, "stdout": ""},
+            }))
+        finally:
+            cr.postcommit = original
+        record = self.env["cloud.instance"].with_context(active_test=False)
+        self.assertTrue(record.browse(inst_id).exists(), "gone from the hook")
+        self.assertEqual(len(armed), 1)
+        # The hook's cursor commits before ``postcommit`` fires in
+        # production; here its writes sit in this transaction's cache and
+        # the armed unlink reads through a cursor of its own.
+        job.env.flush_all()
+        armed[0]()
+        self.env.invalidate_all()
+        self.assertFalse(record.browse(inst_id).exists())
 
     def test_failure_keeps_the_record_and_names_the_cause(self):
         job = self._job()

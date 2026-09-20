@@ -167,8 +167,16 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         for code, _msg in PURGE_ARCHIVED_ALERT_BY_EXIT.values():
             Alert.resolve_alert(code, instance=inst)
         Alert.resolve_alert("archive_copy_lost", instance=inst)
-        inst.sudo().unlink()
-        _logger.info("archived instance %s deleted with its chain", name)
+        # Deferred, not done here: an unlink from the hook cascades onto
+        # this job's row and costs the job its commit (see
+        # ``_unlink_after_job_commit``). The record is archived, so a
+        # re-run after a dropped unlink simply purges an empty prefix
+        # and arms it again.
+        self._unlink_after_job_commit(inst, sudo=True)
+        _logger.info(
+            "archived instance %s: chain purged; record goes once the "
+            "job commits", name,
+        )
         # Whatever the instance leaves behind — an emptied project, a
         # tenant link — is cleaned up by ``unlink`` itself, layer by
         # layer. Doing it from here would mean core deciding to delete a

@@ -208,20 +208,22 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
 
     def get_commands(self):
         inst = self._inst()
-        if not inst.exists():
+        if not inst.exists() or inst.removal_finalized:
             # Nothing left to tear down: an earlier attempt already
-            # finished and unlinked the record. This job is running
-            # again because its own transaction lost a serialization
-            # race against the sibling deletes committing at the same
-            # instant and queue_job re-queued it — not because the
-            # teardown failed. ``on_success`` commits on its own cursor,
-            # so the remote work survived that rollback; re-running has
-            # to be a no-op or a completed removal reports as failed and
-            # raises an alert for a host that is already clean.
+            # finished — and either unlinked the record, or marked it
+            # ``removal_finalized`` with the unlink still owed (it runs
+            # after the job commits, and a rollback drops it). This job
+            # is running again because its own transaction lost a
+            # serialization race and queue_job re-queued it — not
+            # because the teardown failed. ``on_success`` commits on its
+            # own cursor, so the remote work survived that rollback;
+            # re-running has to be a no-op or a completed removal
+            # reports as failed and raises an alert for a host that is
+            # already clean.
             #
-            # Only the *unlinked* case lands here. An archived instance
-            # still exists and still has its directory on the host, so
-            # it goes down the normal path below.
+            # An archived instance still exists, is not marked, and
+            # still has its directory on the host, so it goes down the
+            # normal path below.
             self._sys("Instance already removed from the host; nothing to do.")
             return []
         d = self._inst_dir(inst)
@@ -285,17 +287,22 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
     async def on_success(self, results):
         inst = self._inst()
         if not inst:
-            # The re-run path, and it is not rare: it is every successful
-            # delete. This job's own transaction lost a serialization
-            # race — against the unlink its *first* run committed on the
-            # hook's cursor, which ``ON DELETE SET NULL`` turned into an
-            # update of this very row — and queue_job ran it again.
-            # That first run already finalised the record and refreshed
-            # the host's labels. Refreshing again queued a second
-            # identical playbook (the first is ``started`` by now, so
-            # ``_enqueue_observability`` cannot collapse onto it) and
-            # logged a removal this run did not perform.
-            # ``get_commands`` has already said "nothing to do".
+            # Record already gone: a re-run after the job's transaction
+            # lost a genuine race. The run that did the work finalised
+            # the record and refreshed the host's labels; doing either
+            # again would queue a second identical playbook (the first is
+            # ``started`` by now, so it cannot be collapsed onto) and log
+            # a removal this run did not perform. Until 1.0.127 this was
+            # every successful delete, not a rare race: the unlink itself
+            # was what made the transaction lose (see
+            # ``_unlink_after_job_commit``).
+            return
+        if inst.removal_finalized:
+            # The first run tore the host down and marked the record, but
+            # its deferred unlink went with the rolled-back transaction.
+            # Arm it again and touch nothing else: the host is clean and
+            # its labels were refreshed by that run.
+            self._unlink_after_job_commit(inst)
             return
         # A clean run closes whatever a previous attempt complained
         # about; leaving them lit would keep an operator chasing a
@@ -304,10 +311,13 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         for code in self._purge_alert_targets():
             Alert.resolve_alert(code, instance=inst)
         self._sys(f"✓ Instance '{inst.name}' removed from host.")
-        # Read the host before _finalize_removal, which may unlink the
-        # instance and take the link with it.
         host = inst.host_id
-        inst._finalize_removal(self._keeps_the_record())
+        keep = self._keeps_the_record()
+        # The unlink is the one thing the hook must not do itself: it
+        # would cascade onto this job's row and cost the job its commit.
+        inst._finalize_removal(keep, unlink=False)
+        if not keep:
+            self._unlink_after_job_commit(inst)
         if host:
             host.refresh_observability_labels(reason="instance removed")
 
