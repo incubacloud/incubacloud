@@ -276,6 +276,23 @@ class TestPurgeAlerts(_PurgeBase):
         for alert_code, _msg in PURGE_ALERT_BY_EXIT.values():
             self.assertFalse(self._active(alert_code))
 
+    def test_an_unreadable_compose_is_not_reported_as_drift(self):
+        """Production, 2026-09-19: the read died and the operator was
+        told the compose "does not declare" a backup service and to
+        rebuild the instance. A failed read says nothing about what the
+        compose declares, so it gets its own alert and its own advice —
+        and never the drift one."""
+        ex = self._executor(self._job())
+        ex._alert_on_purge_failure(
+            {PURGE_LABEL: {"stdout": "", "exit_status": 23}},
+            self.instance,
+        )
+        alert = self._active("backup_purge_compose_unreadable")
+        self.assertTrue(alert)
+        self.assertIn("delete again", alert.message)
+        self.assertNotIn("Rebuild", alert.message)
+        self.assertFalse(self._active("backup_purge_service_missing"))
+
     def test_the_alert_names_the_instance_and_carries_the_job(self):
         job = self._job()
         ex = self._executor(job)

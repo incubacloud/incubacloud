@@ -115,6 +115,52 @@ STUB
     run bash "$SCRIPT" "$HOME/project/inst"
     [ "$status" -eq 20 ]
     [[ "$output" == *"no 'backup' service"* ]]
+    # The command answered; retrying an answer would be wrong.
+    [ "$(grep -c 'compose config' "$DOCKER_CALLS")" -eq 1 ]
+}
+
+@test "archive reports an unreadable compose as 23, not as drift" {
+    # Same contract as the purge: a read that failed says nothing about
+    # what the compose declares, so it must not be reported as drift
+    # (whose advice is "rebuild"), and docker's error must reach the log.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$DOCKER_CALLS"
+if [ "$1" = "compose" ] && [ "$2" = "config" ]; then
+    echo "no configuration file provided: not found" >&2
+    exit 1
+fi
+exit 0
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$SCRIPT" "$HOME/project/inst"
+    [ "$status" -eq 23 ]
+    [[ "$output" == *"could not read the compose"* ]]
+    [[ "$output" == *"no configuration file provided"* ]]
+    [[ "$output" != *"no 'backup' service"* ]]
+    ! grep -q 'compose run' "$DOCKER_CALLS"
+}
+
+@test "archive retries a failed compose read once and says so" {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$DOCKER_CALLS"
+if [ "$1" = "compose" ] && [ "$2" = "config" ]; then
+    if [ "$(grep -c 'compose config' "$DOCKER_CALLS")" -eq 1 ]; then
+        echo "transient" >&2
+        exit 1
+    fi
+    printf 'odoo\ndb\nbackup\n'
+    exit 0
+fi
+exit 0
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$SCRIPT" "$HOME/project/inst"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'compose config' "$DOCKER_CALLS")" -eq 2 ]
+    [[ "$output" == *"retrying once"* ]]
+    grep -q 'compose run' "$DOCKER_CALLS"
 }
 
 @test "any failure the script cannot attribute is reported as 22" {

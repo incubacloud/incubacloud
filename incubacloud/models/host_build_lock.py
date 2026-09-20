@@ -33,35 +33,60 @@ them: two families each holding their own lock would still collide.
 """
 from odoo.addons.queue_job.exception import RetryableJobError
 
-# Single namespace for every per-host build lock, whatever enqueued the
-# build: manual rebuild, tenant rebuild, warm deploy, warm rebuild.
-# Distinct from ``_JOB_LOCK_NAMESPACE`` in ``cloud.job`` so the two lock
-# families never collide. Released on COMMIT/ROLLBACK automatically.
+# Single namespace for every per-host lock, whatever enqueued the work:
+# manual rebuild, tenant rebuild, warm deploy, warm rebuild, and the
+# instance teardowns. Distinct from ``_JOB_LOCK_NAMESPACE`` in
+# ``cloud.job`` so the two lock families never collide. Released on
+# COMMIT/ROLLBACK automatically.
 _HOST_BUILD_LOCK_NS = 0x0C70BB1D
 
 
 class HostBuildLockMixin:
-    """Serialise image builds per host via a try-advisory-xact-lock."""
+    """Serialise heavy docker work per host via a try-advisory-xact-lock.
+
+    Builds first, and since 2026-09-19 instance teardowns too: two
+    ``delete_instance`` jobs fired on one host in the same millisecond,
+    and one of them saw ``docker compose config`` die in under 110 ms
+    (the same call answered correctly 11 minutes later). ``enqueue``
+    serialises per *instance*, so two deletes of two instances on one
+    host passed straight through; this lock is what closes that gap.
+    One namespace for builds and teardowns on purpose — they contend for
+    the same daemon.
+    """
+
+    #: Executors that wait for something before doing their remote work
+    #: opt out: holding the host's lock while merely waiting would park
+    #: every build and teardown on that machine behind the wait.
+    _takes_host_build_lock = True
 
     def pre_run_checks(self):
-        """Acquire the per-host build lock; defer the job if busy.
+        """Acquire the per-host lock; defer the job if busy.
 
         Runs before the SSH connection is opened, so a deferred job pays
-        no remote cost at all. Any other build already executing on this
-        host holds the lock; the loser raises ``RetryableJobError`` and
-        queue_job reschedules it after 30 s.
+        no remote cost at all. Any other build or teardown already
+        executing on this host holds the lock; the loser raises
+        ``RetryableJobError`` and queue_job reschedules it after 30 s.
 
         ``ignore_retry`` keeps a deferral off the job's retry budget: the
         host being busy is not the job failing, and a long queue on one
         host must not exhaust the retries a real error deserves.
+
+        Keyed on the host the *job* runs against, not the instance's:
+        the move cleanups tear down a copy on a host the instance does
+        not live on (the abandoned source, or a rolled-back target), and
+        keying on ``inst.host_id`` would lock the machine they never
+        touch while leaving the one they do touch open. For every other
+        executor the two are the same host.
         """
         super().pre_run_checks()
-        inst = self._inst()
-        if not inst or not inst.host_id:
+        if not self._takes_host_build_lock:
+            return
+        host = self._host()
+        if not host:
             return
         self.env.cr.execute(
             "SELECT pg_try_advisory_xact_lock(%s, %s)",
-            (_HOST_BUILD_LOCK_NS, inst.host_id.id),
+            (_HOST_BUILD_LOCK_NS, host.id),
         )
         if not self.env.cr.fetchone()[0]:
             raise RetryableJobError(

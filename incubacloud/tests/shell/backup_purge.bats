@@ -99,6 +99,59 @@ STUB
     run bash "$PURGE" "$HOME/project/inst"
     [ "$status" -eq 20 ]
     [[ "$output" == *"no 'backup' service"* ]]
+    # Retrying would be wrong here: the command answered, and the answer
+    # was "no such service".
+    [ "$(grep -c 'compose config' "$DOCKER_CALLS")" -eq 1 ]
+}
+
+@test "purge reports an unreadable compose as 23, not as drift" {
+    # Production, 2026-09-19: ``compose config`` died in under 110 ms
+    # and the purge reported "no backup service declared" — a
+    # permanent-drift diagnosis whose advice is "rebuild" — with the
+    # reason gone to /dev/null. A failed read must say so, keep
+    # docker's error, and never reach the container.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$DOCKER_CALLS"
+if [ "$1" = "compose" ] && [ "$2" = "config" ]; then
+    echo "no configuration file provided: not found" >&2
+    exit 1
+fi
+exit 0
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$PURGE" "$HOME/project/inst"
+    [ "$status" -eq 23 ]
+    [[ "$output" == *"could not read the compose"* ]]
+    [[ "$output" == *"no configuration file provided"* ]]
+    [[ "$output" != *"no 'backup' service"* ]]
+    ! grep -q 'compose run' "$DOCKER_CALLS"
+}
+
+@test "purge retries a failed compose read once and says so" {
+    # The read has no side effects, so a second attempt costs two
+    # seconds on the host rather than a failed job. The log line is
+    # what keeps a recurring transient from being invisible.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$DOCKER_CALLS"
+if [ "$1" = "compose" ] && [ "$2" = "config" ]; then
+    if [ "$(grep -c 'compose config' "$DOCKER_CALLS")" -eq 1 ]; then
+        echo "transient" >&2
+        exit 1
+    fi
+    printf 'odoo\ndb\nbackup\n'
+    exit 0
+fi
+cat > /dev/null
+exit 0
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$PURGE" "$HOME/project/inst"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'compose config' "$DOCKER_CALLS")" -eq 2 ]
+    [[ "$output" == *"retrying once"* ]]
+    grep -q 'compose run' "$DOCKER_CALLS"
 }
 
 @test "purge passes an already-empty prefix through as 10" {

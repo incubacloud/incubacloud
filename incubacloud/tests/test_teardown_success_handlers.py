@@ -113,6 +113,13 @@ class TestDeleteInstanceRerun(_TeardownBase):
     a serialization race and be re-queued while the remote work has
     already been committed. Reporting that as a failure raises an alert
     for a host that is in exactly the state it should be.
+
+    And it is not a rare path. Measured in production on 2026-09-19: the
+    race is against the job's *own* first run, whose unlink (committed on
+    the hook's cursor) cascades ``SET NULL`` onto the job row that the
+    main transaction is about to mark done. Every successful delete
+    re-ran. So what the re-run does — or does not do — is the steady
+    state, not an edge case.
     """
 
     def test_get_commands_is_empty_once_the_record_is_gone(self):
@@ -122,7 +129,21 @@ class TestDeleteInstanceRerun(_TeardownBase):
         self.assertEqual(ex.get_commands(), [])
 
     def test_on_success_completes_with_no_instance_left(self):
-        """This is what raised in production."""
+        """This is what raised in production on 2026-08-27."""
+        job = self._job('delete_instance')
+        ex = self._executor(DeleteInstanceExecutor, job)
+        self._remove_record()
+
+        with patch.object(
+            type(self.source), 'refresh_observability_labels',
+        ):
+            asyncio.run(ex.on_success({}))
+
+    def test_the_rerun_does_not_refresh_the_labels(self):
+        """The first run already did, and its job is ``started`` by the
+        time the re-run finishes, so a second refresh cannot collapse
+        onto it: it is a second identical playbook against the host.
+        Two per delete, measured."""
         job = self._job('delete_instance')
         ex = self._executor(DeleteInstanceExecutor, job)
         self._remove_record()
@@ -132,7 +153,23 @@ class TestDeleteInstanceRerun(_TeardownBase):
         ) as refresh:
             asyncio.run(ex.on_success({}))
 
-        refresh.assert_called_once()
+        refresh.assert_not_called()
+
+    def test_the_rerun_claims_nothing(self):
+        """``✓ Instance '?' removed from host.`` reported, on every
+        delete, a removal this run did not perform."""
+        job = self._job('delete_instance')
+        ex = self._executor(DeleteInstanceExecutor, job)
+        self._remove_record()
+
+        with patch.object(
+            type(self.source), 'refresh_observability_labels',
+        ):
+            asyncio.run(ex.on_success({}))
+
+        self.assertFalse(
+            [m for m, _kind in ex._log_buffer if 'removed from host' in m],
+        )
 
     def test_on_success_still_finalises_when_the_instance_is_there(self):
         """The normal path must keep working — the fix is additive."""

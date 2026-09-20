@@ -1,4 +1,5 @@
 from .abstract_executor import AbstractSSHExecutor
+from .host_build_lock import HostBuildLockMixin
 
 #: Label of the purge step. The failure classifier looks the step up by
 #: this exact string, so it lives here rather than being repeated.
@@ -27,6 +28,18 @@ PURGE_ALERT_BY_EXIT = {
         "backup container reported; a container that fails to start is "
         "the usual cause.",
     ),
+    # Distinct from 20 on purpose. 20 is a statement about what the
+    # compose declares; 23 says the host could not read it at all, which
+    # is usually transient (the script already retried once) and whose
+    # fix is "try again", not "rebuild". Production 2026-09-19: a read
+    # that died in under 110 ms was reported as 20, and the operator was
+    # sent to rebuild a warm instance that was about to be destroyed.
+    23: (
+        "backup_purge_compose_unreadable",
+        "The host could not read %(name)s's compose file, so its backups "
+        "were not cleared and the instance was not deleted. The host's own "
+        "error is in the job log. This is usually transient: delete again.",
+    ),
 }
 
 #: The prefix was already empty. Not a failure: the invariant this step
@@ -54,11 +67,25 @@ ARCHIVE_ALERT_BY_EXIT = {
         "Could not take the archive copy of %(name)s. See the job log for "
         "what the backup container reported.",
     ),
+    23: (
+        "backup_archive_compose_unreadable",
+        "The host could not read %(name)s's compose file, so no archive "
+        "copy could be taken. The host's own error is in the job log. This "
+        "is usually transient: archive again.",
+    ),
 }
 
 
-class DeleteInstanceExecutor(AbstractSSHExecutor):
-    """Stop and remove a doodba instance from the remote host."""
+class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
+    """Stop and remove a doodba instance from the remote host.
+
+    Takes the per-host lock: ``enqueue`` only serialises per instance,
+    so "Recycle all" on a host fired one of these per warm in the same
+    millisecond, and the concurrent ``docker compose`` calls are the
+    likeliest reason one of them saw its compose read fail
+    (2026-09-19). A teardown that has to wait 30 s for its sibling
+    costs nothing; one that fails costs an alert and a manual retry.
+    """
 
     _job_type = "delete_instance"
 
@@ -257,20 +284,30 @@ class DeleteInstanceExecutor(AbstractSSHExecutor):
 
     async def on_success(self, results):
         inst = self._inst()
-        name = inst.name if inst else "?"
+        if not inst:
+            # The re-run path, and it is not rare: it is every successful
+            # delete. This job's own transaction lost a serialization
+            # race — against the unlink its *first* run committed on the
+            # hook's cursor, which ``ON DELETE SET NULL`` turned into an
+            # update of this very row — and queue_job ran it again.
+            # That first run already finalised the record and refreshed
+            # the host's labels. Refreshing again queued a second
+            # identical playbook (the first is ``started`` by now, so
+            # ``_enqueue_observability`` cannot collapse onto it) and
+            # logged a removal this run did not perform.
+            # ``get_commands`` has already said "nothing to do".
+            return
         # A clean run closes whatever a previous attempt complained
         # about; leaving them lit would keep an operator chasing a
         # problem that is already gone.
-        if inst:
-            Alert = self.env["cloud.alert"].sudo()
-            for code in self._purge_alert_targets():
-                Alert.resolve_alert(code, instance=inst)
-        self._sys(f"✓ Instance '{name}' removed from host.")
+        Alert = self.env["cloud.alert"].sudo()
+        for code in self._purge_alert_targets():
+            Alert.resolve_alert(code, instance=inst)
+        self._sys(f"✓ Instance '{inst.name}' removed from host.")
         # Read the host before _finalize_removal, which may unlink the
         # instance and take the link with it.
-        host = inst.host_id if inst else self._host()
-        if inst:
-            inst._finalize_removal(self._keeps_the_record())
+        host = inst.host_id
+        inst._finalize_removal(self._keeps_the_record())
         if host:
             host.refresh_observability_labels(reason="instance removed")
 

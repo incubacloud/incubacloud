@@ -98,3 +98,48 @@ ic_require_args() {
         ic_die "expected at least ${needed} argument(s), got ${given}.${usage:+ Usage: ${usage}}"
     fi
 }
+
+# Print the service list of the compose in the current directory,
+# retrying once. Returns 1 — with docker's own error in the job log —
+# when the command fails both times.
+#
+# ``docker compose config`` failing and it answering a list without a
+# given service are different facts with different fixes, and a caller
+# that pipes the command straight into ``grep`` cannot tell them apart:
+# a failed read looks exactly like an empty list. Production,
+# 2026-09-19: two deletes fired on one host in the same millisecond,
+# one of them saw the command die in under 110 ms, and the purge
+# reported "this host's compose declares no backup service" — a
+# permanent-drift diagnosis, with "rebuild the instance" as its advice —
+# for something the same command answered correctly 11 minutes later.
+# The stderr that would have said why was going to /dev/null.
+#
+# So the caller only ever sees a real list. The retry is here and not in
+# the executor because the read has no side effects: a second attempt
+# costs two seconds on the host, not a second job.
+#
+# The line logged on retry is deliberate: a transient that a retry
+# absorbs is otherwise invisible, and one that keeps happening should
+# not be.
+ic_compose_services() {
+    local err out attempt
+    err="$(mktemp)"
+    for attempt in 1 2; do
+        if out="$(docker compose config --services 2>"$err")"; then
+            rm -f "$err"
+            printf '%s\n' "$out"
+            return 0
+        fi
+        if [ "$attempt" -eq 1 ]; then
+            # stderr on purpose: stdout is this function's return value
+            # and callers capture it, so a line printed there would be
+            # swallowed into the service list instead of reaching the log.
+            ic_log "docker compose config failed; retrying once in 2s" >&2
+            sleep 2
+        fi
+    done
+    ic_warn "could not read the compose in $PWD; docker compose config said:"
+    sed 's/^/[docker] /' "$err" >&2
+    rm -f "$err"
+    return 1
+}
