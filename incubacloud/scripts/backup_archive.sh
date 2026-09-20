@@ -28,6 +28,8 @@
 #   20  no ``backup`` service in this compose (panel/host drift)
 #   22  anything else: the container could not start, the dump failed,
 #       duplicity refused, the provider rejected the credentials
+#   23  the compose could not be read at all (docker's error is in the
+#       job log) — unlike 20, this says nothing about what it declares
 #
 # Deliberately coarser than backup_purge.sh, which distinguishes an
 # auth failure. There the S3 call is ours and the error code is
@@ -51,7 +53,14 @@ fi
 
 cd "$dir"
 
-if ! docker compose config --services 2>/dev/null | grep -qx backup; then
+if ! services="$(ic_compose_services)"; then
+    # Not drift: nothing is known about what the compose declares, only
+    # that the host could not read it. The helper has already put
+    # docker's own error in the log.
+    exit 23
+fi
+
+if ! printf '%s\n' "$services" | grep -qx backup; then
     # Checked here rather than inferred from a failed exec: ``docker
     # compose exec`` answers `service "backup" is not running` both when
     # the service is stopped and when it does not exist, so that message

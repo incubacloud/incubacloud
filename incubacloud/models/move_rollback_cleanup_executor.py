@@ -21,6 +21,12 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
     _job_type = "move_rollback_cleanup"
     _retry_on_connection_loss = False
 
+    # ``before_execute`` below can wait up to ten minutes for the move
+    # chain to settle. The per-host lock is taken before it, so holding
+    # it here would park every build and teardown on the target host
+    # behind a wait that does nothing to the host.
+    _takes_host_build_lock = False
+
     # Tears down the half-built copy on the TARGET host while the
     # instance keeps living on the source: the record's lifecycle state
     # must not move. (This class also replaces ``before_execute``

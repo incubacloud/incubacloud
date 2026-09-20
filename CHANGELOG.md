@@ -6,6 +6,63 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.126] — 2026-09-20
+
+### Fixed
+
+- **A backup purge whose compose read failed was reported as drift.**
+  `backup_purge.sh` and `backup_archive.sh` piped `docker compose config
+  --services` straight into `grep` with stderr to `/dev/null`, so a read
+  that failed looked exactly like a list without a `backup` service: exit
+  20, the `backup_purge_service_missing` alert, and "rebuild the instance,
+  then delete it again" as advice. Production, 2026-09-19: "Recycle all"
+  on an auto-provisioned host fired one `delete_instance` per warm in the
+  same millisecond; one of them saw the read die in under 110 ms (its
+  sibling's took ~500 ms and succeeded) and was reported as drift — for a
+  compose the same command had listed correctly nine hours earlier and
+  listed correctly again eleven minutes later, when the recycle cron
+  retried. The read now goes through `ic_compose_services` in
+  `lib/common.sh`: it retries once after two seconds and says so in the
+  job log, and when both attempts fail the scripts exit **23** with
+  docker's own error in the log — the new
+  `backup_purge_compose_unreadable` / `backup_archive_compose_unreadable`
+  alerts, whose advice is "try again", not "rebuild". Exit 20 now means
+  what it says: the command answered, and the answer had no `backup`
+  service. The retry covers the read only; a transient during the purge
+  itself still lands as 22 and needs its own retry.
+
+- **Every successful `delete_instance` ran twice, and the second run
+  queued a second `install_observability`.** The teardown's `on_success`
+  unlinks the instance on the hook's own cursor; `cloud_job.instance_id`
+  is `ON DELETE SET NULL`, so that commit updates the job's own row; and
+  the raw `UPDATE cloud_job SET state='done'` that mirrors the queue job's
+  terminal state then loses a serialization race against it, which
+  queue_job answers by running the job again. Measured over three days:
+  `delete_instance` 2 re-runs of 3 jobs, every other job type 0 of
+  ~10,000. The re-run was already a no-op for the host (1.0.58) but still
+  called `refresh_observability_labels`, five seconds after the first
+  run's refresh had started and could no longer be collapsed onto — two
+  identical playbooks per delete. The re-run now returns before touching
+  anything, and no longer logs `✓ Instance '?' removed from host.` for a
+  removal it did not perform. The re-run itself remains: removing it
+  means changing where the terminal state is written, for every job type,
+  and is left for its own change.
+
+### Changed
+
+- **Instance teardowns take the per-host lock the builds take.**
+  `cloud.job.enqueue` serialises per instance, so two deletes of two
+  instances on one host ran side by side; `DeleteInstanceExecutor` now
+  mixes in `HostBuildLockMixin`, and a teardown waits 30 s for its
+  sibling (or for a build) rather than sharing the daemon with it. The
+  lock is keyed on the host the *job* runs against instead of the
+  instance's host: for every build the two are the same, but the move
+  cleanups tear down a copy on the host the instance does *not* live on,
+  and keyed the old way they locked the machine they never touched.
+  `move_rollback_cleanup`, which can wait ten minutes for the move chain
+  before touching the host, opts out (`_takes_host_build_lock = False`)
+  so that wait does not park every build on the target.
+
 ## [1.0.125] — 2026-09-18
 
 ### Changed
