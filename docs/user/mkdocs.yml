@@ -120,4 +120,5 @@ nav:
     - reference/index.md
     - Notifications: reference/notifications.md
     - Monitoring: reference/monitoring.md
+    - Monitoring panels: reference/monitoring-panels.md
     - Service limits: reference/limits.md

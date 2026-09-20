@@ -29,6 +29,9 @@ code and the client addresses sending the most.
 **The whole fleet** → the **Monitoring** entry in the sidebar, next to
 Hosts. It appears only when observability is enabled.
 
+For what each individual chart means, what a healthy one looks like and what to
+check when it does not, see [Monitoring panels](monitoring-panels.md).
+
 **Is a host being monitored?** → its page states it plainly: reporting,
 agents installed but no data yet, install failed and retrying, or not
 enrolled yet.
