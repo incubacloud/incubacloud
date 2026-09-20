@@ -6,6 +6,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.127] — 2026-09-20
+
+### Fixed
+
+- **A teardown's unlink now waits for the job's commit, so a successful
+  `delete_instance` runs once.** 1.0.126 found why every successful delete
+  ran twice and defused the re-run's side effect; this removes the re-run.
+  The success hook unlinked the instance on its own cursor; `cloud_job`
+  references the instance `ON DELETE SET NULL`, so that commit updated the
+  job's own row; and the job's transaction — whose snapshot `job.lock()`
+  had fixed before the run — then failed to mark itself done
+  (`could not serialize access due to concurrent update`) and queue_job
+  ran the whole job again. Nothing inside the transaction could fix that:
+  a commit is forbidden by queue_job (it would release the job lock), a
+  fresh cursor for the terminal `UPDATE` still leaves the stored related
+  `cloud.job.state` to the ORM on the old snapshot, `allow_commit` on the
+  job function changes nothing because the snapshot predates the run, and
+  touching the job row *before* the hook would make the hook's cascade
+  block on it — a hang, not an error. So the hook now stops one step
+  short: `_finalize_removal(unlink=False)` marks the record
+  `removal_finalized`, and `AbstractExecutor._unlink_after_job_commit`
+  arms the unlink on the job's cursor's `postcommit`, where it runs on a
+  cursor of its own once nobody holds the row. A rollback drops it; the
+  re-run finds the marker, touches nothing on the host, and arms it
+  again. A failure inside the deferred unlink is logged and raised as
+  `instance_unlink_failed` rather than turning a finished job into a
+  failed one after the fact. `purge_archived_backups`, which unlinked
+  from its hook the same way and would have re-run the same way the day
+  it ran, defers the same way.
+
 ## [1.0.126] — 2026-09-20
 
 ### Fixed

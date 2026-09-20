@@ -440,6 +440,11 @@ class AbstractExecutor(ABC):
         # ``cloud_instance``, the same rows the metrics cron stamps on
         # its own schedule. See ``_concurrency`` for why losing that
         # race is worse than waiting for it.
+        # The job's own cursor, pinned before the swap below: a hook that
+        # needs something to happen *after* the job commits registers it
+        # there (``_unlink_after_job_commit``), never on the hook cursor,
+        # whose commit is the very thing that must be waited for.
+        self._job_cr = self.job.env.cr
         with read_committed_cursor(self.job.env.registry) as cr:
             _orig_job, _orig_env = self.job, self.env
             self.job = self.job.env(cr=cr)['cloud.job'].browse(self.job.id)
@@ -453,6 +458,80 @@ class AbstractExecutor(ABC):
         )
         if errors:
             raise RuntimeError("; ".join(errors))
+
+    def _unlink_after_job_commit(self, inst, sudo=False):
+        """Unlink *inst* once this job's own transaction has committed.
+
+        A success hook runs on its own cursor (``_dispatch_outcome``) so
+        what it writes survives the job's transaction. Unlinking an
+        instance there is the one write that cannot: ``cloud_job``
+        references it ``ON DELETE SET NULL``, so the unlink's commit
+        updates this very job's row, and the job's transaction — whose
+        snapshot ``job.lock()`` fixed before any of this ran — then
+        fails to mark itself done (``could not serialize access due to
+        concurrent update``) and queue_job runs the whole job again.
+        Measured in production on 2026-09-19: every successful
+        ``delete_instance`` ran twice; no other job type ever did.
+
+        Nothing inside the transaction can fix that. A commit is
+        forbidden by queue_job (it would release the job lock); moving
+        the terminal ``UPDATE`` to a fresh cursor still leaves the
+        stored related ``cloud.job.state`` to the ORM on the old
+        snapshot; and touching the job row *before* the hook would
+        make the hook's cascade block on it, which is a hang, not an
+        error. So the unlink waits for the commit: ``postcommit`` fires
+        right after it, on a cursor of its own, when nobody holds the
+        row.
+
+        If the job does not commit, the rollback clears ``postcommit``
+        and the unlink is simply dropped: the record stays exactly as
+        the hook left it (marked, for the teardown; archived, for the
+        purge), and the re-run finds that state and arms this again.
+
+        Never raises. By the time it runs the job is already done, so
+        a failure here is logged and raised as an alert rather than
+        turning a finished job into a failed one after the fact.
+
+        :param inst: the ``cloud.instance`` to remove.
+        :param sudo: unlink as superuser, for callers that did before.
+        """
+        job_env = self.job.env
+        registry = job_env.registry
+        inst_id, inst_name = inst.id, inst.name
+        job_id, host_id = self.job.id, self._host().id
+
+        def _unlink():
+            with registry.cursor() as cr:
+                env = job_env(cr=cr)
+                rec = env["cloud.instance"].with_context(
+                    active_test=False,
+                ).browse(inst_id)
+                if sudo:
+                    rec = rec.sudo()
+                if not rec.exists():
+                    return
+                try:
+                    rec.unlink()
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "deferred unlink of instance %s failed", inst_name,
+                    )
+                    cr.rollback()
+                    env["cloud.alert"].sudo().raise_alert(
+                        "instance_unlink_failed",
+                        f"'{inst_name}' was removed from its host but its "
+                        "record could not be deleted; see the server log. "
+                        "Delete it again once the cause is fixed.",
+                        level="warning",
+                        host=env["cloud.host"].browse(host_id),
+                        instance=rec,
+                        job=env["cloud.job"].browse(job_id),
+                    )
+
+        # ``_job_cr`` is set by ``_dispatch_outcome``; a hook invoked
+        # directly (tests) has only its own cursor, which is the job's.
+        main_cr = getattr(self, "_job_cr", None) or job_env.cr
+        main_cr.postcommit.add(_unlink)
 
     # ===============================
     # DB + BUS INFRASTRUCTURE
