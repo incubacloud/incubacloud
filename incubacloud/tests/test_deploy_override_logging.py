@@ -98,11 +98,9 @@ class TestDeployOverrideLogging(_OverrideCase):
             DeployInstanceExecutor, "deploy_instance", inst=staging,
         )
         _raw, data = self._override(executor)
-        self.assertEqual(
-            set(data["services"]),
-            set(DeployInstanceExecutor._TEST_SERVICES),
-        )
-        self._assert_rotated(data, DeployInstanceExecutor._TEST_SERVICES)
+        expected = staging.expected_services()
+        self.assertEqual(set(data["services"]), set(expected))
+        self._assert_rotated(data, expected)
 
     def test_rebuild_rotates_every_expected_service(self):
         """The retrofit rides on the next rebuild, so rebuild must emit it."""

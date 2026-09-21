@@ -6,6 +6,47 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.128] — 2026-09-21
+
+### Fixed
+
+- **A staging no longer publishes its mailbox on the internet.** The copier
+  template wires a staging's Odoo to an in-stack MailHog so a copy of
+  production never mails real customers, and then gives that container a
+  Traefik router on `<domain>/smtpfake/`. MailHog asks for a password only
+  when `/etc/mailhog/auth` exists and nothing here writes it, so the whole
+  mailbox of an instance carrying production's data — password resets,
+  invitations, customer addresses — was one URL away from anyone who knew the
+  hostname, which Certificate Transparency publishes. The deploy/rebuild
+  override now gives that service `traefik.enable=false`: compose merges
+  labels by key and the override wins, so the router labels stay in the file
+  and Traefik ignores the container, while Odoo keeps reaching the catcher
+  over the internal network. Production's `smtp` is the real relay and is
+  untouched.
+- **`expected_services` told the truth about staging.** It claimed staging ran
+  `odoo` and `db` only, while the template renders `smtp` there
+  unconditionally — so the mail catcher was never probed (Odoo fails to send
+  and nothing says so), never limited by `smtp_memory_limit` / `smtp_cpus`,
+  never log-rotated, and out of reach of the override above. The deploy
+  executor's separate `_TEST_SERVICES` constant, which is where the two
+  answers diverged, is gone: both environments now read the model.
+- **Stagings stopped inheriting an egress policy nobody chose.** From template
+  v9.6.0 on, `whitelisted_hosts_test` defaults to a 32-entry list — payment
+  gateways and tax agencies among them — and a non-empty list makes the
+  template render a NAT gateway plus a sidecar sharing the odoo container's
+  network namespace, both `NET_ADMIN`, the sidecar mounting the host's docker
+  socket. `copier --defaults` takes the default for every question the answers
+  file omits, so every staging got all of that, unasked, alongside the host
+  whitelist network it already joins. The answers now carry
+  `whitelisted_hosts_test: []` and `whitelisted_hosts_devel: []` explicitly,
+  the same reason `backup_backend_password` is answered. A per-instance
+  allow-list is a feature in its own right and is not this change.
+
+Migration `1.0.128` re-anchors production instances behind a binary gate: a
+record is re-stamped only when its snapshot minus exactly the two new answers
+still hashes to the anchor it carries, so real drift is never masked. Stagings
+stay dirty on purpose — their compose genuinely changed.
+
 ## [1.0.127] — 2026-09-20
 
 ### Added
