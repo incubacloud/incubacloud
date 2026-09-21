@@ -743,6 +743,29 @@ class CloudInstance(models.Model):
             # (SFTP) read it; ours are S3/R2, which authenticate with
             # the AWS keys above.
             "backup_backend_password": "",
+            # Egress allow-list, answered empty on purpose — and it must
+            # be answered, for the same reason as the line above.
+            #
+            # From template v9.6.0 on, a non-empty list makes the test
+            # compose file grow a NAT gateway plus a sidecar sharing the
+            # odoo container's network namespace, both privileged
+            # (NET_ADMIN) and the sidecar mounting the host's docker
+            # socket. Its default is a 32-host list — payment gateways
+            # and tax agencies among them — so leaving the question out
+            # would hand every staging an egress policy nobody chose and
+            # two containers this module neither limits nor probes.
+            #
+            # Egress for test instances is the host's own whitelist
+            # network (``cloud.host.whitelist`` → the proxies in
+            # ``~/globalwhitelist``), which the template keeps declaring
+            # as external and joining. The per-instance model is a
+            # feature in its own right; until it is one, this stays [].
+            "whitelisted_hosts_test": [],
+            # The generated devel.yaml is never used (the panel points
+            # docker-compose.yml at prod.yaml or test.yaml), but leaving
+            # the question unanswered would let the template's default
+            # decide part of a file we ship. Determinism over apathy.
+            "whitelisted_hosts_devel": [],
         }
         if has_backup and bb:
             answers.update(
@@ -1029,14 +1052,22 @@ class CloudInstance(models.Model):
         probe (to know which containers must be ``running``). The
         shape matches what the copier template actually renders:
 
-        * staging / dev → ``('odoo', 'db')`` only.
+        * staging / dev → ``odoo`` + ``db`` + ``smtp``. The staging
+          ``smtp`` is not a relay: the template wires Odoo to an
+          in-stack mail catcher (``SMTP_SERVER: smtplocal``) so a copy
+          of production never mails real customers. It is there
+          unconditionally, with or without ``smtp_relay_host``, and it
+          used to be missing from this list — which left it unprobed
+          (Odoo fails to send and nothing says so), unlimited, and
+          unreachable by the override that keeps its mailbox off the
+          public internet.
         * production    → ``odoo`` + ``db``, plus ``backup`` when
           :meth:`_backup_enabled` is true, plus ``smtp`` when a relay
           host is configured.
         """
         self.ensure_one()
         if self.environment != "production":
-            return ("odoo", "db")
+            return ("odoo", "db", "smtp")
         svcs = ["odoo", "db"]
         if self._backup_enabled():
             svcs.append("backup")

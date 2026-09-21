@@ -375,11 +375,6 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             else ""
         )
 
-    # Services present per environment. backup and smtp only exist in
-    # production doodba deployments; including them in the override for
-    # test/staging would cause a Docker Compose validation error.
-    _TEST_SERVICES = ("odoo", "db")
-
     def _prod_services(self):
         """Return the services present in a production compose file.
 
@@ -503,11 +498,13 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         networks at all; see ``ansible/playbooks/host_maintenance.yml``.
         """
         inst = self._inst()
-        allowed = (
-            self._prod_services()
-            if inst.environment == "production"
-            else self._TEST_SERVICES
-        )
+        # One source of truth for both environments. A separate constant
+        # for the test one drifted from ``expected_services`` and said
+        # staging had no ``smtp``, which the template renders there
+        # unconditionally — so the mail catcher fell out of the override
+        # entirely (no limits, no rotation, and no way to reach its
+        # labels from here).
+        allowed = inst.expected_services()
         field_map = {
             "odoo": ("odoo_memory_limit", "odoo_cpus"),
             "db": ("db_memory_limit", "db_cpus"),
@@ -541,7 +538,9 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                     "max-file": str(settings.container_log_max_file),
                 },
             }
-        if "smtp" in allowed:
+        if "smtp" in allowed and inst.environment == "production":
+            # Production's ``smtp`` is the real relay (docker-mailserver).
+            #
             # docker-mailserver runs an ``update-check`` service that asks
             # GitHub for the latest release and mails postmaster once per
             # container start. Which tag an instance runs is the panel's
@@ -553,6 +552,28 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             # Sablier wake, turning "once per start" into dozens of
             # identical mails a day.
             services["smtp"]["environment"] = {"ENABLE_UPDATE_CHECK": "0"}
+        elif "smtp" in allowed:
+            # A staging's ``smtp`` is a different animal: the mail
+            # catcher (MailHog), so there is no update check to switch
+            # off. What it needs is to come off the public internet.
+            #
+            # The template gives staging's ``smtp`` a Traefik router on
+            # ``<domain>/smtpfake/`` — the whole mailbox, and MailHog
+            # only asks for a password when ``/etc/mailhog/auth`` exists,
+            # which nothing here writes. A staging carries a copy of
+            # production, so that URL serves this instance's password
+            # resets and invitations to whoever opens it, and the
+            # hostname is not a secret: it comes from the host's
+            # wildcard and Certificate Transparency publishes it.
+            #
+            # Compose merges labels by key and the override wins, so
+            # flipping ``traefik.enable`` here is enough — the router
+            # labels stay in the file and Traefik ignores the container.
+            # Odoo keeps reaching the catcher over the internal network
+            # (``smtplocal:1025``); only the window is closed.
+            services["smtp"].setdefault("labels", {})["traefik.enable"] = (
+                "false"
+            )
         if "odoo" in allowed:
             services["odoo"]["command"] = self._odoo_command()
             services["odoo"]["volumes"] = [

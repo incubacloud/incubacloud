@@ -142,7 +142,18 @@ class TestSmtpUpdateCheckDisabled(_SmtpOverrideCase):
         )
         self.assertNotIn("smtp", data["services"])
 
-    def test_staging_renders_no_smtp_service(self):
+    def test_staging_smtp_gets_no_update_check_switch(self):
+        """The switch is docker-mailserver's, and staging does not run it.
+
+        This test used to assert the opposite of its own subject — that a
+        staging renders no ``smtp`` service at all — which is what the
+        template had never done: it wires staging Odoo to an in-stack
+        MailHog unconditionally. Believing otherwise left the catcher
+        out of the override entirely; see
+        ``test_deploy_override_mailcatcher``. What is true is that
+        MailHog has no update check to turn off, and a relay host set on
+        a staging changes nothing about that.
+        """
         staging = self.env["cloud.instance"].create({
             "name": "updchkstag",
             "project_id": self.project.id,
@@ -155,7 +166,8 @@ class TestSmtpUpdateCheckDisabled(_SmtpOverrideCase):
                 DeployInstanceExecutor, "deploy_instance", inst=staging,
             )
         )
-        self.assertNotIn("smtp", data["services"])
+        self.assertIn("smtp", data["services"])
+        self.assertNotIn("environment", data["services"]["smtp"])
 
     def test_every_registered_deploy_flavour_disables_it(self):
         """Registry sweep: a flavour that breaks super() fails here."""

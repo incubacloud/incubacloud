@@ -105,11 +105,9 @@ class TestDeployOverrideProtectLabel(TransactionCase):
             DeployInstanceExecutor, "deploy_instance", inst=staging,
         )
         data = self._override(executor)
-        self.assertEqual(
-            set(data["services"]),
-            set(DeployInstanceExecutor._TEST_SERVICES),
-        )
-        self._assert_protected(data, DeployInstanceExecutor._TEST_SERVICES)
+        expected = staging.expected_services()
+        self.assertEqual(set(data["services"]), set(expected))
+        self._assert_protected(data, expected)
 
     def test_rebuild_inherits_the_label(self):
         """The 2026-08 incident: the rebuild flavour lost the label."""
