@@ -249,6 +249,7 @@ export class ProjectDetail extends Component {
                     odoo_version: defs.odoo_version || this.state.odooVersions.at(-1),
                     odoo_initial_lang: null,
                     backup_backend_id: null,
+                    pr_reviews_enabled: false,
                 };
                 this._savedForm = JSON.stringify(this.state.form);
             } else {
@@ -272,6 +273,7 @@ export class ProjectDetail extends Component {
                     odoo_version: p.odoo_version || this.state.odooVersions.at(-1),
                     odoo_initial_lang: p.odoo_initial_lang || null,
                     backup_backend_id: p.backup_backend_id || null,
+                    pr_reviews_enabled: Boolean(p.pr_reviews_enabled),
                 };
                 this.state.selectedTags = [...(p.tags || [])];
                 this.state.allTags = [...(p.all_tags || [])];

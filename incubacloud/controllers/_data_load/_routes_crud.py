@@ -973,6 +973,7 @@ class CrudMixin:
             'backup_backend_id': (
                 project.backup_backend_id.id if project.backup_backend_id else None
             ),
+            'pr_reviews_enabled': project.pr_reviews_enabled,
             'repos': [
                 {
                     'id': r.id,
@@ -993,7 +994,7 @@ class CrudMixin:
             'name', 'description', 'project_author', 'project_license',
             'odoo_version', 'odoo_commit_sha', 'odoo_initial_lang',
             'pip_dependencies', 'apt_dependencies',
-            'backup_backend_id',
+            'backup_backend_id', 'pr_reviews_enabled',
         }
         repos = vals.pop('repos', None)
         tag_ids = vals.pop('tag_ids', None)
@@ -1056,7 +1057,7 @@ class CrudMixin:
             'name', 'description', 'project_author', 'project_license',
             'odoo_version', 'odoo_commit_sha', 'odoo_initial_lang',
             'pip_dependencies', 'apt_dependencies',
-            'backup_backend_id',
+            'backup_backend_id', 'pr_reviews_enabled',
         }
         safe_vals = {k: v for k, v in vals.items() if k in _PROJ_ALLOWED}
         if tag_ids is not None:

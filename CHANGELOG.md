@@ -6,6 +6,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.129] — 2026-09-21
+
+### Added
+
+- **A switch for pull request previews, where a project is configured.** A pull
+  request on a repository a production instance follows creates a staging with
+  the pull request's branch and a neutralized copy of production data, rebuilds
+  it on every push and deletes it when the pull request closes. That has worked
+  since early on, and the field that governs it (`pr_reviews_enabled`) had never
+  been on a screen nor in the API: it was missing from `/cloud/get_project` and
+  from the write allowlists of `/cloud/create_project` and
+  `/cloud/save_project`, so it could only be changed from a shell. It is now
+  read, saved and shown in the project's settings.
+- **A hook to keep instances out of previews.** `cloud.github.event.
+  _pr_preview_allowed(inst)` is asked before a preview is cloned and says yes by
+  default. A layer on top overrides it for instances it manages itself,
+  whatever their repositories look like — the same pattern as
+  `_rebuild_job_type`.
+
+### Changed
+
+- **Previews are opt-in.** New projects start with the switch off: a preview is
+  an instance nobody asked for by name, on the production's host, carrying a
+  copy of production data. Projects that already exist keep the value they have
+  stored — a default does not touch rows.
+
+### Fixed
+
+- **A preview that cannot be created says so.** The webhook caught every
+  exception from `clone_to_staging` and wrote a log line, so a pull request that
+  produced nothing looked like a feature that did not work. The pull request now
+  gets a comment and the production instance a `pr_preview_failed` alert, closed
+  by the next preview that does get created. Only a `UserError` or
+  `ValidationError` message is published; anything else becomes a generic line
+  with a log reference, because the comment lands in a repository that may be
+  public.
+- **A clone that fails half-way leaves nothing behind.** The clone now runs in a
+  savepoint. Without it, a failure after the staging record was created (the job
+  chain refused, say) was swallowed and the half-made row committed — and every
+  later "reopened" then found the preview as already existing and did nothing.
+
+---
+
 ## [1.0.128] — 2026-09-21
 
 ### Fixed

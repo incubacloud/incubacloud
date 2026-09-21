@@ -8243,6 +8243,12 @@ msgstr "Presente"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Preview instances for pull requests"
+msgstr "Instancias de vista previa para pull requests"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/ic_pager/ic_pager.xml:0
 msgid "Previous page"
 msgstr "Página anterior"
@@ -8427,6 +8433,16 @@ msgstr "Proxy"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__public_key
 msgid "Public Key"
 msgstr "Clave pública"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_github_event.py:0
+msgid ""
+"Pull request #%(number)s on %(repo)s asked for a preview of %(instance)s and"
+" none could be created: %(reason)s"
+msgstr ""
+"El pull request #%(number)s de %(repo)s pidió una vista previa de "
+"%(instance)s y no se pudo crear: %(reason)s"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__purge_cutoff_at
@@ -8916,6 +8932,11 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_remote_write_url
 msgid "Remote-write URL"
 msgstr "URL de remote-write"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__removal_finalized
+msgid "Removal Finalized"
+msgstr "Eliminación finalizada"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10719,6 +10740,19 @@ msgstr ""
 "Los ajustes concretos de la plantilla que le faltan a la copia guardada."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__removal_finalized
+msgid ""
+"The teardown finished and the record only awaits its unlink, which runs once"
+" the job's own transaction has committed (see "
+"AbstractExecutor._unlink_after_job_commit). A re-run of the teardown that "
+"finds this set has nothing left to do on the host."
+msgstr ""
+"El desmontaje terminó y el registro solo espera su eliminación, que se "
+"ejecuta una vez confirmada la transacción del propio job (véase "
+"AbstractExecutor._unlink_after_job_commit). Una repetición del desmontaje "
+"que encuentre esto marcado no tiene nada más que hacer en el host."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_host.py:0
 #: code:addons/incubacloud/models/cloud_settings.py:0
@@ -11062,6 +11096,12 @@ msgstr "Activar o desactivar la observabilidad"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Toggle off to stop receiving cloud alerts by email"
 msgstr "Desactive para dejar de recibir alertas de la nube por correo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid "Toggle pull request previews"
+msgstr "Activar o desactivar las vistas previas de pull requests"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__token
@@ -12714,6 +12754,20 @@ msgstr "odoo shell --no-http"
 #: code:addons/incubacloud/static/src/components/truncation_banner/truncation_banner.xml:0
 msgid "of"
 msgstr "de"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"opening a pull request on a repository a production instance follows creates"
+" a staging on the same host, with the pull request's branch and a "
+"neutralized copy of production data. It is rebuilt on every push and deleted"
+" when the pull request closes."
+msgstr ""
+"abrir un pull request en un repositorio que sigue una instancia de "
+"producción crea un staging en el mismo host, con la rama del pull request y "
+"una copia neutralizada de los datos de producción. Se reconstruye con cada "
+"push y se elimina cuando el pull request se cierra."
 
 #. module: incubacloud
 #. odoo-javascript

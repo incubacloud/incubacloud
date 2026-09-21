@@ -140,3 +140,4 @@ from . import test_delete_instance_gate_order
 from . import test_rotation_pending_count
 from . import test_module_hygiene
 from . import test_metrics_gateway_frameguard
+from . import test_pr_preview_control

@@ -352,19 +352,7 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         inst.write({"status": "ok", "running": True})
         if inst.pr_number:
-            url = (
-                f'https://{inst.domain}' if inst.domain
-                else '_(no domain configured)_'
-            )
-            body = (
-                f'✅ **IncubaCloud Preview** — ready!\n\n'
-                f'| | |\n|---|---|\n'
-                f'| **URL** | {url} |\n'
-                f'| **Branch** | `{inst.pr_head_branch}` |\n'
-                f'| **Instance** | `{inst.name}` |\n\n'
-                f'_Auto-destroys when the PR is closed._'
-            )
-            inst._post_or_update_pr_comment(body)
+            inst._post_or_update_pr_comment(inst._pr_preview_ready_body())
 
     async def _cleanup_cross_host_handoff(self):
         """Best-effort removal of the handoff archive on the *source*

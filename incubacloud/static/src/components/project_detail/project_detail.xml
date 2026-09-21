@@ -209,6 +209,18 @@
                                                   emptyLabel.translate="— Use global default —"
                                                   onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
                                     </div>
+                                    <div class="rl-ftoggle rl-full">
+                                        <div>
+                                            <div class="rl-tl-label">Preview instances for pull requests</div>
+                                            <div class="rl-th">opening a pull request on a repository a production instance follows creates a staging on the same host, with the pull request's branch and a neutralized copy of production data. It is rebuilt on every push and deleted when the pull request closes.</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            t-att-class="'rl-sw' + (state.form.pr_reviews_enabled ? ' on' : '')"
+                                            aria-label="Toggle pull request previews"
+                                            t-on-click="() => { state.form.pr_reviews_enabled = !state.form.pr_reviews_enabled; }"
+                                        />
+                                    </div>
                                     <div class="rl-frow rl-full">
                                         <label>Tags</label>
                                         <TagSelector

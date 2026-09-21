@@ -1,9 +1,12 @@
 import json
 import logging
+import uuid
 from datetime import timedelta
 
 from odoo import _, api, fields, models
+from odoo.exceptions import UserError, ValidationError
 
+from ..github.client import GitHubAppClient
 from ._repo_requirements import _normalize_url, is_safe_git_ref
 from .res_users_ext import as_platform
 
@@ -21,6 +24,11 @@ GITHUB_APP_REVOKED_CODE = 'github_app_revoked'
 # source ranges fails by dropping requests before they reach us, so the
 # absence of traffic is the only signal that reaches this process.
 GITHUB_WEBHOOK_SILENT_CODE = 'github_webhook_silent'
+
+# Alert raised on the production instance when a pull request asked for a
+# preview and none could be created. The pull request gets a comment too,
+# because that is where whoever opened it is looking.
+PR_PREVIEW_FAILED_CODE = 'pr_preview_failed'
 
 
 class CloudGitHubEvent(models.Model):
@@ -271,6 +279,22 @@ class CloudGitHubEvent(models.Model):
         """
         return 'rebuild_instance'
 
+    def _pr_preview_allowed(self, inst):
+        """Whether a pull request may spawn a preview of this instance.
+
+        Default: yes — the project's own switch has already been checked
+        by the time this is asked. Modules layered on top override this
+        to keep instances they manage themselves out of the flow,
+        whatever their repositories look like: a preview is a copy of
+        the instance's production data, and not every production
+        instance is somebody's to copy.
+
+        :param inst: the production ``cloud.instance`` a preview would
+            be cloned from
+        :return: ``True`` to go ahead, falsy to skip it silently
+        """
+        return True
+
     def _rebuild_blocking_codes(self):
         """Job codes whose active presence defers a new auto-rebuild.
 
@@ -508,6 +532,8 @@ class CloudGitHubEvent(models.Model):
             ]).filtered(lambda r: _normalize_url(r.url) == repo_norm)
 
             for prod in prod_repos.mapped('instance_id'):
+                if not self._pr_preview_allowed(prod):
+                    continue
                 exists = self.env['cloud.instance'].search([
                     ('pr_number', '=', pr_number),
                     ('pr_repo', '=', repo_full),
@@ -516,19 +542,44 @@ class CloudGitHubEvent(models.Model):
                 if exists:
                     continue
                 try:
-                    prod.clone_to_staging(
-                        f'pr-{pr_number}',
-                        pr_number=pr_number,
-                        pr_repo=repo_full,
-                        pr_head_branch=head_ref,
+                    # Savepoint: a clone that fails half-way (record
+                    # created, chain refused) must leave nothing behind.
+                    # A leftover row would make every later "reopened"
+                    # find the preview as already existing, and the
+                    # comment below would be lying.
+                    with self.env.cr.savepoint():
+                        prod.clone_to_staging(
+                            f'pr-{pr_number}',
+                            pr_number=pr_number,
+                            pr_repo=repo_full,
+                            pr_head_branch=head_ref,
+                        )
+                except (UserError, ValidationError) as exc:
+                    # Written for a user to read, so it can be shown.
+                    _logger.warning(
+                        "PR preview refused for PR #%s (%s): %s",
+                        pr_number, repo_full, exc,
                     )
+                    self._report_pr_preview_failure(
+                        prod, repo_full, pr_number, str(exc),
+                    )
+                except Exception:
+                    ref = uuid.uuid4().hex[:8]
+                    _logger.exception(
+                        "Failed to create PR preview for PR #%s (ref: %s)",
+                        pr_number, ref,
+                    )
+                    self._report_pr_preview_failure(
+                        prod, repo_full, pr_number,
+                        f'An internal error occurred (ref: {ref}).',
+                    )
+                else:
                     _logger.info(
                         "PR preview instance created for PR #%s (%s) → project %s",
                         pr_number, repo_full, prod.project_id.name,
                     )
-                except Exception:
-                    _logger.exception(
-                        "Failed to create PR preview for PR #%s", pr_number,
+                    self.env['cloud.alert'].sudo().resolve_alert(
+                        PR_PREVIEW_FAILED_CODE, instance=prod,
                     )
 
         elif action == 'synchronize':
@@ -590,3 +641,66 @@ class CloudGitHubEvent(models.Model):
                 )
 
         self.write({'processed': True})
+
+    def _report_pr_preview_failure(self, prod, pr_repo, pr_number, reason):
+        """Say where people are looking that a preview was not created.
+
+        Two places: the pull request itself, for whoever opened it, and
+        an alert on the production instance, for whoever runs the panel.
+        Until this existed the only trace was a log line, so a pull
+        request that produced nothing looked like a feature that did
+        not work.
+
+        :param prod: the production ``cloud.instance`` that was to be
+            cloned
+        :param str pr_repo: ``owner/name`` of the repository
+        :param int pr_number: the pull request number
+        :param str reason: text safe to publish — a ``UserError``
+            message, or a generic line carrying a log reference
+        """
+        reason = ' '.join((reason or '').split())
+        self.env['cloud.alert'].sudo().raise_alert(
+            PR_PREVIEW_FAILED_CODE,
+            _(
+                "Pull request #%(number)s on %(repo)s asked for a preview "
+                "of %(instance)s and none could be created: %(reason)s",
+                number=pr_number, repo=pr_repo, instance=prod.name,
+                reason=reason,
+            ),
+            level='warning',
+            instance=prod,
+        )
+        self._comment_on_pull_request(pr_repo, pr_number, (
+            '⚠️ **IncubaCloud Preview** — could not be created\n\n'
+            '| | |\n|---|---|\n'
+            f'| **Project** | `{prod.project_id.name}` |\n'
+            f'| **Reason** | {reason} |\n\n'
+            '_Close and reopen the pull request to try again._'
+        ))
+
+    def _comment_on_pull_request(self, pr_repo, pr_number, body):
+        """Post a one-off comment on a pull request. Best effort.
+
+        The comment a preview instance keeps updated lives on the
+        instance (``_post_or_update_pr_comment``); this one is for the
+        case where no instance came to exist. Never raises: failing to
+        comment must not undo the webhook's own bookkeeping.
+
+        :param str pr_repo: ``owner/name`` of the repository
+        :param int pr_number: the pull request number
+        :param str body: Markdown body of the comment
+        """
+        if '/' not in (pr_repo or ''):
+            return
+        owner, repo = pr_repo.split('/', 1)
+        try:
+            creds = self.env[
+                'cloud.github.credential.service'
+            ].get_credentials()
+            GitHubAppClient(creds).post_issue_comment(
+                owner, repo, pr_number, body,
+            )
+        except Exception:
+            _logger.exception(
+                "Could not comment on PR #%s of %s", pr_number, pr_repo,
+            )
