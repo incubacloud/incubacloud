@@ -131,7 +131,10 @@ class CloudProject(models.Model):
     )
     pr_reviews_enabled = fields.Boolean(
         string='Auto-create PR preview instances',
-        default=True,
+        # Opt-in: a preview is an instance nobody asked for by name,
+        # carrying a copy of production data. Existing projects keep
+        # whatever they have stored; only new ones start switched off.
+        default=False,
         help='When enabled, opening a PR on a repo configured in the '
              'production instance automatically creates a staging preview '
              'instance with the PR branch and a clone of prod data.',

@@ -69,6 +69,7 @@ path and write into the copy being kept.
 - Open a shell on the container (Instance detail → Shell)
 - [Restore from a backup](../backups/restore.md)
 - [Refresh a staging with production data](#refresh-from-production)
+- [Get a preview instance for every pull request](#pull-request-previews)
 - Add a custom domain (Instance detail → Networking → Domain)
 
 ## Refresh from production
@@ -112,6 +113,43 @@ If you push commits to a connected repo, two settings control what happens:
   only the modules whose checksum changed. On by default.
 
 Both live under `Instance detail → Networking`.
+
+## Pull request previews
+
+A project can create a throwaway staging for every pull request, so a change can
+be looked at running — on real data — before it is merged. It is **off by
+default**; turn it on under **Project → Settings → Preview instances for pull
+requests**.
+
+With it on, opening (or reopening) a pull request on a repository that one of
+the project's **production** instances follows does this, with nobody pressing
+anything:
+
+1. A staging named `pr-<number>` is created on the **same host** as that
+   production, following the pull request's branch.
+2. It receives a copy of the production's data — the latest backup, or a live
+   dump when the production has no backup destination — **neutralized** exactly
+   like [Refresh from production](#refresh-from-production): scheduled actions
+   and outgoing mail servers disabled, test banner showing.
+3. It gets an address of its own under the host's wildcard domain
+   (`<project>-pr-<number>.<host domain>`), and the panel comments that link on
+   the pull request once the preview is up.
+4. Every new push to the pull request rebuilds it.
+5. Closing or merging the pull request deletes it, comment included.
+
+Things worth knowing before switching it on:
+
+- A preview is a full copy of production data sitting on your host for as long
+  as the pull request stays open. Anyone who can reach its address and log in
+  sees that data.
+- It needs the [GitHub App](../getting-started/first-project.md) connected to the
+  repository: the webhook that announces the pull request, and the comment, both
+  go through it.
+- A production instance that pins the repository to a fixed commit does not get
+  previews for it — a pin says "this instance does not move with the branch".
+- If a preview cannot be created, the pull request gets a comment saying why and
+  the production instance an alert. Fix the cause, then close and reopen the
+  pull request to try again.
 
 ## See also
 

@@ -397,7 +397,7 @@ When planning around it: the window is per host and only fires when an update de
 
 ## GitHub integration
 
-IncubaCloud supports GitHub App authentication for private repository access and receives webhooks for installation and push events. A stored PAT (in `cloud.settings`) is the fallback when no App is configured.
+IncubaCloud supports GitHub App authentication for private repository access and receives webhooks for installation, push and pull request events. A stored PAT (in `cloud.settings`) is the fallback when no App is configured.
 
 ### Authentication flow
 
@@ -424,6 +424,17 @@ IncubaCloud supports GitHub App authentication for private repository access and
 All webhook events are stored in `cloud.github.event` (immutable audit log). The receiver validates the HMAC-SHA256 signature, rate-limits per IP and ignores replayed delivery ids.
 
 `push` events drive **auto-rebuilds**: an instance rebuilds when it is active, deployed, has `auto_rebuild` enabled and its host is active. Rebuilds respect a cooldown, defer while a blocking job is running (the push is recorded in `cloud.instance.pending.push` and coalesced), and honour per-repo **freeze** flags. Archived instances and archived hosts never auto-rebuild.
+
+### Pull request previews
+
+`pull_request` events arrive through the same receiver and are handled by `cloud.github.event._process_pull_request_event`. The head ref is checked with `is_safe_git_ref` first: it ends up in `cloud.instance.repo.branch`, so a hostile ref name is dropped here rather than at the constraint.
+
+- **`opened` / `reopened`** — every `cloud.instance.repo` matching the repository with an **empty `commit_sha`** (a pinned repository never takes part), on a `production`, deployed instance whose project has `pr_reviews_enabled`, yields a candidate. Each candidate is put to `_pr_preview_allowed(inst)` — yes by default; layers on top override it to keep instances they manage themselves out, the same pattern as `_rebuild_job_type`. Deduplicated on `(pr_number, pr_repo, project)`, the instance is then cloned with `clone_to_staging('pr-<n>', …)` inside a savepoint, so a clone that fails half-way leaves no row behind to be mistaken for an existing preview.
+- The clone lands on the **production's host**, follows the pull request's branch on the matching repository, gets its domain from the host's wildcard like any other instance (`create()`), and runs the chain `deploy_instance` → `backup_download` (on production; latest backup, or a live dump without a backend) → `restore_instance` with `neutralize` and `reset_base_url`. The restore's success posts the "ready" comment (`cloud.instance._pr_preview_ready_body`) through the GitHub App.
+- **`synchronize`** re-points the branch and enqueues a rebuild, skipping archived instances and inactive hosts. **`closed`** deletes the comment and enqueues `delete_instance`, or unlinks a preview that never deployed.
+- **Failure is reported where people look.** A `UserError`/`ValidationError` from the clone is commented on the pull request verbatim and raised as a `pr_preview_failed` warning on the production instance; anything else is logged with a reference and published only as a generic line, because the repository may be public. The alert is resolved by the next preview created for that production. Commenting is best effort and never fails the event.
+
+`pr_reviews_enabled` defaults to **off** and travels through `/cloud/get_project`, `/cloud/create_project` and `/cloud/save_project`. Everything the webhook enqueues is signed by the platform bot (`as_platform`), not by whoever opened the pull request.
 
 ---
 

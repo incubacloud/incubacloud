@@ -1795,6 +1795,29 @@ class CloudInstance(models.Model):
             bypass_running_check=True,
         )
 
+    def _pr_preview_ready_body(self):
+        """Markdown of the pull request comment for a preview that is up.
+
+        Lives here and not inline in the restore executor so what the
+        comment promises — a link that opens the preview — can be
+        checked without running a job.
+
+        :return: the comment body as :class:`str`
+        """
+        self.ensure_one()
+        url = (
+            f'https://{self.domain}' if self.domain
+            else '_(no domain configured)_'
+        )
+        return (
+            f'✅ **IncubaCloud Preview** — ready!\n\n'
+            f'| | |\n|---|---|\n'
+            f'| **URL** | {url} |\n'
+            f'| **Branch** | `{self.pr_head_branch}` |\n'
+            f'| **Instance** | `{self.name}` |\n\n'
+            f'_Auto-destroys when the PR is closed._'
+        )
+
     def _post_or_update_pr_comment(self, body):
         """Post or update the GitHub PR comment for this PR preview instance."""
         if not self.pr_number or not self.pr_repo:
