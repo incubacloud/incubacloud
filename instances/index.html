@@ -1253,6 +1253,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pull-request-previews" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pull request previews
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See also
@@ -1347,6 +1356,7 @@ writing.</p>
 <li>Open a shell on the container (Instance detail → Shell)</li>
 <li><a href="../backups/restore/">Restore from a backup</a></li>
 <li><a href="#refresh-from-production">Refresh a staging with production data</a></li>
+<li><a href="#pull-request-previews">Get a preview instance for every pull request</a></li>
 <li>Add a custom domain (Instance detail → Networking → Domain)</li>
 </ul>
 <h2 id="refresh-from-production">Refresh from production<a class="headerlink" href="#refresh-from-production" title="Permanent link">&para;</a></h2>
@@ -1384,6 +1394,41 @@ the same neutralization.</p>
   only the modules whose checksum changed. On by default.</li>
 </ul>
 <p>Both live under <code>Instance detail → Networking</code>.</p>
+<h2 id="pull-request-previews">Pull request previews<a class="headerlink" href="#pull-request-previews" title="Permanent link">&para;</a></h2>
+<p>A project can create a throwaway staging for every pull request, so a change can
+be looked at running — on real data — before it is merged. It is <strong>off by
+default</strong>; turn it on under <strong>Project → Settings → Preview instances for pull
+requests</strong>.</p>
+<p>With it on, opening (or reopening) a pull request on a repository that one of
+the project's <strong>production</strong> instances follows does this, with nobody pressing
+anything:</p>
+<ol>
+<li>A staging named <code>pr-&lt;number&gt;</code> is created on the <strong>same host</strong> as that
+   production, following the pull request's branch.</li>
+<li>It receives a copy of the production's data — the latest backup, or a live
+   dump when the production has no backup destination — <strong>neutralized</strong> exactly
+   like <a href="#refresh-from-production">Refresh from production</a>: scheduled actions
+   and outgoing mail servers disabled, test banner showing.</li>
+<li>It gets an address of its own under the host's wildcard domain
+   (<code>&lt;project&gt;-pr-&lt;number&gt;.&lt;host domain&gt;</code>), and the panel comments that link on
+   the pull request once the preview is up.</li>
+<li>Every new push to the pull request rebuilds it.</li>
+<li>Closing or merging the pull request deletes it, comment included.</li>
+</ol>
+<p>Things worth knowing before switching it on:</p>
+<ul>
+<li>A preview is a full copy of production data sitting on your host for as long
+  as the pull request stays open. Anyone who can reach its address and log in
+  sees that data.</li>
+<li>It needs the <a href="../getting-started/first-project/">GitHub App</a> connected to the
+  repository: the webhook that announces the pull request, and the comment, both
+  go through it.</li>
+<li>A production instance that pins the repository to a fixed commit does not get
+  previews for it — a pin says "this instance does not move with the branch".</li>
+<li>If a preview cannot be created, the pull request gets a comment saying why and
+  the production instance an alert. Fix the cause, then close and reopen the
+  pull request to try again.</li>
+</ul>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../hosts/">Hosts</a> — where instances run.</li>
