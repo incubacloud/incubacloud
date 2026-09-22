@@ -1444,7 +1444,7 @@ core module have no plans or invoices.</p>
 <th>Monthly</th>
 <th>Annual (per month)</th>
 <th>Hosts</th>
-<th>Instances</th>
+<th>Production instances</th>
 <th>Backup retention</th>
 </tr>
 </thead>
@@ -1483,6 +1483,13 @@ core module have no plans or invoices.</p>
 </tr>
 </tbody>
 </table>
+<div class="admonition tip">
+<p class="admonition-title">Staging instances are not counted</p>
+<p>Only <strong>production</strong> instances use up the allowance. Stagings — the test
+copies you clone from production, one per pull request or as many as you
+want to keep — run on servers you already pay for, so we do not charge a
+slot for them. Neither does the limit on extra instances below.</p>
+</div>
 <p>Annual saves 22%. You can switch monthly ⇄ annual at any time;
 the new rate kicks in on the next renewal.</p>
 <h2 id="extras">Extras<a class="headerlink" href="#extras" title="Permanent link">&para;</a></h2>

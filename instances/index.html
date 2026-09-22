@@ -1300,7 +1300,9 @@ one filestore. It belongs to a project and runs on a host.</p>
 <ul>
 <li><strong>Production instance</strong> — customer-facing. Re-deploys go through the safe-rebuild
   flow (boot test before swap). One per project.</li>
-<li><strong>Staging instance</strong> — test copy. Re-deploys are direct. As many as your plan allows.</li>
+<li><strong>Staging instance</strong> — test copy. Re-deploys are direct. As many as you like:
+  stagings run on servers you already pay for, so they never count against the
+  instance allowance of a SaaS plan.</li>
 <li><strong>Sleeping instance</strong> (SaaS Free plan) — automatically suspended after ~30 minutes
   without traffic to save resources. Wakes up on the next request (the first request
   after a nap takes a few seconds).</li>
