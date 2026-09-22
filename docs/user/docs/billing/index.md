@@ -6,12 +6,19 @@
 
 ## Plans
 
-| Plan | Monthly | Annual (per month) | Hosts | Instances | Backup retention |
+| Plan | Monthly | Annual (per month) | Hosts | Production instances | Backup retention |
 | --- | --- | --- | --- | --- | --- |
 | Free | 0 € | 0 € | 1 | 1 (sleeps when idle) | — |
 | Starter | 9 € | 7 € | 3 | 5 | 7 days |
 | Professional | 29 € | 23 € | 10 | 20 | 14 days |
 | Business | 49 € | 39 € | 25 | 50 | 30 days |
+
+!!! tip "Staging instances are not counted"
+
+    Only **production** instances use up the allowance. Stagings — the test
+    copies you clone from production, one per pull request or as many as you
+    want to keep — run on servers you already pay for, so we do not charge a
+    slot for them. Neither does the limit on extra instances below.
 
 Annual saves 22%. You can switch monthly ⇄ annual at any time;
 the new rate kicks in on the next renewal.

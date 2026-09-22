@@ -7,7 +7,9 @@ one filestore. It belongs to a project and runs on a host.
 
 - **Production instance** — customer-facing. Re-deploys go through the safe-rebuild
   flow (boot test before swap). One per project.
-- **Staging instance** — test copy. Re-deploys are direct. As many as your plan allows.
+- **Staging instance** — test copy. Re-deploys are direct. As many as you like:
+  stagings run on servers you already pay for, so they never count against the
+  instance allowance of a SaaS plan.
 - **Sleeping instance** (SaaS Free plan) — automatically suspended after ~30 minutes
   without traffic to save resources. Wakes up on the next request (the first request
   after a nap takes a few seconds).
