@@ -163,6 +163,30 @@ written, so anything not labelled at ingest is unattributable forever.
 The panel generates the label map (only it knows which compose project
 belongs to which instance) and passes it to the agent playbook.
 
+**The map is a snapshot, not a subscription.** It is rendered when the
+`install_observability` job runs and written into the host's vmagent
+config; nothing re-reads it afterwards. An instance that appears on the
+host later — or one whose *names* change later — keeps producing series
+that no rule matches, and those series are unattributable for as long as
+that lasts. `cloud.host.refresh_observability_labels()` is the call that
+re-renders it; every operation that changes what a host holds is expected
+to end with it, and one that forgets is invisible until somebody asks a
+question the missing label was the answer to.
+
+Measured on 2026-09-22: three tenants born from the warm pool had no
+`instance_id` on their sleep-proxy series, because a warm is deployed
+before it has a slug and the claim that gives it one did not re-render
+the map. The panel's activity cron filters `instance_id!=""`, so all
+three were invisible to it — one with 195 requests over seven days and
+two days left before an inactivity auto-suspend would have taken it
+down. The fix is in the claim; the lesson is that a stale label map fails
+silently and looks exactly like disuse.
+
+To check a host by hand: `grep -c svc@file ~/observability/scrape.yml`
+on the host should match the number of non-draft instances it holds, and
+`sum by (router, instance_id) (…)` over any per-instance metric should
+show no empty `instance_id`.
+
 ## Tuning alerts
 
 Rules are data (`cloud.metric.rule`), not code: threshold, comparator,
