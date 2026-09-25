@@ -62,7 +62,11 @@ def _iter_elements(path):
     it would also blame the wrong test.
     """
     try:
-        tree = ET.parse(path)
+        # The only paths reaching here come from get_module_path() of
+        # our own addons: templates this repo ships and CI has already
+        # parsed to build the assets. There is no untrusted document,
+        # so there is no entity for an attacker to expand.
+        tree = ET.parse(path)  # nosec B314 — this repo's own templates
     except ET.ParseError:
         return []
     return tree.iter()

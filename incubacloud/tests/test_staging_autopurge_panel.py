@@ -19,6 +19,9 @@ from odoo import fields
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.cloud_security_mixin import (
+    CloudSecurityMixin,
+)
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 
 _WINDOW = 90
@@ -132,7 +135,7 @@ class TestKeep(_PanelCase):
 
     def _keep(self, instance=None):
         inst = instance or self.staging
-        sec = MagicMock()
+        sec = MagicMock(spec=CloudSecurityMixin)
         self.controller._sec = lambda: sec
         with patch.object(_routes_crud, "request", self._request()):
             result = self.controller.cloud_keep_instance(inst.id)
@@ -187,7 +190,7 @@ class TestKeep(_PanelCase):
     def test_keeping_something_that_is_gone_is_refused(self):
         inst_id = self.staging.id
         self.staging.sudo().unlink()
-        sec = MagicMock()
+        sec = MagicMock(spec=CloudSecurityMixin)
         self.controller._sec = lambda: sec
         with patch.object(_routes_crud, "request", self._request()):
             result = self.controller.cloud_keep_instance(inst_id)
