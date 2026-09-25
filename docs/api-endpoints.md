@@ -80,6 +80,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/get_instance` | record rules | Full instance detail (Odoo config, DB, SMTP, repos, domains). |
 | `/cloud/create_instance` | create instance | Create instance with repos. May return `{blocked: true, reason}` (`pip_conflict`, `host_required`, `no_host`). |
 | `/cloud/save_instance` | consultant | Update instance (field whitelist enforced). |
+| `/cloud/keep_instance` | consultant | Reset a staging's autopurge window and clear its expiry warnings. |
 | `/cloud/delete_instance` | delete instance | Tear down and delete/archive the instance. |
 | `/cloud/deploy_instance` | deploy | Enqueue `deploy_instance` job. |
 | `/cloud/rebuild_instance` | deploy | Enqueue `rebuild_instance` job (safe rebuild with boot test). |
@@ -95,6 +96,9 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/fetch_log_archive` | view logs | Read one archived day, with an optional fixed-string filter applied on the host. |
 | `/cloud/search_log_archives` | view logs | Which archived days mention a term, with hit counts (bounded sweep on the host). Rate-limited; audited with the term. |
 | `/cloud/instance/<id>/log_archive/<name>` | view logs | Download one archived day, gzipped (HTTP, not JSON-RPC). Rate-limited; audited. |
+| `/cloud/instance_mailbox` | view logs | List the mail a staging captured instead of sending. Staging only, deployed and running; rate-limited; nothing stored. |
+| `/cloud/instance_mail` | view logs | One captured message, decoded, with its attachments listed but not carried. Rate-limited. |
+| `/cloud/instance_mailbox_clear` | view logs | Empty a staging's captured mailbox. Rate-limited; audited. |
 
 Deploy/rebuild endpoints include data-race prevention: if a job is already running for the instance, the response is an error (or a `{blocked: true, alert_id, alert_code, conflicts}` envelope when a blocking pip-conflict alert exists).
 

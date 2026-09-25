@@ -80,6 +80,28 @@
   white-space: nowrap;
 }
 
+// ── Expiry badge ─────────────────────────────────────────────────
+// Shown only from the first warning on. Amber while there is time to
+// react, red over the last three days — the same two-step the alerts
+// use, so the list and the alert panel never disagree about urgency.
+.ic-expiry-badge {
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(var(--rl-amber-rgb), 0.15);
+  color: var(--rl-amber);
+  border: 1px solid rgba(var(--rl-amber-rgb), 0.3);
+  flex-shrink: 0;
+  white-space: nowrap;
+
+  &.urgent {
+    background: rgba(var(--rl-red-rgb), 0.15);
+    color: var(--rl-red);
+    border-color: rgba(var(--rl-red-rgb), 0.3);
+  }
+}
+
 // ── Project › Settings cog ───────────────────────────────────────
 .ic-psidebar-icon {
   width: 14px;

@@ -141,3 +141,10 @@ from . import test_rotation_pending_count
 from . import test_module_hygiene
 from . import test_metrics_gateway_frameguard
 from . import test_pr_preview_control
+from . import test_staging_autopurge_clock
+from . import test_read_last_login
+from . import test_staging_autopurge_cron
+from . import test_staging_autopurge_panel
+from . import test_form_field_width
+from . import test_mailbox_commands
+from . import test_mailbox_routes

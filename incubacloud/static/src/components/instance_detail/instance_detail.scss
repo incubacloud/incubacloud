@@ -1285,3 +1285,181 @@
     font-style: italic;
 }
 
+
+// ── Keep, inside the expiry pill ─────────────────────────────────
+// The button lives in the pill on purpose: the warning and the way to
+// answer it are the same object, so nobody has to go looking for the
+// undo after reading the threat.
+.ic-keep-btn {
+    margin-left: 8px;
+    padding: 0 7px;
+    border: 1px solid currentColor;
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        background: currentColor;
+        filter: invert(1);
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+}
+
+/* ── Mails tab ──────────────────────────────────────────────────────────
+   A staging's captured mailbox. Laid out as a list with the open message
+   underneath rather than side by side: the body is somebody else's HTML
+   and needs the full width to look like what the customer would get. */
+
+.ic-mails-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.ic-mails-spacer { margin-inline-start: auto; }
+
+.ic-mails-notice {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(var(--rl-muted-rgb), 0.9);
+
+    svg { flex: none; }
+}
+
+.rl-table--mails {
+    .ic-mail-row { cursor: pointer; }
+
+    .ic-mail-row.is-open { background: rgba(var(--rl-fg-rgb), 0.04); }
+
+    .ic-mails-size { text-align: end; white-space: nowrap; }
+}
+
+.ic-mail-clip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-inline-start: 8px;
+    font-size: 11px;
+    color: rgba(var(--rl-muted-rgb), 0.9);
+}
+
+.ic-mail-view {
+    margin-block-start: 16px;
+    border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.ic-mail-view-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(var(--rl-fg-rgb), 0.03);
+    border-bottom: 1px solid rgba(var(--rl-fg-rgb), 0.08);
+
+    strong { flex: 1; min-inline-size: 0; }
+}
+
+.ic-mail-close {
+    flex: none;
+    background: none;
+    border: 0;
+    padding: 2px;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.6;
+
+    &:hover { opacity: 1; }
+}
+
+.ic-mail-headers {
+    padding: 12px 14px;
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(var(--rl-fg-rgb), 0.06);
+
+    .rl-l {
+        display: inline-block;
+        inline-size: 80px;
+        color: rgba(var(--rl-muted-rgb), 0.9);
+    }
+}
+
+.ic-mail-atts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(var(--rl-fg-rgb), 0.06);
+}
+
+.ic-mail-att {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(var(--rl-fg-rgb), 0.05);
+    font-size: 12px;
+}
+
+.ic-mail-att-size { color: rgba(var(--rl-muted-rgb), 0.9); }
+
+.ic-mail-views {
+    display: flex;
+    gap: 4px;
+    padding: 8px 14px 0;
+}
+
+.ic-mail-body {
+    display: block;
+    inline-size: 100%;
+    block-size: 420px;
+    border: 0;
+    background: var(--rl-mail-canvas);
+}
+
+.ic-mail-text {
+    padding: 14px;
+    margin: 0;
+    background: transparent;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    block-size: auto;
+    max-block-size: 420px;
+    overflow: auto;
+}
+
+.ic-mail-trunc,
+.ic-mail-empty,
+.ic-mail-error {
+    padding: 10px 14px;
+    font-size: 12px;
+    color: rgba(var(--rl-muted-rgb), 0.9);
+}
+
+.ic-mail-error { color: var(--rl-red); }
+
+/* The same sentence as the Mails tab, shown where the relay is set up so
+   the difference between staging and production is stated once per
+   screen that can act on it. */
+.ic-smtp-note {
+    font-size: 12px;
+    color: rgba(var(--rl-muted-rgb), 0.9);
+}

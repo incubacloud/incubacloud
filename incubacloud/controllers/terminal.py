@@ -116,6 +116,9 @@ class TerminalController(TerminalProxyMixin, http.Controller):
             'session_id': sid,
             'user_id': env.user.id,
         })
+        # A shell on the instance is somebody using it. Like connect-as,
+        # it produces no job, so the staging clock only learns of it here.
+        inst._touch_autopurge_clock()
 
         # Spawn the subprocess and record its port in the route
         # table. If anything fails we let the error bubble (wrapped

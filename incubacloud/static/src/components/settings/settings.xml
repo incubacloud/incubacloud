@@ -58,14 +58,12 @@
                         The default backup backend used for production instances when
                         no specific backend is selected at the project or instance level.
                     </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Backup Destination</label>
-                            <RlSelect options="backupBackendOptions"
-                                      value="state.form.default_backup_backend_id"
-                                      emptyLabel.translate="— None —"
-                                      onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
-                        </div>
+                    <div class="rl-frow">
+                        <label>Backup Destination</label>
+                        <RlSelect options="backupBackendOptions"
+                                  value="state.form.default_backup_backend_id"
+                                  emptyLabel.translate="— None —"
+                                  onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
                     </div>
 
                     <!-- Audit Log Retention -->
@@ -74,20 +72,18 @@
                         Automatically purge audit log entries older than the specified
                         number of days. Set to 0 to keep all records indefinitely.
                     </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Retention period (days)</label>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="number" min="0" style="width:120px;"
-                                       t-att-value="state.form.audit_log_retention_days"
-                                       t-on-change="(ev) => this.onIntInput('audit_log_retention_days', ev)"/>
-                                <button class="rl-btn rl-btn-ghost rl-btn-sm"
-                                        t-att-disabled="state.auditPurging"
-                                        t-on-click="purgeAuditLogs">
-                                    <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
-                                    Purge old logs now
-                                </button>
-                            </div>
+                    <div class="rl-frow">
+                        <label>Retention period (days)</label>
+                        <div class="rl-frow-inline">
+                            <input type="number" min="0"
+                                   t-att-value="state.form.audit_log_retention_days"
+                                   t-on-change="(ev) => this.onIntInput('audit_log_retention_days', ev)"/>
+                            <button class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-att-disabled="state.auditPurging"
+                                    t-on-click="purgeAuditLogs">
+                                <i t-att-class="'fa ' + (state.auditPurging ? 'fa-spinner fa-spin' : 'fa-trash-o')"/>
+                                Purge old logs now
+                            </button>
                         </div>
                     </div>
 
@@ -98,13 +94,11 @@
                         terminated jobs older than the specified number of days. Active
                         jobs are never purged. Set to 0 to keep all chunks indefinitely.
                     </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Retention period (days)</label>
-                            <input type="number" min="0" style="width:120px;"
-                                   t-att-value="state.form.job_log_retention_days"
-                                   t-on-change="(ev) => this.onIntInput('job_log_retention_days', ev)"/>
-                        </div>
+                    <div class="rl-frow">
+                        <label>Retention period (days)</label>
+                        <input type="number" min="0"
+                               t-att-value="state.form.job_log_retention_days"
+                               t-on-change="(ev) => this.onIntInput('job_log_retention_days', ev)"/>
                     </div>
 
                     <!-- Job Retention -->
@@ -116,13 +110,29 @@
                         this window is also how far back the timeline reaches. Set to 0
                         to keep all jobs indefinitely.
                     </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Retention period (days)</label>
-                            <input type="number" min="0" style="width:120px;"
-                                   t-att-value="state.form.job_retention_days"
-                                   t-on-change="(ev) => this.onIntInput('job_retention_days', ev)"/>
-                        </div>
+                    <div class="rl-frow">
+                        <label>Retention period (days)</label>
+                        <input type="number" min="0"
+                               t-att-value="state.form.job_retention_days"
+                               t-on-change="(ev) => this.onIntInput('job_retention_days', ev)"/>
+                    </div>
+
+                    <!-- Staging autopurge -->
+                    <div class="rl-saas-fsec">Staging autopurge</div>
+                    <p class="rl-tabnote">
+                        A staging instance nobody uses for this many days is deleted:
+                        no action on it from the panel, and no login inside it. Two
+                        warnings go out first, 14 and 3 days ahead, and one click on
+                        Keep starts the window over. A staging has no backup, so what
+                        goes with it does not come back — instances that should stay
+                        for good can be marked as never purged, one by one. Production
+                        instances are never touched. Set to 0 to disable.
+                    </p>
+                    <div class="rl-frow">
+                        <label>Delete unused stagings after (days)</label>
+                        <input type="number" min="0"
+                               t-att-value="state.form.staging_autopurge_days"
+                               t-on-change="(ev) => this.onIntInput('staging_autopurge_days', ev)"/>
                     </div>
 
                     <!-- Edge -->
@@ -174,13 +184,13 @@
                     <div class="rl-fgrid">
                         <div class="rl-frow">
                             <label>Payload truncation (days)</label>
-                            <input type="number" min="0" style="width:120px;"
+                            <input type="number" min="0"
                                    t-att-value="state.form.github_event_truncate_days"
                                    t-on-change="(ev) => this.onIntInput('github_event_truncate_days', ev)"/>
                         </div>
                         <div class="rl-frow">
                             <label>Full row deletion (days)</label>
-                            <input type="number" min="0" style="width:120px;"
+                            <input type="number" min="0"
                                    t-att-value="state.form.github_event_retention_days"
                                    t-on-change="(ev) => this.onIntInput('github_event_retention_days', ev)"/>
                         </div>
@@ -200,19 +210,19 @@
                     <div class="rl-fgrid">
                         <div class="rl-frow">
                             <label>Odoo log archive (days)</label>
-                            <input type="number" min="1" style="width:120px;"
+                            <input type="number" min="1"
                                    t-att-value="state.form.odoo_log_archive_days"
                                    t-on-change="(ev) => this.onIntInput('odoo_log_archive_days', ev)"/>
                         </div>
                         <div class="rl-frow">
                             <label>Max size per container log</label>
-                            <input type="text" style="width:120px;" placeholder="10m"
+                            <input type="text" placeholder="10m"
                                    t-att-value="state.form.container_log_max_size"
                                    t-on-change="(ev) => this.onInput('container_log_max_size', ev)"/>
                         </div>
                         <div class="rl-frow">
                             <label>Container log files kept</label>
-                            <input type="number" min="1" style="width:120px;"
+                            <input type="number" min="1"
                                    t-att-value="state.form.container_log_max_file"
                                    t-on-change="(ev) => this.onIntInput('container_log_max_file', ev)"/>
                         </div>
@@ -227,19 +237,19 @@
                     <div class="rl-fgrid">
                         <div class="rl-frow">
                             <label>Download cap (MB)</label>
-                            <input type="number" min="1" style="width:120px;"
+                            <input type="number" min="1"
                                    t-att-value="state.form.log_download_max_mb"
                                    t-on-change="(ev) => this.onIntInput('log_download_max_mb', ev)"/>
                         </div>
                         <div class="rl-frow">
                             <label>Search: days swept</label>
-                            <input type="number" min="1" style="width:120px;"
+                            <input type="number" min="1"
                                    t-att-value="state.form.log_search_max_files"
                                    t-on-change="(ev) => this.onIntInput('log_search_max_files', ev)"/>
                         </div>
                         <div class="rl-frow">
                             <label>Search timeout (s)</label>
-                            <input type="number" min="5" style="width:120px;"
+                            <input type="number" min="5"
                                    t-att-value="state.form.log_search_timeout_s"
                                    t-on-change="(ev) => this.onIntInput('log_search_timeout_s', ev)"/>
                         </div>
@@ -254,13 +264,11 @@
                         to inherit this value, -1 to disable, or 1–100 for an explicit
                         percentage).
                     </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow">
-                            <label>Default threshold (%)</label>
-                            <input type="number" min="0" max="100" style="width:120px;"
-                                   t-att-value="state.form.default_backup_alert_threshold_pct"
-                                   t-on-change="(ev) => this.onIntInput('default_backup_alert_threshold_pct', ev)"/>
-                        </div>
+                    <div class="rl-frow">
+                        <label>Default threshold (%)</label>
+                        <input type="number" min="0" max="100"
+                               t-att-value="state.form.default_backup_alert_threshold_pct"
+                               t-on-change="(ev) => this.onIntInput('default_backup_alert_threshold_pct', ev)"/>
                     </div>
 
                 </t>
@@ -486,19 +494,17 @@
                     <p class="rl-tabnote">
                         Fallback token for accessing private repositories the GitHub App cannot reach (e.g. odoo/enterprise).
                     </p>
-                    <div class="rl-fgrid">
-                        <div class="rl-frow rl-full">
-                            <label>Personal Access Token</label>
-                            <input type="password"
-                                   placeholder="ghp_xxxxxxxxxxxx"
-                                   t-att-value="state.form.github_pat"
-                                   t-on-input="(ev) => this.onInput('github_pat', ev)"/>
-                            <t t-if="state.hasPat">
-                                <span class="rl-th">
-                                    PAT stored. Leave blank to keep, or paste a new one to replace.
-                                </span>
-                            </t>
-                        </div>
+                    <div class="rl-frow">
+                        <label>Personal Access Token</label>
+                        <input type="password"
+                               placeholder="ghp_xxxxxxxxxxxx"
+                               t-att-value="state.form.github_pat"
+                               t-on-input="(ev) => this.onInput('github_pat', ev)"/>
+                        <t t-if="state.hasPat">
+                            <span class="rl-th">
+                                PAT stored. Leave blank to keep, or paste a new one to replace.
+                            </span>
+                        </t>
                     </div>
 
                 </t>
@@ -617,7 +623,7 @@
 
                         <div class="rl-frow">
                             <label for="ic-metrics-retention">Metrics retention (days)</label>
-                            <input id="ic-metrics-retention" type="number" min="1" style="width:120px;"
+                            <input id="ic-metrics-retention" type="number" min="1"
                                    t-att-value="state.form.metrics_retention_days"
                                    t-on-change="(ev) => this.onIntInput('metrics_retention_days', ev)"/>
                         </div>

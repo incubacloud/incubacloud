@@ -6,6 +6,156 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.132] — 2026-09-23
+
+### Added
+
+- **A "Mails" tab on every staging.** A staging never emails anybody: the
+  doodba template wires Odoo to a mail catcher that runs beside it, so a
+  restored copy of production cannot reach real customers. That has been
+  true since the first deploy and there was no way to see it — you had to
+  trust it, or go and look on the host. The tab lists what was caught
+  (when, from, to, subject, size, attachments), opens one message with
+  its HTML and plain-text bodies and its attachments described, and
+  empties the box on request. Odoo.sh calls the same thing Mails.
+
+  The catcher is not published — core 1.0.128 took away its Traefik
+  router, because the template serves that inbox at
+  `/<domain>/smtpfake/` with no authentication — so the read goes
+  through `curl` inside the instance's own `odoo` container, and the
+  parsing happens on the **host**, on the right of a pipe. A staging can
+  be any Odoo from 7.0 up, so nothing is assumed about its Python; and
+  only the projected JSON crosses SSH, where the raw mailbox would be
+  megabytes of attachments the panel never shows.
+
+  Developer and up, the same floor as the logs, capped per user by a new
+  **Mailbox reads on staging** rate limit (Settings → Rates, default 30
+  a minute). Nothing is stored in the panel. Clearing is audited.
+
+### Changed
+
+- **The Overview no longer says a staging has no SMTP.** It said "not
+  configured", which was true of the relay and false about the mail: a
+  staging captures it. It now says so, and the Networking tab states in
+  one line what this environment does with outgoing email — captured on
+  staging, real on production.
+
+## [1.0.131] — 2026-09-23
+
+### Fixed
+
+- **Fields are as wide as their form again.** The same screen used to
+  show a select at 575px, a number at 120px and a textarea at 100%, and
+  none of them was the width of the form. It reads as carelessness and
+  it is the first thing a partner sees. Four rules were fighting, and
+  all four are gone: the 460px cap every `.rl-frow` carried, the
+  hand-set `width:120px` on 32 number and text fields across core and
+  the SaaS manager, seven `.rl-fgrid` two-column grids that held a
+  single field and pinned it to the left half, and a `width:100%` that
+  reached the checkboxes too.
+
+- **A checkbox on the host form was a text box.** "Exclude from
+  auto-assignment" was an `<input>` with no `type` at all — so a text
+  field carrying `checked` — which the width rule then stretched across
+  the form. The missing attribute, not the CSS, is why it looked like
+  an empty box with its label off to the side.
+
+### Added
+
+- A structural guard over every SPA template in core, the SaaS manager
+  and the tenant panel: no form control may carry an inline width, and
+  no two-column grid may wrap a single field. Layout regressions that
+  need a screenshot to notice are layout regressions nobody notices.
+
+### Notes
+
+- `.rl-frow-inline` replaces the ad-hoc flex style on the one row that
+  pairs a field with a button ("Purge old logs now").
+- Seven `style="max-width:none"` overrides in the SaaS manager existed
+  only to defeat the 460px cap. With the cap gone they said nothing, so
+  they went with it.
+- No cap was put back at the form level. If the Rates tab reads badly
+  with fifteen numbers across 1170px, the answer is one
+  `max-inline-size` on the form — never per field, which is how the
+  three different widths happened in the first place.
+
+---
+
+## [1.0.130] — 2026-09-23
+
+### Added
+
+- **A staging nobody uses is deleted, after two warnings and never
+  without them.** Stagings stopped counting against the plan allowance
+  in the previous release, which removed the only thing that ever
+  pushed anyone to delete one. They are not free: they sit on the
+  customer's own host, they generate probes and series, and each one
+  holds a copy of production data nobody remembers is there. A staging
+  with no activity for `staging_autopurge_days` (default 90, `0`
+  disables) now goes. Production is never a candidate, nor an archived
+  instance, nor one marked `autopurge_exempt`.
+
+- **The clock measures use, not age**, and is the later of two signals.
+  `last_touched_at` is sealed when a person acts from the panel — a
+  visible job they started reaches `done`, they connect as a user, or
+  they open a terminal. `last_login_seen_at` is the last login read from
+  the staging's own database by a hidden daily job. Two things
+  deliberately do not count: the background probes, which finish
+  successfully every few minutes on instances nobody is looking at, and
+  anything the platform bot starts on its own — a rebuild off a push
+  above all. Either one counting would keep every staging alive forever
+  and leave the feature dead code that looks alive.
+
+- **The ladder climbs one rung per tick**, and each rung requires the one
+  below it: warning at 14 days out, a second and critical one at 3, then
+  deletion — which additionally waits a full day after that final
+  warning. The naive version, evaluating every condition and acting on
+  all that match, warns twice and deletes in one sub-second pass when
+  the cron comes back from an outage. That is notice in form and nothing
+  in substance, and it is the specific failure this ordering exists to
+  make impossible.
+
+- **A countdown and a one-click way out.** An amber *Expires in N days*
+  badge (red over the last three) appears on the instance and in the
+  project sidebar from the first warning on, carrying a **Keep** button
+  that starts the window over. Per-instance *Never purge automatically*
+  for the permanent ones, and the window itself under Settings →
+  General.
+
+### Changed
+
+- `docs/roadmap.md`: "Login with GitHub" moves from medium term to
+  shipped, where it has been for some time.
+
+### Notes
+
+- The migration starts every existing instance's clock at **now**, not
+  at `create_date`. `create_date` was available and looks like a
+  reasonable proxy, and it would have made the first tick after this
+  deploy find every staging older than the window already past its
+  deadline — the feature would have opened by doing the one thing it
+  exists to promise never to do. Nothing can therefore be deleted until
+  90 days after this release, and the first warning is possible at 76.
+
+- Two alert codes rather than one that escalates: `cloud.alert` only
+  dispatches notifications when a row is **created**, so re-raising the
+  same alert at a higher level reaches nobody — and `critical` is the
+  only level the default notification preference delivers.
+
+- The login reading is deliberately asymmetric. A real answer may extend
+  an instance's life; nothing may ever shorten it. A stopped container,
+  an unreachable database, a garbled answer, a host clock skewed into
+  the future and a restore that rolled the instance's history backwards
+  all leave the field exactly as it was. "We could not ask" is never
+  recorded as "nobody logged in".
+
+- The reading has to work from Odoo 7.0 to 19.0, so it assumes neither
+  `python3` in the image nor `to_regclass` in PostgreSQL, and it decides
+  which table holds the answer by asking the catalogue rather than
+  trusting the panel's `odoo_version`, which an operator fills in.
+
+---
+
 ## [1.0.129] — 2026-09-21
 
 ### Added

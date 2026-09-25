@@ -1159,6 +1159,7 @@ class CrudMixin:
                 'id': i.id,
                 'name': i.name,
                 'environment': i.environment,
+                'autopurge_days_left': i._autopurge_days_left(),
                 'status': i.status,
                 'state': i.state,
                 'deployed': i.deployed,
@@ -1467,6 +1468,9 @@ class CrudMixin:
             ),
             'job_log_retention_days': settings.job_log_retention_days or 0,
             'job_retention_days': settings.job_retention_days or 0,
+            'staging_autopurge_days': (
+                settings.staging_autopurge_days or 0
+            ),
             'default_backup_alert_threshold_pct': (
                 settings.default_backup_alert_threshold_pct or 0
             ),
@@ -1509,7 +1513,7 @@ class CrudMixin:
     def cloud_save_general_settings(
         self, autoassign_enabled=False, default_backup_backend_id=None,
         audit_log_retention_days=90, job_log_retention_days=30,
-        job_retention_days=180,
+        job_retention_days=180, staging_autopurge_days=None,
         default_backup_alert_threshold_pct=80,
         github_event_retention_days=90, github_event_truncate_days=7,
         metrics_enabled=None, metrics_central_url=None,
@@ -1569,6 +1573,25 @@ class CrudMixin:
                 0, _safe_int(github_event_truncate_days, 7),
             ),
         })
+
+        # ── Staging autopurge ─────────────────────────────────────────
+        # Written only when the client sent it, and through the model so
+        # the floor on the window is enforced in one place. A window too
+        # short for the warnings to land is refused by name rather than
+        # silently clamped, because clamping would leave the operator
+        # believing a number that is not in force.
+        if staging_autopurge_days is not None:
+            try:
+                request.env['cloud.settings'].sudo()._get().write({
+                    'staging_autopurge_days': _safe_int(
+                        staging_autopurge_days, 90,
+                    ),
+                })
+            except ValidationError as exc:
+                return {
+                    'ok': False,
+                    'error': exc.args[0] if exc.args else str(exc),
+                }
 
         # ── Edge ──────────────────────────────────────────────────────
         # Written only when the client sent them, so a caller that
@@ -1691,6 +1714,9 @@ class CrudMixin:
                 s.rate_limit_connect_user_per_min or 0
             ),
             'rate_limit_logs_per_min': s.rate_limit_logs_per_min or 0,
+            'rate_limit_mail_reads_per_min': (
+                s.rate_limit_mail_reads_per_min or 0
+            ),
             'rate_limit_log_search_per_min': (
                 s.rate_limit_log_search_per_min or 0
             ),
@@ -1716,6 +1742,7 @@ class CrudMixin:
             'rate_limit_connect_per_min',
             'rate_limit_connect_user_per_min',
             'rate_limit_logs_per_min',
+            'rate_limit_mail_reads_per_min',
             'rate_limit_log_search_per_min',
             'rate_limit_github_previews_per_hour',
             'rate_limit_github_imports_per_hour',
@@ -1764,6 +1791,8 @@ class CrudMixin:
             'stop_is_expected': inst.stop_is_expected,
             'auto_rebuild': inst.auto_rebuild,
             'auto_update': inst.auto_update,
+            'autopurge_exempt': inst.autopurge_exempt,
+            'autopurge_days_left': inst._autopurge_days_left(),
             'pending_pushes': [
                 {
                     'id': p.id,
@@ -1955,6 +1984,7 @@ class CrudMixin:
         'smtp_relay_user', 'smtp_relay_password',
         'odoo_conf', 'pip_dependencies', 'apt_dependencies',
         'backup_backend_id', 'auto_rebuild', 'auto_update', 'tag_ids',
+        'autopurge_exempt',
         'odoo_memory_limit', 'odoo_cpus',
         'db_memory_limit', 'db_cpus',
         'backup_memory_limit', 'backup_cpus',
@@ -2048,3 +2078,34 @@ class CrudMixin:
             if to_unlink:
                 Repo.browse(list(to_unlink)).unlink()
         return {'ok': True}
+
+    @http.route(['/cloud/keep_instance'], type='jsonrpc', auth='user')
+    def cloud_keep_instance(self, instance_id):
+        """Start an expiring staging's window over, from one click.
+
+        The whole escape hatch from the autopurge, and the reason two
+        warnings are enough notice: acting on them costs a button.
+        Consultant-gated, the same role that can deploy — somebody who
+        can start an instance can keep one.
+
+        :param int instance_id: the staging to keep.
+        :returns: ``{'ok': True, 'days_left': False}`` once the ladder
+            has been reset, so the caller can drop the pill without a
+            reload.
+        """
+        self._sec()._check_cloud_group('group_cloud_consultant')
+        inst = request.env['cloud.instance'].browse(instance_id)
+        if not inst.exists():
+            return {'ok': False, 'error': _('Instance not found')}
+        if inst.environment != 'staging':
+            return {
+                'ok': False,
+                'error': _('Only staging instances expire.'),
+            }
+        inst._touch_autopurge_clock()
+        request.env['cloud.audit.log'].sudo().create({
+            'action': 'Keep instance',
+            'details': f"'{inst.name}' kept: the expiry window starts over",
+            **inst._audit_target_vals(),
+        })
+        return {'ok': True, 'days_left': inst._autopurge_days_left()}

@@ -438,6 +438,41 @@ All webhook events are stored in `cloud.github.event` (immutable audit log). The
 
 ---
 
+## Staging autopurge
+
+Once a staging stops counting against the plan allowance, nothing pushes anyone to delete one, and they are not free: disk on the customer's host, probes and series in the central stack, and a copy of production data nobody remembers is there. A staging unused for `cloud.settings.staging_autopurge_days` (default 90, `0` disables, floor of 28 so the warnings still land in time) is deleted. Production is never a candidate, nor is an archived instance, nor one flagged `autopurge_exempt`.
+
+**The clock is two fields and the later one wins** (`cloud.instance._autopurge_clock`). Both are fields of their own and never `write_date`, which the daily crons would push forward forever — the same trap `archived_at` documents.
+
+- `last_touched_at` — somebody acted from the panel. Sealed on `create()` (so no row is ever clockless, including copies, since `copy=False` drops it), by `queue_job_ext.QueueJob._seal_autopurge_clock` when a **visible** job authored by a **human internal user** reaches `done`, and by the connect-as and terminal-open controllers, neither of which leaves a job behind. Hidden types (the probes) and anything the bot starts on its own — a rebuild off a push above all — are excluded by design: either counting would keep every staging alive forever and leave the feature dead code that looks alive. `create_uid` is trustworthy here precisely because everything the platform starts goes through `as_platform`.
+- `last_login_seen_at` — the last login inside the staging's own database, read daily by the hidden `read_last_login` job (`cron_read_staging_logins`, running and non-exempt stagings only). The script picks `res_users_log` or `res_users.login_date` by asking the database with `to_regclass`, not by trusting the panel's `odoo_version`. **A failed reading writes nothing**: a stopped container, an unreachable database or a garbled answer must never be recorded as "nobody logged in". The value is also monotonic — an older answer (a restore from an old backup) and a future one (a skewed host clock) are both refused.
+
+**The ladder** (`_cron_autopurge_stagings` → `_autopurge_step`, daily) climbs **one rung per tick**, and each rung requires the one below it: first warning at `AUTOPURGE_WARN_DAYS` (14) out, final warning at `AUTOPURGE_FINAL_DAYS` (3), deletion at the deadline **and** at least 24 h after the final warning was stamped. That ordering is the whole design: the naive version — evaluate every condition, act on all that match — warns twice and deletes in one sub-second pass when the cron comes back from an outage, which is notice in form and nothing in substance. Failures are reported and skipped per instance, so one unreachable host does not keep the rest alive.
+
+Two alert codes (`staging_expiring` warning, `staging_expiring_final` critical) rather than one that escalates, because `cloud.alert` only dispatches notifications on **create**: re-raising the same row at a higher level reaches nobody, and `critical` is the only level the default `failures` preference delivers. Both are resolved by `_touch_autopurge_clock()`, which also clears the two warning stamps — an instance that comes back to life gets its whole notice period again, never "three days left and no warning showing".
+
+Deletion goes through the ordinary path (`delete_instance` enqueued `as_platform` when deployed, `unlink()` when not) — the same one a closing pull request uses; a second way to delete an instance is a second way to get deletion wrong. An audit row carrying the instance **name** is written first, because `cloud.audit.log.instance_id` is `ondelete='set null'`. A refused enqueue (an operation already running) raises `staging_autopurge_stuck` and retries tomorrow.
+
+`_autopurge_days_left()` answers only once the first warning is out — a countdown on every staging from birth is something people learn to scroll past — and travels through `/cloud/get_instance` and the project instance list. `/cloud/keep_instance` (consultant-gated, the same role that can deploy) is the one-click reset, audited.
+
+## Captured mail on staging (the "Mails" tab)
+
+Every staging renders a MailHog container and the doodba template wires Odoo to it (`SMTP_SERVER: smtplocal`), so a copy of production never mails real customers. That has always been true and was never visible. `controllers/_data_load/_mailbox.py` builds the three commands that make it readable; `_routes_ops` exposes them at `/cloud/instance_mailbox`, `/cloud/instance_mail` and `/cloud/instance_mailbox_clear`.
+
+**The catcher is only reachable from inside the stack**, which is the point: core 1.0.128 took away its Traefik router, because the template publishes the inbox at `/<domain>/smtpfake/` with no authentication and `cidr_whitelist` is `null` on our deploys. So the request is issued with `curl` from the instance's own `odoo` container, which is on the compose network and already carries `curl` (the health probe uses it).
+
+**The projection runs on the host, not in the container.** A staging can be any Odoo from 7.0 up, so its container's Python is whatever that era shipped — the trap `read_last_login.sh` had to dodge. The host is ours and has python3, so `docker compose exec … curl | python3 -c "$PROG"` puts the parser on the right of the pipe, in the SSH shell. Two consequences: nothing is assumed about the tenant image, and only the projected JSON crosses SSH — a mailbox of fifty messages with attachments is megabytes, none of which the panel would show.
+
+Bodies are rebuilt from MailHog's `Raw.Data` with Python's `email` package rather than from its own `MIME.Parts`, because the raw message is the only representation carrying each part's charset and transfer encoding — which is what turns a quoted-printable `=C3=B1` back into an `ñ`, and an RFC 2047 `=?utf-8?q?…?=` subject into something a person can read. Attachments are listed (name, type, size) and never carried. The listing, the message and the attachment list are all bounded (100 messages, 256 KB of HTML, 64 KB of text, 50 attachments), and a truncated body says so.
+
+Gated on `can_view_logs` (developer+): the same data class as the logs, read the same way, and capped per user by its own `rate_limit_mail_reads_per_min` because a mail read costs a `docker compose exec` plus an HTTP call inside the stack where a log read is a `tail`. Nothing is stored in the panel. Production has no catcher, so the tab is absent rather than empty, and the four ways to have no mailbox — production, not deployed, stopped, gone — each answer in their own words: an operator who cannot tell them apart concludes the feature is broken. Clearing is audited; reading is not, matching the proxy access log.
+
+In the browser the HTML body renders in an `iframe` with an empty `sandbox`, so no scripts and no same-origin: it is mail generated by somebody else's database.
+
+---
+
+---
+
 ## Alerts and notifications
 
 ### Alerts

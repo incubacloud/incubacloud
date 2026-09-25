@@ -72,6 +72,7 @@ path and write into the copy being kept.
 - [Restore from a backup](../backups/restore.md)
 - [Refresh a staging with production data](#refresh-from-production)
 - [Get a preview instance for every pull request](#pull-request-previews)
+- [Keep a staging that is about to expire](#stagings-expire-when-nobody-uses-them)
 - Add a custom domain (Instance detail → Networking → Domain)
 
 ## Refresh from production
@@ -152,6 +153,87 @@ Things worth knowing before switching it on:
 - If a preview cannot be created, the pull request gets a comment saying why and
   the production instance an alert. Fix the cause, then close and reopen the
   pull request to try again.
+
+## Stagings expire when nobody uses them
+
+A staging that nobody has touched for **90 days** is deleted automatically.
+Production instances are never affected.
+
+The clock measures *use*, not age: a staging somebody opens every week never
+expires, however old it is. Two things reset it to zero:
+
+- **You did something with it from the panel** — deployed, rebuilt, restarted,
+  restored, refreshed it, connected as a user, or opened a shell on it.
+- **Somebody logged into its Odoo.** The panel reads the last login from the
+  staging's own database once a day.
+
+Two things deliberately do **not** count. Rebuilds triggered by a push are code
+arriving, not a person looking at it. And the health probes that run every few
+minutes are the platform watching, not you.
+
+!!! danger "A staging has no backup to go back to"
+    Deletion removes the containers, the database and the files. Unlike
+    [archiving](#ending-an-instance), it keeps no copy, so whatever was only in
+    that staging is gone. If it holds something you want, download a backup
+    before the deadline.
+
+### What you see before it happens
+
+You get two warnings, and the second one reaches you whatever your notification
+preferences are:
+
+| When | What happens |
+|---|---|
+| 14 days before | A warning, and an amber **Expires in N days** badge on the instance |
+| 3 days before | A second, critical warning; the badge turns red |
+| On the day | Deleted |
+
+The badge appears next to the instance name in the project sidebar and in the
+instance's own header, from the first warning on.
+
+### How to stop it
+
+- **Use it.** Anything in the list above starts the 90 days over.
+- **Press Keep** on the badge in the instance header. One click, same effect.
+- **Mark it as permanent** — *Instance detail → Settings → Never purge
+  automatically*. For the ones that should stay regardless: a QA environment
+  nobody logs into for months is still not disposable.
+
+!!! note "Nothing is ever deleted the day the feature notices it"
+    Each step waits for the one before it, and deletion waits at least a day
+    after the final warning. A platform that had been down for a month comes
+    back and *warns*; it cannot warn and delete in the same pass.
+
+[Pull request previews](#pull-request-previews) follow the same rule, on top of
+being deleted when their pull request closes.
+
+Administrators can change the 90 days, or switch the whole thing off, under
+**Settings → General → Staging autopurge**.
+
+## Email on staging
+
+A staging never emails anybody. Whatever it sends — password resets, order
+confirmations, invitations — is caught by a mail server that runs alongside it
+and goes no further. That is what makes it safe to restore a copy of production
+and click around in it: the customers in that copy are real, and none of them
+will hear from you.
+
+Open **Instance detail → Mails** to read what was caught. The list shows when
+each message arrived, who it was for and what it said; open one to see the HTML
+as the recipient would have seen it, the plain-text alternative, and what was
+attached.
+
+!!! warning "The mailbox is temporary"
+    The catcher keeps everything in memory. Restarting the instance — a rebuild,
+    an update, a stop and start — empties it. If a message matters, read it
+    before you restart.
+
+**Clear mailbox** empties it on purpose, which is the way to make "now watch
+what this button sends" readable.
+
+Production is the opposite: its email is real and leaves the server. There is no
+Mails tab there, and the SMTP relay you configure under *Networking* is the one
+that will actually deliver.
 
 ## See also
 

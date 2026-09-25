@@ -51,6 +51,11 @@
                                 <t t-if="inst.pr_number">
                                     <span class="ic-pr-badge">PR #<t t-esc="inst.pr_number"/></span>
                                 </t>
+                                <t t-if="expiryLabel(inst)">
+                                    <span t-att-class="'ic-expiry-badge' + (inst.autopurge_days_left &lt;= 3 ? ' urgent' : '')"
+                                          t-att-title="expiryTitle(inst)"
+                                          t-esc="expiryLabel(inst)"/>
+                                </t>
                                 <span class="rl-ctx-ver" t-esc="inst.odoo_version || ''"/>
                                 <t t-if="env.permissions?.can_clone_to_staging and inst.state === 'deployed' and inst.environment === 'production'">
                                     <span class="rl-ctx-clone" title="Clone to Staging"

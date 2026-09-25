@@ -770,7 +770,9 @@ class CloudJob(models.Model):
     # Job types hidden from the drawer (automated background tasks).
     # These are still visible in the history page under the "Admin" category.
     # Override _get_hidden_job_types() in submodules to extend this list.
-    _hidden_job_types = ["host_metrics", "docker_prune", "instance_health"]
+    _hidden_job_types = [
+        "host_metrics", "docker_prune", "instance_health", "read_last_login",
+    ]
 
     # Job types whose failure should raise a critical alert — these
     # are user-initiated, long-running operations whose failure the
@@ -840,6 +842,11 @@ class CloudJob(models.Model):
         "delete_host": "group_cloud_manager",
         "docker_prune": "group_cloud_manager",
         "instance_health": "group_cloud_manager",
+        # Opens the instance's own database with its own credentials.
+        # It only reads one timestamp, but the capability is the same
+        # one the health probe has, so it sits at the same level: only
+        # the daily cron legitimately produces these.
+        "read_last_login": "group_cloud_manager",
         "sync_metrics_accounts": "group_cloud_manager",
         # Both deploy containers on the host — cAdvisor runs privileged
         # with the root filesystem mounted, and the central brings up a

@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from contextlib import suppress
+from datetime import timedelta
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
@@ -22,9 +23,24 @@ from ._repo_requirements import _normalize_url
 from .cloud_host import parse_memory_to_gb
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
+from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
 _GLOBAL_BACKUP_PARAM = "incubacloud.backup_backend_id"
+
+# Staging autopurge: how much notice an expiring staging gets, in days
+# before its deadline. Constants rather than settings because the two
+# steps only make sense relative to each other and to the window's
+# lower bound — an operator who could set them independently could
+# order them wrongly and get a final warning before the first one.
+AUTOPURGE_WARN_DAYS = 14
+AUTOPURGE_FINAL_DAYS = 3
+# Two codes and not one that escalates: ``cloud.alert`` only dispatches
+# notifications when the row is *created*, so raising the same alert
+# again at a higher level reaches nobody. The second code is critical,
+# which is the only level the default notification preference delivers.
+AUTOPURGE_WARN_ALERT_CODE = "staging_expiring"
+AUTOPURGE_FINAL_ALERT_CODE = "staging_expiring_final"
 
 
 def _smtp_canonical_domain(inst):
@@ -1905,6 +1921,125 @@ class CloudInstance(models.Model):
              "never refreshed: 'now' on a retry would defeat the point.",
     )
 
+    # ── Staging autopurge clock ──────────────────────────────────────────
+    # A staging that costs disk, probes and a copy of production data is
+    # only harmless while somebody is using it. These fields answer "when
+    # did a person last use this one", which is a different question from
+    # "when was it last written to": the crons rewrite every row daily, so
+    # ``write_date`` would push the deadline forward forever — the same
+    # trap ``archived_at`` above exists to avoid.
+    last_touched_at = fields.Datetime(
+        copy=False,
+        readonly=True,
+        help="When somebody last acted on this instance from the panel: "
+             "a visible job they started finished, they connected as a "
+             "user, opened a terminal, or pressed Keep. Background "
+             "probes and anything the platform bot starts on its own do "
+             "not count.",
+    )
+    last_login_seen_at = fields.Datetime(
+        copy=False,
+        readonly=True,
+        help="The most recent login read from the staging's own database. "
+             "Complements the panel signal: somebody can use a staging "
+             "for weeks without touching the panel. An unreadable "
+             "instance leaves this alone — no reading means 'unknown', "
+             "never 'nobody logged in'.",
+    )
+    autopurge_exempt = fields.Boolean(
+        default=False,
+        copy=False,
+        string="Never Purge Automatically",
+        help="Keep this instance out of the staging autopurge for good. "
+             "For the permanent ones — a QA environment nobody logs "
+             "into for months is still not disposable.",
+    )
+    autopurge_warned_at = fields.Datetime(
+        copy=False,
+        readonly=True,
+        help="When the first expiry warning went out. Cleared the moment "
+             "somebody touches the instance, so a staging that comes "
+             "back to life starts its whole notice period over.",
+    )
+    autopurge_final_warned_at = fields.Datetime(
+        copy=False,
+        readonly=True,
+        help="When the final expiry warning went out. Deletion requires "
+             "this to be set and at least a day old, which is what keeps "
+             "a cron that was down for weeks from warning and deleting "
+             "in the same tick.",
+    )
+
+    def _autopurge_clock(self):
+        """Return the later of the two activity signals, or ``False``.
+
+        Either signal alone is an undercount — somebody can drive a
+        staging entirely from the panel without ever logging into it, or
+        live inside it without opening the panel — so the freshest one
+        wins and a missing one simply does not vote.
+
+        :returns: ``datetime`` of the last known activity, or ``False``
+            when neither signal has ever been recorded.
+        """
+        self.ensure_one()
+        stamps = [
+            stamp for stamp in (self.last_touched_at, self.last_login_seen_at)
+            if stamp
+        ]
+        return max(stamps) if stamps else False
+
+    def _autopurge_days_left(self):
+        """Days until this staging is deleted, or ``False`` if none are.
+
+        Answers only once the first warning has gone out. Before that
+        there is nothing for anyone to act on, and a countdown on every
+        staging from the day it is created would be noise people learn
+        to scroll past — which is exactly the reflex the warning needs
+        them not to have.
+
+        :returns: whole days remaining (``0`` on the last day), or
+            ``False`` when this instance is not on the ladder.
+        """
+        self.ensure_one()
+        if self.environment != "staging" or self.autopurge_exempt:
+            return False
+        if not self.autopurge_warned_at:
+            return False
+        window = self.env["cloud.settings"].sudo()._get().staging_autopurge_days
+        clock = self._autopurge_clock()
+        if not window or not clock:
+            return False
+        deadline = clock + timedelta(days=window)
+        return max(0, (deadline - fields.Datetime.now()).days)
+
+    def _touch_autopurge_clock(self):
+        """Record that somebody just used these instances.
+
+        Resets the whole escalation, not just the clock: the warning
+        stamps are cleared and the alerts resolved, so an instance that
+        comes back to life gets its full notice period again rather than
+        being three days from deletion with no visible warning left.
+
+        Production is skipped rather than refused — the callers are
+        generic (a job finished, a terminal opened) and should not each
+        have to ask what environment they are in.
+
+        :returns: the staging records whose clock was sealed.
+        """
+        stagings = self.filtered(lambda i: i.environment == "staging")
+        if not stagings:
+            return stagings
+        stagings.sudo().write({
+            "last_touched_at": fields.Datetime.now(),
+            "autopurge_warned_at": False,
+            "autopurge_final_warned_at": False,
+        })
+        Alert = self.env["cloud.alert"].sudo()
+        for inst in stagings:
+            Alert.resolve_alert(AUTOPURGE_WARN_ALERT_CODE, instance=inst)
+            Alert.resolve_alert(AUTOPURGE_FINAL_ALERT_CODE, instance=inst)
+        return stagings
+
     @api.model
     def _cron_verify_archived_copies(self):
         """Check that every archived instance still has its copy.
@@ -2434,6 +2569,239 @@ class CloudInstance(models.Model):
                 )
 
     @api.model
+    def _cron_autopurge_stagings(self):
+        """Walk every staging one step along the expiry ladder.
+
+        The ladder has three rungs — first warning, final warning,
+        deletion — and an instance climbs **at most one per tick**, with
+        each rung requiring the one below it to have been reached
+        already. That is the invariant the whole feature rests on: if
+        this cron is down for a month, the tick that brings it back
+        sends a first warning and stops. It cannot warn and delete in
+        the same pass, no matter how far past its deadline something is.
+
+        Deletion additionally requires the final warning to be a day old,
+        so "nobody was warned in time" cannot happen through a fast
+        succession of ticks either.
+
+        Failures are reported and skipped rather than raised: one host
+        that will not answer must not keep every other expired staging
+        alive, the same policy the archived-copy check uses.
+
+        :returns: counts per rung, for the cron log.
+        """
+        window = self.env["cloud.settings"].sudo()._get().staging_autopurge_days
+        if not window:
+            return {"warned": 0, "final_warned": 0, "deleted": 0, "skipped": 0}
+        now = fields.Datetime.now()
+        tally = {"warned": 0, "final_warned": 0, "deleted": 0, "skipped": 0}
+        # ``search`` excludes archived rows by default, which is what we
+        # want: an archived instance has already been dealt with, and its
+        # copy has a retention of its own.
+        candidates = self.search(
+            [
+                ("environment", "=", "staging"),
+                ("autopurge_exempt", "=", False),
+            ]
+            + self._periodic_maintenance_domain()
+        )
+        for inst in candidates:
+            clock = inst._autopurge_clock()
+            if not clock:
+                # No clock is not "never used" — it is "we do not know",
+                # and the migration means it should not happen. Skipping
+                # is the only safe reading.
+                tally["skipped"] += 1
+                continue
+            deadline = clock + timedelta(days=window)
+            try:
+                rung = inst._autopurge_step(now, deadline, window)
+            except Exception:
+                _logger.exception(
+                    "autopurge step failed for instance %s", inst.name,
+                )
+                tally["skipped"] += 1
+                continue
+            if rung:
+                tally[rung] += 1
+        return tally
+
+    def _autopurge_step(self, now, deadline, window):
+        """Take this instance's single step for this tick, if any is due.
+
+        :param now: the tick's instant, shared by every instance so one
+            long pass cannot straddle a boundary.
+        :param deadline: when this instance is due to be deleted.
+        :param int window: the configured window, for the messages.
+        :returns: the rung climbed (``warned``, ``final_warned`` or
+            ``deleted``), or ``False`` when nothing was due.
+        """
+        self.ensure_one()
+        Alert = self.env["cloud.alert"].sudo()
+        if not self.autopurge_warned_at:
+            if now < deadline - timedelta(days=AUTOPURGE_WARN_DAYS):
+                return False
+            Alert.raise_alert(
+                AUTOPURGE_WARN_ALERT_CODE,
+                _(
+                    "Staging '%(name)s' has had no activity for a while "
+                    "and is scheduled for deletion on %(date)s. Open it, "
+                    "or press Keep on it, and the %(window)s-day window "
+                    "starts over. A staging has no backup: once deleted "
+                    "it cannot be brought back.",
+                    name=self.name,
+                    date=fields.Date.to_string(deadline.date()),
+                    window=window,
+                ),
+                instance=self,
+            )
+            self.sudo().write({"autopurge_warned_at": now})
+            return "warned"
+        if not self.autopurge_final_warned_at:
+            if now < deadline - timedelta(days=AUTOPURGE_FINAL_DAYS):
+                return False
+            Alert.raise_alert(
+                AUTOPURGE_FINAL_ALERT_CODE,
+                _(
+                    "Last call: staging '%(name)s' is deleted on "
+                    "%(date)s, with everything in it. Press Keep to "
+                    "stop that, or mark it as never purged if it should "
+                    "stay for good.",
+                    name=self.name,
+                    date=fields.Date.to_string(deadline.date()),
+                ),
+                level="critical",
+                instance=self,
+            )
+            self.sudo().write({"autopurge_final_warned_at": now})
+            return "final_warned"
+        if now < deadline:
+            return False
+        # The final warning has to have been out for a full day. Without
+        # this a cron that had been down could send it and delete on
+        # consecutive ticks minutes apart, which is notice in form only.
+        if now < self.autopurge_final_warned_at + timedelta(days=1):
+            return False
+        return "deleted" if self._autopurge_delete(window) else False
+
+    def _autopurge_delete(self, window):
+        """Delete this expired staging through the ordinary path.
+
+        Reuses what closing a pull request does — enqueue
+        ``delete_instance`` when there is something on a host to tear
+        down, unlink when there is not — rather than a destructor of its
+        own. A second way to delete an instance is a second way to get
+        deletion wrong.
+
+        :param int window: the window that expired, for the audit trail.
+        :returns: ``True`` when the deletion was started or done.
+        """
+        self.ensure_one()
+        name = self.name
+        # The audit row goes *inside* the savepoint, and before the
+        # deletion. Before, because ``instance_id`` is a real foreign key
+        # — after an unlink there is no row left to point at, and
+        # ``ondelete='set null'`` only rescues rows that already exist.
+        # Inside, because a deletion that is then refused must not leave
+        # a trail claiming a purge that never happened: the savepoint
+        # takes the row back with it.
+        #
+        # The savepoint also keeps a database-level failure from
+        # poisoning the cursor the alert below is written on, which would
+        # otherwise swallow the one record of why this did not happen —
+        # the lesson the PR-preview clone taught.
+        try:
+            with self.env.cr.savepoint():
+                self.env["cloud.audit.log"].sudo().create({
+                    "action": "Autopurge",
+                    "details": (
+                        f"'{name}' deleted by autopurge after {window} "
+                        f"days without activity"
+                    ),
+                    **self._audit_target_vals(),
+                })
+                if not (self.deployed and self.host_id):
+                    # ``unlink`` refuses a record a job still owns
+                    # (``deploying``/``deleting``), which is the same
+                    # "busy right now" as a refused enqueue and gets the
+                    # same answer below.
+                    self.sudo().unlink()
+                else:
+                    # The platform is deleting this on its own schedule,
+                    # so the job must not be attributed to whoever the
+                    # cron happens to run as.
+                    as_platform(self.env["cloud.job"]).enqueue(
+                        self.host_id.id, self.id, "delete_instance",
+                    )
+        except Exception as exc:
+            # An operation already running on the instance is the normal
+            # case here, and tomorrow's tick simply tries again. It is
+            # still worth surfacing: an instance that never manages to
+            # start its own deletion would otherwise sit past its
+            # deadline indefinitely with nothing saying so.
+            self.env["cloud.alert"].sudo().raise_alert(
+                "staging_autopurge_stuck",
+                _(
+                    "Staging '%(name)s' is past its autopurge deadline "
+                    "but its deletion could not be started: %(reason)s. "
+                    "It will be retried daily.",
+                    name=name, reason=str(exc),
+                ),
+                instance=self,
+            )
+            return False
+        return True
+
+    @api.model
+    def cron_read_staging_logins(self):
+        """Queue a login reading for every staging the autopurge watches.
+
+        Daily rather than on the health probe's five-minute tick: the
+        answer moves at most once per login, and the reading opens the
+        staging's own database, which is not something to do sixty times
+        an hour for a number nobody reads until the deadline approaches.
+
+        Only stagings that are deployed and running are asked. A stopped
+        one cannot answer, and — per the design — being stopped for three
+        months is exactly the disuse this measures, not a gap to paper
+        over. Exempt instances are skipped because their reading could
+        never change an outcome, and everything is skipped while the
+        window is ``0``, which is how the feature is turned off.
+
+        :returns: how many readings were queued.
+        """
+        settings = self.env["cloud.settings"].sudo()._get()
+        if not settings.staging_autopurge_days:
+            return 0
+        instances = self.search(
+            [
+                ("environment", "=", "staging"),
+                ("deployed", "=", True),
+                ("running", "=", True),
+                ("autopurge_exempt", "=", False),
+            ]
+            + self._periodic_maintenance_domain()
+        )
+        queued = 0
+        for inst in instances:
+            if not inst.host_id:
+                continue
+            try:
+                self.env["cloud.job"].enqueue(
+                    inst.host_id.id, inst.id, "read_last_login",
+                )
+                queued += 1
+            except Exception as exc:
+                # One unreachable instance must not cost the fleet its
+                # readings — the same skip-and-carry-on policy the
+                # archived-copy check uses.
+                _logger.warning(
+                    "Could not enqueue read_last_login for %s: %s",
+                    inst.name, exc,
+                )
+        return queued
+
+    @api.model
     def cron_recover_stuck_moves(self):
         """Watchdog: recover instances stranded by a failed host move.
 
@@ -2594,6 +2962,7 @@ class CloudInstance(models.Model):
             "postgres_dbname",
             "backup_backend_id",
             "active",
+            "autopurge_exempt",
         }
     )
 
@@ -2852,6 +3221,12 @@ class CloudInstance(models.Model):
                     )
                 )
             self._check_name_not_held_by_an_archived(vals)
+            # Being born counts as activity. A row that reached the
+            # table with an empty clock is the one shape the autopurge
+            # cron cannot read, and ``copy=False`` produces exactly that
+            # on every duplicate — so the default is applied here rather
+            # than on the field, where a copy would skip it.
+            vals.setdefault("last_touched_at", fields.Datetime.now())
             for field in self._REQUIRED_PASSWORD_FIELDS:
                 if not vals.get(field):
                     vals[field] = generate_password()
