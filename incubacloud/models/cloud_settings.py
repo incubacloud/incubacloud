@@ -9,6 +9,7 @@ from odoo import _, api, fields, models, tools
 from odoo.exceptions import UserError, ValidationError
 
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
+from .cloud_instance import AUTOPURGE_FINAL_DAYS, AUTOPURGE_WARN_DAYS
 from .encrypted_char import EncryptedChar, EncryptedFieldMixin
 from .password_utils import (
     generate_password,
@@ -97,6 +98,21 @@ class CloudSettings(models.Model):
              'a job also removes its remaining log chunks and trims the '
              'instance timeline to this window. Set to 0 to disable '
              'purging entirely (table will grow unbounded).',
+    )
+
+    # A staging nobody uses still costs disk on the customer's host,
+    # still generates probes and series, and still holds a copy of
+    # production data. Nothing pushes anyone to delete it once stagings
+    # stopped counting against the plan allowance, so the window does.
+    staging_autopurge_days = fields.Integer(
+        string='Staging autopurge (days)',
+        default=90,
+        help='Delete a staging instance after this many days without '
+             'anyone using it — no action on it from the panel and no '
+             'login inside it. Two warnings go out first, 14 and 3 days '
+             'ahead, and one click on Keep starts the window over. '
+             'Production instances are never touched. Set to 0 to '
+             'disable the autopurge entirely.',
     )
 
     # ── GitHub event retention ────────────────────────────────────────────
@@ -309,6 +325,15 @@ class CloudSettings(models.Model):
              "A search decompresses up to the configured number of days "
              "on the instance's host; a download ships a whole day "
              "through the panel. 0 falls back to the default.",
+    )
+    rate_limit_mail_reads_per_min = fields.Integer(
+        string="Mail reads per minute (per user)",
+        default=30,
+        help="Cap on reads of a staging's captured mailbox per user: "
+             "the listing, one message and emptying the box. Each one "
+             "costs a docker exec plus an HTTP call inside the "
+             "instance's stack, which is dearer than a log tail. "
+             "0 falls back to the default.",
     )
     rate_limit_connect_user_per_min = fields.Integer(
         string='Connect as user (per user, per minute)',
@@ -735,6 +760,40 @@ class CloudSettings(models.Model):
         if not rec:
             rec = self.sudo().create({})
         return rec
+
+    @api.constrains('staging_autopurge_days')
+    def _check_staging_autopurge_days(self):
+        """Refuse a window the warning ladder cannot fit inside.
+
+        The two warnings are fixed at 14 and 3 days before the deadline.
+        A window shorter than the first one would send both warnings on
+        the day the instance was created — technically "never without
+        notice", and useless as notice. The floor keeps the promise
+        meaningful instead of merely literal.
+
+        :raise ValidationError: when the window is negative, or positive
+            but shorter than the first warning needs.
+        """
+        floor = AUTOPURGE_WARN_DAYS * 2
+        for settings in self:
+            days = settings.staging_autopurge_days
+            if days == 0:
+                continue
+            if days < 0:
+                raise ValidationError(_(
+                    "The staging autopurge window cannot be negative. "
+                    "Use 0 to turn the autopurge off."
+                ))
+            if days < floor:
+                raise ValidationError(_(
+                    "The staging autopurge window must be at least "
+                    "%(floor)s days, so the warnings at %(warn)s and "
+                    "%(final)s days before deletion still arrive in time "
+                    "to act on. Use 0 to turn the autopurge off.",
+                    floor=floor,
+                    warn=AUTOPURGE_WARN_DAYS,
+                    final=AUTOPURGE_FINAL_DAYS,
+                ))
 
     @api.constrains('trusted_proxy_ranges')
     def _check_trusted_proxy_ranges(self):

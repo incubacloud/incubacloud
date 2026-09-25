@@ -143,5 +143,37 @@ class QueueJob(models.Model):
                 )
             elif new_state == 'done':
                 CJob._dismiss_job_failed_alerts(cjob)
+                self._seal_autopurge_clock(cjob)
 
         return result
+
+    def _seal_autopurge_clock(self, cjob):
+        """Count a finished job as somebody having used the instance.
+
+        This is the panel half of the staging activity clock, and it is
+        deliberately narrow. Two kinds of job finish successfully on
+        instances nobody is looking at: the background probes, which run
+        every few minutes forever, and everything the platform bot
+        starts on its own — a rebuild off a GitHub push above all. Either
+        one counting would keep every staging alive indefinitely and turn
+        the autopurge into dead code that looks alive.
+
+        So the job has to be one a person could have started (not a
+        hidden type) *and* actually authored by a person (an internal
+        user that is not the bot). ``create_uid`` is trustworthy here
+        because everything the platform starts on its own goes through
+        ``as_platform``, which stamps the bot rather than whoever's
+        request happened to trigger it.
+
+        :param cjob: the ``cloud.job`` that just reached ``done``.
+        """
+        instance = cjob.instance_id
+        if not instance:
+            return
+        if cjob.job_type_id.code in self.env['cloud.job']._get_hidden_job_types():
+            return
+        author = cjob.create_uid
+        bot = self.env['res.users']._get_cron_bot()
+        if not author or author.share or (bot and author.id == bot.id):
+            return
+        instance._touch_autopurge_clock()

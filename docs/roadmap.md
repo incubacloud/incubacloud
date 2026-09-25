@@ -11,6 +11,8 @@ This document describes the planned direction for IncubaCloud Core. It is a livi
 - Cross-host instance move with automatic recovery of interrupted moves
 - Transient host-connection retry before alerting; host-scoped job serialization
 - PR preview environments and coalesced webhook auto-rebuilds
+- Login with GitHub — sign in to the platform with a GitHub account, alongside the existing GitHub App integration
+- Staging autopurge — a staging nobody has used for 90 days is deleted, after two warnings and with a one-click Keep
 
 ---
 
@@ -22,7 +24,6 @@ This document describes the planned direction for IncubaCloud Core. It is a livi
 
 ## Medium term
 
-- **Login with GitHub** — sign in to the platform with a GitHub account. Pairs with SSH key import and the existing GitHub App integration.
 - **Managed version upgrades** — migrate instances between Odoo major versions with a guided pipeline: snapshot, upgrade on a staging copy, automated smoke tests, report, manual approval, and a cutover window with the previous instance kept as rollback. OpenUpgrade for Community; the official upgrade service for Enterprise databases.
 - **Data migrations (ETL)** — assisted data onboarding into freshly deployed instances: partners, products, pricing, opening balances, open invoices, initial stock and CRM from spreadsheets, another Odoo, or other ERPs — validated, repeatable, with per-row error reports.
 

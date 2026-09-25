@@ -48,6 +48,11 @@ RATE_LIMIT_DEFAULTS = {
     # of logs on the customer's host — and gets a much tighter one.
     'rate_limit_logs_per_min': 60,
     'rate_limit_log_search_per_min': 6,
+    # Reading captured mail: a browse of the tab is one listing
+    # plus one read per message opened, so the cap has to clear a
+    # few minutes of ordinary clicking without letting the tab
+    # become a way to walk a whole mailbox at speed.
+    'rate_limit_mail_reads_per_min': 30,
     'rate_limit_github_previews_per_hour': 10,
     'rate_limit_github_imports_per_hour': 5,
 }

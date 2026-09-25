@@ -352,7 +352,7 @@
                       t-att-id="'hd-err-ip_address'" t-esc="validator.fieldError('ip_address')"/>
                                     </t>
                                 </div>
-                                <div class="rl-frow"
+                                <div class="rl-frow rl-full"
                                      t-att-class="validator.fieldError('port') ? 'has-error' : ''">
                                     <label>Port <span class="rl-req">*</span></label>
                                     <input
@@ -385,7 +385,7 @@
                                 <div class="rl-frow rl-full">
                                     <label>Auto-assignment</label>
                                     <div style="display: flex; align-items: center; gap: 8px;">
-                                        <input
+                                        <input type="checkbox"
                                                t-att-checked="state.form.exclude_from_autoassign"
                                                t-on-change="(ev) => { this.state.form.exclude_from_autoassign = ev.target.checked; }"/>
                                         <span>Exclude from auto-assignment</span>

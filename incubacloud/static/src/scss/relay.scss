@@ -36,6 +36,11 @@
   // theme can invert it: the hardcoded #080b09 kept a near-black panel
   // under light-theme ink and measured 1.82:1 — WCAG AA needs 4.5:1.
   --rl-logs-bg:#080b09; --rl-logs-fg:#c3cad0;
+  // The canvas a captured email renders on. White in BOTH themes on
+  // purpose: the body is HTML somebody else wrote for a mail client,
+  // and it assumes white — a dark canvas turns their black text
+  // invisible. It is not the panel's surface and must not follow it.
+  --rl-mail-canvas:#ffffff;
   // Lifted state-text colours (used on pills/timeline/badges); were hardcoded literals.
   --rl-green-text:#9fe7c4; --rl-amber-text:#f0c987; --rl-red-text:#ff9b9d;
   // Card elevation: surface is now lighter than bg + a hairline top highlight.
@@ -317,18 +322,32 @@
     .rl-ts { color:var(--rl-faint); } .rl-ok { color:var(--rl-green); } .rl-dim { color:var(--rl-muted); } }
 
   // ── Forms ────────────────────────────────────────────────────────────────
-  .rl-frow { margin-block-end:16px; max-inline-size:460px;
+  // One rule, said once: a field fills its column, and the column is the
+  // form unless an ``.rl-fgrid`` deliberately pairs two fields. The old
+  // ``max-inline-size:460px`` here was the opposite — every field stopped
+  // at 460px inside a 1170px form, so the same screen showed a select at
+  // 575px, a number at 120px and a textarea at 100%, none of them the
+  // width of the form.
+  .rl-frow { margin-block-end:16px;
     label { display:block; font-family:var(--rl-fm); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
       color:var(--rl-muted); margin-block-end:6px; }
-    input, select, textarea { width:100%; background:var(--rl-bg); border:1px solid var(--rl-line2);
+    // Checkboxes and radios are excluded: they have an intrinsic size,
+    // and stretching one to 100% painted it as an empty text box with
+    // its label off to the right (visible on New Host).
+    input:not([type=checkbox]):not([type=radio]), select, textarea {
+      width:100%; background:var(--rl-bg); border:1px solid var(--rl-line2);
       border-radius:var(--rl-rsm); padding-block:9px; padding-inline:12px; color:var(--rl-fg); font-family:var(--rl-fb); font-size:13.5px; outline:none;
       &:focus { border-color:var(--rl-green); box-shadow:0 0 0 3px var(--rl-green-soft); } }
     textarea { font-family:var(--rl-fm); resize:vertical; min-block-size:90px; }
     .rl-req { color:var(--rl-green); }
     .rl-opt { color:var(--rl-faint); text-transform:none; letter-spacing:0; } }
+  // A field with a button beside it: the field takes what is left.
+  .rl-frow-inline { display:flex; align-items:flex-end; gap:10px;
+    > :first-child { flex:1 1 auto; min-inline-size:0; }
+    > button { flex:none; } }
   .rl-fgrid { display:grid; grid-template-columns:1fr 1fr; gap:14px 18px;
     .rl-full { grid-column:1/-1; }
-    .rl-frow { margin:0; max-inline-size:none; } }
+    .rl-frow { margin:0; } }
   .rl-tabnote { font-family:var(--rl-fm); font-size:11px; color:var(--rl-faint); margin-block-start:0; margin-inline:0; margin-block-end:16px; }
 
   .rl-ftoggle { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-block:10px; padding-inline:0; border-block-start:1px solid var(--rl-line);

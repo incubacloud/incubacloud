@@ -47,6 +47,7 @@ export class Settings extends Component {
                 audit_log_retention_days: 90,
                 job_log_retention_days: 30,
                 job_retention_days: 180,
+                staging_autopurge_days: 90,
                 default_backup_alert_threshold_pct: 80,
                 github_event_retention_days: 90,
                 github_event_truncate_days: 7,
@@ -102,6 +103,9 @@ export class Settings extends Component {
                 nonNegativeInt(_t("Must be a positive integer")),
             ],
             job_retention_days: [
+                nonNegativeInt(_t("Must be a positive integer")),
+            ],
+            staging_autopurge_days: [
                 nonNegativeInt(_t("Must be a positive integer")),
             ],
             github_event_retention_days: [
@@ -243,6 +247,7 @@ export class Settings extends Component {
             this.state.form.audit_log_retention_days = general.audit_log_retention_days ?? 90;
             this.state.form.job_log_retention_days = general.job_log_retention_days ?? 30;
             this.state.form.job_retention_days = general.job_retention_days ?? 180;
+            this.state.form.staging_autopurge_days = general.staging_autopurge_days ?? 90;
             this.state.form.default_backup_alert_threshold_pct = general.default_backup_alert_threshold_pct ?? 80;
             this.state.form.github_event_retention_days = general.github_event_retention_days ?? 90;
             this.state.form.github_event_truncate_days = general.github_event_truncate_days ?? 7;
@@ -371,6 +376,7 @@ export class Settings extends Component {
                 audit_log_retention_days: this.state.form.audit_log_retention_days,
                 job_log_retention_days: this.state.form.job_log_retention_days,
                 job_retention_days: this.state.form.job_retention_days,
+                staging_autopurge_days: this.state.form.staging_autopurge_days,
                 default_backup_alert_threshold_pct: this.state.form.default_backup_alert_threshold_pct,
                 github_event_retention_days: this.state.form.github_event_retention_days,
                 github_event_truncate_days: this.state.form.github_event_truncate_days,

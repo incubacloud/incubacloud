@@ -178,6 +178,39 @@ export class ProjectSidebar extends Component {
         return "stopped";
     }
 
+    /**
+     * Label for the staging-expiry badge, or "" when there is none.
+     *
+     * Built here rather than in the template so each wording is one
+     * translatable string: split across a ``t-esc`` the extractor
+     * produces fragments like "expires in" and "d", which no
+     * translator can place and no language has to order the same way.
+     *
+     * @param {Object} inst instance record from the project store
+     * @returns {string} the badge text, empty when not expiring
+     */
+    expiryLabel(inst) {
+        const days = inst.autopurge_days_left;
+        if (days === false || days === undefined || days === null) return "";
+        if (days === 0) return _t("expires today");
+        if (days === 1) return _t("expires tomorrow");
+        return _t("expires in %(days)s days", {days});
+    }
+
+    /**
+     * Tooltip for the staging-expiry badge.
+     *
+     * @param {Object} inst instance record from the project store
+     * @returns {string} the full explanation and the way out of it
+     */
+    expiryTitle(inst) {
+        return _t(
+            "No activity for a while: this staging is deleted in %(days)s day(s) " +
+                "unless somebody uses it or presses Keep on it.",
+            {days: inst.autopurge_days_left}
+        );
+    }
+
     cloneToStaging(inst) {
         this.ui.cloneModal = {
             instanceId: inst.id,

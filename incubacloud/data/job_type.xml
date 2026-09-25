@@ -268,5 +268,13 @@
             <field name="priority_tier">low</field>
         </record>
 
+        <record id="read_last_login" model="cloud.job.type">
+            <field name="name">Read Last Login</field>
+            <field name="code">read_last_login</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Reads the most recent login from a staging instance's own database, so the staging autopurge can tell a used environment from a forgotten one. Takes no action and changes nothing inside the instance.</field>
+            <field name="priority_tier">low</field>
+        </record>
+
     </data>
 </odoo>

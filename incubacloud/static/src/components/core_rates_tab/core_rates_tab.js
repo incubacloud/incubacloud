@@ -11,6 +11,7 @@ export const CORE_RATE_DEFAULTS = Object.freeze({
     rate_limit_connect_per_min: 20,
     rate_limit_connect_user_per_min: 10,
     rate_limit_logs_per_min: 60,
+    rate_limit_mail_reads_per_min: 30,
     rate_limit_log_search_per_min: 6,
     rate_limit_github_previews_per_hour: 10,
     rate_limit_github_imports_per_hour: 5,
@@ -55,6 +56,9 @@ export class CoreRatesTab extends Component {
                 ),
                 rate_limit_logs_per_min: Number(
                     d.rate_limit_logs_per_min || 60,
+                ),
+                rate_limit_mail_reads_per_min: Number(
+                    d.rate_limit_mail_reads_per_min || 30,
                 ),
                 rate_limit_log_search_per_min: Number(
                     d.rate_limit_log_search_per_min || 6,

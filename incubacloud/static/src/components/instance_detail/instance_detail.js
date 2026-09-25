@@ -32,6 +32,7 @@ import {AccessMixin} from "./instance_detail_access";
 import {RestoreUploadMixin} from "./instance_detail_restore";
 import {RefreshMixin} from "./instance_detail_refresh";
 import {AuditMixin} from "./instance_detail_audit";
+import {MailsMixin} from "./instance_detail_mails";
 import { confirmVia } from "../../utils/use_confirm";
 
 const PG_VERSIONS = ["14", "15", "16", "17", "18"];
@@ -189,7 +190,8 @@ export class InstanceDetail extends JobsMixin(
   RestoreUploadMixin(
   RefreshMixin(
   AuditMixin(
-  Component)))))))) {
+  MailsMixin(
+  Component))))))))) {
   static props = {
     instance_id: {type: Number, optional: true},
     project_id: {type: Number},
@@ -255,6 +257,7 @@ export class InstanceDetail extends JobsMixin(
       tab: "overview",
       loading: true,
       saving: false,
+      keeping: false,
       error: null,
       hosts: [],
       autoassignEnabled: false,
@@ -279,6 +282,15 @@ export class InstanceDetail extends JobsMixin(
       accessLog: {
         loading: false, loaded: false, error: "",
         entries: [], summary: { by_status: [], top_clients: [], top_paths: [] },
+      },
+      // Mails tab — a staging's captured mailbox. Read on demand for
+      // the same reason as the access log: it is live data on the
+      // host, and nothing about it is stored here.
+      mails: {
+        loading: false, loaded: false, error: "",
+        items: [], total: 0,
+        openId: null, message: null, messageLoading: false,
+        messageError: "", view: "html",
       },
       // has_* flags — whether a password is currently stored server-side
       has_odoo_admin_password: false,
@@ -485,6 +497,7 @@ export class InstanceDetail extends JobsMixin(
       smtp_cpus: inst.smtp_cpus || 0.25,
       backup_backend_id: inst.backup_backend_id || null,
       auto_rebuild: inst.auto_rebuild || false,
+      autopurge_exempt: inst.autopurge_exempt || false,
       auto_update: inst.auto_update !== false,
       repos: (inst.repos || []).map((r) => ({...r})),
     };
@@ -555,6 +568,7 @@ export class InstanceDetail extends JobsMixin(
           smtp_cpus: 0.25,
           backup_backend_id: project?.backup_backend_id || null,
           auto_rebuild: false,
+          autopurge_exempt: false,
           auto_update: true,
           repos,
         };
@@ -607,6 +621,9 @@ export class InstanceDetail extends JobsMixin(
       if (!this.state.accessLog.loaded && !this.state.accessLog.loading) {
         this.loadAccessLog();
       }
+    }
+    if (tab === "mails" && !this.state.mails.loaded && !this.state.mails.loading) {
+      this.loadMails();
     }
   }
 
@@ -882,6 +899,53 @@ export class InstanceDetail extends JobsMixin(
   }
   tagDotStyle(tag) {
     return tagDotStyle(tag);
+  }
+
+  /**
+   * Label for the expiry pill, or "" when this instance is not expiring.
+   *
+   * Built here and not in the template so each wording stays one
+   * translatable string: split around a ``t-esc`` the extractor emits
+   * fragments like "Expires in" and "days", which no translator can
+   * place and no language has to order the same way.
+   *
+   * @returns {string} the pill text, empty when nothing is pending
+   */
+  get expiryLabel() {
+    const days = this.state.inst?.autopurge_days_left;
+    if (days === false || days === undefined || days === null) return "";
+    if (days === 0) return _t("Expires today");
+    if (days === 1) return _t("Expires tomorrow");
+    return _t("Expires in %(days)s days", {days});
+  }
+
+  /**
+   * Start an expiring staging's window over.
+   *
+   * The one-click answer to the expiry pill. Clears the countdown in
+   * place rather than reloading, because the whole point is that
+   * keeping an instance costs a single gesture.
+   */
+  async keep() {
+    if (this.state.keeping) return;
+    this.state.keeping = true;
+    try {
+      const res = await rpc("/cloud/keep_instance", {
+        instance_id: this.props.instance_id,
+      });
+      if (res?.ok) {
+        this.state.inst.autopurge_days_left = res.days_left;
+        this.env.toast?.success(_t("Kept. The expiry window starts over."));
+      } else {
+        this.env.toast?.error(res?.error || _t("Could not keep this instance."));
+      }
+    } catch (e) {
+      this.env.toast?.error(
+        e.data?.message || e.message || _t("Could not keep this instance.")
+      );
+    } finally {
+      this.state.keeping = false;
+    }
   }
 
   async save() {

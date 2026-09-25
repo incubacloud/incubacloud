@@ -346,6 +346,10 @@ class InstanceConnectController(http.Controller):
             'instance_id': inst.id,
             'details': f'{label} [{inst.environment}]',
         })
+        # Somebody is about to walk into this instance, which is as
+        # direct a use as there is — and it leaves no job behind, so
+        # without this the staging clock would not hear about it.
+        inst._touch_autopurge_clock()
 
         return {
             'ok': True,

@@ -1,9 +1,10 @@
 """Operational endpoints: deploy/rebuild, backups, delete project/instance,
-browse/import host directory, container log streaming.
+browse/import host directory, container log streaming, captured mail.
 
 Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 """
 
+import json
 import logging
 import re
 import shlex
@@ -29,6 +30,12 @@ from ._helpers import (
     log_archive_search_command,
     odoo_log_live_command,
     odoo_log_read_command,
+)
+from ._mailbox import (
+    is_safe_mail_id,
+    mailbox_clear_command,
+    mailbox_list_command,
+    mailbox_message_command,
 )
 
 _logger = logging.getLogger(__name__)
@@ -1317,6 +1324,186 @@ class OpsMixin:
             # the viewer can say "no match *so far*" instead of "none".
             "complete": "IC_DONE" in stdout,
         }
+
+    # ── Captured mail on staging (the "Mails" tab) ────────────────────────
+
+    #: Compose file whose stack holds the mail catcher. Production has
+    #: no catcher at all, so there is only ever one answer here.
+    _MAILBOX_YAML = "test.yaml"
+
+    def _mailbox_instance(self, instance_id):
+        """Return the staging whose mailbox may be read, or an error dict.
+
+        Four conditions, each refused with its own sentence rather than
+        a single "not available": an operator whose Mails tab is empty
+        needs to know whether the instance is the wrong kind, not
+        deployed, or merely stopped.
+
+        :param instance_id: id coming from the browser
+        :return: a ``cloud.instance`` recordset, or a dict to return
+        """
+        inst = request.env["cloud.instance"].browse(instance_id)
+        if not inst.exists():
+            return {"ok": False, "error": _("Instance not found")}
+        if inst.environment == "production":
+            return {"ok": False, "error": _(
+                "Production sends real email; there is no catcher to read.",
+            )}
+        # A missing host is judged here rather than alongside "not found":
+        # an instance with no host has no stack, which is the same thing
+        # as not being deployed and reads very differently from the
+        # record having vanished.
+        if not inst.deployed or not inst.host_id:
+            return {"ok": False, "error": _(
+                "This staging has not been deployed yet.",
+            )}
+        if not inst.running:
+            return {"ok": False, "error": _(
+                "This staging is stopped. Start it to read its mailbox.",
+            )}
+        return inst
+
+    def _mailbox_rule(self):
+        """Per-user cap for one read of a staging's captured mailbox.
+
+        Its own bucket and its own setting rather than the log one: a
+        mail read costs a ``docker compose exec`` plus an HTTP call
+        inside the stack, where a log read is a ``tail`` on the host.
+        """
+        return Rule(
+            f"mailbox_user:{request.env.uid}",
+            _("Too many mailbox reads recently. Try again in a minute."),
+            cap_key="rate_limit_mail_reads_per_min",
+            log_tag=f"mailbox user={request.env.uid}",
+        )
+
+    def _mailbox_run(self, inst, command, failure):
+        """Run *command* on the instance's host and decode its JSON.
+
+        The projection always prints one JSON object, so anything else
+        on stdout means the pipeline broke before it ran — most often a
+        catcher that is not up. That is reported as itself instead of
+        being parsed into a confusing empty mailbox.
+
+        :param inst: the ``cloud.instance`` being read
+        :param str command: what to run over SSH
+        :param str failure: user-facing message if the read fails
+        :return: the decoded dict, or an error dict
+        """
+        try:
+            stdout, stderr = self._ssh_run(inst.host_id, command)
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            _logger.warning(
+                "[mailbox] could not read the catcher of instance %s: %s",
+                inst.id, exc,
+            )
+            return safe_error_response(exc, failure)
+        try:
+            payload = json.loads((stdout or "").strip())
+        except ValueError:
+            # Empty output or anything that is not JSON means the
+            # pipeline died before the projection ran — a stopped
+            # catcher, a proxy error page — not an empty mailbox.
+            _logger.warning(
+                "[mailbox] instance %s answered no JSON: %s",
+                inst.id, (stderr or stdout or "")[:400],
+            )
+            return {"ok": False, "error": _(
+                "The mail catcher did not answer. It may not be running.",
+            )}
+        if not payload.get("ok"):
+            return {"ok": False, "error": failure}
+        return payload
+
+    @http.route(["/cloud/instance_mailbox"], type="jsonrpc", auth="user")
+    def cloud_instance_mailbox(self, instance_id, limit=None, start=0):
+        """List the mail a staging captured instead of sending.
+
+        Read live over SSH and never stored: these are password resets,
+        invitations and customer addresses belonging to whoever owns
+        the database this staging was copied from. Same role as the
+        logs (developer+), for the same reason.
+        """
+        self._sec()._check_can_view_logs()
+        limited = rate_gate_json(self._mailbox_rule())
+        if limited:
+            return limited
+        inst = self._mailbox_instance(instance_id)
+        if isinstance(inst, dict):
+            return inst
+        return self._mailbox_run(
+            inst,
+            mailbox_list_command(
+                inst.get_remote_dir(), self._MAILBOX_YAML, limit, start,
+            ),
+            _("Could not read the mailbox"),
+        )
+
+    @http.route(["/cloud/instance_mail"], type="jsonrpc", auth="user")
+    def cloud_instance_mail(self, instance_id, message_id):
+        """Return one captured message, decoded, with its attachments listed.
+
+        The attachments' bytes stay on the host: the panel shows what
+        was attached and how big it was, which is what tells you the
+        mail was built right, without turning the tab into a way to
+        pull a customer's files through the panel.
+        """
+        self._sec()._check_can_view_logs()
+        limited = rate_gate_json(self._mailbox_rule())
+        if limited:
+            return limited
+        if not is_safe_mail_id(message_id):
+            return {"ok": False, "error": _("Invalid message id")}
+        inst = self._mailbox_instance(instance_id)
+        if isinstance(inst, dict):
+            return inst
+        return self._mailbox_run(
+            inst,
+            mailbox_message_command(
+                inst.get_remote_dir(), self._MAILBOX_YAML, message_id,
+            ),
+            _("Could not read the message"),
+        )
+
+    @http.route(["/cloud/instance_mailbox_clear"], type="jsonrpc", auth="user")
+    def cloud_instance_mailbox_clear(self, instance_id):
+        """Empty a staging's captured mailbox.
+
+        Destructive but bounded: the catcher holds its mail in memory
+        and loses it on every restart anyway, so this is the button
+        that makes "now watch what this action sends" readable.
+        """
+        self._sec()._check_can_view_logs()
+        limited = rate_gate_json(self._mailbox_rule())
+        if limited:
+            return limited
+        inst = self._mailbox_instance(instance_id)
+        if isinstance(inst, dict):
+            return inst
+        command = mailbox_clear_command(
+            inst.get_remote_dir(), self._MAILBOX_YAML,
+        )
+        try:
+            stdout, stderr = self._ssh_run(inst.host_id, command)
+        except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+            _logger.warning(
+                "[mailbox] could not clear the catcher of instance %s: %s",
+                inst.id, exc,
+            )
+            return safe_error_response(exc, _("Could not clear the mailbox"))
+        if "IC_MAILBOX_CLEARED" not in (stdout or ""):
+            _logger.warning(
+                "[mailbox] clear on instance %s did not confirm: %s",
+                inst.id, (stderr or stdout or "")[:400],
+            )
+            return {"ok": False, "error": _(
+                "The mail catcher did not answer. It may not be running.",
+            )}
+        request.env["cloud.audit.log"].sudo().create({
+            "action": "Cleared staging mailbox",
+            "instance_id": inst.id,
+        })
+        return {"ok": True}
 
     # ── Monitoring (Fase 4 / A10) ─────────────────────────────────────────
 

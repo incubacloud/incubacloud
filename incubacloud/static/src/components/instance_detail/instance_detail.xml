@@ -147,6 +147,20 @@
                                         Changes not deployed
                                     </span>
                                 </t>
+                                <t t-if="expiryLabel">
+                                    <span
+                      t-att-class="'rl-pill ' + (state.inst.autopurge_days_left &lt;= 3 ? 'crashed' : 'pending')"
+                      title="This staging has had no activity for a while and will be deleted. Nothing in it is backed up. Press Keep to start the window over."
+                    >
+                                        <t t-esc="expiryLabel" />
+                                        <button
+                        type="button"
+                        class="ic-keep-btn"
+                        t-att-disabled="state.keeping"
+                        t-on-click="() => this.keep()"
+                      >Keep</button>
+                                    </span>
+                                </t>
                             </h1>
                             <t t-if="state.inst.domain or state.inst.host">
                                 <p class="rl-psub">
@@ -465,6 +479,12 @@
                 >Backups</button>
                             </t>
                         </t>
+                        <t t-if="canShowMails">
+                            <button
+                t-att-class="state.tab === 'mails' ? 'rl-tab active' : 'rl-tab'"
+                t-on-click="() => this.setTab('mails')"
+              >Mails</button>
+                        </t>
                         <t t-if="env.permissions?.can_view_metrics">
                             <button
                 t-att-class="state.tab === 'metrics' ? 'rl-tab active' : 'rl-tab'"
@@ -582,6 +602,9 @@
                           t-out="env.icon('check', 13)"
                         /> <t t-esc="state.form.smtp_relay_host" /></span>
                                         </t>
+                                        <t
+                      t-elif="state.inst.environment !== 'production'"
+                    ><span class="rl-v">captured on this server</span></t>
                                         <t t-else=""><span
                         class="rl-v muted"
                       >not configured</span></t>
@@ -886,9 +909,12 @@
 
                     </div>
 
-                    <!-- Footer (hidden for stakeholders) — edit mode, non-overview -->
+                    <!-- Footer (hidden for stakeholders) — edit mode, non-overview.
+                         Mails is excluded: it is a reader, and a Save button
+                         under a mailbox offers to save something that was
+                         never a form. -->
                     <t
-            t-if="env.permissions?.can_edit_instance and state.tab !== 'overview'"
+            t-if="env.permissions?.can_edit_instance and state.tab !== 'overview' and state.tab !== 'mails'"
           >
                         <div class="rl-formfoot">
                             <t t-if="state.tab === 'activity'">
@@ -2372,6 +2398,9 @@
                         </button>
                     </div>
                 </div>
+                <div class="rl-frow rl-full">
+                    <div class="ic-smtp-note" t-esc="mailCaptureNotice"/>
+                </div>
                 <div class="rl-frow">
                     <label>SMTP Host <span
               class="rl-opt"
@@ -2471,6 +2500,22 @@
               t-on-click="() => { state.form.auto_update = !state.form.auto_update; state.saved = false; }"
             />
                     </div>
+                    <t t-if="state.form.environment === 'staging'">
+                        <div class="rl-ftoggle rl-full">
+                            <div>
+                                <div class="rl-tl-label">Never purge automatically</div>
+                                <div
+                  class="rl-th"
+                >keep this staging out of the autopurge for good. For the permanent ones — a QA environment nobody logs into for months is still not disposable.</div>
+                            </div>
+                            <button
+                type="button"
+                t-att-class="'rl-sw' + (state.form.autopurge_exempt ? ' on' : '')"
+                aria-label="Toggle never purge automatically"
+                t-on-click="() => { state.form.autopurge_exempt = !state.form.autopurge_exempt; state.saved = false; }"
+              />
+                        </div>
+                    </t>
                 </t>
             </div>
         </t>
@@ -2893,6 +2938,173 @@
                             </t>
                         </tbody>
                     </table>
+                </t>
+            </div>
+        </t>
+
+        <!-- ── Mails ────────────────────────────────────────────────────────── -->
+        <!-- A staging's mail never leaves the server: Odoo is wired to an
+             in-stack catcher. This is that mailbox, read live over SSH and
+             stored nowhere in the panel. -->
+        <t t-if="state.tab === 'mails'">
+            <div class="ic-mails-panel">
+
+                <div class="ic-mails-toolbar">
+                    <span class="ic-mails-notice">
+                        <t t-out="env.icon('shield', 14)"/>
+                        <t t-esc="mailCaptureNotice"/>
+                    </span>
+                    <div class="ic-mails-spacer"/>
+                    <button
+            class="rl-btn rl-btn-ghost rl-btn-sm"
+            t-att-disabled="state.mails.loading"
+            t-on-click="loadMails"
+          >
+                        <i t-att-class="'fa ' + (state.mails.loading ? 'fa-spinner fa-spin' : 'fa-refresh')"/>
+                        <t t-if="state.mails.loading"> Reading…</t>
+                        <t t-else=""> Refresh</t>
+                    </button>
+                    <button
+            class="rl-btn rl-btn-ghost rl-btn-sm ic-mails-clear"
+            t-att-disabled="state.mails.loading or !state.mails.items.length"
+            t-on-click="clearMailbox"
+          >
+                        <t t-out="env.icon('trash', 15)"/> Clear mailbox
+                    </button>
+                </div>
+
+                <t t-if="state.mails.error">
+                    <div class="rl-stub">
+                        <span class="rl-si"><i class="fa fa-envelope-o"/></span>
+                        <h3>Mailbox unavailable</h3>
+                        <p t-esc="state.mails.error"/>
+                    </div>
+                </t>
+                <t t-elif="state.mails.loading and !state.mails.loaded">
+                    <div class="history-loading">Loading…</div>
+                </t>
+                <t t-elif="!state.mails.items.length">
+                    <div class="rl-stub">
+                        <span class="rl-si"><i class="fa fa-envelope-o"/></span>
+                        <h3>No mail captured yet</h3>
+                        <p>Anything this staging sends will show up here. The
+                           catcher keeps it in memory, so a restart empties it.</p>
+                    </div>
+                </t>
+                <t t-else="">
+                    <table class="rl-table rl-table--mails">
+                        <thead>
+                            <tr>
+                                <th>Received</th>
+                                <th>From</th>
+                                <th>To</th>
+                                <th>Subject</th>
+                                <th class="ic-mails-size">Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="state.mails.items" t-as="mail" t-key="mail.id">
+                                <tr
+                  t-att-class="state.mails.openId === mail.id ? 'ic-mail-row is-open' : 'ic-mail-row'"
+                  t-on-click="() => this.openMail(mail.id)"
+                >
+                                    <td class="rl-mono" t-esc="formatMailDate(mail.created)"/>
+                                    <td t-esc="mail.from || '—'"/>
+                                    <td t-esc="formatMailTo(mail.to)"/>
+                                    <td>
+                                        <t t-esc="mail.subject || '(no subject)'"/>
+                                        <t t-if="mail.attachments">
+                                            <span class="ic-mail-clip" t-att-title="'Has attachments'">
+                                                <i class="fa fa-paperclip"/>
+                                                <t t-esc="mail.attachments"/>
+                                            </span>
+                                        </t>
+                                    </td>
+                                    <td class="ic-mails-size rl-mono" t-esc="formatMailSize(mail.size)"/>
+                                </tr>
+                            </t>
+                        </tbody>
+                    </table>
+                </t>
+
+                <!-- One open message -->
+                <t t-if="state.mails.openId">
+                    <div class="ic-mail-view">
+                        <div class="ic-mail-view-head">
+                            <strong t-esc="state.mails.message?.subject || '(no subject)'"/>
+                            <button class="ic-mail-close" t-on-click="closeMail" t-att-title="'Close'">
+                                <t t-out="env.icon('x', 15)"/>
+                            </button>
+                        </div>
+
+                        <t t-if="state.mails.messageLoading">
+                            <div class="history-loading">Loading…</div>
+                        </t>
+                        <t t-elif="state.mails.messageError">
+                            <div class="ic-mail-error" t-esc="state.mails.messageError"/>
+                        </t>
+                        <t t-elif="state.mails.message">
+                            <div class="ic-mail-headers">
+                                <div><span class="rl-l">From</span><span class="rl-v" t-esc="state.mails.message.from || '—'"/></div>
+                                <div><span class="rl-l">To</span><span class="rl-v" t-esc="state.mails.message.to || '—'"/></div>
+                                <t t-if="state.mails.message.cc">
+                                    <div><span class="rl-l">Cc</span><span class="rl-v" t-esc="state.mails.message.cc"/></div>
+                                </t>
+                                <div><span class="rl-l">Received</span><span class="rl-v" t-esc="formatMailDate(state.mails.message.created)"/></div>
+                            </div>
+
+                            <t t-if="state.mails.message.attachments.length">
+                                <div class="ic-mail-atts">
+                                    <t t-foreach="state.mails.message.attachments" t-as="att" t-key="att_index">
+                                        <span class="ic-mail-att">
+                                            <i class="fa fa-paperclip"/>
+                                            <t t-esc="att.filename || att.type"/>
+                                            <span class="ic-mail-att-size" t-esc="formatMailSize(att.size)"/>
+                                        </span>
+                                    </t>
+                                </div>
+                            </t>
+
+                            <div class="ic-mail-views">
+                                <t t-if="state.mails.message.html">
+                                    <button
+                    t-att-class="state.mails.view === 'html' ? 'rl-tab active' : 'rl-tab'"
+                    t-on-click="() => this.setMailView('html')"
+                  >HTML</button>
+                                </t>
+                                <t t-if="state.mails.message.text">
+                                    <button
+                    t-att-class="state.mails.view === 'text' ? 'rl-tab active' : 'rl-tab'"
+                    t-on-click="() => this.setMailView('text')"
+                  >Text</button>
+                                </t>
+                            </div>
+
+                            <!-- The body is mail generated by somebody else's
+                                 database. It renders in a sandbox with no
+                                 scripts and no same-origin, so it cannot reach
+                                 the panel's session. -->
+                            <t t-if="state.mails.view === 'html' and state.mails.message.html">
+                                <iframe
+                  class="ic-mail-body"
+                  sandbox=""
+                  t-att-srcdoc="state.mails.message.html"
+                />
+                                <t t-if="state.mails.message.html_truncated">
+                                    <div class="ic-mail-trunc">This message was too large to show in full.</div>
+                                </t>
+                            </t>
+                            <t t-elif="state.mails.message.text">
+                                <pre class="ic-mail-body ic-mail-text" t-esc="state.mails.message.text"/>
+                                <t t-if="state.mails.message.text_truncated">
+                                    <div class="ic-mail-trunc">This message was too large to show in full.</div>
+                                </t>
+                            </t>
+                            <t t-else="">
+                                <div class="ic-mail-empty">This message has no readable body.</div>
+                            </t>
+                        </t>
+                    </div>
                 </t>
             </div>
         </t>
