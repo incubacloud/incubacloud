@@ -18,6 +18,9 @@ from odoo.exceptions import AccessError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.cloud_security_mixin import (
+    CloudSecurityMixin,
+)
 from odoo.addons.incubacloud.controllers import _rate_limit
 from odoo.addons.incubacloud.controllers._data_load import _routes_ops
 from odoo.addons.incubacloud.models.cloud_rate_limit import (
@@ -75,7 +78,7 @@ class _MailboxCase(TransactionCase):
 
     def _allow_everything(self):
         """Grant the role, so each test below isolates one other thing."""
-        sec = MagicMock()
+        sec = MagicMock(spec=CloudSecurityMixin)
         sec._check_can_view_logs.return_value = True
         self.controller._sec = lambda: sec
         self.sec = sec
