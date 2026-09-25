@@ -1262,6 +1262,48 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#stagings-expire-when-nobody-uses-them" class="md-nav__link">
+    <span class="md-ellipsis">
+      Stagings expire when nobody uses them
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Stagings expire when nobody uses them">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-you-see-before-it-happens" class="md-nav__link">
+    <span class="md-ellipsis">
+      What you see before it happens
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-stop-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      How to stop it
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#email-on-staging" class="md-nav__link">
+    <span class="md-ellipsis">
+      Email on staging
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See also
@@ -1359,6 +1401,7 @@ writing.</p>
 <li><a href="../backups/restore/">Restore from a backup</a></li>
 <li><a href="#refresh-from-production">Refresh a staging with production data</a></li>
 <li><a href="#pull-request-previews">Get a preview instance for every pull request</a></li>
+<li><a href="#stagings-expire-when-nobody-uses-them">Keep a staging that is about to expire</a></li>
 <li>Add a custom domain (Instance detail → Networking → Domain)</li>
 </ul>
 <h2 id="refresh-from-production">Refresh from production<a class="headerlink" href="#refresh-from-production" title="Permanent link">&para;</a></h2>
@@ -1431,6 +1474,93 @@ anything:</p>
   the production instance an alert. Fix the cause, then close and reopen the
   pull request to try again.</li>
 </ul>
+<h2 id="stagings-expire-when-nobody-uses-them">Stagings expire when nobody uses them<a class="headerlink" href="#stagings-expire-when-nobody-uses-them" title="Permanent link">&para;</a></h2>
+<p>A staging that nobody has touched for <strong>90 days</strong> is deleted automatically.
+Production instances are never affected.</p>
+<p>The clock measures <em>use</em>, not age: a staging somebody opens every week never
+expires, however old it is. Two things reset it to zero:</p>
+<ul>
+<li><strong>You did something with it from the panel</strong> — deployed, rebuilt, restarted,
+  restored, refreshed it, connected as a user, or opened a shell on it.</li>
+<li><strong>Somebody logged into its Odoo.</strong> The panel reads the last login from the
+  staging's own database once a day.</li>
+</ul>
+<p>Two things deliberately do <strong>not</strong> count. Rebuilds triggered by a push are code
+arriving, not a person looking at it. And the health probes that run every few
+minutes are the platform watching, not you.</p>
+<div class="admonition danger">
+<p class="admonition-title">A staging has no backup to go back to</p>
+<p>Deletion removes the containers, the database and the files. Unlike
+<a href="#ending-an-instance">archiving</a>, it keeps no copy, so whatever was only in
+that staging is gone. If it holds something you want, download a backup
+before the deadline.</p>
+</div>
+<h3 id="what-you-see-before-it-happens">What you see before it happens<a class="headerlink" href="#what-you-see-before-it-happens" title="Permanent link">&para;</a></h3>
+<p>You get two warnings, and the second one reaches you whatever your notification
+preferences are:</p>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>14 days before</td>
+<td>A warning, and an amber <strong>Expires in N days</strong> badge on the instance</td>
+</tr>
+<tr>
+<td>3 days before</td>
+<td>A second, critical warning; the badge turns red</td>
+</tr>
+<tr>
+<td>On the day</td>
+<td>Deleted</td>
+</tr>
+</tbody>
+</table>
+<p>The badge appears next to the instance name in the project sidebar and in the
+instance's own header, from the first warning on.</p>
+<h3 id="how-to-stop-it">How to stop it<a class="headerlink" href="#how-to-stop-it" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Use it.</strong> Anything in the list above starts the 90 days over.</li>
+<li><strong>Press Keep</strong> on the badge in the instance header. One click, same effect.</li>
+<li><strong>Mark it as permanent</strong> — <em>Instance detail → Settings → Never purge
+  automatically</em>. For the ones that should stay regardless: a QA environment
+  nobody logs into for months is still not disposable.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Nothing is ever deleted the day the feature notices it</p>
+<p>Each step waits for the one before it, and deletion waits at least a day
+after the final warning. A platform that had been down for a month comes
+back and <em>warns</em>; it cannot warn and delete in the same pass.</p>
+</div>
+<p><a href="#pull-request-previews">Pull request previews</a> follow the same rule, on top of
+being deleted when their pull request closes.</p>
+<p>Administrators can change the 90 days, or switch the whole thing off, under
+<strong>Settings → General → Staging autopurge</strong>.</p>
+<h2 id="email-on-staging">Email on staging<a class="headerlink" href="#email-on-staging" title="Permanent link">&para;</a></h2>
+<p>A staging never emails anybody. Whatever it sends — password resets, order
+confirmations, invitations — is caught by a mail server that runs alongside it
+and goes no further. That is what makes it safe to restore a copy of production
+and click around in it: the customers in that copy are real, and none of them
+will hear from you.</p>
+<p>Open <strong>Instance detail → Mails</strong> to read what was caught. The list shows when
+each message arrived, who it was for and what it said; open one to see the HTML
+as the recipient would have seen it, the plain-text alternative, and what was
+attached.</p>
+<div class="admonition warning">
+<p class="admonition-title">The mailbox is temporary</p>
+<p>The catcher keeps everything in memory. Restarting the instance — a rebuild,
+an update, a stop and start — empties it. If a message matters, read it
+before you restart.</p>
+</div>
+<p><strong>Clear mailbox</strong> empties it on purpose, which is the way to make "now watch
+what this button sends" readable.</p>
+<p>Production is the opposite: its email is real and leaves the server. There is no
+Mails tab there, and the SMTP relay you configure under <em>Networking</em> is the one
+that will actually deliver.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../hosts/">Hosts</a> — where instances run.</li>
