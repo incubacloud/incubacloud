@@ -8,6 +8,10 @@ Three distinct situations used to collapse into one ``instance_down``:
   via the ``_odoo_stop_is_expected`` hook;
 * container **missing** — never normal (this is how a pruned stack
   presents itself), alerts even when a stop would have been expected.
+
+A layer that parks a whole stack on purpose opts in through the wider
+``_stack_stop_is_expected`` hook: there the companions are stopped too,
+so nothing is graded at all.
 """
 import asyncio
 
@@ -24,6 +28,15 @@ class _SleepAwareProbe(InstanceHealthExecutor):
     _job_type = None  # keep out of the executor registry
 
     def _odoo_stop_is_expected(self):
+        return True
+
+
+class _ParkedProbe(InstanceHealthExecutor):
+    """Test double for a layered module that parks whole stacks."""
+
+    _job_type = None  # keep out of the executor registry
+
+    def _stack_stop_is_expected(self):
         return True
 
 
@@ -147,6 +160,51 @@ class TestHealthProbeClassification(TransactionCase):
         self.assertTrue(self._down_alert())
         self._probe(_SleepAwareProbe, self._states(odoo="exited"))
         self.assertFalse(self._down_alert())
+
+    def _all_stopped(self):
+        """Render a listing where every expected service has exited."""
+        return self._states(
+            **dict.fromkeys(self.instance.expected_services(), "exited"),
+        )
+
+    def _service_alerts(self):
+        return self.env["cloud.alert"].search([
+            ("instance_id", "=", self.instance.id),
+            ("code", "=like", "instance_service_%_down"),
+            ("state", "=", "active"),
+        ])
+
+    def test_parked_stack_is_healthy(self):
+        """Stopped companions are part of the parking, not an issue."""
+        self._probe(_ParkedProbe, self._all_stopped())
+        self.assertEqual(self.instance.status, "ok")
+        self.assertFalse(self.instance.running)
+        self.assertFalse(self._down_alert())
+        self.assertFalse(self._service_alerts())
+
+    def test_parked_stack_resolves_what_was_standing(self):
+        """Parking closes the alerts raised before, or mid-stop."""
+        self._probe(InstanceHealthExecutor, self._states(odoo="exited"))
+        self._probe(_SleepAwareProbe, self._states(odoo="exited", db="exited"))
+        self._probe(InstanceHealthExecutor, self._states(odoo="exited"))
+        self.assertTrue(self._down_alert())
+        self.assertTrue(self._service_alerts())
+        self._probe(_ParkedProbe, self._all_stopped())
+        self.assertFalse(self._down_alert())
+        self.assertFalse(self._service_alerts())
+
+    def test_stopped_stack_is_an_incident_by_default(self):
+        self._probe(InstanceHealthExecutor, self._all_stopped())
+        self.assertEqual(self.instance.status, "error")
+        self.assertEqual(len(self._down_alert()), 1)
+
+    def test_missing_odoo_alerts_even_when_parked(self):
+        """Parked and pruned are different things: absent always alerts."""
+        self._probe(_ParkedProbe, self._states(odoo=None))
+        self.assertEqual(self.instance.status, "error")
+        alert = self._down_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertIn("missing", alert.message)
 
 
 class TestUnresponsiveHysteresis(TransactionCase):

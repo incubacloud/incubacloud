@@ -207,6 +207,23 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         """
         return False
 
+    def _stack_stop_is_expected(self):
+        """Whether this instance's whole stack being stopped is normal.
+
+        Always False in core: it knows of no legitimate reason for every
+        container of a deployed instance to be down, so a stopped stack
+        is an incident. A layer that parks instances on purpose — stops
+        them whole and means to leave them that way — overrides this.
+
+        Wider than :meth:`_odoo_stop_is_expected`, which excuses only
+        ``odoo`` and keeps grading the companions because they must stay
+        up while it sleeps; here nothing is meant to be running, so
+        nothing is graded. Consulted under the same condition: only when
+        the ``odoo`` container exists, since a missing one is never
+        expected.
+        """
+        return False
+
     # ── AbstractSSHExecutor interface ─────────────────────────────────────
 
     async def before_execute(self, transport):
@@ -693,6 +710,26 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         if not self._container_running:
             odoo_present = 'odoo' in self._service_states
+            if odoo_present and self._stack_stop_is_expected():
+                # Parked on purpose, companions included: nothing here
+                # is meant to run, so there is nothing to grade. Grading
+                # it anyway kept a critical "down" alert standing for as
+                # long as the instance stayed parked, next to a warning
+                # for whichever companion the probe caught mid-stop.
+                vals = {
+                    'status': 'ok',
+                    'cpu_over_threshold_streak': 0,
+                    'mem_over_threshold_streak': 0,
+                    'http_fail_streak': 0,
+                }
+                if owns_running:
+                    vals['running'] = False
+                inst.write(vals)
+                self._resolve_inst_alert('instance_down')
+                self._resolve_inst_alert('instance_unresponsive')
+                self._resolve_service_alerts(inst)
+                self._sys(f"✓ '{inst.name}' is stopped on purpose.")
+                return
             if odoo_present and self._odoo_stop_is_expected():
                 # Present but stopped, and the stop is scheduled (e.g.
                 # Sablier sleep): not an incident. ``running=False`` is
@@ -907,6 +944,17 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 )
             else:
                 self._resolve_inst_alert(code)
+
+    def _resolve_service_alerts(self, inst):
+        """Dismiss every per-service container alert of *inst*.
+
+        Covers the services :meth:`_check_other_services` grades — the
+        expected ones and any seen on the host — so whatever that method
+        could have raised, this can close.
+        """
+        services = set(inst.expected_services()) | set(self._service_states)
+        for svc in sorted(services - {'odoo'}):
+            self._resolve_inst_alert(f'instance_service_{svc}_down')
 
     # ── Instance-scoped alert helpers ─────────────────────────────────────
 

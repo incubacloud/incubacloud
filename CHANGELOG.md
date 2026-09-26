@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.133] — 2026-09-27
+
+### Added
+
+- **The health probe can be told a whole stack is stopped on purpose.**
+  The probe already had a way to hear that a stopped `odoo` is normal —
+  an instance put to sleep on idle — but only `odoo`: the companions are
+  still graded, because they must stay up while it sleeps. An instance
+  that is parked whole, every container stopped and meant to stay that
+  way, had no such answer, so it raised a critical "down" alert every
+  five minutes for as long as it stayed parked, plus a warning for
+  whichever companion the probe happened to catch mid-stop — and that
+  one never closed, because a stopped `odoo` returns before the
+  companions are looked at again.
+
+  A new `_stack_stop_is_expected` hook, False in core, lets a layer that
+  parks instances say so. The probe then grades nothing, reports the
+  instance as stopped rather than broken, and closes the `down`,
+  `unresponsive` and per-service alerts left standing. A missing `odoo`
+  container still alerts: parked and pruned are different things.
+
 ## [1.0.132] — 2026-09-23
 
 ### Added
