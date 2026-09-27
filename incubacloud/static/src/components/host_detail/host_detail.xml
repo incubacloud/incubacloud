@@ -562,6 +562,9 @@
                                     through the <code>globalwhitelist</code> proxy.
                                     Click <strong>Apply Whitelist</strong> to push changes.
                                 </p>
+                                <p class="rl-tabnote">
+                                    This list is also what a new staging on this host starts with. Changing it here does not change the stagings that already exist — each one keeps its own list, on its own Whitelist tab.
+                                </p>
                                 <div class="rl-card ic-whitelist-card">
                                     <t t-foreach="state.form.whitelist" t-as="hostname" t-key="hostname">
                                         <div class="rl-row ic-whitelist-item">

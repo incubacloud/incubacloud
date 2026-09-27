@@ -34,6 +34,7 @@ _ANSWER_KEYS = frozenset({
     "backup_aws_access_key_id", "backup_aws_secret_access_key",
     "backup_passphrase", "backup_backend_password",
     "whitelisted_hosts_test", "whitelisted_hosts_devel",
+    "whitelist_docker_project_test",
 })
 
 _EXTRA_FIELDS = frozenset({

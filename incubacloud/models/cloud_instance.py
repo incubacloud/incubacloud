@@ -21,6 +21,7 @@ from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
 from ._repo_requirements import _normalize_url
 from .cloud_host import parse_memory_to_gb
+from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
 from .password_utils import generate_password
 from .res_users_ext import as_platform
@@ -352,6 +353,15 @@ class CloudInstance(models.Model):
         "cloud.instance.domain",
         "instance_id",
         string="Domains",
+    )
+    whitelist_ids = fields.One2many(
+        "cloud.instance.whitelist",
+        "instance_id",
+        string="Egress Whitelist",
+        help="Hostnames this staging may reach on the open internet, "
+        "through a NAT gateway of its own. Empty means it falls back "
+        "to the host's central whitelist. Production ignores it: a "
+        "production instance is not filtered by this platform.",
     )
     domain = fields.Char(
         string="Primary Domain",
@@ -759,24 +769,31 @@ class CloudInstance(models.Model):
             # (SFTP) read it; ours are S3/R2, which authenticate with
             # the AWS keys above.
             "backup_backend_password": "",
-            # Egress allow-list, answered empty on purpose — and it must
-            # be answered, for the same reason as the line above.
+            # Egress allow-list — always answered, never left to the
+            # template, for the same reason as the line above: its
+            # default is a 32-host list (payment gateways and tax
+            # agencies among them) that nobody here chose.
             #
             # From template v9.6.0 on, a non-empty list makes the test
-            # compose file grow a NAT gateway plus a sidecar sharing the
-            # odoo container's network namespace, both privileged
-            # (NET_ADMIN) and the sidecar mounting the host's docker
-            # socket. Its default is a 32-host list — payment gateways
-            # and tax agencies among them — so leaving the question out
-            # would hand every staging an egress policy nobody chose and
-            # two containers this module neither limits nor probes.
+            # compose file grow a NAT gateway (``proxy_general``) plus a
+            # sidecar sharing the odoo container's network namespace
+            # (``odoo_net_setup``), both with ``NET_ADMIN``. Empty keeps
+            # the staging on the host's central whitelist network, which
+            # the template declares and joins either way.
             #
-            # Egress for test instances is the host's own whitelist
-            # network (``cloud.host.whitelist`` → the proxies in
-            # ``~/globalwhitelist``), which the template keeps declaring
-            # as external and joining. The per-instance model is a
-            # feature in its own right; until it is one, this stays [].
-            "whitelisted_hosts_test": [],
+            # What the template also does, unconditionally and with no
+            # question to switch it off, is mount the host's docker
+            # socket into that sidecar and ship it with its healthcheck
+            # disabled. Both are undone in the deploy's override — see
+            # ``_resource_override_content``, which is where this
+            # answer's consequences are paid for.
+            "whitelisted_hosts_test": inst._egress_whitelist(),
+            # Which compose project the sidecar looks itself up in.
+            # The template falls back to ``$COMPOSE_PROJECT_NAME``,
+            # which only resolves because the deploy writes that
+            # variable into ``.env`` — so say it outright rather than
+            # depend on one file to rescue another.
+            "whitelist_docker_project_test": inst.doodba_project_name or "",
             # The generated devel.yaml is never used (the panel points
             # docker-compose.yml at prod.yaml or test.yaml), but leaving
             # the question unanswered would let the template's default
@@ -1060,6 +1077,58 @@ class CloudInstance(models.Model):
         bb = self.effective_backup_backend
         return bool(bb and bb.backup_dst)
 
+    def _egress_whitelist(self):
+        """Hostnames this instance's own egress gateway may reach.
+
+        Empty for production — a production instance is the customer's
+        own deployment and this platform does not filter its traffic —
+        and empty for any staging whose list nobody has filled in,
+        which leaves it on the host's central whitelist exactly as
+        before this model existed.
+
+        Order and duplicates are the operator's: the list is rendered
+        into a copier answer that feeds the config-drift hash, so it
+        has to read the same way twice.
+
+        :return: list of hostnames, possibly empty
+        """
+        self.ensure_one()
+        if self.environment == "production":
+            return []
+        seen = []
+        for entry in self.whitelist_ids:
+            host = (entry.hostname or "").strip()
+            if host and host not in seen:
+                seen.append(host)
+        return seen
+
+    #: Compose services a user may open a shell into. Everything else a
+    #: staging renders is infrastructure this platform put there — the
+    #: egress gateway and its sidecar — and infrastructure is not the
+    #: customer's to sit inside.
+    _SHELL_SERVICES = ("odoo", "db", "smtp", "backup")
+
+    def _shell_services(self):
+        """Return the deployed services a terminal session may target.
+
+        Read from ``compose_services`` (what the last deploy actually
+        found on the host) rather than from :meth:`expected_services`,
+        so the list a user is offered is the list that exists — and
+        then narrowed to :attr:`_SHELL_SERVICES`.
+
+        :return: list of service names, in the order they were detected
+        """
+        self.ensure_one()
+        allowed = set(self._SHELL_SERVICES)
+        return [
+            svc
+            for svc in (
+                s.strip()
+                for s in (self.compose_services or "odoo,db").split(",")
+            )
+            if svc and svc in allowed
+        ]
+
     def expected_services(self):
         """Compose services this instance is supposed to render and run.
 
@@ -1077,13 +1146,24 @@ class CloudInstance(models.Model):
           (Odoo fails to send and nothing says so), unlimited, and
           unreachable by the override that keeps its mailbox off the
           public internet.
+
+          Plus ``proxy_general`` and ``odoo_net_setup`` when the
+          instance has an egress whitelist of its own: the template
+          renders both on exactly that condition. They belong here for
+          the same reason ``smtp`` does — a sidecar nobody expects is
+          a sidecar nobody probes, and ``odoo_net_setup`` is the one
+          container whose silent death takes the whitelist down with
+          it while every other light stays green.
         * production    → ``odoo`` + ``db``, plus ``backup`` when
           :meth:`_backup_enabled` is true, plus ``smtp`` when a relay
           host is configured.
         """
         self.ensure_one()
         if self.environment != "production":
-            return ("odoo", "db", "smtp")
+            svcs = ["odoo", "db", "smtp"]
+            if self._egress_whitelist():
+                svcs += ["proxy_general", "odoo_net_setup"]
+            return tuple(svcs)
         svcs = ["odoo", "db"]
         if self._backup_enabled():
             svcs.append("backup")
@@ -3279,7 +3359,25 @@ class CloudInstance(models.Model):
         # above; writing them requires sudo. We drop back to the caller's
         # env so the returned recordset respects their normal permissions.
         records = super(CloudInstance, self.sudo()).create(vals_list).with_env(self.env)
+        Whitelist = self.env["cloud.instance.whitelist"]
         for inst in records:
+            # A staging is born with the egress list its host already
+            # publishes, so the common case — "the same five hostnames
+            # every instance here needs" — costs nobody a decision. A
+            # staging created before its host is chosen falls back to
+            # the platform default, which is that same list of five.
+            #
+            # Production is skipped: its answer is always [] and a row
+            # nobody reads is a row somebody will eventually believe.
+            if inst.environment != "production" and not inst.whitelist_ids:
+                seed = (
+                    inst.host_id.whitelist_ids.mapped("hostname")
+                    or DEFAULT_WHITELIST.copy()
+                )
+                Whitelist.create([
+                    {"instance_id": inst.id, "hostname": h, "sequence": i * 10}
+                    for i, h in enumerate(seed, 1)
+                ])
             self.env["cloud.audit.log"].sudo().create(
                 {
                     "action": "Instance created",

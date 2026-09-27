@@ -6,6 +6,64 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.134] — 2026-09-27
+
+### Added
+
+- **A staging reaches what its operator wrote down, and nothing else.**
+  Egress used to be decided per *host*: one proxy container per hostname
+  in `~/globalwhitelist`, shared by every test instance on the machine.
+  That answers "what may stagings on this box reach", which is never the
+  question a customer asks — theirs is "this staging has to reach *their*
+  API". Each staging now carries its own list
+  (`cloud.instance.whitelist`, a **Whitelist** tab on the instance), and
+  a non-empty list makes the doodba template render that instance a NAT
+  gateway of its own. A new staging is born with the list its host
+  publishes, so the common case costs nobody a decision, and an empty
+  list still means what it always did: fall back to the host's shared
+  whitelist. Production is untouched — it is the customer's own
+  deployment and this platform does not filter its traffic.
+
+### Fixed
+
+- **The host's docker socket no longer reaches a staging's sidecar.**
+  The template mounts `/var/run/docker.sock` into `odoo_net_setup`
+  unconditionally — no copier question turns it off — and `:ro` marks
+  the *mount*, not the protocol: talking to a unix socket is `connect()`
+  plus `send()`, and the Docker API has no read-only mode. The same
+  channel accepts `POST /containers/create` with a bind of `/` and
+  `privileged`. On a host shared between customers that is not "can see
+  other containers", it is root over the machine and everyone on it. The
+  deploy's override re-points the mount at `/dev/null` and switches off
+  the one lookup that wanted it (`DNS_INTERNAL_FROM_DOCKER=0`, which is
+  the default in the image's own entrypoint; the template is what turns
+  it on). Nothing is lost: the DNS that lookup built is already served
+  by Docker's resolver at `127.0.0.11`, which the sidecar forwards to
+  and which answers service names and network aliases alike. An empty
+  `volumes:` list would **not** have worked — compose merges volumes by
+  target path, so the base file's mount survives it.
+
+- **The egress sidecar is no longer allowed to die quietly.** The
+  template ships it with `healthcheck: disable: true`, while the route
+  injection it performs happens once, at start. Restart the odoo
+  container and Docker hands it a fresh netns with the default NAT
+  route: the injection is gone, the staging has free egress, and the
+  sidecar stays `Up` because its last line is `tail -f /dev/null`. Every
+  light green. That is the 2026-08-06 incident on this panel — three and
+  a half hours sending Telegram to the live channel — which is why
+  `devel.yaml` has carried a route check ever since. The override now
+  ships the same check to every staging, and `expected_services()` names
+  both sidecars so the health probe grades them, the daily prune cannot
+  sweep them, and their logs are rotated like everything else.
+
+- **The shell selector is no longer the only thing deciding which
+  container a user may sit inside.** `terminal_open` validated the
+  *shape* of a service name with a regex and opened whatever matched, so
+  the browser's list was the gate. Which services are a customer's is
+  now the instance's answer (`_shell_services()`) — `odoo`, `db`, `smtp`
+  and `backup`, an allow-list rather than a deny-list — and the route
+  refuses everything else, including the egress gateway and its sidecar.
+
 ## [1.0.133] — 2026-09-27
 
 ### Added

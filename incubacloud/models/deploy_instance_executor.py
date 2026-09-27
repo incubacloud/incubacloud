@@ -433,6 +433,76 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             ]),
         )
 
+    def _net_setup_override(self):
+        """Return what the override has to undo on ``odoo_net_setup``.
+
+        The egress sidecar is upstream's, and the template renders it
+        with two things this platform will not ship. Neither is behind
+        a copier question, so the only place to answer them is here.
+
+        **The host's docker socket.** ``test.yaml.jinja`` mounts
+        ``/var/run/docker.sock`` into the sidecar unconditionally. It is
+        read by exactly one function of the image's entrypoint, guarded
+        by ``DNS_INTERNAL_FROM_DOCKER`` — whose default *in the script*
+        is ``0``; it is the template that turns it on. The work that
+        matters (find the gateway, pick the interface, replace the
+        default route) never touches Docker, and the DNS the function
+        builds is already served by Docker's own resolver at
+        ``127.0.0.11``, which the sidecar's dnsmasq forwards to and
+        which answers service names and network aliases alike.
+
+        So the socket buys nothing, and it costs everything: ``:ro``
+        marks the *mount*, not the protocol — talking to a unix socket
+        is ``connect()`` + ``send()``, and the Docker API has no
+        read-only mode. The same channel takes ``POST
+        /containers/create`` with a bind of ``/`` and ``privileged``.
+        On a host shared between customers that is not "can see other
+        containers", it is root over the machine and everyone on it.
+
+        An empty ``volumes:`` list would not remove it: compose merges
+        volumes by target path, so the base file's mount survives. The
+        target is therefore re-pointed at ``/dev/null``, which is a
+        mount nobody can connect to.
+
+        **A disabled healthcheck.** The template sends
+        ``healthcheck: disable: true``. The route injection happens once,
+        at start; restart the odoo container and Docker hands it a fresh
+        netns with the default NAT route, the injection is gone — and
+        the sidecar, whose last line is ``tail -f /dev/null``, stays
+        ``Up``. The instance is on the open internet and every light is
+        green. That is not theory: it happened to this panel on
+        2026-08-06 and ran for three and a half hours, sending Telegram
+        to the live channel. ``devel.yaml`` has carried the check below
+        ever since; this is the same one. ``disable: false`` has to be
+        said out loud, because compose merges the healthcheck mapping
+        key by key and ``disable: true`` would otherwise survive.
+
+        :return: the service fragment to merge into the override
+        """
+        return {
+            "volumes": ["/dev/null:/var/run/docker.sock:ro"],
+            "environment": {"DNS_INTERNAL_FROM_DOCKER": "0"},
+            "healthcheck": {
+                "disable": False,
+                # The image ships /sbin/ip and little else — no grep, no
+                # awk, no getent — so the check is pure shell. A live
+                # injection points the default route at the gateway
+                # container; a lost one points it back at Docker's own
+                # bridge gateway, which is always the .1 of the subnet.
+                # Comparing the last octet tells the two apart without
+                # knowing the proxy's address.
+                "test": [
+                    "CMD-SHELL",
+                    'set -- $$(ip route show default); gw=$$3; '
+                    '[ -n "$$gw" ] && [ "$${gw##*.}" != "1" ]',
+                ],
+                "interval": "30s",
+                "timeout": "5s",
+                "retries": 2,
+                "start_period": "20s",
+            },
+        }
+
     def _resource_override_content(self):
         """Generate docker-compose.override.yml: limits, label, logs.
 
@@ -449,6 +519,10 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         in the override rather than in ``.docker/smtp.env`` or the
         compose files because ``copier update`` regenerates all three on
         every rebuild, which would drop it.
+
+        A staging with an egress whitelist of its own also carries
+        ``odoo_net_setup``, whose template defaults are corrected here;
+        see :meth:`_net_setup_override` for what and why.
 
         Every service also carries a ``logging:`` block (``json-file``
         with the ``max-size``/``max-file`` from ``cloud.settings``).
@@ -513,6 +587,13 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         }
         services = {}
         for svc in allowed:
+            # Not every expected service has limit fields: the egress
+            # sidecars are two shell scripts and a dnsmasq, and giving
+            # them a memory ceiling the operator never set would be
+            # inventing a number. They still fall through to the label
+            # and logging loop below, which is what they need.
+            if svc not in field_map:
+                continue
             mem_field, cpu_field = field_map[svc]
             mem = getattr(inst, mem_field, "") or ""
             cpus = getattr(inst, cpu_field, 0) or 0
@@ -574,6 +655,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             services["smtp"].setdefault("labels", {})["traefik.enable"] = (
                 "false"
             )
+        if "odoo_net_setup" in allowed:
+            services["odoo_net_setup"].update(self._net_setup_override())
         if "odoo" in allowed:
             services["odoo"]["command"] = self._odoo_command()
             services["odoo"]["volumes"] = [

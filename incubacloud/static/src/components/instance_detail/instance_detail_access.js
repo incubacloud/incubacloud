@@ -124,13 +124,20 @@ export const AccessMixin = (Base) =>
 
     openShellDialog() {
       const inst = this.state.inst;
-      const raw = inst.compose_services || "odoo,db";
+      // ``shell_services`` is the server's answer to "which of this
+      // stack's containers may somebody sit inside" — already without
+      // the egress gateway and its sidecar, which this platform put on
+      // the host and nobody deployed. The fallback to the raw compose
+      // list only covers a payload from before that field existed; the
+      // terminal route refuses anything outside the list either way.
+      const raw = inst.shell_services || inst.compose_services || "odoo,db";
       const services = Array.isArray(raw)
         ? raw
         : raw
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean);
+      if (!services.length) services.push("odoo");
       if (services.length === 1) {
         this._openShellFor(services[0]);
       } else {

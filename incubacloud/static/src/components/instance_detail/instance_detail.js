@@ -272,6 +272,11 @@ export class InstanceDetail extends JobsMixin(
       langSearch: "",
       langOpen: false,
       repoSearch: "",
+      // Uncommitted text in the whitelist tab's input. Deliberately
+      // outside ``form``: the dirty check compares the whole form, so
+      // typing a hostname and thinking better of it would otherwise
+      // leave the page claiming unsaved changes.
+      newWhitelistEntry: "",
       pipDeps: "",
       aptDeps: "",
       pipConflictModal: null, // { conflicts, choices }
@@ -500,6 +505,7 @@ export class InstanceDetail extends JobsMixin(
       autopurge_exempt: inst.autopurge_exempt || false,
       auto_update: inst.auto_update !== false,
       repos: (inst.repos || []).map((r) => ({...r})),
+      whitelist: [...(inst.whitelist || [])],
     };
     this.state.selectedTags = [...(inst.tags || [])];
     this.state.allTags = [...(inst.all_tags || [])];
@@ -571,6 +577,9 @@ export class InstanceDetail extends JobsMixin(
           autopurge_exempt: false,
           auto_update: true,
           repos,
+          // Seeded on the server from the chosen host, so the create
+          // form has nothing to show and nothing to send.
+          whitelist: [],
         };
         this._savedForm = JSON.stringify(this.state.form);
       } else {
@@ -945,6 +954,65 @@ export class InstanceDetail extends JobsMixin(
       );
     } finally {
       this.state.keeping = false;
+    }
+  }
+
+  // ── Egress whitelist ──────────────────────────────────────────────────
+
+  /**
+   * Whether this instance has an egress whitelist to show at all.
+   *
+   * Staging only, and only once the instance exists: on production
+   * this platform does not filter outbound traffic, and on the create
+   * form the list is seeded server-side from the chosen host, so there
+   * is nothing to edit before saving.
+   *
+   * @returns {boolean}
+   */
+  get canShowWhitelist() {
+    return !!(
+      !this.isCreate &&
+      this.state.form.environment !== "production" &&
+      this.env.permissions?.can_edit_instance
+    );
+  }
+
+  /**
+   * Add the hostname typed in the input to the pending list.
+   *
+   * Unlike the host's whitelist this does not save: changing what a
+   * staging may reach changes its compose file, so it travels the
+   * normal route — save, drift pill, rebuild.
+   */
+  addWhitelistEntry() {
+    const entry = (this.state.newWhitelistEntry || "").trim().toLowerCase();
+    if (!entry) return;
+    if (!this.state.form.whitelist.includes(entry)) {
+      this.state.form.whitelist = [...this.state.form.whitelist, entry];
+    }
+    this.state.newWhitelistEntry = "";
+  }
+
+  /**
+   * Drop one hostname from the pending list.
+   *
+   * @param {string} hostname the entry to remove
+   */
+  removeWhitelistEntry(hostname) {
+    this.state.form.whitelist = this.state.form.whitelist.filter(
+      (h) => h !== hostname
+    );
+  }
+
+  /**
+   * Let Enter commit the input, the way every tag field does.
+   *
+   * @param {KeyboardEvent} ev
+   */
+  onWhitelistKeydown(ev) {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      this.addWhitelistEntry();
     }
   }
 

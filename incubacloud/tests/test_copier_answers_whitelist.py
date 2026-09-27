@@ -3,24 +3,21 @@
 ``copier --defaults`` takes the template's own default for every
 question the answers file leaves out. From template v9.6.0 on, the test
 environment gained ``whitelisted_hosts_test``, whose default is a
-32-entry list — payment gateways and tax agencies among them. A
-non-empty list makes the template render a NAT gateway plus a sidecar
-that shares the odoo container's network namespace, both with
-``NET_ADMIN`` and the sidecar mounting the host's docker socket.
+32-entry list — payment gateways and tax agencies among them. Leaving
+it out never meant "no allow-list": it meant every staging silently got
+an egress policy nobody chose.
 
-So not answering it does not mean "no allow-list": it means every
-staging silently gets an egress policy nobody chose and two privileged
-containers this module neither limits nor probes. Egress for test
-instances is the host's own whitelist network
-(``cloud.host.whitelist``), which the template keeps declaring as
-external and joining.
+So it is always answered. What it is answered *with* is the instance's
+own list (F1): a non-empty list makes the template render a NAT gateway
+and a sidecar that points the odoo container's default route at it, so
+a staging reaches what its operator wrote down and nothing else. Empty
+is still meaningful — it leaves the staging on the host's central
+whitelist, which is what every staging did before this model existed.
 
 Same failure mode as ``backup_backend_password``, which this module
 already answers explicitly for exactly this reason.
 """
 from odoo.tests.common import TransactionCase
-
-_KEYS = ("whitelisted_hosts_test", "whitelisted_hosts_devel")
 
 
 class TestWhitelistAnswers(TransactionCase):
@@ -47,25 +44,86 @@ class TestWhitelistAnswers(TransactionCase):
             "host_id": self.host.id,
         })
 
-    def test_staging_answers_both_questions_empty(self):
-        answers = self.staging._render_copier_answers()
-        for key in _KEYS:
-            self.assertIn(key, answers, f"{key} must be answered explicitly")
-            self.assertEqual(answers[key], [], f"{key} must stay empty")
+    def _set(self, instance, hostnames):
+        """Replace *instance*'s whitelist with *hostnames*, in order."""
+        instance.whitelist_ids.unlink()
+        self.env["cloud.instance.whitelist"].create([
+            {"instance_id": instance.id, "hostname": h, "sequence": i * 10}
+            for i, h in enumerate(hostnames, 1)
+        ])
 
-    def test_production_answers_them_too(self):
-        """The answers file is one file per instance and copier reads all
-        of it; leaving the question out of a production answers file
-        would let the default decide a devel.yaml we still ship."""
-        answers = self.prod._render_copier_answers()
-        for key in _KEYS:
-            self.assertIn(key, answers)
-            self.assertEqual(answers[key], [])
+    def test_the_question_is_always_answered(self):
+        """Both environments, both keys: an unanswered question is the
+        template's 32-host default, not an empty list."""
+        for inst in (self.staging, self.prod):
+            answers = inst._render_copier_answers()
+            for key in ("whitelisted_hosts_test", "whitelisted_hosts_devel"):
+                self.assertIn(key, answers, f"{key} must be answered")
+
+    def test_staging_answers_its_own_list(self):
+        self._set(self.staging, ["api.example.com", "cdn.example.net"])
+        answers = self.staging._render_copier_answers()
+        self.assertEqual(
+            answers["whitelisted_hosts_test"],
+            ["api.example.com", "cdn.example.net"],
+        )
+
+    def test_the_order_is_the_operators(self):
+        """The answer feeds the config-drift hash, so the same list has
+        to render the same way twice — and a reordering is a real
+        change to the file, not noise to be sorted away."""
+        self._set(self.staging, ["b.example.com", "a.example.com"])
+        self.assertEqual(
+            self.staging._render_copier_answers()["whitelisted_hosts_test"],
+            ["b.example.com", "a.example.com"],
+        )
+
+    def test_production_is_never_filtered_by_us(self):
+        """A production instance is the customer's own deployment. Rows
+        on it would be rows nobody applies, so the answer stays []."""
+        self._set(self.prod, ["api.example.com"])
+        self.assertEqual(
+            self.prod._render_copier_answers()["whitelisted_hosts_test"], [],
+        )
+
+    def test_an_empty_list_is_a_valid_answer(self):
+        """It is the fallback to the host's central whitelist, which is
+        how every staging worked before F1."""
+        self._set(self.staging, [])
+        self.assertEqual(
+            self.staging._render_copier_answers()["whitelisted_hosts_test"],
+            [],
+        )
+
+    def test_the_devel_list_stays_empty(self):
+        """The generated ``devel.yaml`` is never used — the panel points
+        docker-compose.yml at prod.yaml or test.yaml — but an
+        unanswered question would still let the template decide part of
+        a file we ship."""
+        self._set(self.staging, ["api.example.com"])
+        self.assertEqual(
+            self.staging._render_copier_answers()["whitelisted_hosts_devel"],
+            [],
+        )
+
+    def test_the_compose_project_is_stated_outright(self):
+        """The template falls back to ``$COMPOSE_PROJECT_NAME``, which
+        only resolves because the deploy writes it into ``.env``. One
+        file rescuing another is not an answer."""
+        self.assertEqual(
+            self.staging._render_copier_answers()[
+                "whitelist_docker_project_test"
+            ],
+            self.staging.doodba_project_name,
+        )
 
     def test_the_lists_are_not_shared_between_instances(self):
-        """A mutable default shared across renders would let one
+        """A mutable list handed out by reference would let one
         instance's edit leak into another's answers file."""
+        self._set(self.staging, ["api.example.com"])
         first = self.staging._render_copier_answers()["whitelisted_hosts_test"]
         first.append("evil.example.com")
-        second = self.prod._render_copier_answers()["whitelisted_hosts_test"]
-        self.assertEqual(second, [])
+        second = self.staging._render_copier_answers()[
+            "whitelisted_hosts_test"
+        ]
+        self.assertEqual(second, ["api.example.com"])

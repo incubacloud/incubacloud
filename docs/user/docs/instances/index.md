@@ -235,6 +235,30 @@ Production is the opposite: its email is real and leaves the server. There is no
 Mails tab there, and the SMTP relay you configure under *Networking* is the one
 that will actually deliver.
 
+## What a staging can reach on the internet
+
+A staging is a copy of production that people poke at, so what it can talk to
+matters. It reaches only the hostnames on its own list; everything else is
+refused at the network, before Odoo ever sees it. That is what stops a staging
+from calling a payment gateway, a tax agency or a customer's webhook while
+somebody is trying things out in it.
+
+Open **Instance detail → Whitelist** to see and edit the list. A new staging
+starts with whatever its host publishes, so in the usual case there is nothing
+to decide. Add the hostname of any API the code under test genuinely needs —
+written plainly, `api.example.com`, with no `https://`, no port and no path.
+
+!!! note "It takes a rebuild"
+    The list is part of the instance's configuration, not a live setting.
+    **Save** records it and the instance shows *Changes not deployed*; it
+    applies on the next **Rebuild**.
+
+Emptying the list does not open the staging up — it falls back to the shared
+list of its host, which is what every staging used before this existed.
+
+Production has no such list. A production instance is yours, its traffic is not
+filtered by the platform, and the tab is absent rather than empty.
+
 ## See also
 
 - [Hosts](../hosts/index.md) — where instances run.
