@@ -1133,7 +1133,9 @@ class TestTheBackendRefusesDeletionsWithoutTheKey(BaseCase):
         )
         content = task["ansible.builtin.copy"]["content"]
         # Ansible's own defaults: trim_blocks on, lstrip_blocks off.
-        rendered = jinja2.Environment(trim_blocks=True).from_string(
+        rendered = jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
+            trim_blocks=True,
+        ).from_string(
             content,
         ).render(ic_delete_auth_key=key, ic_retention_days=90)
         return yaml.safe_load(rendered)["services"]["victoriametrics"]["command"]
@@ -1230,7 +1232,7 @@ class TestStaleOrganisationsAreDeleted(BaseCase):
         expr = self._tasks()["Work out which account organisations are stale"][
             "ansible.builtin.set_fact"
         ]["ic_stale_orgs"]
-        env = jinja2.Environment()
+        env = jinja2.Environment()  # nosec B701 — renders a Jinja expression as Ansible does, never HTML
         # Ansible's ``match`` test: re.match, anchored at the start.
         env.tests["match"] = lambda value, pattern: bool(re.match(pattern, value))
         rendered = env.from_string(expr).render(
