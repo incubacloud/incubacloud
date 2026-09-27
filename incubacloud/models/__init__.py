@@ -35,6 +35,7 @@ from . import cloud_instance_backup
 from . import cloud_restore_upload_grant
 from . import restore_upload_key_executors
 from . import cloud_instance_domain
+from . import cloud_instance_whitelist
 from . import cloud_instance_move
 from . import cloud_job
 from . import cloud_job_log_chunk

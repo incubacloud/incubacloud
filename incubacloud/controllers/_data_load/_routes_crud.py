@@ -1878,6 +1878,12 @@ class CrudMixin:
             'pip_dependencies': inst.pip_dependencies or '',
             'apt_dependencies': inst.apt_dependencies or '',
             'compose_services': (inst.compose_services or 'odoo,db').split(','),
+            # What the shell selector may offer. Derived on the
+            # server, not filtered in the SPA: the terminal route
+            # answers to whatever service name reaches it, so the
+            # list the browser draws must not be the only gate.
+            'shell_services': inst._shell_services(),
+            'whitelist': inst.whitelist_ids.mapped('hostname'),
             'backup_backend_id': (
                 inst.backup_backend_id.id if inst.backup_backend_id else None
             ),
@@ -1999,6 +2005,7 @@ class CrudMixin:
             return {'ok': False, 'error': _('Instance not found')}
         repos = vals.pop('repos', None)
         domains = vals.pop('domains', None)
+        whitelist = vals.pop('whitelist', None)
         safe = {
             k: v for k, v in vals.items()
             if k in self._SAVE_INSTANCE_ALLOWED
@@ -2077,6 +2084,23 @@ class CrudMixin:
             to_unlink = existing_ids - kept_ids
             if to_unlink:
                 Repo.browse(list(to_unlink)).unlink()
+        # Egress whitelist — replaced wholesale, like the host's. The
+        # list is short, ordered by the operator, and its order is part
+        # of the copier answer, so rewriting it is both simpler and
+        # more faithful than diffing it. Searched rather than read off
+        # ``inst.whitelist_ids`` for the same reason the host route
+        # does: the recordset was browsed before this write.
+        if whitelist is not None:
+            Whitelist = request.env['cloud.instance.whitelist']
+            hostnames = [
+                h.strip() for h in (whitelist or []) if h and h.strip()
+            ]
+            Whitelist.search([('instance_id', '=', inst.id)]).unlink()
+            if hostnames:
+                Whitelist.create([
+                    {'instance_id': inst.id, 'hostname': h, 'sequence': i * 10}
+                    for i, h in enumerate(hostnames, 1)
+                ])
         return {'ok': True}
 
     @http.route(['/cloud/keep_instance'], type='jsonrpc', auth='user')

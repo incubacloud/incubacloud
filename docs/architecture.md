@@ -116,7 +116,7 @@ incubacloud/
 | `cloud.terminal.route` | Terminal subprocess routing (encrypted auth token, owner) |
 | `cloud.connect.token` | One-time session token for connect-as |
 
-Supporting models: `cloud.project.repo`, `cloud.instance.repo`, `cloud.instance.domain`, `cloud.instance.backup`, `cloud.instance.session`, `cloud.tag`, `cloud.host.tag`, `cloud.instance.tag`, `cloud.host.whitelist`, `cloud.github.credential.service`, `cloud.security.mixin` (abstract). `res.users` is extended with notification preferences; `queue.job` with the state bridge.
+Supporting models: `cloud.project.repo`, `cloud.instance.repo`, `cloud.instance.domain`, `cloud.instance.backup`, `cloud.instance.session`, `cloud.tag`, `cloud.host.tag`, `cloud.instance.tag`, `cloud.host.whitelist`, `cloud.instance.whitelist`, `cloud.github.credential.service`, `cloud.security.mixin` (abstract). `res.users` is extended with notification preferences; `queue.job` with the state bridge.
 
 ### Entity relationships
 
@@ -454,6 +454,26 @@ Two alert codes (`staging_expiring` warning, `staging_expiring_final` critical) 
 Deletion goes through the ordinary path (`delete_instance` enqueued `as_platform` when deployed, `unlink()` when not) — the same one a closing pull request uses; a second way to delete an instance is a second way to get deletion wrong. An audit row carrying the instance **name** is written first, because `cloud.audit.log.instance_id` is `ondelete='set null'`. A refused enqueue (an operation already running) raises `staging_autopurge_stuck` and retries tomorrow.
 
 `_autopurge_days_left()` answers only once the first warning is out — a countdown on every staging from birth is something people learn to scroll past — and travels through `/cloud/get_instance` and the project instance list. `/cloud/keep_instance` (consultant-gated, the same role that can deploy) is the one-click reset, audited.
+
+## Egress on staging (the "Whitelist" tab)
+
+A staging is a copy of production that people poke at, so what it can reach matters. Until template v9.6.0 the answer was decided per *host*: `cloud.host.whitelist` builds one `docker-whitelist` proxy per hostname in `~/globalwhitelist`, and every test instance on the machine joins the same network by alias. That answers "what may stagings on this box reach", which is not the question a customer asks — theirs is "this staging has to reach *their* API".
+
+`cloud.instance.whitelist` is the per-instance answer, and a non-empty list is what makes the template render this instance a NAT gateway (`proxy_general`) plus a sidecar (`odoo_net_setup`) that shares the odoo container's network namespace and replaces its default route. It travels as the `whitelisted_hosts_test` copier answer, so it is part of the config snapshot: saving lights the drift pill and it applies on the next rebuild. A new staging is seeded from its host's list, an empty list falls back to that host's shared proxies, and production is never filtered by us — its answer is always `[]`.
+
+**Two of the template's choices are not ours to ship, and the deploy override undoes both** (`_net_setup_override`).
+
+*The host's docker socket.* `test.yaml.jinja` mounts `/var/run/docker.sock` into the sidecar unconditionally — no copier question turns it off. It is read by exactly one function of the image's entrypoint, guarded by `DNS_INTERNAL_FROM_DOCKER`, whose default *in the script* is `0`; the template is what turns it on. The work that matters — resolve the gateway, pick the interface, `ip route replace default` — never touches Docker, and the internal DNS that function builds is already served by Docker's own resolver at `127.0.0.11`, which the sidecar's dnsmasq forwards to and which answers service names and network aliases alike. Measured on this panel's own devel, which has run with the lookup off and no socket for months: `/run/dnsmasq-internal.hosts` is empty, `db`/`smtp`/`wdb` and the network aliases all resolve, the default route points at the gateway, and a host outside the list still gets nothing.
+
+So the mount buys nothing and costs everything. `:ro` marks the *mount*, not the protocol: talking to a unix socket is `connect()` plus `send()`, and the Docker API has no read-only mode — the same channel accepts `POST /containers/create` with a bind of `/` and `privileged`. On a host shared between customers that is not "can see other containers", it is root over the machine and everyone on it. The override re-points the target at `/dev/null`, because **an empty `volumes:` list does not remove a mount**: compose merges volumes by target path, so the base file's entry survives it.
+
+*A disabled healthcheck.* The template ships `healthcheck: disable: true`, while the route injection happens once, at start. Restart the odoo container and Docker hands it a fresh netns with the default NAT route: the injection is gone, the staging has free egress, and the sidecar stays `Up` because its last line is `tail -f /dev/null`. Every light green. That is the 2026-08-06 incident on this panel — three and a half hours sending Telegram to the live channel — which is why `devel.yaml` has carried a route check ever since. The override ships the same check (pure shell: the image has `/sbin/ip` and little else, and a lost injection is recognised by the default gateway's last octet being Docker's own `.1`), and `disable: false` is said out loud because compose merges the healthcheck mapping key by key.
+
+`expected_services()` names both sidecars whenever the list is non-empty, which is the same condition the template renders them on. That is what gets them probed, labelled against the daily `docker system prune`, and log-rotated; they get no resource limits, because two shell scripts and a dnsmasq are not a number this module should invent.
+
+**Which containers a user may sit inside is a server-side list.** `terminal_open` used to validate the *shape* of a service name and open whatever matched, so the browser's selector was the gate. `cloud.instance._shell_services()` now answers it — `odoo`, `db`, `smtp`, `backup`, intersected with what the last deploy actually found — and the route refuses everything else. An allow-list, not a deny-list: a service the template grows next year is excluded until somebody says otherwise.
+
+---
 
 ## Captured mail on staging (the "Mails" tab)
 

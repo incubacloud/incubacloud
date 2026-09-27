@@ -478,6 +478,12 @@
                   t-on-click="() => this.setTab('backups')"
                 >Backups</button>
                             </t>
+                            <t t-if="canShowWhitelist">
+                                <button
+                  t-att-class="state.tab === 'whitelist' ? 'rl-tab active' : 'rl-tab'"
+                  t-on-click="() => this.setTab('whitelist')"
+                >Whitelist</button>
+                            </t>
                         </t>
                         <t t-if="canShowMails">
                             <button
@@ -2939,6 +2945,51 @@
                         </tbody>
                     </table>
                 </t>
+            </div>
+        </t>
+
+        <!-- ── Egress whitelist ─────────────────────────────────────────────── -->
+        <!-- What this staging may reach on the open internet. The list is
+             its own — a gateway per instance, which is what a customer
+             actually asks for — and it is rendered into the compose file,
+             so it takes a rebuild to apply, not a job. -->
+        <t t-if="state.tab === 'whitelist'">
+            <div class="ic-whitelist-panel">
+                <!-- One sentence, one string: an emphasis tag inside a
+                     sentence makes the extractor emit fragments ("records the
+                     change; it reaches the", "rebuild") that no translator can
+                     place and no language has to order the same way. -->
+                <p class="rl-tabnote">
+                    Hostnames this staging can reach on the internet, through a gateway of its own. Everything else is refused. Saving records the change; it reaches the instance on its next rebuild.
+                </p>
+                <p class="rl-tabnote" t-if="state.form.whitelist.length === 0">
+                    With the list empty this staging falls back to the shared whitelist of its host, which is how every instance worked before this tab existed.
+                </p>
+                <div class="rl-card ic-whitelist-card">
+                    <t t-foreach="state.form.whitelist" t-as="hostname" t-key="hostname">
+                        <div class="rl-row ic-whitelist-item">
+                            <span class="rl-mono ic-whitelist-hostname" t-esc="hostname"/>
+                            <span class="rl-rspacer"/>
+                            <button class="rl-iconbtn danger" title="Remove"
+                                    t-on-click="() => this.removeWhitelistEntry(hostname)">
+                                <t t-out="env.icon('x', 14)"/>
+                            </button>
+                        </div>
+                    </t>
+                    <t t-if="state.form.whitelist.length === 0">
+                        <div class="ic-whitelist-empty">No hosts in whitelist.</div>
+                    </t>
+                </div>
+                <div class="ic-whitelist-add">
+                    <input type="text" placeholder="e.g. api.example.com"
+                           t-att-value="state.newWhitelistEntry"
+                           t-on-input="(ev) => { state.newWhitelistEntry = ev.target.value; }"
+                           t-on-keydown="onWhitelistKeydown"/>
+                    <button class="rl-btn rl-btn-ghost"
+                            t-on-click="() => this.addWhitelistEntry()">
+                        <t t-out="env.icon('plus', 15)"/> Add
+                    </button>
+                </div>
             </div>
         </t>
 

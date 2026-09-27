@@ -104,6 +104,13 @@ class TerminalController(TerminalProxyMixin, http.Controller):
             return {'ok': False, 'error': _('Instance has no host')}
         if not inst.deployed or not inst.running:
             return {'ok': False, 'error': _('Instance is not running')}
+        # The regex above only says the name is *shaped* like a compose
+        # service. Which services one may actually sit inside is the
+        # instance's to answer, and it answers a short list: the egress
+        # gateway and its sidecar are infrastructure this platform put
+        # on the host, not part of what the customer deployed.
+        if service not in inst._shell_services():
+            return {'ok': False, 'error': _('Unknown service')}
 
         sid = uuid.uuid4().hex
         auth_token = secrets.token_urlsafe(32)

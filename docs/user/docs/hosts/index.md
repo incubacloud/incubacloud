@@ -55,7 +55,9 @@ decides three things:
 - [Connect your own VPS](connect.md)
 - [Order a VPS through the platform](hire.md)
 - Check host health (Host detail → Check)
-- Whitelist external domains that may proxy through (Host detail → Whitelist)
+- Whitelist external domains that may proxy through (Host detail → Whitelist).
+  This is also the list a new staging on this host starts with — each staging
+  then keeps its own, on its own **Whitelist** tab.
 - Audit who did what on the host (Host detail → Audit Logs)
 - Import an instance that was already running on the host
   (Host detail → Import Instance)
