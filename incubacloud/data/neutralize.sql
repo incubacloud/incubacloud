@@ -13,7 +13,8 @@ UPDATE cloud_github_app SET webhook_secret = NULL, private_key = '';
 UPDATE cloud_instance SET odoo_admin_password = NULL, odoo_admin_user_password = NULL,
     postgres_password = NULL, smtp_relay_password = NULL;
 UPDATE cloud_settings SET github_pat = NULL, metrics_remote_write_token = NULL,
-    metrics_operator_token = NULL, grafana_admin_password = NULL;
+    metrics_operator_token = NULL, grafana_admin_password = NULL,
+    metrics_delete_auth_key = NULL;
 UPDATE cloud_host SET tls_default_key = NULL, tls_default_cert = NULL;
 UPDATE cloud_job SET secret_payload = NULL;
 UPDATE res_users SET cloud_telegram_bot_token = NULL, cloud_webhook_secret = NULL;

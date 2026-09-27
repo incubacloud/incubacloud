@@ -6,6 +6,75 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.135] — 2026-09-27
+
+### Added
+
+- **A removed instance or host lets its metrics go.** Nothing deleted
+  series before: an instance removed from the panel kept its series on
+  the central until the global retention (90 days) dropped them, which
+  with stagings and PR previews coming and going is disk spent on things
+  that no longer exist. `cloud.instance.unlink()` — where every removal
+  path ends — and the retirement of a host (a host leaves the fleet by
+  being archived, never unlinked) now queue the deletion. Three rules
+  shape it:
+  - **The selector always names the account.** `instance_id` and
+    `host_id` are row ids of the panel that owns them, and several
+    panels share one central, so `instance_id="5"` exists in many
+    accounts at once. `series_selector()` is the one thing that builds a
+    selector and refuses to build one without an account. A host's
+    selector also carries `instance_id=""`, so an instance that moved
+    elsewhere keeps its history.
+  - **It waits 30 minutes.** Measured in production: a removed
+    instance's disk series kept receiving samples for three minutes
+    after the record was gone (the collector rewrites its file every ten
+    minutes), and a late sample recreates a deleted series. The job is
+    queued inside the removal's own transaction, so a rollback drops it.
+  - **Only the panel that owns the central deletes**, through a new
+    operator route; elsewhere the hook does nothing and a layer above can
+    forward the request. A failure raises `metrics_purge_failed`
+    (warning) — the series then expire with the retention.
+- **A retired host stops shipping metrics.** The host teardown now takes
+  the agents down, removes the disk collector's cron and deletes the
+  agents' directory, which held this panel's metrics credential in
+  clear. Before, a BYOH server removed from the panel kept pushing for
+  ever and would have recreated every series deleted for it.
+- **Grafana organisations of accounts that no longer exist are
+  deleted.** They were created and never removed — seven were deleted by
+  hand on 2026-09-20. The central deployment and the account sync now
+  converge against the whole account list; only organisations named like
+  an account are candidates, never the default one, and an empty list
+  deletes nothing.
+
+### Fixed
+
+- **An account could write series as another account.** vmauth forwarded
+  every path under an account's prefix, and VictoriaMetrics serves
+  writes and its admin endpoints on the same port as reads. Measured in
+  the lab against the production configuration: through its READ route
+  an account posted to `/api/v1/import/prometheus` with another account's
+  `ic_account` — that route forces a read filter, not a write label — and
+  the other account then saw the series as its own. The same route
+  created snapshots, forced merges and read the backend's flags. Each
+  account route now names the exact endpoints it serves: the agents'
+  push, and the reads Grafana 11.2 and the panel were measured using.
+- **Any account could delete its own series, and the central had no
+  deletion lock at all.** VictoriaMetrics now starts with
+  `-deleteAuthKey`, minted by the central deployment, and only the
+  operator's deletion route (`/admin-d/`, exactly `delete_series`)
+  carries it — vmauth adds it the way it swaps in Grafana's password,
+  so the panel never sends it. The account sync, which rewrites the
+  whole access-control document, keeps the route but never mints the
+  key: only a deployment restarts VictoriaMetrics with it.
+- **vmauth's own endpoints answered anyone on the internet.** `/flags`,
+  `/metrics`, `/debug/pprof/` and `/-/reload` need no credential, and the
+  public gateway handed vmauth the whole host: a POST from outside got
+  200 (the CDN challenges GET, not POST). The gateway fragment
+  (`docs/observability-traefik-metrics-gateway.yml`, installed by hand)
+  now routes only the four account prefixes to vmauth and denies the new
+  operator route with the other two. A test pins both lists to what the
+  code renders.
+
 ## [1.0.134] — 2026-09-27
 
 ### Added

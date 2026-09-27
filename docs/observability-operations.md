@@ -25,10 +25,12 @@ push.
 
 vmauth's user list **is** the access-control list: a user in it may write
 series labelled with itself and read those same series, and nothing else.
-It is rebuilt from the tenant list every time the central is deployed, so
-re-running that job is how a new tenant gains access and how a departed
-one loses it. Their Grafana organisation and scoped datasource are
-created in the same run.
+It is rebuilt from the tenant list by the account sync, which a new or
+departed tenant queues on its own (and by every deployment of the
+central). Their Grafana organisation and scoped datasource are created in
+the same run — and, since 1.0.135, the organisation of an account no
+longer on the list is deleted there too. A deleted tenant's series are
+deleted 30 minutes after its account is revoked; see *Deleting series*.
 
 # Observability — operations guide
 
@@ -44,7 +46,7 @@ the platform.
 ┌──────────────────────────────┐   ┌──────────────────────────────────┐
 │ node_exporter  (system)      │   │  vmauth  ← the account boundary  │
 │ cAdvisor       (containers)  │   │    /w/  /r/  /lw/  /lr/           │
-│ Traefik        (HTTP, :8082) │   │    /admin-r/  /gadmin/           │
+│ Traefik        (HTTP, :8082) │   │  /admin-r/ /admin-d/ /gadmin/    │
 │ vmagent   ── push ───────────┼──▶│         │                        │
 │ promtail  ── push ───────────┼──▶│         ├→ VictoriaMetrics       │
 └──────────────────────────────┘   │         └→ Loki                  │
@@ -85,9 +87,9 @@ user:
 
 | Path | Rule |
 | --- | --- |
-| `/w/` metrics write | the route forces `extra_label=ic_account=<user>`; a client's own copy is **dropped** for colliding |
-| `/r/` metrics read | the route forces `extra_filters[]={ic_account="<user>"}` the same way, so a client cannot widen the result |
-| `/lw/` `/lr/` logs | the `X-Scope-OrgID` header is **set** from the user, replacing whatever the sender supplied |
+| `/w/api/v1/write` metrics write | the route forces `extra_label=ic_account=<user>`; a client's own copy is **dropped** for colliding |
+| `/r/api/v1/{query,query_range,series,labels,label/<n>/values,…}` metrics read | the route forces `extra_filters[]={ic_account="<user>"}` the same way, so a client cannot widen the result |
+| `/lw/loki/api/v1/push`, `/lr/loki/api/v1/{query,query_range,…}` logs | the `X-Scope-OrgID` header is **set** from the user, replacing whatever the sender supplied |
 
 None of that is caution. Measured against real VictoriaMetrics + Loki
 (2026-08-10): vmauth drops a client's query arg that collides with the
@@ -96,14 +98,27 @@ needs no hand-written reject rules that would rot when VictoriaMetrics
 changes a query arg's meaning. A credential-less request is 401 because
 the config declares no `unauthorized_user`.
 
+**Each route names its endpoints; none is a catch-all.** They used to be
+`/w/.*` and friends, and VictoriaMetrics serves writes, deletions and its
+admin endpoints on the same port as reads. Measured on 2026-09-27 against
+the production configuration: through its *read* route an account posted
+to `/api/v1/import/prometheus` with another account's `ic_account` — a
+read route forces a read filter, not a write label — and the other
+account saw the series as its own; the same route created snapshots and
+forced merges. The read list is what Grafana 11.2 and the panel were
+measured calling (dashboards, Explore, both browsers, *Save & test*). A
+Grafana upgrade that starts calling a new endpoint shows up as a 400 from
+vmauth in that panel: add the endpoint to `_ACCOUNT_READ_PATHS`, never a
+wildcard.
+
 An agent runs on a machine its owner has root on. Its claim about who it
 is can never be trusted, which is why the label comes from the
 credential and not from the payload.
 
 **Two credentials, and they are not interchangeable.** Each account has
 one, scoped to itself, and it is written to that account's hosts. The
-*operator* credential reads across every account (`/admin-r/`) and is
-never written to any host. Grafana's own admin password stays on the
+*operator* credential reads across every account (`/admin-r/`), deletes
+series (`/admin-d/`) and is never written to any host. Grafana's own admin password stays on the
 central: vmauth authenticates callers on `/gadmin/` with the operator
 credential and swaps in the admin credential before proxying, so rotating
 it is a redeploy rather than a change everywhere.
@@ -187,6 +202,51 @@ on the host should match the number of non-draft instances it holds, and
 `sum by (router, instance_id) (…)` over any per-instance metric should
 show no empty `instance_id`.
 
+## Deleting series
+
+Series of what no longer exists are deleted; before 1.0.135 they stayed
+until the retention dropped them.
+
+| What goes | When | Selector |
+| --- | --- | --- |
+| an instance | its record is unlinked (every removal path ends there) | `{ic_account, instance_id}` |
+| a host | it is retired (archived — hosts are never unlinked by the teardown) | `{ic_account, host_id, instance_id=""}` |
+| a tenant's whole account (SaaS) | the tenant is deleted, after its account is revoked | `{ic_account}` |
+
+**The selector always names the account.** `instance_id` and `host_id`
+are row ids of the panel that owns them, so `instance_id="5"` exists in
+many accounts at once; `series_selector()` refuses to build a selector
+without one. A host's selector keeps series that carry an `instance_id`,
+so an instance that moved to another host keeps its history.
+
+**It waits 30 minutes.** The per-instance disk collector rewrites its file
+every ten minutes and node_exporter serves the old one meanwhile —
+measured, a removed instance kept sending samples for three minutes —
+and a sample that arrives after the deletion recreates the series. The
+job is queued inside the removal's own transaction, on `root.bg`, so a
+rolled-back removal deletes nothing.
+
+**Only the panel that owns the central deletes.** It holds the operator
+credential; the gateway adds VictoriaMetrics' `-deleteAuthKey` on the
+operator's `/admin-d/` route, the way it swaps in Grafana's password, so
+the panel never sends the key and no account can delete at all. A tenant
+names what it removed through `/saas/metrics_purge` and core deletes it
+under the account core holds for that tenant — never one the request
+names. Until the central is redeployed with 1.0.135 there is no key and
+every deletion is skipped.
+
+**Failure is a warning, not an error.** `metrics_purge_failed` means some
+series were left to expire with the retention; it clears on the next
+deletion that works.
+
+**Disk comes back later.** VictoriaMetrics hides deleted series at once
+and reclaims their space in background merges.
+
+**A retired host stops shipping.** The teardown takes the agents down and
+removes their directory, which holds the account credential. Left
+running, a server that outlives its record would recreate every series
+deleted for it.
+
 ## Tuning alerts
 
 Rules are data (`cloud.metric.rule`), not code: threshold, comparator,
@@ -238,8 +298,10 @@ one-time edit to Traefik's dynamic config on the central's host — a
 **separate file**, so a bad edit is rejected without taking the rest of
 the proxy down. A reference copy lives beside this guide; the shape is:
 
-- `Host(metrics.<domain>)` and `/admin-r/` or `/gadmin/` → **denied**
-  from the public (an `ipWhitelist`). Their only real callers — the panel
+- `Host(metrics.<domain>)` and `/admin-r/`, `/admin-d/` or `/gadmin/` →
+  **denied** from the public (an `ipWhitelist`). Every operator route
+  vmauth serves must be on this list; a test pins it to what the code
+  renders. Their only real callers — the panel
   and Grafana's datasource — reach vmauth over the bridge, never through
   Traefik.
 - `Host(metrics.<domain>)` and `/grafana/` → Grafana's bridge port
@@ -247,8 +309,11 @@ the proxy down. A reference copy lives beside this guide; the shape is:
   carries its own `frame-ancestors` — see *Who may frame Grafana* below —
   because panels on other origins embed it, and the host-wide
   `frame_ancestors` field would override it.
-- `Host(metrics.<domain>)` (everything else: `/w/ /r/ /lw/ /lr/`) →
-  vmauth's bridge port, which returns 401 without a credential.
+- `Host(metrics.<domain>)` and `/w/ /r/ /lw/ /lr/` → vmauth's bridge
+  port, which returns 401 without a credential. **Only those four
+  prefixes**: vmauth answers its own `/flags`, `/metrics`,
+  `/debug/pprof/` and `/-/reload` to anyone, and until 2026-09-27 a POST
+  to them from outside got 200.
 
 Then set the tenant-facing URLs in Settings to
 `https://metrics.<domain>/w/api/v1/write` and

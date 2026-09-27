@@ -1,19 +1,49 @@
 ---
-# Tear a host down: stop the shared Traefik reverse proxy and remove its
-# directory. Driven by DeleteHostExecutor; the executor archives the
-# cloud.host record afterwards.
+# Tear a host down: stop the metrics agents and the shared Traefik
+# reverse proxy and remove their directories. Driven by
+# DeleteHostExecutor; the executor archives the cloud.host record
+# afterwards.
 #
-# Idempotent: a host whose Traefik was never deployed (or already
-# removed) converges without error, so a half-finished teardown can be
-# re-run safely.
+# Idempotent: a host whose agents or Traefik were never deployed (or
+# already removed) converges without error, so a half-finished teardown
+# can be re-run safely.
 - name: Tear down a cloud host
   hosts: all
   gather_facts: true
 
   vars:
     traefik_dir: "{{ ansible_env.HOME }}/traefik"
+    # Where host_observability.yml installs the metrics agents.
+    ic_obs_dir: "{{ ansible_env.HOME }}/observability"
 
   tasks:
+    # The metrics agents go first. Left running, a host the panel no
+    # longer knows keeps pushing with this panel's credential, and the
+    # series the panel deletes for it are recreated by the next scrape —
+    # on a machine that outlives its record (a BYOH server) for ever.
+    - name: Check whether the metrics agents are deployed
+      ansible.builtin.stat:
+        path: "{{ ic_obs_dir }}/docker-compose.yaml"
+      register: ic_agents_compose
+
+    - name: Stop the metrics agents
+      ansible.builtin.command:
+        cmd: docker compose -p incubacloud-observability -f docker-compose.yaml down
+        chdir: "{{ ic_obs_dir }}"
+      when: ic_agents_compose.stat.exists
+      changed_when: true
+
+    - name: Remove the disk usage collector
+      ansible.builtin.cron:
+        name: "incubacloud instance disk usage"
+        state: absent
+
+    - name: Remove the agents' directory
+      # It holds this panel's metrics credential in clear.
+      ansible.builtin.file:
+        path: "{{ ic_obs_dir }}"
+        state: absent
+
     - name: Check whether Traefik is deployed
       ansible.builtin.stat:
         path: "{{ traefik_dir }}/inverseproxy.yaml"

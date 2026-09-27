@@ -42,6 +42,9 @@
     # task that consumes them is idempotent, so this is a cost decision:
     # at a thousand tenants a sync provisions the one that arrived.
     ic_accounts: []
+    # Every account's name, even where ic_accounts is only the new ones:
+    # the organisations of names missing from it are deleted.
+    ic_account_names: []
     ic_bridge_ip: "{{ ansible_docker0.ipv4.address | default('172.17.0.1') }}"
     ic_gateway_bind: "{{ ic_bridge_ip }}:8428"
 

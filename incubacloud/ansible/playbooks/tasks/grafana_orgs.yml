@@ -154,3 +154,63 @@
   loop: "{{ ic_accounts | zip(ic_org_ids.results) | list }}"
   loop_control:
     label: "{{ item.0.user }}"
+
+# ── Organisations of accounts that no longer exist ────────────────────
+# Organisations used to be created and never deleted: a tenant that left
+# kept its organisation, datasource and dashboards for ever (seven were
+# removed by hand on 2026-09-20). Removal converges here instead, against
+# the FULL account list — ``ic_account_names``, not ``ic_accounts``,
+# which the sync narrows to the accounts it is adding.
+#
+# Only organisations named like an account (``acct_<hex>``) are
+# candidates, and never the default one: anything else in Grafana was
+# made by a person, and is theirs. An empty list skips all of it — a
+# caller that lost the list must not read as "every account is gone".
+
+- name: List every organisation
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs?perpage=1000"
+    method: GET
+    status_code: [200]
+  register: ic_all_orgs
+  when: ic_account_names | length > 0
+
+- name: Work out which account organisations are stale
+  ansible.builtin.set_fact:
+    ic_stale_orgs: >-
+      {{ ic_all_orgs.json
+         | selectattr('name', 'match', '^acct_[0-9a-f]+$')
+         | rejectattr('name', 'in', ic_account_names)
+         | rejectattr('id', 'equalto', 1)
+         | list }}
+  when: ic_account_names | length > 0
+
+- name: Leave the admin session in the default organisation
+  # Measured (lab, Grafana 11.2.0): Grafana refuses to delete the
+  # organisation the admin is switched into — 400 "Can not delete org
+  # for current user" — and the provisioning above leaves it in
+  # whichever account organisation it touched last.
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/user/using/1"
+    method: POST
+    status_code: [200]
+  when: ic_account_names | length > 0 and ic_stale_orgs | length > 0
+
+- name: Delete the organisations of accounts that no longer exist
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/orgs/{{ item.id }}"
+    method: DELETE
+    status_code: [200]
+  loop: "{{ ic_stale_orgs }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: ic_account_names | length > 0 and ic_stale_orgs | length > 0

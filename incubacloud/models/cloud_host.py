@@ -1353,14 +1353,22 @@ class CloudHost(models.Model):
                     "details": host.name,
                 }
             )
-        return super().unlink()
+        # An archived host already let its series go when it was retired.
+        still_active = self.filtered("active").ids
+        result = super().unlink()
+        self.env["cloud.settings"].sudo()._purge_host_metrics(still_active)
+        return result
 
     def write(self, vals):
         self._check_can_manage_hosts()
+        retiring = []
         if vals.get("active") is False:
             self._check_no_instances()
             self.filtered("active")._release_external_resources()
             self.filtered("active")._dismiss_alerts_on_retirement()
+            # Archiving is how a host leaves the fleet (the teardown job
+            # archives, it never unlinks), so this is where its series go.
+            retiring = self.filtered("active").ids
         # Drop empty password values so existing stored passwords are preserved
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
@@ -1449,6 +1457,8 @@ class CloudHost(models.Model):
             # the message carries the new endpoint and the revoked key.
             host._alert_host_key_revoked()
         self._audit_log_changes(changed, old_snap)
+        if retiring:
+            self.env["cloud.settings"].sudo()._purge_host_metrics(retiring)
         return result
 
     def _audit_target_vals(self):

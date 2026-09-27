@@ -36,6 +36,37 @@ _VM_URL = "http://victoriametrics:8428/"
 _LOKI_URL = "http://loki:3100/"
 _GRAFANA_URL = "http://grafana:3000/"
 
+# What an account may reach on the central, and nothing else. Each is a
+# vmauth ``src_paths`` regex, which vmauth matches against the WHOLE path.
+#
+# The routes used to be ``/w/.*`` and friends, and VictoriaMetrics serves
+# writes, deletions and its admin endpoints on the same port as reads.
+# Measured (lab, 2026-09-27): through the read route an account could
+# POST ``/r/api/v1/import/prometheus`` with another account's
+# ``ic_account`` — that route forces a read filter, not a write label —
+# and the other account then saw the series as its own. The same route
+# created snapshots, forced merges and read the backend's flags.
+#
+# Writes are the one path each agent posts to. Reads are what Grafana
+# 11.2 was measured calling (dashboards, Explore, the metrics and label
+# browsers, "Save & test") plus ``series``, which the browsers use once
+# a label is picked. Nothing in the panel reads logs through here today;
+# the log read route is kept, read-only, for the datasource that will.
+_ACCOUNT_WRITE_PATH = "/w/api/v1/write"
+_ACCOUNT_READ_PATHS = (
+    "/r/api/v1/(query|query_range|query_exemplars|series|labels"
+    "|label/[^/]+/values|metadata|rules|status/buildinfo)"
+)
+_ACCOUNT_LOG_WRITE_PATH = "/lw/loki/api/v1/push"
+_ACCOUNT_LOG_READ_PATHS = (
+    "/lr/loki/api/v1/(query|query_range|series|labels"
+    "|label/[^/]+/values|index/stats|index/volume|index/volume_range)"
+)
+
+#: The operator's deletion route. Exact, so the key it carries opens
+#: ``delete_series`` and no other endpoint that honours ``authKey``.
+_OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
+
 
 class ObservabilityCentralExecutor(AnsibleExecutor):
     """Deploy VictoriaMetrics + Grafana on this job's host."""
@@ -114,7 +145,11 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
 
         The forced ``extra_label`` (write) and ``extra_filters`` (read)
         are what pin every series to this account: a client that sends
-        its own copy has it dropped for colliding, not merged.
+        its own copy has it dropped for colliding, not merged. Forcing is
+        only half the boundary, though: each route also names the exact
+        endpoints it serves (see ``_ACCOUNT_READ_PATHS``), because a
+        forced read filter does nothing to a write sent down the read
+        route.
 
         :param user: the account name, used both as the credential's user
             half and as the ``ic_account`` label value.
@@ -125,17 +160,17 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         acct_filter = f'%7Bic_account%3D%22{user}%22%7D'
         return [
             {
-                "src_paths": ["/w/.*"],
+                "src_paths": [_ACCOUNT_WRITE_PATH],
                 "url_prefix": f"{_VM_URL}?extra_label=ic_account={user}",
                 "drop_src_path_prefix_parts": 1,
             },
             {
-                "src_paths": ["/r/.*"],
+                "src_paths": [_ACCOUNT_READ_PATHS],
                 "url_prefix": f"{_VM_URL}?extra_filters[]={acct_filter}",
                 "drop_src_path_prefix_parts": 1,
             },
             {
-                "src_paths": ["/lw/.*"],
+                "src_paths": [_ACCOUNT_LOG_WRITE_PATH],
                 "url_prefix": _LOKI_URL,
                 # SET, not appended: a client cannot spoof it. The header
                 # belongs on the url_map entry, not the user — at user
@@ -144,21 +179,24 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "drop_src_path_prefix_parts": 1,
             },
             {
-                "src_paths": ["/lr/.*"],
+                "src_paths": [_ACCOUNT_LOG_READ_PATHS],
                 "url_prefix": _LOKI_URL,
                 "headers": [f"X-Scope-OrgID: {user}"],
                 "drop_src_path_prefix_parts": 1,
             },
         ]
 
-    def _vmauth_config(self, accounts, operator_token, grafana_admin_basic):
+    def _vmauth_config(
+        self, accounts, operator_token, grafana_admin_basic, delete_key="",
+    ):
         """Render the vmauth ``-auth.config`` YAML for the whole central.
 
         One vmauth ``user`` per account (writes and reads only its own
-        series and logs) plus one operator (the cross-account read, and
-        the Grafana admin API used to provision organisations). There is
-        deliberately NO ``unauthorized_user`` section: its absence is what
-        makes a credential-less request 401 rather than proxied.
+        series and logs) plus one operator (the cross-account read, the
+        Grafana admin API used to provision organisations, and series
+        deletion). There is deliberately NO ``unauthorized_user`` section:
+        its absence is what makes a credential-less request 401 rather
+        than proxied.
 
         Passwords are in clear here — vmauth has no hash support. It is
         mitigated the same way the agents' copy of the token is: the file
@@ -166,10 +204,22 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         it is ``no_log``. The token already exists in clear on every agent
         and in each Grafana datasource, so this adds no new exposure.
 
+        The deletion key is the one secret here that no caller holds:
+        VictoriaMetrics refuses any deletion without it, and only the
+        operator's deletion route adds it, the way the Grafana admin
+        route swaps in Grafana's password. Measured (lab, 2026-09-27): an
+        ``authKey`` the client sends collides with the forced one and is
+        dropped, and the prefix has to be the backend ROOT — vmauth
+        appends the path, so a prefix naming ``delete_series`` answers
+        400.
+
         :param accounts: ``[(user, token), ...]``.
         :param operator_token: the cross-account operator credential.
         :param grafana_admin_basic: base64 ``admin:<pw>`` for the header
             swap on the Grafana admin path.
+        :param delete_key: VictoriaMetrics' ``-deleteAuthKey``; empty
+            leaves the deletion route out, for a central not yet started
+            with a key.
         :return: the YAML document as a string.
         """
         users = [
@@ -181,26 +231,33 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             for user, token in accounts
             if user and token
         ]
+        operator_map = [
+            {
+                "src_paths": ["/admin-r/.*"],
+                "url_prefix": _VM_URL,
+                "drop_src_path_prefix_parts": 1,
+            },
+            {
+                "src_paths": ["/gadmin/.*"],
+                "url_prefix": _GRAFANA_URL,
+                # vmauth consumes the operator's Authorization to
+                # authenticate, then this REPLACES it with Grafana's
+                # admin credential before forwarding (verified in the
+                # lab). So the panel never holds Grafana's password.
+                "headers": [f"Authorization: Basic {grafana_admin_basic}"],
+                "drop_src_path_prefix_parts": 1,
+            },
+        ]
+        if delete_key:
+            operator_map.append({
+                "src_paths": [_OPERATOR_DELETE_PATH],
+                "url_prefix": f"{_VM_URL}?authKey={delete_key}",
+                "drop_src_path_prefix_parts": 1,
+            })
         users.append({
             "username": "operator",
             "password": operator_token,
-            "url_map": [
-                {
-                    "src_paths": ["/admin-r/.*"],
-                    "url_prefix": _VM_URL,
-                    "drop_src_path_prefix_parts": 1,
-                },
-                {
-                    "src_paths": ["/gadmin/.*"],
-                    "url_prefix": _GRAFANA_URL,
-                    # vmauth consumes the operator's Authorization to
-                    # authenticate, then this REPLACES it with Grafana's
-                    # admin credential before forwarding (verified in the
-                    # lab). So the panel never holds Grafana's password.
-                    "headers": [f"Authorization: Basic {grafana_admin_basic}"],
-                    "drop_src_path_prefix_parts": 1,
-                },
-            ],
+            "url_map": operator_map,
         })
         return yaml.safe_dump({"users": users}, sort_keys=False)
 
@@ -217,6 +274,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         accounts = self._accounts_for_deployment()
         operator_token = settings._ensure_operator_credential()
         admin_password = settings._ensure_grafana_admin_password()
+        delete_key = settings._ensure_metrics_delete_key()
         self._sys(
             f"Deploying the metrics central on {self._host().name} "
             f"(retention {settings.metrics_retention_days or 90} days, "
@@ -239,8 +297,11 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # The whole vmauth access-control list in one document: the
             # user list IS the boundary. The playbook writes it verbatim.
             "ic_vmauth_config": self._vmauth_config(
-                accounts, operator_token, grafana_admin_basic,
+                accounts, operator_token, grafana_admin_basic, delete_key,
             ),
+            # A flag of the VictoriaMetrics container. The same key sits
+            # on the operator's deletion route above; nothing else has it.
+            "ic_delete_auth_key": delete_key,
             # Plaintext, because each organisation's datasource has to
             # authenticate AS that account — a hash cannot be used to
             # make a request. Every task consuming it is ``no_log``.
@@ -248,6 +309,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 {"user": user, "password": password}
                 for user, password in accounts
             ],
+            # Grafana organisations of accounts missing from this list
+            # are deleted, so it is always the whole list.
+            "ic_account_names": [user for user, _password in accounts],
             # Grafana's datasource and the post-deploy health check both
             # need to *use* the credential, not just verify it, so the
             # plaintext travels too. It never lands on disk in clear: the

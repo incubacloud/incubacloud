@@ -149,3 +149,4 @@ from . import test_form_field_width
 from . import test_mailbox_commands
 from . import test_mailbox_routes
 from . import test_instance_whitelist
+from . import test_metrics_purge
