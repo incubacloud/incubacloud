@@ -56,6 +56,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   both sidecars so the health probe grades them, the daily prune cannot
   sweep them, and their logs are rotated like everything else.
 
+- **A staging-expiry test no longer sits on an exact day boundary.**
+  `_warned_with` wrote the activity clock with `fields.Datetime.now()`
+  and `_autopurge_days_left` read it with a second one, so a single tick
+  of the wall clock between the two turned "7 days left" into `6 days,
+  23:59:59` — and `timedelta.days` truncates. It passed on a fast
+  machine and failed on a loaded one, which is how it came to abort a
+  production deploy on the clone rehearsal rather than in CI. The helper
+  now leaves an hour of slack, which is also the truthful setup: no real
+  instance sits on the boundary.
+
 - **The shell selector is no longer the only thing deciding which
   container a user may sit inside.** `terminal_open` validated the
   *shape* of a service name with a regex and opened whatever matched, so

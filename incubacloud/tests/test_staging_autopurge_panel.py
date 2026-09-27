@@ -55,11 +55,24 @@ class _PanelCase(TransactionCase):
         request.env = self.env
         return request
 
+    #: Slack between the clock this helper writes and the deadline it
+    #: means. Without it the setup lands on an exact day boundary, and
+    #: ``_autopurge_days_left`` truncates: it reads the clock with a
+    #: second ``now()``, so one tick of the wall clock between the write
+    #: and the read turns "7 days" into ``6 days, 23:59:59`` and the
+    #: assertion into ``6 != 7``. It passes on a fast machine and fails
+    #: on a loaded one, which is the worst way for a test to be wrong —
+    #: this one aborted a production deploy. An hour of slack is also
+    #: the truthful setup: no real instance sits on the boundary.
+    _SLACK = timedelta(hours=1)
+
     def _warned_with(self, days_left):
         """Put the instance on the ladder with *days_left* remaining."""
         idle = _WINDOW - days_left
         self.staging.sudo().write({
-            "last_touched_at": fields.Datetime.now() - timedelta(days=idle),
+            "last_touched_at": (
+                fields.Datetime.now() - timedelta(days=idle) + self._SLACK
+            ),
             "autopurge_warned_at": fields.Datetime.now(),
         })
 
