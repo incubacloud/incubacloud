@@ -69,10 +69,20 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
             f"admin:{admin_password}".encode()
         ).decode()
         return {
+            # The deletion key is read, never minted: it is a flag of the
+            # VictoriaMetrics container, which this job cannot restart.
+            # But it must travel whenever it exists — the document
+            # replaces the file, so leaving it out here would delete the
+            # operator's deletion route on every account change.
             "ic_vmauth_config": self._vmauth_config(
                 accounts, operator_token, grafana_admin_basic,
+                settings.metrics_delete_auth_key or "",
             ),
             "ic_accounts": new,
+            # The whole list, not the delta: the organisations of accounts
+            # missing from it are deleted, which is how a tenant that left
+            # stops leaving one behind.
+            "ic_account_names": [user for user, _password in accounts],
             # The boundary probe and every Grafana call authenticate AS
             # the operator, so the plaintext has to travel alongside the
             # document that grants it. Left out, the probe authenticates

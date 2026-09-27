@@ -48,11 +48,17 @@
   vars:
     ic_central_dir: "{{ ansible_env.HOME }}/observability-central"
     ic_retention_days: 90
+    # VictoriaMetrics' key for deleting series. Empty starts it without
+    # one, which is how a central deployed before deletions existed runs.
+    ic_delete_auth_key: ""
     # The whole vmauth access-control document, rendered by the executor.
     ic_vmauth_config: ""
     # [{user, password}, ...] — the plaintext is needed to build each
     # organisation's datasource. Every task that touches it is no_log.
     ic_accounts: []
+    # Every account's name, even where ic_accounts is only the new ones:
+    # the organisations of names missing from it are deleted.
+    ic_account_names: []
     ic_grafana_root_url: ""
     ic_grafana_oidc: {}
     ic_grafana_admin_password: ""
@@ -246,6 +252,12 @@
                 - '-retentionPeriod={{ ic_retention_days }}d'
                 - '-storageDataPath=/vmdata'
                 - '-httpListenAddr=:8428'
+          {% if ic_delete_auth_key %}
+                # Without it VictoriaMetrics deletes for anyone who can
+                # reach it. Only vmauth's operator deletion route carries
+                # it, so no account can delete — not even its own series.
+                - '-deleteAuthKey={{ ic_delete_auth_key }}'
+          {% endif %}
                 # Bound to the compose network only — see the header.
               volumes:
                 - vmdata:/vmdata

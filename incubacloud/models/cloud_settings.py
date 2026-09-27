@@ -520,6 +520,15 @@ class CloudSettings(models.Model):
              'to any host — that is the whole point of keeping it apart '
              'from the account credential above.',
     )
+    metrics_delete_auth_key = EncryptedChar(
+        string='Metrics deletion key',
+        help="VictoriaMetrics' own key for deleting series. The central "
+             'refuses every deletion that does not carry it, and the '
+             'gateway adds it on the operator\'s deletion route only, so '
+             'no account can delete anything — not even its own series. '
+             'Minted by the central deployment; empty means the central '
+             'was deployed before deletions existed and cannot delete yet.',
+    )
     metrics_retention_days = fields.Integer(
         string='Metrics retention (days)',
         default=90,
@@ -569,6 +578,25 @@ class CloudSettings(models.Model):
         token = generate_password(32)
         settings.sudo().write({'metrics_operator_token': token})
         return token
+
+    def _ensure_metrics_delete_key(self):
+        """Return VictoriaMetrics' deletion key, generating it once.
+
+        Only the central deployment calls this: the key is a flag of the
+        VictoriaMetrics container, so it only exists on the central once
+        a deployment has restarted that container with it. The account
+        sync reads the field without minting it for the same reason — a
+        key the backend was never started with would be a route that
+        answers 401.
+
+        :return: the plaintext key.
+        """
+        settings = self._get_system()
+        if not settings.metrics_delete_auth_key:
+            settings.sudo().write({
+                'metrics_delete_auth_key': generate_password(32),
+            })
+        return settings.metrics_delete_auth_key
 
     def _ensure_grafana_admin_password(self):
         """Return Grafana's admin password, generating it once.

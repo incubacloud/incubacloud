@@ -3178,7 +3178,13 @@ class CloudInstance(models.Model):
                     "details": inst.name,
                 }
             )
-        return super().unlink()
+        instance_ids = self.ids
+        result = super().unlink()
+        # Every way an instance stops existing ends here, so this is the
+        # one place its series are let go of. Queued inside this
+        # transaction: a rollback keeps both the record and its series.
+        self.env["cloud.settings"].sudo()._purge_instance_metrics(instance_ids)
+        return result
 
     def _finalize_removal(self, keep_in_panel, unlink=True):
         """Apply the outcome of a successful ``delete_instance`` job.

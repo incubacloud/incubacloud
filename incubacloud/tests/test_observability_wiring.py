@@ -1107,3 +1107,174 @@ class TestTheDefaultOrganisationIsNotAPrivilegedFallback(BaseCase):
             "naming an account that no longer exists, and a grant whose "
             "org already existed would never refresh it",
         )
+
+
+class TestTheBackendRefusesDeletionsWithoutTheKey(BaseCase):
+    """VictoriaMetrics starts with the deletion key whenever there is one.
+
+    Without ``-deleteAuthKey`` it deletes for anyone who can reach it,
+    and measured (lab, 2026-09-27) an account could: through ``/r/`` or
+    ``/w/`` it deleted its own series, the forced filter being the only
+    thing keeping it to its own. The flag is rendered into the compose
+    file, so it is checked here the way Ansible renders it.
+    """
+
+    def _vm_command(self, key):
+        """Return the VictoriaMetrics command the playbook would write.
+
+        :param key: the ``ic_delete_auth_key`` value to render with.
+        :return: the ``command`` list of the ``victoriametrics`` service.
+        """
+        import jinja2  # noqa: PLC0415 — only this test renders a template
+
+        task = next(
+            t for t in yaml.safe_load(_CENTRAL_PLAYBOOK.read_text())[0]["tasks"]
+            if t.get("name") == "Write the central compose file"
+        )
+        content = task["ansible.builtin.copy"]["content"]
+        # Ansible's own defaults: trim_blocks on, lstrip_blocks off.
+        rendered = jinja2.Environment(trim_blocks=True).from_string(
+            content,
+        ).render(ic_delete_auth_key=key, ic_retention_days=90)
+        return yaml.safe_load(rendered)["services"]["victoriametrics"]["command"]
+
+    def test_the_key_becomes_the_flag(self):
+        self.assertIn("-deleteAuthKey=s3cr3t", self._vm_command("s3cr3t"))
+
+    def test_no_key_renders_no_flag(self):
+        """An empty flag would be a key of '' — the lock left open."""
+        command = self._vm_command("")
+        self.assertFalse(
+            [arg for arg in command if arg.startswith("-deleteAuthKey")],
+        )
+        self.assertIn("-retentionPeriod=90d", command)
+
+
+class TestTeardownStopsTheAgents(BaseCase):
+    """A retired host stops pushing with this panel's credential.
+
+    The panel deletes a retired host's series. Agents left running on a
+    machine that outlives its record (a BYOH server) would recreate them
+    on the next scrape, for ever, with a credential the panel no longer
+    accounts for.
+    """
+
+    _TEARDOWN = _ROOT / "ansible" / "playbooks" / "host_teardown.yml"
+    _INSTALL = _ROOT / "ansible" / "playbooks" / "host_observability.yml"
+
+    def _tasks(self, playbook):
+        """Return the task list of *playbook*."""
+        return yaml.safe_load(playbook.read_text())[0]["tasks"]
+
+    def test_the_agents_stack_is_brought_down(self):
+        install_project = re.search(
+            r"docker compose -p (\S+)", self._INSTALL.read_text(),
+        ).group(1)
+        commands = [
+            t["ansible.builtin.command"]["cmd"]
+            for t in self._tasks(self._TEARDOWN)
+            if "ansible.builtin.command" in t
+        ]
+        self.assertIn(
+            f"docker compose -p {install_project} -f docker-compose.yaml down",
+            commands,
+        )
+
+    def test_the_disk_collector_cron_is_removed_by_its_install_name(self):
+        """``cron`` removes by name: a different name removes nothing."""
+        installed = {
+            t["ansible.builtin.cron"]["name"]
+            for t in self._tasks(self._INSTALL)
+            if "ansible.builtin.cron" in t
+        }
+        removed = {
+            t["ansible.builtin.cron"]["name"]
+            for t in self._tasks(self._TEARDOWN)
+            if t.get("ansible.builtin.cron", {}).get("state") == "absent"
+        }
+        self.assertTrue(installed)
+        self.assertEqual(installed, removed)
+
+    def test_the_directory_holding_the_credential_is_removed(self):
+        removed = [
+            t["ansible.builtin.file"]["path"]
+            for t in self._tasks(self._TEARDOWN)
+            if t.get("ansible.builtin.file", {}).get("state") == "absent"
+        ]
+        self.assertIn("{{ ic_obs_dir }}", removed)
+
+
+class TestStaleOrganisationsAreDeleted(BaseCase):
+    """A tenant that leaves stops leaving its Grafana organisation behind.
+
+    Organisations were created and never deleted — seven were removed by
+    hand on 2026-09-20. The task file now converges against the whole
+    account list; these pin what it may and may not delete.
+    """
+
+    _ORGS = _ROOT / "ansible" / "playbooks" / "tasks" / "grafana_orgs.yml"
+
+    def _tasks(self):
+        """Return the task file's tasks by name."""
+        return {t["name"]: t for t in yaml.safe_load(self._ORGS.read_text())}
+
+    def _stale(self, orgs, names):
+        """Render the stale-organisation expression as Ansible would.
+
+        :param orgs: what Grafana's ``GET /api/orgs`` returned.
+        :param names: ``ic_account_names``.
+        :return: the organisations the playbook would delete.
+        """
+        import jinja2  # noqa: PLC0415 — only this test renders a template
+
+        expr = self._tasks()["Work out which account organisations are stale"][
+            "ansible.builtin.set_fact"
+        ]["ic_stale_orgs"]
+        env = jinja2.Environment()
+        # Ansible's ``match`` test: re.match, anchored at the start.
+        env.tests["match"] = lambda value, pattern: bool(re.match(pattern, value))
+        rendered = env.from_string(expr).render(
+            ic_all_orgs={"json": orgs}, ic_account_names=names,
+        )
+        return ast.literal_eval(rendered.strip())
+
+    def test_only_account_organisations_missing_from_the_list_go(self):
+        orgs = [
+            {"id": 1, "name": "Main Org."},
+            {"id": 3, "name": "acct_124ff4d0041f"},
+            {"id": 9, "name": "acct_99e784a633ed"},
+            {"id": 12, "name": "Operators"},
+            {"id": 14, "name": "acct_notanaccount!"},
+        ]
+        stale = self._stale(orgs, ["acct_124ff4d0041f"])
+        self.assertEqual([o["id"] for o in stale], [9])
+
+    def test_the_default_organisation_is_never_a_candidate(self):
+        stale = self._stale([{"id": 1, "name": "acct_0"}], ["acct_1"])
+        self.assertEqual(stale, [])
+
+    def test_every_step_is_skipped_without_the_list(self):
+        """An empty list must not read as "every account is gone"."""
+        for name, task in self._tasks().items():
+            if name in (
+                "List every organisation",
+                "Work out which account organisations are stale",
+                "Leave the admin session in the default organisation",
+                "Delete the organisations of accounts that no longer exist",
+            ):
+                self.assertIn(
+                    "ic_account_names | length > 0", str(task.get("when")),
+                    name,
+                )
+
+    def test_the_admin_leaves_the_organisation_before_deleting(self):
+        """Grafana 11.2 refuses to delete the admin's current organisation."""
+        names = [t["name"] for t in yaml.safe_load(self._ORGS.read_text())]
+        self.assertLess(
+            names.index("Leave the admin session in the default organisation"),
+            names.index("Delete the organisations of accounts that no longer exist"),
+        )
+        switch = self._tasks()[
+            "Leave the admin session in the default organisation"
+        ]["ansible.builtin.uri"]
+        self.assertTrue(switch["url"].endswith("/gadmin/api/user/using/1"))

@@ -38,9 +38,11 @@ http:
     # Operator-only paths must NOT be public. Their only consumers — the
     # panel and Grafana's datasource — reach vmauth over the bridge, never
     # through here. Higher priority so it wins over the data router below;
-    # the ipWhitelist turns any outside request into 403.
+    # the ipWhitelist turns any outside request into 403. Every operator
+    # route vmauth defines must be listed here: a new one left out is
+    # public the moment the central is redeployed.
     metrics-operator-denied:
-      rule: 'Host(`metrics.incubacloud.io`) && (PathPrefix(`/admin-r/`) || PathPrefix(`/gadmin/`))'
+      rule: 'Host(`metrics.incubacloud.io`) && (PathPrefix(`/admin-r/`) || PathPrefix(`/gadmin/`) || PathPrefix(`/admin-d/`))'
       priority: 30
       entryPoints:
         - https
@@ -62,10 +64,16 @@ http:
       tls: {}
 
     # The data plane (/w/ /r/ /lw/ /lr/). vmauth enforces the account
-    # boundary and returns 401 to a credential-less request, so this is
-    # safe to expose.
+    # boundary and returns 401 to a credential-less request on these.
+    #
+    # Only these four prefixes, not the whole host: vmauth answers its
+    # own /metrics, /flags, /debug/pprof/ and /-/reload WITHOUT any
+    # credential. Measured on 2026-09-27 from outside: a POST to /flags,
+    # /metrics or /debug/pprof/cmdline through this router got 200 (the
+    # CDN challenges GET, not POST). Anything else now falls to the
+    # catchall instead of reaching vmauth.
     metrics-data:
-      rule: 'Host(`metrics.incubacloud.io`)'
+      rule: 'Host(`metrics.incubacloud.io`) && (PathPrefix(`/w/`) || PathPrefix(`/r/`) || PathPrefix(`/lw/`) || PathPrefix(`/lr/`))'
       priority: 10
       entryPoints:
         - https

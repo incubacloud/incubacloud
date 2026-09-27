@@ -6926,6 +6926,11 @@ msgid "Metrics credential"
 msgstr "Credencial de métricas"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_delete_auth_key
+msgid "Metrics deletion key"
+msgstr "Clave de borrado de métricas"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__metrics_last_seen
 msgid "Metrics last seen"
@@ -12197,6 +12202,22 @@ msgstr ""
 #: model:ir.actions.server,name:incubacloud.cron_cloud_verify_archived_copies_ir_actions_server
 msgid "Verify archived instance copies"
 msgstr "Verificar las copias de instancias archivadas"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_delete_auth_key
+msgid ""
+"VictoriaMetrics' own key for deleting series. The central refuses every "
+"deletion that does not carry it, and the gateway adds it on the operator's "
+"deletion route only, so no account can delete anything — not even its own "
+"series. Minted by the central deployment; empty means the central was "
+"deployed before deletions existed and cannot delete yet."
+msgstr ""
+"Clave propia de VictoriaMetrics para borrar series. El central rechaza todo "
+"borrado que no la lleve, y la pasarela solo la añade en la ruta de borrado "
+"del operador, así que ninguna cuenta puede borrar nada, ni siquiera sus "
+"propias series. La genera el despliegue del central; si está vacía, el "
+"central se desplegó antes de que existieran los borrados y todavía no puede "
+"borrar."
 
 #. module: incubacloud
 #. odoo-javascript

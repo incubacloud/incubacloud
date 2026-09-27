@@ -31,6 +31,7 @@ from . import cloud_instance_access_log
 from . import cloud_instance_metrics
 from . import cloud_host_metrics
 from . import cloud_host_observability
+from . import cloud_settings_metrics_purge
 from . import cloud_instance_backup
 from . import cloud_restore_upload_grant
 from . import restore_upload_key_executors

@@ -8,6 +8,7 @@ deployment successful when the backend never answered.
 Built the same way as the hardening executor's tests — instantiated
 without ``__init__`` so no SSH transport or job record is needed.
 """
+import re
 from unittest.mock import MagicMock
 
 import yaml
@@ -15,10 +16,18 @@ import yaml
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.metrics_acl_sync_executor import (
+    MetricsAclSyncExecutor,
+)
 from odoo.addons.incubacloud.models.observability_agents_executor import (
     ObservabilityAgentsExecutor,
 )
 from odoo.addons.incubacloud.models.observability_central_executor import (
+    _ACCOUNT_LOG_READ_PATHS,
+    _ACCOUNT_LOG_WRITE_PATH,
+    _ACCOUNT_READ_PATHS,
+    _ACCOUNT_WRITE_PATH,
+    _OPERATOR_DELETE_PATH,
     ObservabilityCentralExecutor,
 )
 
@@ -184,7 +193,7 @@ class TestCentralExecutor(ObservabilityExecutorCase):
         )
         # And the label it forces on writes is derived from that user, so
         # a client cannot write as anyone else.
-        write = self._route(account, "/w/.*")
+        write = self._route(account, _ACCOUNT_WRITE_PATH)
         self.assertIn("extra_label=ic_account=acct_test01", write["url_prefix"])
 
     def test_the_operator_credential_is_separate_and_generated(self):
@@ -201,9 +210,11 @@ class TestCentralExecutor(ObservabilityExecutorCase):
         self.assertTrue(extra["ic_operator_plain"])
         self.assertNotEqual(extra["ic_operator_plain"], "shared-secret")
         self.assertEqual(operator["password"], extra["ic_operator_plain"])
-        # The operator owns the two cross-account doors and nothing else.
+        # The operator owns the cross-account doors and nothing else.
         paths = {sp for entry in operator["url_map"] for sp in entry["src_paths"]}
-        self.assertEqual(paths, {"/admin-r/.*", "/gadmin/.*"})
+        self.assertEqual(
+            paths, {"/admin-r/.*", "/gadmin/.*", _OPERATOR_DELETE_PATH},
+        )
 
     def test_retention_falls_back_to_ninety_days(self):
         """Zero would tell VictoriaMetrics to keep nothing."""
@@ -225,12 +236,13 @@ class TestCentralExecutor(ObservabilityExecutorCase):
         account = self._user(cfg, "acct_test01")
         self.assertIn(
             "extra_label=ic_account=acct_test01",
-            self._route(account, "/w/.*")["url_prefix"],
+            self._route(account, _ACCOUNT_WRITE_PATH)["url_prefix"],
         )
         self.assertIn(
-            "acct_test01", self._route(account, "/r/.*")["url_prefix"],
+            "acct_test01",
+            self._route(account, _ACCOUNT_READ_PATHS)["url_prefix"],
         )
-        for logs in ("/lw/.*", "/lr/.*"):
+        for logs in (_ACCOUNT_LOG_WRITE_PATH, _ACCOUNT_LOG_READ_PATHS):
             self.assertIn(
                 "X-Scope-OrgID: acct_test01",
                 self._route(account, logs)["headers"],
@@ -295,6 +307,180 @@ class TestCentralExecutor(ObservabilityExecutorCase):
             {executor._playbook: {"exit_status": 1}},
         )
         self.assertEqual(len(errors), 1)
+
+
+class TestAccountRoutesNameTheirEndpoints(ObservabilityExecutorCase):
+    """An account reaches the endpoints it uses, and nothing else.
+
+    Measured (lab, 2026-09-27) against the ``/r/.*`` these replaced: an
+    account wrote series labelled as ANOTHER account through
+    ``/r/api/v1/import/prometheus`` and that account saw them as its own;
+    it also created snapshots and forced merges. vmauth matches
+    ``src_paths`` against the whole path, so ``re.fullmatch`` here is
+    the same question vmauth asks.
+    """
+
+    #: What agents, the panel and Grafana 11.2 were measured using.
+    _ALLOWED = (
+        "/w/api/v1/write",
+        "/r/api/v1/query",
+        "/r/api/v1/query_range",
+        "/r/api/v1/query_exemplars",
+        "/r/api/v1/series",
+        "/r/api/v1/labels",
+        "/r/api/v1/label/__name__/values",
+        "/r/api/v1/label/host/values",
+        "/r/api/v1/metadata",
+        "/r/api/v1/rules",
+        "/r/api/v1/status/buildinfo",
+        "/lw/loki/api/v1/push",
+        "/lr/loki/api/v1/query",
+        "/lr/loki/api/v1/query_range",
+        "/lr/loki/api/v1/labels",
+        "/lr/loki/api/v1/label/job/values",
+        "/lr/loki/api/v1/index/stats",
+    )
+
+    #: Writes down a read route, deletions, and the backends' admin.
+    _REFUSED = (
+        "/r/api/v1/import/prometheus",
+        "/r/api/v1/import",
+        "/r/api/v1/write",
+        "/r/api/v1/admin/tsdb/delete_series",
+        "/r/api/v1/export",
+        "/r/snapshot/create",
+        "/r/snapshot/delete_all",
+        "/r/internal/force_merge",
+        "/r/internal/resetRollupResultCache",
+        "/r/flags",
+        "/r/metrics",
+        "/r/api/v1/label/a/b/values",
+        "/r/api/v1/query/../../api/v1/import/prometheus",
+        "/w/api/v1/import/prometheus",
+        "/w/api/v1/admin/tsdb/delete_series",
+        "/w/api/v1/write/../import/prometheus",
+        "/w/",
+        "/lw/loki/api/v1/query",
+        "/lr/loki/api/v1/push",
+        "/lr/loki/api/v1/delete",
+        "/lr/flush",
+        "/lr/config",
+    )
+
+    def _account_paths(self):
+        """Return every ``src_paths`` regex of this panel's account."""
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        cfg = yaml.safe_load(extra["ic_vmauth_config"])
+        account = self._user(cfg, "acct_test01")
+        return [sp for entry in account["url_map"] for sp in entry["src_paths"]]
+
+    def _reachable(self, path, patterns):
+        """Return True if vmauth would route *path* for this account."""
+        return any(re.fullmatch(p, path) for p in patterns)
+
+    def test_every_endpoint_in_use_is_reachable(self):
+        """Cutting one of these blanks a dashboard or stops an agent."""
+        patterns = self._account_paths()
+        for path in self._ALLOWED:
+            self.assertTrue(
+                self._reachable(path, patterns),
+                f"{path} is in use and no account route serves it",
+            )
+
+    def test_writes_deletions_and_admin_are_not(self):
+        patterns = self._account_paths()
+        for path in self._REFUSED:
+            self.assertFalse(
+                self._reachable(path, patterns),
+                f"an account can reach {path}",
+            )
+
+    def test_no_account_route_is_a_catch_all(self):
+        """A trailing ``.*`` is how the injection route existed."""
+        for pattern in self._account_paths():
+            self.assertNotIn(".*", pattern, pattern)
+
+
+class TestSeriesDeletionKey(ObservabilityExecutorCase):
+    """Only the operator's deletion route may carry the deletion key."""
+
+    def _config(self, executor_cls=ObservabilityCentralExecutor):
+        """Return ``(extra_vars, parsed vmauth config)`` for *executor_cls*."""
+        extra = self._make(executor_cls).get_extra_vars()
+        return extra, yaml.safe_load(extra["ic_vmauth_config"])
+
+    def test_the_deployment_mints_it_and_hands_it_to_the_backend(self):
+        extra, _cfg = self._config()
+        self.assertTrue(extra["ic_delete_auth_key"])
+        self.assertEqual(
+            extra["ic_delete_auth_key"], self.settings.metrics_delete_auth_key,
+        )
+
+    def test_the_operator_route_adds_it_and_reaches_only_delete_series(self):
+        extra, cfg = self._config()
+        route = self._route(self._user(cfg, "operator"), _OPERATOR_DELETE_PATH)
+        self.assertEqual(
+            route["url_prefix"],
+            f"http://victoriametrics:8428/?authKey={extra['ic_delete_auth_key']}",
+        )
+        self.assertFalse(
+            re.fullmatch(_OPERATOR_DELETE_PATH, "/admin-d/snapshot/create"),
+        )
+
+    def test_no_account_ever_sees_it(self):
+        """With it, an account could delete any series of any account."""
+        extra, cfg = self._config()
+        key = extra["ic_delete_auth_key"]
+        for user in cfg["users"]:
+            if user["username"] == "operator":
+                continue
+            self.assertNotIn(key, yaml.safe_dump(user), user["username"])
+
+    def test_the_account_sync_keeps_the_route(self):
+        """The sync REPLACES the document; dropping it would lose the route."""
+        self.settings.metrics_delete_auth_key = "k" * 43
+        self.settings._ensure_operator_credential()
+        _extra, cfg = self._config(MetricsAclSyncExecutor)
+        route = self._route(self._user(cfg, "operator"), _OPERATOR_DELETE_PATH)
+        self.assertTrue(route["url_prefix"].endswith("?authKey=" + "k" * 43))
+
+    def test_the_account_sync_never_mints_it(self):
+        """The backend only knows a key a deployment restarted it with.
+
+        A route carrying a key VictoriaMetrics was never given answers
+        401, so a sync on a central deployed before deletions existed
+        leaves the route out rather than inventing one.
+        """
+        self.settings.metrics_delete_auth_key = False
+        self.settings._ensure_operator_credential()
+        _extra, cfg = self._config(MetricsAclSyncExecutor)
+        paths = {
+            sp
+            for entry in self._user(cfg, "operator")["url_map"]
+            for sp in entry["src_paths"]
+        }
+        self.assertNotIn(_OPERATOR_DELETE_PATH, paths)
+        self.assertFalse(self.settings.metrics_delete_auth_key)
+
+
+class TestTheWholeAccountListTravels(ObservabilityExecutorCase):
+    """Grafana organisations of accounts missing from the list are deleted.
+
+    So the list must be the whole one in both jobs — the sync narrows
+    ``ic_accounts`` to the new accounts, and handing that to the
+    convergence would delete every other organisation.
+    """
+
+    def test_the_deployment_names_every_account(self):
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_account_names"], ["acct_test01"])
+
+    def test_the_sync_names_every_account_not_only_the_new_ones(self):
+        self.settings.metrics_accounts_deployed = "acct_test01"
+        self.settings._ensure_operator_credential()
+        extra = self._make(MetricsAclSyncExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_accounts"], [])
+        self.assertEqual(extra["ic_account_names"], ["acct_test01"])
 
 
 class TestLogCollectorEndpoint(ObservabilityExecutorCase):

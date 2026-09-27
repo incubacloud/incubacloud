@@ -22,6 +22,10 @@ import yaml
 
 from odoo.tests.common import BaseCase
 
+from odoo.addons.incubacloud.models.observability_central_executor import (
+    ObservabilityCentralExecutor,
+)
+
 
 _GATEWAY = (
     pathlib.Path(__file__).resolve().parents[2]
@@ -127,3 +131,61 @@ class TestMetricsGatewayFrameguard(BaseCase):
                     _ZONE_SOURCE, _frame_ancestors(headers),
                     f"{name} would let the whole zone frame it.",
                 )
+
+
+class TestOperatorRoutesAreNotPublic(BaseCase):
+    """Every operator route vmauth serves is refused from outside.
+
+    The gateway fragment is installed by hand, and vmauth's routes are
+    rendered by code. A route added to one and not the other is public
+    the moment the central is redeployed — which is exactly what a new
+    deletion route would have been.
+    """
+
+    def setUp(self):
+        """Skip where the repository's ``docs/`` was stripped out."""
+        super().setUp()
+        if not _GATEWAY.parent.is_dir():
+            self.skipTest("docs/ is not in this build.")
+
+    def test_every_operator_prefix_is_denied(self):
+        # Rendered without a database: the method only reads its
+        # arguments and the account route builder.
+        executor = object.__new__(ObservabilityCentralExecutor)
+        cfg = yaml.safe_load(
+            executor._vmauth_config([], "op", "YWRtaW46eA==", "key"),
+        )
+        operator = next(u for u in cfg["users"] if u["username"] == "operator")
+        prefixes = {
+            "/" + src.strip("/").split("/", 1)[0] + "/"
+            for entry in operator["url_map"]
+            for src in entry["src_paths"]
+        }
+        rule = _gateway()["routers"]["metrics-operator-denied"]["rule"]
+        for prefix in prefixes:
+            self.assertIn(
+                f"PathPrefix(`{prefix}`)", rule,
+                f"{prefix} is an operator route that the public gateway "
+                "does not deny",
+            )
+
+    def test_the_data_router_serves_the_account_prefixes_only(self):
+        """vmauth answers /flags, /metrics and /debug/pprof/ to anyone.
+
+        So the public router must not hand it the whole host: measured
+        on 2026-09-27, a credential-less POST to those got 200 from
+        outside. Pinned to exactly what an account route starts with.
+        """
+        executor = object.__new__(ObservabilityCentralExecutor)
+        account_prefixes = {
+            "/" + src.strip("/").split("/", 1)[0] + "/"
+            for entry in executor._account_url_map("acct_x")
+            for src in entry["src_paths"]
+        }
+        rule = _gateway()["routers"]["metrics-data"]["rule"]
+        self.assertEqual(
+            set(re.findall(r"PathPrefix\(`([^`]+)`\)", rule)),
+            account_prefixes,
+            "the public data router must name exactly the account "
+            "prefixes; anything wider reaches vmauth's own endpoints",
+        )
