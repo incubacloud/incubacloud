@@ -1304,6 +1304,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-a-staging-can-reach-on-the-internet" class="md-nav__link">
+    <span class="md-ellipsis">
+      What a staging can reach on the internet
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       See also
@@ -1561,6 +1570,26 @@ what this button sends" readable.</p>
 <p>Production is the opposite: its email is real and leaves the server. There is no
 Mails tab there, and the SMTP relay you configure under <em>Networking</em> is the one
 that will actually deliver.</p>
+<h2 id="what-a-staging-can-reach-on-the-internet">What a staging can reach on the internet<a class="headerlink" href="#what-a-staging-can-reach-on-the-internet" title="Permanent link">&para;</a></h2>
+<p>A staging is a copy of production that people poke at, so what it can talk to
+matters. It reaches only the hostnames on its own list; everything else is
+refused at the network, before Odoo ever sees it. That is what stops a staging
+from calling a payment gateway, a tax agency or a customer's webhook while
+somebody is trying things out in it.</p>
+<p>Open <strong>Instance detail → Whitelist</strong> to see and edit the list. A new staging
+starts with whatever its host publishes, so in the usual case there is nothing
+to decide. Add the hostname of any API the code under test genuinely needs —
+written plainly, <code>api.example.com</code>, with no <code>https://</code>, no port and no path.</p>
+<div class="admonition note">
+<p class="admonition-title">It takes a rebuild</p>
+<p>The list is part of the instance's configuration, not a live setting.
+<strong>Save</strong> records it and the instance shows <em>Changes not deployed</em>; it
+applies on the next <strong>Rebuild</strong>.</p>
+</div>
+<p>Emptying the list does not open the staging up — it falls back to the shared
+list of its host, which is what every staging used before this existed.</p>
+<p>Production has no such list. A production instance is yours, its traffic is not
+filtered by the platform, and the tab is absent rather than empty.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../hosts/">Hosts</a> — where instances run.</li>
