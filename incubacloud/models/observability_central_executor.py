@@ -26,6 +26,7 @@ import logging
 import yaml
 
 from .ansible_executor import AnsibleExecutor
+from .password_utils import generate_password
 
 _logger = logging.getLogger(__name__)
 
@@ -131,6 +132,38 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 sorted(user for user, _password in accounts)
             ),
         })
+
+    def _delete_key_for_deployment(self):
+        """Return the deletion key this run starts VictoriaMetrics with.
+
+        The recorded key when there is one, a new one otherwise — decided
+        here and written down only in :meth:`_record_shipped_delete_key`,
+        after the run succeeded. Writing it from here does not work: this
+        runs in the job's asynchronous phase, whose cursor does not
+        survive it. Measured in production on 2026-09-27: the first
+        deployment started VictoriaMetrics with a key the database never
+        received, so the panel could not delete.
+        """
+        if not hasattr(self, "_shipped_delete_key"):
+            settings = self.env["cloud.settings"].sudo()._get_system()
+            self._shipped_delete_key = (
+                settings.metrics_delete_auth_key or generate_password(32)
+            )
+        return self._shipped_delete_key
+
+    def _record_shipped_delete_key(self):
+        """Write down the deletion key the central now runs with.
+
+        Only after success, like the account list: a key recorded for a
+        central that never restarted with it would be a deletion route
+        answering 401.
+        """
+        key = getattr(self, "_shipped_delete_key", None)
+        if not key:
+            return
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if settings.metrics_delete_auth_key != key:
+            settings.write({"metrics_delete_auth_key": key})
 
     def _account_url_map(self, user):
         """Return the vmauth ``url_map`` for one account.
@@ -274,7 +307,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         accounts = self._accounts_for_deployment()
         operator_token = settings._ensure_operator_credential()
         admin_password = settings._ensure_grafana_admin_password()
-        delete_key = settings._ensure_metrics_delete_key()
+        delete_key = self._delete_key_for_deployment()
         self._sys(
             f"Deploying the metrics central on {self._host().name} "
             f"(retention {settings.metrics_retention_days or 90} days, "
@@ -391,6 +424,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 )
         settings.write(vals)
         self._record_shipped_accounts()
+        self._record_shipped_delete_key()
 
         self._sys(
             f"✓ Metrics central is up and observability is enabled "

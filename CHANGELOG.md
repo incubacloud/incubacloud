@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.136] — 2026-09-28
+
+### Fixed
+
+- **The metrics deletion key reaches the database.** 1.0.135 minted it
+  while building the central deployment, which runs in the job's
+  asynchronous phase — and nothing written there survives it. Measured
+  in production: VictoriaMetrics started with the key, the operator's
+  deletion route carried it, and the database never received it, so the
+  panel could not delete anything (safe, but useless). The key is now
+  decided while building the run and recorded by the success hook, the
+  way the list of granted accounts already was: the database holds
+  exactly the key the backend was started with, and a failed deployment
+  records nothing. A redeployment keeps the recorded key.
+
 ## [1.0.135] — 2026-09-27
 
 ### Added

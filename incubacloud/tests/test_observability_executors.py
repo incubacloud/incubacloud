@@ -8,6 +8,7 @@ deployment successful when the backend never answered.
 Built the same way as the hardening executor's tests — instantiated
 without ``__init__`` so no SSH transport or job record is needed.
 """
+import asyncio
 import re
 from unittest.mock import MagicMock
 
@@ -412,9 +413,42 @@ class TestSeriesDeletionKey(ObservabilityExecutorCase):
     def test_the_deployment_mints_it_and_hands_it_to_the_backend(self):
         extra, _cfg = self._config()
         self.assertTrue(extra["ic_delete_auth_key"])
+
+    def test_building_the_deployment_writes_nothing(self):
+        """The build runs in the job's asynchronous phase.
+
+        Measured in production on 2026-09-27: a key written from there
+        never reached the database while VictoriaMetrics started with
+        it, so the panel could not delete. The record belongs to the
+        success hook, which commits on a cursor of its own.
+        """
+        self.settings.metrics_delete_auth_key = False
+        self._config()
+        self.assertFalse(self.settings.metrics_delete_auth_key)
+
+    def test_success_records_the_key_the_backend_was_started_with(self):
+        self.settings.metrics_delete_auth_key = False
+        executor = self._make(ObservabilityCentralExecutor)
+        extra = executor.get_extra_vars()
+        executor._facts = {"ic_central_gateway": "http://172.17.0.1:8428"}
+        asyncio.run(executor.on_success({}))
         self.assertEqual(
-            extra["ic_delete_auth_key"], self.settings.metrics_delete_auth_key,
+            self.settings.metrics_delete_auth_key, extra["ic_delete_auth_key"],
         )
+
+    def test_a_redeployment_keeps_the_recorded_key(self):
+        """Rotating it on every deployment would buy nothing."""
+        self.settings.metrics_delete_auth_key = "k" * 43
+        extra, _cfg = self._config()
+        self.assertEqual(extra["ic_delete_auth_key"], "k" * 43)
+
+    def test_a_failed_deployment_records_nothing(self):
+        self.settings.metrics_delete_auth_key = False
+        executor = self._make(ObservabilityCentralExecutor)
+        executor.get_extra_vars()
+        executor._alert = MagicMock(spec=ObservabilityCentralExecutor._alert)
+        asyncio.run(executor.on_failure({}, ["boom"]))
+        self.assertFalse(self.settings.metrics_delete_auth_key)
 
     def test_the_operator_route_adds_it_and_reaches_only_delete_series(self):
         extra, cfg = self._config()
