@@ -12,8 +12,14 @@ assumes otherwise is not a flow, it is a dead end.
 Fetching from a link exists because neither of those helps with an
 archive that already lives somewhere else.
 """
+import asyncio
 import json
+from unittest.mock import MagicMock
 
+from odoo.addons.incubacloud.models.restore_instance_executor import (
+    RestoreInstanceExecutor,
+)
+from odoo.addons.incubacloud.models.transport import SSHTransport
 from odoo.addons.incubacloud.net.outbound import OutboundError
 from odoo.addons.incubacloud.net.restore_source import (
     curl_resolve_argument,
@@ -26,6 +32,9 @@ from odoo.addons.incubacloud.restore_staging import (
     new_upload_path,
     path_for_upload,
     upload_id_of,
+)
+from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
+    JobEndAssertions,
 )
 from odoo.tests.common import BaseCase, TransactionCase
 
@@ -276,3 +285,63 @@ class TestJobSecretPayload(TransactionCase):
             "job_type_id": self.env.ref("incubacloud.host_probe").id,
         })
         self.assertIsNone(job._restore_url_credential())
+
+
+class TestTheConsumedGrantOutlivesTheJob(JobEndAssertions, TransactionCase):
+    """Closing the key is the one thing a failed restore must not undo.
+
+    It used to happen in the job's own transaction: a restore failing
+    afterwards took the closure back, and even a successful one lost
+    whatever the runner's final ``clear()`` found unflushed.
+    """
+
+    def setUp(self):
+        """A restore job that consumes a checked upload grant."""
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.host = self.env["cloud.host"].create({
+            "name": "consumed-host",
+            "ip_address": "198.51.100.22",
+            "user": "root",
+            "wildcard_domain": "consumed.example",
+        })
+        project = self.env["cloud.project"].create({"name": "consumed-proj"})
+        self.instance = self.env["cloud.instance"].create({
+            "name": "consumed-inst",
+            "project_id": project.id,
+            "host_id": self.host.id,
+            "odoo_version": "19.0",
+        })
+        self.grant, _private = self.env["cloud.restore.upload.grant"]._open(
+            self.instance,
+        )
+        self.job = self.env["cloud.job"].create({
+            "name": "restore",
+            "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.env.ref("incubacloud.restore_instance").id,
+            "payload": {"mode": "ssh_upload", "grant_id": self.grant.id},
+        })
+        # The durable cursor reads the database, not this env's cache.
+        self.env.flush_all()
+
+    def test_the_grant_is_closed_and_its_revocation_queued_for_good(self):
+        """Both the closure and the queued revocation survive the job's end."""
+        executor = RestoreInstanceExecutor(self.job, self.host)
+        asyncio.run(executor.before_execute(MagicMock(spec=SSHTransport)))
+        self.end_job()
+        self.assertEqual(self.stored(self.grant, "state"), "used")
+        self.env.cr.execute(
+            """
+            SELECT j.queue_job_uuid IS NOT NULL
+              FROM cloud_job j
+              JOIN cloud_job_type t ON t.id = j.job_type_id
+             WHERE t.code = 'revoke_restore_upload_key'
+               AND j.instance_id = %s
+               AND j.payload::text LIKE %s
+            """,
+            (self.instance.id, '%keep_directory%'),
+        )
+        rows = self.env.cr.fetchall()
+        self.assertEqual(len(rows), 1, "exactly one revocation is queued")
+        self.assertTrue(rows[0][0], "the revocation lost its queue job")

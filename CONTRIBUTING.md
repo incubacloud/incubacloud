@@ -69,8 +69,8 @@ pip install asyncssh cryptography boto3 PyYAML bcrypt refurb
   1. A new `AbstractSSHExecutor` subclass with `_job_type` set.
   2. A matching `cloud.job.type` record in `data/job_type.xml`.
   3. Tests covering `get_commands()`, `parse_results()`, and the `on_success()` / `on_failure()` paths.
-- All DB writes inside an executor must use **fresh cursors** (see [architecture docs](docs/architecture.md#transaction-model)).
-- Bus notifications must be sent **inside a transaction** (PostgreSQL `NOTIFY` delivers on commit) — inside executors, via the same fresh-cursor pattern as log flushes. Never from postcommit hooks.
+- **An executor never writes in its job's transaction.** Outside `on_success` / `on_failure`, every write goes through `self._durable_env()`, or `self._persist()` when the rest of the job must read it back (see [architecture docs](docs/architecture.md#transaction-model)). Never open a cursor yourself: `test_executor_write_rules` fails the build. A model helper meant for executors writes through the environment of the record it is called on.
+- Bus notifications must be sent **inside a transaction** (PostgreSQL `NOTIFY` delivers on commit) — inside executors, through `_durable_env()` like log flushes. Never from postcommit hooks.
 
 ---
 
@@ -110,6 +110,11 @@ These are enforced habits, born from real incidents in this codebase:
   `MagicMock(spec=type(env['cloud.job']))`.
 - **Pure-Python tests inherit `BaseCase`**, not `unittest.TestCase` —
   they integrate with Odoo's runner, tags and logging.
+- **Assert what survives the job, not what the same environment reads
+  back.** A pending write looks exactly like a saved one to the
+  environment that made it. End the job the way the runner does and read
+  the row by SQL: `JobEndAssertions` in
+  `tests/test_executor_durable_writes.py` (`end_job()`, `stored()`).
 - **Never assert against SQL `NOW()`** or freshly-written timestamps
   via raw SQL — the transaction clock and the write clock differ and
   the test goes flaky. Assert through the ORM.

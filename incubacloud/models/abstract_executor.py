@@ -10,6 +10,7 @@ from pathlib import Path
 
 import asyncssh
 
+from odoo.sql_db import Cursor
 from odoo.tools import file_path
 
 from ._concurrency import read_committed_cursor
@@ -113,6 +114,12 @@ MAX_CHUNKS_PER_JOB = 20_000
 # and removed once the command loop ends, so nothing lingers on the host
 # between runs and two concurrent jobs never share a payload.
 SCRIPT_REMOTE_ROOT = "/tmp/.incubacloud-scripts"
+
+# How long a durable write waits for a row lock before giving up. The one
+# holder that keeps a lock that long is the job's own transaction, and
+# then waiting is a deadlock: the job cannot commit until the executor
+# returns. The cap turns that hang into an error with a traceback.
+DURABLE_LOCK_TIMEOUT = "30s"
 
 
 def _redact_tokens(text):
@@ -436,18 +443,19 @@ class AbstractExecutor(ABC):
             "[_dispatch_outcome] %s START job_id=%s errors=%s",
             hook.__name__, self.job.id, errors,
         )
-        # READ COMMITTED: this is where ``on_success`` stamps
-        # ``cloud_instance``, the same rows the metrics cron stamps on
-        # its own schedule. See ``_concurrency`` for why losing that
-        # race is worse than waiting for it.
+        # A durable environment, READ COMMITTED: this is where
+        # ``on_success`` stamps ``cloud_instance``, the same rows the
+        # metrics cron stamps on its own schedule. See ``_concurrency``
+        # for why losing that race is worse than waiting for it, and
+        # ``_durable_env`` for why the wait is capped.
         # The job's own cursor, pinned before the swap below: a hook that
         # needs something to happen *after* the job commits registers it
         # there (``_unlink_after_job_commit``), never on the hook cursor,
         # whose commit is the very thing that must be waited for.
         self._job_cr = self.job.env.cr
-        with read_committed_cursor(self.job.env.registry) as cr:
+        with self._durable_env() as env:
             _orig_job, _orig_env = self.job, self.env
-            self.job = self.job.env(cr=cr)['cloud.job'].browse(self.job.id)
+            self.job = env['cloud.job'].browse(self.job.id)
             self.env = self.job.env
             try:
                 await hook(*args)
@@ -534,6 +542,152 @@ class AbstractExecutor(ABC):
         main_cr.postcommit.add(_unlink)
 
     # ===============================
+    # DURABLE WRITES
+    # ===============================
+
+    @contextlib.contextmanager
+    def _durable_env(self):
+        """Yield an environment whose writes outlive this job's transaction.
+
+        The rule: **the job's transaction is not written.** While an
+        executor runs, whatever it writes through ``self.env`` is lost
+        one way or another:
+
+        * ``cloud.job.execute`` ends with ``env.clear()``, which drops
+          every write not flushed yet. Core 1.0.135 started
+          VictoriaMetrics with a deletion key the database never
+          received that way.
+        * queue_job rolls the whole transaction back when the job fails
+          or is retried, and forbids committing it midway, because the
+          commit would release the job's lock.
+        * A write that did get flushed holds its row until the job ends,
+          so a hook writing the same row on its own cursor waits for a
+          transaction that is waiting for the hook.
+
+        Writes that must last go through here or through :meth:`_persist`.
+        ``on_success``/``on_failure`` already run inside one (see
+        :meth:`_dispatch_outcome`) and write with ``self.env``; the one
+        write that waits for the job's commit instead is
+        :meth:`_unlink_after_job_commit`.
+
+        What is written here stays invisible to the job's own
+        transaction, which reads the snapshot it took when the job
+        started: invalidating its cache and reading again returns the old
+        value. Use :meth:`_persist` when the rest of the job must see it.
+
+        The cursor is fresh and READ COMMITTED (see ``_concurrency``).
+        On a real one the lock wait is capped at
+        ``DURABLE_LOCK_TIMEOUT``, so the deadlock above surfaces as an
+        error instead of a stuck worker. Under tests ``registry.cursor()``
+        may hand back a pseudo-cursor riding on the test's transaction,
+        which is left untouched for the reason ``read_committed_cursor``
+        leaves its isolation alone.
+
+        Commits on a clean exit and rolls back if the block raises. The
+        environment keeps the job's user, superuser flag and context.
+
+        :return: a context manager yielding an ``api.Environment``
+        """
+        with read_committed_cursor(self.job.env.registry) as cr:
+            if isinstance(cr, Cursor):
+                cr.execute(
+                    "SET LOCAL lock_timeout = %s", (DURABLE_LOCK_TIMEOUT,),
+                )
+            yield self.job.env(cr=cr)
+
+    def _persist(self, record, vals):
+        """Write *vals* on *record* durably and let this job see the result.
+
+        :meth:`_durable_env` makes a write last; this also makes it
+        visible. Invalidating the job's cache is not enough — its
+        transaction would read the old value back from its snapshot, and
+        that is how a deployment merged a new requirement into the
+        database and then uploaded the list from before the merge. The
+        committed values are put in the job's cache instead, as clean
+        entries, so the job's own flush never writes them a second time.
+
+        What the write recomputed comes along: stored computed fields of
+        the same record that depend on *vals* (``rebuild_fingerprint``
+        after ``pip_dependencies``) are copied, and non-stored ones are
+        dropped from the cache to recompute from the new values.
+        Dependents on other records are not followed.
+
+        The write keeps *record*'s own user, superuser flag and context,
+        so ``record.sudo().with_context(...)`` behaves as it would with a
+        plain ``write``. Never call it inside :meth:`_durable_env`: the
+        two cursors would contend for the same row.
+
+        :param record: a single record bound to the job's environment
+        :param dict vals: values in ``write`` format
+        :raise ValueError: if *vals* names a one2many or many2many field,
+            whose commands do not translate into cache values
+        """
+        record.ensure_one()
+        relational = [
+            name for name in vals
+            if record._fields[name].type in ("one2many", "many2many")
+        ]
+        if relational:
+            raise ValueError(
+                "_persist() cannot copy x2many fields into the job's "
+                f"cache: {', '.join(relational)}"
+            )
+        with self._durable_env() as env:
+            durable = record.with_env(record.env(cr=env.cr))
+            durable.write(vals)
+            values, volatile = self._durable_values(durable, vals)
+        self._mirror_to_job_cache(record, values, volatile)
+
+    @staticmethod
+    def _durable_values(durable, fnames):
+        """Return what *durable* now holds for *fnames* and their dependents.
+
+        Read on the durable cursor after the write, so the values are the
+        ones about to be committed, including whatever the ORM recomputed
+        from them.
+
+        :param durable: a single record bound to a durable environment
+        :param fnames: names of the fields that were written
+        :return: ``(values, volatile)`` — ``values`` maps the written and
+            the dependent stored fields to their values in ``write``
+            format (relational ones as ids, never as records bound to a
+            cursor about to close); ``volatile`` is the set of non-stored
+            dependents to drop from the job's cache
+        """
+        model = durable._name
+        stored, volatile = set(fnames), set()
+        for name in fnames:
+            for dep in durable.pool.get_dependent_fields(durable._fields[name]):
+                if dep.model_name != model:
+                    continue
+                if not dep.store:
+                    volatile.add(dep.name)
+                elif dep.column_type:
+                    stored.add(dep.name)
+        values = {
+            name: durable._fields[name].convert_to_write(durable[name], durable)
+            for name in stored
+        }
+        return values, volatile - stored
+
+    @staticmethod
+    def _mirror_to_job_cache(record, values, volatile=()):
+        """Make the job's transaction see values committed on another cursor.
+
+        One limit: a many2one naming a row *created* on the durable
+        cursor points at a row the job's snapshot cannot see, so reading
+        through it from the job fails. Leave such a link out of the copy.
+
+        :param record: the record as the job's environment holds it
+        :param dict values: stored values, as :meth:`_durable_values`
+            returns them
+        :param volatile: non-stored field names to recompute on next read
+        """
+        record._update_cache(values, validate=False)
+        if volatile:
+            record.invalidate_recordset(list(volatile), flush=False)
+
+    # ===============================
     # DB + BUS INFRASTRUCTURE
     # ===============================
 
@@ -567,8 +721,7 @@ class AbstractExecutor(ABC):
         if self._cap_marker_emitted:
             return 0
         written = 0
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             Log = env['cloud.job.log.chunk'].sudo()
             for line, source in entries:
                 if self._chunks_persisted >= MAX_CHUNKS_PER_JOB:
@@ -617,8 +770,7 @@ class AbstractExecutor(ABC):
         meaningfully change mid-job.
         """
         logger = logging.getLogger("AbstractExecutor")
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             Job = env['cloud.job']
             if self._bus_audience_ids is None:
                 self._bus_audience_ids = Job._bus_audience(
@@ -632,8 +784,8 @@ class AbstractExecutor(ABC):
             )
 
     def _check_cancel(self):
-        with self.job.env.registry.cursor() as cr:
-            job = self.job.env(cr=cr)['cloud.job'].browse(self.job.id)
+        with self._durable_env() as env:
+            job = env['cloud.job'].browse(self.job.id)
             if job.state == 'cancelled':
                 raise Exception("Job cancelled")
 
@@ -668,8 +820,8 @@ class AbstractExecutor(ABC):
 
     def _write_system_direct(self, msg):
         """Write a system log chunk directly to DB (without async buffer)."""
-        with self.job.env.registry.cursor() as cr:
-            self.job.env(cr=cr)['cloud.job.log.chunk'].sudo().create({
+        with self._durable_env() as env:
+            env['cloud.job.log.chunk'].sudo().create({
                 'job_id': self.job.id,
                 'content': msg,
                 'source': 'system',
@@ -706,8 +858,7 @@ class AbstractExecutor(ABC):
         alert about a failure must survive the rollback of the very
         transaction that failed.
         """
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             env['cloud.alert'].raise_alert(
                 code, message, level=level,
                 host=env['cloud.host'].browse(self.job.host_id.id),
@@ -716,8 +867,7 @@ class AbstractExecutor(ABC):
 
     def _resolve_alert(self, code):
         """Dismiss any active alert with the given code for this job's host."""
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             env['cloud.alert'].resolve_alert(
                 code, host=env['cloud.host'].browse(self.job.host_id.id),
             )

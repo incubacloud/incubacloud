@@ -201,8 +201,8 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         inst = self._inst()
         if not self._owns_instance_lifecycle or not inst:
             return
-        with self.job.env.registry.cursor() as cr:
-            fresh = self.job.env(cr=cr)["cloud.instance"].browse(inst.id)
+        with self._durable_env() as env:
+            fresh = env["cloud.instance"].browse(inst.id)
             if fresh.exists() and fresh.state == "deployed":
                 fresh._transition("deleting")
 

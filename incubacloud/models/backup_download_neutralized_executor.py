@@ -187,8 +187,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
             self._sys("✓ Downloaded. Storing as attachment…")
             data = Path(local_tmp).read_bytes()
 
-            with self.job.env.registry.cursor() as cr:
-                env = self.job.env(cr=cr)
+            with self._durable_env() as env:
                 # ``raw`` skips the in-RAM base64 copy of the archive.
                 env['ir.attachment'].create({
                     'name': filename,

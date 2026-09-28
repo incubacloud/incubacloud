@@ -213,8 +213,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
             # whole archive in RAM for nothing.
             data = Path(local_tmp).read_bytes()
 
-            with self.job.env.registry.cursor() as cr:
-                env = self.job.env(cr=cr)
+            with self._durable_env() as env:
                 env['ir.attachment'].create({
                     'name': filename,
                     'type': 'binary',

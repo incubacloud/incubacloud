@@ -244,19 +244,39 @@ def get_commands(self):
 
 ### Transaction model
 
-The `queue_job` worker holds a cursor with a lock on the `queue.job` row for the duration of execution. All DB operations inside an executor must use **fresh cursors** to avoid deadlocks:
+**The job's transaction is not written.** An executor runs inside the transaction `queue_job` opened for its job (which holds the lock on the `queue.job` row), and nothing written there through `self.env` can be relied on:
+
+- `cloud.job.execute()` ends with `env.clear()`, which in Odoo 19 drops every write not flushed yet. Core 1.0.135 started VictoriaMetrics with a deletion key the database never received that way.
+- `queue_job` rolls the whole transaction back when the job fails or is retried, and refuses a commit midway (it would release the job's lock).
+- A write that does get flushed holds its row until the job ends; a hook writing the same row on its own cursor then waits for a transaction that is waiting for the hook.
+- The transaction is REPEATABLE READ and its snapshot dates from the job's start, so a value committed on another cursor stays invisible to it — invalidating the cache and reading again returns the old value (measured).
+
+Two primitives on `AbstractExecutor` cover every durable write:
+
+| Primitive | Use it for |
+|---|---|
+| `with self._durable_env() as env:` | Writes that must last. A fresh READ COMMITTED cursor, committed on exit and rolled back if the block raises; the lock wait is capped at 30 s, so a mixed-transaction deadlock becomes an error instead of a stuck worker. Same user, superuser flag and context as the job. |
+| `self._persist(record, vals)` | A durable write the rest of the job must also *see*. Writes through `_durable_env()`, then copies the committed values — and the stored computed fields of the same record that depend on them — into the job's cache. |
+
+`on_success` / `on_failure` already run inside `_durable_env()` (see `_dispatch_outcome`) and write with `self.env`. `pre_run_checks`, `before_execute`, `get_commands`, `get_extra_vars`, `after_commands` and `parse_results` do not. The one write that waits for the job's own commit is `_unlink_after_job_commit`.
 
 ```python
-# Correct pattern inside an executor:
-with self.job.env.registry.cursor() as cr:
-    env = self.job.env(cr=cr)
-    env['cloud.instance'].browse(instance_id).write({...})
-    cr.commit()
+# Durable; invisible to the rest of this job (alerts, logs, state for a retry):
+with self._durable_env() as env:
+    env['cloud.alert'].raise_alert(...)
 
-# WRONG — never use self.job.env.cr directly for writes
+# Durable AND read again later in this job (the upload step reads it):
+self._persist(inst.sudo().with_context(pip_provenance_managed=True), vals)
+
+# WRONG — dropped at the end of the job, or taken back if it fails:
+self.env['cloud.instance'].browse(inst_id).write({...})
 ```
 
-Bus notifications must also be sent from fresh cursors, but only **during** execution. PostgreSQL `NOTIFY` is committed automatically with the transaction.
+A model helper meant to be called from an executor writes through the environment of the record it is called on, so the executor can bind it to a durable one (`env['cloud.settings'].sudo()._get_system()._ensure_operator_credential()` inside `_durable_env()`); it never opens a cursor of its own.
+
+**Enforced by tests.** `tests/executor_write_rules.py` checks every executor class of core, the SaaS manager and the tenant module by AST: no cursor opened outside `abstract_executor.py`, and no `write` / `create` / `unlink` / `_transition` / `enqueue` / `raise_alert` / … outside a durable block or a hook (a short, verified list of hook-only helpers aside). It cannot see a write made inside a model helper; `tests/test_executor_durable_writes.py` covers those by ending the job the way the runner does (`env.clear()`) and reading the row by SQL — the check the 1.0.135 test was missing. In a `TransactionCase` the durable cursor rides on the test's own transaction (`registry_enter_test_mode()`), so the REPEATABLE READ snapshot cannot be reproduced there; it was measured with two real cursors.
+
+Bus notifications go out from durable cursors too (`_publish_bus`), and only **during** execution. PostgreSQL `NOTIFY` is committed automatically with the transaction.
 
 ## Safe rebuild
 

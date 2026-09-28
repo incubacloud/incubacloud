@@ -803,9 +803,9 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 "Resolve them in Alerts (the stored spec wins unless you "
                 "pick the repo's) and run this job again."
             )
-            with self.job.env.registry.cursor() as cr:
+            with self._durable_env() as env:
                 create_pip_conflict_alert(
-                    self.job.env(cr=cr), conflicts, instance_id=inst.id,
+                    env, conflicts, instance_id=inst.id,
                 )
             raise RuntimeError(
                 f"Pre-flight: {len(conflicts)} pip dependency conflict(s)"
@@ -814,15 +814,21 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             self._sys("✓ Dependencies already in sync with the repos.")
 
     def _persist_resynced_requirements(self, inst, text, sources):
-        """Store the merged dependency list on its own cursor.
+        """Store the merged dependency list durably, and let the job see it.
 
         Committed independently of the job so the merged list (and any
         conflict markers) survive a later failure of this same job —
         otherwise the retry would re-derive them from scratch and the
         alert would point at a field that never changed.
 
-        The job's own cache is invalidated afterwards so the upload step
-        reads what was just written rather than the pre-merge value.
+        Through :meth:`_persist`, which also hands the committed values to
+        the job's cache. The upload step reads ``pip_dependencies`` right
+        after this, and the full-rebuild decision reads
+        ``rebuild_fingerprint``, which depends on it. This used to
+        invalidate the cache instead, and the job's snapshot then served
+        the pre-merge list back: measured in devel on 2026-09-28, the
+        database held the merged list while ``pip.txt`` would have gone
+        out without it.
 
         :param inst: the instance being deployed
         :param text: merged ``pip_dependencies`` content
@@ -842,13 +848,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             vals["pip_dependency_sources"] = sources
         if not vals:
             return
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
-            env["cloud.instance"].browse(inst.id).sudo().with_context(
-                pip_provenance_managed=True,
-            ).write(vals)
-        inst.invalidate_recordset(
-            ["pip_dependencies", "apt_dependencies", "pip_dependency_sources"],
+        self._persist(
+            inst.sudo().with_context(pip_provenance_managed=True), vals,
         )
 
     async def _upload_copier_files(self, transport):
@@ -920,8 +921,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             f"Addon conflict: {names} defined in multiple"
             " repos — resolve all conflicts and redeploy"
         )
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             Alert = env["cloud.alert"]
             existing = Alert.search(
                 [
@@ -1226,8 +1226,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             f"Addon conflict: {names} defined in multiple repos"
             " — add excludes to the offending repo and redeploy"
         )
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             Alert = env["cloud.alert"]
             existing = Alert.search(
                 [
@@ -1262,8 +1261,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         if not inst:
             return
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             env["cloud.alert"].search(
                 [
                     ("instance_id", "=", inst.id),
@@ -1276,8 +1274,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         inst = self._inst()
         if not inst:
             return
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             env["cloud.alert"].search(
                 [
                     ("instance_id", "=", inst.id),
@@ -1317,8 +1314,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         conflicts = detect_pip_conflicts(inst.pip_dependencies)
         if not conflicts:
             return
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             create_pip_conflict_alert(env, conflicts, instance_id=inst.id)
 
     async def on_failure(self, results, errors):

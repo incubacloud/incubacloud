@@ -249,14 +249,19 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
             # The key has done its job. Closing it here rather than at the
             # end means a restore that fails still leaves no door open —
             # the archive is already on the host, so a retry needs no
-            # second upload.
-            grant._mark_used()
-            self.env['cloud.job'].enqueue(
-                grant.host_id.id, grant.instance_id.id,
-                'revoke_restore_upload_key',
-                payload={'grant_id': grant.id, 'keep_directory': True},
-                bypass_running_check=True,
-            )
+            # second upload. Both writes on one durable cursor: from the
+            # job's own transaction a failure took them back, and even on
+            # success the runner's final ``clear()`` drops whatever was
+            # never flushed — measured, it dropped the revocation's link
+            # to its queue job.
+            with self._durable_env() as env:
+                grant.with_env(env)._mark_used()
+                env['cloud.job'].enqueue(
+                    grant.host_id.id, grant.instance_id.id,
+                    'revoke_restore_upload_key',
+                    payload={'grant_id': grant.id, 'keep_directory': True},
+                    bypass_running_check=True,
+                )
 
         elif mode == 'from_url':
             self._sys("Downloading the archive on the host…")

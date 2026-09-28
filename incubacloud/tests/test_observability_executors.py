@@ -31,12 +31,18 @@ from odoo.addons.incubacloud.models.observability_central_executor import (
     _OPERATOR_DELETE_PATH,
     ObservabilityCentralExecutor,
 )
+from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
+    JobEndAssertions,
+)
 
 
 class ObservabilityExecutorCase(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The central's credentials are minted on a durable cursor; in
+        # test mode that cursor rides on this test's transaction.
+        self.registry_enter_test_mode()
         self.settings = self.env["cloud.settings"].sudo()._get_system()
         self.settings.write({
             "metrics_enabled": True,
@@ -63,9 +69,13 @@ class ObservabilityExecutorCase(TransactionCase):
         executor.env = self.env
         executor.job = MagicMock(spec=type(self.env["cloud.job"]))
         executor.job.host_id = self.host
+        executor.job.env = self.env
         executor._log_buffer = []
         executor._sys = lambda *args, **kwargs: None
         executor._facts = {}
+        # The durable cursor reads the database, not this env's cache,
+        # so whatever the test set up has to be there first.
+        self.env.flush_all()
         return executor
 
     def _user(self, cfg, username):
@@ -414,24 +424,10 @@ class TestSeriesDeletionKey(ObservabilityExecutorCase):
         extra, _cfg = self._config()
         self.assertTrue(extra["ic_delete_auth_key"])
 
-    def test_building_the_deployment_writes_nothing(self):
-        """The build runs in the job's asynchronous phase.
-
-        Measured in production on 2026-09-27: a key written from there
-        never reached the database while VictoriaMetrics started with
-        it, so the panel could not delete. The record belongs to the
-        success hook, which commits on a cursor of its own.
-        """
+    def test_the_job_reads_the_key_it_handed_to_the_backend(self):
+        """The rest of the run sees the key it minted, from its own cache."""
         self.settings.metrics_delete_auth_key = False
-        self._config()
-        self.assertFalse(self.settings.metrics_delete_auth_key)
-
-    def test_success_records_the_key_the_backend_was_started_with(self):
-        self.settings.metrics_delete_auth_key = False
-        executor = self._make(ObservabilityCentralExecutor)
-        extra = executor.get_extra_vars()
-        executor._facts = {"ic_central_gateway": "http://172.17.0.1:8428"}
-        asyncio.run(executor.on_success({}))
+        extra, _cfg = self._config()
         self.assertEqual(
             self.settings.metrics_delete_auth_key, extra["ic_delete_auth_key"],
         )
@@ -442,13 +438,19 @@ class TestSeriesDeletionKey(ObservabilityExecutorCase):
         extra, _cfg = self._config()
         self.assertEqual(extra["ic_delete_auth_key"], "k" * 43)
 
-    def test_a_failed_deployment_records_nothing(self):
+    def test_a_failed_deployment_leaves_the_key_for_the_next_one(self):
+        """Minted before the playbook, so a failure cannot take it back.
+
+        The backend may not have it yet, and purges fail until a good
+        deployment starts it — with this same key, not a new one.
+        """
         self.settings.metrics_delete_auth_key = False
         executor = self._make(ObservabilityCentralExecutor)
-        executor.get_extra_vars()
+        first = executor.get_extra_vars()["ic_delete_auth_key"]
         executor._alert = MagicMock(spec=ObservabilityCentralExecutor._alert)
         asyncio.run(executor.on_failure({}, ["boom"]))
-        self.assertFalse(self.settings.metrics_delete_auth_key)
+        again, _cfg = self._config()
+        self.assertEqual(again["ic_delete_auth_key"], first)
 
     def test_the_operator_route_adds_it_and_reaches_only_delete_series(self):
         extra, cfg = self._config()
@@ -599,3 +601,74 @@ class TestFirstDeploymentIsUsable(ObservabilityExecutorCase):
         )
         self.assertTrue(extra["ic_accounts"])
         self.assertTrue(self.settings.metrics_account)
+
+
+class TestTheCentralsSecretsOutliveTheJob(JobEndAssertions, ObservabilityExecutorCase):
+    """What a run mints must still be there once the runner ends the job.
+
+    ``get_extra_vars`` runs in the job's asynchronous phase. Core 1.0.135
+    minted the deletion key there with a plain write: VictoriaMetrics
+    started with it and the database never received it. Every secret
+    below is checked by SQL after the same ``env.clear()`` the runner
+    does, which is the check that release was missing.
+    """
+
+    def setUp(self):
+        """Start from a fresh install: nothing minted yet."""
+        super().setUp()
+        # A fresh install: nothing minted yet.
+        self.settings.write({
+            "metrics_account": False,
+            "metrics_remote_write_token": False,
+            "metrics_operator_token": False,
+            "grafana_admin_password": False,
+            "metrics_delete_auth_key": False,
+        })
+
+    def _assert_saved(self, extra):
+        """Every credential the playbook received is the one in the database."""
+        (account,) = extra["ic_account_names"]
+        self.assertTrue(account)
+        self.assertEqual(self.stored(self.settings, "metrics_account"), account)
+        passwords = {a["user"]: a["password"] for a in extra["ic_accounts"]}
+        if account in passwords:
+            self.assertEqual(
+                self.stored(self.settings, "metrics_remote_write_token"),
+                passwords[account],
+            )
+        self.assertEqual(
+            self.stored(self.settings, "metrics_operator_token"),
+            extra["ic_operator_plain"],
+        )
+
+    def test_the_deployment_saves_everything_it_ships(self):
+        """
+        Every secret the deployment hands the playbook is in the database.
+        """
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.end_job()
+        self._assert_saved(extra)
+        self.assertEqual(
+            self.stored(self.settings, "grafana_admin_password"),
+            extra["ic_grafana_admin_password"],
+        )
+        self.assertEqual(
+            self.stored(self.settings, "metrics_delete_auth_key"),
+            extra["ic_delete_auth_key"],
+        )
+
+    def test_the_account_sync_saves_everything_it_ships(self):
+        """The sync saves what it mints, and never mints the deletion key."""
+        extra = self._make(MetricsAclSyncExecutor).get_extra_vars()
+        self.end_job()
+        self._assert_saved(extra)
+        self.assertTrue(self.stored(self.settings, "grafana_admin_password"))
+        self.assertFalse(self.stored(self.settings, "metrics_delete_auth_key"))
+
+    def test_the_job_reads_what_it_minted_without_a_query(self):
+        """The rest of the run resolves the panel's own account from the cache."""
+        self._make(ObservabilityCentralExecutor).get_extra_vars()
+        with self.assertQueryCount(0, flush=False):
+            account = self.settings.metrics_account
+        self.end_job()
+        self.assertEqual(account, self.stored(self.settings, "metrics_account"))

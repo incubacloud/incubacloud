@@ -132,8 +132,8 @@ class FullSetupExecutor(
 
     async def before_execute(self, transport):
         # Mark host as 'checking' so the dashboard updates immediately
-        with self.job.env.registry.cursor() as cr:
-            self.job.env(cr=cr)['cloud.host'].browse(
+        with self._durable_env() as env:
+            env['cloud.host'].browse(
                 self._host().id
             ).write({'status': 'checking'})
 

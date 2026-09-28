@@ -46,13 +46,14 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
         the difference is the whole point.
         """
         settings = self.env["cloud.settings"].sudo()._get_system()
-        # Minted before the list is read, exactly as the deployment does:
-        # a central whose own account does not exist accepts no writes
-        # from anyone and looks healthy from every angle.
-        settings._ensure_metrics_credential()
-        accounts = self._accounts_for_deployment()
-        operator_token = settings._ensure_operator_credential()
-        admin_password = settings._ensure_grafana_admin_password()
+        # Minted durably and before the list is read, exactly as the
+        # deployment does: a central whose own account does not exist
+        # accepts no writes from anyone and looks healthy from every
+        # angle. The deletion key is read, never minted: it is a flag of
+        # the VictoriaMetrics container, which this job cannot restart.
+        accounts, operator_token, admin_password, delete_key = (
+            self._ensure_central_secrets(mint_delete_key=False)
+        )
         granted = set((settings.metrics_accounts_deployed or "").split())
         new = [
             {"user": user, "password": password}
@@ -69,14 +70,11 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
             f"admin:{admin_password}".encode()
         ).decode()
         return {
-            # The deletion key is read, never minted: it is a flag of the
-            # VictoriaMetrics container, which this job cannot restart.
-            # But it must travel whenever it exists — the document
-            # replaces the file, so leaving it out here would delete the
-            # operator's deletion route on every account change.
+            # The deletion key must travel whenever it exists — the
+            # document replaces the file, so leaving it out here would
+            # delete the operator's deletion route on every account change.
             "ic_vmauth_config": self._vmauth_config(
-                accounts, operator_token, grafana_admin_basic,
-                settings.metrics_delete_auth_key or "",
+                accounts, operator_token, grafana_admin_basic, delete_key,
             ),
             "ic_accounts": new,
             # The whole list, not the delta: the organisations of accounts

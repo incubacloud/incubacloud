@@ -160,7 +160,7 @@ class TestTheHookMarksInsteadOfUnlinking(_DeferredUnlinkBase):
         src = inspect.getsource(AbstractExecutor._dispatch_outcome)
         self.assertLess(
             src.index('self._job_cr = self.job.env.cr'),
-            src.index('with read_committed_cursor('),
+            src.index('with self._durable_env()'),
         )
         src = inspect.getsource(AbstractExecutor._unlink_after_job_commit)
         self.assertIn("getattr(self, \"_job_cr\", None)", src)
