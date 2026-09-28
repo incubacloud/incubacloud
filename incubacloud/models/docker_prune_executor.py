@@ -184,8 +184,7 @@ class DockerPruneExecutor(AnsibleExecutor):
                 for svc in _REQUIRED_SERVICES
                 if (name := f"{project}-{svc}-1") not in survivors
             )
-        with self.job.env.registry.cursor() as cr:
-            alert_env = self.job.env(cr=cr)
+        with self._durable_env() as alert_env:
             host = alert_env["cloud.host"].browse(self.job.host_id.id)
             if missing:
                 shown = ", ".join(sorted(missing))
@@ -233,8 +232,7 @@ class DockerPruneExecutor(AnsibleExecutor):
             for inst in self._instances_to_check()
             if (name := f"{inst.doodba_project_name}_default") not in survivors
         ]
-        with self.job.env.registry.cursor() as cr:
-            alert_env = self.job.env(cr=cr)
+        with self._durable_env() as alert_env:
             host = alert_env["cloud.host"].browse(self.job.host_id.id)
             if missing:
                 shown = ", ".join(sorted(missing))

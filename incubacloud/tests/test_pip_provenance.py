@@ -14,7 +14,6 @@ import base64
 import json
 from unittest.mock import MagicMock, patch
 
-from odoo import api
 from odoo.exceptions import UserError
 from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase
@@ -31,6 +30,9 @@ from odoo.addons.incubacloud.models._repo_requirements import (
     create_pip_conflict_alert,
     fetch_requirements_txt_with_client,
     resolve_github_client,
+)
+from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
+    JobEndAssertions,
 )
 
 _REPO_A = 'https://github.com/acme/repo-a'
@@ -156,18 +158,18 @@ class TestInstanceInheritsProvenance(ProvenanceCase):
         self.assertFalse(instance.pip_dependency_sources)
 
 
-class TestResyncExecutor(TransactionCase):
+class TestResyncExecutor(JobEndAssertions, TransactionCase):
     """The re-sync step of deploy/rebuild.
 
-    Persistence runs on its own cursor (so the merged list survives a
-    later failure of the same job), which a test transaction cannot
-    observe — the record it would write does not exist outside this
-    transaction. The write is therefore asserted through the mocked
-    cursor rather than by re-reading the instance.
+    Persistence runs on a durable cursor, so the merged list survives a
+    later failure of the same job. In test mode that cursor rides on the
+    test's transaction, which is what lets these tests end the job the
+    way the runner does and read the row back by SQL.
     """
 
     def setUp(self):
         super().setUp()
+        self.registry_enter_test_mode()
         self.project = self.env['cloud.project'].create({
             'name': 'Resync Project',
             'pip_dependencies': 'libx==1.0\n',
@@ -199,12 +201,11 @@ class TestResyncExecutor(TransactionCase):
         job = MagicMock(spec=type(self.env['cloud.job']))
         job.id = 1
         job.instance_id = self.instance
-        # ``self.job.env`` is only ever used to open the dedicated cursor
-        # the persistence and alert paths write on. Spec'd against the
-        # real Environment so a call outside its API fails here instead
-        # of in production.
-        job.env = MagicMock(spec=api.Environment)
+        # ``self.job.env`` is what the durable cursor is opened from.
+        job.env = self.env
         executor.job = job
+        # That cursor reads the database, not this env's cache.
+        self.env.flush_all()
         return executor
 
     def _run(self, fetched):
@@ -221,23 +222,45 @@ class TestResyncExecutor(TransactionCase):
         """Return the job log lines this run produced."""
         return [line for line, _source in self.executor._log_buffer]
 
-    def _written_vals(self):
-        """Return the vals handed to the write on the dedicated cursor."""
-        env_factory = self.executor.job.env
-        browse = env_factory.return_value.__getitem__.return_value.browse
-        write = browse.return_value.sudo.return_value \
-            .with_context.return_value.write
-        self.assertTrue(write.called, "nothing was persisted")
-        return write.call_args.args[0]
+    def _saved(self):
+        """Return ``(pip_dependencies, pip_dependency_sources)`` as saved.
+
+        Read after ending the job the way the runner does, so a write
+        the job's transaction never flushed does not count.
+        """
+        self.end_job()
+        return (
+            self.stored(self.instance, 'pip_dependencies') or '',
+            self.stored(self.instance, 'pip_dependency_sources') or {},
+        )
 
     def test_new_upstream_package_is_added_and_persisted(self):
         self._run('libnew==2.0\n')
-        vals = self._written_vals()
-        self.assertIn('libnew==2.0', vals['pip_dependencies'])
-        self.assertEqual(
-            vals['pip_dependency_sources']['libnew']['repo'], _KEY_A,
-        )
         self.assertIn('  + libnew==2.0', self._log())
+        text, sources = self._saved()
+        self.assertIn('libnew==2.0', text)
+        self.assertEqual(sources['libnew']['repo'], _KEY_A)
+
+    def test_the_upload_reads_the_merged_list(self):
+        """``pip.txt`` is built from the job's cache right after the merge.
+
+        Invalidating the cache instead made the job read the list back
+        from its own snapshot, from before the merge (measured in devel
+        with two real cursors). Here the snapshot is shared, so what is
+        pinned is that the merged values come from the cache — no query —
+        together with the fingerprint the full-rebuild decision reads.
+        """
+        before = self.instance.rebuild_fingerprint
+        self._run('libnew==2.0\n')
+        with self.assertQueryCount(0, flush=False):
+            text = self.executor._inst().pip_dependencies
+            fingerprint = self.executor._inst().rebuild_fingerprint
+        self.assertIn('libnew==2.0', text)
+        self.assertNotEqual(fingerprint, before)
+        self.end_job()
+        self.assertEqual(
+            fingerprint, self.stored(self.instance, 'rebuild_fingerprint'),
+        )
 
     def test_unreachable_github_keeps_the_stored_list(self):
         """A blip at GitHub must not stop the fleet from rebuilding."""
@@ -298,9 +321,9 @@ class TestResyncExecutor(TransactionCase):
             '— kept, dependencies are never auto-removed.',
             self._log(),
         )
-        vals = self._written_vals()
-        self.assertIn('libx==1.0', vals['pip_dependencies'])
-        self.assertIn('libx', vals['pip_dependency_sources'])
+        text, sources = self._saved()
+        self.assertIn('libx==1.0', text)
+        self.assertIn('libx', sources)
 
 
 class TestResolveConflictOwnership(TransactionCase):

@@ -150,3 +150,5 @@ from . import test_mailbox_commands
 from . import test_mailbox_routes
 from . import test_instance_whitelist
 from . import test_metrics_purge
+from . import test_executor_durable_writes
+from . import test_executor_write_rules

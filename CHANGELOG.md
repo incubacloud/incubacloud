@@ -6,6 +6,62 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.137] — 2026-09-28
+
+### Fixed
+
+- **A new central saves the credentials it deploys.** The central
+  deployment and the account sync minted this panel's metrics
+  credential, the operator's and Grafana's admin password in the job's
+  asynchronous phase, whose writes the runner drops (`cloud.job.execute`
+  ends with `env.clear()`). Measured in devel: all three were generated,
+  handed to the playbook and lost. Production already had them, so
+  nothing bit there; on a new install the panel's own account would
+  never have been saved (no host enrolled, and a critical
+  `metrics_backend_unreachable` with a healthy central), purges would
+  never have been enabled, and Grafana's password would have rotated on
+  every deployment. They are now minted on a durable cursor before the
+  playbook, together with any credential a layer above mints while
+  listing the accounts.
+- **The deletion key follows the same pattern.** 1.0.136 decided it in
+  memory and recorded it on success; it is now minted durably before the
+  playbook like the rest, so every credential of the central is handled
+  one way. A deployment that fails after minting leaves a key the backend
+  may not have yet: purges report `metrics_purge_failed` until the next
+  good deployment, which starts VictoriaMetrics with that same key.
+- **A deployment uploads the dependencies it has just merged.** The
+  requirements re-sync saved the merged list on its own cursor and
+  invalidated the job's cache — and the job's REPEATABLE READ snapshot
+  served the pre-merge list back, so `pip.txt` went out without the new
+  requirement in the very deployment that added it (measured in devel
+  with two real cursors). The committed values, and the
+  `rebuild_fingerprint` the full-rebuild decision reads, now go straight
+  into the job's cache.
+- **A restore through a temporary key closes it for good.** Marking the
+  grant used and queueing the key's revocation happened in the job's
+  transaction: a restore failing afterwards took both back, and even on
+  success the runner's final `clear()` dropped the revocation's link to
+  its queue job (measured in devel).
+  Both are now committed together on a durable cursor.
+
+### Added
+
+- **One rule for what an executor writes, enforced by tests.** "The
+  job's transaction is not written." `AbstractExecutor._durable_env()`
+  (a fresh READ COMMITTED cursor, committed on exit, lock wait capped at
+  30 s) and `_persist(record, vals)` (the same, plus the committed values
+  and their stored dependents copied into the job's cache) replace the
+  hand-written `registry.cursor()` blocks of every executor and the
+  internal log, bus, cancel and alert cursors. The success and failure
+  hooks run inside one too: a hook that would have hung on a row the job
+  holds now fails after 30 s with a traceback.
+  `tests/executor_write_rules.py` checks every executor class by AST (no
+  cursor of its own, no write outside a durable block or a hook), and
+  `tests/test_executor_durable_writes.py` gives tests `end_job()` /
+  `stored()` to assert what survives the runner's `env.clear()` — the
+  check whose absence let 1.0.135 through. See *Transaction model* in
+  `docs/architecture.md`.
+
 ## [1.0.136] — 2026-09-28
 
 ### Fixed

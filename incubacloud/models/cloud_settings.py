@@ -579,6 +579,31 @@ class CloudSettings(models.Model):
         settings.sudo().write({'metrics_operator_token': token})
         return token
 
+    def _ensure_metrics_delete_key(self):
+        """Return VictoriaMetrics' deletion key, generating it once.
+
+        Only the central deployment calls this: the key is a flag of the
+        VictoriaMetrics container, so it only exists on the central once
+        a deployment has restarted that container with it. The account
+        sync reads the field without minting it for the same reason — a
+        key the backend was never started with would be a route that
+        answers 401.
+
+        The deployment mints it before its playbook runs, on a cursor
+        that outlives the job. One that fails afterwards leaves a key the
+        backend may not have yet: purges then fail with
+        ``metrics_purge_failed`` until the next good deployment, which
+        starts the backend with this same key.
+
+        :return: the plaintext key.
+        """
+        settings = self._get_system()
+        if not settings.metrics_delete_auth_key:
+            settings.sudo().write({
+                'metrics_delete_auth_key': generate_password(32),
+            })
+        return settings.metrics_delete_auth_key
+
     def _ensure_grafana_admin_password(self):
         """Return Grafana's admin password, generating it once.
 

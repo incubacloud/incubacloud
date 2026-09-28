@@ -119,8 +119,7 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                 (self.job.payload or {}).get('with_filestore', True)
             )
 
-            with self.job.env.registry.cursor() as cr:
-                env = self.job.env(cr=cr)
+            with self._durable_env() as env:
                 att = env['ir.attachment'].create({
                     'name': filename,
                     'type': 'binary',

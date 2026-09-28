@@ -49,8 +49,8 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
         active_states = self.env['cloud.job']._active_states
         deadline = time.monotonic() + self.MOVE_CHAIN_TERMINAL_TIMEOUT
         while time.monotonic() < deadline:
-            with self.job.env.registry.cursor() as cr:
-                inst = self.job.env(cr=cr)['cloud.instance'].browse(
+            with self._durable_env() as env:
+                inst = env['cloud.instance'].browse(
                     self.job.instance_id.id,
                 )
                 if not inst.exists():

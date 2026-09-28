@@ -26,7 +26,6 @@ import logging
 import yaml
 
 from .ansible_executor import AnsibleExecutor
-from .password_utils import generate_password
 
 _logger = logging.getLogger(__name__)
 
@@ -68,6 +67,17 @@ _ACCOUNT_LOG_READ_PATHS = (
 #: ``delete_series`` and no other endpoint that honours ``authKey``.
 _OPERATOR_DELETE_PATH = "/admin-d/api/v1/admin/tsdb/delete_series"
 
+#: The ``cloud.settings`` credentials a run may mint. Minted on a durable
+#: cursor, then copied into the job's cache so the rest of the run reads
+#: them from there.
+_CENTRAL_SECRET_FIELDS = (
+    "metrics_account",
+    "metrics_remote_write_token",
+    "metrics_operator_token",
+    "grafana_admin_password",
+    "metrics_delete_auth_key",
+)
+
 
 class ObservabilityCentralExecutor(AnsibleExecutor):
     """Deploy VictoriaMetrics + Grafana on this job's host."""
@@ -79,7 +89,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         """Return the host this job targets."""
         return self.job.host_id
 
-    def _metrics_accounts(self):
+    def _metrics_accounts(self, settings=None):
         """Return ``[(user, password), ...]`` allowed to write and read.
 
         Core knows exactly one account: this panel's own. The SaaS
@@ -91,10 +101,18 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         *is* the label the central forces on every series. So adding an
         account here is the single act that grants a panel the right to
         write, and removing it is the single act that revokes it.
-        """
-        return self.env["cloud.settings"].sudo()._desired_metrics_accounts()
 
-    def _accounts_for_deployment(self):
+        :param settings: the ``cloud.settings`` record to resolve the
+            list through. Listing mints a credential for every tenant
+            that lacks one, so the caller's environment decides whether
+            those survive; defaults to this executor's, for callers that
+            only read.
+        """
+        if settings is None:
+            settings = self.env["cloud.settings"].sudo()
+        return settings._desired_metrics_accounts()
+
+    def _accounts_for_deployment(self, settings=None):
         """Return the account list this run is built from, memoised.
 
         ``_metrics_accounts()`` is read more than once while the playbook
@@ -104,10 +122,63 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         must not be recorded as granted, because on the gateway it is
         not — and a record of intent instead of fact would defeat the
         record's only purpose.
+
+        :param settings: passed to :meth:`_metrics_accounts` on the first
+            call; :meth:`_ensure_central_secrets` hands it the durable one.
         """
         if not hasattr(self, "_shipped_accounts"):
-            self._shipped_accounts = self._metrics_accounts()
+            self._shipped_accounts = self._metrics_accounts(settings)
         return self._shipped_accounts
+
+    def _ensure_central_secrets(self, mint_delete_key):
+        """Mint what the central needs, durably, and return what this run ships.
+
+        Every credential here is generated on first use and must then
+        outlive the job. This runs in the job's asynchronous phase, whose
+        own writes the runner discards: measured in devel on 2026-09-28,
+        the three secrets were generated, handed to the playbook and
+        dropped when the job ended — and core 1.0.135 lost the deletion
+        key the same way in production. So they are minted in
+        :meth:`_durable_env` and then copied into the job's cache, where
+        the rest of the run (Grafana's organisation mapping reads the
+        panel's own account) finds them.
+
+        The panel's own account is minted before the list is built. It
+        used to be created in ``on_success``, so the very first
+        deployment wrote an empty account file: a central that came up
+        healthy and accepted no writes at all.
+
+        The list is built in the same environment, because the SaaS layer
+        mints tenant credentials while listing and those have to survive
+        too.
+
+        :param bool mint_delete_key: whether to mint the deletion key
+            when absent. Only the full deployment restarts the backend
+            with it (see ``cloud.settings._ensure_metrics_delete_key``);
+            otherwise it is only read.
+        :return: ``(accounts, operator_token, admin_password, delete_key)``
+            where ``accounts`` is ``[(user, password), ...]`` and
+            ``delete_key`` may be empty
+        """
+        with self._durable_env() as env:
+            settings = env["cloud.settings"].sudo()._get_system()
+            settings._ensure_metrics_credential()
+            accounts = self._accounts_for_deployment(settings)
+            operator_token = settings._ensure_operator_credential()
+            admin_password = settings._ensure_grafana_admin_password()
+            delete_key = (
+                settings._ensure_metrics_delete_key() if mint_delete_key
+                else settings.metrics_delete_auth_key or ""
+            )
+            values, volatile = self._durable_values(
+                settings, _CENTRAL_SECRET_FIELDS,
+            )
+            settings_id = settings.id
+        self._mirror_to_job_cache(
+            self.env["cloud.settings"].sudo().browse(settings_id),
+            values, volatile,
+        )
+        return accounts, operator_token, admin_password, delete_key
 
     def _record_shipped_accounts(self):
         """Write down the access-control list this run put in force.
@@ -132,38 +203,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 sorted(user for user, _password in accounts)
             ),
         })
-
-    def _delete_key_for_deployment(self):
-        """Return the deletion key this run starts VictoriaMetrics with.
-
-        The recorded key when there is one, a new one otherwise — decided
-        here and written down only in :meth:`_record_shipped_delete_key`,
-        after the run succeeded. Writing it from here does not work: this
-        runs in the job's asynchronous phase, whose cursor does not
-        survive it. Measured in production on 2026-09-27: the first
-        deployment started VictoriaMetrics with a key the database never
-        received, so the panel could not delete.
-        """
-        if not hasattr(self, "_shipped_delete_key"):
-            settings = self.env["cloud.settings"].sudo()._get_system()
-            self._shipped_delete_key = (
-                settings.metrics_delete_auth_key or generate_password(32)
-            )
-        return self._shipped_delete_key
-
-    def _record_shipped_delete_key(self):
-        """Write down the deletion key the central now runs with.
-
-        Only after success, like the account list: a key recorded for a
-        central that never restarted with it would be a deletion route
-        answering 401.
-        """
-        key = getattr(self, "_shipped_delete_key", None)
-        if not key:
-            return
-        settings = self.env["cloud.settings"].sudo()._get_system()
-        if settings.metrics_delete_auth_key != key:
-            settings.write({"metrics_delete_auth_key": key})
 
     def _account_url_map(self, user):
         """Return the vmauth ``url_map`` for one account.
@@ -297,17 +336,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
     def get_extra_vars(self):
         """Hand retention, credentials and Grafana auth to the playbook."""
         settings = self.env["cloud.settings"].sudo()._get_system()
-        # Mint this panel's own credential BEFORE listing the accounts.
-        # It used to be created in on_success, which meant the very first
-        # deployment wrote an empty account file: a central that came up
-        # healthy and accepted no writes at all, needing a second
-        # deployment to become usable. Nothing about that was visible
-        # from the job log.
-        settings._ensure_metrics_credential()
-        accounts = self._accounts_for_deployment()
-        operator_token = settings._ensure_operator_credential()
-        admin_password = settings._ensure_grafana_admin_password()
-        delete_key = self._delete_key_for_deployment()
+        accounts, operator_token, admin_password, delete_key = (
+            self._ensure_central_secrets(mint_delete_key=True)
+        )
         self._sys(
             f"Deploying the metrics central on {self._host().name} "
             f"(retention {settings.metrics_retention_days or 90} days, "
@@ -424,7 +455,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 )
         settings.write(vals)
         self._record_shipped_accounts()
-        self._record_shipped_delete_key()
 
         self._sys(
             f"✓ Metrics central is up and observability is enabled "

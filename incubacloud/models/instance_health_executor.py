@@ -970,8 +970,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         transaction that failed.
         """
         inst = self._inst()
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             env['cloud.alert'].raise_alert(
                 code, message, level=level,
                 instance=env['cloud.instance'].browse(inst.id),
@@ -1000,8 +999,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         cutoff = odoo_fields.Datetime.now() - timedelta(
             hours=_ERROR_QUIET_HOURS,
         )
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             instance = env['cloud.instance'].browse(inst.id)
             Alert = env['cloud.alert']
             alert = Alert.search(
@@ -1026,8 +1024,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         looking permanently open there.
         """
         inst = self._inst()
-        with self.job.env.registry.cursor() as cr:
-            env = self.job.env(cr=cr)
+        with self._durable_env() as env:
             env['cloud.alert'].resolve_alert(
                 code, instance=env['cloud.instance'].browse(inst.id),
             )

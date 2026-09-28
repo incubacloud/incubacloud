@@ -85,8 +85,7 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
                 data = Path(local_tmp).read_bytes()
 
                 filename = f"{inst.name}-export.tar.gz"
-                with self.job.env.registry.cursor() as cr:
-                    env = self.job.env(cr=cr)
+                with self._durable_env() as env:
                     # ``raw`` skips the in-RAM base64 copy of the tarball.
                     attachment = env["ir.attachment"].create({
                         "name": filename,
