@@ -139,6 +139,9 @@ class HostHardeningExecutor(AnsibleExecutor):
             "ic_http_conn_rate": host.http_conn_rate or 0,
             # Filtering 80/443 to the CDN's ranges replaces the per-source
             # rate cap; both at once would count the edge as one visitor.
+            # The rate is still handed over -- it is the host's setting --
+            # and the ruleset template leaves the cap out whenever the
+            # ranges are present, so the box gets one or the other.
             # Deliberately gated on the host also refusing direct access
             # at the proxy: enabling the firewall half on its own is how
             # a host stops answering anybody without the panel saying so.
