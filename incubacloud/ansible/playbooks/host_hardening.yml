@@ -431,12 +431,16 @@
                   # addresses, so a per-source cap would throttle the CDN
                   # itself and protect nobody -- which is why the cap
                   # below is not rendered alongside, whatever the host's
-                  # rate says.
-                  ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept
+                  # rate says. ``meta l4proto tcp`` comes first because
+                  # nftables 1.0.2 (Ubuntu 22.04) can only type
+                  # ``ct original proto-dst`` once the transport protocol
+                  # is stated; a newer nft infers it, and a ruleset
+                  # checked only there was refused by the fleet.
+                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept
                   {% if ic_http_allowed_ranges_v6 | default('') | trim %}
-                  ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept
+                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept
                   {% endif %}
-                  ct state new ct status dnat ct original proto-dst { 80, 443 } drop
+                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } drop
                   {% elif (ic_http_conn_rate | default(0) | int) > 0 %}
                   # Per-source new-connection cap on the instances' 80/443.
                   # Tenant traffic is DNAT'd to the Traefik container, so it

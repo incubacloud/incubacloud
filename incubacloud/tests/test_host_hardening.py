@@ -382,15 +382,16 @@ class TestHardeningPreflight(TransactionCase):
 
     # ── the allowlist judges the forward hook ─────────────────────────
     _FWD_ACCEPT4 = (
-        "ct state new ct status dnat ct original proto-dst { 80, 443 }"
-        " ip saddr @ic_cdn_v4 accept"
+        "meta l4proto tcp ct state new ct status dnat"
+        " ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept"
     )
     _FWD_ACCEPT6 = (
-        "ct state new ct status dnat ct original proto-dst { 80, 443 }"
-        " ip6 saddr @ic_cdn_v6 accept"
+        "meta l4proto tcp ct state new ct status dnat"
+        " ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept"
     )
     _FWD_DROP = (
-        "ct state new ct status dnat ct original proto-dst { 80, 443 } drop"
+        "meta l4proto tcp ct state new ct status dnat"
+        " ct original proto-dst { 80, 443 } drop"
     )
 
     def _forward_chain(self, rendered):
@@ -419,7 +420,7 @@ class TestHardeningPreflight(TransactionCase):
         self.assertLess(forward.index(self._FWD_ACCEPT6), drop)
 
     def test_only_the_first_packet_of_a_redirected_connection_is_judged(self):
-        """Every allowlist rule in forward carries all three guards.
+        """Every allowlist rule in forward carries all four guards.
 
         Without ``ct state new`` the replies are judged too -- their
         source is the container and the connection still carries the
@@ -427,7 +428,10 @@ class TestHardeningPreflight(TransactionCase):
         dnat`` the containers' own outbound 80/443 (backups, packages,
         webhooks) is weighed against the CDN's ranges. ``ct original
         proto-dst`` names the port the visitor dialled, not whatever
-        the container listens on.
+        the container listens on -- and nftables 1.0.2, the fleet's,
+        can only type it once ``meta l4proto tcp`` has been stated
+        before it: without that the whole ruleset is refused and the
+        hardening run fails.
         """
         forward = self._forward_chain(self._render_ruleset(**self._CDN))
         rules = [
@@ -436,6 +440,7 @@ class TestHardeningPreflight(TransactionCase):
         ]
         self.assertEqual(len(rules), 3)
         for line in rules:
+            self.assertTrue(line.startswith("meta l4proto tcp ct "), line)
             for guard in (
                 "ct state new", "ct status dnat",
                 "ct original proto-dst { 80, 443 }",

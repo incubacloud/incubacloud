@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.140] — 2026-09-29
+
+### Fixed
+
+- **The CDN allowlist loads on the fleet's nftables.** The rules 1.0.139
+  added to the forward chain name the port the visitor dialled with
+  `ct original proto-dst`, which nftables 1.0.2 (Ubuntu 22.04) can only
+  type once the transport protocol is stated. The first hardening run
+  with them was refused by `nft -f` ("Can't parse symbolic invalid
+  expressions") and applied nothing, leaving the previous firewall in
+  force. The rules now start with `meta l4proto tcp`, checked against
+  nftables 1.0.2 as well as the newer release the lab ran on.
+
 ## [1.0.139] — 2026-09-29
 
 ### Fixed
