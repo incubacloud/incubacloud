@@ -147,9 +147,9 @@ not visitors, and throttles the CDN itself. Instead the forward chain
 accepts 80/443 only from the CDN's published ranges:
 
 ```
-ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept
-ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept
-ct state new ct status dnat ct original proto-dst { 80, 443 } drop
+meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept
+meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept
+meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } drop
 ```
 
 It lives in **forward** for the same reason the cap does: instance
@@ -159,7 +159,11 @@ three guards are what keep it narrow — only the first packet
 judged too), only connections that were redirected from the host's own
 ports (`ct status dnat`: the containers' outbound 80/443 stays out of
 it), and by the port the visitor dialled (`ct original proto-dst`).
-Other published ports are untouched.
+Other published ports are untouched. `meta l4proto tcp` has to come
+first: nftables 1.0.2 (Ubuntu 22.04) cannot type `ct original
+proto-dst` until the transport protocol is stated, and refuses the
+whole ruleset otherwise — check any change to these lines against that
+release, not only against a newer one.
 
 The ranges are named sets, refreshed in place by the proxy-ranges job
 each time the CDN publishes a change; only turning the list on or off
