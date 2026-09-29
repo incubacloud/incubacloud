@@ -521,7 +521,7 @@ class TestHardeningPreflight(TransactionCase):
         """
         for extra in (
             {}, {"ic_http_conn_rate": 50},
-            self._CDN, {**self._CDN, "ic_http_conn_rate": 50},
+            self._CDN, self._CDN | {"ic_http_conn_rate": 50},
         ):
             rendered = self._render_ruleset(**extra)
             self.assertEqual(
