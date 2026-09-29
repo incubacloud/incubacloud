@@ -138,6 +138,14 @@ under-rate traffic falls through to Docker's own forward rules. The
 ruleset still uses declare-then-delete of our own table, never
 `flush ruleset`.
 
+The play renders the ruleset to `/etc/nftables.conf.new`, parses it
+there with `nft -c`, and only then installs and applies it: a ruleset
+this host's nft cannot load fails with the parser's message and leaves
+the live file alone (the staging file stays for inspection). CI parses
+every variant the template can render with the nft of each OS the
+preflight admits, so a rule one release refuses is caught before it
+ships.
+
 ### Behind a CDN: the allowlist replaces the cap
 
 On a host with `behind_cdn` **and** `block_direct_access`, the hardening

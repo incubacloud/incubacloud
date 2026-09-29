@@ -334,9 +334,15 @@
           {{ ic_effective_allowlist }}
           (configured: {{ ssh_allowlist }})
 
+    # Rendered to a staging file, parsed there, and only then installed
+    # and applied. The kernel loads a ruleset atomically, so a bad one
+    # never half applies -- but the file it was read from is what the
+    # nftables service loads at boot, and a bad file left there is a
+    # host that comes back with no firewall. 2026-09-29: a rule this
+    # host's nft could not type overwrote the live file and failed.
     - name: Write the nftables ruleset
       ansible.builtin.copy:
-        dest: /etc/nftables.conf
+        dest: /etc/nftables.conf.new
         mode: "0755"
         content: |
           #!/usr/sbin/nft -f
@@ -464,6 +470,25 @@
                   type filter hook output priority filter; policy accept;
               }
           }
+
+    # ``nft -c`` parses and type-checks against this host's nft without
+    # touching the kernel. A failure here stops the play with the
+    # parser's own message and leaves the staging file for inspection.
+    - name: Check the ruleset loads on this host's nftables
+      ansible.builtin.command: nft -c -f /etc/nftables.conf.new
+      changed_when: false
+
+    - name: Install the checked ruleset
+      ansible.builtin.copy:
+        src: /etc/nftables.conf.new
+        dest: /etc/nftables.conf
+        remote_src: true
+        mode: "0755"
+
+    - name: Remove the staging copy
+      ansible.builtin.file:
+        path: /etc/nftables.conf.new
+        state: absent
 
     - name: Apply the nftables ruleset
       ansible.builtin.command: nft -f /etc/nftables.conf

@@ -220,14 +220,7 @@ class TestHardeningPreflight(TransactionCase):
         fleet down on 2026-08-14 — it had only ever run before Docker
         existed, so the flush had never had anything to destroy.
         """
-        play = self._playbook()
-        rulesets = [
-            t for t in (play.get("tasks") or [])
-            if str(t.get("ansible.builtin.copy", {}).get("dest", ""))
-            == "/etc/nftables.conf"
-        ]
-        self.assertEqual(len(rulesets), 1)
-        content = rulesets[0]["ansible.builtin.copy"]["content"]
+        content = self._ruleset_task()["ansible.builtin.copy"]["content"]
         # Directives only: the comment above the ruleset names the thing
         # it is warning against, and prose must not fail the assertion.
         directives = [
@@ -257,14 +250,7 @@ class TestHardeningPreflight(TransactionCase):
         self.assertIn("SSH_CONNECTION", blob)
         # The nftables rule must use the effective list, never the raw
         # configured one.
-        rules = [
-            t for t in tasks
-            if "nftables.conf" in str(
-                t.get("ansible.builtin.copy", {}).get("dest", "")
-            )
-        ]
-        self.assertEqual(len(rules), 1)
-        content = rules[0]["ansible.builtin.copy"]["content"]
+        content = self._ruleset_task()["ansible.builtin.copy"]["content"]
         self.assertIn("ic_effective_allowlist", content)
         self.assertNotIn("{{ ssh_allowlist }}", content)
 
@@ -284,15 +270,79 @@ class TestHardeningPreflight(TransactionCase):
         self.assertTrue(gates, "the sudo probe result must be asserted on")
 
     # ── Phase 4b: the per-source connection-rate cap (P2, SEC-008) ──────
-    def _ruleset_content(self):
-        """Return the raw ``/etc/nftables.conf`` template the playbook writes."""
+    _RULESET_LIVE = "/etc/nftables.conf"
+    _RULESET_STAGING = "/etc/nftables.conf.new"
+
+    def _ruleset_task(self):
+        """Return the one task that renders the ruleset, to its staging file."""
         rules = [
             t for t in (self._playbook().get("tasks") or [])
-            if str(t.get("ansible.builtin.copy", {}).get("dest", ""))
-            == "/etc/nftables.conf"
+            if "content" in t.get("ansible.builtin.copy", {})
+            and str(t["ansible.builtin.copy"].get("dest", "")).startswith(
+                self._RULESET_LIVE,
+            )
         ]
         self.assertEqual(len(rules), 1)
-        return rules[0]["ansible.builtin.copy"]["content"]
+        return rules[0]
+
+    def _ruleset_content(self):
+        """Return the raw ruleset template the playbook writes."""
+        return self._ruleset_task()["ansible.builtin.copy"]["content"]
+
+    def _task_index(self, tasks, name):
+        """Return the position of the task called *name*, which must exist."""
+        names = [t.get("name") for t in tasks]
+        self.assertIn(name, names)
+        return names.index(name)
+
+    def test_the_ruleset_is_parsed_on_the_host_before_it_goes_live(self):
+        """Render to a staging file, ``nft -c`` it there, then install.
+
+        The kernel loads a ruleset atomically, so a bad one never half
+        applies -- but the file it was read from is what the nftables
+        service loads at boot, and a bad file left there is a host that
+        comes back with no firewall. 2026-09-29: a rule the fleet's nft
+        could not type overwrote the live file and failed.
+        """
+        tasks = self._playbook().get("tasks") or []
+        write = self._ruleset_task()
+        self.assertEqual(
+            write["ansible.builtin.copy"]["dest"], self._RULESET_STAGING,
+        )
+        check = tasks[self._task_index(
+            tasks, "Check the ruleset loads on this host's nftables",
+        )]
+        self.assertEqual(
+            check["ansible.builtin.command"],
+            f"nft -c -f {self._RULESET_STAGING}",
+        )
+        self.assertIs(check.get("changed_when"), False)
+        install = tasks[self._task_index(tasks, "Install the checked ruleset")]
+        self.assertEqual(
+            install["ansible.builtin.copy"]["src"], self._RULESET_STAGING,
+        )
+        self.assertEqual(
+            install["ansible.builtin.copy"]["dest"], self._RULESET_LIVE,
+        )
+        self.assertIs(install["ansible.builtin.copy"]["remote_src"], True)
+        apply = tasks[self._task_index(tasks, "Apply the nftables ruleset")]
+        self.assertEqual(
+            apply["ansible.builtin.command"], f"nft -f {self._RULESET_LIVE}",
+        )
+        order = [tasks.index(t) for t in (write, check, install, apply)]
+        self.assertEqual(order, sorted(order))
+
+    def test_nothing_else_writes_the_live_ruleset(self):
+        """Only the copy of the checked staging file may land there."""
+        tasks = self._playbook().get("tasks") or []
+        writers = [
+            t["name"] for t in tasks
+            if self._RULESET_LIVE in (
+                str(t.get("ansible.builtin.copy", {}).get("dest", "")),
+                str(t.get("ansible.builtin.template", {}).get("dest", "")),
+            )
+        ]
+        self.assertEqual(writers, ["Install the checked ruleset"])
 
     def _render_ruleset(self, **extra):
         """Render the ruleset template as Ansible would, with *extra* vars.
