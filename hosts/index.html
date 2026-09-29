@@ -1226,6 +1226,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#open-a-shell-on-a-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      Open a shell on a host
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#common-tasks" class="md-nav__link">
     <span class="md-ellipsis">
       Common tasks
@@ -1305,6 +1314,23 @@ decides three things:</p>
 domain at the CDN, and refuse direct traffic only once traffic is actually
 arriving through it. The other order leaves the host answering nobody.</p>
 </div>
+<h2 id="open-a-shell-on-a-host">Open a shell on a host<a class="headerlink" href="#open-a-shell-on-a-host" title="Permanent link">&para;</a></h2>
+<p><strong>Host Shell</strong>, in the host's action bar, opens a terminal on the machine itself
+— not inside one instance's container — as the SSH user the host is registered
+with. It is there for the things a panel does not cover: looking at the disk,
+the Docker daemon or a system service.</p>
+<ul>
+<li><strong>Who can</strong> — Administrators only, the same role that can run Full Setup on
+  the host. A Developer keeps the terminal of each instance, which stays inside
+  its container.</li>
+<li><strong>What is recorded</strong> — who opened it, when, from which address and browser,
+  and when it closed. What you type and what the server answers are <strong>not</strong>
+  recorded, because a shell is where passwords get typed.</li>
+<li><strong>Limits</strong> — one open shell per person and host, and at most 3 opened per
+  minute (tunable in Settings → Rates). A shell with no keystrokes for 2
+  minutes closes itself.</li>
+</ul>
+<p>Everything you run there affects the whole server and every instance on it.</p>
 <h2 id="common-tasks">Common tasks<a class="headerlink" href="#common-tasks" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="connect/">Connect your own VPS</a></li>
