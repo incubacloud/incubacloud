@@ -4,3 +4,4 @@ from . import github_webhook
 from . import github_setup
 from . import connect
 from . import terminal
+from . import host_terminal

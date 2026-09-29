@@ -4,7 +4,7 @@ Home of the buffer / lock / lifecycle machinery common to:
 
   * the instance terminal — ``incubacloud.terminal_session.TerminalSession``,
     scoped to a ``docker exec`` inside a compose service; and
-  * the host console — ``incubacloud_saas_manager.host_terminal_session
+  * the host console — ``incubacloud.host_terminal_session
     .HostTerminalSession``, a login shell on the whole box.
 
 Deliberately free of ``odoo.*`` imports so the per-session subprocess can
@@ -13,9 +13,10 @@ terminal.
 
 Security boundary — why this base carries NO ``create_process`` call:
     Opening a *command-less* PTY yields a host login shell. That
-    capability must exist ONLY in the SaaS subclass, never in the core
-    distributable (core ships to partners). The base connects the SSH
-    transport and then delegates process creation to the abstract
+    capability must exist ONLY in the host subclass, reached through an
+    endpoint reserved to whoever manages hosts — never as a fallback of
+    the container terminal, which developers use. The base connects the
+    SSH transport and then delegates process creation to the abstract
     ``_open_process`` hook, which each subclass implements with its own
     ``conn.create_process(...)`` call. A subclass that forgot to override
     it raises ``NotImplementedError`` — it never silently falls back to a

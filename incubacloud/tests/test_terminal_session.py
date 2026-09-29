@@ -6,8 +6,9 @@ share, and — crucially — the capability boundary between them:
   * the core base (``BaseTerminalSession``) never opens a PTY process at
     all; ``_open_process`` is abstract, so a subclass that forgot to
     override it raises rather than silently opening a host shell;
-  * the core addon contains NO command-less ``create_process`` call — the
-    host-shell capability lives only in ``incubacloud_saas_manager``;
+  * exactly one file in the addon holds a command-less ``create_process``
+    call — the host session, behind the manager-only endpoint — so the
+    host-shell capability cannot spread to any other code path;
   * the instance session's ``_open_process`` always builds a docker
     command (never a bare login shell);
   * the loopback subprocess handler enforces the Bearer token and serves
@@ -77,7 +78,7 @@ def _create_process_calls(src):
 
 
 class TestTerminalCapabilityIsolation(BaseCase):
-    """The host-shell capability must not exist anywhere in core."""
+    """The host-shell capability lives in exactly one place."""
 
     def test_base_module_has_no_create_process(self):
         """The shared base never opens a PTY — no ``create_process`` call."""
@@ -92,21 +93,23 @@ class TestTerminalCapabilityIsolation(BaseCase):
         with self.assertRaises(NotImplementedError):
             asyncio.run(inst._open_process(object()))
 
-    def test_core_addon_has_no_commandless_create_process(self):
-        """No core file opens a command-less (host) shell.
+    def test_only_the_host_session_opens_a_commandless_shell(self):
+        """Only ``host_terminal_session.py`` opens a command-less shell.
 
         A ``create_process`` call with no positional command is the
-        host-login-shell form; it must exist only in the SaaS addon.
+        host-login-shell form. The host shell's endpoint is reserved to
+        whoever manages hosts; the same call anywhere else would hand
+        root on the machine to a path nobody reviewed as such.
         """
-        offenders = []
+        commandless = []
         for path in _py_files(_CORE_DIR):
             src = Path(path).read_text(encoding='utf-8')
             if any(not call.args for call in _create_process_calls(src)):
-                offenders.append(path)
+                commandless.append(os.path.relpath(path, _CORE_DIR))
         self.assertEqual(
-            offenders, [],
-            "host-shell capability (command-less create_process) leaked "
-            "into the core addon: %s" % offenders,
+            commandless, ['host_terminal_session.py'],
+            "a command-less create_process (a host login shell) must live "
+            "only in host_terminal_session.py; found in: %s" % commandless,
         )
 
 

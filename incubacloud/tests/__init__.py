@@ -152,3 +152,8 @@ from . import test_instance_whitelist
 from . import test_metrics_purge
 from . import test_executor_durable_writes
 from . import test_executor_write_rules
+from . import test_host_terminal_session
+from . import test_cloud_host_terminal_route
+from . import test_host_session_reconcile
+from . import test_host_terminal_controller
+from . import test_host_shell_takeover_migration

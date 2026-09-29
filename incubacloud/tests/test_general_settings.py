@@ -6,11 +6,13 @@ Covers that ``get_general_settings`` returns the two GitHub event
 retention fields and that ``save_general_settings`` persists them onto
 ``cloud.settings``.
 """
+import re
 from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import ValidationError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
+from odoo.tools.misc import file_open
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 
@@ -217,3 +219,25 @@ class TestCoreRateLimitsCoverLogAccess(TransactionCase):
         settings = self.env['cloud.settings'].sudo()._get()
         self.assertEqual(settings.rate_limit_github_previews_per_hour, 17)
         self.assertEqual(settings.rate_limit_github_imports_per_hour, 8)
+
+    def test_the_tab_sends_every_cap_it_shows(self):
+        """Every cap the tab loads is also sent back when it saves.
+
+        The tab lists its fields twice by hand — in the defaults it
+        renders and in the payload it saves — and the mailbox cap was
+        rendered and editable but never sent, so a change to it was
+        silently dropped. The backend's GET answer is the reference.
+        """
+        with patch.object(_routes_crud, 'request', self._fake_request()):
+            served = set(self.controller.cloud_get_core_rate_limits())
+        with file_open(
+            'incubacloud/static/src/components/core_rates_tab/'
+            'core_rates_tab.js',
+        ) as js:
+            src = js.read()
+        defaults = src.split('CORE_RATE_DEFAULTS = Object.freeze({', 1)[1]
+        defaults = defaults.split('});', 1)[0]
+        payload = src.split('vals: {', 1)[1].split('},', 1)[0]
+        key = re.compile(r'^\s*(rate_limit_\w+):', re.MULTILINE)
+        self.assertEqual(set(key.findall(defaults)), served)
+        self.assertEqual(set(key.findall(payload)), served)

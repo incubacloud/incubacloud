@@ -50,6 +50,25 @@ decides three things:
     domain at the CDN, and refuse direct traffic only once traffic is actually
     arriving through it. The other order leaves the host answering nobody.
 
+## Open a shell on a host
+
+**Host Shell**, in the host's action bar, opens a terminal on the machine itself
+— not inside one instance's container — as the SSH user the host is registered
+with. It is there for the things a panel does not cover: looking at the disk,
+the Docker daemon or a system service.
+
+- **Who can** — Administrators only, the same role that can run Full Setup on
+  the host. A Developer keeps the terminal of each instance, which stays inside
+  its container.
+- **What is recorded** — who opened it, when, from which address and browser,
+  and when it closed. What you type and what the server answers are **not**
+  recorded, because a shell is where passwords get typed.
+- **Limits** — one open shell per person and host, and at most 3 opened per
+  minute (tunable in Settings → Rates). A shell with no keystrokes for 2
+  minutes closes itself.
+
+Everything you run there affects the whole server and every instance on it.
+
 ## Common tasks
 
 - [Connect your own VPS](connect.md)

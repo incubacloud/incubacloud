@@ -3,7 +3,7 @@
 Thin concrete model over ``cloud.terminal.route.mixin`` — the whole
 routing schema and liveness/GC/resolve logic is shared plumbing (see the
 mixin). This model exists only to give the instance terminal its own
-table, independent of the host shell's (saas) routing table.
+table, independent of the host shell's routing table.
 """
 from odoo import models
 

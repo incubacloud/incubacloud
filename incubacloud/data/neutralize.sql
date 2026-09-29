@@ -28,6 +28,7 @@ UPDATE cloud_instance SET active = false;
 
 -- 4. Delete ephemeral session data
 DELETE FROM cloud_terminal_route;
+DELETE FROM cloud_host_terminal_route;
 DELETE FROM cloud_restore_upload_grant;
 DELETE FROM cloud_rate_limit;
 DELETE FROM mail_mail;

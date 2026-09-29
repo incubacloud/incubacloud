@@ -38,6 +38,12 @@
                        t-on-change="(ev) => this.onIntInput('rate_limit_terminal_user_per_min', ev)"/>
             </div>
             <div class="rl-frow">
+                <label>Host console sessions (per user, per host)</label>
+                <input type="number" min="1"
+                       t-att-value="state.form.rate_limit_host_console_per_min"
+                       t-on-change="(ev) => this.onIntInput('rate_limit_host_console_per_min', ev)"/>
+            </div>
+            <div class="rl-frow">
                 <label>Connect as user (per instance)</label>
                 <input type="number" min="1"
                        t-att-value="state.form.rate_limit_connect_per_min"

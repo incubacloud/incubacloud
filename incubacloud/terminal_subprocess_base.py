@@ -1,7 +1,7 @@
 """Shared machinery for the per-session terminal subprocesses.
 
 Both the instance terminal (``incubacloud.terminal_subprocess``) and the
-host console (``incubacloud_saas_manager.host_terminal_subprocess``) run
+host console (``incubacloud.host_terminal_subprocess``) run
 one subprocess per live session that owns the SSH socket and serves a
 tiny loopback HTTP API to the Odoo workers. Everything about that API —
 the request handler, the Bearer-token auth, the idle watchdog, the port
