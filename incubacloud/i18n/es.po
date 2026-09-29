@@ -541,6 +541,12 @@ msgid "Actions"
 msgstr "Acciones"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Actions affect the entire server."
+msgstr "Las acciones afectan a todo el servidor."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__active
@@ -1035,6 +1041,7 @@ msgid "Audit trail for tracked config fields"
 msgstr "Rastro de auditoría de los campos de configuración vigilados"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__auth_token
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__auth_token
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__auth_token
 msgid "Auth Token"
@@ -1928,6 +1935,11 @@ msgid "Client"
 msgstr "Cliente"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__client_ip
+msgid "Client Ip"
+msgstr "IP del cliente"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "Clone"
@@ -1961,20 +1973,33 @@ msgid "Close"
 msgstr "Cerrar"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__close_reason
+msgid "Close Reason"
+msgstr "Motivo de cierre"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/slide_over/slide_over.xml:0
 msgid "Close panel"
 msgstr "Cerrar panel"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host_session__state__closed
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_session__state__closed
 msgid "Closed"
 msgstr "Cerrado"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__closed_at
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__closed_at
 msgid "Closed At"
 msgstr "Cerrado en"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_session.py:0
+msgid "Closed host sessions are immutable."
+msgstr "Las sesiones de host cerradas son inmutables."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2002,6 +2027,11 @@ msgstr "Entrega de correos de la nube"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job_type__apply_to__host
 msgid "Cloud Host"
 msgstr "Host Cloud"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_host_session
+msgid "Cloud Host Console Session"
+msgstr "Sesión de consola de host de la nube"
 
 #. module: incubacloud
 #: model:ir.model,name:incubacloud.model_cloud_host_tag
@@ -2784,7 +2814,9 @@ msgstr "Crea tu primer proyecto para comenzar a gestionar instancias de Odoo."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__create_uid
@@ -2813,7 +2845,9 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__create_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__create_date
@@ -3232,6 +3266,15 @@ msgid "Deleting %s: clearing its copy first."
 msgstr "Eliminando %s: primero se borra su copia."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_session__host_id
+msgid ""
+"Deleting the host is blocked while sessions exist — ondelete=restrict keeps "
+"the audit trail."
+msgstr ""
+"No se puede eliminar el host mientras existan sesiones: ondelete=restrict "
+"conserva el registro de auditoría."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
@@ -3424,6 +3467,12 @@ msgid "Disk Usage %"
 msgstr "Uso de disco %"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Disk usage"
+msgstr "Uso de disco"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 msgid "Dismiss"
@@ -3486,7 +3535,9 @@ msgstr "Descarta esta alerta para todos los usuarios"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_credential_service__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__display_name
@@ -4196,6 +4247,12 @@ msgstr "Fallo al medir el uso."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Failed to open host shell"
+msgstr "No se pudo abrir la shell del host"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_access.js:0
 msgid "Failed to open terminal."
 msgstr "Error al abrir terminal."
@@ -4601,6 +4658,11 @@ msgid "Garbage-collect old dismissed alerts"
 msgstr "Recolectar alertas descartadas antiguas"
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_cloud_host_terminal_route_gc_ir_actions_server
+msgid "Garbage-collect stale host terminal routes"
+msgstr "Recolectar rutas de terminal de host obsoletas"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_terminal_route_gc_ir_actions_server
 msgid "Garbage-collect stale terminal routes"
 msgstr "Recolectar rutas de terminal obsoletas"
@@ -4906,6 +4968,12 @@ msgstr ""
 "X-IncubaCloud-Signature."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "HOST SHELL"
+msgstr "SHELL DEL HOST"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "HTML"
@@ -5038,6 +5106,7 @@ msgstr "Alta"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__host_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__host_id
@@ -5073,6 +5142,12 @@ msgid "Host Label"
 msgstr "Etiqueta de host"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Host Shell"
+msgstr "Shell del host"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__type
 msgid "Host Type"
 msgstr "Tipo de host"
@@ -5096,6 +5171,22 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
+msgid "Host console sessions (per user, per host)"
+msgstr "Sesiones de consola de host (por usuario, por host)"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__rate_limit_host_console_per_min
+msgid "Host console sessions (req/min)"
+msgstr "Sesiones de consola de host (sol/min)"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_host_terminal_route
+msgid "Host console subprocess routing table"
+msgstr "Tabla de enrutamiento de subprocesos de consola de host"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Host is required when auto-assign is disabled"
 msgstr "El host es obligatorio cuando la auto-asignación está desactivada"
@@ -5110,6 +5201,7 @@ msgstr "El nombre del host es obligatorio"
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
+#: code:addons/incubacloud/controllers/host_terminal.py:0
 msgid "Host not found"
 msgstr "Host no encontrado"
 
@@ -5118,6 +5210,12 @@ msgstr "Host no encontrado"
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid "Host still has instances. Delete all instances first."
 msgstr "El host aún tiene instancias. Elimina todas las instancias primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Host:"
+msgstr "Host:"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__hostname
@@ -5250,7 +5348,9 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_credential_service__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__id
@@ -5310,6 +5410,12 @@ msgid "IP address or hostname is required"
 msgstr "La dirección IP o el hostname son obligatorios"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "IP:"
+msgstr "IP:"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_account
 msgid ""
 "Identity this panel authenticates as against the central, and the label the "
@@ -5323,6 +5429,12 @@ msgstr ""
 "que un panel lea o envenene los datos de otro, por eso nunca se acepta del "
 "agente: el central la deduce del usuario autenticado. Un panel self-hosted "
 "genera la suya; en modo SaaS la asigna el manager."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Idle sessions auto-close after 2 minutes."
+msgstr "Las sesiones inactivas se cierran automáticamente tras 2 minutos."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__exclude_from_autoassign
@@ -5876,6 +5988,12 @@ msgstr "La estructura de respuestas de Copier no es válida."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_host_session.py:0
+msgid "Invalid host session state transition."
+msgstr "Transición de estado de sesión de host no válida."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid "Invalid instance id"
 msgstr "ID de instancia no válido"
@@ -6247,6 +6365,7 @@ msgstr "Última huella de reconstrucción"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__last_raised_at
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__last_seen
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__last_seen
 msgid "Last Seen"
@@ -6268,7 +6387,9 @@ msgstr "Última actividad en el panel el"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__write_uid
@@ -6298,7 +6419,9 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__write_date
@@ -6469,6 +6592,12 @@ msgstr "Lista las cadenas de copia disponibles en el destino remoto"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "List compose projects"
+msgstr "Listar proyectos de compose"
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "List files in the most recent backup"
 msgstr "Listar archivos del backup más reciente"
@@ -6477,6 +6606,12 @@ msgstr "Listar archivos del backup más reciente"
 #: model:ir.model.fields,help:incubacloud.field_cloud_alert__conflict_data
 msgid "List of pip dependency conflicts: [{name, existing, incoming}]"
 msgstr "Lista de conflictos de dependencias pip: [{name, existing, incoming}]"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "List running containers"
+msgstr "Listar contenedores en ejecución"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6489,6 +6624,12 @@ msgstr "Volcado en vivo desde producción"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Live environment"
 msgstr "Entorno en vivo"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Load and uptime"
+msgstr "Carga y tiempo activo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6831,6 +6972,17 @@ msgid "Max size per container log"
 msgstr "Tamaño máximo por log de contenedor"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__rate_limit_host_console_per_min
+msgid ""
+"Maximum host console sessions per minute, per (user) and per (host). "
+"Defaults to a low value because every open session is a root-equivalent "
+"shell on the host."
+msgstr ""
+"Máximo de sesiones de consola de host por minuto, por (usuario) y por "
+"(host). Por defecto es un valor bajo porque cada sesión abierta es una shell"
+" equivalente a root en el host."
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_measure_backup_usage_ir_actions_server
 msgid "Measure Backup Backend Usage"
 msgstr "Medir uso de backends de backup"
@@ -6852,6 +7004,12 @@ msgstr "Miembros"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Memory Limit"
 msgstr "Límite de memoria"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Memory usage"
+msgstr "Uso de memoria"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__message
@@ -8071,6 +8229,7 @@ msgstr ""
 "núcleo no lo interpreta. Vacío para los backends propios (BYO)."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host_session__state__open
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_session__state__open
 msgid "Open"
 msgstr "Abrir"
@@ -8089,11 +8248,31 @@ msgstr "Abrir inicio de sesión de GitHub"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Open Host Shell"
+msgstr "Abrir shell del host"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Open Shell"
 msgstr "Abrir terminal"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Open an interactive shell directly on this host"
+msgstr "Abrir una shell interactiva directamente en este host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Open host shell"
+msgstr "Abrir shell del host"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__opened_at
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__opened_at
 msgid "Opened At"
 msgstr "Abierto el"
@@ -8204,6 +8383,7 @@ msgstr ""
 " Reenvíe con force=true."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_terminal_route__user_id
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__user_id
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__user_id
 msgid "Ownership for quick ACL check on every proxy call."
@@ -8487,6 +8667,7 @@ msgid "Pick the host that should run it."
 msgstr "Elige el host que debe ejecutarlo."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__pid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__pid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__pid
 msgid "Pid"
@@ -8549,6 +8730,7 @@ msgstr "Por favor seleccione un host para la instancia."
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__port
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__port
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__port
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__port
 msgid "Port"
@@ -9115,6 +9297,12 @@ msgstr "SHA-256 recibido"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Recent activity"
 msgstr "Actividad reciente"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Recent docker daemon logs"
+msgstr "Registros recientes del demonio de docker"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10275,6 +10463,8 @@ msgid "Service:"
 msgstr "Servicio:"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__session_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__session_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__session_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route_mixin__session_id
 msgid "Session"
@@ -10361,6 +10551,7 @@ msgid "Settings"
 msgstr "Configuración"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_terminal_route__auth_token
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__auth_token
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__auth_token
 msgid ""
@@ -10591,6 +10782,7 @@ msgstr "Iniciando…"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__state
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__state
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__state
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__state
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__state
@@ -10695,6 +10887,12 @@ msgstr "Dependencias del sistema (APT)"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "System Dependencies (apt)"
 msgstr "Dependencias del sistema (apt)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "System unit overview"
+msgstr "Resumen de unidades del sistema"
 
 #. module: incubacloud
 #. odoo-python
@@ -11640,6 +11838,22 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Too many host console sessions on this host. Try again in a minute."
+msgstr ""
+"Demasiadas sesiones de consola de host en este host. Inténtelo de nuevo en "
+"un minuto."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Too many host console sessions opened recently. Try again in a minute."
+msgstr ""
+"Se han abierto demasiadas sesiones de consola de host recientemente. "
+"Inténtelo de nuevo en un minuto."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Too many log reads recently. Try again in a minute."
 msgstr ""
@@ -11864,6 +12078,12 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__backend_type
 msgid "Type"
 msgstr "Tipo"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Type `exit` when done."
+msgstr "Escriba `exit` cuando termine."
 
 #. module: incubacloud
 #. odoo-python
@@ -12132,6 +12352,12 @@ msgstr "Usada"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "Useful (read-only) commands:"
+msgstr "Comandos útiles (de solo lectura):"
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Useful commands:"
 msgstr "Comandos útiles:"
@@ -12144,6 +12370,8 @@ msgstr "Comandos útiles:"
 #: model:ir.model,name:incubacloud.model_res_users
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__user
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__user_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_terminal_route__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__user_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__user_id
@@ -12152,10 +12380,21 @@ msgid "User"
 msgstr "Usuario"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__user_agent
+msgid "User Agent"
+msgstr "Agente de usuario"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "User menu"
 msgstr "Menú de usuario"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "User:"
+msgstr "Usuario:"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__user
@@ -12550,6 +12789,7 @@ msgstr ""
 "``create_date``."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host_terminal_route__last_seen
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__last_seen
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__last_seen
 msgid ""
@@ -12760,6 +13000,24 @@ msgstr ""
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "YAML aliases are not supported in imported configuration."
 msgstr "Los alias YAML no se admiten en la configuración importada."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "You already have an open console on this host. Close it first."
+msgstr "Ya tiene una consola abierta en este host. Ciérrela primero."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid ""
+"You are about to open a shell directly on host \"%s\" (%s) as user %s. "
+"Anything you run affects the whole server. Who opens it, when and from where"
+" is recorded; what you type is not. Continue?"
+msgstr ""
+"Está a punto de abrir una shell directamente en el host \"%s\" (%s) como "
+"usuario %s. Todo lo que ejecute afecta al servidor entero. Se registra quién"
+" la abre, cuándo y desde dónde; lo que escriba, no. ¿Continuar?"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13020,6 +13278,12 @@ msgid "destination"
 msgstr "destino"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "df -h"
+msgstr "df -h"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "differs"
@@ -13030,6 +13294,12 @@ msgstr "difiere"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "disabled"
 msgstr "desactivado"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "docker compose ls"
+msgstr "docker compose ls"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13126,6 +13396,12 @@ msgid ""
 msgstr ""
 "para ver el formato de la carga útil\n"
 "                            y ejemplos de verificación."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "free -h"
+msgstr "free -h"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13295,6 +13571,12 @@ msgstr "su dominio"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "job"
 msgstr "tarea"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "journalctl -u docker --since \"5 min ago\""
+msgstr "journalctl -u docker --since \"5 min ago\""
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13531,6 +13813,12 @@ msgid "source"
 msgstr "origen"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "systemctl status"
+msgstr "systemctl status"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
@@ -13593,6 +13881,12 @@ msgstr "traefik.yml es obligatorio"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "ubuntu"
 msgstr "ubuntu"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/host_terminal.py:0
+msgid "uptime"
+msgstr "uptime"
 
 #. module: incubacloud
 #. odoo-javascript

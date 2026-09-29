@@ -52,6 +52,7 @@ incubacloud/
 │   │   └── _routes_backends.py # Backup backend endpoints
 │   ├── connect.py            # Connect-as, audit log, notification preferences
 │   ├── terminal.py           # Web terminal (PTY session endpoints)
+│   ├── host_terminal.py      # Host shell (login shell on the machine, manager only)
 │   ├── github_webhook.py     # Webhook receiver (HMAC-SHA256 validated)
 │   ├── github_setup.py       # GitHub App manifest flow
 │   ├── async_utils.py        # Event-loop helpers for controllers
@@ -83,6 +84,7 @@ incubacloud/
 │   └── …                     # repos, domains, tags, whitelist, tokens, sessions
 ├── terminal_session.py       # PTY session manager (module root)
 ├── terminal_subprocess.py    # Spawned PTY worker process
+├── host_terminal_session.py / host_terminal_subprocess.py  # Host-shell session + worker
 ├── static/src/
 │   ├── app/                  # OWL app entry point + router + shell
 │   ├── components/           # One folder per OWL component
@@ -114,6 +116,8 @@ incubacloud/
 | `cloud.github.event` | Immutable webhook audit log (drives auto-rebuilds) |
 | `cloud.instance.pending.push` | Pushes awaiting a coalesced auto-rebuild |
 | `cloud.terminal.route` | Terminal subprocess routing (encrypted auth token, owner) |
+| `cloud.host.terminal.route` | Host-shell subprocess routing (same shape, its own table) |
+| `cloud.host.session` | Immutable audit of host-shell sessions: who, when, client IP, user agent — never the content |
 | `cloud.connect.token` | One-time session token for connect-as |
 
 Supporting models: `cloud.project.repo`, `cloud.instance.repo`, `cloud.instance.domain`, `cloud.instance.backup`, `cloud.instance.session`, `cloud.tag`, `cloud.host.tag`, `cloud.instance.tag`, `cloud.host.whitelist`, `cloud.instance.whitelist`, `cloud.github.credential.service`, `cloud.security.mixin` (abstract). `res.users` is extended with notification preferences; `queue.job` with the state bridge.
@@ -371,6 +375,7 @@ Sensitive fields use the custom `EncryptedChar` field type (a `fields.Char` subc
 | `cloud.github.app` | `webhook_secret` |
 | `cloud.settings` | `github_pat` |
 | `cloud.terminal.route` | `auth_token` |
+| `cloud.host.terminal.route` | `auth_token` |
 | `res.users` | `cloud_telegram_bot_token`, `cloud_webhook_secret` |
 
 The frontend cannot read encrypted values directly. `/cloud/get_secret` exposes a whitelisted subset (see `docs/api-endpoints.md`) to developers with write access on the record.
@@ -385,6 +390,7 @@ The frontend cannot read encrypted values directly. `/cloud/get_secret` exposes 
 - **Audit trail**: `cloud.audit.log` records who did what, filterable per instance/host, with configurable retention and a manager-only purge.
 - **Rate limiting**: DB-backed counters protect the public endpoints (webhook, health), the restore upload and terminal opens. Caps are tunable in Settings → Rates.
 - **Web terminal**: PTY subprocesses are isolated per session with an encrypted routing token; only the owning user can attach. Idle sessions are reaped (see RB-03).
+- **Host shell**: a login shell on the machine itself, for Administrators only (`_check_can_manage_hosts`) — the role that already runs root there through every host job, with the same key. Same subprocess isolation as the web terminal, its own cap (3/min per user and per host), one open session per user and host, and an immutable `cloud.host.session` row per session. What is typed is not recorded: a shell receives passwords on stdin. Only `host_terminal_session.py` may open a command-less PTY; `test_terminal_session.py` fails the build if one appears anywhere else.
 
 ### Host edge protection (network layers)
 

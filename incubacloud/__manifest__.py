@@ -1,7 +1,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     "name": "Incubacloud",
-    "version": "1.0.137",
+    "version": "1.0.138",
     "summary": "Deploy, manage and monitor doodba-based Odoo instances via SSH",
     "sequence": 10,
     "description": """
@@ -66,6 +66,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "views/log_terminal_page.xml",
         "views/github_setup_page.xml",
         "views/cloud_terminal_page.xml",
+        "views/host_terminal_page.xml",
         "views/cloud_instance_logs.xml",
         "views/cloud_github_event.xml",
     ],

@@ -6,6 +6,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.138] — 2026-09-29
+
+### Added
+
+- **A shell on the host itself.** **Host Shell** in a host's action bar
+  opens a login shell on the machine, as the host's SSH user, for
+  Administrators — the role that already runs root there through every
+  host job, with the same key. It lived in an extension until now; a
+  panel run on your own servers is now complete without it. Same
+  subprocess isolation as the instance terminal, its own cap
+  (`rate_limit_host_console_per_min`, 3 per minute per user and per
+  host, in Settings → Rates), one open shell per user and host, and an
+  immutable `cloud.host.session` row per session with who, when, client
+  address and browser. What is typed is never recorded.
+  `test_terminal_session.py` now requires the command-less PTY to exist
+  in exactly one file, `host_terminal_session.py`.
+
+### Fixed
+
+- **The confirmation no longer claims the session is logged.** It said
+  "The full session is logged"; only its opening and closing are, on
+  purpose. It now says what is recorded and what is not.
+- **Deleting a never-set-up host with shell history archives it.** Such a
+  host was unlinked, and the shell's audit rows hold the host with
+  `ondelete='restrict'`, so the delete failed. It is archived, like a
+  host with jobs.
+- **The Rates tab saves the mailbox cap.** "Mailbox reads on staging"
+  was loaded and editable but left out of the save, so a change to it
+  was silently dropped. A test now holds the tab's defaults and its
+  save payload to the keys the backend serves.
+
+### Migration
+
+- `1.0.138` pre-migrate takes over the host shell's identifiers (models,
+  fields, selection values, ACL lines, the GC cron and its action, the
+  cap field, the page) and the reflected foreign keys of its two tables
+  from whichever module shipped them, before either module loads. Left
+  behind, that module's next upgrade would delete what it no longer
+  declares. The audit rows never move. The post-migrate puts the GC cron
+  on the platform bot where it arrives new.
+
+---
+
 ## [1.0.137] — 2026-09-28
 
 ### Fixed

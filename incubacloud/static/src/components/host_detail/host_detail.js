@@ -553,6 +553,48 @@ export class HostDetail extends Component {
         }
     }
 
+    /**
+     * Open an interactive login shell on this host in a new tab.
+     *
+     * Asks first, in red: it is root on the whole machine, not a shell
+     * inside one container. The notice says exactly what is audited —
+     * who, when and from where — and that the session content is not,
+     * because a shell receives passwords on stdin.
+     */
+    async openHostShell() {
+        const host = this.state.host;
+        if (!host?.id) return;
+
+        const ok = await this._confirm({
+            title: _t("Open host shell"),
+            message: _t(
+                'You are about to open a shell directly on host "%s" (%s) ' +
+                'as user %s. Anything you run affects the whole server. ' +
+                'Who opens it, when and from where is recorded; what you ' +
+                'type is not. Continue?',
+                host.name || host.ip_address,
+                host.ip_address || "?",
+                host.user || "?",
+            ),
+            confirmLabel: _t("Open Host Shell"),
+            isDanger: true,
+        });
+        if (!ok) return;
+
+        let res;
+        try {
+            res = await rpc("/cloud/host_terminal/open", { host_id: host.id });
+        } catch {
+            this.env.toast?.error(_t("Failed to open host shell"));
+            return;
+        }
+        if (!res?.ok) {
+            this.env.toast?.error(res?.error || _t("Failed to open host shell"));
+            return;
+        }
+        window.open(`/cloud/host_terminal/${res.session_id}`, "_blank", "noopener");
+    }
+
     // ── Tags ─────────────────────────────────────────────────────────────
 
     addTag(tag) {

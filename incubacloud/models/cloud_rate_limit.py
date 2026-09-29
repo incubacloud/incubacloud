@@ -11,6 +11,7 @@ Settings → Rates without redeploying:
   * ``rate_limit_webhook_per_min``        (default 300)
   * ``rate_limit_terminal_per_min``       (default 30)
   * ``rate_limit_terminal_user_per_min``  (default 10)
+  * ``rate_limit_host_console_per_min``   (default 3)
   * ``rate_limit_connect_per_min``        (default 20)
   * ``rate_limit_connect_user_per_min``   (default 10)
   * ``rate_limit_github_previews_per_hour`` (default 10)
@@ -40,6 +41,10 @@ RATE_LIMIT_DEFAULTS = {
     'rate_limit_webhook_per_min': 300,
     'rate_limit_terminal_per_min': 30,
     'rate_limit_terminal_user_per_min': 10,
+    # A host shell is root on the whole machine, so it gets a far
+    # tighter cap than the container terminal. Applied per user and,
+    # separately, per host.
+    'rate_limit_host_console_per_min': 3,
     'rate_limit_connect_per_min': 20,
     'rate_limit_connect_user_per_min': 10,
     # Reading logs: the viewer polls the live tail every 4 s, so the

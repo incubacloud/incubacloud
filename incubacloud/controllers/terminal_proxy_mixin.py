@@ -1,7 +1,7 @@
 """Shared controller machinery for the terminal / host-console proxies.
 
 Both ``incubacloud.controllers.terminal`` and
-``incubacloud_saas_manager.controllers.host_terminal`` are thin HTTP
+``incubacloud.controllers.host_terminal`` are thin HTTP
 proxies in front of a per-session subprocess: they look the session's
 subprocess up in a route model and forward the request to its loopback
 port. The lookup/forward logic (``_proxy``), the spawn+port-read dance

@@ -22,7 +22,7 @@ see :meth:`_gc`.
 
 This is generic plumbing — a session id, a pid, a port, a bearer token
 and an owner — with no notion of *what* the session connects to. Both
-the instance-scoped terminal (core) and the host shell (saas) inherit
+the instance-scoped terminal and the host shell inherit
 it and add nothing to the routing model itself; the capability
 difference lives entirely in the session/controller, not here.
 """

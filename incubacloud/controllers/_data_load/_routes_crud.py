@@ -851,10 +851,19 @@ class CrudMixin:
             #     False})`` still fires ``_release_external_resources``
             #     so downstream modules (tenant on-demand VPS release,
             #     DNS, etc.) clean up provider-side state.
+            #
+            # A host shell leaves no job but the same kind of history: its
+            # audit rows hold the host with ``ondelete='restrict'``, and a
+            # shell can be opened before any setup has run.
             has_jobs = bool(request.env['cloud.job'].sudo().search_count(
                 [('host_id', '=', host.id)],
             ))
-            if has_jobs:
+            has_shell_sessions = bool(
+                request.env['cloud.host.session'].sudo().search_count(
+                    [('host_id', '=', host.id)],
+                )
+            )
+            if has_jobs or has_shell_sessions:
                 host.write({'active': False})
             else:
                 host.unlink()
@@ -1709,6 +1718,9 @@ class CrudMixin:
             'rate_limit_terminal_user_per_min': (
                 s.rate_limit_terminal_user_per_min or 0
             ),
+            'rate_limit_host_console_per_min': (
+                s.rate_limit_host_console_per_min or 0
+            ),
             'rate_limit_connect_per_min': s.rate_limit_connect_per_min or 0,
             'rate_limit_connect_user_per_min': (
                 s.rate_limit_connect_user_per_min or 0
@@ -1739,6 +1751,7 @@ class CrudMixin:
             'rate_limit_webhook_per_min',
             'rate_limit_terminal_per_min',
             'rate_limit_terminal_user_per_min',
+            'rate_limit_host_console_per_min',
             'rate_limit_connect_per_min',
             'rate_limit_connect_user_per_min',
             'rate_limit_logs_per_min',

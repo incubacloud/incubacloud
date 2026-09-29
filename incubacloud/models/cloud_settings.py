@@ -303,6 +303,13 @@ class CloudSettings(models.Model):
              'session holds an SSH connection + PTY buffer until '
              'SESSION_TIMEOUT.',
     )
+    rate_limit_host_console_per_min = fields.Integer(
+        string='Host console sessions (req/min)',
+        default=3,
+        help='Maximum host console sessions per minute, per (user) '
+             'and per (host). Defaults to a low value because every '
+             'open session is a root-equivalent shell on the host.',
+    )
     rate_limit_connect_per_min = fields.Integer(
         string='Connect as user (per instance, per minute)',
         default=20,

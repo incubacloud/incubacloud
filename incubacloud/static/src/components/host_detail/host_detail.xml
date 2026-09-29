@@ -73,8 +73,8 @@
 
                 <!-- ═══════════════════════════════════════════════════════════
                      Action bar (existing hosts only, Manager only)
-                     Keeps `ic-action-bar` so the saas terminal / retry
-                     patches (xpath on `hasclass('ic-action-bar')`) resolve.
+                     Keeps `ic-action-bar` so extension patches
+                     (xpath on `hasclass('ic-action-bar')`) resolve.
                      ═══════════════════════════════════════════════════════════ -->
                 <t t-if="!isNew and state.host and env.permissions?.can_manage_hosts">
                     <div class="rl-abar ic-action-bar">
@@ -114,6 +114,16 @@
                             <i t-else="" class="fa fa-shield"/>
                             <t t-if="state.has_known_hosts_key"> Re-trust Key</t>
                             <t t-else=""> Trust SSH Key</t>
+                        </button>
+                        <span class="rl-asep"/>
+                        <!-- Same gate as the endpoint behind it
+                             (_check_can_manage_hosts): root on the whole
+                             machine is for whoever manages hosts. -->
+                        <button class="rl-btn rl-btn-ghost ic-ab-warn"
+                                title="Open an interactive shell directly on this host"
+                                aria-label="Open host shell"
+                                t-on-click="openHostShell">
+                            <t t-out="env.icon('terminal', 15)"/> Host Shell
                         </button>
                     </div>
                 </t>
