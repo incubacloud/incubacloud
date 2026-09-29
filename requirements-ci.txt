@@ -25,4 +25,4 @@ ovh==1.2.0
 
 # Test-only pins (matched by the CI ``test`` job)
 PyYAML==6.0.3
-cryptography==50.0.0
+cryptography==50.0.1
