@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.139] — 2026-09-29
+
+### Fixed
+
+- **The CDN allowlist now guards the hook the traffic crosses.** A host
+  behind a CDN that also refuses direct access gets its 80/443 filtered
+  to the CDN's ranges in the firewall, not only at the proxy. The rule
+  was written in the input chain, which instance traffic never crosses:
+  it is DNAT'd to the Traefik container and crosses the forward hook.
+  Measured on the fleet's iptables-nft backend, a source outside the
+  list went straight through. The list is now enforced in the forward
+  chain, on the first packet of a connection redirected from the host's
+  80/443 only (`ct state new ct status dnat ct original proto-dst`), so
+  replies and the containers' own outbound traffic are never weighed
+  against it; and the per-source connection-rate cap, which behind a
+  CDN counts edges rather than visitors, is no longer rendered alongside
+  it. Applies on the next hardening run. A name that resolves straight
+  to such a host, bypassing the CDN, stops answering — ACME challenges
+  included. RB-18 documents the mode.
+
 ## [1.0.138] — 2026-09-29
 
 ### Added

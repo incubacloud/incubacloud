@@ -396,11 +396,13 @@
                   tcp dport {{ ssh_port }} ip saddr { {{ ic_effective_allowlist }} } accept
                   {% if ic_http_allowed_ranges | default('') | trim %}
                   # The host is reached through a CDN, so its origin has
-                  # no business answering anyone else. Written as an
-                  # explicit set rather than a rate limit: behind a proxy
-                  # every visitor arrives from the same handful of edge
-                  # addresses, so a per-source cap would throttle the CDN
-                  # itself and protect nobody.
+                  # no business answering anyone else. This rule covers
+                  # what the host's own sockets receive on 80/443 (the
+                  # userland proxy Docker keeps for loopback and hairpin
+                  # traffic); instance traffic never gets here -- it is
+                  # DNAT'd to the Traefik container and judged in the
+                  # forward chain below, where the same list is enforced
+                  # for real.
                   tcp dport { 80, 443 } ip saddr @ic_cdn_v4 accept
                   {% if ic_http_allowed_ranges_v6 | default('') | trim %}
                   tcp dport { 80, 443 } ip6 saddr @ic_cdn_v6 accept
@@ -411,6 +413,31 @@
               }
               chain forward {
                   type filter hook forward priority filter; policy accept;
+                  {% if ic_http_allowed_ranges | default('') | trim %}
+                  # The CDN allowlist, where it actually applies: instance
+                  # traffic is DNAT'd to the Traefik container and crosses
+                  # the forward hook, never input. Measured, not assumed:
+                  # the same list in the input chain alone let a source
+                  # outside it straight through. Only the first packet of
+                  # a connection that was redirected from the host's
+                  # 80/443 is judged. ``ct state new`` keeps the replies
+                  # out (their source is the container, and they carry
+                  # the dnat status too); ``ct status dnat`` keeps the
+                  # containers' own outbound traffic out; ``ct original
+                  # proto-dst`` names the port the visitor dialled,
+                  # whatever the container listens on. Written as an
+                  # explicit set rather than a rate limit: behind a proxy
+                  # every visitor arrives from the same handful of edge
+                  # addresses, so a per-source cap would throttle the CDN
+                  # itself and protect nobody -- which is why the cap
+                  # below is not rendered alongside, whatever the host's
+                  # rate says.
+                  ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept
+                  {% if ic_http_allowed_ranges_v6 | default('') | trim %}
+                  ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept
+                  {% endif %}
+                  ct state new ct status dnat ct original proto-dst { 80, 443 } drop
+                  {% elif (ic_http_conn_rate | default(0) | int) > 0 %}
                   # Per-source new-connection cap on the instances' 80/443.
                   # Tenant traffic is DNAT'd to the Traefik container, so it
                   # crosses the forward hook, not input — a limit in the
@@ -423,7 +450,6 @@
                   # connections OVER the rate are dropped; established and
                   # under-rate traffic falls through to Docker's own
                   # forward rules untouched.
-                  {% if (ic_http_conn_rate | default(0) | int) > 0 %}
                   {% set _rate = ic_http_conn_rate | int %}
                   {% set _burst = ic_http_conn_burst | default(ic_http_conn_rate) | int %}
                   tcp dport { 80, 443 } ct state new meter ic_http_conn4 { ip saddr limit rate over {{ _rate }}/second burst {{ _burst }} packets } drop

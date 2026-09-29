@@ -380,6 +380,96 @@ class TestHardeningPreflight(TransactionCase):
             rendered.index("chain input {"),
         )
 
+    # ── the allowlist judges the forward hook ─────────────────────────
+    _FWD_ACCEPT4 = (
+        "ct state new ct status dnat ct original proto-dst { 80, 443 }"
+        " ip saddr @ic_cdn_v4 accept"
+    )
+    _FWD_ACCEPT6 = (
+        "ct state new ct status dnat ct original proto-dst { 80, 443 }"
+        " ip6 saddr @ic_cdn_v6 accept"
+    )
+    _FWD_DROP = (
+        "ct state new ct status dnat ct original proto-dst { 80, 443 } drop"
+    )
+
+    def _forward_chain(self, rendered):
+        """Return the forward chain's directives, stripped, in order."""
+        fwd = rendered.index("chain forward {")
+        out = rendered.index("chain output {")
+        return [l.strip() for l in self._active_lines(rendered[fwd:out])]
+
+    def test_the_allowlist_is_enforced_in_the_forward_chain(self):
+        """Instance traffic is DNAT'd to the Traefik container and crosses
+        the forward hook, never input. Measured in a lab on the fleet's
+        iptables-nft backend: the list in the input chain alone let a
+        source outside it straight through (200); the same list in
+        forward dropped it."""
+        forward = self._forward_chain(self._render_ruleset(**self._CDN))
+        self.assertIn(self._FWD_ACCEPT4, forward)
+        self.assertIn(self._FWD_ACCEPT6, forward)
+        self.assertIn(self._FWD_DROP, forward)
+
+    def test_the_drop_comes_after_both_accepts(self):
+        """A chain is read top to bottom; a drop above an accept would
+        refuse the CDN as well."""
+        forward = self._forward_chain(self._render_ruleset(**self._CDN))
+        drop = forward.index(self._FWD_DROP)
+        self.assertLess(forward.index(self._FWD_ACCEPT4), drop)
+        self.assertLess(forward.index(self._FWD_ACCEPT6), drop)
+
+    def test_only_the_first_packet_of_a_redirected_connection_is_judged(self):
+        """Every allowlist rule in forward carries all three guards.
+
+        Without ``ct state new`` the replies are judged too -- their
+        source is the container and the connection still carries the
+        dnat status -- and every response dies. Without ``ct status
+        dnat`` the containers' own outbound 80/443 (backups, packages,
+        webhooks) is weighed against the CDN's ranges. ``ct original
+        proto-dst`` names the port the visitor dialled, not whatever
+        the container listens on.
+        """
+        forward = self._forward_chain(self._render_ruleset(**self._CDN))
+        rules = [
+            l for l in forward
+            if l.endswith(" accept") or l.endswith(" drop")
+        ]
+        self.assertEqual(len(rules), 3)
+        for line in rules:
+            for guard in (
+                "ct state new", "ct status dnat",
+                "ct original proto-dst { 80, 443 }",
+            ):
+                self.assertIn(guard, line)
+
+    def test_the_allowlist_replaces_the_cap_rather_than_stacking(self):
+        """Behind a CDN every visitor arrives from a handful of edge
+        addresses, so a per-source cap counts edges, not visitors: a
+        rate left on the host is not rendered once the ranges are."""
+        rendered = self._render_ruleset(**self._CDN, ic_http_conn_rate=50)
+        forward = self._forward_chain(rendered)
+        self.assertFalse([l for l in forward if "meter ic_http_conn" in l])
+        self.assertIn(self._FWD_DROP, forward)
+
+    def test_a_host_reached_directly_judges_nothing_in_forward(self):
+        """Without ranges the forward chain stays what every host runs:
+        the plain policy, plus the cap when a rate is set."""
+        for extra in ({}, {"ic_http_conn_rate": 50}):
+            forward = self._forward_chain(self._render_ruleset(**extra))
+            self.assertFalse(
+                [l for l in forward if "ct status dnat" in l], extra,
+            )
+
+    def test_a_host_with_no_ipv6_range_judges_no_ipv6_in_forward(self):
+        forward = self._forward_chain(self._render_ruleset(
+            ic_http_allowed_ranges="203.0.113.0/24",
+            ic_http_allowed_ranges_v4="203.0.113.0/24",
+            ic_http_allowed_ranges_v6="",
+        ))
+        self.assertIn(self._FWD_ACCEPT4, forward)
+        self.assertNotIn(self._FWD_ACCEPT6, forward)
+        self.assertIn(self._FWD_DROP, forward)
+
     def test_conn_rate_meter_is_off_by_default(self):
         """The fleet ruleset must not change unless a rate is set.
 
@@ -429,7 +519,10 @@ class TestHardeningPreflight(TransactionCase):
         the firewall down), never a host-wide ``flush``, and the
         declare-then-delete idiom kept intact.
         """
-        for extra in ({}, {"ic_http_conn_rate": 50}):
+        for extra in (
+            {}, {"ic_http_conn_rate": 50},
+            self._CDN, {**self._CDN, "ic_http_conn_rate": 50},
+        ):
             rendered = self._render_ruleset(**extra)
             self.assertEqual(
                 rendered.count("{"), rendered.count("}"),

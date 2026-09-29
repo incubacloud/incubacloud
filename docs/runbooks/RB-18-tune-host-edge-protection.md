@@ -22,6 +22,7 @@ full model. This runbook is how you tune each layer.
 |-------|-------|---------|---------------------------|
 | Provider L3/L4 anti-DDoS | provider network | on (Hetzner/OVH) | n/a — assumed |
 | Host conn-rate (nftables) | `host_hardening.yml`, forward hook | **off** | no (extra-var + re-run) |
+| CDN allowlist (nftables) | `host_hardening.yml`, forward hook | **off** — needs `behind_cdn` + `block_direct_access` | ranges: yes (the proxy-ranges job refreshes the set); turning it on: no (re-run hardening) |
 | Proxy per-IP limit (Traefik) | host `config.yml`, `ratelimit` middleware | 300/min, burst 100 per IP | **yes** (file is watched) |
 | App counters (`cloud.rate.limit`) | `cloud.settings` | see RB-04 | yes — [RB-04](RB-04-tune-rate-limits.md) |
 
@@ -137,6 +138,47 @@ under-rate traffic falls through to Docker's own forward rules. The
 ruleset still uses declare-then-delete of our own table, never
 `flush ruleset`.
 
+### Behind a CDN: the allowlist replaces the cap
+
+On a host with `behind_cdn` **and** `block_direct_access`, the hardening
+run renders no cap at all — behind a proxy every new connection comes
+from one of the CDN's edge addresses, so a per-source cap counts edges,
+not visitors, and throttles the CDN itself. Instead the forward chain
+accepts 80/443 only from the CDN's published ranges:
+
+```
+ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept
+ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept
+ct state new ct status dnat ct original proto-dst { 80, 443 } drop
+```
+
+It lives in **forward** for the same reason the cap does: instance
+traffic is DNAT'd to the Traefik container and never crosses input. The
+three guards are what keep it narrow — only the first packet
+(`ct state new`: replies come from the container and would otherwise be
+judged too), only connections that were redirected from the host's own
+ports (`ct status dnat`: the containers' outbound 80/443 stays out of
+it), and by the port the visitor dialled (`ct original proto-dst`).
+Other published ports are untouched.
+
+The ranges are named sets, refreshed in place by the proxy-ranges job
+each time the CDN publishes a change; only turning the list on or off
+needs a hardening run.
+
+Consequences to know before enabling it:
+
+- A direct request to the origin **times out** instead of getting the
+  proxy's `403`; check with a hostname the host serves, through the CDN
+  (200) and against the bare address (no answer).
+- Anything that reaches the host's 80/443 without going through the CDN
+  stops working: a name that resolves straight to the host, and with it
+  any ACME challenge for that name. Every name such a host serves has
+  to go through the CDN.
+- A container dialling its own host's public address on 80/443 is
+  refused as well (its source is not a CDN range). Nothing in the
+  platform does this — the health probe uses loopback — but a custom
+  add-on might.
+
 ---
 
 ## Layer 1 — the provider's L3/L4 anti-DDoS (a dependency, not code)
@@ -162,6 +204,9 @@ network. Hetzner and OVH include this free and automatically; it is
 - **nftables cap**: unset `ic_http_conn_rate` and re-run hardening; the
   meter block disappears and the forward chain returns to `policy
   accept`.
+- **CDN allowlist**: turn off `block_direct_access` (or `behind_cdn`)
+  on the host and re-run hardening; the forward chain returns to
+  `policy accept`, or to the cap if a rate is set.
 
 ## References
 
