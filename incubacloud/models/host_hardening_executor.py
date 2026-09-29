@@ -41,7 +41,7 @@ _SSH_PORT_MAX = 29999
 
 # Path of the sshd drop-in the playbook writes; the final root-disable
 # step edits this same file.
-_SSHD_DROPIN = "/etc/ssh/sshd_config.d/99-incubacloud-hardening.conf"
+_SSHD_DROPIN = "/etc/ssh/sshd_config.d/00-incubacloud-hardening.conf"
 
 
 def _pick_new_ssh_port(current_port):

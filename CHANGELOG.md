@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.143] — 2026-09-30
+
+### Fixed
+
+- **Host hardening now really turns SSH passwords off.** sshd keeps the
+  first value it reads for each keyword, and reads its drop-ins in name
+  order. Cloud images ship their own — Hetzner's `50-cloud-init.conf`
+  says `PasswordAuthentication yes` — and the hardening drop-in was
+  named `99-…`, so on such a host passwords stayed on, and the key login
+  the play proves at the end could not tell. Measured on 2026-09-30.
+  The drop-in is now `00-incubacloud-hardening.conf`, the old file is
+  removed on the next run, and before sshd is restarted the play reads
+  `sshd -T` and stops unless the values in force are `PasswordAuthentication
+  no`, `PermitRootLogin prohibit-password` and the new port. Applies on
+  the next hardening run.
+- CI parses the firewall ruleset with Debian 13's nft as well.
+
 ## [1.0.142] — 2026-09-29
 
 ### Fixed
