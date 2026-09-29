@@ -361,6 +361,42 @@ jobs:
       - name: Run bats
         run: bats incubacloud/tests/shell
 
+  firewall:
+    name: Firewall ruleset (nft -c, every supported OS)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # The hardening playbook writes one nftables ruleset for every OS its
+    # preflight admits, and each of those ships a different nft. A rule a
+    # newer release accepts can be refused by an older one -- the
+    # fleet's 1.0.2 rejected a ruleset a lab on 1.1.6 had passed
+    # (2026-09-29) -- so every variant the template can render is parsed
+    # by the nft of each supported OS, in that OS's own container. Add
+    # the container here when the preflight's list grows.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu:22.04", "ubuntu:24.04", "debian:12"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Render every variant of the ruleset
+        run: |
+          pip install --quiet 'PyYAML>=6' 'Jinja2>=3'
+          python incubacloud/tests/shell/render_firewall_ruleset.py /tmp/rulesets
+
+      - name: Parse them with this OS's nft
+        run: |
+          docker run --rm --cap-add NET_ADMIN -v /tmp/rulesets:/r:ro "${{ matrix.os }}" sh -euc '
+            apt-get update -qq >/dev/null
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nftables >/dev/null
+            nft --version
+            for f in /r/*.nft; do echo "== $f"; nft -c -f "$f"; done'
+
   ansible-lint:
     name: Lint (ansible-lint)
     runs-on: ubuntu-latest

@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.141] — 2026-09-29
+
+### Changed
+
+- **A firewall ruleset is parsed on the host before it goes live.**
+  Hardening renders the ruleset to `/etc/nftables.conf.new`, runs
+  `nft -c` on it there, and only then installs and applies it. The
+  kernel already loaded rulesets atomically, so a bad one never half
+  applied — but the file it was read from is what the nftables service
+  loads at boot, and the run 1.0.140 fixed had left an unloadable file
+  there. Such a ruleset now fails with the parser's message and the
+  live file is never touched.
+- **CI parses every variant of the ruleset with the nft of each
+  supported OS** — Ubuntu 22.04 and 24.04, Debian 12 — in that OS's
+  own container: the check that would have caught 1.0.139 before it
+  shipped. `incubacloud/tests/shell/render_firewall_ruleset.py`
+  renders the variants; add a container to the job when the preflight
+  admits a new OS.
+
 ## [1.0.140] — 2026-09-29
 
 ### Fixed
