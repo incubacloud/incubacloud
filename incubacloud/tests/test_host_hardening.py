@@ -254,6 +254,75 @@ class TestHardeningPreflight(TransactionCase):
         self.assertIn("ic_effective_allowlist", content)
         self.assertNotIn("{{ ssh_allowlist }}", content)
 
+    # ── the sshd drop-in has to win, and the play has to prove it ──────
+    _SSHD_LEGACY = "/etc/ssh/sshd_config.d/99-incubacloud-hardening.conf"
+
+    def _sshd_dropin_task(self):
+        """Return the task that writes the sshd hardening drop-in."""
+        tasks = self._playbook().get("tasks") or []
+        return tasks[self._task_index(tasks, "Write the sshd hardening drop-in")]
+
+    def test_the_sshd_dropin_is_read_before_cloud_init(self):
+        """sshd keeps the FIRST value per keyword and reads drop-ins in
+        name order; Hetzner's ``50-cloud-init.conf`` says
+        ``PasswordAuthentication yes``. Under the old ``99-`` name the
+        host kept taking passwords (measured on 2026-09-30)."""
+        dest = self._sshd_dropin_task()["ansible.builtin.copy"]["dest"]
+        self.assertTrue(dest.startswith("/etc/ssh/sshd_config.d/"), dest)
+        self.assertLess(dest.rsplit("/", 1)[1], "50-cloud-init.conf")
+
+    def test_the_executor_edits_the_file_the_playbook_writes(self):
+        """The final root-disable step seds the drop-in by path; a rename
+        on one side only would make it edit a file that does not exist."""
+        from odoo.addons.incubacloud.models import host_hardening_executor
+        self.assertEqual(
+            host_hardening_executor._SSHD_DROPIN,
+            self._sshd_dropin_task()["ansible.builtin.copy"]["dest"],
+        )
+
+    def test_the_old_dropin_is_removed(self):
+        """A host hardened under the old name keeps no second copy."""
+        tasks = self._playbook().get("tasks") or []
+        removals = [
+            t for t in tasks
+            if t.get("ansible.builtin.file", {}).get("path")
+            == self._SSHD_LEGACY
+        ]
+        self.assertEqual(len(removals), 1)
+        self.assertEqual(removals[0]["ansible.builtin.file"]["state"], "absent")
+
+    def test_the_effective_sshd_settings_are_checked_before_restart(self):
+        """``sshd -t`` proves the files parse, not that ours win. The play
+        reads ``sshd -T`` and asserts the three values that matter before
+        sshd is moved to the new port, so a host where another file
+        outranks ours keeps its current sshd."""
+        tasks = self._playbook().get("tasks") or []
+        read = tasks[self._task_index(
+            tasks, "Read the settings sshd will actually use",
+        )]
+        self.assertEqual(read["ansible.builtin.command"], "sshd -T")
+        self.assertIs(read.get("changed_when"), False)
+        check = tasks[self._task_index(
+            tasks, "Refuse to go on if another sshd file outranks ours",
+        )]
+        that = " ".join(check["ansible.builtin.assert"]["that"])
+        for needle in (
+            "'passwordauthentication no'",
+            "'permitrootlogin without-password'",
+            "'port ' ~ ssh_port",
+        ):
+            self.assertIn(needle, that)
+        order = [
+            self._task_index(tasks, name) for name in (
+                "Write the sshd hardening drop-in",
+                "Validate the sshd configuration",
+                "Read the settings sshd will actually use",
+                "Refuse to go on if another sshd file outranks ours",
+                "Wait for sshd to listen on the new port",
+            )
+        ]
+        self.assertEqual(order, sorted(order))
+
     def test_preflight_gates_sudo(self):
         """A non-root connection is probed for passwordless sudo."""
         pre = self._playbook().get("pre_tasks") or []
