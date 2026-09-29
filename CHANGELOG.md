@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.142] — 2026-09-29
+
+### Fixed
+
+- **Instances built from this repository's requirements resolve again.**
+  `asyncssh` moved to 2.24.0 on 2026-09-19, and that release requires
+  `cryptography` 48.0.1 or later while `requirements.txt` still pinned
+  46.0.7: pip
+  could not resolve the file and every new instance that took it failed
+  its image build. The pool of spare tenant instances could not refill
+  from then on, which went unnoticed until the first signup in two
+  weeks consumed a spare. `cryptography` is now 50.0.1, with
+  `pyOpenSSL` 26.4.0 alongside: the release the base image ships
+  crashes Odoo's `base` import against `cryptography` 49 and later. It
+  is the pair the panel image already runs. Instances whose repository
+  is pinned keep the dependencies they were built with.
+- **The wait for an instance's public URL gets past the CDN.** Tenant
+  hostnames answer every `GET` from a non-browser with a challenge page,
+  so `wait_public_url.sh` never saw the instance behind its
+  `/web/health` probe and always timed out. It now asks Odoo over a
+  `POST` JSON-RPC call to `/web/webclient/version_info`, which the CDN
+  never challenges and the catch-all page cannot answer.
+
 ## [1.0.141] — 2026-09-29
 
 ### Changed

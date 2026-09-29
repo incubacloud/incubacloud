@@ -20,21 +20,36 @@ teardown() {
     rm -rf "${STUB_DIR}"
 }
 
-# Write a fake ``curl`` on PATH that prints $1 and exits with $2.
+# Write a fake ``curl`` on PATH that records its arguments (one per
+# line, in ${STUB_DIR}/args), prints $1 and exits with $2.
 _stub_curl() {
     cat > "${STUB_DIR}/curl" <<EOF
 #!/usr/bin/env bash
+printf '%s\n' "\$@" > "${STUB_DIR}/args"
 echo '$1'
 exit ${2:-0}
 EOF
     chmod +x "${STUB_DIR}/curl"
 }
 
-@test "succeeds as soon as Odoo's health payload answers" {
-    _stub_curl '{"status": "pass"}'
+_VERSION_INFO='{"jsonrpc": "2.0", "id": null, "result": {"server_version": "19.0"}}'
+
+@test "succeeds as soon as Odoo's version_info answers" {
+    _stub_curl "$_VERSION_INFO"
     run bash "$SCRIPT" https://tenant.example.com 3 1
     [ "$status" -eq 0 ]
     [[ "$output" == *"public URL is live"* ]]
+}
+
+@test "asks over a POST JSON-RPC call, which the CDN never challenges" {
+    # A GET from the host gets the CDN's 403 challenge page, never the
+    # instance: every claim timed out on it from 2026-09-22 on.
+    _stub_curl "$_VERSION_INFO"
+    run bash "$SCRIPT" https://tenant.example.com 1 1
+    [ "$status" -eq 0 ]
+    run cat "${STUB_DIR}/args"
+    [[ "$output" == *$'-X\nPOST'* ]]
+    [[ "$output" == *"https://tenant.example.com/web/webclient/version_info"* ]]
 }
 
 @test "rejects the catch-all 'being prepared' page and times out" {
