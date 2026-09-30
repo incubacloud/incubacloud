@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.144] — 2026-09-30
+
+### Fixed
+
+- **Finished queue jobs are cleaned up again, and cloud jobs keep their
+  outcome when they are.** queue_job's autovacuum only deletes jobs on
+  channels that have a record, and `root.user` and `root.bg` — where
+  cloud jobs run — had none: production had kept 184,516 finished jobs
+  since June. Both channels now ship as data. Cleaning them up would
+  have wiped history: `cloud.job.state` and `date_done` are stored
+  related fields on the queue job, and deleting it recomputed them empty
+  (26 production jobs already showed that). Deleting a queue job now
+  cuts the link first, so a cloud job keeps the last state it reached
+  for the whole 180-day timeline. `cloud_job.queue_job_id` is indexed:
+  each deletion nulled it with a full scan of `cloud_job` (200 deletions
+  took 1.57 s; with the index, 1,000 take 0.29 s).
+
 ## [1.0.143] — 2026-09-30
 
 ### Fixed

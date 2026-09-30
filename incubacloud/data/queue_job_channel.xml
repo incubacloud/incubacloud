@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- The channels cloud.job routes to (_TIER_TO_ROUTING). The job
+             runner only needs them in the Odoo conf, but queue_job's
+             autovacuum walks these records to decide what to delete: a
+             channel with no record here keeps its finished jobs forever
+             (184k of them by 2026-09-30). -->
+        <record id="channel_user" model="queue.job.channel">
+            <field name="name">user</field>
+            <field name="parent_id" ref="queue_job.channel_root"/>
+        </record>
+
+        <record id="channel_bg" model="queue.job.channel">
+            <field name="name">bg</field>
+            <field name="parent_id" ref="queue_job.channel_root"/>
+        </record>
+    </data>
+</odoo>

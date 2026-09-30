@@ -27,6 +27,36 @@ class QueueJob(models.Model):
 
     _inherit = "queue.job"
 
+    def unlink(self):
+        """Delete queue jobs without erasing the history of their cloud jobs.
+
+        ``cloud.job.state`` and ``cloud.job.date_done`` are stored related
+        fields on ``queue_job_id``. Deleting the queue job makes the ORM
+        recompute them through a link that no longer exists, so they are
+        written back empty. The autovacuum deletes queue jobs after 30
+        days, while cloud jobs are kept for the instance timeline for 180:
+        every job in that window lost its outcome and its end date.
+
+        The link is cut first, with SQL, so no cloud job depends on the
+        records being deleted and nothing is recomputed. The stored values
+        stay as they were — the last state the job reached.
+        """
+        if self.ids:
+            # Store first what is still pending: a write of the link would
+            # land after the UPDATE and restore it, and a related value not
+            # computed yet would be computed after it, from an empty link.
+            self.env["cloud.job"].flush_model(
+                ["queue_job_id", "state", "date_done"],
+            )
+            self.env.cr.execute(
+                "UPDATE cloud_job SET queue_job_id = NULL"
+                " WHERE queue_job_id IN %s",
+                (tuple(self.ids),),
+            )
+            if self.env.cr.rowcount:
+                self.env["cloud.job"].invalidate_model(["queue_job_id"])
+        return super().unlink()
+
     def write(self, vals):
         result = super().write(vals)
         new_state = vals.get("state")
