@@ -61,6 +61,13 @@ _ODOO_EXPRESSION = (
     "})"
 )
 
+#: Which hosts the backend hears from, through any container at all —
+#: the agents' own included, so a host whose every instance is stopped
+#: still answers. It only says whose silence means something.
+_HOST_COVERAGE_EXPRESSION = (
+    "max by (host_id) (time() - container_last_seen)"
+)
+
 
 class CloudInstance(models.Model):
     _inherit = "cloud.instance"
@@ -116,8 +123,9 @@ class CloudInstance(models.Model):
         return age <= _LIVENESS_HANDOVER_SECONDS
 
     @api.model
-    def _ages_by_instance(self, base, expression, user, token):
-        """Return ``{instance id: seconds since last seen}``, or ``None``.
+    def _ages_by_instance(self, base, expression, user, token,
+                          label="instance_id"):
+        """Return ``{record id: seconds since last seen}``, or ``None``.
 
         ``None`` is "the question could not be asked" — a transport or
         protocol failure — and callers must treat it as unknown rather
@@ -128,6 +136,8 @@ class CloudInstance(models.Model):
         :param str expression: PromQL returning one sample per instance
         :param str user: metrics account this panel authenticates as
         :param str token: password half of that credential
+        :param str label: the sample label that carries the record id —
+            ``instance_id`` by default, ``host_id`` for host coverage
         :rtype: dict | None
         """
         try:
@@ -140,7 +150,7 @@ class CloudInstance(models.Model):
 
         ages = {}
         for labels, age_seconds in samples:
-            raw = (labels or {}).get("instance_id")
+            raw = (labels or {}).get(label)
             if not raw:
                 continue
             try:
@@ -158,11 +168,20 @@ class CloudInstance(models.Model):
         ``odoo`` container was seen. Only the second decides the flag —
         ``running`` has always meant *that* container, the same thing the
         SSH probe measures, and asking about any container of the stack
-        answers a different question. A sleeping tenant keeps its
-        database and backup containers up, so the loose form said "yes"
-        all night and the flag never fell: the sleep/wake tracking that
-        hangs off it never fired, and the panel showed a tenant asleep as
-        running.
+        answers a different question. An instance can keep its database
+        and backup containers up while its ``odoo`` is stopped, so the
+        loose form said "yes" all night and the flag never fell: the
+        sleep/wake tracking that hangs off it never fired, and the panel
+        showed a stopped instance as running.
+
+        A third question covers the stack stopped whole. Its containers
+        leave the backend within a scrape, so it drops out of the first
+        answer altogether, and left alone its flag stayed True until the
+        SSH probe took it back up to twenty minutes later. An instance
+        the backend used to report on and now reports nothing of, on a
+        host that still reports containers, has its whole stack stopped
+        and is written as not running. Never one the backend never
+        reported on, and never when the host itself has gone quiet.
 
         Fail-safe, three times over:
 
@@ -201,6 +220,14 @@ class CloudInstance(models.Model):
             )
             return
 
+        host_ages = self._ages_by_instance(
+            base, _HOST_COVERAGE_EXPRESSION, user, token, label="host_id",
+        )
+        reporting_hosts = [
+            host_id for host_id, age in (host_ages or {}).items()
+            if age <= _SEEN_WINDOW_SECONDS
+        ]
+
         now = fields.Datetime.now()
         # The stamping runs on its own READ COMMITTED cursor, opened
         # only now that the HTTP query is done: these are the very rows
@@ -227,6 +254,22 @@ class CloudInstance(models.Model):
                 # liveness is already covered here, and "no change" is
                 # exactly the steady state where that matters most.
                 inst.write(vals)
+            if reporting_hosts:
+                # Not stamped: ``metrics_last_seen`` is the last time the
+                # backend reported on the instance, and silence is not.
+                parked = env["cloud.instance"].sudo().search([
+                    ("id", "not in", list(covered)),
+                    ("host_id", "in", reporting_hosts),
+                    ("running", "=", True),
+                    ("metrics_last_seen", "!=", False),
+                ])
+                for inst in parked:
+                    _logger.info(
+                        "[metrics] instance %s running: True → False"
+                        " (no container reported on a reporting host)",
+                        inst.name,
+                    )
+                    inst.write({"running": False})
 
     @api.model
     def _metrics_liveness_window(self):
