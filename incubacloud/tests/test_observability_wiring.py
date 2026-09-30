@@ -192,6 +192,33 @@ class TestDashboardsMatchTheSpa(BaseCase):
                     f"{panel['title']} filters by instance without a host",
                 )
 
+    def test_instance_panels_leave_one_off_containers_out(self):
+        """``docker compose run`` names each container it creates anew
+        (``<project>-odoo-run-<hash>``), so every deploy step and every
+        shell session added a series that ended minutes later and sat in
+        the legend for the whole range. Keyed by compose service, the
+        legend reads odoo/db/smtp; the one-offs are not charted at all
+        rather than added to ``odoo``, where a shell session would look
+        like the server's own memory."""
+        instance = json.loads(
+            (_DASHBOARDS / "incubacloud-instance.json").read_text()
+        )
+        for panel in instance["panels"]:
+            for target in panel["targets"]:
+                self.assertIn(
+                    'name!~".+-run-[0-9a-f]{12}"', target["expr"],
+                    panel["title"],
+                )
+                self.assertIn(
+                    "by (container_label_com_docker_compose_service)",
+                    target["expr"], panel["title"],
+                )
+                self.assertEqual(
+                    target["legendFormat"],
+                    "{{container_label_com_docker_compose_service}}",
+                    panel["title"],
+                )
+
     def test_the_disk_panel_reads_a_label_the_collector_emits(self):
         """A legend can only name a label the exposed metric carries.
 

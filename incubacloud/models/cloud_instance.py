@@ -969,6 +969,74 @@ class CloudInstance(models.Model):
         self.ensure_one()
         return False
 
+    def _monitoring_label(self):
+        """Return how the Monitoring picker shows this instance.
+
+        The name followed, when the instance is not running, by the
+        reason its charts will be empty. The value the picker sends
+        stays ``name``: that is the label Grafana filters on.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        name = self._monitoring_name()
+        status = self._monitoring_status()
+        return f"{name} — {status}" if status else name
+
+    def _monitoring_name(self):
+        """Return a name for this instance that means something alone.
+
+        An instance name is only unique within its project, so it is
+        shown next to it. A layer that knows a better name overrides
+        this.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        if not self.project_id:
+            return self.name
+        return f"{self.project_id.name} / {self.name}"
+
+    def _monitoring_status(self):
+        """Return why this instance may have nothing to chart, or ''.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        if self.running:
+            return ""
+        if self._stop_is_expected():
+            return self.env._("Asleep")
+        return self.env._("Stopped")
+
+    @api.model
+    def _monitoring_picklist(self):
+        """Return the instances the Monitoring tab can chart, labelled.
+
+        Searched as the caller, so each panel lists what it may see.
+        Drafts are skipped: nothing of theirs runs on a host yet, so no
+        series can carry their name. Sorted by label, which is what the
+        operator reads, not by the technical name.
+
+        :return: one dict per instance with ``name`` (the value Grafana
+            filters on), ``host``, ``label`` and ``running``.
+        :rtype: list[dict]
+        """
+        instances = self.search([
+            ("state", "!=", "draft"),
+            ("host_id", "!=", False),
+        ])
+        rows = [
+            {
+                "name": inst.name,
+                "host": inst.host_id.name,
+                "label": inst._monitoring_label(),
+                "running": bool(inst.running),
+            }
+            for inst in instances
+        ]
+        return sorted(rows, key=lambda row: row["label"].casefold())
+
     def _transition(self, to_state):
         """Move this instance to *to_state*.
 

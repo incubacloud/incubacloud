@@ -1523,23 +1523,18 @@ class OpsMixin:
         returns, so every host and instance but one was unreachable from
         this tab, with nothing on screen saying so.
 
-        Instances follow the same rule the label map does — drafts are
-        skipped, because nothing of theirs runs on a host yet and no
-        series can carry their name.
+        Instances come from ``cloud.instance._monitoring_picklist``,
+        which skips drafts (nothing of theirs runs on a host yet, so no
+        series can carry their name) and labels each one: the bare name
+        is what Grafana filters on, but it means nothing on its own.
         """
         self._sec()._check_can_view_metrics()
         settings = request.env["cloud.settings"].sudo()._get_system()
         hosts = request.env["cloud.host"].search([], order="name")
-        instances = request.env["cloud.instance"].search(
-            [("state", "!=", "draft"), ("host_id", "!=", False)],
-            order="name",
-        )
         return {
             "ok": True,
             "enabled": bool(settings.metrics_enabled),
             "grafana_base_url": settings.grafana_base_url or "",
             "hosts": [{"name": h.name} for h in hosts],
-            "instances": [
-                {"name": i.name, "host": i.host_id.name} for i in instances
-            ],
+            "instances": request.env["cloud.instance"]._monitoring_picklist(),
         }

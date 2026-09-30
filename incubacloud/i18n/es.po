@@ -1018,6 +1018,8 @@ msgstr "Pide primero una clave de subida."
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Asleep"
 msgstr "Durmiendo"
@@ -10832,6 +10834,8 @@ msgstr "Detener instancia"
 
 #. module: incubacloud
 #. odoo-javascript
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Stopped"
 msgstr "Detenido"
