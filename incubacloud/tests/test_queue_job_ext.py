@@ -1,11 +1,11 @@
-"""Integration test for queue_job_ext.QueueJob.write.
+"""Integration tests for queue_job_ext.QueueJob.write and unlink.
 
 Specifically verifies that the raw UPDATE performed on the cloud_job
 table invalidates the ORM cache for ``state`` — otherwise subsequent
 reads in the same transaction (broadcast, notifications, computes)
 would see the previous value.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from odoo import fields
 from odoo.tests.common import TransactionCase, tagged
@@ -806,3 +806,109 @@ class TestHostUnreachableOnTerminalState(TransactionCase):
     def test_a_job_that_finished_never_alerts(self):
         self._terminal('host_metrics', 'uuid-u4', 'done', False)
         self.assertFalse(self._alert())
+
+
+class TestQueueJobCleanupKeepsHistory(TransactionCase):
+    """Queue jobs are deleted after 30 days; their cloud jobs are not.
+
+    ``cloud.job.state`` and ``date_done`` are stored related fields on
+    ``queue_job_id``. Deleting the queue job used to recompute them
+    empty, and the autovacuum never reached the channels cloud jobs run
+    on because those channels had no record — two faults that hid each
+    other in production until 2026-09-30.
+    """
+
+    _OLD = datetime(2000, 1, 1, 12, 0, 0)
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'vacuum-host',
+            'ip_address': '10.0.0.43',
+            'user': 'ubuntu',
+            'wildcard_domain': 'vacuum.example.com',
+        })
+        self.jt = self.env['cloud.job.type'].search(
+            [('code', '=', 'vacuum_test')], limit=1,
+        ) or self.env['cloud.job.type'].create({
+            'name': 'vacuum_test', 'code': 'vacuum_test', 'apply_to': 'host',
+        })
+
+    def _pair(self, uuid, date_done, channel='root.bg'):
+        """Create a finished queue job and the cloud job linked to it.
+
+        The queue job is created first so the cloud job's computed
+        ``queue_job_id`` finds it, exactly as a real run leaves them.
+        """
+        qjob = self.env['queue.job'].sudo().create({
+            'uuid': uuid,
+            'name': f'qj-{uuid}',
+            'state': 'done',
+            'date_done': date_done,
+            'channel': channel,
+            'method_name': 'noop',
+            'model_name': 'cloud.job',
+            'func_string': 'noop()',
+        })
+        cjob = self.env['cloud.job'].sudo().create({
+            'host_id': self.host.id,
+            'job_type_id': self.jt.id,
+            'name': f'cj-{uuid}',
+            'queue_job_uuid': uuid,
+        })
+        self.assertEqual(cjob.queue_job_id, qjob)
+        self.assertEqual(cjob.state, 'done')
+        return cjob, qjob
+
+    def _stored(self, cjob):
+        """Read what is really in the table, not what the cache holds."""
+        self.env.flush_all()
+        self.env.cr.execute(
+            "SELECT state, date_done, queue_job_id FROM cloud_job"
+            " WHERE id = %s",
+            (cjob.id,),
+        )
+        return self.env.cr.fetchone()
+
+    def test_deleting_a_queue_job_keeps_the_cloud_job_outcome(self):
+        cjob, qjob = self._pair('vacuum-keep', self._OLD)
+        qjob.unlink()
+        self.assertEqual(self._stored(cjob), ('done', self._OLD, None))
+
+    def test_every_routed_channel_has_a_record(self):
+        # A channel without a record is never vacuumed. Deriving the list
+        # from the routing table keeps a future tier from reopening it.
+        channels = self.env['queue.job.channel'].search([]).mapped(
+            'complete_name',
+        )
+        for channel, _priority in self.env['cloud.job']._TIER_TO_ROUTING.values():
+            self.assertIn(channel, channels)
+
+    def test_autovacuum_removes_an_old_bg_job_and_keeps_its_history(self):
+        old_cjob, old_qjob = self._pair('vacuum-old', self._OLD)
+        new_cjob, new_qjob = self._pair(
+            'vacuum-new', self._OLD + timedelta(days=2),
+        )
+        # Put every channel's deadline on 2000-01-02, so only the fixture
+        # dated before it qualifies and nothing else in the database does.
+        deadline = datetime(2000, 1, 2)
+        self.env['queue.job.channel'].search([]).write({
+            'removal_interval': (datetime.now() - deadline).days,
+        })
+
+        self.env['queue.job'].autovacuum()
+
+        self.assertFalse(old_qjob.exists())
+        self.assertTrue(new_qjob.exists())
+        self.assertEqual(self._stored(old_cjob), ('done', self._OLD, None))
+        self.assertEqual(self._stored(new_cjob)[0], 'done')
+
+    def test_the_link_to_the_queue_job_is_indexed(self):
+        # Deleting a queue job nulls this column on the rows pointing at
+        # it; without an index that is a full scan of cloud_job per job.
+        self.env.cr.execute(
+            "SELECT indexdef FROM pg_indexes"
+            " WHERE tablename = 'cloud_job'"
+            "   AND indexdef LIKE '%%(queue_job_id)%%'"
+        )
+        self.assertTrue(self.env.cr.fetchall())

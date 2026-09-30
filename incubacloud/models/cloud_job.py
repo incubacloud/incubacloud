@@ -113,6 +113,10 @@ class CloudJob(models.Model):
         string="Queue Job",
         compute="_compute_queue_job_id",
         store=True,
+        # Every queue job deleted sets this column to NULL on the rows
+        # that point at it. Unindexed, that is a full scan of cloud_job
+        # per deleted job: 200 deletions took 1.57 s against 180k rows.
+        index=True,
     )
     instance_id = fields.Many2one(
         "cloud.instance",
