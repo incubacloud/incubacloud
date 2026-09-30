@@ -75,8 +75,9 @@ export class Monitoring extends Component {
         return this.state.hosts.map((h) => h.name);
     }
 
+    /** Options for the instance picker: the label shown, the name sent. */
     get instanceOptions() {
-        return this.state.instances.map((i) => i.name);
+        return this.state.instances.map((i) => ({ value: i.name, label: i.label }));
     }
 
     /** True while a tab that needs a subject is showing. */
@@ -101,7 +102,10 @@ export class Monitoring extends Component {
             // Pin the first of each rather than leaving it blank: a blank
             // subject is exactly the silent default this fixes.
             this.state.host = this.state.hosts[0]?.name || "";
-            this.state.instance = this.state.instances[0]?.name || "";
+            // A stopped instance charts nothing, so open on one that runs.
+            const first = this.state.instances.find((i) => i.running)
+                || this.state.instances[0];
+            this.state.instance = first?.name || "";
         } catch (err) {
             const msg = err?.data?.message ?? err?.message;
             this.state.error = (typeof msg === "string" && msg)

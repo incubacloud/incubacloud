@@ -92,3 +92,22 @@ describe("Monitoring — who may configure it", () => {
         expect(withEnv({}).canConfigure).toBe(true);
     });
 });
+
+describe("Monitoring — instance picker", () => {
+    /**
+     * Grafana filters on the compose name, which means nothing on its
+     * own (``ic-tenant-034a549f``). The picker shows the label the
+     * server built and must keep sending the name.
+     */
+    test("shows the label and sends the name Grafana filters on", () => {
+        const cmp = Object.create(Monitoring.prototype);
+        cmp.state = {
+            instances: [
+                { name: "ic-tenant-1", label: "Acme · acme.example.com", running: true },
+            ],
+        };
+        expect(cmp.instanceOptions).toEqual([
+            { value: "ic-tenant-1", label: "Acme · acme.example.com" },
+        ]);
+    });
+});

@@ -66,8 +66,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{host=~\"$host\",instance=\"$instance\"}[5m]))",
-          "legendFormat": "{{name}}"
+          "expr": "sum by (container_label_com_docker_compose_service) (rate(container_cpu_usage_seconds_total{host=~\"$host\",instance=\"$instance\",name!~\".+-run-[0-9a-f]{12}\"}[5m]))",
+          "legendFormat": "{{container_label_com_docker_compose_service}}"
         }
       ]
     },
@@ -88,8 +88,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (name) (container_memory_working_set_bytes{host=~\"$host\",instance=\"$instance\"})",
-          "legendFormat": "{{name}}"
+          "expr": "sum by (container_label_com_docker_compose_service) (container_memory_working_set_bytes{host=~\"$host\",instance=\"$instance\",name!~\".+-run-[0-9a-f]{12}\"})",
+          "legendFormat": "{{container_label_com_docker_compose_service}}"
         }
       ]
     }

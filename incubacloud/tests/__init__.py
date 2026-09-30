@@ -88,6 +88,7 @@ from . import (
     test_metric_rules,
     test_host_metrics_handover,
     test_observability_wiring,
+    test_monitoring_picklist,
     test_form_error_accessibility,
     test_observability_executors,
     test_traefik_metrics_retrofit,
