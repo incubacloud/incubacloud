@@ -6,6 +6,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.145] — 2026-10-01
+
+### Changed
+
+- **The Monitoring picker says which instance it is.** It showed each
+  instance by its compose name — `ic-tenant-034a549f`, or a dozen
+  `production` — which is what Grafana filters on and meant nothing on
+  its own. It now shows `project / instance` (a layer above can name its
+  instances better), followed by `— Asleep` or `— Stopped` when the
+  instance is not running, which is why its charts are empty; the value
+  sent to Grafana is still the compose name. The tab opens on the first
+  running instance instead of on an empty chart.
+- **The instance dashboard charts services, not one-off containers.**
+  `docker compose run` names every container it creates anew
+  (`<project>-odoo-run-<hash>`), so each deploy step and each `odoo
+  shell` added a series that ended minutes later and stayed in the
+  legend. The CPU and memory panels now group by compose service
+  (`odoo`, `db`, `smtp`, …) and leave `-run-` containers out. Reaches
+  Grafana with the next central deploy; the instance Metrics tab embeds
+  the same dashboard.
+
+### Fixed
+
+- **`running` falls as soon as an instance's whole stack stops.** The
+  metrics cron only wrote the flag for instances that reported some
+  container, and a stack stopped whole reports none within a scrape — so
+  the flag stayed True until the SSH probe took it back, up to twenty
+  minutes later. An instance the backend used to report on and now
+  reports nothing of, on a host that still reports containers, is now
+  written as not running. Never one it never reported on, and never when
+  the host itself is quiet.
+
 ## [1.0.144] — 2026-09-30
 
 ### Fixed

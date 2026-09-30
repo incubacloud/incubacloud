@@ -200,10 +200,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         Core has no concept of scheduled sleep, so this is always
         False and a stopped ``odoo`` keeps raising ``instance_down``.
-        Layered modules override it (the SaaS manager returns True for
-        sleep-eligible tenants, whose ``odoo`` is stopped by Sablier on
-        inactivity). Only consulted when the container *exists*: a
-        missing container is never expected and always alerts.
+        Layered modules override it for an app they stop on purpose
+        while its companions stay up. Only consulted when the container
+        *exists*: a missing container is never expected and always
+        alerts.
         """
         return False
 
@@ -735,9 +735,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 # Sablier sleep): not an incident. ``running=False`` is
                 # still written — downstream hooks read it to track the
                 # sleep/wake cycle — but status stays green and no
-                # alert fires. The companion services must keep
-                # running while the instance sleeps, so they are still
-                # graded below.
+                # alert fires. A layer that stops only ``odoo`` keeps
+                # its companions running, so they are still graded
+                # below.
                 vals = {
                     'cpu_over_threshold_streak': 0,
                     'mem_over_threshold_streak': 0,
@@ -909,9 +909,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         severity (``critical``). Backup, db, smtp going sideways is a
         ``warning`` — the instance keeps serving traffic — but stays
         visible so the operator does not learn about a 2-day-old broken
-        backup container from a failed cron. Also runs while the
-        instance sleeps: Sablier only stops ``odoo``, so its companions
-        must stay up.
+        backup container from a failed cron. Also runs while ``odoo``
+        alone is expected to be stopped: its companions are meant to be
+        up then, and are graded.
         """
         expected_other = set(inst.expected_services()) - {'odoo'}
         all_known = expected_other | {

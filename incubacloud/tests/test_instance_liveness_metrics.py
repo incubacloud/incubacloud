@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
+from odoo import fields
 from odoo.tests.common import TransactionCase
 
 _MODULE = "odoo.addons.incubacloud.models.cloud_metric_rule"
@@ -28,6 +29,19 @@ def _samples(*pairs):
             "result": [
                 {"metric": {"instance_id": str(iid)}, "value": [0, str(age)]}
                 for iid, age in pairs
+            ],
+        },
+    }
+
+
+def _host_samples(*pairs):
+    """Build a PromQL payload of (host_id, seconds-since-seen)."""
+    return {
+        "status": "success",
+        "data": {
+            "result": [
+                {"metric": {"host_id": str(hid)}, "value": [0, str(age)]}
+                for hid, age in pairs
             ],
         },
     }
@@ -53,7 +67,8 @@ class InstanceLivenessCase(TransactionCase):
             "environment": "staging",
         })
 
-    def _run(self, payload=None, exc=None, odoo_payload=None):
+    def _run(self, payload=None, exc=None, odoo_payload=None,
+             host_payload=None):
         # The cron stamps on a cursor of its own, so it reads what is in
         # the database rather than what is pending in this env's cache —
         # which is exactly what happens in production, where the cron
@@ -64,9 +79,14 @@ class InstanceLivenessCase(TransactionCase):
         # each one's ``odoo`` container. Passing only ``payload`` answers
         # both the same way, which is the shape of a fleet where every
         # instance's odoo container is the freshest thing it reports —
-        # what every test written before the split assumed.
+        # what every test written before the split assumed. The third
+        # answers which hosts report at all; none, unless a test says.
         coverage = payload or _samples()
-        bodies = [coverage, coverage if odoo_payload is None else odoo_payload]
+        bodies = [
+            coverage,
+            coverage if odoo_payload is None else odoo_payload,
+            host_payload or _host_samples(),
+        ]
         responses = []
         for body in bodies:
             resp = MagicMock(spec=requests.Response)
@@ -183,9 +203,9 @@ class TestLivenessFailSafes(InstanceLivenessCase):
 class TestWhichContainerDecides(InstanceLivenessCase):
     """``running`` is about the ``odoo`` container, not about the stack.
 
-    An instance put to sleep keeps its database and backup containers
-    up — only ``odoo`` is stopped. Asked about any container of the
-    stack, the backend therefore answers "seen seconds ago" all night,
+    An instance whose app alone is stopped keeps its database and
+    backup containers up. Asked about any container of the stack, the
+    backend therefore answers "seen seconds ago" all night,
     the flag never falls, and everything hanging off it never happens:
     the tenant is never marked sleeping, its activity clock is refreshed
     as though somebody had visited, and the panel shows a sleeping
@@ -206,7 +226,7 @@ class TestWhichContainerDecides(InstanceLivenessCase):
         """Return the PromQL of each query the cron sent, in order."""
         self.env.flush_all()
         responses = []
-        for _ in range(2):
+        for _ in range(3):
             resp = MagicMock(spec=requests.Response)
             resp.json.return_value = _samples((self.inst.id, 5))
             resp.raise_for_status.return_value = None
@@ -217,8 +237,18 @@ class TestWhichContainerDecides(InstanceLivenessCase):
             call.kwargs["params"]["query"] for call in get.call_args_list
         ]
 
-    def test_two_questions_are_asked_not_one(self):
-        self.assertEqual(len(self._queries()), 2)
+    def test_three_questions_are_asked(self):
+        """Who reports, whose ``odoo`` reports, and which hosts report —
+        the third being what tells a stack stopped whole from one whose
+        telemetry never arrived."""
+        self.assertEqual(len(self._queries()), 3)
+
+    def test_the_third_asks_which_hosts_report(self):
+        """Any container at all, the agents' own included: a host whose
+        every instance is stopped must still count as reporting."""
+        third = self._queries()[2]
+        self.assertIn("by (host_id)", third)
+        self.assertNotIn("instance_id", third)
 
     def test_the_first_asks_who_reports_at_all(self):
         """Coverage, not liveness: it decides whose flag may be written,
@@ -293,4 +323,65 @@ class TestWhenTheSecondQuestionCannotBeTrusted(InstanceLivenessCase):
         ):
             self.env["cloud.instance"]._cron_refresh_running_from_metrics()
         self.inst.invalidate_recordset()
+        self.assertTrue(self.inst.running)
+
+
+class TestParkedStacks(InstanceLivenessCase):
+    """A stack stopped whole reports nothing at all.
+
+    Its containers leave the backend within a scrape of stopping, so the
+    instance simply drops out of the coverage query, and "not covered"
+    used to mean "leave the flag alone". The flag then stayed True for
+    up to twenty minutes, until the SSH probe took it back — long enough
+    for a nightly job keyed on it to start the stack behind the back of
+    whatever had parked it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env["cloud.host"].create({
+            "name": "HPark", "ip_address": "10.0.0.51", "user": "root",
+            "wildcard_domain": "hpark.example.com",
+        })
+        self.inst.write({
+            "host_id": self.host.id,
+            "running": True,
+            "metrics_last_seen": fields.Datetime.now(),
+        })
+        # A neighbour that still reports, so the fleet-wide guards
+        # (something covered, some odoo seen) are satisfied.
+        other_project = self.env["cloud.project"].create({"name": "P2"})
+        self.other = self.env["cloud.instance"].create({
+            "name": "i2", "project_id": other_project.id,
+            "environment": "staging", "host_id": self.host.id,
+        })
+
+    def _run_parked(self, host_payload):
+        """Run the cron with only the neighbour reporting containers."""
+        self._run(_samples((self.other.id, 10)), host_payload=host_payload)
+        self.inst.invalidate_recordset()
+
+    def test_a_silent_instance_on_a_reporting_host_is_stopped(self):
+        self._run_parked(_host_samples((self.host.id, 10)))
+        self.assertFalse(self.inst.running)
+
+    def test_it_keeps_its_last_reading(self):
+        """``metrics_last_seen`` still means the last time the backend
+        reported on this instance, which silence is not."""
+        before = self.inst.metrics_last_seen
+        self._run_parked(_host_samples((self.host.id, 10)))
+        self.assertEqual(self.inst.metrics_last_seen, before)
+
+    def test_an_instance_never_reported_on_is_left_alone(self):
+        """The label map may never have reached it: silence proves nothing."""
+        self.inst.write({"metrics_last_seen": False})
+        self._run_parked(_host_samples((self.host.id, 10)))
+        self.assertTrue(self.inst.running)
+
+    def test_a_host_that_reports_nothing_says_nothing(self):
+        self._run_parked(_host_samples())
+        self.assertTrue(self.inst.running)
+
+    def test_a_host_gone_quiet_says_nothing(self):
+        self._run_parked(_host_samples((self.host.id, 9999)))
         self.assertTrue(self.inst.running)
