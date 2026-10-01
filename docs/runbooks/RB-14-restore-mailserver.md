@@ -42,8 +42,16 @@ docker run --rm -it \
   dup restore boto3+s3://incubacloud-platform-backups/backups/incubacloud/mailserver /mnt/backup/src
 ```
 
+Rehearsed on 2026-10-01: this exact command restored the whole tree
+(28 MB) in 10 seconds into a directory the bind mount had just created.
+
 For a partial restore (e.g. only DKIM keys), add
-`--file-to-restore docker-data/dms/config`.
+`--path-to-restore docker-data/dms/config` (duplicity 2.0 renamed the
+old `--file-to-restore`, which the image now rejects). The subtree lands
+at the **root** of the destination, not under its own path, so mount an
+empty directory instead of `/root/Mailserver` and copy the files into
+`docker-data/dms/config/` afterwards. Add `--time 2026-09-16` (or any
+duplicity time spec) to restore an older point.
 
 ## 3. Bring the stack up
 
@@ -51,15 +59,25 @@ For a partial restore (e.g. only DKIM keys), add
 cd /root/Mailserver && docker compose up -d
 ```
 
+`compose.yaml` pins no version (`docker-mailserver:latest`). On
+2026-10-01 production ran v15.1.0 while `latest` was already v16.0.1;
+the drill booted v16 with this configuration, but to come back on the
+exact version that was running, set its tag in `compose.yaml` first.
+
 Re-create the weekly certbot renewal cron if the crontab was lost
 (see the mailserver architecture notes; it is a one-line `docker run
 certbot/dns-cloudflare renew` + `docker compose restart mailserver`).
 
 ## 4. DNS
 
-If the host IP changed: update the `mail` A record in Cloudflare, and
-verify MX, SPF, DKIM (`dig TXT mail._domainkey.incubacloud.io`) and
-DMARC still match the restored keys.
+If the host IP changed: update the `mail` A record in Cloudflare. Then
+verify MX, SPF and DKIM: the `p=` of
+`dig TXT mail._domainkey.incubacloud.io` must equal the public half of
+the restored key,
+`openssl rsa -in docker-data/dms/config/opendkim/keys/incubacloud.io/mail.private -pubout`
+(without the PEM armour). Check `dig TXT _dmarc.incubacloud.io` too
+(published on 2026-10-01 with `p=none`; reports go to
+`dmarc.report@incubacloud.io`).
 
 ## 5. Verify
 
