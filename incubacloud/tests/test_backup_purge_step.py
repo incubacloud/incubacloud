@@ -22,7 +22,8 @@ What these pin, in order of how badly each would hurt:
   * each exit code produces the alert that names its own fix, and a
     clean run clears them.
 """
-from unittest.mock import patch
+import asyncio
+from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase
 
@@ -38,8 +39,37 @@ from ..models.move_cutover_executor import MoveCleanupSourceExecutor
 from ..models.move_rollback_cleanup_executor import (
     MoveRollbackCleanupExecutor,
 )
+from ..models.transport import CommandResult, SSHTransport
 
 _TEARDOWN_FIRST_STEP = "Stop and remove containers"
+_TEARDOWN_STEPS = (
+    "Stop and remove containers",
+    "Remove log rotation config",
+    "Remove instance directory",
+)
+
+
+def run_delete_steps(ex, exits):
+    """Run *ex*'s real steps through the executor's own step loop.
+
+    The host is a ``SSHTransport`` mock that answers each command with
+    the exit code *exits* gives its label (0 when absent), so what runs,
+    in what order and what gets cut off is decided by production code,
+    not by results a test made up.
+
+    :param ex: executor built with ``_PurgeBase._executor``.
+    :param dict exits: ``{label: exit_status}`` for the non-zero steps.
+    :return: ``(results, skipped)`` exactly as ``_run_steps`` returns them.
+    """
+    commands = list(ex.get_commands())
+    exit_by_command = {
+        step[1]: exits.get(step[0], 0) for step in commands
+    }
+    transport = MagicMock(spec=SSHTransport)
+    transport.execute.side_effect = (
+        lambda command, *_handlers: CommandResult("", exit_by_command[command])
+    )
+    return asyncio.run(ex._run_steps(transport, commands))
 
 
 class _PurgeBase(TransactionCase):
@@ -117,6 +147,16 @@ class TestPurgeStepPlacement(_PurgeBase):
         purge = next(s for s in steps if s[0] == PURGE_LABEL)
         self.assertEqual(len(purge), 3, "purge step carries no options")
         self.assertTrue(purge[2].get("stop_on_failure"))
+
+    def test_an_empty_prefix_does_not_stop_the_run(self):
+        """"Already empty" is the purge saying there was nothing to do.
+        Forgiving it only after the run had stopped left the instance on
+        the host while the panel reported it removed."""
+        steps = self._executor(self._job()).get_commands()
+        purge = next(s for s in steps if s[0] == PURGE_LABEL)
+        self.assertEqual(
+            purge[2].get("continue_on"), (PURGE_EXIT_ALREADY_EMPTY,),
+        )
 
     def test_keeping_the_record_does_not_purge(self):
         """Keeping the record is not a deletion — those backups still
@@ -241,6 +281,36 @@ class TestPurgeOutcomes(_PurgeBase):
                 self._results(PURGE_EXIT_ALREADY_EMPTY, teardown_exit=1),
             ),
         )
+
+
+class TestPurgeThroughTheRealLoop(_PurgeBase):
+    """The same outcomes, with the steps run by the executor's own loop.
+
+    ``TestPurgeOutcomes`` hands ``parse_results`` a purge at 10 *and* a
+    teardown that ran — a run the loop never produced, because the purge
+    stopped it first. Production, 2026-09-29: nine deletes ended "done"
+    with "removed from host" and left every warm stack running.
+    """
+
+    def test_an_empty_prefix_still_tears_the_instance_down(self):
+        ex = self._executor(self._job())
+        results, skipped = run_delete_steps(
+            ex, {PURGE_LABEL: PURGE_EXIT_ALREADY_EMPTY},
+        )
+        self.assertEqual(skipped, [])
+        for label in _TEARDOWN_STEPS:
+            self.assertIn(label, results, f"'{label}' never ran")
+        self.assertEqual(ex._outcome_errors(results, skipped), [])
+
+    def test_a_failed_purge_still_spares_the_teardown(self):
+        """The protection the purge exists for is untouched: a real
+        failure keeps the container that can still reach the bucket."""
+        ex = self._executor(self._job())
+        results, skipped = run_delete_steps(ex, {PURGE_LABEL: 22})
+        for label in _TEARDOWN_STEPS:
+            self.assertNotIn(label, results)
+            self.assertIn(label, skipped)
+        self.assertTrue(ex._outcome_errors(results, skipped))
 
 
 class TestPurgeAlerts(_PurgeBase):

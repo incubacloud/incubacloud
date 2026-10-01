@@ -377,36 +377,16 @@ class AbstractExecutor(ABC):
                 commands = list(self.get_commands())
                 await self._upload_scripts(transport)
 
-                results = {}
                 try:
-                    for item in commands:
-                        label, command = item[0], item[1]
-                        opts = item[2] if len(item) == 3 else {}
-                        logger.debug("[_async_entry] Executing: %s", command)
-                        self._sys(f"Running: {label}")
-                        result = await transport.execute(
-                            command, self.on_stdout, self.on_stderr,
-                        )
-                        results[label] = {
-                            'stdout': result.stdout,
-                            'exit_status': result.exit_status,
-                        }
-                        if result.exit_status != 0:
-                            if opts.get('stop_on_failure'):
-                                self._sys(
-                                    f"✗ '{label}' failed"
-                                    f" (exit {result.exit_status})"
-                                    f" — aborting remaining steps."
-                                )
-                                break
-                            self._sys(
-                                f"✗ '{label}' exited with status"
-                                f" {result.exit_status}."
-                            )
+                    results, skipped = await self._run_steps(
+                        transport, commands,
+                    )
                     # Inside the try so ``after_commands`` can still run
                     # a script, and in a finally so a failed job cleans
                     # up after itself too.
-                    await self._dispatch_outcome(results, transport)
+                    await self._dispatch_outcome(
+                        results, transport, skipped=skipped,
+                    )
                 finally:
                     await self._cleanup_scripts(transport)
 
@@ -416,7 +396,84 @@ class AbstractExecutor(ABC):
             self._sys(f"✗ {type(e).__name__}: {e}")
             raise
 
-    async def _dispatch_outcome(self, results, transport=None):
+    async def _run_steps(self, transport, commands):
+        """Run the job's steps in order and report what ran and what did not.
+
+        A step is ``(label, command)`` or ``(label, command, opts)``. Two
+        options shape what a non-zero exit does:
+
+        - ``stop_on_failure`` — the remaining steps are not run.
+        - ``continue_on`` — exit codes the step uses to say something
+          other than "failed" (e.g. "nothing to do"). They never stop the
+          run, whatever ``stop_on_failure`` says; whether they count as an
+          error is still ``parse_results``'s call.
+
+        :param transport: open transport the commands run through.
+        :param list commands: the materialised ``get_commands()`` output.
+        :return: ``(results, skipped)``. ``results`` maps each label that
+            ran to ``{'stdout': str, 'exit_status': int}``; ``skipped``
+            lists, in order, the labels a ``stop_on_failure`` step cut
+            off (empty when everything ran).
+        """
+        logger = logging.getLogger("AbstractExecutor")
+        results = {}
+        for index, item in enumerate(commands):
+            label, command = item[0], item[1]
+            opts = item[2] if len(item) == 3 else {}
+            logger.debug("[_run_steps] Executing: %s", command)
+            self._sys(f"Running: {label}")
+            result = await transport.execute(
+                command, self.on_stdout, self.on_stderr,
+            )
+            status = result.exit_status
+            results[label] = {'stdout': result.stdout, 'exit_status': status}
+            if status == 0:
+                continue
+            if status in opts.get('continue_on', ()):
+                self._sys(
+                    f"'{label}' exited with status {status}, which this"
+                    f" step accepts — continuing."
+                )
+                continue
+            if opts.get('stop_on_failure'):
+                self._sys(
+                    f"✗ '{label}' failed (exit {status})"
+                    f" — aborting remaining steps."
+                )
+                return results, [step[0] for step in commands[index + 1:]]
+            self._sys(f"✗ '{label}' exited with status {status}.")
+        return results, []
+
+    def _outcome_errors(self, results, skipped=()):
+        """Return the job's errors: ``parse_results`` plus skipped steps.
+
+        A run that skipped steps can never succeed, whatever
+        ``parse_results`` thinks of the step that stopped it. An executor
+        may legitimately forgive an exit code there — but then it must
+        not stop the run on it (``continue_on``), because the steps it
+        cut off are part of what the job promises. Until 2026-10-01 the
+        delete forgave its purge's "already empty" after the purge had
+        stopped the run, so it reported instances removed whose
+        containers, volumes and directory were all still on the host.
+
+        ``parse_results`` runs first and its exceptions propagate: a
+        ``RetryableJobError`` (the rebuild's exit 75) is a retry, not a
+        failure, and must stay one.
+
+        :param dict results: what ran, as returned by ``_run_steps``.
+        :param skipped: labels of the steps that never ran.
+        :return: list of error strings (empty means success).
+        """
+        errors = self.parse_results(results)
+        if skipped and not errors:
+            stopper = next(reversed(results), "a step")
+            errors = [
+                f"'{stopper}' stopped the run, so these steps never ran: "
+                + ", ".join(f"'{label}'" for label in skipped)
+            ]
+        return errors
+
+    async def _dispatch_outcome(self, results, transport=None, skipped=()):
         """Run ``parse_results`` and fire the matching terminal hook.
 
         Both callbacks run on their own cursor so what they write is
@@ -430,9 +487,11 @@ class AbstractExecutor(ABC):
         :param transport: open transport, when the executor has one.
             ``after_commands`` needs it, so it is skipped when there is
             none (an Ansible-backed job opens no transport of its own).
+        :param skipped: labels a ``stop_on_failure`` step cut off; any
+            of them makes the run a failure (see ``_outcome_errors``).
         """
         logger = logging.getLogger("AbstractExecutor")
-        errors = self.parse_results(results)
+        errors = self._outcome_errors(results, skipped)
         hook, args = (
             (self.on_success, (results,)) if not errors
             else (self.on_failure, (results, errors))

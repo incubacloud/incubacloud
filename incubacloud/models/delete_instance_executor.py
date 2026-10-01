@@ -44,7 +44,11 @@ PURGE_ALERT_BY_EXIT = {
 
 #: The prefix was already empty. Not a failure: the invariant this step
 #: exists to uphold — no objects left behind by a vanished instance —
-#: already holds, so the teardown proceeds.
+#: already holds, so the teardown proceeds. Declared as the step's
+#: ``continue_on`` so it does: forgiving it only in ``parse_results``
+#: came too late, after ``stop_on_failure`` had already cut the teardown
+#: off, and the delete reported instances removed that were still on
+#: the host (2026-09-29: nine warm stacks left running).
 PURGE_EXIT_ALREADY_EMPTY = 10
 
 #: Label of the archive step, for the same reason as ``PURGE_LABEL``.
@@ -162,6 +166,8 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         panel. So the purge runs *first* and, if it fails,
         ``stop_on_failure`` aborts before the teardown — otherwise the
         objects would be stranded with nothing left able to reach them.
+        "Already empty" is not a failure, so it is the step's
+        ``continue_on``: the teardown still runs.
 
         Which instances it applies to is decided by
         :meth:`_backups_are_ours_to_touch`; on top of that, keeping
@@ -175,7 +181,10 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         return ((
             PURGE_LABEL,
             self.run_script("backup_purge.sh", [inst_dir]),
-            {"stop_on_failure": True},
+            {
+                "stop_on_failure": True,
+                "continue_on": (PURGE_EXIT_ALREADY_EMPTY,),
+            },
         ),)
 
     def _step_exit_status(self, results, label):

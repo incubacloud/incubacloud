@@ -74,6 +74,7 @@ from . import (
     test_restore_backup_guard,
     test_archived_lifecycle,
     test_backup_purge_step,
+    test_executor_step_loop,
     test_purge_archived,
     test_restore_staging,
     test_teardown_success_handlers,
