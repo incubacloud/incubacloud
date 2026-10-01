@@ -26,6 +26,8 @@ import yaml
 from odoo import fields
 from odoo.tests.common import BaseCase, TransactionCase
 
+from ..models.cloud_instance_metrics import _ODOO_SERVICE
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DASHBOARDS = _ROOT / "ansible" / "files" / "dashboards"
 _CENTRAL_PLAYBOOK = _ROOT / "ansible" / "playbooks" / "observability_central.yml"
@@ -170,13 +172,62 @@ class TestDashboardsMatchTheSpa(BaseCase):
         all, and read as a real instance nobody could find. Filtered, an
         empty fleet has no series left to count, hence the fallback.
         """
-        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
-        panel = next(
-            p for p in fleet["panels"] if p["title"] == "Instances observed"
-        )
-        expression = panel["targets"][0]["expr"]
+        expression = self._fleet_panel("Instances running")["targets"][0]["expr"]
         self.assertIn('instance_id!=""', expression)
         self.assertIn("or vector(0)", expression)
+
+    def _fleet_panel(self, title):
+        """Return the Fleet dashboard panel titled *title*."""
+        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
+        return next(p for p in fleet["panels"] if p["title"] == title)
+
+    def test_running_means_what_the_panel_means_by_running(self):
+        """The panel decides ``running`` from the ``odoo`` container
+        alone (``_ODOO_EXPRESSION``). Counting "any container", as the
+        card used to, made a Free tenant asleep with ``db`` up count as
+        running — and since 1.0.145 a sleeping one counts as nothing."""
+        expression = self._fleet_panel("Instances running")["targets"][0]["expr"]
+        self.assertIn(
+            f'container_label_com_docker_compose_service="{_ODOO_SERVICE}"',
+            expression,
+        )
+
+    def test_deployed_counts_what_every_host_reports_for_every_instance(self):
+        """A sleeping instance has no container series at all, so the
+        only metric that names every deployed instance is the disk one
+        the host agent writes for each instance directory. The card has
+        to read the name the playbook actually emits."""
+        expression = self._fleet_panel("Instances deployed")["targets"][0]["expr"]
+        metric = re.search(r"\((\w+)\)\)", expression).group(1)
+        playbook = (
+            _ROOT / "ansible" / "playbooks" / "host_observability.yml"
+        ).read_text()
+        self.assertIn(f"{metric}{{instance_id=", playbook)
+        self.assertIn("or vector(0)", expression)
+
+    def test_the_top_row_lists_hosts_then_instances(self):
+        """Grouped so the operator reads one subject at a time, and
+        laid out on Grafana's 24-column grid with nothing overlapping."""
+        fleet = json.loads((_DASHBOARDS / "incubacloud-fleet.json").read_text())
+        row = sorted(
+            (p for p in fleet["panels"] if p["gridPos"]["y"] == 0),
+            key=lambda p: p["gridPos"]["x"],
+        )
+        self.assertEqual(
+            [p["title"] for p in row],
+            [
+                "Hosts reporting",
+                "Hosts above 90% disk",
+                "Hosts above 92% memory",
+                "Instances deployed",
+                "Instances running",
+            ],
+        )
+        edge = 0
+        for panel in row:
+            self.assertEqual(panel["gridPos"]["x"], edge, panel["title"])
+            edge += panel["gridPos"]["w"]
+        self.assertEqual(edge, 24)
 
     def test_instance_panels_are_scoped_to_one_host(self):
         """Container names repeat across hosts and an instance name is

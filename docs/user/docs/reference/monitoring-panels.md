@@ -18,12 +18,16 @@ change that: `1h` while watching a deploy, `7d` to tell a spike from a trend.
 Open **Monitoring** in the sidebar. This tab answers "is anything wrong
 anywhere?" and needs no selection — every host you manage is on it.
 
+The top row reads left to right: three cards about your hosts, then two
+about your instances.
+
 | Card | What it shows | Healthy |
 | --- | --- | --- |
 | **Hosts reporting** | How many hosts sent a sample in the last five minutes | The number of hosts you manage |
-| **Instances observed** | How many instances are currently reporting containers | Your instance count, minus any that are asleep |
 | **Hosts above 90% disk** | Count of hosts whose root disk is nearly full | `0` |
 | **Hosts above 92% memory** | Count of hosts nearly out of memory | `0` |
+| **Instances deployed** | How many instances are installed on your hosts, awake or asleep | Your instance count |
+| **Instances running** | How many instances have Odoo up right now | Your instance count, minus any that are asleep |
 
 **Load per core, by host.** The 15-minute load average divided by the number of
 cores, top ten hosts. A ratio, not a percentage: `1` means the host is using

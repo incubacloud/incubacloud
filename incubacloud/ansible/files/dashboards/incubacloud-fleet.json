@@ -21,7 +21,7 @@
       "description": "Hosts whose agents pushed a sample in the last five minutes. A drop here is the fleet-level signal that the staleness rule then attributes to specific hosts.",
       "gridPos": {
         "h": 5,
-        "w": 6,
+        "w": 4,
         "x": 0,
         "y": 0
       },
@@ -34,28 +34,11 @@
     },
     {
       "type": "stat",
-      "title": "Instances observed",
-      "description": "Distinct instances currently carrying a label in the fleet's container metrics.",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
-      "targets": [
-        {
-          "expr": "count(count by (instance_id) (container_last_seen{instance_id!=\"\"})) or vector(0)",
-          "legendFormat": "instances"
-        }
-      ]
-    },
-    {
-      "type": "stat",
       "title": "Hosts above 90% disk",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 12,
+        "w": 4,
+        "x": 4,
         "y": 0
       },
       "targets": [
@@ -70,14 +53,48 @@
       "title": "Hosts above 92% memory",
       "gridPos": {
         "h": 5,
-        "w": 6,
-        "x": 18,
+        "w": 4,
+        "x": 8,
         "y": 0
       },
       "targets": [
         {
           "expr": "count(100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) > 92) or vector(0)",
           "legendFormat": "hosts"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Instances deployed",
+      "description": "Instances installed on your hosts, awake or asleep. Counted from the disk each one uses, which is measured whether its containers run or not.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(count by (instance_id) (ic_instance_disk_bytes)) or vector(0)",
+          "legendFormat": "instances"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Instances running",
+      "description": "Instances whose Odoo container is up right now. An instance on a plan that sleeps when idle is not counted while it sleeps, so this is lower than Instances deployed by design.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "count(count by (instance_id) (container_last_seen{instance_id!=\"\", container_label_com_docker_compose_service=\"odoo\"})) or vector(0)",
+          "legendFormat": "instances"
         }
       ]
     },
