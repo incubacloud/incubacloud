@@ -1367,6 +1367,8 @@ yours to read.</p>
 <h2 id="fleet">Fleet<a class="headerlink" href="#fleet" title="Permanent link">&para;</a></h2>
 <p>Open <strong>Monitoring</strong> in the sidebar. This tab answers "is anything wrong
 anywhere?" and needs no selection — every host you manage is on it.</p>
+<p>The top row reads left to right: three cards about your hosts, then two
+about your instances.</p>
 <table>
 <thead>
 <tr>
@@ -1382,11 +1384,6 @@ anywhere?" and needs no selection — every host you manage is on it.</p>
 <td>The number of hosts you manage</td>
 </tr>
 <tr>
-<td><strong>Instances observed</strong></td>
-<td>How many instances are currently reporting containers</td>
-<td>Your instance count, minus any that are asleep</td>
-</tr>
-<tr>
 <td><strong>Hosts above 90% disk</strong></td>
 <td>Count of hosts whose root disk is nearly full</td>
 <td><code>0</code></td>
@@ -1395,6 +1392,16 @@ anywhere?" and needs no selection — every host you manage is on it.</p>
 <td><strong>Hosts above 92% memory</strong></td>
 <td>Count of hosts nearly out of memory</td>
 <td><code>0</code></td>
+</tr>
+<tr>
+<td><strong>Instances deployed</strong></td>
+<td>How many instances are installed on your hosts, awake or asleep</td>
+<td>Your instance count</td>
+</tr>
+<tr>
+<td><strong>Instances running</strong></td>
+<td>How many instances have Odoo up right now</td>
+<td>Your instance count, minus any that are asleep</td>
 </tr>
 </tbody>
 </table>
