@@ -6,6 +6,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.146] — 2026-10-01
+
+### Changed
+
+- **The Fleet tab counts instances in two ways, next to each other.**
+  Its only instance card, *Instances observed*, counted instances with
+  any container up. Since 1.0.145 a Free tenant asleep stops all its
+  containers, so the card dropped to the few instances awake and read
+  as if the rest had vanished. It is replaced by *Instances deployed*
+  (every instance installed on your hosts, awake or asleep, from the
+  disk usage each host reports per instance) and *Instances running*
+  (instances whose Odoo container is up — the same rule the panel uses
+  for an instance's own `running` state). The top row now shows the
+  three host cards first and the two instance cards after them.
+  Reaches Grafana with the next central deploy.
+
+### Fixed
+
+- **Deleting an instance with no backups really removes it from the
+  host.** The delete clears the instance's backups first and stops if
+  that fails, so the backups are never stranded. "Nothing to clear"
+  (exit 10) was meant to let the teardown go on, but it was only
+  forgiven after the step had already stopped the run: the containers,
+  volumes and directory stayed on the host while the job ended `done`,
+  said "removed from host" and dropped the record. The purge started
+  `db` and `smtp` for its own run, so they stayed up too — production
+  had nine such stacks from the warm spares recycled on 2026-09-29,
+  using ~1 GB of memory nobody could see. "Nothing to clear" no longer
+  stops the run.
+- **A job that skipped steps can no longer report success.** Whatever
+  an executor's `parse_results` forgives, a run in which a step cut the
+  remaining ones off now fails and says which steps never ran. Retries
+  (the rebuild's exit 75) are unaffected.
+
 ## [1.0.145] — 2026-10-01
 
 ### Changed
