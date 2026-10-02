@@ -2372,24 +2372,16 @@
                   />
                                     <span>301</span>
                                 </label>
-                                <select
+                                <div
                   class="ic-domain-cert"
-                  title="Let's Encrypt: issue a certificate automatically. Existing certificate: serve whatever the host's Traefik already holds (e.g. a wildcard) — it falls back to a self-signed one if nothing is loaded. No TLS: no TLS config for this router; the host proxy still redirects HTTP to HTTPS, so in practice this also ends up self-signed."
-                  t-on-change="(ev) => this.onDomainChange(d_index, 'cert_resolver', ev.target.value)"
+                  title="Automatic: the host decides — its own certificate when a CDN answers for this name and that certificate covers it, Let's Encrypt otherwise. Let's Encrypt: issue a certificate automatically. Existing certificate: serve a certificate held on the host (its default one on Host › Traefik, or one loaded by hand per RB-12); the deploy stops if the host holds none. No TLS: no TLS config for this router; the host proxy still redirects HTTP to HTTPS, so in practice this ends up self-signed."
                 >
-                                    <option
-                    value="letsencrypt"
-                    t-att-selected="(d.cert_resolver || 'letsencrypt') === 'letsencrypt'"
-                  >Let's Encrypt</option>
-                                    <option
-                    value="custom"
-                    t-att-selected="d.cert_resolver === 'custom'"
-                  >Existing certificate</option>
-                                    <option
-                    value="none"
-                    t-att-selected="d.cert_resolver === 'none'"
-                  >No TLS</option>
-                                </select>
+                                    <RlSelect
+                    options="certResolverOptions"
+                    value="d.cert_resolver || 'auto'"
+                    onChange="(value) => this.onDomainChange(d_index, 'cert_resolver', value)"
+                  />
+                                </div>
                                 <button
                   class="ic-domain-remove"
                   title="Remove"

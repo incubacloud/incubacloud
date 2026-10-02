@@ -21,6 +21,7 @@ client implements, and they are worth being able to test on their own.
 import re
 
 from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 
 # A wildcard is accepted only as an entire leftmost label. RFC 6125
 # permits a partial one (``f*.example.com``) but tells callers not to
@@ -106,3 +107,89 @@ def covers(hostname, names):
     :rtype: bool
     """
     return any(name_matches(hostname, name) for name in names or [])
+
+
+def _public_bytes(public_key):
+    """Return a public key's canonical DER encoding, for comparison.
+
+    Comparing the encodings rather than the objects is what makes
+    "does this key belong to this certificate" a single equality.
+    """
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+
+def pair_problem(cert_pem, key_pem):
+    """Return why a certificate and key cannot serve traffic, or None.
+
+    Answered as a code so callers can word it for whoever pasted the
+    pair; this module stays free of Odoo. Nothing at all is not a
+    problem — it is how a pair is removed.
+
+    :param str cert_pem: PEM certificate, possibly empty
+    :param str key_pem: PEM private key, possibly empty
+    :return: ``None``, ``'half'``, ``'certificate'``, ``'key'`` or
+        ``'mismatch'``
+    :rtype: str | None
+    """
+    cert = (cert_pem or "").strip()
+    key = (key_pem or "").strip()
+    if not cert and not key:
+        return None
+    if not cert or not key:
+        return "half"
+    try:
+        loaded = x509.load_pem_x509_certificate(cert.encode())
+    except (ValueError, TypeError):
+        return "certificate"
+    try:
+        private = serialization.load_pem_private_key(
+            key.encode(), password=None,
+        )
+    except (ValueError, TypeError):
+        return "key"
+    if _public_bytes(private.public_key()) != _public_bytes(
+        loaded.public_key()
+    ):
+        return "mismatch"
+    return None
+
+
+def certificate_info(cert_pem):
+    """Describe a PEM certificate, or return None when nothing reads.
+
+    Read from the certificate itself rather than stored alongside it, so
+    a pasted certificate is described as accurately as an issued one and
+    nothing can drift apart. Names are returned as the certificate states
+    them, in order, for display; :func:`certificate_names` is the one to
+    match against.
+
+    :param str cert_pem: PEM certificate, possibly empty
+    :return: ``{'hostnames', 'expires_on', 'fingerprint', 'issuer'}``
+        with ``expires_on`` a naive UTC datetime, or None
+    :rtype: dict | None
+    """
+    pem = (cert_pem or "").strip()
+    if not pem:
+        return None
+    try:
+        loaded = x509.load_pem_x509_certificate(pem.encode())
+    except (ValueError, TypeError):
+        return None
+    try:
+        names = loaded.extensions.get_extension_for_class(
+            x509.SubjectAlternativeName,
+        ).value.get_values_for_type(x509.DNSName)
+    except x509.ExtensionNotFound:
+        names = []
+    digest = loaded.fingerprint(hashes.SHA256()).hex()
+    return {
+        "hostnames": names,
+        "expires_on": loaded.not_valid_after_utc.replace(tzinfo=None),
+        "fingerprint": ":".join(
+            digest[i:i + 2] for i in range(0, len(digest), 2)
+        ).upper(),
+        "issuer": loaded.issuer.rfc4514_string(),
+    }

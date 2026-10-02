@@ -15,12 +15,14 @@ import asyncssh
 from asyncssh.misc import _ACMWrapper
 
 from odoo import http
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, ValidationError
 from odoo.tests.common import TransactionCase, new_test_user
 
 from odoo.addons.incubacloud.models.host_hardening_executor import (
     HostHardeningExecutor,
 )
+
+from ._certs import make_pair
 
 
 class TestCloudHostTraefikDefaults(TransactionCase):
@@ -1067,3 +1069,138 @@ class TestHardeningKeepsTheKeyReachable(KnownHostsCase):
                 ]
             )
         )
+
+
+class TestHostDefaultCertificate(TransactionCase):
+    """A host's default certificate is refused where somebody can still
+    see what they pasted: a half pair or a key from another certificate
+    makes Traefik answer every handshake with a throwaway certificate."""
+
+    def setUp(self):
+        super().setUp()
+        self.cert, self.key = make_pair()
+        self.host = self.env["cloud.host"].create({
+            "name": "cert-host",
+            "ip_address": "198.51.100.9",
+            "user": "root",
+            "wildcard_domain": "example.test",
+        })
+
+    def test_a_matching_pair_is_stored(self):
+        self.host.write({
+            "tls_default_cert": self.cert, "tls_default_key": self.key,
+        })
+        self.assertEqual(
+            self.host._effective_tls_default(), (self.cert, self.key),
+        )
+
+    def test_a_half_pair_is_refused(self):
+        with self.assertRaises(ValidationError):
+            self.host.write({"tls_default_cert": self.cert})
+            self.env.flush_all()
+
+    def test_a_key_from_another_certificate_is_refused(self):
+        _cert, other_key = make_pair(issuer="Other CA")
+        with self.assertRaises(ValidationError):
+            self.host.write({
+                "tls_default_cert": self.cert, "tls_default_key": other_key,
+            })
+            self.env.flush_all()
+
+    def test_an_empty_key_on_save_keeps_the_stored_one(self):
+        """The panel never echoes the key, so empty means untouched."""
+        self.host.write({
+            "tls_default_cert": self.cert, "tls_default_key": self.key,
+        })
+        self.host.write({
+            "tls_default_cert": self.cert, "tls_default_key": "",
+        })
+        self.assertEqual(self.host._effective_tls_default()[1], self.key)
+
+    def test_clearing_the_certificate_clears_the_key_too(self):
+        self.host.write({
+            "tls_default_cert": self.cert, "tls_default_key": self.key,
+        })
+        self.host.write({"tls_default_cert": ""})
+        self.assertEqual(self.host._effective_tls_default(), ("", ""))
+
+
+class TestSaveHostCertificateRoute(TestCloudDeleteHostRoute):
+    """The host page loads and saves the default certificate. The key is
+    write-only: the read says whether one is stored, never what it is.
+
+    Reuses the parent's manager user, host and NOT NULL workaround; the
+    loader collects only the tests declared here, not the inherited ones.
+    """
+
+    def _call(self, method, **kwargs):
+        """Drive a CRUD route against the test cursor as the manager."""
+        from odoo.addons.incubacloud.controllers import data_load
+        from odoo.addons.incubacloud.controllers._data_load import (
+            _routes_crud,
+        )
+
+        fake_request = MagicMock(spec=http.Request)
+        fake_request.env = self.env(user=self.manager)
+        ctrl = data_load.CloudDataLoadController()
+        with (
+            patch.object(http, "request", fake_request),
+            patch.object(data_load, "request", fake_request),
+            patch.object(_routes_crud, "request", fake_request),
+        ):
+            return getattr(ctrl, method)(**kwargs)
+
+    def test_save_stores_the_pair(self):
+        cert, key = make_pair()
+        self._call("cloud_save_host", host_id=self.host.id, vals={
+            "tls_default_cert": cert, "tls_default_key": key,
+        })
+        self.assertEqual(self.host._effective_tls_default(), (cert, key))
+
+    def test_save_with_an_empty_key_keeps_the_stored_one(self):
+        cert, key = make_pair()
+        self.host.write({"tls_default_cert": cert, "tls_default_key": key})
+        self._call("cloud_save_host", host_id=self.host.id, vals={
+            "tls_default_cert": cert, "tls_default_key": "",
+        })
+        self.assertEqual(self.host._effective_tls_default()[1], key)
+
+    def test_read_describes_the_certificate_and_never_returns_the_key(self):
+        cert, key = make_pair(["example.test", "*.example.test"])
+        self.host.write({"tls_default_cert": cert, "tls_default_key": key})
+        data = self._call("cloud_get_host", host_id=self.host.id)
+        self.assertEqual(data["tls_default_cert"], cert)
+        self.assertTrue(data["has_tls_default_key"])
+        self.assertEqual(
+            data["tls_default_info"]["hostnames"],
+            ["example.test", "*.example.test"],
+        )
+        self.assertNotIn("tls_default_key", data)
+        self.assertNotIn(key, repr(data))
+
+
+class TestStoreCertificatesDeclared(TransactionCase):
+    """Whether a host's config.yml loads certificates of its own (RB-12)."""
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env["cloud.host"].create({
+            "name": "store-host",
+            "ip_address": "198.51.100.10",
+            "user": "root",
+            "wildcard_domain": "example.test",
+        })
+
+    def test_the_shipped_template_declares_none(self):
+        self.assertFalse(self.host._declares_store_certificates())
+
+    def test_a_tls_certificates_list_is_a_declaration(self):
+        self.host.traefik_config_yml = (
+            "tls:\n  certificates:\n"
+            "    - certFile: /etc/certs/a.pem\n      keyFile: /etc/certs/a.key\n"
+        )
+        self.assertTrue(self.host._declares_store_certificates())
+
+    def test_unreadable_yaml_declares_nothing(self):
+        self.host.traefik_config_yml = "tls: [unclosed"
+        self.assertFalse(self.host._declares_store_certificates())

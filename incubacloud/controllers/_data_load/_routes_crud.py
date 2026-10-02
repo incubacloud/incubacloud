@@ -45,29 +45,33 @@ from ._helpers import (
 
 _logger = logging.getLogger(__name__)
 
-# Mirrors the Selection on ``cloud.instance.domain.cert_resolver``.
-_CERT_RESOLVERS = frozenset({'letsencrypt', 'custom', 'none'})
 
-
-def _domain_vals(payload):
+def _domain_vals(payload, env):
     """Normalise one domain entry from the SPA into ORM values.
 
     ``cert_resolver`` is clamped to the model's Selection rather than
     passed through: the field used to be a free Char, so a cached SPA
     bundle or a hand-made RPC call can still send a value outside the
-    domain. Clamping degrades it to the default instead of raising a 500
-    on what is, from the caller's side, a stale client.
+    domain. Clamping degrades it to the field's default instead of
+    raising a 500 on what is, from the caller's side, a stale client.
+
+    The options and the default are read from the field itself. A copy
+    kept here is how ``auto`` went missing: every save of the Networking
+    tab rewrote it to ``letsencrypt``.
 
     :param dict payload: one entry of the request's ``domains`` list
+    :param env: environment the model is read through
     :returns: dict of values for ``cloud.instance.domain``
     """
+    Domain = env['cloud.instance.domain']
+    options = dict(Domain._fields['cert_resolver'].selection)
     resolver = (payload.get('cert_resolver') or '').strip()
+    if resolver not in options:
+        resolver = Domain.default_get(['cert_resolver'])['cert_resolver']
     return {
         'hostname': (payload.get('hostname') or '').strip(),
         'redirect_to': (payload.get('redirect_to') or '').strip(),
-        'cert_resolver': (
-            resolver if resolver in _CERT_RESOLVERS else 'letsencrypt'
-        ),
+        'cert_resolver': resolver,
         'redirect_permanent': bool(payload.get('redirect_permanent')),
     }
 
@@ -764,6 +768,12 @@ class CrudMixin:
             'behind_cdn': host.behind_cdn,
             'trusted_proxy_ranges': host.trusted_proxy_ranges or '',
             'block_direct_access': host.block_direct_access,
+            # The default certificate is shown and described; its key is
+            # only ever reported as stored or not, never returned.
+            'tls_default_cert': host.tls_default_cert or '',
+            'has_tls_default_key': _has_encrypted(host, 'tls_default_key'),
+            'tls_default_info':
+                host._tls_certificate_info(host.tls_default_cert),
             # The list the host is actually filtered against, and where
             # it comes from. The field above is only the override, so
             # showing it alone would say nothing about what applies.
@@ -797,6 +807,9 @@ class CrudMixin:
         'traefik_config_yml', 'traefik_inverseproxy_yaml', 'traefik_yml',
         'exclude_from_autoassign', 'http_conn_rate',
         'trusted_proxy_ranges', 'block_direct_access', 'behind_cdn',
+        # The key is write-only: the model ignores an empty one, so a
+        # save that does not paste a new key keeps the stored one.
+        'tls_default_cert', 'tls_default_key',
     }
 
     @http.route(['/cloud/host_defaults'], type='jsonrpc', auth='user')
@@ -1357,7 +1370,7 @@ class CrudMixin:
             safe['domain_ids'] = [(0, 0, {'hostname': domain_str})]
         elif domains:
             safe['domain_ids'] = [
-                (0, 0, _domain_vals(d))
+                (0, 0, _domain_vals(d, request.env))
                 for d in domains if (d.get('hostname') or '').strip()
             ]
         # ── Normalize odoo_version to string (frontend may send a number) ──
@@ -2047,7 +2060,7 @@ class CrudMixin:
                 hostname = (d.get('hostname') or '').strip()
                 if not hostname:
                     continue
-                dvals = _domain_vals(d)
+                dvals = _domain_vals(d, request.env)
                 if did and did in existing_ids:
                     Domain.browse(did).write(dvals)
                     kept_ids.add(did)

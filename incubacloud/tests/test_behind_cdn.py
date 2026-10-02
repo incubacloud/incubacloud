@@ -14,6 +14,8 @@ import yaml
 
 from odoo.tests.common import TransactionCase
 
+from ._certs import make_pair
+
 
 class TestBehindCdnRendering(TransactionCase):
 
@@ -103,30 +105,36 @@ class TestDefaultCertificate(TransactionCase):
         self.assertEqual(self.host._shipped_tls_default_yml(), "")
 
     def test_half_a_pair_renders_nothing(self):
-        self.host.tls_default_cert = "-----BEGIN CERTIFICATE-----"
+        """Written straight to the table: the model refuses a half pair
+        since 1.0.147, but a row stored before then can still hold one."""
+        cert, _key = make_pair()
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_host SET tls_default_cert = %s WHERE id = %s",
+            (cert, self.host.id),
+        )
+        self.host.invalidate_recordset()
         self.assertEqual(self.host._shipped_tls_default_yml(), "")
 
     def test_a_full_pair_names_both_files(self):
-        self.host.write({
-            "tls_default_cert": "-----BEGIN CERTIFICATE-----",
-            "tls_default_key": "-----BEGIN PRIVATE KEY-----",
-        })
+        cert, key = make_pair()
+        self.host.write({"tls_default_cert": cert, "tls_default_key": key})
         rendered = self.host._shipped_tls_default_yml()
         self.assertIn("defaultCertificate", rendered)
         self.assertIn("/etc/certs/default.crt", rendered)
         self.assertIn("/etc/certs/default.key", rendered)
 
     def test_the_key_is_not_stored_in_the_clear(self):
-        self.host.write({
-            "tls_default_cert": "-----BEGIN CERTIFICATE-----",
-            "tls_default_key": "not-a-real-key-canary",
-        })
+        cert, key = make_pair()
+        self.host.write({"tls_default_cert": cert, "tls_default_key": key})
+        self.env.flush_all()
         self.env.cr.execute(
             "SELECT tls_default_key FROM cloud_host WHERE id = %s",
             (self.host.id,),
         )
         stored = self.env.cr.fetchone()[0]
-        self.assertNotIn("canary", stored or "")
+        self.assertTrue(stored)
+        self.assertNotIn("PRIVATE KEY", stored)
 
     def test_the_certificate_is_part_of_the_drift_snapshot(self):
         self.assertIn("tls_default_cert", self.host._config_snapshot_fields())

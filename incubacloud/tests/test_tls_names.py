@@ -120,8 +120,17 @@ class TestTheHostDecides(TransactionCase):
 
     def test_half_a_pair_covers_nothing(self):
         """A certificate with no key cannot be served, so it covers no
-        name however good its extension looks."""
-        self.host.tls_default_cert = self.cert
+        name however good its extension looks.
+
+        Written straight to the table: the model refuses a half pair
+        since 1.0.147, but a row stored before then can still hold one.
+        """
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_host SET tls_default_cert = %s WHERE id = %s",
+            (self.cert, self.host.id),
+        )
+        self.host.invalidate_recordset()
         self.assertFalse(self.host._tls_default_covers("a.example.test"))
 
     def test_it_covers_what_the_certificate_says(self):
@@ -168,3 +177,59 @@ class TestTheHostDecides(TransactionCase):
         self.assertEqual(
             self.host._router_tls_mode("a.example.test"), "acme",
         )
+
+
+class TestReadingAPair(BaseCase):
+    """Whether a certificate and a key can serve traffic together.
+
+    A host given a pair that cannot — half of one, an unreadable PEM, a
+    key from another certificate — answers every handshake with a
+    throwaway certificate, so the answer is pinned before anything is
+    stored.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.cert, self.key = make_pair()
+
+    def test_a_matching_pair_has_no_problem(self):
+        self.assertIsNone(tls_names.pair_problem(self.cert, self.key))
+
+    def test_nothing_at_all_is_not_a_problem(self):
+        self.assertIsNone(tls_names.pair_problem("", ""))
+        self.assertIsNone(tls_names.pair_problem(None, None))
+
+    def test_half_a_pair_is(self):
+        self.assertEqual(tls_names.pair_problem(self.cert, ""), "half")
+        self.assertEqual(tls_names.pair_problem("", self.key), "half")
+
+    def test_an_unreadable_certificate_is(self):
+        self.assertEqual(
+            tls_names.pair_problem("not a pem", self.key), "certificate",
+        )
+
+    def test_an_unreadable_key_is(self):
+        self.assertEqual(tls_names.pair_problem(self.cert, "not a pem"), "key")
+
+    def test_a_key_from_another_certificate_is(self):
+        _cert, other_key = make_pair(issuer="Other CA")
+        self.assertEqual(
+            tls_names.pair_problem(self.cert, other_key), "mismatch",
+        )
+
+
+class TestDescribingACertificate(BaseCase):
+
+    def test_the_names_issuer_and_fingerprint_are_read_from_it(self):
+        cert, _key = make_pair(["a.example.test", "*.example.test"],
+                               issuer="Info CA")
+        info = tls_names.certificate_info(cert)
+        self.assertEqual(info["hostnames"],
+                         ["a.example.test", "*.example.test"])
+        self.assertEqual(info["issuer"], "CN=Info CA")
+        self.assertRegex(info["fingerprint"], r"^([0-9A-F]{2}:){31}[0-9A-F]{2}$")
+        self.assertIsNone(info["expires_on"].tzinfo)
+
+    def test_nothing_readable_describes_as_nothing(self):
+        self.assertIsNone(tls_names.certificate_info(""))
+        self.assertIsNone(tls_names.certificate_info("not a pem"))

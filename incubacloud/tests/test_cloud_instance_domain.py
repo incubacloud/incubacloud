@@ -231,3 +231,141 @@ class TestCertResolverDomain(TransactionCase):
                 domain._cert_resolver_answer(),
                 ("letsencrypt", True, False),
             )
+
+    def test_the_panel_offers_exactly_the_model_options(self):
+        """The certificate picker is hand-written JS; this keeps it honest.
+
+        A Selection value the panel cannot show is one it cannot keep:
+        the native select it replaced displayed ``auto`` rows as Let's
+        Encrypt for a month, and the save path rewrote them to match.
+        """
+        import pathlib
+        import re
+
+        from odoo.addons import incubacloud
+
+        js = (
+            pathlib.Path(incubacloud.__file__).parent
+            / "static/src/components/instance_detail/instance_detail.js"
+        ).read_text()
+        block = js.split("get certResolverOptions()", 1)[1]
+        block = block.split("addDomain()", 1)[0]
+        offered = set(re.findall(r'value:\s*"([a-z]+)"', block))
+        self.assertEqual(
+            offered, set(dict(self.Domain._fields["cert_resolver"].selection)),
+        )
+
+
+class TestDomainValsClamp(TransactionCase):
+    """The save endpoint accepts every value the model accepts and
+    degrades anything else to the model's default — never to a value of
+    its own choosing. A hand-kept allowlist without ``auto`` is how every
+    save of the Networking tab rewrote ``auto`` to ``letsencrypt``."""
+
+    def setUp(self):
+        super().setUp()
+        from odoo.addons.incubacloud.controllers._data_load._routes_crud import (
+            _domain_vals,
+        )
+
+        self.fn = _domain_vals
+        self.options = set(dict(
+            self.env["cloud.instance.domain"]._fields["cert_resolver"].selection
+        ))
+
+    def test_every_model_option_survives_a_save(self):
+        for value in self.options:
+            vals = self.fn(
+                {"hostname": "a.example.com", "cert_resolver": value}, self.env,
+            )
+            self.assertEqual(vals["cert_resolver"], value)
+
+    def test_an_unknown_value_degrades_to_the_model_default(self):
+        vals = self.fn(
+            {"hostname": "a.example.com", "cert_resolver": "acme-evil"},
+            self.env,
+        )
+        self.assertEqual(vals["cert_resolver"], "auto")
+
+    def test_a_missing_value_degrades_to_the_model_default(self):
+        vals = self.fn({"hostname": "a.example.com"}, self.env)
+        self.assertEqual(vals["cert_resolver"], "auto")
+
+
+class TestMigrate1_0_147(TransactionCase):
+    """1.0.147 moves ``letsencrypt`` rows back to ``auto`` on hosts a CDN
+    answers for — the rows the save endpoint clobbered — and leaves every
+    other row exactly as it is."""
+
+    def setUp(self):
+        super().setUp()
+        self._seq = 0
+        self.cdn_host = self._host("mig-cdn", "198.51.100.61", behind_cdn=True)
+        self.direct_host = self._host("mig-direct", "198.51.100.62")
+
+    def _host(self, name, ip, **vals):
+        """Return a host instances can be placed on."""
+        return self.env["cloud.host"].create({
+            "name": name,
+            "ip_address": ip,
+            "user": "root",
+            "wildcard_domain": f"{name}.example.com",
+        } | vals)
+
+    def _domain_on(self, host, cert_resolver):
+        """Return one domain row on a production instance placed on *host*."""
+        self._seq += 1
+        project = self.env["cloud.project"].create(
+            {"name": f"Mig147-{self._seq}"},
+        )
+        inst = self.env["cloud.instance"].create({
+            "name": f"mig147-{self._seq}",
+            "project_id": project.id,
+            "environment": "production",
+            "host_id": host.id,
+            "domain_ids": [(0, 0, {
+                "hostname": f"m{self._seq}.example.com",
+                "cert_resolver": cert_resolver,
+            })],
+        })
+        return inst.domain_ids
+
+    def _run_migration(self, version="19.0.1.0.146"):
+        """Load the post-migrate script by path and run it on this cursor."""
+        import importlib.util
+        import pathlib
+
+        from odoo.addons import incubacloud
+
+        path = (
+            pathlib.Path(incubacloud.__file__).parent
+            / "migrations" / "1.0.147" / "post-migrate.py"
+        )
+        spec = importlib.util.spec_from_file_location("mig_1_0_147", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.env.flush_all()
+        module.migrate(self.env.cr, version)
+        self.env.invalidate_all()
+
+    def test_letsencrypt_behind_a_cdn_goes_back_to_auto(self):
+        domain = self._domain_on(self.cdn_host, "letsencrypt")
+        self._run_migration()
+        self.assertEqual(domain.cert_resolver, "auto")
+
+    def test_letsencrypt_on_a_direct_host_is_left_alone(self):
+        domain = self._domain_on(self.direct_host, "letsencrypt")
+        self._run_migration()
+        self.assertEqual(domain.cert_resolver, "letsencrypt")
+
+    def test_deliberate_choices_are_left_alone(self):
+        custom = self._domain_on(self.cdn_host, "custom")
+        none = self._domain_on(self.cdn_host, "none")
+        self._run_migration()
+        self.assertEqual(custom.cert_resolver, "custom")
+        self.assertEqual(none.cert_resolver, "none")
+
+    def test_a_fresh_install_touches_nothing(self):
+        domain = self._domain_on(self.cdn_host, "letsencrypt")
+        self._run_migration(version=None)
+        self.assertEqual(domain.cert_resolver, "letsencrypt")
