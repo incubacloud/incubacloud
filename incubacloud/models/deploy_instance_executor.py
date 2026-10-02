@@ -953,8 +953,80 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         if not inst:
             raise ValueError("deploy_instance job has no instance_id")
         await self._preflight_addon_check()
+        self._preflight_tls_check()
         self._sys(f"Preparing deployment for '{inst.name}'...")
         await self._upload_copier_files(transport)
+
+    def _preflight_tls_check(self):
+        """Say how each domain will get its certificate; refuse the impossible.
+
+        ``custom`` means "serve a certificate the host holds": its default
+        one (Traefik tab), or one loaded by hand and declared in its
+        ``config.yml`` (RB-12). A host with neither answers every
+        handshake with a throwaway certificate and nothing says so, so
+        that combination stops the deploy here, before the host is
+        touched. Short of that the check only informs: a default
+        certificate that does not cover the name is warned about, and a
+        declared one cannot be read from here at all.
+
+        Every domain also gets one log line naming what its choice
+        resolved to, which is the only place the decision ``auto`` took
+        is visible without reading code.
+
+        :raise RuntimeError: when a domain asks for the host's
+            certificate and the host holds none.
+        """
+        inst = self._inst().sudo()
+        host = inst.host_id
+        missing = []
+        for domain in inst.domain_ids:
+            if not domain.hostname:
+                continue
+            description = self._describe_tls(domain)
+            if domain.cert_resolver == "custom":
+                cert, key = host._effective_tls_default() if host else ("", "")
+                declared = bool(host) and host._declares_store_certificates()
+                covered = bool(cert and key) and host._tls_default_covers(
+                    domain.hostname,
+                )
+                if not covered and declared:
+                    description = (
+                        "a certificate declared in the host's config.yml "
+                        "(not checked)"
+                    )
+                elif not (cert and key):
+                    missing.append(domain.hostname)
+                    continue
+                elif not covered:
+                    self._sys(
+                        f"⚠ {domain.hostname}: the host's certificate does "
+                        "not cover this name; browsers will warn."
+                    )
+            self._sys(f"TLS for {domain.hostname}: {description}")
+        if missing:
+            raise RuntimeError(
+                "These domains ask for the host's certificate and the host "
+                f"holds none: {', '.join(missing)}. Load one on the host "
+                "(Traefik tab, or RB-12) or pick another option for the "
+                "domain."
+            )
+
+    @staticmethod
+    def _describe_tls(domain):
+        """Return one line naming what *domain*'s certificate choice means.
+
+        :param domain: a ``cloud.instance.domain`` row
+        :rtype: str
+        """
+        if domain.cert_resolver == "auto":
+            if domain._cert_resolver_answer() is True:
+                return "automatic → host's certificate (a CDN answers for it)"
+            return "automatic → Let's Encrypt"
+        return {
+            "letsencrypt": "Let's Encrypt",
+            "custom": "host's certificate",
+            "none": "no TLS",
+        }[domain.cert_resolver]
 
     def get_commands(self):
         inst = self._inst()

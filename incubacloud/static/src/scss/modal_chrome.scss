@@ -100,7 +100,10 @@
 
     &:last-child { margin-bottom: 0; }
 
-    label {
+    // Same reach as `.rl-frow` in relay.scss: the row's own caption and
+    // field, plus class-less controls in a plain wrapper (the import URL
+    // row). A component nested in the row (SearchSelect) keeps its own CSS.
+    > label {
         display: block;
         font-family: var(--rl-fm);
         font-size: 10.5px;
@@ -110,9 +113,12 @@
         margin-bottom: 6px;
     }
 
-    input,
-    textarea,
-    select {
+    > input,
+    > textarea,
+    > select,
+    input:not([class]),
+    textarea:not([class]),
+    select:not([class]) {
         width: 100%;
         background: var(--rl-bg);
         border: 1px solid var(--rl-line2);
@@ -131,7 +137,10 @@
         }
     }
 
-    textarea {
+    // With the ``:not([class])`` form too, which the field rule above
+    // outweighs a bare ``textarea`` with.
+    textarea,
+    textarea:not([class]) {
         font-family: var(--rl-fm);
         resize: vertical;
         min-height: 76px;

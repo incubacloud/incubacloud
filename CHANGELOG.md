@@ -6,6 +6,62 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.147] — 2026-10-02
+
+### Added
+
+- **A host's default certificate is set on its Traefik tab.** The
+  certificate a host serves when a router has none of its own — what a
+  CDN in front connects to, and what *Existing certificate* serves — was
+  a pair of fields nothing in the panel could reach, so on a core-only
+  install that option always ended up self-signed. The tab now takes
+  the certificate and its key, describes what is stored (names, expiry,
+  issuer), never shows the key back, and refuses a pair that cannot
+  serve: half of one, an unreadable PEM, or a key from another
+  certificate. Saving it marks the host's configuration as not
+  deployed; *Push Trusted Proxy Settings* or *Full Setup* ships it.
+- **Every deploy says how each domain gets its certificate.** One line
+  per domain in the job log — including what *Automatic* resolved to on
+  that host — so the decision is visible without reading code. A domain
+  set to *Existing certificate* on a host that holds none — no default
+  certificate and none declared by hand in its `config.yml` — stops the
+  deploy, rebuild or warm claim before anything reaches the host; a
+  default certificate that does not cover the name is warned about.
+  RB-12 is rewritten around the Traefik tab.
+
+### Fixed
+
+- **Saving an instance no longer turns *Automatic* certificates into
+  Let's Encrypt.** Since 1.0.109 a domain's certificate defaults to
+  *Automatic*: the host decides, and behind a CDN it serves the
+  certificate it holds instead of asking an authority that cannot reach
+  it. The endpoint that saves an instance kept its own list of accepted
+  values without *Automatic* and rewrote it to Let's Encrypt every time
+  the Networking tab was saved. It now reads the options from the
+  field. Rows it rewrote on hosts behind a CDN go back to *Automatic*
+  on upgrade; elsewhere both values deploy the same and rows are left
+  as they are.
+- **The certificate picker offers *Automatic*.** It showed every
+  *Automatic* domain as Let's Encrypt, and new domains were created as
+  Let's Encrypt, skipping the host's decision. *Automatic* is now the
+  first option and the default for a new domain, and the picker is the
+  panel's own dropdown, like the rest of the form.
+- **The domain editor on an instance's Networking tab is usable
+  again.** The certificate select took the whole row and squeezed the
+  hostname and redirect fields to empty slivers, with the remove button
+  pushed off screen. Its hostname, redirect and certificate fields now
+  look like every other field on the form in both themes; their old
+  translucent fill read as disabled on the light theme. The shared
+  form-row style that sizes a row's field
+  to 100% reached every control nested inside the row and outweighed
+  their own rules. It now styles only the row's own caption and field,
+  so controls that belong to a component keep their own look: the
+  warm-pool target stepper no longer stretches, a long SearchSelect
+  value no longer runs under its arrow, the tag selector's input no
+  longer draws a box inside its box, a stored password shows its green
+  "value set" field again, and the announcement's tenant-state
+  checkboxes read as normal text instead of uppercase captions.
+
 ## [1.0.146] — 2026-10-01
 
 ### Changed

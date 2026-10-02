@@ -799,12 +799,27 @@ export class InstanceDetail extends JobsMixin(
 
   // ── Domain management ──────────────────────────────────────────────
 
+  /**
+   * Certificate choices for a domain row, labelled in the user's language.
+   * Values match `cloud.instance.domain.cert_resolver`; "auto" comes first
+   * because it is the model's default and what every row holds unless
+   * somebody chose otherwise.
+   */
+  get certResolverOptions() {
+    return [
+      {value: "auto", label: _t("Automatic")},
+      {value: "letsencrypt", label: _t("Let's Encrypt")},
+      {value: "custom", label: _t("Existing certificate")},
+      {value: "none", label: _t("No TLS")},
+    ];
+  }
+
   addDomain() {
     this.state.form.domains.push({
       id: null,
       hostname: "",
       redirect_to: "",
-      cert_resolver: "letsencrypt",
+      cert_resolver: "auto",
       redirect_permanent: false,
     });
   }

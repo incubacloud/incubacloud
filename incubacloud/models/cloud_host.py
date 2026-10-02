@@ -1373,6 +1373,14 @@ class CloudHost(models.Model):
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        # The default certificate's key is never echoed to the panel, so
+        # an empty one on a save means "untouched", not "remove". Removing
+        # is clearing the certificate, which takes the key with it — a
+        # key left behind alone would only make the pair invalid.
+        if "tls_default_key" in vals and not vals["tls_default_key"]:
+            del vals["tls_default_key"]
+        if "tls_default_cert" in vals and not vals["tls_default_cert"]:
+            vals["tls_default_key"] = False
         # Endpoint change → forbid while jobs are running, then drop
         # the captured SSH host key so the next connection forces a
         # fresh TOFU. The previously captured key was bound to the
@@ -2408,6 +2416,100 @@ class CloudHost(models.Model):
             self.traefik_config_yml or "", ranges, self.block_direct_access,
             self.behind_cdn,
         )
+
+    @api.constrains("tls_default_cert", "tls_default_key")
+    def _check_tls_default_pair(self):
+        """Refuse a default certificate that cannot serve traffic.
+
+        Traefik answers every handshake with a throwaway certificate when
+        its default one does not match its key — including the CDN's,
+        which then serves an error to everyone. The mismatch is invisible
+        until then, so it is refused where somebody can still see what
+        they pasted.
+
+        :raise ValidationError: on a half pair, an unreadable PEM, or a
+            key that belongs to a different certificate.
+        """
+        for host in self:
+            problem = self._tls_pair_error(
+                host.tls_default_cert, host.tls_default_key,
+            )
+            if problem:
+                raise ValidationError(problem)
+
+    @api.model
+    def _tls_pair_error(self, cert, key):
+        """Return why this certificate and key cannot serve traffic, or None.
+
+        Worded for whoever pasted the pair. Shared with any module that
+        stores a pair of its own (the SaaS zone certificate), so the same
+        mistake reads the same everywhere. Callable before writing, which
+        matters: a constraint raises at flush, after the row has already
+        changed inside the transaction.
+
+        :param str cert: PEM certificate, possibly empty
+        :param str key: PEM private key, possibly empty
+        :rtype: str | None
+        """
+        problem = tls_names.pair_problem(cert, key)
+        if problem is None:
+            return None
+        return {
+            "half": _(
+                "A certificate and its private key go together: supply "
+                "both, or neither."
+            ),
+            "certificate": _(
+                "That does not read as a PEM certificate. Paste the block "
+                "that begins with -----BEGIN CERTIFICATE-----."
+            ),
+            "key": _(
+                "That does not read as a PEM private key, or it is "
+                "protected by a passphrase, which is not supported."
+            ),
+            "mismatch": _(
+                "That private key does not belong to that certificate. A "
+                "host given a mismatched pair serves no valid certificate "
+                "at all."
+            ),
+        }[problem]
+
+    @api.model
+    def _tls_certificate_info(self, cert):
+        """Describe a PEM certificate for the panel, or return None.
+
+        :param str cert: PEM certificate, possibly empty
+        :return: names, issuer, fingerprint and ``expires_on`` as an Odoo
+            datetime string
+        :rtype: dict | None
+        """
+        info = tls_names.certificate_info(cert)
+        if info is None:
+            return None
+        return info | {
+            "expires_on": fields.Datetime.to_string(info["expires_on"]),
+        }
+
+    def _declares_store_certificates(self):
+        """Return whether this host's ``config.yml`` loads certificates.
+
+        RB-12 puts certificates on the host by hand and lists them under
+        ``tls.certificates`` in the dynamic configuration, which lets one
+        host serve several of them by name. The panel cannot read those
+        files, so the declaration is all it can know — and enough to stop
+        it from claiming the host holds nothing.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        try:
+            document = yaml.safe_load(self.traefik_config_yml or "") or {}
+        except yaml.YAMLError:
+            return False
+        tls = document.get("tls") if isinstance(document, dict) else None
+        if not isinstance(tls, dict):
+            return False
+        return bool(tls.get("certificates"))
 
     def _effective_tls_default(self):
         """Return the certificate this host serves by default.

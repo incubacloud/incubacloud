@@ -214,6 +214,18 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "-----BEGIN CERTIFICATE-----"
+msgstr "-----BEGIN CERTIFICATE-----"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "-----BEGIN PRIVATE KEY-----"
+msgstr "-----BEGIN PRIVATE KEY-----"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "-----BEGIN RSA PRIVATE KEY-----\n"
@@ -393,6 +405,14 @@ msgid ""
 msgstr ""
 "<span style=\"background:#fef3c7;color:#d97706;font-size:11px;padding:2px "
 "8px;border-radius:10px;\">advertencia</span>"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"A certificate and its private key go together: supply both, or neither."
+msgstr ""
+"Un certificado y su clave privada van juntos: indique ambos, o ninguno."
 
 #. module: incubacloud
 #. odoo-python
@@ -1115,6 +1135,12 @@ msgid "Auto-update modules on rebuild"
 msgstr "Auto-actualizar módulos al reconstruir"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+msgid "Automatic"
+msgstr "Automático"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_domain__cert_resolver__auto
 msgid "Automatic (decided by the host)"
 msgstr "Automático (lo decide el host)"
@@ -1138,6 +1164,27 @@ msgid ""
 msgstr ""
 "La configuración automática requiere HTTPS. Por favor crea la aplicación "
 "GitHub manualmente y pega las credenciales a continuación."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"Automatic: the host decides — its own certificate when a CDN answers for "
+"this name and that certificate covers it, Let's Encrypt otherwise. Let's "
+"Encrypt: issue a certificate automatically. Existing certificate: serve a "
+"certificate held on the host (its default one on Host › Traefik, or one "
+"loaded by hand per RB-12); the deploy stops if the host holds none. No TLS: "
+"no TLS config for this router; the host proxy still redirects HTTP to HTTPS,"
+" so in practice this ends up self-signed."
+msgstr ""
+"Automático: lo decide el host — su propio certificado cuando un CDN responde"
+" por este nombre y ese certificado lo cubre; Let's Encrypt en los demás "
+"casos. Let's Encrypt: emite un certificado automáticamente. Certificado "
+"existente: sirve un certificado que ya tiene el host (el suyo por defecto en"
+" Host › Traefik, o uno cargado a mano según RB-12); el despliegue se detiene"
+" si el host no tiene ninguno. Sin TLS: sin configuración TLS para este "
+"router; el proxy del host sigue redirigiendo HTTP a HTTPS, así que en la "
+"práctica acaba en autofirmado."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2699,6 +2746,12 @@ msgid "Count"
 msgstr "Cantidad"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Covers"
+msgstr "Cubre"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__cpu_over_threshold_streak
 msgid "Cpu Over Threshold Streak"
 msgstr "Racha de CPU sobre umbral"
@@ -3087,6 +3140,18 @@ msgid "Default backup backend for all production instances in this project."
 msgstr ""
 "Backend de backup por defecto para todas las instancias de producción de "
 "este proyecto."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Default certificate"
+msgstr "Certificado por defecto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Default certificate key"
+msgstr "Clave del certificado por defecto"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__odoo_initial_lang
@@ -3936,7 +4001,7 @@ msgstr "Exclusiones"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Existing certificate"
 msgstr "Certificado existente"
 
@@ -6527,26 +6592,10 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_domain__cert_resolver__letsencrypt
 msgid "Let's Encrypt"
 msgstr "Let's Encrypt"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid ""
-"Let's Encrypt: issue a certificate automatically. Existing certificate: "
-"serve whatever the host's Traefik already holds (e.g. a wildcard) — it falls"
-" back to a self-signed one if nothing is loaded. No TLS: no TLS config for "
-"this router; the host proxy still redirects HTTP to HTTPS, so in practice "
-"this also ends up self-signed."
-msgstr ""
-"Let's Encrypt: emite un certificado automáticamente. Certificado existente: "
-"sirve el que ya tenga el Traefik del host (por ejemplo un comodín); si no "
-"hay ninguno cargado, recurre a uno autofirmado. Sin TLS: sin configuración "
-"TLS para este router; el proxy del host sigue redirigiendo HTTP a HTTPS, así"
-" que en la práctica también acaba en autofirmado."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7480,7 +7529,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_domain__cert_resolver__none
 msgid "No TLS"
 msgstr "Sin TLS"
@@ -9180,6 +9229,16 @@ msgstr "Se llega a través de un CDN"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Reached through a CDN"
 msgstr "Se llega a través de un CDN"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Reaches the host with Push Trusted Proxy Settings or Full Setup. Clear the "
+"certificate to remove both."
+msgstr ""
+"Llega al host con «Push Trusted Proxy Settings» o «Configuración completa». "
+"Vacíe el certificado para quitar ambos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11067,9 +11126,39 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"That does not read as a PEM certificate. Paste the block that begins with "
+"-----BEGIN CERTIFICATE-----."
+msgstr ""
+"Eso no se lee como un certificado PEM. Pegue el bloque que empieza por "
+"-----BEGIN CERTIFICATE-----."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"That does not read as a PEM private key, or it is protected by a passphrase,"
+" which is not supported."
+msgstr ""
+"Eso no se lee como una clave privada PEM, o está protegida por una frase de "
+"paso, que no se admite."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "That link cannot be used: %s."
 msgstr "Ese enlace no se puede usar: %s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
+"That private key does not belong to that certificate. A host given a "
+"mismatched pair serves no valid certificate at all."
+msgstr ""
+"Esa clave privada no pertenece a ese certificado. Un host al que se le da un"
+" par que no encaja no sirve ningún certificado válido."
 
 #. module: incubacloud
 #. odoo-python
@@ -13906,6 +13995,12 @@ msgstr "· SSH ✓"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "· expires"
+msgstr "· caduca"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "— None —"
 msgstr "— Ninguno —"
@@ -13997,10 +14092,25 @@ msgstr "— selecciona —"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"— served when a router has none of its own; what a CDN in front connects to"
+msgstr ""
+"— se sirve cuando un router no tiene uno propio; es al que se conecta un CDN"
+" que esté delante"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "— set a quota below to see a % bar and enable alerts."
 msgstr ""
 "— configura una cuota abajo para ver la barra de % y activar los avisos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "— stored; paste a new one to replace it"
+msgstr "— guardada; pegue una nueva para sustituirla"
 
 #. module: incubacloud
 #. odoo-javascript

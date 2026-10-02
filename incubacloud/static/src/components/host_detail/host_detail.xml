@@ -539,6 +539,28 @@
                                         hasValue="state.has_traefik_panel_password"
                                         onChange="(val) => this.onPasswordChange('traefik_panel_password', val)"/>
                                 </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Default certificate <span class="rl-opt">— served when a router has none of its own; what a CDN in front connects to</span></label>
+                                    <textarea rows="5" spellcheck="false"
+                                              placeholder="-----BEGIN CERTIFICATE-----"
+                                              t-att-value="state.form.tls_default_cert"
+                                              t-on-input="(ev) => this.onInput('tls_default_cert', ev)"/>
+                                    <t t-if="state.tls_default_info">
+                                        <span class="ic-form-note">
+                                            Covers <t t-esc="state.tls_default_info.hostnames.join(', ') || '—'"/>
+                                            · expires <t t-esc="state.tls_default_info.expires_on"/>
+                                            · <t t-esc="state.tls_default_info.issuer"/>
+                                        </span>
+                                    </t>
+                                </div>
+                                <div class="rl-frow rl-full">
+                                    <label>Default certificate key <span class="rl-opt" t-if="state.has_tls_default_key">— stored; paste a new one to replace it</span></label>
+                                    <textarea rows="5" spellcheck="false" autocomplete="off"
+                                              placeholder="-----BEGIN PRIVATE KEY-----"
+                                              t-att-value="state.form.tls_default_key"
+                                              t-on-input="(ev) => this.onInput('tls_default_key', ev)"/>
+                                    <span class="ic-form-note">Reaches the host with Push Trusted Proxy Settings or Full Setup. Clear the certificate to remove both.</span>
+                                </div>
                             </div>
                             <div class="ic-file-tabs">
                                 <t t-foreach="traefikFiles" t-as="f" t-key="f.key">

@@ -535,3 +535,160 @@ class TestBackupHooksDefault(TransactionCase):
         content = self._make_executor(inst)._backup_env_content()
         # Default 3M matches copier default → no override line
         self.assertNotIn("JOB_800_WHAT", content)
+
+
+# ── Tier 2: TLS preflight (what a domain asks for vs what the host holds) ────
+
+
+class TestTlsPreflight(TransactionCase):
+    """Each domain's certificate choice is checked against what the host
+    can give before anything reaches the host, and written to the job log
+    so the decision ``auto`` took is visible without reading code."""
+
+    def setUp(self):
+        super().setUp()
+        self._seq = 0
+
+    def _host(self, **vals):
+        """Return a host instances can be placed on."""
+        self._seq += 1
+        return self.env["cloud.host"].create({
+            "name": f"tls-preflight-{self._seq}",
+            "ip_address": f"198.51.100.{100 + self._seq}",
+            "user": "root",
+            "wildcard_domain": "example.com",
+        } | vals)
+
+    def _executor_with(self, host, executor_cls=None, **domain_vals):
+        """Return an executor for one production domain on *host*.
+
+        :param executor_cls: executor class to build, the deploy one by
+            default
+        """
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            DeployInstanceExecutor,
+        )
+
+        executor_cls = executor_cls or DeployInstanceExecutor
+        self._seq += 1
+        project = self.env["cloud.project"].create(
+            {"name": f"TlsPre-{self._seq}"},
+        )
+        inst = self.env["cloud.instance"].create({
+            "name": f"tls-pre-{self._seq}",
+            "project_id": project.id,
+            "environment": "production",
+            "host_id": host.id,
+            "domain_ids": [
+                (0, 0, {"hostname": "c.example.com"} | domain_vals),
+            ],
+        })
+        executor = executor_cls.__new__(executor_cls)
+        executor.env = self.env
+        executor._log_buffer = []
+        job = MagicMock(spec=type(self.env["cloud.job"]))
+        job.instance_id = inst
+        executor.job = job
+        return executor
+
+    def _log(self, executor):
+        """Return the system lines the executor wrote."""
+        return [msg for msg, _kind in executor._log_buffer]
+
+    def test_custom_without_a_host_certificate_fails_before_shipping(self):
+        executor = self._executor_with(self._host(), cert_resolver="custom")
+        with self.assertRaisesRegex(RuntimeError, "c.example.com"):
+            executor._preflight_tls_check()
+
+    def test_custom_with_a_covering_certificate_passes(self):
+        cert, key = make_pair(["c.example.com"])
+        executor = self._executor_with(
+            self._host(tls_default_cert=cert, tls_default_key=key),
+            cert_resolver="custom",
+        )
+        executor._preflight_tls_check()
+        self.assertIn("TLS for c.example.com: host's certificate",
+                      self._log(executor))
+
+    def test_custom_not_covering_the_name_warns_but_ships(self):
+        """A wildcard or an internal CA can be right in ways the check
+        cannot see, so a mismatch is said, not refused."""
+        cert, key = make_pair(["other.example.com"])
+        executor = self._executor_with(
+            self._host(tls_default_cert=cert, tls_default_key=key),
+            cert_resolver="custom",
+        )
+        executor._preflight_tls_check()
+        self.assertTrue(
+            any("does not cover" in line for line in self._log(executor)),
+        )
+
+    def test_custom_with_certificates_declared_in_config_yml_ships(self):
+        """RB-12 loads certificates by hand and declares them in the
+        host's ``config.yml``; the panel cannot read those files, so it
+        trusts the declaration instead of refusing the deploy."""
+        host = self._host()
+        host.traefik_config_yml = (
+            (host.traefik_config_yml or "")
+            + "\ntls:\n  certificates:\n"
+            "    - certFile: /etc/certs/fullchain.pem\n"
+            "      keyFile: /etc/certs/privkey.pem\n"
+        )
+        executor = self._executor_with(host, cert_resolver="custom")
+        executor._preflight_tls_check()
+        self.assertIn(
+            "TLS for c.example.com: a certificate declared in the host's "
+            "config.yml (not checked)",
+            self._log(executor),
+        )
+
+    def test_auto_names_the_host_certificate_when_a_cdn_answers(self):
+        cert, key = make_pair(["c.example.com"])
+        executor = self._executor_with(
+            self._host(
+                behind_cdn=True, tls_default_cert=cert, tls_default_key=key,
+            ),
+            cert_resolver="auto",
+        )
+        executor._preflight_tls_check()
+        self.assertIn(
+            "TLS for c.example.com: automatic → host's certificate "
+            "(a CDN answers for it)",
+            self._log(executor),
+        )
+
+    def test_auto_names_lets_encrypt_on_a_direct_host(self):
+        executor = self._executor_with(self._host(), cert_resolver="auto")
+        executor._preflight_tls_check()
+        self.assertIn(
+            "TLS for c.example.com: automatic → Let's Encrypt",
+            self._log(executor),
+        )
+
+    def test_deploy_and_rebuild_check_before_touching_the_host(self):
+        """Both entry points that ship copier answers run the check first,
+        so a refused ``custom`` never reaches the upload."""
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        from odoo.addons.incubacloud.models.deploy_instance_executor import (
+            DeployInstanceExecutor,
+        )
+        from odoo.addons.incubacloud.models.rebuild_instance_executor import (
+            RebuildInstanceExecutor,
+        )
+
+        for cls in (DeployInstanceExecutor, RebuildInstanceExecutor):
+            executor = self._executor_with(
+                self._host(),
+                executor_cls=cls,
+                cert_resolver="custom",
+                hostname=f"{cls.__name__.lower()}.example.com",
+            )
+            with (
+                patch.object(cls, "_preflight_addon_check", new_callable=AsyncMock),
+                patch.object(cls, "_upload_copier_files", new_callable=AsyncMock) as upload,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "holds none"):
+                    asyncio.run(executor.before_execute(transport=None))
+                upload.assert_not_called()

@@ -328,17 +328,32 @@
   // at 460px inside a 1170px form, so the same screen showed a select at
   // 575px, a number at 120px and a textarea at 100%, none of them the
   // width of the form.
+  //
+  // The row styles its OWN caption and field: a direct child, or a
+  // class-less control in a plain wrapper (language picker, rl-frow-inline).
+  // A control that carries a class inside a wrapper belongs to a component
+  // (domain row, TagSelector, PasswordInput, SearchSelect, warm-pool
+  // stepper, checkbox labels) and keeps that component's CSS. Reaching them
+  // too painted every one over — the input selector outweighs any
+  // single-class rule — and broke the domain row outright: its certificate
+  // select went 100% wide and squeezed both text fields to nothing.
   .rl-frow { margin-block-end:16px;
-    label { display:block; font-family:var(--rl-fm); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
+    > label { display:block; font-family:var(--rl-fm); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase;
       color:var(--rl-muted); margin-block-end:6px; }
     // Checkboxes and radios are excluded: they have an intrinsic size,
     // and stretching one to 100% painted it as an empty text box with
     // its label off to the right (visible on New Host).
-    input:not([type=checkbox]):not([type=radio]), select, textarea {
+    // Kept as separate selectors (no ``:is()``): ``:is`` takes its heaviest
+    // argument, which would lift the select/textarea weight to the input's
+    // and beat rules such as ``.ic-app select.ic-ann-multi`` that win today.
+    > input:not([type=checkbox]):not([type=radio]), > select, > textarea,
+    input:not([type=checkbox]):not([type=radio]):not([class]), select:not([class]), textarea:not([class]) {
       width:100%; background:var(--rl-bg); border:1px solid var(--rl-line2);
       border-radius:var(--rl-rsm); padding-block:9px; padding-inline:12px; color:var(--rl-fg); font-family:var(--rl-fb); font-size:13.5px; outline:none;
       &:focus { border-color:var(--rl-green); box-shadow:0 0 0 3px var(--rl-green-soft); } }
-    textarea { font-family:var(--rl-fm); resize:vertical; min-block-size:90px; }
+    // Listed with the ``:not([class])`` form too: that branch of the field
+    // rule above outweighs a bare ``textarea``, and would set the body font.
+    textarea, textarea:not([class]) { font-family:var(--rl-fm); resize:vertical; min-block-size:90px; }
     .rl-req { color:var(--rl-green); }
     .rl-opt { color:var(--rl-faint); text-transform:none; letter-spacing:0; } }
   // A field with a button beside it: the field takes what is left.

@@ -49,6 +49,8 @@ const EMPTY_FORM = () => ({
     http_conn_rate:           0,
     trusted_proxy_ranges:     "",
     block_direct_access:      false,
+    tls_default_cert:         "",
+    tls_default_key:          "",
     whitelist:                [...DEFAULT_WHITELIST],
     newWhitelistEntry:        "",
 });
@@ -90,6 +92,10 @@ export class HostDetail extends Component {
             has_key_file:              false,
             has_known_hosts_key:       false,
             has_traefik_panel_password: false,
+            // The default certificate's key is write-only: the server says
+            // whether one is stored, and describes the certificate.
+            has_tls_default_key:       false,
+            tls_default_info:          null,
             trusting_host_key:         false,
             // Code of the pluggable action being enqueued, "" when idle.
             actionBusy: "",
@@ -263,9 +269,13 @@ export class HostDetail extends Component {
                 behind_cdn:               host.behind_cdn || false,
                 trusted_proxy_ranges:     host.trusted_proxy_ranges || "",
                 block_direct_access:      host.block_direct_access || false,
+                tls_default_cert:         host.tls_default_cert || "",
+                tls_default_key:          "",
                 whitelist:                host.whitelist || [],
                 newWhitelistEntry:        "",
             };
+            this.state.has_tls_default_key = host.has_tls_default_key || false;
+            this.state.tls_default_info = host.tls_default_info || null;
             // Read-only, derived server-side: what the host is actually
             // filtered against, versus the override box above it.
             this.state.effectiveProxyRanges =
@@ -641,14 +651,33 @@ export class HostDetail extends Component {
             } else {
                 await rpc("/cloud/save_host", { host_id: this.props.host_id, vals });
                 this.state.host.name = vals.name;
+                await this._refreshDefaultCertificate();
                 this._snapshotForm();
                 this.env.toast?.success(_t("Changes saved"));
             }
         } catch (e) {
-            this.env.toast?.error(this.isNew ? _t("Failed to create host.") : _t("Failed to save host."));
+            // A refused certificate says why (half a pair, a key from
+            // another certificate); a generic message would hide that.
+            const reason = e?.data?.message;
+            this.env.toast?.error(
+                reason || (this.isNew ? _t("Failed to create host.") : _t("Failed to save host."))
+            );
         } finally {
             this.state.saving = false;
         }
+    }
+
+    /**
+     * Re-read what the server now holds for the default certificate.
+     *
+     * After a save the pasted key must leave the form (it is never shown
+     * again) and the description must follow the certificate just stored.
+     */
+    async _refreshDefaultCertificate() {
+        const host = await rpc("/cloud/get_host", { host_id: this.props.host_id });
+        this.state.form.tls_default_key = "";
+        this.state.has_tls_default_key = host.has_tls_default_key || false;
+        this.state.tls_default_info = host.tls_default_info || null;
     }
 
     async addWhitelistEntry() {

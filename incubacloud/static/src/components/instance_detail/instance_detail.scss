@@ -948,35 +948,34 @@
     align-items: center;
 }
 
-.ic-domain-hostname {
-    flex: 2;
-    padding: 6px 10px;
-    background: rgba(var(--rl-fg-rgb), 0.06);
-    border: 1px solid rgba(var(--rl-fg-rgb), 0.15);
-    border-radius: 6px;
-    color: $text-primary;
-    font-size: 0.8125rem;
+// Hostname and redirect wear the same field look as every other control on
+// the form (`.rl-frow` in relay.scss), built from the theme tokens so they
+// read the same in light and dark (the certificate picker is an RlSelect,
+// which already does). The translucent fills they had before looked
+// disabled on the light theme.
+.ic-domain-hostname,
+.ic-domain-redirect {
+    padding: 9px 12px;
+    background: var(--rl-bg);
+    border: 1px solid var(--rl-line2);
+    border-radius: var(--rl-rsm);
+    color: var(--rl-fg);
+    font-family: var(--rl-fb);
+    font-size: 13.5px;
+    outline: none;
 
     &:focus {
-        outline: none;
-        border-color: rgba(var(--rl-green-rgb), 0.5);
+        border-color: var(--rl-green);
+        box-shadow: 0 0 0 3px var(--rl-green-soft);
     }
+}
+
+.ic-domain-hostname {
+    flex: 2;
 }
 
 .ic-domain-redirect {
     flex: 1;
-    padding: 6px 10px;
-    background: rgba(var(--rl-fg-rgb), 0.04);
-    border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
-    border-radius: 6px;
-    color: $text-secondary;
-    font-size: 0.75rem;
-
-    &:focus {
-        outline: none;
-        border-color: rgba(var(--rl-green-rgb), 0.5);
-        color: $text-primary;
-    }
 }
 
 // 301 toggle. Only meaningful when a redirect target is set, so it dims
@@ -1008,21 +1007,12 @@
     }
 }
 
+// Wraps the certificate RlSelect. A fixed width, wide enough for the
+// longest label in either language: sized by its content, the picker
+// would resize the row every time the choice changed.
 .ic-domain-cert {
-    flex-shrink: 0;
-    padding: 6px 8px;
-    background: rgba(var(--rl-fg-rgb), 0.04);
-    border: 1px solid rgba(var(--rl-fg-rgb), 0.1);
-    border-radius: 6px;
-    color: $text-secondary;
-    font-size: 0.75rem;
-    cursor: pointer;
-
-    &:focus {
-        outline: none;
-        border-color: rgba(var(--rl-green-rgb), 0.5);
-        color: $text-primary;
-    }
+    flex: 0 0 auto;
+    inline-size: 13rem;
 }
 
 .ic-domain-remove {
