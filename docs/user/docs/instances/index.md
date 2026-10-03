@@ -131,7 +131,8 @@ run a module update: if the staging's branch lacks a module the restored databas
 has installed, use a rebuild afterwards.
 
 Cloning a production to a new staging (**Project → Clone to staging**) applies
-the same neutralization.
+the same neutralization, and always takes a live dump: a production created
+today has no backup to copy until its first nightly run.
 
 ## Auto-update
 
@@ -157,8 +158,8 @@ anything:
 
 1. A staging named `pr-<number>` is created on the **same host** as that
    production, following the pull request's branch.
-2. It receives a copy of the production's data — the latest backup, or a live
-   dump when the production has no backup destination — **neutralized** exactly
+2. It receives a copy of the production's data as it is at that moment — a
+   live dump, so it works even before the first backup — **neutralized** exactly
    like [Refresh from production](#refresh-from-production): scheduled actions
    and outgoing mail servers disabled, test banner showing.
 3. It gets an address of its own under the host's wildcard domain
