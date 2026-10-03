@@ -82,7 +82,10 @@ case "$op" in
     boot-test)
         ic_require_args 5 "$#" \
             "rebuild.sh boot-test <dir> <inst_id> <project> <pg_user> <pg_version> <dbname>"
-        inst_id="$1"; project="$2"; pg_user="$3"; pg_version="$4"; dbname="$5"
+        # <project> is accepted and no longer read: the boot test stopped
+        # going through the project network when it got a network of its
+        # own. Kept so the callers' argv does not have to change.
+        inst_id="$1"; pg_user="$3"; pg_version="$4"; dbname="$5"
         # Boot the new image against a throwaway physical clone of the
         # production DB before touching the live stack. Every path is
         # suffixed by the instance id so concurrent rebuilds never overlap.
@@ -90,6 +93,8 @@ case "$op" in
         backup_in_db="/tmp/ic_boot_backup_${inst_id}"
         clone_on_host="/tmp/ic_boot_${inst_id}"
         pg_container="ic_boot_pg_${inst_id}"
+        boot_net="ic_boot_${inst_id}"
+        odoo_container="ic_boot_odoo_${inst_id}"
 
         # Whatever this test disturbs has to come back up, so the restore
         # runs from a trap rather than from the tail of the block: with
@@ -108,7 +113,9 @@ case "$op" in
             2>/dev/null | tr '\n' ' ')"
         # shellcheck disable=SC2317  # reached through the EXIT trap below
         ic_boot_restore() {
+            docker rm -f "$odoo_container" 2>/dev/null || true
             docker rm -f "$pg_container" 2>/dev/null || true
+            docker network rm "$boot_net" 2>/dev/null || true
             docker run --rm -v /tmp:/host_tmp alpine \
                 rm -rf "/host_tmp/ic_boot_${inst_id}" 2>/dev/null || true
             if [ -n "${running_before// /}" ]; then
@@ -140,51 +147,66 @@ case "$op" in
         # container (the host user lacks CAP_CHOWN).
         docker run --rm -v "$clone_on_host:/data" alpine chown -R 70:70 /data
 
-        # The throwaway PG is reached *through* the project network's
-        # gateway, never from inside it. A container holding an endpoint
-        # on that network blocks any reconciliation docker compose
-        # decides to do mid-test: compose cannot remove the network to
-        # recreate it, so the step dies with 'has active endpoints' and
-        # leaves the stack half stopped — twice on 2026-08-13, taking
-        # every tenant on the host down with it. Published on the gateway
-        # address alone, the PG is reachable from every container on that
-        # bridge and from nowhere else, while compose stays free to
-        # reconcile whatever it likes.
+        # The throwaway PG lives on a network of its own, never on the
+        # project's. A container holding an endpoint on the project
+        # network blocks any reconciliation docker compose decides to do
+        # mid-test: compose cannot remove the network to recreate it, so
+        # the step dies with 'has active endpoints' and leaves the stack
+        # half stopped — twice on 2026-08-13, taking every tenant on the
+        # host down with it.
+        #
+        # It used to be published on the project network's gateway
+        # instead. That cannot work on a staging: test.yaml declares
+        # that network ``internal``, Docker drops whatever leaves an
+        # internal bridge, and the published port is unreachable from
+        # it. The first staging rebuild in production waited for it
+        # forever (2026-10-03). The boot container joins this network
+        # instead, which works whatever the project's networks are.
         #
         # postgres-autoconf (not vanilla postgres:*-alpine) bundles
         # pgvector, which the cloned Odoo 19 cluster needs to open its
         # ``ai`` embedding index.
-        gw="$(docker network inspect "${project}_default" \
-            -f '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
-        # Failing here is safe and deliberate: the caller marks the step
-        # stop_on_failure, so the rebuild aborts with the instance still
-        # running its previous image. Falling back to the old on-network
-        # behaviour would reintroduce the outage silently.
-        [ -n "$gw" ] || ic_die "cannot resolve the gateway of ${project}_default"
-
-        docker rm -f "$pg_container" 2>/dev/null || true
-        docker run -d --name "$pg_container" \
-            -p "$gw::5432" \
+        docker rm -f "$odoo_container" "$pg_container" 2>/dev/null || true
+        docker network rm "$boot_net" 2>/dev/null || true
+        docker network create "$boot_net"
+        docker run -d --name "$pg_container" --network "$boot_net" \
             -v "$clone_on_host:/var/lib/postgresql/data" \
             --user postgres --entrypoint postgres \
             "ghcr.io/tecnativa/postgres-autoconf:${pg_version}-alpine" \
             -D /var/lib/postgresql/data
-        sleep 5
-
-        # Docker picked the host port; ask it which one.
-        pg_port="$(docker port "$pg_container" 5432 | head -1 | sed 's/.*://')"
-        [ -n "$pg_port" ] || ic_die "throwaway postgres published no port"
 
         # The boot test itself: click-odoo-update against the throwaway PG
         # verifies the new image opens the DB. ``set +e`` so a boot
         # failure is captured and reported rather than aborting before
         # cleanup — the whole point is to fail *without* touching the live
         # stack. Doodba reads PGHOST/PGPORT through libpq, so pointing at
-        # the gateway needs no config change inside the image.
+        # the throwaway needs no config change inside the image.
+        #
+        # ``docker compose run`` cannot attach a container to a network
+        # outside the project, so it starts detached and joins the boot
+        # network right after. Doodba's own wait for Postgres has no
+        # deadline — an unreachable database hung the job for good — so
+        # it is replaced by a bounded one; and the unaccent hook, which
+        # would query before the network is joined, is skipped: the
+        # clone already carries the extension.
         set +e
-        docker compose run --rm -e "PGHOST=$gw" -e "PGPORT=$pg_port" odoo \
-            click-odoo-update --database "$dbname"
+        # shellcheck disable=SC2016  # expanded by the container's bash
+        docker compose run -d --name "$odoo_container" \
+            -e "PGHOST=$pg_container" -e PGPORT=5432 \
+            -e WAIT_DB=false -e UNACCENT=false odoo \
+            bash -c 'for _ in $(seq 120); do
+                         psql -l >/dev/null 2>&1 \
+                             && exec click-odoo-update --database "$0"
+                         sleep 1
+                     done
+                     echo "boot test: the throwaway postgres never answered" >&2
+                     exit 1' "$dbname" \
+            && docker network connect "$boot_net" "$odoo_container" \
+            && docker logs -f "$odoo_container"
         ic_test_exit=$?
+        if [ "$ic_test_exit" -eq 0 ]; then
+            ic_test_exit="$(docker wait "$odoo_container")"
+        fi
         set -e
         # Cleanup and stack restore both run from the EXIT trap.
         exit "$ic_test_exit"

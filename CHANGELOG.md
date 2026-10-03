@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.150] — 2026-10-03
+
+### Fixed
+
+- **A staging can be rebuilt.** Before swapping images, a rebuild boots
+  the new one against a throwaway copy of the database. That copy was
+  published on the gateway of the project's network, which a staging
+  cannot reach: its compose file makes that network `internal`, and
+  Docker drops what leaves an internal bridge. Doodba then waits for
+  its database with no deadline, so the first staging rebuild in
+  production hung for good instead of failing. The throwaway database
+  now runs on a network of its own, which the boot container joins —
+  the same path for every instance, production included, and still
+  never an endpoint on the project's network (2026-08-13). Verified end
+  to end against both network layouts. The wait for the database now
+  gives up after two minutes with a clear message, so a database that
+  never answers fails the step instead of hanging the job.
+
 ## [1.0.149] — 2026-10-03
 
 ### Fixed

@@ -8,10 +8,17 @@ remove it — ``has active endpoints`` — and the step died leaving ``db``
 and ``smtp`` stopped under a live ``odoo``.
 
 Shell is not reachable from the Python suite, so these tests pin the
-three properties of the fixed script that the incident turned into
+properties of the fixed script that the incident turned into
 invariants. They are cheap and they fail loudly the day someone
 reintroduces ``--network "${project}_default"`` because it reads like
 the obvious way to let the two containers talk.
+
+The first fix published the Postgres on the project network's gateway,
+which a staging cannot reach — test.yaml makes that network
+``internal`` — and doodba waits for its database forever: the first
+staging rebuild in production hung for good (2026-10-03). The Postgres
+now has a network of its own, which the boot container joins, and the
+wait has a deadline.
 """
 from pathlib import Path
 
@@ -51,21 +58,42 @@ class TestRebuildBootTestIsolation(BaseCase):
             "tenant is left half stopped.",
         )
 
-    def test_the_throwaway_postgres_is_published_on_the_gateway(self):
-        """Reachable from that bridge, and from nowhere else."""
-        self.assertIn('-p "$gw::5432"', self.block)
-        self.assertIn("(index .IPAM.Config 0).Gateway", self.block)
+    def test_the_throwaway_postgres_has_a_network_of_its_own(self):
+        """Not the project's, and not published on any host address.
 
-    def test_the_boot_run_points_libpq_at_the_gateway(self):
-        """Both halves are needed: the port is whatever docker picked."""
-        self.assertIn('-e "PGHOST=$gw"', self.block)
-        self.assertIn('-e "PGPORT=$pg_port"', self.block)
+        Publishing it on the project network's gateway was the previous
+        answer, and it cannot reach a staging: test.yaml makes that
+        network ``internal`` and Docker drops what leaves it. The first
+        staging rebuild in production waited forever (2026-10-03).
+        """
+        self.assertIn('docker network create "$boot_net"', self.block)
+        self.assertIn('--network "$boot_net"', self.block)
+        self.assertNotIn("-p ", self.block)
+        self.assertNotIn(".Gateway", self.block)
 
-    def test_an_unresolvable_gateway_aborts_instead_of_falling_back(self):
-        """Silently reverting to the old behaviour would hide the outage."""
+    def test_the_boot_run_joins_that_network_and_points_libpq_at_it(self):
+        """``compose run`` cannot attach outside the project, so it joins."""
         self.assertIn(
-            'cannot resolve the gateway of ${project}_default', self.block,
+            'docker network connect "$boot_net" "$odoo_container"',
+            self.block,
         )
+        self.assertIn('-e "PGHOST=$pg_container"', self.block)
+
+    def test_the_wait_for_postgres_has_a_deadline(self):
+        """Doodba's own wait loops forever; an unreachable DB hung the job."""
+        self.assertIn("-e WAIT_DB=false", self.block)
+        self.assertIn("$(seq 120)", self.block)
+        self.assertIn("the throwaway postgres never answered", self.block)
+
+    def test_the_trap_removes_what_the_test_created(self):
+        """The boot container and the network go with the throwaway PG."""
+        restore = self.block[
+            self.block.index("ic_boot_restore() {"):
+            self.block.index("trap ic_boot_restore EXIT")
+        ]
+        self.assertIn('docker rm -f "$odoo_container"', restore)
+        self.assertIn('docker rm -f "$pg_container"', restore)
+        self.assertIn('docker network rm "$boot_net"', restore)
 
     def test_the_stack_is_restored_from_a_trap(self):
         """``set -e`` must not be able to skip the restore.
