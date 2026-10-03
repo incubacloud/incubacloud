@@ -175,7 +175,111 @@ class TestStagingMailCatcherIsNotPublished(_CatcherCase):
         self.assertNotIn("environment", data["services"]["smtp"])
 
 
+#: What the template (v9.7.0) makes a staging's Odoo routers reference,
+#: read off the first staging in production. Only ``override-ws-headers``
+#: is declared on Odoo itself; the rest live on ``smtp``.
+_ODOO_ROUTER_MIDDLEWARES = (
+    "addSTS", "buffering", "compress", "forbid-crawlers", "forceSecure",
+)
+
+
+class TestStagingOdooRoutersKeepTheirMiddlewares(_CatcherCase):
+    """Taking ``smtp`` off Traefik must not take Odoo's routes with it.
+
+    test.yaml declares the middlewares the Odoo routers use on ``smtp``;
+    with ``smtp`` ignored they stop existing, Traefik drops every Odoo
+    router and the staging answers 404 — every staging from 2026-09-21
+    until the first one in production (2026-10-03).
+    """
+
+    def _middleware_labels(self, data):
+        """Return the odoo service's middleware labels from *data*."""
+        return {
+            key: value
+            for key, value in data["services"]["odoo"]["labels"].items()
+            if key.startswith("traefik.http.middlewares.")
+        }
+
+    def _prefix(self):
+        """The template's name prefix for this staging's middlewares."""
+        return (
+            "traefik.http.middlewares."
+            f"{self.staging.doodba_project_name}-19-0-test"
+        )
+
+    def test_odoo_declares_every_middleware_its_routers_use(self):
+        self.staging.odoo_version = "19.0"
+        _raw, data = self._override(
+            self._executor(
+                DeployInstanceExecutor, "deploy_instance", self.staging,
+            )
+        )
+        declared = self._middleware_labels(data)
+        for name in _ODOO_ROUTER_MIDDLEWARES:
+            self.assertTrue(
+                any(key.startswith(f"{self._prefix()}-{name}.") for key in declared),
+                f"middleware {name!r} must be declared on odoo",
+            )
+
+    def test_the_values_are_the_templates(self):
+        """Different values would change what the staging serves."""
+        self.staging.odoo_version = "19.0"
+        _raw, data = self._override(
+            self._executor(
+                DeployInstanceExecutor, "deploy_instance", self.staging,
+            )
+        )
+        declared = self._middleware_labels(data)
+        p = self._prefix()
+        self.assertEqual(declared[f"{p}-forceSecure.redirectScheme.scheme"], "https")
+        self.assertEqual(declared[f"{p}-forceSecure.redirectScheme.permanent"], "true")
+        self.assertEqual(declared[f"{p}-addSTS.headers.forceSTSHeader"], "true")
+        self.assertEqual(declared[f"{p}-compress.compress"], "true")
+        self.assertEqual(
+            declared[f"{p}-buffering.buffering.retryExpression"],
+            "IsNetworkError() && Attempts() < 5",
+        )
+        self.assertEqual(
+            declared[
+                f"{p}-forbid-crawlers.headers.customResponseHeaders"
+                ".X-Robots-Tag"
+            ],
+            "noindex, nofollow",
+        )
+
+    def test_rebuild_declares_them_too(self):
+        """``copier update`` rewrites the compose files on every rebuild."""
+        self.staging.odoo_version = "19.0"
+        _raw, data = self._override(
+            self._executor(
+                RebuildInstanceExecutor, "rebuild_instance", self.staging,
+            )
+        )
+        self.assertTrue(self._middleware_labels(data))
+
+    def test_smtp_stays_out_of_traefik(self):
+        """The mailbox stays closed whatever the template names things."""
+        _raw, data = self._override(
+            self._executor(
+                DeployInstanceExecutor, "deploy_instance", self.staging,
+            )
+        )
+        self.assertEqual(
+            data["services"]["smtp"]["labels"].get("traefik.enable"), "false",
+        )
+
+
 class TestProductionMailIsUntouched(_CatcherCase):
+
+    def test_production_odoo_gets_no_middleware_labels(self):
+        """prod.yaml declares them on Odoo itself; a second copy is noise."""
+        _raw, data = self._override(
+            self._executor(DeployInstanceExecutor, "deploy_instance", self.prod)
+        )
+        self.assertFalse([
+            key for key in data["services"]["odoo"]["labels"]
+            if key.startswith("traefik.http.middlewares.")
+        ])
 
     def test_production_smtp_keeps_its_router(self):
         """Production's ``smtp`` is the real relay behind a domain; the
