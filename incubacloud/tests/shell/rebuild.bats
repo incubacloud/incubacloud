@@ -20,17 +20,15 @@ STUB
         chmod +x "$TMP/bin/$tool"
     done
     # The boot test asks docker two questions it cannot proceed without:
-    # the gateway of the project network (it publishes the throwaway PG
-    # there rather than joining the network) and the host port docker
-    # picked for it. It also asks which services were running, so it can
-    # put them back. A stub that answers nothing makes the step abort,
-    # which is correct behaviour and not what these tests exercise.
+    # which services were running, so it can put them back, and the exit
+    # code of the boot container, which it reads with ``docker wait``. A
+    # stub that answers nothing makes the step fail, which is correct
+    # behaviour and not what these tests exercise.
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
 case "$*" in
-    *"network inspect"*)          echo "172.18.0.1" ;;
-    "port "*)                     echo "172.18.0.1:49153" ;;
+    "wait "*)                     echo 0 ;;
     *"compose ps --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
 esac
 STUB
@@ -120,7 +118,9 @@ YAML
     calls="$(cat "$CALLS")"
     [[ "$calls" == *"pg_basebackup -U odoo -D /tmp/ic_boot_backup_42"* ]]
     [[ "$calls" == *"postgres-autoconf:17-alpine"* ]]
-    [[ "$calls" == *"click-odoo-update --database prod"* ]]
+    # The database name reaches the boot script as its $0, after the body.
+    [[ "$calls" == *'click-odoo-update --database "$0"'* ]]
+    [[ "$calls" == *"exit 1 prod"* ]]
     # cleanup removed the throwaway PG
     [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
 }
@@ -134,30 +134,57 @@ YAML
     [ "$status" -eq 0 ]
     calls="$(cat "$CALLS")"
     [[ "$calls" != *"--network myproj_default"* ]]
-    # Reached through the network's gateway instead: visible to every
-    # container on that bridge, invisible to compose.
-    [[ "$calls" == *"network inspect myproj_default"* ]]
-    [[ "$calls" == *"-p 172.18.0.1::5432"* ]]
-    [[ "$calls" == *"PGHOST=172.18.0.1"* ]]
-    [[ "$calls" == *"PGPORT=49153"* ]]
+    # On a network of its own instead, which the boot container joins.
+    # Nothing is published on a host address: on a staging the project
+    # network is ``internal`` and a port on its gateway is unreachable.
+    [[ "$calls" == *"network create ic_boot_42"* ]]
+    [[ "$calls" == *"--network ic_boot_42"* ]]
+    [[ "$calls" == *"network connect ic_boot_42 ic_boot_odoo_42"* ]]
+    [[ "$calls" == *"PGHOST=ic_boot_pg_42"* ]]
+    [[ "$calls" != *" -p "* ]]
 }
 
-@test "boot-test aborts when the gateway cannot be resolved" {
-    # Falling back to the old on-network behaviour would reintroduce the
-    # outage silently. Failing here is safe: the caller marks the step
-    # stop_on_failure, so the instance keeps running its previous image.
+@test "boot-test bounds the wait for the throwaway postgres" {
+    # Doodba's own wait loops forever: a database the boot container
+    # cannot reach hung the first staging rebuild in production for good.
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"WAIT_DB=false"* ]]
+    [[ "$calls" == *'seq 120'* ]]
+    [[ "$calls" == *"the throwaway postgres never answered"* ]]
+}
+
+@test "boot-test aborts before booting when the network cannot be created" {
+    # Failing here is safe: the caller marks the step stop_on_failure, so
+    # the instance keeps running its previous image.
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
 case "$*" in
-    *"network inspect"*) exit 1 ;;
+    "network create "*)        exit 1 ;;
+    *"compose ps --services"*) printf 'odoo\ndb\nsmtp\n' ;;
 esac
 STUB
     chmod +x "$TMP/bin/docker"
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -ne 0 ]
-    [[ "$output" == *"cannot resolve the gateway"* ]]
-    [[ "$(cat "$CALLS")" != *"click-odoo-update"* ]]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" != *"click-odoo-update"* ]]
+    [[ "$calls" == *"compose start odoo db smtp"* ]]
+}
+
+@test "boot-test removes the boot container and its network on the way out" {
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    # The last of each: the pre-cleanup removes them too, before creating.
+    last_rm_odoo="$(printf '%s\n' "$calls" | grep -n 'rm -f ic_boot_odoo_42$' | tail -1 | cut -d: -f1)"
+    last_net_rm="$(printf '%s\n' "$calls" | grep -n 'network rm ic_boot_42' | tail -1 | cut -d: -f1)"
+    wait_line="$(printf '%s\n' "$calls" | grep -n '^docker wait ic_boot_odoo_42' | head -1 | cut -d: -f1)"
+    [ -n "$last_rm_odoo" ] && [ -n "$last_net_rm" ] && [ -n "$wait_line" ]
+    [ "$last_rm_odoo" -gt "$wait_line" ]
+    [ "$last_net_rm" -gt "$last_rm_odoo" ]
 }
 
 @test "boot-test puts back the services it found running" {
@@ -182,8 +209,6 @@ STUB
 echo "docker $*" >> "$CALLS"
 case "$*" in
     *"compose cp"*)            exit 1 ;;
-    *"network inspect"*)       echo "172.18.0.1" ;;
-    "port "*)                  echo "172.18.0.1:49153" ;;
     *"compose ps --services"*) printf 'odoo\ndb\nsmtp\n' ;;
 esac
 STUB
@@ -239,6 +264,25 @@ STUB
     [ "$status" -eq 1 ]
     # Cleanup still ran despite the failure.
     [[ "$(cat "$CALLS")" == *"rm -f ic_boot_pg_42"* ]]
+}
+
+@test "boot-test reports the boot container's own exit code" {
+    # The container runs detached, so its outcome comes from docker wait:
+    # a boot that fails inside it must still fail the step.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    "wait "*)                  echo 3 ;;
+    *"compose ps --services"*) printf 'odoo\ndb\nsmtp\n' ;;
+esac
+STUB
+    chmod +x "$TMP/bin/docker"
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 3 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"network rm ic_boot_42"* ]]
 }
 
 @test "a missing instance directory fails loudly" {
