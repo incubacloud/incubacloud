@@ -1226,6 +1226,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-hosts-default-certificate" class="md-nav__link">
+    <span class="md-ellipsis">
+      The host's default certificate
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#open-a-shell-on-a-host" class="md-nav__link">
     <span class="md-ellipsis">
       Open a shell on a host
@@ -1306,7 +1315,9 @@ decides three things:</p>
 <li><strong>Where the certificate comes from.</strong> A CDN terminates TLS, so the challenge
   a host uses to obtain its own certificate never reaches it. Such a host is
   given a certificate instead — an origin certificate covering the whole
-  domain, which only ever has to satisfy the CDN.</li>
+  domain, which only ever has to satisfy the CDN. Domains left on the
+  <em>Automatic</em> certificate switch to it by themselves on their next deploy, for
+  the names it covers.</li>
 </ul>
 <div class="admonition warning">
 <p class="admonition-title">Order matters</p>
@@ -1314,6 +1325,23 @@ decides three things:</p>
 domain at the CDN, and refuse direct traffic only once traffic is actually
 arriving through it. The other order leaves the host answering nobody.</p>
 </div>
+<h2 id="the-hosts-default-certificate">The host's default certificate<a class="headerlink" href="#the-hosts-default-certificate" title="Permanent link">&para;</a></h2>
+<p><strong>Host detail → Traefik → Default certificate</strong> holds the certificate the host
+serves when a router has none of its own: what a CDN in front of the host
+connects to, and what a domain set to <em>Existing certificate</em> is served. Paste
+the full chain and its private key, then save.</p>
+<ul>
+<li>A pair that cannot serve is refused with the reason: half of one, an
+  unreadable PEM, a key protected by a passphrase, or a key that belongs to
+  another certificate.</li>
+<li>Once stored, the tab shows which names the certificate covers, when it
+  expires and who issued it. The key is never shown again; leave its box empty
+  to keep it, or clear the certificate to remove both.</li>
+<li>Saving marks the host's configuration as not deployed. <strong>Push Trusted Proxy
+  Settings</strong> (or <strong>Full Setup</strong>) ships it to the host.</li>
+</ul>
+<p>On the hosted service the platform supplies the origin certificate to its own
+hosts behind the CDN; a certificate set on a host here takes precedence over it.</p>
 <h2 id="open-a-shell-on-a-host">Open a shell on a host<a class="headerlink" href="#open-a-shell-on-a-host" title="Permanent link">&para;</a></h2>
 <p><strong>Host Shell</strong>, in the host's action bar, opens a terminal on the machine itself
 — not inside one instance's container — as the SSH user the host is registered

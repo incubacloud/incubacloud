@@ -1235,6 +1235,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#custom-domains-and-certificates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Custom domains and certificates
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#refresh-from-production" class="md-nav__link">
     <span class="md-ellipsis">
       Refresh from production
@@ -1411,8 +1420,50 @@ writing.</p>
 <li><a href="#refresh-from-production">Refresh a staging with production data</a></li>
 <li><a href="#pull-request-previews">Get a preview instance for every pull request</a></li>
 <li><a href="#stagings-expire-when-nobody-uses-them">Keep a staging that is about to expire</a></li>
-<li>Add a custom domain (Instance detail → Networking → Domain)</li>
+<li><a href="#custom-domains-and-certificates">Add a custom domain</a> (Instance detail → Networking → Domains)</li>
 </ul>
+<h2 id="custom-domains-and-certificates">Custom domains and certificates<a class="headerlink" href="#custom-domains-and-certificates" title="Permanent link">&para;</a></h2>
+<p><strong>Instance detail → Networking → Domains</strong> lists the names the instance answers
+to. Leave it empty and the platform generates one under the host's wildcard
+domain. Each row has an optional redirect target (with <em>301</em> for a permanent
+redirect) and a <strong>Certificate</strong> choice:</p>
+<table>
+<thead>
+<tr>
+<th>Certificate</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Automatic</strong> (default)</td>
+<td>The host decides. If a CDN answers for the name <em>and</em> the certificate the host holds covers it, the host serves that one; otherwise it asks Let's Encrypt. Pick this unless you have a reason not to.</td>
+</tr>
+<tr>
+<td><strong>Let's Encrypt</strong></td>
+<td>Always asks Let's Encrypt, whatever the host. The domain's DNS must point straight at the host when it deploys.</td>
+</tr>
+<tr>
+<td><strong>Existing certificate</strong></td>
+<td>Serves a certificate already on the host — its default certificate (Host detail → Traefik), or one loaded by hand. Use it for a purchased wildcard or a certificate from your own CA.</td>
+</tr>
+<tr>
+<td><strong>No TLS</strong></td>
+<td>No TLS for this name. The host still redirects HTTP to HTTPS, so in practice visitors get a self-signed certificate.</td>
+</tr>
+</tbody>
+</table>
+<p>Changes take effect on the next deploy or rebuild. The deploy log says, one line
+per domain, how each name got its certificate — for <em>Automatic</em>, which way the
+host decided:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>TLS for app.example.com: automatic → Let's Encrypt
+</span></code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Existing certificate needs a certificate</p>
+<p>A deploy that asks for <em>Existing certificate</em> on a host holding none stops
+before touching the host and names the domain. Load the certificate first;
+the steps are in <a href="https://github.com/incubacloud/incubacloud/blob/19.0/docs/runbooks/RB-12-custom-domain-certificate.md">RB-12</a>.</p>
+</div>
 <h2 id="refresh-from-production">Refresh from production<a class="headerlink" href="#refresh-from-production" title="Permanent link">&para;</a></h2>
 <p><strong>Instance detail → Refresh from production</strong> replaces a staging instance's
 database and filestore with a copy of its project's production, keeping the

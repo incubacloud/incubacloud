@@ -1483,12 +1483,16 @@ from there. You can still override.</p>
 <p>Both modes can be mixed. Our deployer composes a Docker image with everything
 you selected.</p>
 <h2 id="6-optional-custom-domain">6. Optional: custom domain<a class="headerlink" href="#6-optional-custom-domain" title="Permanent link">&para;</a></h2>
-<p>Add <code>app.example.com</code> (or any domain you control). The deployer requests a
-Let's Encrypt certificate automatically and wires up HTTPS.</p>
+<p>Add <code>app.example.com</code> (or any domain you control) under <strong>Networking →
+Domains</strong>. Its certificate is <em>Automatic</em> by default: on a host your visitors
+reach directly, the deployer requests a Let's Encrypt certificate and wires up
+HTTPS. The other choices are described in
+<a href="../../instances/#custom-domains-and-certificates">Custom domains and certificates</a>.</p>
 <div class="admonition warning">
 <p class="admonition-title">DNS must be in place</p>
-<p>The domain's A or AAAA record must already point to the host's IP <strong>at the moment
-of deployment</strong>, otherwise Let's Encrypt will fail to validate. Set the DNS first.</p>
+<p>For Let's Encrypt, the domain's A or AAAA record must already point to the
+host's IP <strong>at the moment of deployment</strong>, otherwise the validation fails.
+Set the DNS first.</p>
 </div>
 <p>If you skip the domain, the platform generates a subdomain under its base domain
 for testing (on the hosted SaaS: <code>&lt;name&gt;.&lt;your-subdomain&gt;.incubacloud.io</code>).</p>
