@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.148] — 2026-10-03
+
+### Fixed
+
+- **A job on a staging no longer runs twice.** Since 1.0.130 a job a
+  person starts on a staging seals its autopurge clock when it
+  finishes. The seal wrote the instance row inside the job's own
+  transaction, after the job's hooks had already written and committed
+  that same row on cursors of their own, so the job lost a
+  serialization race at the very end and queue_job ran it again from
+  the start. The first staging created in production hit it: the
+  deploy succeeded, ran a second time — tearing the fresh staging down
+  and rebuilding it — and then failed on `deployed → deployed`, which
+  cancelled the restore of production's data. A rebuild or a restore
+  would have repeated indefinitely. The seal now runs after the job
+  commits, on a cursor of its own, and a failure there is logged
+  instead of failing a job that already finished.
+- **A failed job cancels everything chained after it, on any
+  instance.** The cascade only looked at the failed job's own
+  instance, but a staging built from production downloads the backup
+  on *production*: that download waited forever and kept production
+  from running any other job until it was cancelled by hand. Jobs still
+  waiting in the failed job's chain are now cancelled too.
+
 ## [1.0.147] — 2026-10-02
 
 ### Added

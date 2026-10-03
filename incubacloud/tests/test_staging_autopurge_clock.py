@@ -16,11 +16,13 @@ promises never to do.
 import importlib.util
 import os
 from datetime import timedelta
+from unittest.mock import patch
 
 from odoo import fields
 from odoo.exceptions import ValidationError
 from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase
+from odoo.tools.misc import Callbacks
 
 from odoo.addons.incubacloud.models.cloud_instance import (
     AUTOPURGE_FINAL_ALERT_CODE,
@@ -45,6 +47,10 @@ def _load_backfill_migration():
 class _ClockBase(TransactionCase):
 
     def setUp(self):
+        # The seal runs after the job's commit on ``registry.cursor()``;
+        # outside test mode that is a second connection which cannot see
+        # this transaction's fixtures.
+        self.registry_enter_test_mode()
         super().setUp()
         self.host = self.env["cloud.host"].create({
             "name": "ap-host",
@@ -69,11 +75,41 @@ class _ClockBase(TransactionCase):
         return jt
 
     def _finish_job(self, code, author, state="done"):
+        """Drive a cloud.job of *code* to *state* and commit it.
+
+        :returns: the ``cloud.job``.
+        """
+        cjob, armed = self._write_state(code, author, state)
+        self._commit(armed)
+        return cjob
+
+    def _commit(self, armed):
+        """Run what the job's commit would run, then drop stale cache.
+
+        :param armed: the ``Callbacks`` returned by :meth:`_write_state`.
+        """
+        armed.run()
+        self.env.invalidate_all()
+
+    def _db_touched_at(self):
+        """Read ``last_touched_at`` from the table, past the ORM cache."""
+        self.env.cr.execute(
+            "SELECT last_touched_at FROM cloud_instance WHERE id = %s",
+            (self.staging.id,),
+        )
+        return self.env.cr.fetchone()[0]
+
+    def _write_state(self, code, author, state):
         """Drive a cloud.job of *code* to *state* through the real bridge.
 
         The clock is sealed by ``queue.job.write``, not by anything the
         test could call directly, so the job has to travel the same path
-        a real one does.
+        a real one does. The write stops short of the commit: what it
+        armed for after the commit comes back instead, for
+        :meth:`_commit` to run. ``Callbacks`` has ``__slots__``, so the
+        cursor's ``postcommit`` is swapped for a fresh one for the call.
+
+        :returns: ``(cloud.job, Callbacks)``
         """
         uuid = f"ap-uuid-{code}-{author.id}-{state}"
         # ``with_user`` resets ``su``, so the sudo has to come after it —
@@ -94,8 +130,15 @@ class _ClockBase(TransactionCase):
             "model_name": "cloud.job",
             "func_string": "noop()",
         })
-        qjob.write({"state": state})
-        return cjob
+        cr = self.env.cr
+        original = cr.postcommit
+        cr.postcommit = armed = Callbacks()
+        try:
+            qjob.write({"state": state})
+            self.env.flush_all()
+        finally:
+            cr.postcommit = original
+        return cjob, armed
 
     def _backdate(self, days):
         """Put the clock *days* in the past, the way real disuse would."""
@@ -264,6 +307,59 @@ class TestOnlyHumanVisibleWorkSealsTheClock(_ClockBase):
         past = self._backdate(60)
         self._finish_job("restart_instance", self.human, state="failed")
         self.assertEqual(self.staging.last_touched_at, past)
+
+
+class TestTheSealWaitsForTheCommit(_ClockBase):
+    """The job's own transaction must never write the instance row.
+
+    Production, 2026-10-03: the executor's hooks commit their writes on
+    that same row on cursors of their own, after the job's transaction
+    took its snapshot. The seal's UPDATE then lost the serialization
+    race and queue_job ran the whole deploy again — which tore the fresh
+    staging down, rebuilt it, and failed on ``deployed → deployed``.
+
+    The race itself needs two committing connections, which a test
+    cursor is not; what is pinned is that the job's transaction leaves
+    the row alone and the commit seals it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.human = self.env.ref("base.user_admin")
+
+    def test_the_jobs_transaction_leaves_the_row_alone(self):
+        past = self._backdate(60)
+        self._write_state("restart_instance", self.human, "done")
+        self.assertEqual(self._db_touched_at(), past)
+
+    def test_the_commit_seals_the_clock(self):
+        past = self._backdate(60)
+        _cjob, armed = self._write_state("restart_instance", self.human, "done")
+        self._commit(armed)
+        self.assertGreater(self._db_touched_at(), past)
+
+    def test_an_instance_deleted_by_the_job_is_left_alone(self):
+        """A finished delete unlinks the record after the same commit."""
+        self._backdate(60)
+        _cjob, armed = self._write_state("restart_instance", self.human, "done")
+        self.staging.sudo().unlink()
+        with self.assertNoLogs(
+            "odoo.addons.incubacloud.models.queue_job_ext", "ERROR",
+        ):
+            self._commit(armed)
+
+    def test_a_failing_seal_does_not_fail_the_finished_job(self):
+        """The job is already done; a seal that breaks is only logged."""
+        past = self._backdate(60)
+        _cjob, armed = self._write_state("restart_instance", self.human, "done")
+        with patch.object(
+            type(self.staging), "_touch_autopurge_clock",
+            autospec=True, side_effect=RuntimeError("boom"),
+        ), self.assertLogs(
+            "odoo.addons.incubacloud.models.queue_job_ext", "ERROR",
+        ):
+            self._commit(armed)
+        self.assertEqual(self._db_touched_at(), past)
 
 
 class TestWindowSetting(_ClockBase):
