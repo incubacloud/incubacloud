@@ -49,12 +49,16 @@ you selected.
 
 ## 6. Optional: custom domain
 
-Add `app.example.com` (or any domain you control). The deployer requests a
-Let's Encrypt certificate automatically and wires up HTTPS.
+Add `app.example.com` (or any domain you control) under **Networking →
+Domains**. Its certificate is *Automatic* by default: on a host your visitors
+reach directly, the deployer requests a Let's Encrypt certificate and wires up
+HTTPS. The other choices are described in
+[Custom domains and certificates](../instances/index.md#custom-domains-and-certificates).
 
 !!! warning "DNS must be in place"
-    The domain's A or AAAA record must already point to the host's IP **at the moment
-    of deployment**, otherwise Let's Encrypt will fail to validate. Set the DNS first.
+    For Let's Encrypt, the domain's A or AAAA record must already point to the
+    host's IP **at the moment of deployment**, otherwise the validation fails.
+    Set the DNS first.
 
 If you skip the domain, the platform generates a subdomain under its base domain
 for testing (on the hosted SaaS: `<name>.<your-subdomain>.incubacloud.io`).

@@ -73,7 +73,34 @@ path and write into the copy being kept.
 - [Refresh a staging with production data](#refresh-from-production)
 - [Get a preview instance for every pull request](#pull-request-previews)
 - [Keep a staging that is about to expire](#stagings-expire-when-nobody-uses-them)
-- Add a custom domain (Instance detail → Networking → Domain)
+- [Add a custom domain](#custom-domains-and-certificates) (Instance detail → Networking → Domains)
+
+## Custom domains and certificates
+
+**Instance detail → Networking → Domains** lists the names the instance answers
+to. Leave it empty and the platform generates one under the host's wildcard
+domain. Each row has an optional redirect target (with *301* for a permanent
+redirect) and a **Certificate** choice:
+
+| Certificate | What happens |
+|---|---|
+| **Automatic** (default) | The host decides. If a CDN answers for the name *and* the certificate the host holds covers it, the host serves that one; otherwise it asks Let's Encrypt. Pick this unless you have a reason not to. |
+| **Let's Encrypt** | Always asks Let's Encrypt, whatever the host. The domain's DNS must point straight at the host when it deploys. |
+| **Existing certificate** | Serves a certificate already on the host — its default certificate (Host detail → Traefik), or one loaded by hand. Use it for a purchased wildcard or a certificate from your own CA. |
+| **No TLS** | No TLS for this name. The host still redirects HTTP to HTTPS, so in practice visitors get a self-signed certificate. |
+
+Changes take effect on the next deploy or rebuild. The deploy log says, one line
+per domain, how each name got its certificate — for *Automatic*, which way the
+host decided:
+
+```
+TLS for app.example.com: automatic → Let's Encrypt
+```
+
+!!! warning "Existing certificate needs a certificate"
+    A deploy that asks for *Existing certificate* on a host holding none stops
+    before touching the host and names the domain. Load the certificate first;
+    the steps are in [RB-12](https://github.com/incubacloud/incubacloud/blob/19.0/docs/runbooks/RB-12-custom-domain-certificate.md).
 
 ## Refresh from production
 
