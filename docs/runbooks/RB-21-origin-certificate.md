@@ -28,6 +28,10 @@ One certificate covers the whole zone. Hosts behind the CDN are
 interchangeable, and a certificate each would multiply issuance for no
 gain.
 
+A host that holds a default certificate of its own (**Hosts → <host> →
+Traefik → Default certificate**) keeps it: the zone certificate is never
+handed to it. Clear that field for the host to take the zone's.
+
 ## The one prerequisite
 
 The API token already configured for DNS needs one more permission:
@@ -60,15 +64,29 @@ $ openssl s_client -connect <host ip>:443 \
 
 Expect `issuer=C = US, O = CloudFlare, Inc., CN = CloudFlare Origin
 Certificate` and both names in the SAN list. An issuer of *Let's
-Encrypt* means the host is still serving its own — either the push has
-not run or the host is not marked as behind the CDN.
+Encrypt* means the host is still serving its own — the push has not run,
+the host is not marked as behind the CDN, or the name's router asks Let's
+Encrypt explicitly. The last one is a domain whose **Certificate** is set
+to *Let's Encrypt* instead of *Automatic*; the instance's last deploy or
+rebuild log says which, one line per domain:
+
+```
+TLS for app.<base domain>: automatic → host's certificate (a CDN answers for it)
+```
+
+A domain's router only changes on that instance's next deploy or
+rebuild.
 
 **Cloud 1 is a special case worth checking rather than assuming.** Its
 current certificate expires 2026-11-22. Traefik serves the *default*
 certificate only for requests no router matched with its own; if a
 router there names a certificate explicitly, the default never applies
-and the expiry stands. Check the router definition before treating
-RB-21 as having covered it.
+and the expiry stands. Its two panel domains (`<base domain>` and
+`www.<base domain>`) were in that state: up to 1.0.146 saving the
+instance rewrote *Automatic* to *Let's Encrypt*, and the 1.0.147 upgrade
+moved them back. The routers follow on the panel instance's next
+rebuild — check its log line (above) or the router definition before
+treating RB-21 as having covered it.
 
 ## Replacing one
 

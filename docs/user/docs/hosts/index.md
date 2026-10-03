@@ -43,12 +43,33 @@ decides three things:
 - **Where the certificate comes from.** A CDN terminates TLS, so the challenge
   a host uses to obtain its own certificate never reaches it. Such a host is
   given a certificate instead — an origin certificate covering the whole
-  domain, which only ever has to satisfy the CDN.
+  domain, which only ever has to satisfy the CDN. Domains left on the
+  *Automatic* certificate switch to it by themselves on their next deploy, for
+  the names it covers.
 
 !!! warning "Order matters"
     Give the host its certificate and its trusted ranges *before* pointing the
     domain at the CDN, and refuse direct traffic only once traffic is actually
     arriving through it. The other order leaves the host answering nobody.
+
+## The host's default certificate
+
+**Host detail → Traefik → Default certificate** holds the certificate the host
+serves when a router has none of its own: what a CDN in front of the host
+connects to, and what a domain set to *Existing certificate* is served. Paste
+the full chain and its private key, then save.
+
+- A pair that cannot serve is refused with the reason: half of one, an
+  unreadable PEM, a key protected by a passphrase, or a key that belongs to
+  another certificate.
+- Once stored, the tab shows which names the certificate covers, when it
+  expires and who issued it. The key is never shown again; leave its box empty
+  to keep it, or clear the certificate to remove both.
+- Saving marks the host's configuration as not deployed. **Push Trusted Proxy
+  Settings** (or **Full Setup**) ships it to the host.
+
+On the hosted service the platform supplies the origin certificate to its own
+hosts behind the CDN; a certificate set on a host here takes precedence over it.
 
 ## Open a shell on a host
 

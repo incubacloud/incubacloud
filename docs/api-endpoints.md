@@ -47,10 +47,10 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | Path | Gate | Description |
 |---|---|---|
 | `/cloud/get_hosts` | none¹ | List hosts with metrics and instance count. |
-| `/cloud/get_host` | manage hosts | Full host detail including Traefik config and alerts. |
+| `/cloud/get_host` | manage hosts | Full host detail including Traefik config and alerts. The default certificate comes back as `tls_default_cert` plus `tls_default_info` (names, expiry, issuer, fingerprint); its key only as `has_tls_default_key`, never the value. |
 | `/cloud/host_defaults` | manage hosts | Defaults for the new-host form. |
 | `/cloud/create_host` | manage hosts | Create host (field whitelist enforced). |
-| `/cloud/save_host` | manage hosts | Update host; also syncs whitelist entries. |
+| `/cloud/save_host` | manage hosts | Update host; also syncs whitelist entries. Accepts `tls_default_cert` / `tls_default_key`: an empty key keeps the stored one, an empty certificate removes both, and a pair that cannot serve is refused with a validation error. |
 | `/cloud/delete_host` | manage hosts | Archive or delete host. |
 | `/cloud/trust_host_key` | manage hosts | Pin the host's SSH key (TOFU confirmation). |
 | `/cloud/setup_whitelist` | manage hosts | Enqueue whitelist setup SSH job. |
@@ -78,8 +78,8 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | Path | Gate | Description |
 |---|---|---|
 | `/cloud/get_instance` | record rules | Full instance detail (Odoo config, DB, SMTP, repos, domains). |
-| `/cloud/create_instance` | create instance | Create instance with repos. May return `{blocked: true, reason}` (`pip_conflict`, `host_required`, `no_host`). |
-| `/cloud/save_instance` | consultant | Update instance (field whitelist enforced). |
+| `/cloud/create_instance` | create instance | Create instance with repos. May return `{blocked: true, reason}` (`pip_conflict`, `host_required`, `no_host`). Each domain's `cert_resolver` is clamped to the field's options; anything else becomes the field's default (`auto`). |
+| `/cloud/save_instance` | consultant | Update instance (field whitelist enforced). Rewrites the domain list from the request, with `cert_resolver` clamped as in `create_instance`. |
 | `/cloud/keep_instance` | consultant | Reset a staging's autopurge window and clear its expiry warnings. |
 | `/cloud/delete_instance` | delete instance | Tear down and delete/archive the instance. |
 | `/cloud/deploy_instance` | deploy | Enqueue `deploy_instance` job. |
