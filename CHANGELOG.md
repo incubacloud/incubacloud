@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.151] — 2026-10-04
+
+### Fixed
+
+- **Stagings answer again.** Since 1.0.128 a staging's mail catcher is
+  taken off Traefik so its mailbox is not published on the internet.
+  The copier template, though, declares the middlewares a staging's
+  Odoo routes use (`addSTS`, `buffering`, `compress`,
+  `forbid-crawlers`, `forceSecure`) on that same `smtp` container.
+  Ignoring the container made them disappear, Traefik dropped every
+  Odoo route that named them, and every staging — pull-request
+  previews included — answered `404 page not found`. The override now
+  declares the same middlewares on Odoo, with the template's names and
+  values, so the routes come back while the mail catcher stays off
+  Traefik. Production declares them on Odoo already and is unchanged.
+  Verified against Traefik v2.11 with the labels of the first staging
+  in production: 404 before, routed to Odoo after, and `/smtpfake/`
+  still does not reach the mailbox.
+
 ## [1.0.150] — 2026-10-03
 
 ### Fixed

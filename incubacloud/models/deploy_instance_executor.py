@@ -503,6 +503,46 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             },
         }
 
+    def _staging_shared_middleware_labels(self):
+        """Return the Traefik middlewares a staging's Odoo routers need.
+
+        test.yaml declares the middlewares its Odoo routers use
+        (``addSTS``, ``buffering``, ``compress``, ``forbid-crawlers``,
+        ``forceSecure``) on the ``smtp`` container's labels, not on
+        Odoo's own. The override takes ``smtp`` out of Traefik to keep
+        the mail catcher off the internet, and Traefik then ignores
+        every label it carries, definitions included: each Odoo router
+        names a middleware that no longer exists, Traefik drops them
+        all, and the staging answers 404. Every staging did, from
+        2026-09-21 until this was found on the first one in production
+        (2026-10-03). prod.yaml declares them on Odoo and is unaffected.
+
+        Declaring the same middlewares on Odoo, with the template's
+        names and values, leaves ``smtp`` out of Traefik regardless of
+        what the template calls its routers: should it ever rename
+        these, the staging fails visibly in Traefik's log, but the
+        mailbox does not reappear.
+
+        :return: ``{label: value}`` to merge into the odoo service
+        """
+        inst = self._inst()
+        version = (inst.odoo_version or "").replace(".", "-")
+        prefix = (
+            f"traefik.http.middlewares.{inst.doodba_project_name}"
+            f"-{version}-test"
+        )
+        return {
+            f"{prefix}-addSTS.headers.forceSTSHeader": "true",
+            f"{prefix}-buffering.buffering.retryExpression": (
+                "IsNetworkError() && Attempts() < 5"
+            ),
+            f"{prefix}-compress.compress": "true",
+            f"{prefix}-forbid-crawlers.headers.customResponseHeaders"
+            ".X-Robots-Tag": "noindex, nofollow",
+            f"{prefix}-forceSecure.redirectScheme.permanent": "true",
+            f"{prefix}-forceSecure.redirectScheme.scheme": "https",
+        }
+
     def _resource_override_content(self):
         """Generate docker-compose.override.yml: limits, label, logs.
 
@@ -655,6 +695,10 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             services["smtp"].setdefault("labels", {})["traefik.enable"] = (
                 "false"
             )
+            if "odoo" in allowed:
+                services["odoo"]["labels"].update(
+                    self._staging_shared_middleware_labels(),
+                )
         if "odoo_net_setup" in allowed:
             services["odoo_net_setup"].update(self._net_setup_override())
         if "odoo" in allowed:
