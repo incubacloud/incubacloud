@@ -386,7 +386,13 @@ class TestCloneNeutralizes(TransactionCase):
         self.assertEqual(download["job_type_code"], "backup_download")
         self.assertEqual(download["payload"]["time"], "live")
 
-    def test_clone_with_backend_stays_on_latest(self):
+    def test_clone_with_backend_takes_a_live_dump_too(self):
+        """A backend does not mean a backup exists yet.
+
+        Production, 2026-10-03: a staging cloned from a production
+        created that morning failed on the download — no nightly backup
+        had run yet — and was left deployed but empty.
+        """
         backend = self.env["cloud.backup.backend"].create({
             "name": "clone-bb", "backend_type": "s3", "s3_bucket": "clone-bkt",
         })
@@ -397,7 +403,7 @@ class TestCloneNeutralizes(TransactionCase):
         ) as m:
             self.prod.clone_to_staging("clone-latest")
         download = m.call_args[0][0][1]
-        self.assertEqual(download["payload"]["time"], "latest")
+        self.assertEqual(download["payload"]["time"], "live")
 
 
 class TestRefreshGate(CloudSecurityBase):

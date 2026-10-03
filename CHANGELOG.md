@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.149] — 2026-10-03
+
+### Fixed
+
+- **Cloning a production to a staging works before its first backup.**
+  The clone copied production's latest backup whenever a backup
+  destination was configured, but a destination does not mean a backup
+  exists: a production created the same day has none until its first
+  nightly run. The download failed with "No backup chains found" and
+  the new staging was left deployed but empty. The clone now always
+  takes a live dump of production, which also gives the staging the
+  data as it is now rather than as it was last night. Refresh from
+  production keeps its choice of source.
+
 ## [1.0.148] — 2026-10-03
 
 ### Fixed

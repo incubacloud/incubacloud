@@ -1569,13 +1569,14 @@ class CloudInstance(models.Model):
                     "instance_id": self.id,  # prod
                     "job_type_code": "backup_download",
                     "payload": {
-                        # Without a backup backend there is no duplicity
-                        # store to restore 'latest' from — an on-demand
-                        # dump is the only workable source.
-                        "time": (
-                            "latest" if self.effective_backup_backend
-                            else "live"
-                        ),
+                        # Always an on-demand dump. 'latest' needs a
+                        # backup to exist: a production created the same
+                        # day has none until its first nightly run, and
+                        # the chain then failed on the download and left
+                        # the staging empty (2026-10-03). The dump also
+                        # carries production as it is now, not as it was
+                        # last night.
+                        "time": "live",
                         "download_type": "all",
                         "handoff": "host",
                     },
