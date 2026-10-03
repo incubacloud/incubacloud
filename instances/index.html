@@ -1489,7 +1489,8 @@ restore never starts and the staging is left untouched. Refreshing does <strong>
 run a module update: if the staging's branch lacks a module the restored database
 has installed, use a rebuild afterwards.</p>
 <p>Cloning a production to a new staging (<strong>Project → Clone to staging</strong>) applies
-the same neutralization.</p>
+the same neutralization, and always takes a live dump: a production created
+today has no backup to copy until its first nightly run.</p>
 <h2 id="auto-update">Auto-update<a class="headerlink" href="#auto-update" title="Permanent link">&para;</a></h2>
 <p>If you push commits to a connected repo, two settings control what happens:</p>
 <ul>
@@ -1510,8 +1511,8 @@ anything:</p>
 <ol>
 <li>A staging named <code>pr-&lt;number&gt;</code> is created on the <strong>same host</strong> as that
    production, following the pull request's branch.</li>
-<li>It receives a copy of the production's data — the latest backup, or a live
-   dump when the production has no backup destination — <strong>neutralized</strong> exactly
+<li>It receives a copy of the production's data as it is at that moment — a
+   live dump, so it works even before the first backup — <strong>neutralized</strong> exactly
    like <a href="#refresh-from-production">Refresh from production</a>: scheduled actions
    and outgoing mail servers disabled, test banner showing.</li>
 <li>It gets an address of its own under the host's wildcard domain
