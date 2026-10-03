@@ -137,6 +137,39 @@ class QueueJob(models.Model):
                         cjob.instance_id.id,
                     )
 
+            # A chain can cross instances: a staging built from
+            # production downloads the backup on *production*, which the
+            # instance match above misses — that download waited forever
+            # and held production's job slot. Every chain is linear, so
+            # whatever still waits in the failed job's graph waits on it.
+            if new_state == "failed" and qjob.graph_uuid:
+                self.env.cr.execute(
+                    "UPDATE cloud_job c SET state = 'failed',"
+                    " write_date = (now() at time zone 'UTC')"
+                    " FROM queue_job q"
+                    " WHERE c.queue_job_id = q.id"
+                    "   AND q.graph_uuid = %s"
+                    "   AND q.state = 'wait_dependencies'"
+                    "   AND c.id != %s",
+                    (qjob.graph_uuid, cjob.id),
+                )
+                if self.env.cr.rowcount:
+                    self.env['cloud.job'].invalidate_model(['state'])
+                self.env.cr.execute(
+                    "UPDATE queue_job SET state = 'cancelled',"
+                    " date_cancelled = (now() at time zone 'UTC')"
+                    " WHERE graph_uuid = %s"
+                    "   AND state = 'wait_dependencies'",
+                    (qjob.graph_uuid,),
+                )
+                if self.env.cr.rowcount:
+                    _logger.info(
+                        "[queue_job_ext] cancelled %d chained"
+                        " queue_job records in graph %s",
+                        self.env.cr.rowcount,
+                        qjob.graph_uuid,
+                    )
+
             # Broadcast job update to all active internal users so every
             # user watching the cloud UI gets real-time notifications.
             # External notifications (email, Telegram, webhook) for
@@ -206,4 +239,32 @@ class QueueJob(models.Model):
         bot = self.env['res.users']._get_cron_bot()
         if not author or author.share or (bot and author.id == bot.id):
             return
-        instance._touch_autopurge_clock()
+        # The seal waits for the job's commit. The executor's hooks write
+        # this same instance row on cursors of their own, and they commit
+        # after this transaction took its snapshot: an UPDATE here loses
+        # the serialization race, and queue_job then runs the whole job
+        # again. Production, 2026-10-03: the first staging deploy since
+        # the clock shipped ran twice and failed on the second pass.
+        env = self.env
+        instance_id = instance.id
+
+        def _seal():
+            """Seal the clock on a cursor of its own; never raises.
+
+            By the time it runs the job is already done, so a failure
+            here is logged rather than turned into a failed job.
+            """
+            try:
+                with env.registry.cursor() as cr:
+                    rec = env(cr=cr)['cloud.instance'].browse(instance_id)
+                    # A finished delete unlinks the record after the
+                    # same commit.
+                    if rec.exists():
+                        rec._touch_autopurge_clock()
+            except Exception:
+                _logger.exception(
+                    "could not seal the autopurge clock of instance %s",
+                    instance_id,
+                )
+
+        self.env.cr.postcommit.add(_seal)

@@ -1004,6 +1004,68 @@ class TestChainFailurePropagation(TransactionCase):
             self.env.cr.fetchone()[0], 'failed',
         )
 
+    def _chained_job(self, instance, state, graph_uuid, uuid):
+        """Create a cloud.job on *instance* backed by a queue.job in a graph.
+
+        :returns: the ``cloud.job``, linked to its ``queue.job``.
+        """
+        self.env['queue.job'].sudo().create({
+            'uuid': uuid,
+            'name': uuid,
+            'state': state,
+            'method_name': 'execute',
+            'model_name': 'cloud.job',
+            'func_string': 'execute()',
+            'graph_uuid': graph_uuid,
+        })
+        return self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'instance_id': instance.id,
+            'job_type_id': self.jt.id,
+            'name': uuid,
+            'queue_job_uuid': uuid,
+        })
+
+    def _db_queue_state(self, job):
+        """Read the state of *job*'s queue.job directly from the DB."""
+        self.env.cr.execute(
+            "SELECT state FROM queue_job WHERE uuid = %s",
+            (job.queue_job_uuid,),
+        )
+        return self.env.cr.fetchone()[0]
+
+    def test_a_chain_across_instances_is_cancelled_through_its_graph(self):
+        """A staging built from production downloads on *production*.
+
+        Production, 2026-10-03: the staging's deploy failed, the restore
+        on the staging was cancelled, and the download on production
+        waited forever — holding production's job slot, so nothing else
+        could run on it.
+        """
+        source = self.env['cloud.instance'].create({
+            'name': 'test-chain-source',
+            'project_id': self.project.id,
+            'host_id': self.host.id,
+        })
+        deploy = self._chained_job(
+            self.instance, 'started', 'graph-a', 'graph-a-1',
+        )
+        download = self._chained_job(
+            source, 'wait_dependencies', 'graph-a', 'graph-a-2',
+        )
+        unrelated = self._chained_job(
+            source, 'wait_dependencies', 'graph-b', 'graph-b-1',
+        )
+
+        deploy.queue_job_id.write({'state': 'failed'})
+
+        self.assertEqual(self._db_state(download), 'failed')
+        self.assertEqual(self._db_queue_state(download), 'cancelled')
+        self.assertEqual(self._db_state(unrelated), 'wait_dependencies')
+        self.assertEqual(
+            self._db_queue_state(unrelated), 'wait_dependencies',
+        )
+
 
 class TestLoadHistoryAccessControl(TransactionCase):
     """Non-Job-Queue-Manager cloud users must be able to open the SPA's
