@@ -29,7 +29,10 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
             mail disabled and the test banner on. Callers that copy a
             production database into another instance (clone to staging,
             refresh from production) set it; a host move must not, since
-            that is the same production instance changing machines.
+            that is the same production instance changing machines. On a
+            staging, the placeholder server the neutralization inserts is
+            then removed, so mail falls back to the stack's MailHog
+            instead of failing; the real servers stay archived.
         reset_base_url: overwrite the ``web.base.url`` that travelled
             inside the dump with this instance's own domain, and drop
             ``web.base.url.freeze``. Skipped when the instance has no
@@ -300,6 +303,21 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
                 {"stop_on_failure": True},
             ),
         ]
+
+        # Only where ``smtplocal`` is the mail catcher: a production
+        # stack resolves the same name to the real relay.
+        if neutralize == "1" and inst.environment != "production":
+            cmds.append((
+                "Route mail to the mail catcher",
+                self.run_script(
+                    "restore.sh",
+                    [
+                        "use-mail-catcher", d,
+                        inst.postgres_username or "odoo",
+                        dbname,
+                    ],
+                ),
+            ))
 
         # Before "Ensure incubacloud_connect" on purpose: that step boots
         # an Odoo which reads web.base.url. ``db`` stays up throughout the

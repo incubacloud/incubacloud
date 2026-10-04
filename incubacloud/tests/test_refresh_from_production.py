@@ -14,7 +14,9 @@ worth pinning here is the wiring:
     asked, without disturbing the duplicity path;
   * that ``restore_instance`` passes ``--neutralize`` and resets the base
     URL only when told to — and that the host move, which shares the same
-    executor, still does neither.
+    executor, still does neither;
+  * that a neutralized staging drops the placeholder mail server, so its
+    mail reaches the stack's MailHog, and that a production never does.
 
 The SSH executors themselves are mocked away; the shell they invoke is
 covered by ``tests/shell/restore.bats``.
@@ -45,7 +47,8 @@ def _find(cmds, label):
 
 
 def _make_restore_executor(payload, domain="staging.example.com",
-                           dbname="prod", pg_user="odoo"):
+                           dbname="prod", pg_user="odoo",
+                           environment="staging"):
     from odoo.addons.incubacloud.models.restore_instance_executor import (
         RestoreInstanceExecutor,
     )
@@ -56,6 +59,7 @@ def _make_restore_executor(payload, domain="staging.example.com",
         domain=domain,
         postgres_dbname=dbname,
         postgres_username=pg_user,
+        environment=environment,
     )
     job = SimpleNamespace(id=42, instance_id=inst, payload=payload)
 
@@ -606,6 +610,54 @@ class TestRestoreNeutralize(BaseCase):
             "mode": "from_job", "neutralize": False,
         }))
         self.assertEqual(argv[-1], "0")
+
+
+class TestRestoreMailCatcher(BaseCase):
+    """A neutralized staging sends through its MailHog, not into a void.
+
+    Odoo's neutralization leaves an active placeholder server on host
+    ``invalid``, which Odoo prefers over the stack's ``smtplocal``.
+    """
+
+    _LABEL = "Route mail to the mail catcher"
+
+    def test_a_neutralized_staging_drops_the_placeholder_server(self):
+        step = _find(
+            _make_restore_executor({
+                "mode": "from_job", "neutralize": True,
+            }).get_commands(),
+            self._LABEL,
+        )
+        self.assertIsNotNone(step)
+        self.assertEqual(
+            _argv(step)[2:],
+            ["use-mail-catcher", INSTANCE_DIR, "odoo", "prod"],
+        )
+
+    def test_without_neutralize_there_is_no_step(self):
+        cmds = _make_restore_executor({"mode": "from_job"}).get_commands()
+        self.assertIsNone(_find(cmds, self._LABEL))
+
+    def test_a_production_never_gets_the_step(self):
+        # There ``smtplocal`` is the real relay: removing the placeholder
+        # would let a neutralized copy mail real customers.
+        cmds = _make_restore_executor(
+            {"mode": "from_job", "neutralize": True},
+            environment="production",
+        ).get_commands()
+        self.assertIsNone(_find(cmds, self._LABEL))
+
+    def test_step_runs_after_the_restore_and_before_odoo_boots(self):
+        labels = [c[0] for c in _make_restore_executor({
+            "mode": "from_job", "neutralize": True,
+        }).get_commands()]
+        self.assertGreater(
+            labels.index(self._LABEL), labels.index("Restore database"),
+        )
+        self.assertLess(
+            labels.index(self._LABEL),
+            labels.index("Ensure incubacloud_connect"),
+        )
 
 
 class TestRestoreBaseUrl(BaseCase):

@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.152] — 2026-10-04
+
+### Fixed
+
+- **A neutralized staging sends its mail to MailHog again.** Odoo's
+  neutralization archives the real outgoing servers and adds an active
+  placeholder, `neutralization - disable emails`, on host `invalid`.
+  Odoo uses any active server before the SMTP in its configuration, so
+  every mail of a staging cloned or refreshed from production failed
+  instead of reaching the stack's mail catcher (`smtplocal:1025`), and
+  whatever waited on a mail broke with it. After a neutralized restore
+  on a staging, `restore_instance` now removes that placeholder and only
+  that one: the real servers stay archived and mail falls back to
+  MailHog. A production never gets the step, because there `smtplocal`
+  is the real relay, and the neutralized backup download keeps the
+  placeholder because it can be restored anywhere. Stagings created
+  before this version get it at their next refresh from production.
+  `data/neutralize.sql` documents the same `DELETE` for a local devel.
+
 ## [1.0.151] — 2026-10-04
 
 ### Fixed

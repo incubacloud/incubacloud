@@ -113,6 +113,25 @@ STUB
     [ "$status" -eq 1 ]
 }
 
+@test "use-mail-catcher deletes only the neutralization placeholder" {
+    run bash "$SCRIPT" use-mail-catcher "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"docker compose exec -T db psql -U odoo -d prod -c"* ]]
+    [[ "$calls" == *"DELETE FROM ir_mail_server WHERE name='neutralization - disable emails' AND smtp_host='invalid'"* ]]
+}
+
+@test "use-mail-catcher is guarded against a database with no mail servers table" {
+    run bash "$SCRIPT" use-mail-catcher "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"table_name='ir_mail_server'"* ]]
+}
+
+@test "use-mail-catcher refuses to run with missing arguments" {
+    run bash "$SCRIPT" use-mail-catcher "$DIR" odoo
+    [ "$status" -eq 1 ]
+}
+
 @test "ensure-connect reinstalls the connect module headless" {
     run bash "$SCRIPT" ensure-connect "$DIR" prod
     [ "$status" -eq 0 ]
