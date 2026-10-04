@@ -4,7 +4,14 @@
 -- Usage:
 --   click-odoo-copydb restore devel < dump.sql
 --   click-odoo-neutralize -d devel
+--   docker compose exec -T db psql -U odoo -d devel -c "DELETE FROM ir_mail_server
+--       WHERE name = 'neutralization - disable emails' AND smtp_host = 'invalid'"
 --   invoke restart
+--
+-- The DELETE drops the placeholder server Odoo's own neutralization adds,
+-- so mail falls back to the stack's MailHog instead of failing. Only on a
+-- stack whose SMTP is a mail catcher (devel, staging): on prod.yaml the
+-- fallback is the real relay.
 
 -- 1. Nullify all EncryptedChar fields (prevents decrypt crashes with wrong key)
 UPDATE cloud_host SET password = '', key_file = NULL, traefik_panel_password = '';

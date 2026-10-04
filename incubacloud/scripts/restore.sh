@@ -5,6 +5,7 @@
 #   restore.sh verify-file    <dir> <remote_zip>
 #   restore.sh restore-db     <dir> <dbname> <remote_zip> [neutralize]
 #   restore.sh set-base-url   <dir> <pg_user> <dbname> <base_url_sql> <report_url>
+#   restore.sh use-mail-catcher <dir> <pg_user> <dbname>
 #   restore.sh ensure-connect <dir> <dbname>
 #
 # ``restore-db`` takes an optional 4th argument (0/1, default 0): with 1
@@ -18,6 +19,14 @@
 # ``set-base-url`` overwrites the web.base.url/report.url that travelled
 # inside the restored dump. It also drops web.base.url.freeze: with the
 # freeze set, the copy would stay pinned to the source's domain forever.
+#
+# ``use-mail-catcher`` removes the placeholder outgoing server that
+# Odoo's neutralization inserts (``neutralization - disable emails`` on
+# host ``invalid``). Odoo uses any active ``ir.mail_server`` before the
+# SMTP in its configuration, so while the placeholder exists every mail
+# fails instead of reaching the staging's MailHog (``smtplocal:1025``).
+# The real servers stay archived. Only for a staging restored with
+# --neutralize: on a production stack ``smtplocal`` is the real relay.
 #
 # ``verify-file`` makes the bind-mounted zip readable from *inside* the
 # odoo container: the SSH user and the container's odoo user are
@@ -85,6 +94,21 @@ INSERT INTO ir_config_parameter (key,value) VALUES \
 ('web.base.url','$base_url_sql'),('report.url','$report_url') \
 ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value; \
 DELETE FROM ir_config_parameter WHERE key='web.base.url.freeze'; \
+END IF; END \$\$;"
+        ;;
+    use-mail-catcher)
+        ic_require_args 2 "$#" \
+            "restore.sh use-mail-catcher <dir> <pg_user> <dbname>"
+        pg_user="$1"; dbname="$2"
+        ic_log "letting $dbname send through the stack's mail catcher"
+        # Guarded like set-base-url; matching on name and host leaves any
+        # real server alone, and a database neutralized by an Odoo that
+        # inserts no placeholder simply has nothing to delete.
+        docker compose exec -T db psql -U "$pg_user" -d "$dbname" -c \
+"DO \$\$ BEGIN IF EXISTS (SELECT FROM information_schema.tables WHERE \
+table_schema='public' AND table_name='ir_mail_server') THEN \
+DELETE FROM ir_mail_server WHERE name='neutralization - disable emails' \
+AND smtp_host='invalid'; \
 END IF; END \$\$;"
         ;;
     ensure-connect)
