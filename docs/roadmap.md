@@ -13,13 +13,14 @@ This document describes the planned direction for IncubaCloud Core. It is a livi
 - PR preview environments and coalesced webhook auto-rebuilds
 - Login with GitHub — sign in to the platform with a GitHub account, alongside the existing GitHub App integration
 - Staging autopurge — a staging nobody has used for 90 days is deleted, after two warnings and with a one-click Keep
+- **Host and instance monitoring** — automatically enrolled host agents, host and container metrics, central metrics and log storage, dashboards, and configurable alert thresholds. See the [operations guide](observability-operations.md) and [user reference](user/docs/reference/monitoring.md).
+- **Instance log rotation and log access** — daily Odoo log archives retained on the host across rebuilds, with live viewing, archive search and download. See the [logs guide](user/docs/instances/logs.md).
 
 ---
 
 ## Near term
 
-- **Agentless monitoring** — lightweight metric history (host load, memory, disk per mount point, per-container stats, database size, HTTP latency, job queue depth), an external HTTP health check with TLS-expiry verification as a second independent signal, configurable alert thresholds, and sparklines in the dashboard. No agent installed on the servers.
-- **Instance log rotation and log access** — guaranteed log rotation for every deployed instance (including retroactive application to existing ones) and a better container log viewer: incremental follow, log download, and rate-limited access.
+- **Monitoring follow-up** — per-instance database metrics (connections, cache hit ratio and locks) and synthetic probes from outside remain designed but deferred; they are not part of the monitoring already shipped. See [what is not here yet](user/docs/reference/monitoring.md#what-is-not-here-yet).
 - **User SSH keys and direct shell access** — register per-user public SSH keys (added manually or imported from a GitHub account), grant them per instance, and open a shell directly over SSH with your own identity. Restricted server-side authorization, immediate revocation and full audit trail.
 
 ## Medium term
