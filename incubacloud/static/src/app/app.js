@@ -160,12 +160,51 @@ export class Chrome extends Component {
 
     /**
      * Escape closes the off-canvas navigation, the way every overlay
-     * on the platform behaves.
+     * on the platform behaves. With no overlay open it dismisses the
+     * latest toast instead: errors persist, and the keyboard needs a
+     * way to close them. Modals stop Escape before it gets here; the
+     * slide-over and open dropdowns handle it themselves, so they win.
+     *
+     * @param {KeyboardEvent} ev
      */
     onGlobalKeydown(ev) {
-        if (ev.key === "Escape" && this.state.sidebarOpen) {
+        if (ev.key !== "Escape") return;
+        if (this.state.sidebarOpen) {
             this.state.sidebarOpen = false;
+            return;
         }
+        if (this.state.slideOver || ev.defaultPrevented) return;
+        if (ev.target?.closest?.("[aria-expanded='true'], .rl-sel--open")) return;
+        this._dismissLatestToast?.();
+    }
+
+    /**
+     * Text of a failed-job toast: what failed, on what, and why in one
+     * line, so the user knows whether to act before opening anything.
+     *
+     * @param {{name: string, target_name?: string, error?: string}} brief
+     *     the ``/cloud/get_job_brief`` answer
+     * @returns {string}
+     */
+    _jobFailedMessage(brief) {
+        if (!brief.target_name) return _t("%s failed", brief.name);
+        if (!brief.error) return _t("%s on %s failed", brief.name, brief.target_name);
+        return _t("%s on %s failed: %s", brief.name, brief.target_name, brief.error);
+    }
+
+    /**
+     * Open the job history of the failed job's instance, or of its host
+     * when the job has no instance: the failed job is at the top.
+     *
+     * @param {{host_id?: number, instance_id?: number}} brief
+     */
+    _openJobsOf(brief) {
+        this.state.slideOver = {
+            panel: "jobs",
+            instanceId: brief.instance_id || false,
+            hostId: brief.instance_id ? false : (brief.host_id || false),
+            expanded: false,
+        };
     }
 
     setup() {
@@ -233,7 +272,8 @@ export class Chrome extends Component {
                     this._toastApi?.success(_t("%s completed", brief.name));
                 } else if (brief.state === "failed") {
                     this._toastApi?.error(
-                        _t("%s failed — check the job log", brief.name),
+                        this._jobFailedMessage(brief),
+                        { label: _t("View"), onClick: () => this._openJobsOf(brief) },
                     );
                 }
             } catch (_e) { console.debug("Job toast skipped:", _e); }
@@ -309,10 +349,11 @@ export class Chrome extends Component {
         const pollAlertCount = this._pollAlertCount;
         let _alertReturnUrl = null;
         // Toast notification service
-        const { toastApi, toasts, dismissToast } = createToastService();
+        const { toastApi, toasts, dismissToast, dismissLatestToast } = createToastService();
         // Referenced by the bus handlers above (they only run
         // post-mount, long after setup finished assigning this).
         this._toastApi = toastApi;
+        this._dismissLatestToast = dismissLatestToast;
 
         // Single source of truth for project data on the SPA side.
         // Owns the cloud_jobs bus subscription that drives the

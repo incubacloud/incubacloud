@@ -1,12 +1,19 @@
 .ic-toast-container {
     position: fixed;
-    top: 16px;
+    // Below the 54px header, never over it: an error toast is persistent,
+    // and on top it covered the bell, the job history and the user menu,
+    // the very places it sends the user to.
+    top: 66px;
     right: 16px;
     z-index: 10000;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-width: 420px;
+    // On a phone the 420px cap is wider than the screen: keep the 16px
+    // gutter on the left as well.
+    // Interpolated: libsass would evaluate a bare min() as its own and
+    // fail on the mixed units, taking the whole bundle down with it.
+    max-width: #{"min(420px, calc(100vw - 32px))"};
     pointer-events: none;
 }
 
@@ -58,6 +65,23 @@
 
 .ic-toast-msg {
     flex: 1;
+}
+
+.ic-toast-action {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+    white-space: nowrap;
+
+    &:hover,
+    &:focus-visible {
+        text-decoration: underline;
+    }
 }
 
 .ic-toast-close {

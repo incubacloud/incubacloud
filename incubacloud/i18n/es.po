@@ -126,8 +126,20 @@ msgstr "%s eliminada."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/app/app.js:0
-msgid "%s failed — check the job log"
-msgstr "%s falló — revise el registro del trabajo"
+msgid "%s failed"
+msgstr "%s falló"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.js:0
+msgid "%s on %s failed"
+msgstr "%s en %s falló"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.js:0
+msgid "%s on %s failed: %s"
+msgstr "%s en %s falló: %s"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12649,6 +12661,12 @@ msgstr ""
 "VictoriaMetrics, Grafana y una pasarela, desplegados como un trabajo en el "
 "host que elija. Lo habitual es empezar en el mismo host del panel; para "
 "moverlo, re-ejecútelo contra otro host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/app/app.js:0
+msgid "View"
+msgstr "Ver"
 
 #. module: incubacloud
 #. odoo-javascript

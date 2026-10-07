@@ -6,6 +6,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.154] — 2026-10-07
+
+### Changed
+
+- **Notices appear below the header, not over it.** An error notice
+  stays until it is closed, and it sat on top of the alerts bell, the
+  job history and the user menu: the places it sent the user to. On a
+  phone a notice now keeps a margin on both sides. Each notice is its
+  own live region, an error as an alert that a screen reader announces
+  at once, everything else as a status.
+- **A failed job's notice says on what and why, and opens its jobs.**
+  "Provision VPS failed — check the job log" becomes "Provision VPS on
+  vps-01 failed: no stock for cx23 in hel1", with the same one-line
+  excerpt the failed-job alert shows, and a **View** button that opens
+  the job history of that instance or host. `/cloud/get_job_brief`
+  returns the target and the excerpt for it; who gets an answer at all
+  is unchanged.
+
+### Added
+
+- **Escape closes the latest notice** when no modal, side panel or
+  open menu takes the key first.
+- **Notices no longer pile up.** One identical to a notice already on
+  screen is not shown twice, and at most five stay visible: the oldest
+  makes room. Every failed job is still in the alerts bell.
+
 ## [1.0.153] — 2026-10-07
 
 ### Added

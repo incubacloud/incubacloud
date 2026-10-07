@@ -482,6 +482,11 @@ class CrudMixin:
         back through this ACL-checked path for anything displayable.
         Returns ``{'ok': False}`` for jobs the user cannot read and for
         hidden background types — neither should ever toast.
+
+        Besides ``id``, ``name`` and ``state`` it returns what the job ran
+        on (``target_name``, ``host_id``, ``instance_id``), so the toast
+        says on what and can open its job history, and for a failed job
+        the same one-line ``error`` the failed-job alert shows.
         """
         try:
             job_id = int(job_id)
@@ -500,11 +505,22 @@ class CrudMixin:
         # email/digest channels honour.
         if request.env['cloud.job']._job_muted_for(job, request.env.user):
             return {'ok': False}
+        # Read past the record rules on purpose: the caller can read the
+        # job, and the failed-job alert shows them the same target and
+        # excerpt. ``queue.job`` itself is not theirs to read.
+        job_sudo = job.sudo()
+        error = ''
+        if job.state == 'failed':
+            error = job_sudo._failure_excerpt(job_sudo.queue_job_id.exc_message)
         return {
             'ok': True,
             'id': job.id,
             'name': job.name,
             'state': job.state,
+            'target_name': job_sudo.instance_id.name or job_sudo.host_id.name or '',
+            'host_id': job_sudo.host_id.id or False,
+            'instance_id': job_sudo.instance_id.id or False,
+            'error': error,
         }
 
     @http.route(['/cloud/dismiss_all_alerts'], type='jsonrpc', auth='user')
