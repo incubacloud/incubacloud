@@ -1074,6 +1074,22 @@ class CloudJob(models.Model):
         return set(self._actionable_alert_codes)
 
     @api.model
+    def _failure_excerpt(self, exc_message):
+        """Shorten a job's exception to one line for at-a-glance triage.
+
+        The failed-job alert and the failed-job toast both show it. Only
+        the first line, capped at 100 characters, so neither wraps into a
+        wall of text; the job log keeps the full traceback.
+
+        :param str exc_message: the queue job's exception message, or None
+        :return: the excerpt, or ``""`` when there is nothing to show
+        :rtype: str
+        """
+        if not exc_message:
+            return ""
+        return exc_message.strip().split("\n", 1)[0][:100]
+
+    @api.model
     def _create_job_failed_alert(self, cjob, exc_message=None):
         """Persist a ``cloud.alert`` when a job transitions to failed.
 
@@ -1108,14 +1124,10 @@ class CloudJob(models.Model):
             else "warning"
         )
         target_name = cjob.instance_id.name or cjob.host_id.name or ""
-        # Include a snippet of the exception for at-a-glance triage.
-        # Cap at 100 chars so the panel doesn't wrap into a wall of
-        # text; the job log has the full traceback.
         msg = f"{cjob.name or 'Job'} on {target_name} failed"
-        if exc_message:
-            excerpt = exc_message.strip().split("\n", 1)[0][:100]
-            if excerpt:
-                msg = f"{msg}: {excerpt}"
+        excerpt = self._failure_excerpt(exc_message)
+        if excerpt:
+            msg = f"{msg}: {excerpt}"
 
         vals = {
             "code": "job_failed",
