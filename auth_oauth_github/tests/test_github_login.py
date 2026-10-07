@@ -7,9 +7,11 @@ production.
 from unittest.mock import MagicMock, patch
 
 import requests
+from lxml import etree
 
 from odoo.exceptions import AccessDenied
 from odoo.tests.common import TransactionCase
+from odoo.tools.misc import file_open
 
 from odoo.addons.auth_oauth_github.controllers import main as github_main
 
@@ -164,13 +166,22 @@ class TestGitHubProviderRecord(TransactionCase):
 
     def test_shipped_provider_is_disabled_and_credential_less(self):
         """Shipping it enabled would put a button on every login page that
-        cannot work until someone pastes credentials."""
-        provider = self.env.ref('auth_oauth_github.provider_github')
-        self.assertTrue(provider.github_flow)
-        self.assertFalse(provider.enabled)
-        self.assertFalse(provider.client_id)
-        self.assertFalse(provider.sudo().client_secret)
-        self.assertIn('user:email', provider.scope)
+        cannot work until someone pastes credentials.
+
+        Read from the data file, not the database: the record is
+        ``noupdate`` and an administrator fills it in, so a database
+        restored from production carries its real client id while what
+        ships is still empty.
+        """
+        with file_open('auth_oauth_github/data/auth_oauth_provider.xml') as handle:
+            root = etree.parse(handle).getroot()
+        record = root.find(".//record[@id='provider_github']")
+        fields = {f.get('name'): f for f in record.findall('field')}
+        self.assertEqual(fields['github_flow'].get('eval'), 'True')
+        self.assertEqual(fields['enabled'].get('eval'), 'False')
+        self.assertNotIn('client_id', fields)
+        self.assertNotIn('client_secret', fields)
+        self.assertIn('user:email', fields['scope'].text)
 
 
 class TestBuildAuthLink(TransactionCase):

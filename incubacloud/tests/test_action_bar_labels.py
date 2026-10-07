@@ -14,6 +14,7 @@ part of any gate, so both checks are textual — the same approach as the
 theme and shared-helper guards.
 """
 import pathlib
+import re
 
 from odoo.tests.common import BaseCase
 
@@ -57,6 +58,25 @@ class TestActionBarLabels(BaseCase):
                     self._template(component),
                     "Pass the action object so its confirmation notice "
                     "reaches the handler.",
+                )
+
+    def test_no_button_passes_a_bare_code(self):
+        """Restart, Stop and Start passed ``'restart_instance'`` & co.
+
+        The handler reads ``action.code``, so a string reached the server
+        as ``None`` and every press failed with "Job type with code None
+        not found", from 3-sep-2026 until a QA walk pressed them.
+        """
+        for component, handler in _BARS:
+            with self.subTest(component=component):
+                bare = re.findall(
+                    rf"this\.{handler}\(\s*['\"][^'\"]*['\"]\s*\)",
+                    self._template(component),
+                )
+                self.assertFalse(
+                    bare,
+                    f"{handler} takes an action object ({{ code: ... }}), "
+                    f"not a bare code: {bare}",
                 )
 
     def test_both_handlers_honour_the_notice(self):

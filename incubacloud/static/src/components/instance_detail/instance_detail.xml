@@ -267,7 +267,7 @@
                     class="rl-iconbtn"
                     title="Restart"
                     aria-label="Restart instance"
-                    t-on-click="() => this.instanceAction('restart_instance')"
+                    t-on-click="() => this.instanceAction({ code: 'restart_instance' })"
                   >
                                         <t t-out="env.icon('refresh', 15)" />
                                     </button>
@@ -275,7 +275,7 @@
                     class="rl-iconbtn"
                     title="Stop"
                     aria-label="Stop instance"
-                    t-on-click="() => this.instanceAction('stop_instance')"
+                    t-on-click="() => this.instanceAction({ code: 'stop_instance' })"
                   >
                                         <t t-out="env.icon('stop', 15)" />
                                     </button>
@@ -285,7 +285,7 @@
                     class="rl-iconbtn"
                     title="Start"
                     aria-label="Start instance"
-                    t-on-click="() => this.instanceAction('start_instance')"
+                    t-on-click="() => this.instanceAction({ code: 'start_instance' })"
                   >
                                         <t t-out="env.icon('play', 15)" />
                                     </button>

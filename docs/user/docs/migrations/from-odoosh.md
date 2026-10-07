@@ -19,25 +19,30 @@ from the backup ZIP you download from Odoo.sh. Each step is straightforward.
 
 ## Step 1 — import the project from Git
 
-1. On the Odoo.sh dashboard, copy your project's Git URL (HTTPS with a token,
-   or SSH).
-2. In IncubaCloud, click **New Project**. Paste the URL.
+1. On the Odoo.sh dashboard, copy your project's GitHub URL. The plain HTTPS
+   form (`https://github.com/<owner>/<repo>`) and the SSH form
+   (`git@github.com:<owner>/<repo>.git`) both work.
+2. In IncubaCloud, on **Projects**, click **Import from GitHub**. Paste the URL
+   and pick the branch.
 3. We auto-detect the Odoo.sh layout via `.gitmodules` and reconstruct the
    project structure: submodules, branches, Odoo version (from the project's
    `requirements.txt` or pinned image).
-4. Save. The project shows up with the detected branches and version pre-filled.
+4. Click **Import**. The project shows up with the detected branches and
+   version pre-filled, and with a production instance ready to deploy.
 
 !!! warning "Private repos need credentials"
-    HTTPS with a personal access token works (`https://<token>@github.com/...`).
-    SSH needs the platform's deploy key added to your repo.
+    Connect the platform's GitHub App, or store a personal access token, in
+    **Settings → GitHub** before importing. A URL with a token inside it
+    (`https://<token>@github.com/...`) is refused: credentials never travel in
+    the URL. There are no deploy keys; access goes through the App or the token.
 
 ## Step 2 — restore the database
 
 1. Download a backup from Odoo.sh. From the project's **Backups** tab, pick the
    most recent ZIP. The format is the standard Odoo dump (`dump.sql + filestore/`).
-2. In IncubaCloud, [deploy a fresh instance](../getting-started/first-deploy.md) under your new
-   project, with the same Odoo version. Don't worry about the data — you're
-   about to overwrite it.
+2. In IncubaCloud, [deploy](../getting-started/first-deploy.md) the production
+   instance the import created, with the same Odoo version. Don't worry about the
+   data — you're about to overwrite it.
 3. Open the instance → **Restore Database**.
 4. Send the ZIP through your browser, and for a large database use the
    temporary upload key or paste a link to it instead

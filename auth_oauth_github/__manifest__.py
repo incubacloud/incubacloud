@@ -1,6 +1,6 @@
 {
     'name': 'GitHub OAuth Authentication',
-    'version': '19.0.1.0.0',
+    'version': '19.0.1.0.1',
     'summary': 'Sign in with GitHub, using the OAuth authorization code flow',
     'description': """
 Adds "Sign in with GitHub" to the Odoo login page.
