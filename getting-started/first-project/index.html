@@ -1437,8 +1437,9 @@ with the project form.</p>
 <p>For private GitHub repos, install the platform's <strong>GitHub App</strong>
 (<code>Settings → GitHub App</code>) — it grants repository access without sharing
 credentials — or store a personal access token in <code>Settings → GitHub</code>.
-Plain HTTPS URLs with an embedded token
-(<code>https://&lt;token&gt;@github.com/your-org/your-repo.git</code>) also work.</p>
+A URL with a token inside it
+(<code>https://&lt;token&gt;@github.com/your-org/your-repo.git</code>) is refused:
+credentials never travel in the URL.</p>
 </div>
 <h2 id="4-pick-a-backup-backend-optional-recommended">4. Pick a backup backend (optional, recommended)<a class="headerlink" href="#4-pick-a-backup-backend-optional-recommended" title="Permanent link">&para;</a></h2>
 <p>Select an existing backup backend or skip and configure one later from

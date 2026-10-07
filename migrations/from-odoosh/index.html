@@ -1407,26 +1407,31 @@ customer database.</p>
 </ul>
 <h2 id="step-1-import-the-project-from-git">Step 1 — import the project from Git<a class="headerlink" href="#step-1-import-the-project-from-git" title="Permanent link">&para;</a></h2>
 <ol>
-<li>On the Odoo.sh dashboard, copy your project's Git URL (HTTPS with a token,
-   or SSH).</li>
-<li>In IncubaCloud, click <strong>New Project</strong>. Paste the URL.</li>
+<li>On the Odoo.sh dashboard, copy your project's GitHub URL. The plain HTTPS
+   form (<code>https://github.com/&lt;owner&gt;/&lt;repo&gt;</code>) and the SSH form
+   (<code>git@github.com:&lt;owner&gt;/&lt;repo&gt;.git</code>) both work.</li>
+<li>In IncubaCloud, on <strong>Projects</strong>, click <strong>Import from GitHub</strong>. Paste the URL
+   and pick the branch.</li>
 <li>We auto-detect the Odoo.sh layout via <code>.gitmodules</code> and reconstruct the
    project structure: submodules, branches, Odoo version (from the project's
    <code>requirements.txt</code> or pinned image).</li>
-<li>Save. The project shows up with the detected branches and version pre-filled.</li>
+<li>Click <strong>Import</strong>. The project shows up with the detected branches and
+   version pre-filled, and with a production instance ready to deploy.</li>
 </ol>
 <div class="admonition warning">
 <p class="admonition-title">Private repos need credentials</p>
-<p>HTTPS with a personal access token works (<code>https://&lt;token&gt;@github.com/...</code>).
-SSH needs the platform's deploy key added to your repo.</p>
+<p>Connect the platform's GitHub App, or store a personal access token, in
+<strong>Settings → GitHub</strong> before importing. A URL with a token inside it
+(<code>https://&lt;token&gt;@github.com/...</code>) is refused: credentials never travel in
+the URL. There are no deploy keys; access goes through the App or the token.</p>
 </div>
 <h2 id="step-2-restore-the-database">Step 2 — restore the database<a class="headerlink" href="#step-2-restore-the-database" title="Permanent link">&para;</a></h2>
 <ol>
 <li>Download a backup from Odoo.sh. From the project's <strong>Backups</strong> tab, pick the
    most recent ZIP. The format is the standard Odoo dump (<code>dump.sql + filestore/</code>).</li>
-<li>In IncubaCloud, <a href="../../getting-started/first-deploy/">deploy a fresh instance</a> under your new
-   project, with the same Odoo version. Don't worry about the data — you're
-   about to overwrite it.</li>
+<li>In IncubaCloud, <a href="../../getting-started/first-deploy/">deploy</a> the production
+   instance the import created, with the same Odoo version. Don't worry about the
+   data — you're about to overwrite it.</li>
 <li>Open the instance → <strong>Restore Database</strong>.</li>
 <li>Send the ZIP through your browser, and for a large database use the
    temporary upload key or paste a link to it instead
