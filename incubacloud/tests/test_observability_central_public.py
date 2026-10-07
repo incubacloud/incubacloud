@@ -53,10 +53,9 @@ def _compose(**variables):
     )
     values.update(variables)
     # Ansible's own defaults: trim_blocks on, lstrip_blocks off.
-    environment = jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
+    return jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
         trim_blocks=True, undefined=jinja2.StrictUndefined,
-    )
-    return environment.from_string(
+    ).from_string(
         task["ansible.builtin.copy"]["content"],
     ).render(**values)
 

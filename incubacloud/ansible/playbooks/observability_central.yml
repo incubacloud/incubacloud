@@ -315,7 +315,8 @@
                 traefik.enable: "true"
                 traefik.docker.network: inverseproxy_shared
                 traefik.http.services.ic-central-gateway.loadbalancer.server.port: "8428"
-                traefik.http.routers.ic-central-data.rule: "Host(`{{ ic_public_host }}`) && (PathPrefix(`/w/`) || PathPrefix(`/r/`) || PathPrefix(`/lw/`) || PathPrefix(`/lr/`))"
+                traefik.http.routers.ic-central-data.rule: "Host(`{{ ic_public_host }}`) && (PathPrefix(`/w/`)
+                  || PathPrefix(`/r/`) || PathPrefix(`/lw/`) || PathPrefix(`/lr/`))"
                 traefik.http.routers.ic-central-data.entrypoints: https
                 traefik.http.routers.ic-central-data.service: ic-central-gateway
                 traefik.http.routers.ic-central-data.priority: "10"
