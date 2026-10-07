@@ -22,9 +22,11 @@ request/response.
 """
 import base64
 import logging
+from urllib.parse import urlsplit
 
 import yaml
 
+from ..net.trusted_proxies import parse_ranges
 from .ansible_executor import AnsibleExecutor
 
 _logger = logging.getLogger(__name__)
@@ -356,6 +358,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         grafana_admin_basic = base64.b64encode(
             f"admin:{admin_password}".encode()
         ).decode()
+        public = self._public_endpoint(settings)
         return {
             "ic_retention_days": settings.metrics_retention_days or 90,
             # The whole vmauth access-control list in one document: the
@@ -383,13 +386,56 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "ic_operator_plain": operator_token,
             "ic_grafana_admin_password": admin_password,
             "ic_grafana_admin_basic": grafana_admin_basic,
-            "ic_grafana_root_url": settings.grafana_base_url or "",
+            # With a public name, Grafana answers under it from the first
+            # deployment on: its links need the root before anyone
+            # embeds it.
+            "ic_grafana_root_url": settings.grafana_base_url
+            or (public["grafana"] if public else ""),
+            # Empty keeps the central on this host's docker bridge only,
+            # exactly as before. Set, the playbook also publishes vmauth
+            # and Grafana through this host's Traefik under the name.
+            "ic_public_host": public["host"] if public else "",
+            "ic_public_tls": public["tls"] if public else "",
+            "ic_operator_sources": public["operator_sources"] if public else [],
+            "ic_grafana_frame_ancestors": public["frame_ancestors"] if public else "",
             # Filled by the SaaS layer once Grafana is registered as an
             # OIDC client (see the manager's override). Empty here means
             # "no identity provider available", which is the self-hosted
             # case: the playbook falls back to trusting a header set by
             # the panel's own reverse proxy.
             "ic_grafana_oidc": settings._grafana_oidc(accounts),
+        }
+
+    def _public_endpoint(self, settings):
+        """Where the central is published, or None to keep it on the bridge.
+
+        :param settings: the ``cloud.settings`` record.
+        :returns: ``{"host", "tls", "operator_sources", "frame_ancestors",
+            "read", "write", "grafana"}`` for a public name, else None.
+        :rtype: dict or None
+        """
+        host_name = (settings.metrics_central_public_host or "").strip().lower()
+        if not host_name:
+            return None
+        base = f"https://{host_name}"
+        panel = urlsplit(
+            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
+        )
+        return {
+            "host": host_name,
+            # Behind a CDN that already holds a certificate for the name,
+            # the host's default one; otherwise one of its own.
+            "tls": self._host()._router_tls_mode(host_name),
+            # The host itself always; whoever the operator names besides
+            # (the panel's public address once it runs elsewhere).
+            "operator_sources": ["127.0.0.1/32"]
+            + parse_ranges(settings.metrics_central_operator_sources),
+            "frame_ancestors": (
+                f"{panel.scheme}://{panel.netloc}" if panel.netloc else ""
+            ),
+            "read": f"{base}/r",
+            "write": f"{base}/w/api/v1/write",
+            "grafana": f"{base}/grafana/",
         }
 
     def parse_results(self, results):
@@ -437,7 +483,16 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "metrics_enabled": True,
             "metrics_central_host_id": self._host().id,
         }
-        if gateway:
+        public = self._public_endpoint(settings)
+        if public:
+            # Published under its own name: the panel and every agent use
+            # it, wherever they run. The bridge address below is only
+            # right for what runs on this very host.
+            vals["metrics_central_url"] = public["read"]
+            vals["metrics_remote_write_url"] = public["write"]
+            if not (settings.grafana_base_url or "").strip():
+                vals["grafana_base_url"] = public["grafana"]
+        elif gateway:
             # Read path: the panel queries from inside its own container,
             # so the docker bridge address the playbook reports is
             # exactly right — and is not routable from off the host.
@@ -460,7 +515,13 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             f"✓ Metrics central is up and observability is enabled "
             f"(account {account})."
         )
-        if gateway:
+        if public:
+            self._sys(
+                f"Published as https://{public['host']}: the panel and every "
+                "agent use it. Agents already installed pick it up when "
+                "they are next applied."
+            )
+        elif gateway:
             self._sys(
                 "Agents on this host will push to the local gateway. "
                 "For agents on OTHER hosts, set a public HTTPS "

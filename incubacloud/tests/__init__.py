@@ -92,6 +92,7 @@ from . import (
     test_monitoring_picklist,
     test_form_error_accessibility,
     test_observability_executors,
+    test_observability_central_public,
     test_traefik_metrics_retrofit,
     test_traefik_frameguard_retrofit,
     test_traefik_ratelimit_retrofit,
