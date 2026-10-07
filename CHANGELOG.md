@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.155] — 2026-10-08
+
+### Fixed
+
+- **Restart, Stop and Start on an instance did nothing since 3-sep.** The
+  three buttons passed the job type's code as a bare string, and the
+  handler reads `action.code` since the pluggable actions learnt to carry
+  a confirmation notice: every press reached the server as "Job type with
+  code None not found". They pass an action object now, and a structural
+  test refuses any handler call with a bare string.
+- **A neutralized copy keeps no GitHub credential** (`auth_oauth_github`
+  19.0.1.0.1). Stock neutralization only switches OAuth providers off, so
+  the GitHub OAuth App's client secret and the token stored on every user
+  who signed in with GitHub (plain text, and GitHub's do not expire)
+  survived into QA's copy of production and into every neutralized
+  staging. The module's `data/neutralize.sql` clears both; the client id,
+  which is public, stays.
+- **The Odoo.sh migration guide and the private-repo note** described a URL
+  with a token inside it, which the importer refuses, deploy keys that do
+  not exist and a "New Project" button that is "Import from GitHub".
+
 ## [1.0.154] — 2026-10-07
 
 ### Changed

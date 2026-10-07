@@ -34,8 +34,9 @@ If you don't have a repo yet, skip this step. You can add it later from
     For private GitHub repos, install the platform's **GitHub App**
     (`Settings → GitHub App`) — it grants repository access without sharing
     credentials — or store a personal access token in `Settings → GitHub`.
-    Plain HTTPS URLs with an embedded token
-    (`https://<token>@github.com/your-org/your-repo.git`) also work.
+    A URL with a token inside it
+    (`https://<token>@github.com/your-org/your-repo.git`) is refused:
+    credentials never travel in the URL.
 
 ## 4. Pick a backup backend (optional, recommended)
 
