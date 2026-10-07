@@ -60,6 +60,9 @@ export class Settings extends Component {
                 log_search_timeout_s: 30,
                 // Edge
                 trusted_proxy_ranges: "",
+                // Where the metrics central is published
+                metrics_central_public_host: "",
+                metrics_central_operator_sources: "",
                 // GitHub
                 app_id: "",
                 installation_id: "",
@@ -225,6 +228,10 @@ export class Settings extends Component {
             this.state.form.metrics_remote_write_token = "";
             this.state.form.metrics_retention_days = general.metrics_retention_days || 90;
             this.state.form.grafana_base_url = general.grafana_base_url || "";
+            this.state.form.metrics_central_public_host =
+                general.metrics_central_public_host || "";
+            this.state.form.metrics_central_operator_sources =
+                general.metrics_central_operator_sources || "";
             this.state.hasMetricsToken = !!general.has_metrics_remote_write_token;
             this.state.form.trusted_proxy_ranges = general.trusted_proxy_ranges || "";
             this.state.effectiveProxyRanges =
@@ -393,10 +400,14 @@ export class Settings extends Component {
                 metrics_retention_days: this.state.form.metrics_retention_days,
                 grafana_base_url: this.state.form.grafana_base_url,
                 trusted_proxy_ranges: this.state.form.trusted_proxy_ranges,
+                metrics_central_public_host: this.state.form.metrics_central_public_host,
+                metrics_central_operator_sources:
+                    this.state.form.metrics_central_operator_sources,
             });
             if (res && res.ok === false) {
-                // The range list is refused by a model constraint rather
-                // than trimmed, so the message names the bad entries.
+                // The range lists and the central's name are refused by a
+                // model constraint rather than trimmed, so the message
+                // names what is wrong.
                 this.env.toast?.error(res.error || _t("General settings"));
                 errors.push(_t("General settings"));
             }

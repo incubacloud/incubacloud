@@ -10,6 +10,7 @@ from odoo.exceptions import UserError, ValidationError
 
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from .cloud_instance import AUTOPURGE_FINAL_DAYS, AUTOPURGE_WARN_DAYS
+from .cloud_instance_domain import _HOSTNAME_RE
 from .encrypted_char import EncryptedChar, EncryptedFieldMixin
 from .password_utils import (
     generate_password,
@@ -547,6 +548,24 @@ class CloudSettings(models.Model):
         help='Base URL of the Grafana embedded in the panel, e.g. '
              'https://grafana.example.com. Empty hides the Monitoring tab.',
     )
+    metrics_central_public_host = fields.Char(
+        string='Public host name of the central',
+        help='Host name under which the central publishes itself through '
+             'the Traefik of the host it runs on, with a certificate, e.g. '
+             'metrics.example.com; its DNS record must point at that host. '
+             'The panel then reaches the central, and every agent writes '
+             'to it, under that name. Empty: the central is used from the '
+             "panel's own host, on its docker bridge, as before.",
+    )
+    metrics_central_operator_sources = fields.Text(
+        string='Who may delete series on the central',
+        help='Address ranges, one per line (e.g. 198.51.100.7/32), allowed '
+             "to reach the central's series-deletion route under its "
+             "public name: the panel's own public address. Every other "
+             'operator route stays reachable from the central host only. '
+             "Empty: only the central's host itself, which is right while "
+             'the panel runs there.',
+    )
 
     # ── Metrics account helpers ────────────────────────────────────────────
 
@@ -834,6 +853,41 @@ class CloudSettings(models.Model):
                     floor=floor,
                     warn=AUTOPURGE_WARN_DAYS,
                     final=AUTOPURGE_FINAL_DAYS,
+                ))
+
+    @api.constrains('metrics_central_public_host')
+    def _check_metrics_central_public_host(self):
+        """Refuse a public name that is not a plain DNS host name.
+
+        It ends up in Traefik rules and in URLs the panel and every agent
+        call, so a scheme, a path or a stray character would break both.
+
+        :raise ValidationError: naming the value
+        """
+        for settings in self:
+            name = settings.metrics_central_public_host or ''
+            if name and ('.' not in name or not _HOSTNAME_RE.match(name)):
+                raise ValidationError(_(
+                    "%(name)s is not a host name. Write the name alone, for "
+                    "example metrics.example.com: no https:// and no path.",
+                    name=name,
+                ))
+
+    @api.constrains('metrics_central_operator_sources')
+    def _check_metrics_central_operator_sources(self):
+        """Refuse an entry that is not an address range.
+
+        A typo would silently leave the panel unable to delete series.
+
+        :raise ValidationError: naming the unusable entries
+        """
+        for settings in self:
+            bad = invalid_ranges(settings.metrics_central_operator_sources)
+            if bad:
+                raise ValidationError(_(
+                    "These are not address ranges: %(entries)s. Write one "
+                    "CIDR range per line, for example 198.51.100.7/32.",
+                    entries=", ".join(bad),
                 ))
 
     @api.constrains('trusted_proxy_ranges')

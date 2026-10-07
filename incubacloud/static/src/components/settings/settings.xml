@@ -636,6 +636,33 @@
                                    t-on-change="(ev) => this.state.form.grafana_base_url = ev.target.value"/>
                             <div class="rl-th">Empty hides the charts. The dashboards are served under /grafana/ on the gateway.</div>
                         </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-central-public-host">Central's public name</label>
+                            <input id="ic-central-public-host" type="text"
+                                   placeholder="metrics.example.com"
+                                   t-att-value="state.form.metrics_central_public_host"
+                                   t-on-change="(ev) => this.state.form.metrics_central_public_host = ev.target.value"/>
+                            <div class="rl-th">
+                                For a central on a host of its own. With a name, deploying
+                                the central publishes it there through the host's proxy and
+                                points the panel and every agent at it. Point the name's DNS
+                                at that host first. Empty for a central next to the panel.
+                            </div>
+                        </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-central-operator-sources">Who may delete series on the central</label>
+                            <textarea id="ic-central-operator-sources" rows="2"
+                                      placeholder="203.0.113.10/32"
+                                      t-att-value="state.form.metrics_central_operator_sources"
+                                      t-on-change="(ev) => this.state.form.metrics_central_operator_sources = ev.target.value"/>
+                            <div class="rl-th">
+                                One range per line: the panel's public address, so removing
+                                a host or a tenant clears its series. Only used with a public
+                                name; the central's own host is always allowed.
+                            </div>
+                        </div>
                     </t>
                 </t>
 

@@ -61,6 +61,20 @@
     ic_account_names: []
     ic_grafana_root_url: ""
     ic_grafana_oidc: {}
+    # The name the central is published under through this host's Traefik
+    # (``metrics_central_public_host``). Empty, as on a central next to
+    # its panel: nothing is published, the compose file is what it always
+    # was, and the panel's Traefik (or a hand-written route) reaches the
+    # bridge ports below.
+    ic_public_host: ""
+    # ``acme`` (a certificate of its own) or ``default`` (the host's, when
+    # a CDN fronts the name and that certificate covers it).
+    ic_public_tls: ""
+    # Who may reach the series-deletion route under the public name; the
+    # other operator routes answer this host only.
+    ic_operator_sources: []
+    # The panel's origin, allowed to frame the dashboards.
+    ic_grafana_frame_ancestors: ""
     ic_grafana_admin_password: ""
     ic_grafana_admin_basic: ""
     ic_vm_image: "victoriametrics/victoria-metrics:v1.102.0"
@@ -286,6 +300,45 @@
                 - {{ ic_central_dir }}/vmauth/auth.yml:/etc/vmauth/auth.yml:ro
               ports:
                 - "{{ ic_gateway_bind }}:8428"
+          {% if ic_public_host %}
+              # Published under its own name through this host's Traefik,
+              # which reaches it over the shared network. The same routes
+              # as the hand-written gateway of a central next to its panel
+              # (docs/observability-traefik-metrics-gateway.yml): the
+              # account prefixes for everyone (vmauth asks each for its
+              # credential), the deletion route for the panel only, the
+              # rest of the operator routes for nobody off this host.
+              networks:
+                - default
+                - inverseproxy_shared
+              labels:
+                traefik.enable: "true"
+                traefik.docker.network: inverseproxy_shared
+                traefik.http.services.ic-central-gateway.loadbalancer.server.port: "8428"
+                traefik.http.routers.ic-central-data.rule: "Host(`{{ ic_public_host }}`) && (PathPrefix(`/w/`) || PathPrefix(`/r/`) || PathPrefix(`/lw/`) || PathPrefix(`/lr/`))"
+                traefik.http.routers.ic-central-data.entrypoints: https
+                traefik.http.routers.ic-central-data.service: ic-central-gateway
+                traefik.http.routers.ic-central-data.priority: "10"
+                traefik.http.routers.ic-central-delete.rule: "Host(`{{ ic_public_host }}`) && PathPrefix(`/admin-d/`)"
+                traefik.http.routers.ic-central-delete.entrypoints: https
+                traefik.http.routers.ic-central-delete.service: ic-central-gateway
+                traefik.http.routers.ic-central-delete.priority: "30"
+                traefik.http.routers.ic-central-delete.middlewares: ic-central-delete-sources
+                traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.sourcerange: "{{ ic_operator_sources | join(',') }}"
+                traefik.http.routers.ic-central-operator.rule: "Host(`{{ ic_public_host }}`) && (PathPrefix(`/admin-r/`) || PathPrefix(`/gadmin/`))"
+                traefik.http.routers.ic-central-operator.entrypoints: https
+                traefik.http.routers.ic-central-operator.service: ic-central-gateway
+                traefik.http.routers.ic-central-operator.priority: "30"
+                traefik.http.routers.ic-central-operator.middlewares: ic-central-host-only
+                traefik.http.middlewares.ic-central-host-only.ipwhitelist.sourcerange: "127.0.0.1/32"
+          {% for router in ['ic-central-data', 'ic-central-delete', 'ic-central-operator'] %}
+          {% if ic_public_tls == 'default' %}
+                traefik.http.routers.{{ router }}.tls: "true"
+          {% else %}
+                traefik.http.routers.{{ router }}.tls.certresolver: letsencrypt
+          {% endif %}
+          {% endfor %}
+          {% endif %}
               depends_on:
                 - victoriametrics
                 - loki
@@ -356,6 +409,33 @@
           {% endif %}
               ports:
                 - "{{ ic_grafana_bind }}:3000"
+          {% if ic_public_host %}
+              # The dashboards under /grafana/ of the public name. The
+              # header Grafana trusts when there is no identity provider
+              # is removed from every request that comes this way: only
+              # the panel's own proxy may ever set it.
+              networks:
+                - default
+                - inverseproxy_shared
+              labels:
+                traefik.enable: "true"
+                traefik.docker.network: inverseproxy_shared
+                traefik.http.services.ic-central-grafana.loadbalancer.server.port: "3000"
+                traefik.http.routers.ic-central-grafana.rule: "Host(`{{ ic_public_host }}`) && PathPrefix(`/grafana/`)"
+                traefik.http.routers.ic-central-grafana.entrypoints: https
+                traefik.http.routers.ic-central-grafana.service: ic-central-grafana
+                traefik.http.routers.ic-central-grafana.priority: "20"
+                traefik.http.routers.ic-central-grafana.middlewares: ic-central-grafana-headers
+                traefik.http.middlewares.ic-central-grafana-headers.headers.customrequestheaders.X-WEBAUTH-USER: ""
+                traefik.http.middlewares.ic-central-grafana-headers.headers.contentsecuritypolicy: "frame-ancestors 'self' {{ ic_grafana_frame_ancestors }}"
+          {% for router in ['ic-central-grafana'] %}
+          {% if ic_public_tls == 'default' %}
+                traefik.http.routers.{{ router }}.tls: "true"
+          {% else %}
+                traefik.http.routers.{{ router }}.tls.certresolver: letsencrypt
+          {% endif %}
+          {% endfor %}
+          {% endif %}
               volumes:
                 - grafana-data:/var/lib/grafana
                 - {{ ic_central_dir }}/provisioning:/etc/grafana/provisioning:ro
@@ -363,6 +443,12 @@
               depends_on:
                 - vmauth
 
+          {% if ic_public_host %}
+          networks:
+            inverseproxy_shared:
+              external: true
+
+          {% endif %}
           volumes:
             vmdata:
             lokidata:

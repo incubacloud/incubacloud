@@ -155,19 +155,40 @@ drops it as it ages out.
 
 ## Moving the central to its own VPS
 
-The destination is a parameter, not a hard-coded host:
+The destination is a parameter, not a hard-coded host. A central on a
+host of its own is published under a name of its own, which the
+deployment wires into that host's Traefik; the hand-written gateway
+below is only for a central next to the panel.
 
-1. Add the new server as a host and prepare it as usual.
-2. Re-run *Enable observability* in Settings against the new host.
-3. Point **Metrics backend URL**, **Remote-write URL** and **Grafana base
-   URL** at the new box.
-4. The reconciliation cron re-applies the agents on each host so they push to the
-   new endpoint.
-5. Decommission the old stack.
+1. Add the new server as a host, **not** behind the CDN (the central
+   needs a certificate of its own and Cloudflare's bot challenge drops
+   `vmagent`), and prepare it with Full Setup.
+2. Point a DNS-only A record, `metrics.<domain>` for example, at it.
+3. In Settings → Monitoring → *Advanced…*, fill in **Central's public
+   name** with that name and **Who may delete series on the central**
+   with the panel's public address (`/32`). Empty **Grafana base URL** if
+   it pointed at the old central, so the deployment fills in the new one.
+4. Re-run *Enable observability* against the new host. When the job
+   answers, the panel's query URL, the agents' remote-write URL and (if
+   it was empty) the Grafana base URL point at the new name.
+5. Register Grafana as an OIDC client again: its redirect is the new
+   Grafana URL.
+6. Hosts enrolled before the move keep pushing to the old URL until
+   their agents are re-applied: run `install_observability` on each, or
+   wait for the reconciliation cron.
+7. Remove `metrics-gateway.yml` from the old host's Traefik and
+   decommission the old stack.
 
 Historical series are not migrated by this procedure. If you need them,
-copy the VictoriaMetrics data volume across before step 3 — otherwise
+copy the VictoriaMetrics data volume across before step 4 — otherwise
 expect the dashboards to start from the moment of the switch.
+
+What the deployment publishes under the name is what the hand-written
+gateway publishes (next section), with two differences: Traefik drops
+any `X-WEBAUTH-USER` header on its way to Grafana, and Grafana's
+`frame-ancestors` names the panel's origin only. Tenant dashboards are
+framed from the tenants' own origins, so before switching them on with a
+published central, widen that list the way the gateway file does.
 
 ## Labels
 

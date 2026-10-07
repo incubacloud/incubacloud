@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.153] — 2026-10-07
+
+### Added
+
+- **The metrics central can be published from a host of its own.**
+  Settings → Monitoring gains **Central's public name** and **Who may
+  delete series on the central**. With a name, deploying the central
+  also publishes it through that host's Traefik: the four account
+  prefixes (`/w/ /r/ /lw/ /lr/`), `/grafana/` with the panel's origin in
+  `frame-ancestors` and any `X-WEBAUTH-USER` header removed, series
+  deletion (`/admin-d/`) for the listed sources only and the other
+  operator routes for the host itself. The certificate comes from Let's
+  Encrypt, or from the host's own store behind the CDN. When the job
+  answers, the panel and every new agent are pointed at the name, and the
+  Grafana base URL too if it was empty. With the name empty, a central
+  next to its panel, the compose file and the URLs written are exactly
+  as before: production's central and its hand-written gateway do not
+  change. `docs/observability-operations.md` describes moving a central
+  this way.
+
 ## [1.0.152] — 2026-10-04
 
 ### Fixed

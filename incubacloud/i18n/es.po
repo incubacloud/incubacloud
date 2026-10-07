@@ -81,6 +81,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"%(name)s is not a host name. Write the name alone, for example "
+"metrics.example.com: no https:// and no path."
+msgstr ""
+"%(name)s no es un nombre de host. Escriba solo el nombre, por ejemplo "
+"metrics.example.com: sin https:// y sin ruta."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
 "%(name)s was archived without a backup destination, so there is nothing to "
@@ -632,6 +642,21 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__addons
 msgid "Addons"
 msgstr "Módulos"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_operator_sources
+msgid ""
+"Address ranges, one per line (e.g. 198.51.100.7/32), allowed to reach the "
+"central's series-deletion route under its public name: the panel's own "
+"public address. Every other operator route stays reachable from the central "
+"host only. Empty: only the central's host itself, which is right while the "
+"panel runs there."
+msgstr ""
+"Rangos de direcciones, uno por línea (p. ej. 198.51.100.7/32), a los que se "
+"permite llegar a la ruta de borrado de series del central bajo su nombre "
+"público: la dirección pública del propio panel. Las demás rutas de operador "
+"solo son accesibles desde el host del central. Vacío: solo el propio host "
+"del central, que es lo correcto mientras el panel corre allí."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1820,6 +1845,12 @@ msgstr "Categoría"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Cc"
 msgstr "Cc"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Central's public name"
+msgstr "Nombre público del central"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__cert_resolver
@@ -4575,6 +4606,20 @@ msgstr "Clase de FontAwesome para el botón (p. ej. 'fa-magic', 'fa-cog')."
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
+"For a central on a host of its own. With a name, deploying\n"
+"                                the central publishes it there through the host's proxy and\n"
+"                                points the panel and every agent at it. Point the name's DNS\n"
+"                                at that host first. Empty for a central next to the panel."
+msgstr ""
+"Para un central en un host propio. Con un nombre, al desplegar\n"
+"                                el central se publica allí a través del proxy del host, y el\n"
+"                                panel y todos los agentes pasan a usarlo. Antes, apunte el DNS\n"
+"                                del nombre a ese host. Vacío para un central junto al panel."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
 "For a central that lives elsewhere, agents on more than one\n"
 "                            host, or an existing Grafana."
 msgstr ""
@@ -5263,6 +5308,21 @@ msgstr "El host es obligatorio cuando la auto-asignación está desactivada"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Host name is required"
 msgstr "El nombre del host es obligatorio"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_public_host
+msgid ""
+"Host name under which the central publishes itself through the Traefik of "
+"the host it runs on, with a certificate, e.g. metrics.example.com; its DNS "
+"record must point at that host. The panel then reaches the central, and "
+"every agent writes to it, under that name. Empty: the central is used from "
+"the panel's own host, on its docker bridge, as before."
+msgstr ""
+"Nombre de host bajo el que el central se publica, con certificado, a través "
+"del Traefik del host en el que corre, p. ej. metrics.example.com; su "
+"registro DNS debe apuntar a ese host. Entonces el panel llega al central, y "
+"todos los agentes escriben en él, por ese nombre. Vacío: el central se usa "
+"desde el propio host del panel, por su puente de Docker, como hasta ahora."
 
 #. module: incubacloud
 #. odoo-python
@@ -8206,6 +8266,18 @@ msgstr ""
 "silencio."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"One range per line: the panel's public address, so removing\n"
+"                                a host or a tenant clears its series. Only used with a public\n"
+"                                name; the central's own host is always allowed."
+msgstr ""
+"Un rango por línea: la dirección pública del panel, para que al\n"
+"                                quitar un host o un inquilino se borren sus series. Solo se usa con\n"
+"                                un nombre público; el propio host del central siempre está permitido."
+
+#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_rate_limit_bucket_uniq
 msgid "One row per rate-limit bucket."
 msgstr "Una fila por bucket de rate-limit."
@@ -9029,6 +9101,11 @@ msgstr "Proxy"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__public_key
 msgid "Public Key"
 msgstr "Clave pública"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_public_host
+msgid "Public host name of the central"
+msgstr "Nombre de host público del central"
 
 #. module: incubacloud
 #. odoo-python
@@ -11514,6 +11591,16 @@ msgstr ""
 "línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings.py:0
+msgid ""
+"These are not address ranges: %(entries)s. Write one CIDR range per line, "
+"for example 198.51.100.7/32."
+msgstr ""
+"Estas entradas no son rangos de direcciones: %(entries)s. Escriba un rango "
+"CIDR por línea, por ejemplo 198.51.100.7/32."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid ""
@@ -13026,6 +13113,13 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_operator_sources
+msgid "Who may delete series on the central"
+msgstr "Quién puede borrar series en el central"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__wildcard_domain
 msgid "Wildcard Domain"
@@ -13699,6 +13793,12 @@ msgstr "latest"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "logged before this instance was handed over on"
 msgstr "de antes de que esta instancia se entregara el"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "metrics.example.com"
+msgstr "metrics.example.com"
 
 #. module: incubacloud
 #. odoo-javascript

@@ -1521,6 +1521,10 @@ class CrudMixin:
             ),
             'metrics_retention_days': settings.metrics_retention_days or 0,
             'grafana_base_url': settings.grafana_base_url or '',
+            'metrics_central_public_host':
+                settings.metrics_central_public_host or '',
+            'metrics_central_operator_sources':
+                settings.metrics_central_operator_sources or '',
             # ── Edge ───────────────────────────────────────────────────
             # The override plus what actually applies and where it comes
             # from, because the field alone says nothing about the list
@@ -1544,7 +1548,8 @@ class CrudMixin:
         container_log_max_size=None, container_log_max_file=None,
         odoo_log_archive_days=None, log_download_max_mb=None,
         log_search_max_files=None, log_search_timeout_s=None,
-        trusted_proxy_ranges=None,
+        trusted_proxy_ranges=None, metrics_central_public_host=None,
+        metrics_central_operator_sources=None,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1689,6 +1694,29 @@ class CrudMixin:
             )
         if metrics_vals:
             request.env['cloud.settings'].sudo()._get().write(metrics_vals)
+
+        # Where the central is published, and who may delete series on
+        # it. Through the model constraints, which name what is wrong: a
+        # URL or a typo'd range here would publish nothing usable. In a
+        # savepoint, because a refused value stays in the cache and the
+        # request would otherwise commit it with the answer.
+        central_vals = {}
+        if metrics_central_public_host is not None:
+            central_vals['metrics_central_public_host'] = (
+                str(metrics_central_public_host or '').strip().lower()
+            )
+        if metrics_central_operator_sources is not None:
+            central_vals['metrics_central_operator_sources'] = str(
+                metrics_central_operator_sources or '',
+            ).strip()
+        if central_vals:
+            try:
+                with request.env.cr.savepoint():
+                    request.env['cloud.settings'].sudo()._get().write(
+                        central_vals,
+                    )
+            except ValidationError as exc:
+                return {'ok': False, 'error': exc.args[0] if exc.args else str(exc)}
 
         return {'ok': True}
 
