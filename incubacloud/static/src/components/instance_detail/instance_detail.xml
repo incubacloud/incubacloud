@@ -2224,7 +2224,7 @@
                     t-att-aria-invalid="validator.fieldError('name') ? 'true' : undefined"
                     t-att-aria-describedby="validator.fieldError('name') ? 'idet-err-name' : undefined"
             type="text"
-            placeholder="myproject-staging"
+            t-att-placeholder="state.form.environment === 'staging' ? 'myproject-staging' : 'myproject'"
             t-att-value="state.form.name"
             t-att-disabled="(!isCreate and state.inst.deployed) || null"
             t-on-input="(ev) => this.onInput('name', ev)"
@@ -2248,7 +2248,10 @@
                         </t>
                     </label>
                     <t t-if="!state.hosts.length and !state.autoassignEnabled">
-                        <span class="ic-form-note">No compatible hosts available.</span>
+                        <span class="ic-form-note ic-no-host-note">
+                            No host ready for this instance yet: add your server, or finish its setup, in
+                            <a href="#" t-on-click.prevent="() => env.navigate('hosts', {})">Hosts</a>.
+                        </span>
                     </t>
                     <t t-else="">
                         <RlSelect
