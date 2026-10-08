@@ -84,6 +84,12 @@ class CloudHost(models.Model):
         only has one once it has actually reached the host over SSH, so a
         record somebody typed in but never prepared is skipped without
         needing a lifecycle field that ``cloud.host`` does not have.
+
+        And as ``traefik_deployed``, which Full Setup sets when it ends: a
+        host bought on demand has its key a minute after the purchase,
+        long before Full Setup installs Docker, and the cron queued its
+        agents then, beside the hardening, to fail on a missing ``docker``
+        (2026-10-09). Full Setup queues them itself as it finishes.
         """
         self.ensure_one()
         settings = self.env["cloud.settings"].sudo()._get_system()
@@ -96,6 +102,8 @@ class CloudHost(models.Model):
         if not self.active:
             return False
         if not (self.known_hosts_key or "").strip():
+            return False
+        if not self.traefik_deployed:
             return False
         return True
 

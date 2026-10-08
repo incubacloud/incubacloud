@@ -342,6 +342,7 @@ class TestLabelMapFollowsTheInstanceSet(TransactionCase):
             "user": "root",
             "wildcard_domain": "hobs.example.com",
             "known_hosts_key": "hobs.example.com ssh-ed25519 AAAA",
+            "traefik_deployed": True,
             # Enrolled: the agents are actually installed here. This used
             # to be expressed as ``last_probed``, which the SSH telemetry
             # job also writes — so with the fallback alive every host
@@ -475,6 +476,8 @@ class TestEnrolmentConverges(TransactionCase):
             "user": "root",
             "wildcard_domain": "hrec.example.com",
             "known_hosts_key": "hrec.example.com ssh-ed25519 AAAA",
+            # Prepared: Full Setup has run (it sets this as it ends).
+            "traefik_deployed": True,
         })
 
     def _queued(self):
@@ -528,6 +531,14 @@ class TestEnrolmentConverges(TransactionCase):
         has actually reached the host over SSH.
         """
         self.host.write({"known_hosts_key": ""})
+        self.env["cloud.host"]._cron_reconcile_observability()
+        self.assertFalse(self._queued())
+
+    def test_a_host_still_being_set_up_is_not_enrolled(self):
+        """A host bought on demand has its key a minute after the purchase,
+        long before Full Setup installs Docker; its agents wait for Full
+        Setup, which queues them as it ends (2026-10-09)."""
+        self.host.write({"traefik_deployed": False})
         self.env["cloud.host"]._cron_reconcile_observability()
         self.assertFalse(self._queued())
 
