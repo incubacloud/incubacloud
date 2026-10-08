@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.156] — 2026-10-08
+
+### Fixed
+
+- **The host shell and the container shell start outside devel.** Their
+  pages load xterm.js from `static/lib/xterm`, and `.gitignore` ignored
+  every `lib/` directory: the library was never committed, so every image
+  built from GitHub (production's manager, every customer's panel) served
+  a 404 for it and the terminal stayed at "Establishing SSH connection…"
+  with `Terminal is not defined`. The three vendored files (xterm 5.3.0,
+  xterm-addon-fit 0.8.0, byte-identical to the published packages) are
+  committed with xterm's MIT licence, and a test fails when a page names
+  a static file the module does not hold.
+
+- **The import dialog lists a public repository's branches without
+  credentials.** `/cloud/get_repo_branches` tried the GitHub App and the
+  PAT only, so a panel with neither (every new customer's) answered "No
+  GitHub credentials configured ... to access private repositories" for a
+  public repository, while the import itself reads public repositories
+  anonymously. It now tries GitHub's anonymous API last; a private
+  repository still gets the same message.
+
 ## [1.0.155] — 2026-10-08
 
 ### Fixed

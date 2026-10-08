@@ -372,7 +372,15 @@ class GitHubMixin:
 
     @http.route(['/cloud/get_repo_branches'], type='jsonrpc', auth='user')
     def cloud_get_repo_branches(self, url):
-        """Return branch names for a GitHub repo. Tries App first, then PAT."""
+        """Return branch names for a GitHub repo.
+
+        Tries the App, then the PAT, then GitHub's anonymous API: a public
+        repository needs no credentials, which is what the import itself
+        assumes (``_github_import_clients``). Without the last step the
+        import dialog told a customer importing a public repository that
+        no credentials were configured "to access private repositories",
+        and left the branch list empty (QA, 8-oct-2026).
+        """
         self._sec()._check_cloud_group('group_cloud_consultant')
 
         def _fetch(client):
@@ -422,6 +430,16 @@ class GitHubMixin:
             except Exception:
                 _logger.exception("[branches] PAT unexpected error")
                 pat_status = 'error'
+
+        # 3. A public repository, anonymously. A private one answers 404
+        #    here too, and the message below says what to configure.
+        try:
+            branches = _fetch(GitHubAnonymousClient())
+            return {'ok': True, 'branches': branches}
+        except GitHubAPIError as exc:
+            _logger.info("[branches] anonymous %s: %s", exc.status_code, exc)
+        except Exception:
+            _logger.exception("[branches] anonymous unexpected error")
 
         # Build contextual error message
         msg = self._build_github_error(
