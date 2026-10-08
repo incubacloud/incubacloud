@@ -29,7 +29,7 @@ from odoo.addons.incubacloud.tests.test_observability_wiring import (
     _CENTRAL_PLAYBOOK,
 )
 
-PUBLIC = "metrics-qa.example.test"
+PUBLIC = "metrics-central.example.test"
 ACCOUNT_PREFIXES = {"/w/", "/r/", "/lw/", "/lr/"}
 
 
@@ -334,7 +334,7 @@ class TestTheSettingsScreen(TransactionCase):
 
     def test_the_name_is_saved_trimmed_and_in_lower_case(self):
         answer = self._save(
-            metrics_central_public_host='  Metrics-QA.Example.Test ',
+            metrics_central_public_host='  Metrics-Central.Example.Test ',
             metrics_central_operator_sources=' 198.51.100.7/32\n',
         )
         self.assertEqual(answer, {'ok': True})

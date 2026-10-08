@@ -4,7 +4,7 @@ The terminal pages load xterm.js from ``static/lib/xterm``, and the
 repository's ``.gitignore`` ignored every ``lib/`` directory: the files
 lived only in working copies. Every image built from GitHub shipped
 without them, and the host and container shells never started outside
-devel (from v1.0.0 until QA's terminal walks found it, 8-oct-2026).
+devel (from v1.0.0 until 8-oct-2026).
 
 On CI's fresh clone, a file that is referenced but not committed is
 simply not there, which is what this checks.

@@ -3,8 +3,8 @@
 A pull request preview leaves a comment with its URL on the pull request
 (``cloud.instance._post_or_update_pr_comment``), which GitHub only allows
 an App with write access to pull requests. The manifest asked for read,
-so every comment failed with a 403 that only reached the log (B6, found
-writing QA's GitHub walks, 8-oct-2026).
+so every comment failed with a 403 that only reached the log (B6,
+8-oct-2026).
 """
 import base64
 import json

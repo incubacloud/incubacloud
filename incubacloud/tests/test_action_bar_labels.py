@@ -65,7 +65,7 @@ class TestActionBarLabels(BaseCase):
 
         The handler reads ``action.code``, so a string reached the server
         as ``None`` and every press failed with "Job type with code None
-        not found", from 3-sep-2026 until a QA walk pressed them.
+        not found", from 3-sep-2026 until 8-oct-2026.
         """
         for component, handler in _BARS:
             with self.subTest(component=component):

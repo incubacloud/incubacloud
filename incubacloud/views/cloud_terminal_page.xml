@@ -175,7 +175,7 @@
             // used to be a request of its own, sent without waiting for
             // the one before; the server's workers answer them in
             // parallel, so fast typing, or a slow link, reached the shell
-            // scrambled ("eco h" for "echo", QA 8-oct-2026). What is typed
+            // scrambled ("eco h" for "echo", 8-oct-2026). What is typed
             // while a request is out goes, in order, in the next one.
             var pendingInput = [];
             var inputInFlight = false;
