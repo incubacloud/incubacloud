@@ -107,7 +107,10 @@ class GitHubSetupController(http.Controller):
             "default_permissions": {
                 "contents": "read",
                 "metadata": "read",
-                "pull_requests": "read",
+                # Write: a pull request preview comments its URL on the
+                # pull request, which GitHub refuses to an App that may
+                # only read them (B6, 8-oct-2026).
+                "pull_requests": "write",
             },
             "default_events": [
                 "push",
