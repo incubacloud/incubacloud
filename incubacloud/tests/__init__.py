@@ -163,3 +163,4 @@ from . import test_host_shell_takeover_migration
 from . import test_job_brief
 from . import test_static_assets_present
 from . import test_repo_branches_public
+from . import test_terminal_input_order

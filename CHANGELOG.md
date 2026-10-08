@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.157] — 2026-10-08
+
+### Fixed
+
+- **The web terminals keep what is typed in order.** Each keystroke was a
+  request of its own, sent without waiting for the one before, and the
+  server's workers answer requests in parallel: fast typing, or a slow
+  link, reached the shell scrambled (QA typed `echo QA-$((40+2))` and the
+  shells received `eco hQA-…` and `echo QA-$4(02()+`). Both pages, the
+  instance's containers and the host, now send one request at a time;
+  what is typed while one is out goes, in order, in the next.
+
 ## [1.0.156] — 2026-10-08
 
 ### Fixed
