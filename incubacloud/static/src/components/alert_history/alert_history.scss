@@ -140,6 +140,12 @@
 
     &.active    { color: var(--rl-red-text); .rl-d { background: $state-error; } }
     &.dismissed { color: $text-secondary; .rl-d { background: $state-neutral; } }
+    &.resolved  { color: var(--rl-green-text); .rl-d { background: var(--rl-green); } }
+}
+
+.ah-card-resolved {
+    font-size: 11px;
+    color: $text-secondary;
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────

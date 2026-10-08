@@ -88,8 +88,8 @@
                                     <span class="ah-card-code" t-esc="alert.code"/>
                                 </div>
                                 <div class="ah-card-right">
-                                    <span t-att-class="'rl-sb ah-state-badge ' + alert.state"
-                                          ><span class="rl-d"/><t t-esc="alert.state"/></span>
+                                    <span t-att-class="'rl-sb ah-state-badge ' + badgeState(alert)"
+                                          ><span class="rl-d"/><t t-esc="badgeState(alert)"/></span>
                                     <span class="ah-card-date" t-esc="formatDate(alert.create_date)"/>
                                     <t t-if="lastSeen(alert)">
                                         <span class="ah-card-lastseen"
@@ -98,6 +98,12 @@
                                 </div>
                             </div>
                             <div class="rl-ad ah-card-message" t-esc="alert.message"/>
+                            <div class="ah-card-resolved" t-if="alert.state === 'dismissed' and alert.resolution">
+                                <t t-if="alert.resolution === 'auto'">Resolved automatically</t>
+                                <t t-else="">Closed by a user</t>
+                                <t t-if="alert.resolved_at"> · <t t-esc="formatDate(alert.resolved_at)"/></t>
+                                <t t-if="alert.resolved_by_job_name"> · <t t-esc="alert.resolved_by_job_name"/> succeeded</t>
+                            </div>
 
                             <!-- Error log groups: dedupe'd payload from instance_health -->
                             <t t-if="alert.code === 'instance_error_logs' and alert.payload and alert.payload.length">
@@ -129,7 +135,7 @@
                                 </div>
                             </t>
 
-                            <div class="rl-tl-foot ah-card-actions" t-if="alert.state === 'active' or alert.job_id">
+                            <div class="rl-tl-foot ah-card-actions" t-if="alert.state === 'active' or alert.job_id or alert.resolved_by_job_id">
                                 <div class="rl-acts">
                                     <t t-if="alert.state === 'active' and alert.code === 'pip_conflict' and alert.conflict_data and alert.conflict_data.length">
                                         <button class="rl-tl-abtn ah-btn-resolve" t-on-click="() => this.openResolve(alert)">
@@ -145,6 +151,12 @@
                                         <button class="rl-tl-abtn"
                                                 t-on-click="() => this.openJob(alert.job_id)">
                                             <t t-out="env.icon('terminal', 15)"/> View job
+                                        </button>
+                                    </t>
+                                    <t t-if="alert.resolved_by_job_id">
+                                        <button class="rl-tl-abtn"
+                                                t-on-click="() => this.openJob(alert.resolved_by_job_id)">
+                                            <t t-out="env.icon('check', 15)"/> View resolving job
                                         </button>
                                     </t>
                                     <t t-if="alert.state === 'active' and alert.code !== 'pip_conflict' and alert.code !== 'addon_conflict'">

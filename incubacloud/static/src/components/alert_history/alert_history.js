@@ -234,6 +234,20 @@ export class AlertHistory extends Component {
         return seen === this.formatDate(alert.create_date) ? "" : seen;
     }
 
+    /**
+     * The state an alert's badge shows: a dismissed alert the platform
+     * closed itself (a later run of its job succeeded, its condition
+     * cleared) reads "resolved", apart from one a user dismissed.
+     * @param {Object} alert alert entry from ``get_alert_history``
+     * @returns {string} "active" | "resolved" | "dismissed"
+     */
+    badgeState(alert) {
+        if (alert.state === "dismissed" && alert.resolution === "auto") {
+            return "resolved";
+        }
+        return alert.state;
+    }
+
     formatDate(dateStr) {
         if (!dateStr) return "—";
         const d = parseUTC(dateStr);

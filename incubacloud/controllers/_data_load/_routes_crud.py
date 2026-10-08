@@ -428,7 +428,7 @@ class CrudMixin:
         if not alert.exists():
             return {'ok': False, 'error': _('Alert not found')}
         alert.check_access('write')
-        alert.write({'state': 'dismissed'})
+        alert.write({'state': 'dismissed', 'resolution': 'manual'})
         return {'ok': True}
 
     @http.route(['/cloud/compare_sync'], type='jsonrpc', auth='user')
@@ -577,6 +577,10 @@ class CrudMixin:
                     )
                 ),
                 'job_id': a.job_id.id,
+                'resolution': a.resolution or False,
+                'resolved_at': a.resolved_at,
+                'resolved_by_job_id': a.resolved_by_job_id.id or False,
+                'resolved_by_job_name': a.resolved_by_job_id.name or False,
                 'conflict_data': a.conflict_data or [],
                 'payload': a.payload or None,
                 'instance_id': a.instance_id.id or False,
@@ -653,7 +657,7 @@ class CrudMixin:
             'pip_dependencies': new_text,
             'pip_dependency_sources': sources,
         })
-        alert.state = 'dismissed'
+        alert.write({'state': 'dismissed', 'resolution': 'manual'})
 
         # Unblock the linked job only if all conflicts are now resolved
         if not detect_pip_conflicts(new_text):
@@ -704,7 +708,7 @@ class CrudMixin:
                     existing.add(addon)
             repo.excludes = ','.join(sorted(existing)) if existing else ''
 
-        alert.state = 'dismissed'
+        alert.write({'state': 'dismissed', 'resolution': 'manual'})
         blocked_job = request.env['cloud.job'].search(
             [('blocked_alert_id', '=', alert.id)], limit=1,
         )

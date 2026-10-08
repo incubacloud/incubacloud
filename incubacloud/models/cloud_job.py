@@ -1247,12 +1247,23 @@ class CloudJob(models.Model):
         instance, earlier rebuild failures are resolved history. Keeps
         the Alerts panel tidy — nobody wants to see fixed failures
         stacked.
+
+        Each one records this job as what resolved it, and its
+        resolution is announced where the failure was: the failure
+        reached email and Telegram, and its quiet dismissal left the
+        panel showing nothing of it (two warm rebuilds, 2026-10-08).
         """
         stale = self.env["cloud.alert"].sudo().search(
             self._job_failed_domain(cjob),
         )
         if stale:
-            stale.write({"state": "dismissed"})
+            stale.write({
+                "state": "dismissed",
+                "resolution": "auto",
+                "resolved_by_job_id": cjob.id,
+            })
+            for alert in stale:
+                alert._notify_alert_resolved()
         return stale
 
     def _get_active_jobs(self):

@@ -347,11 +347,14 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             # 1. Container state. ``-a`` includes stopped containers so
             #    a present-but-exited service (a Sablier-slept tenant)
             #    can be told apart from a *missing* one (pruned or never
-            #    created) — the two demand opposite reactions.
+            #    created) — the two demand opposite reactions. The
+            #    status text carries the healthcheck's verdict
+            #    ("Up 3 hours (unhealthy)"), which ``State`` does not.
             (
                 "container_state",
                 f"cd {d} && "
-                f"docker compose ps -a --format '{{{{.Service}}}}\t{{{{.State}}}}' 2>&1",
+                f"docker compose ps -a --format "
+                f"'{{{{.Service}}}}\t{{{{.State}}}}\t{{{{.Status}}}}' 2>&1",
             ),
             # 2. CPU / memory — single non-streaming snapshot (~1.5 s).
             # `docker stats --no-stream` already computes CPU% from two
@@ -418,6 +421,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         #    health check and the ``instance_down`` alert downstream.
         state_out = results.get("container_state", {}).get("stdout", "")
         self._service_states = {}
+        # Running services whose healthcheck says they are not doing
+        # their job (see ``_grade_egress_filter``).
+        self._unhealthy_services = set()
         for line in state_out.splitlines():
             parts = line.strip().split('\t')
             if len(parts) >= 2:
@@ -431,6 +437,12 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 # up no matter how many corpses sit beside it.
                 if self._service_states.get(svc) != 'running':
                     self._service_states[svc] = state
+                if (
+                    state == 'running'
+                    and len(parts) >= 3
+                    and '(unhealthy)' in parts[2]
+                ):
+                    self._unhealthy_services.add(svc)
         self._container_running = (
             self._service_states.get('odoo') == 'running'
         )
@@ -944,6 +956,42 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 )
             else:
                 self._resolve_inst_alert(code)
+        self._grade_egress_filter(inst, issues)
+
+    def _grade_egress_filter(self, inst, issues):
+        """Alert, critical, while a staging's egress filter is not in force.
+
+        ``odoo_net_setup`` points odoo's default route at the allowlist
+        proxy once, when the sidecar starts, and its healthcheck tells
+        whether the route odoo has is still that one. The listing reads
+        ``running`` either way: a restart that started odoo after the
+        sidecar left a customer's staging, a copy of their
+        production, on the open internet with every light green
+        (2026-10-08). Graded only while odoo runs; a stopped odoo
+        reaches nothing.
+
+        :param inst: the ``cloud.instance`` probed.
+        :param list issues: the probe's issues, appended to on alert.
+        """
+        code = 'instance_egress_filter_lost'
+        if not (
+            self._container_running
+            and 'odoo_net_setup' in inst.expected_services()
+            and 'odoo_net_setup' in getattr(self, '_unhealthy_services', ())
+        ):
+            self._resolve_inst_alert(code)
+            return
+        issues.append('egress_filter:lost')
+        self._inst_alert(
+            code,
+            (
+                f"The egress filter of '{inst.name}' is not in force: odoo "
+                f"reaches the internet without its allowlist. Restart "
+                f"its 'odoo_net_setup' container."
+            ),
+            level='critical',
+        )
+        self._sys("✗ Egress filter not in force: 'odoo_net_setup' is unhealthy.")
 
     def _resolve_service_alerts(self, inst):
         """Dismiss every per-service container alert of *inst*.
@@ -955,6 +1003,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         services = set(inst.expected_services()) | set(self._service_states)
         for svc in sorted(services - {'odoo'}):
             self._resolve_inst_alert(f'instance_service_{svc}_down')
+        self._resolve_inst_alert('instance_egress_filter_lost')
 
     # ── Instance-scoped alert helpers ─────────────────────────────────────
 

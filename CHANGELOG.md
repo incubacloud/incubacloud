@@ -6,6 +6,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.160] — 2026-10-08
+
+### Fixed
+
+- **An alert that resolves itself says so.** A failed job's alert is
+  dismissed when a later run of the same job on the same target succeeds,
+  and that dismissal was silent: the failure had reached email and
+  Telegram, and the Alerts page, opened later, showed only a dismissed row,
+  the same as one a user had silenced. An alert now records how it closed
+  (resolved automatically, or closed by a user), when, and which job
+  resolved it; the Alerts page shows it as resolved, with a link to that
+  job; and the resolution is announced by email, Telegram and webhook,
+  wherever the alert itself was. A condition that clears on its own
+  (`resolve_alert`) now also announces its end by email.
+- **A staging's egress filter comes back after a host reboot.** The
+  `odoo_net_setup` sidecar, which keeps a staging with an allowlist off the
+  open internet, had no restart policy: after a host's maintenance reboot
+  odoo came back and the sidecar stayed exited, leaving the staging
+  unfiltered until someone restarted it. It now restarts with the host
+  (`unless-stopped`); existing stagings take it at their next deploy or
+  rebuild.
+- **Starting odoo no longer drops a staging's egress filter.** The sidecar
+  points odoo's default route at the allowlist proxy once, when it starts,
+  inside odoo's network namespace; starting odoo again gives it a fresh
+  namespace with Docker's own route, straight out. A restore (which stops
+  and starts odoo) did that every time, and a Restart that happened to
+  start the sidecar before odoo did it too. Every start, restart or `up`
+  that may start odoo now restarts the sidecar once odoo runs.
+- **The health check says when the egress filter is not in force.** It read
+  only whether each container was running, and the sidecar runs whether or
+  not odoo's route is the filtered one. It now reads the sidecar's own
+  healthcheck and raises a critical alert while it is unhealthy, which
+  closes by itself once the filter is back.
+
 ## [1.0.159] — 2026-10-08
 
 ### Fixed

@@ -2088,6 +2088,13 @@ msgid "Closed At"
 msgstr "Cerrado en"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__resolution__manual
+msgid "Closed by a user"
+msgstr "Cerrada por un usuario"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_host_session.py:0
 msgid "Closed host sessions are immutable."
@@ -5467,6 +5474,18 @@ msgstr ""
 " sola incidencia, no una por intento, y apilar una fila (y una notificación)"
 " por intento es como un único problema sepulta todas las demás alertas del "
 "panel."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__resolution
+msgid ""
+"How the alert left the active list: the platform saw the problem go (a later"
+" run of the failed job succeeded, the condition cleared), or a user "
+"dismissed or resolved it. Empty on alerts closed before this was recorded."
+msgstr ""
+"Cómo salió la alerta de la lista de activas: la plataforma vio desaparecer "
+"el problema (una ejecución posterior del trabajo fallido terminó bien, la "
+"condición desapareció) o un usuario la descartó o la resolvió. Vacío en las "
+"alertas cerradas antes de que esto se registrara."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__comparator
@@ -9880,6 +9899,11 @@ msgid "Reset filters"
 msgstr "Restablecer filtros"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__resolution
+msgid "Resolution"
+msgstr "Resolución"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
@@ -9899,6 +9923,23 @@ msgstr "Resolver conflictos de módulos"
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Resolve Pip Conflicts"
 msgstr "Resolver conflictos pip"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__resolved_at
+msgid "Resolved At"
+msgstr "Resuelta el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__resolved_by_job_id
+msgid "Resolved By Job"
+msgstr "Resuelta por el trabajo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__resolution__auto
+msgid "Resolved automatically"
+msgstr "Resuelta automáticamente"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11387,6 +11428,11 @@ msgstr ""
 " propósito."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__resolved_by_job_id
+msgid "The job whose success closed this failure alert."
+msgstr "El trabajo cuyo éxito cerró esta alerta de fallo."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
@@ -12696,6 +12742,12 @@ msgid "View job"
 msgstr "Ver tarea"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "View resolving job"
+msgstr "Ver el trabajo que la resolvió"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "View the generated Odoo config (addons_path, workers, limits)"
@@ -12961,6 +13013,11 @@ msgstr ""
 "terminó un trabajo visible que esa persona lanzó, se conectó como usuario, "
 "abrió una terminal o pulsó Conservar. Las sondas en segundo plano y todo lo "
 "que el bot de la plataforma lanza por su cuenta no cuentan."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__resolved_at
+msgid "When the alert left the active list."
+msgstr "Cuándo salió la alerta de la lista de activas."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_checked_at
@@ -14022,6 +14079,12 @@ msgstr "smtp.example.com"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
 msgid "source"
 msgstr "origen"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
+msgid "succeeded"
+msgstr "terminó bien"
 
 #. module: incubacloud
 #. odoo-python
