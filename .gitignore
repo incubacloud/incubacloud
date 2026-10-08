@@ -18,6 +18,10 @@ lib/
 # The Python-packaging ``lib/`` pattern above must not swallow the
 # executor shell library (its absence only shows up on a fresh clone).
 !incubacloud/scripts/lib/
+# Nor the vendored front-end libraries: xterm.js lived ignored here from
+# v1.0.0 to 1.0.156, so every image built from GitHub shipped without it
+# and the web terminals never started outside devel.
+!incubacloud/static/lib/
 lib64/
 parts/
 sdist/
