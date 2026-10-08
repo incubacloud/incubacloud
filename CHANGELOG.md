@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.162] — 2026-10-09
+
+### Fixed
+
+- **A host still being set up is not enrolled in monitoring.** The
+  reconciliation cron took a host as ready for the agents once the panel
+  had its SSH key, which a host bought on demand has a minute after the
+  purchase, long before Full Setup installs Docker. It queued the agents
+  beside the hardening, and they failed on a missing `docker`. The cron
+  now waits for Full Setup to have run, which itself queues the agents as
+  it ends.
+
 ## [1.0.161] — 2026-10-09
 
 ### Fixed
