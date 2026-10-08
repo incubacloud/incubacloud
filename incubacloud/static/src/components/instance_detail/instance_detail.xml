@@ -2248,10 +2248,11 @@
                         </t>
                     </label>
                     <t t-if="!state.hosts.length and !state.autoassignEnabled">
-                        <span class="ic-form-note ic-no-host-note">
-                            No host ready for this instance yet: add your server, or finish its setup, in
-                            <a href="#" t-on-click.prevent="() => env.navigate('hosts', {})">Hosts</a>.
-                        </span>
+                        <span class="ic-form-note ic-no-host-note">No host ready for this instance yet.</span>
+                        <button type="button" class="rl-btn rl-btn-sm ic-no-host-add"
+                                t-on-click="() => env.navigate('hosts', {})">
+                            Add a host →
+                        </button>
                     </t>
                     <t t-else="">
                         <RlSelect

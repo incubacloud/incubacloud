@@ -618,6 +618,12 @@ msgstr "Agregar Host"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid "Add a host →"
+msgstr "Añadir un host →"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 msgid "Add a server to start deploying Odoo instances."
 msgstr "Agrega un servidor para comenzar a desplegar instancias de Odoo."
@@ -5428,7 +5434,6 @@ msgstr ""
 #: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Hosts"
 msgstr "Hosts"
 
@@ -7740,12 +7745,8 @@ msgstr "No hay host configurado"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid ""
-"No host ready for this instance yet: add your server, or finish its setup, "
-"in"
-msgstr ""
-"Aún no hay ningún host listo para esta instancia: añade tu servidor, o "
-"termina de configurarlo, en"
+msgid "No host ready for this instance yet."
+msgstr "Aún no hay ningún host listo para esta instancia."
 
 #. module: incubacloud
 #. odoo-python
