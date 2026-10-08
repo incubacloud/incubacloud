@@ -1453,3 +1453,7 @@
     font-size: 12px;
     color: rgba(var(--rl-muted-rgb), 0.9);
 }
+
+// No host to pick yet: the note, then the way to get one, on its own line.
+.ic-no-host-note { display: block; }
+.ic-no-host-add { margin-top: 6px; }

@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.163] — 2026-10-09
+
+### Changed
+
+- **No host to pick: a button, not a sentence.** The new-instance form now
+  shows a short note and an "Add a host" button that opens Hosts, where a
+  server is added or a VPS ordered. A customer asked how to pick a host
+  with the sentence pointing there in front of them.
+
 ## [1.0.162] — 2026-10-09
 
 ### Fixed

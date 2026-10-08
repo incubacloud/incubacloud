@@ -24,7 +24,10 @@ class TestNewInstanceFormHints(TransactionCase):
             template,
         )
 
-    def test_no_host_points_to_the_hosts_page(self):
+    def test_no_host_offers_a_button_to_the_hosts_page(self):
+        """A button rather than a sentence: the first customer asked how
+        to pick a host with the sentence in front of them (9-oct-2026)."""
         template = _FORM.read_text()
         self.assertNotIn("No compatible hosts available.", template)
+        self.assertIn('class="rl-btn rl-btn-sm ic-no-host-add"', template)
         self.assertIn("env.navigate('hosts', {})", template)
