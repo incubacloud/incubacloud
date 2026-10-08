@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.158] — 2026-10-08
+
+### Fixed
+
+- **A web terminal ends when its shell does.** After `exit` (or the
+  container stopping), the output reader stopped but the input writer kept
+  waiting for the session to be marked closed, and nothing marked it: the
+  page said "Connected" until the idle timeout and the session's process
+  lived on. The reader now closes the session at the end of the output, so
+  the page says "Session closed." (QA's walks, both terminals).
+
 ## [1.0.157] — 2026-10-08
 
 ### Fixed
