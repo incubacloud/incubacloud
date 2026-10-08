@@ -276,6 +276,20 @@ class TestTheHealthcheckIsOurs(_WhitelistCase):
         self.assertEqual(health["test"][0], "CMD-SHELL")
         self.assertIn("ip route show default", health["test"][1])
 
+    def test_the_sidecar_comes_back_after_a_reboot(self):
+        """Without a policy the host's reboot brought odoo back and left
+        the sidecar ``Exited``: the staging on the open internet until
+        someone restarted it (a customer's staging, 2026-10-08)."""
+        self._set(self.staging, ["api.example.com"])
+        for executor, code in (
+            (DeployInstanceExecutor, "deploy_instance"),
+            (RebuildInstanceExecutor, "rebuild_instance"),
+        ):
+            data = self._override(self.staging, executor, code)
+            self.assertEqual(
+                data["services"]["odoo_net_setup"]["restart"], "unless-stopped",
+            )
+
     def test_nothing_of_this_is_emitted_without_a_list(self):
         """No list, no sidecar — and an override naming a service the
         compose file does not define is a compose error."""

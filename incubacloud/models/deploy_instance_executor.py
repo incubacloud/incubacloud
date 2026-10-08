@@ -477,9 +477,19 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         said out loud, because compose merges the healthcheck mapping
         key by key and ``disable: true`` would otherwise survive.
 
+        **No restart policy.** The template gives the sidecar none, so a
+        host reboot brought odoo back and left the sidecar ``Exited``:
+        the staging on the open internet until someone restarted it by
+        hand. Every staging with an allowlist on a host did, at each of
+        its maintenance reboots (a customer's staging, 2026-10-08).
+        ``unless-stopped``, like odoo's: at boot Docker starts the
+        sidecar once odoo runs, since it joins odoo's network namespace,
+        and the injection lands in that namespace.
+
         :return: the service fragment to merge into the override
         """
         return {
+            "restart": "unless-stopped",
             "volumes": ["/dev/null:/var/run/docker.sock:ro"],
             "environment": {"DNS_INTERNAL_FROM_DOCKER": "0"},
             "healthcheck": {

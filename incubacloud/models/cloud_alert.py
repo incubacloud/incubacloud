@@ -100,6 +100,27 @@ class CloudAlert(models.Model):
             "this field existed fall back to ``create_date``."
         ),
     )
+    resolution = fields.Selection(
+        [("auto", "Resolved automatically"), ("manual", "Closed by a user")],
+        readonly=True,
+        help=(
+            "How the alert left the active list: the platform saw the "
+            "problem go (a later run of the failed job succeeded, the "
+            "condition cleared), or a user dismissed or resolved it. "
+            "Empty on alerts closed before this was recorded."
+        ),
+    )
+    resolved_at = fields.Datetime(
+        readonly=True,
+        help="When the alert left the active list.",
+    )
+    resolved_by_job_id = fields.Many2one(
+        "cloud.job",
+        string="Resolved By Job",
+        readonly=True,
+        ondelete="set null",
+        help="The job whose success closed this failure alert.",
+    )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -279,15 +300,28 @@ class CloudAlert(models.Model):
             self._dedup_domain(code, host=host, instance=instance),
         )
         if active:
-            active.write({"state": "dismissed"})
+            active.write({"state": "dismissed", "resolution": "auto"})
             # On-call channels saw the problem; they must also see the
             # closure, or every incident looks permanently open from
             # Telegram/webhook. Only *automatic* resolution notifies:
             # an operator dismissing by hand in the panel is already
             # looking at it and chose to silence it.
             for record in active:
-                record._notify_alert_external(resolved=True)
+                record._notify_alert_resolved()
         return active
+
+    def _notify_alert_resolved(self):
+        """Announce this alert's automatic resolution where it was raised.
+
+        Every channel that announced the alert announces its end: the
+        external ones (Telegram, webhook) and the email. An alert that
+        reached someone's inbox and closed on its own otherwise only
+        left the active list, and the panel, opened later, showed
+        nothing of what the email had said.
+        """
+        self.ensure_one()
+        self._notify_alert_external(resolved=True)
+        self._notify_alert_email(resolved=True)
 
     def _dispatch_notifications(self):
         """Central dispatcher for every active alert.
@@ -305,7 +339,20 @@ class CloudAlert(models.Model):
         self._notify_alert_email()
 
     def write(self, vals):
+        # The alerts this write closes, to stamp how and when. A close
+        # that does not say how is the platform's (an executor, a cron,
+        # a condition that cleared); the panel's own buttons say
+        # ``manual``.
+        closing = (
+            self.filtered(lambda a: a.state == "active")
+            if vals.get("state") == "dismissed" else self.browse()
+        )
         res = super().write(vals)
+        if closing:
+            super(CloudAlert, closing).write({
+                "resolution": vals.get("resolution") or "auto",
+                "resolved_at": fields.Datetime.now(),
+            })
         # Only broadcast on state transitions — field-level edits
         # (message tweaks, metadata) do not change the overview badge.
         if "state" in vals:
@@ -437,12 +484,12 @@ class CloudAlert(models.Model):
         alerts = self.search(domain)
         if alerts:
             alerts.check_access("write")
-            alerts.write({"state": "dismissed"})
+            alerts.write({"state": "dismissed", "resolution": "manual"})
         return len(alerts)
 
     # ── Unified notification pipeline ──────────────────────────────────
 
-    def _notify_alert_email(self):
+    def _notify_alert_email(self, resolved=False):
         """Send alert email to every applicable internal user.
 
         Filtering mirrors ``cloud_job._notify_by_email``: subscribed
@@ -450,6 +497,9 @@ class CloudAlert(models.Model):
         muted its project, and whose notification level covers the
         alert's severity. Digest-mode users only receive critical
         alerts immediately.
+
+        :param bool resolved: announce the alert's automatic resolution
+            instead, to the same users the alert itself reached.
         """
         users = self._alert_notification_users()
         if not users:
@@ -466,8 +516,11 @@ class CloudAlert(models.Model):
             if not email:
                 continue
             level_label = self.level.capitalize()
-            subject = f"[IncubaCloud] {level_label} alert: {self.message}"
-            body = self._build_alert_email_body()
+            subject = (
+                f"[IncubaCloud] Resolved: {self.message}" if resolved
+                else f"[IncubaCloud] {level_label} alert: {self.message}"
+            )
+            body = self._build_alert_email_body(resolved=resolved)
             self.env["mail.mail"].sudo().create(
                 {
                     "subject": subject,
@@ -557,6 +610,8 @@ class CloudAlert(models.Model):
         lines = [
             f"{emoji} *{label}:* {self.message}",
         ]
+        if resolved and self.resolved_by_job_id:
+            lines.append(f"Resolved by: {self.resolved_by_job_id.name}")
         if self.instance_id:
             lines.append(f"Instance: {self.instance_id.name}")
         if self.host_id:
@@ -571,6 +626,10 @@ class CloudAlert(models.Model):
                 )
             )
             lines.append(f"Logs: {base_url}/cloud/log/{self.job_id.id}")
+        if resolved and self.resolved_by_job_id:
+            lines.append(
+                f"Resolving run: {base_url}/cloud/log/{self.resolved_by_job_id.id}"
+            )
         text = "\n".join(lines)
         url = f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}/sendMessage"
         payload = json.dumps(
@@ -616,6 +675,10 @@ class CloudAlert(models.Model):
                 "log_url": (
                     f"{base_url}/cloud/log/{self.job_id.id}" if self.job_id else None
                 ),
+                "resolved_by_job_id": (
+                    self.resolved_by_job_id.id
+                    if resolved and self.resolved_by_job_id else None
+                ),
                 "timestamp": fields.Datetime.to_string(fields.Datetime.now()),
             }
         ).encode()
@@ -634,8 +697,12 @@ class CloudAlert(models.Model):
         # socket pinned to the address that passed.
         post_json(user.cloud_webhook_url, payload, headers=headers)
 
-    def _build_alert_email_body(self):
-        """Render a simple HTML body for an alert email."""
+    def _build_alert_email_body(self, resolved=False):
+        """Render a simple HTML body for an alert email.
+
+        :param bool resolved: render the resolution's email, which also
+            names the job whose success closed the alert, if any.
+        """
         instance_line = (
             f"<tr><td><b>Instance</b></td><td>{self.instance_id.name}</td></tr>"
             if self.instance_id
@@ -653,12 +720,24 @@ class CloudAlert(models.Model):
         )
         log_url = f"/cloud/log/{self.job_id.id}" if self.job_id else ""
         level_label = self.level.capitalize()
+        resolving = self.resolved_by_job_id if resolved else self.resolved_by_job_id.browse()
+        resolving_line = (
+            f"<tr><td><b>Resolved by</b></td><td>"
+            f"<a href='/cloud/log/{resolving.id}'>{resolving.name}</a></td></tr>"
+            if resolving
+            else ""
+        )
+        headline = (
+            f"<p><b>Resolved:</b> {self.message}</p>" if resolved
+            else f"<p><b>{level_label} alert:</b> {self.message}</p>"
+        )
         return (
-            f"<p><b>{level_label} alert:</b> {self.message}</p>"
-            f"<table>"
+            headline
+            + f"<table>"
             f"{instance_line}"
             f"{host_line}"
             f"{job_line}"
+            f"{resolving_line}"
             f"</table>"
             + (f"<p><a href='{log_url}'>View logs</a></p>" if log_url else "")
         )

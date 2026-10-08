@@ -3,7 +3,10 @@
 #
 # ``docker`` is stubbed on PATH so the script's own logic is what gets
 # exercised: argument handling, tilde expansion, the missing-directory
-# rules and the exact compose command each operation builds.
+# rules and the exact compose command each operation builds. The stub
+# answers the two read-only queries the script makes (the stack's
+# services, the running ones) from ``STUB_SERVICES`` / ``STUB_RUNNING``
+# without recording them, so ``DOCKER_CALLS`` holds what changes state.
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/compose_op.sh"
@@ -15,12 +18,23 @@ setup() {
     mkdir -p "$TMP/bin"
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
+case "$*" in
+    "compose config --services") printf '%b' "${STUB_SERVICES:-}"; exit 0 ;;
+    "compose ps --status running --services") printf '%b' "${STUB_RUNNING:-}"; exit 0 ;;
+esac
 echo "docker $*" >> "$DOCKER_CALLS"
 STUB
     chmod +x "$TMP/bin/docker"
     export DOCKER_CALLS="$TMP/calls"
     : > "$DOCKER_CALLS"
     export PATH="$TMP/bin:$PATH"
+}
+
+# A staging with an allowlist: the egress sidecar is in the stack and
+# odoo runs.
+with_sidecar() {
+    export STUB_SERVICES="odoo\ndb\nsmtp\nproxy_general\nodoo_net_setup\n"
+    export STUB_RUNNING="odoo\ndb\nsmtp\nproxy_general\nodoo_net_setup\n"
 }
 
 teardown() {
@@ -108,4 +122,48 @@ STUB
     chmod +x "$TMP/bin/docker"
     run bash "$SCRIPT" "$HOME/project/inst" up
     [ "$status" -eq 3 ]
+}
+
+@test "starting odoo restarts the egress sidecar after it" {
+    with_sidecar
+    run bash "$SCRIPT" "$HOME/project/inst" start odoo
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose start odoo
+docker compose restart odoo_net_setup" ]
+}
+
+@test "restarting the stack restarts the egress sidecar again, last" {
+    with_sidecar
+    run bash "$SCRIPT" "$HOME/project/inst" restart
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose restart
+docker compose restart odoo_net_setup" ]
+}
+
+@test "up restarts the egress sidecar once odoo runs" {
+    with_sidecar
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose up -d
+docker compose restart odoo_net_setup" ]
+}
+
+@test "the sidecar is left alone when odoo is not running" {
+    with_sidecar
+    export STUB_RUNNING="db\n"
+    run bash "$SCRIPT" "$HOME/project/inst" start odoo
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose start odoo" ]
+}
+
+@test "an operation that does not start odoo leaves the sidecar alone" {
+    with_sidecar
+    run bash "$SCRIPT" "$HOME/project/inst" start db
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose start db" ]
+    : > "$DOCKER_CALLS"
+    run bash "$SCRIPT" "$HOME/project/inst" stop odoo
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose stop odoo" ]
+}
+
+@test "restarting the sidecar itself does not restart it twice" {
+    with_sidecar
+    run bash "$SCRIPT" "$HOME/project/inst" restart odoo_net_setup
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose restart odoo_net_setup" ]
 }
