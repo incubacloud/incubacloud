@@ -12,7 +12,11 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools import file_open
 
-from ..net.hostname import InvalidHostname, validate_wildcard_domain
+from ..net.hostname import (
+    InvalidHostname,
+    is_host_address,
+    validate_wildcard_domain,
+)
 from ..net import tls_names
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from . import _config_snapshot_diff as _snapshot_diff
@@ -834,6 +838,27 @@ class CloudHost(models.Model):
                 for field, paths in drift.items()
                 for path in paths
             )
+
+    @api.constrains("ip_address")
+    def _check_ip_address(self):
+        """Refuse an address no SSH connection could ever reach.
+
+        The panel took any text: a customer registered a server at
+        ``232.123.321.22``, and its setup then failed asking to trust an
+        SSH key that host could never have. Hosts bought on demand carry
+        ``0.0.0.0`` until the provider answers, which is an IP address.
+
+        :raises ValidationError: when the address is neither an IP
+            address nor a host name.
+        """
+        for host in self.sudo():
+            if not is_host_address(host.ip_address):
+                raise ValidationError(
+                    _(
+                        "'%(address)s' is not an IP address or a host name.",
+                        address=host.ip_address,
+                    )
+                )
 
     @api.constrains("wildcard_domain")
     def _check_wildcard_domain(self):

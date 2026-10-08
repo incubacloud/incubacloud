@@ -101,6 +101,24 @@ class TestHardeningPreflight(TransactionCase):
         self.assertEqual(play["vars"]["supported_ubuntu"], ["22.04", "24.04"])
         self.assertEqual(play["vars"]["debian_min_major"], 12)
 
+    def test_apt_is_bounded_in_time_and_retried(self):
+        """A stalled download times out and is retried, rather than waited
+        on: a new host's cache update hung 17 minutes on a connection the
+        mirror had closed (2026-10-09)."""
+        tasks = self._playbook()["tasks"]
+        names = [task.get("name") for task in tasks]
+        config = tasks[names.index("Bound apt's downloads in time, and retry them")]
+        update = tasks[names.index("Update the apt cache")]
+        self.assertLess(names.index(config["name"]), names.index(update["name"]))
+        content = config["ansible.builtin.copy"]["content"]
+        self.assertIn('Acquire::Retries "3";', content)
+        self.assertIn('Acquire::https::Timeout "30";', content)
+        self.assertEqual(update["timeout"], 600)
+        self.assertEqual(update["retries"], 3)
+        self.assertEqual(update["until"], "ic_apt_cache is succeeded")
+        # Nothing privileged may come before the first of them.
+        self.assertEqual(names.index(config["name"]), 0)
+
     def test_the_rotated_port_survives_a_reboot(self):
         """The socket's listen port must be pinned by our own drop-in.
 

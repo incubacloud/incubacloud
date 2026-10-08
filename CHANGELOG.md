@@ -6,6 +6,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.164] — 2026-10-09
+
+### Changed
+
+- **Delete is in the header of a host, a project and a backup
+  destination, as on an instance.** It sat only at the foot of their forms,
+  below every field, and a host page opens on Overview, which has no foot:
+  a customer could not find how to delete a host. The header now ends with
+  the same trash icon an instance has; the button at the foot stays.
+
+### Fixed
+
+- **A host's address must be one SSH could reach.** The panel took any
+  text as a host's IP address; a server registered at `232.123.321.22`
+  (which reads as an IPv4 address and is not one) then failed its setup
+  asking to trust an SSH key no such host could have. The address must now
+  be an IP address or a host name.
+- **The panel has its icon and its name in the browser tab.** Its pages
+  declared no icon, and a panel without the website module had none to
+  serve, so the tab showed the browser's globe; the main page was also
+  titled "Cloud". They now declare IncubaCloud's icon, and the main page is
+  titled "IncubaCloud".
+- **A stalled apt download no longer holds a host's hardening.** The cache
+  update waited on a connection for as long as it stayed open: on a new
+  host it hung 17 minutes on one the mirror had already closed. apt's
+  downloads now time out after 30 seconds and are retried, and the cache
+  update itself is stopped and retried after 10 minutes.
+
 ## [1.0.163] — 2026-10-09
 
 ### Changed

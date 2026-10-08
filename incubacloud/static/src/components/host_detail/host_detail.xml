@@ -125,6 +125,18 @@
                                 t-on-click="openHostShell">
                             <t t-out="env.icon('terminal', 15)"/> Host Shell
                         </button>
+                        <!-- Same trash as the instance header: the footer
+                             one sits below every form tab and is absent
+                             from Overview, where a host page opens.
+                             Extensions append their buttons inside the
+                             bar; the stylesheet keeps the trash last. -->
+                        <span class="rl-asep ic-ab-delete-sep"/>
+                        <button class="rl-iconbtn danger ic-ab-delete"
+                                title="Delete"
+                                aria-label="Delete host"
+                                t-on-click="deleteHost">
+                            <t t-out="env.icon('trash', 15)"/>
+                        </button>
                     </div>
                 </t>
 
