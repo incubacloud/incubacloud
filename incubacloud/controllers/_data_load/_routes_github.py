@@ -379,7 +379,7 @@ class GitHubMixin:
         assumes (``_github_import_clients``). Without the last step the
         import dialog told a customer importing a public repository that
         no credentials were configured "to access private repositories",
-        and left the branch list empty (QA, 8-oct-2026).
+        and left the branch list empty (8-oct-2026).
         """
         self._sec()._check_cloud_group('group_cloud_consultant')
 

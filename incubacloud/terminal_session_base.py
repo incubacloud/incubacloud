@@ -237,7 +237,7 @@ class BaseTerminalSession:
             # link dropped), and so does the session. The writer below
             # stops only on ``_closed``: without this the session outlived
             # its shell, and the page said "Connected" until the idle
-            # timeout (QA, 8-oct-2026).
+            # timeout (8-oct-2026).
             self._closed = True
 
         async def _write_input():

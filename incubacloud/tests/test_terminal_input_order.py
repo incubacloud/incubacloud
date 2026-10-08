@@ -3,8 +3,8 @@
 Each keystroke used to be a request of its own, sent without waiting for
 the one before. The server's workers answer requests in parallel, so a
 fast typist, a paste split by the browser or a slow link reached the
-shell scrambled: QA's walks typed ``echo QA-$((40+2))`` and the shells
-received ``eco hQA-…`` and ``echo QA-$4(02()+`` (8-oct-2026).
+shell scrambled: a typed ``echo OK-$((40+2))`` reached the shells as
+``eco hOK-…`` and ``echo OK-$4(02()+`` (8-oct-2026).
 
 Nothing in the Python suite runs the pages' script and the hoot tests
 are not part of any gate, so the checks are textual, as for the action

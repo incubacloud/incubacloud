@@ -4,8 +4,7 @@ The import dialog asks ``/cloud/get_repo_branches`` for the branch list.
 That route tried the GitHub App and the PAT only, so a panel with neither
 (every new customer's) answered "No GitHub credentials configured ... to
 access private repositories" for a public repository, while the import
-itself reads public repositories anonymously. QA's import walk found it
-on 8-oct-2026.
+itself reads public repositories anonymously (8-oct-2026).
 """
 import json
 from unittest.mock import patch
@@ -15,7 +14,7 @@ from odoo.tests.common import HttpCase
 
 from odoo.addons.incubacloud.github.client import GitHubAnonymousClient, GitHubAPIError
 
-_URL = "https://github.com/incubacloud/qa-addons"
+_URL = "https://github.com/example/odoo-addons"
 
 
 @tagged("-at_install", "post_install")
@@ -52,11 +51,11 @@ class TestBranchesOfAPublicRepository(HttpCase):
     def test_a_public_repository_lists_its_branches_anonymously(self):
         with patch.object(
             GitHubAnonymousClient, "get",
-            return_value=[{"name": "19.0"}, {"name": "qa-preview"}],
+            return_value=[{"name": "19.0"}, {"name": "feature-x"}],
         ) as get:
             answer = self._branches()
-        self.assertEqual(answer, {"ok": True, "branches": ["19.0", "qa-preview"]})
-        self.assertIn("/repos/incubacloud/qa-addons/branches", get.call_args.args[0])
+        self.assertEqual(answer, {"ok": True, "branches": ["19.0", "feature-x"]})
+        self.assertIn("/repos/example/odoo-addons/branches", get.call_args.args[0])
 
     def test_a_private_repository_still_asks_for_credentials(self):
         with patch.object(

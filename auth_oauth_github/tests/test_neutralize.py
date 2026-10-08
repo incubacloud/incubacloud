@@ -1,7 +1,7 @@
 """A restored copy of production keeps no GitHub credential.
 
 Stock ``auth_oauth`` neutralization only switches the providers off. On
-7-oct-2026 the QA copy of production still held the GitHub OAuth App's
+7-oct-2026 a neutralized copy of production still held the GitHub OAuth App's
 client secret and a user's GitHub access token, in plain text: GitHub's
 tokens do not expire, so either one worked from the copy as well as from
 production. This module's ``data/neutralize.sql`` clears them, and the

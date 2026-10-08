@@ -26,7 +26,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   waiting for the session to be marked closed, and nothing marked it: the
   page said "Connected" until the idle timeout and the session's process
   lived on. The reader now closes the session at the end of the output, so
-  the page says "Session closed." (QA's walks, both terminals).
+  the page says "Session closed." (both terminals).
 
 ## [1.0.157] — 2026-10-08
 
@@ -35,8 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **The web terminals keep what is typed in order.** Each keystroke was a
   request of its own, sent without waiting for the one before, and the
   server's workers answer requests in parallel: fast typing, or a slow
-  link, reached the shell scrambled (QA typed `echo QA-$((40+2))` and the
-  shells received `eco hQA-…` and `echo QA-$4(02()+`). Both pages, the
+  link, reached the shell scrambled (a typed `echo OK-$((40+2))` arrived
+  as `eco hOK-…` or `echo OK-$4(02()+`). Both pages, the
   instance's containers and the host, now send one request at a time;
   what is typed while one is out goes, in order, in the next.
 
@@ -76,8 +76,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   19.0.1.0.1). Stock neutralization only switches OAuth providers off, so
   the GitHub OAuth App's client secret and the token stored on every user
   who signed in with GitHub (plain text, and GitHub's do not expire)
-  survived into QA's copy of production and into every neutralized
-  staging. The module's `data/neutralize.sql` clears both; the client id,
+  survived into every neutralized copy of production, stagings
+  included. The module's `data/neutralize.sql` clears both; the client id,
   which is public, stays.
 - **The Odoo.sh migration guide and the private-repo note** described a URL
   with a token inside it, which the importer refuses, deploy keys that do
