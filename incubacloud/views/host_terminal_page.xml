@@ -192,15 +192,44 @@
             }
 
             // ── Input → server ────────────────────────────────────────────
+            // One request at a time, in the order typed. Each keystroke
+            // used to be a request of its own, sent without waiting for
+            // the one before; the server's workers answer them in
+            // parallel, so fast typing, or a slow link, reached the shell
+            // scrambled ("eco h" for "echo", QA 8-oct-2026). What is typed
+            // while a request is out goes, in order, in the next one.
+            var pendingInput = [];
+            var inputInFlight = false;
+
+            function sendInput(bytes) {
+                pendingInput.push(bytes);
+                if (!inputInFlight) flushInput();
+            }
+
+            function flushInput() {
+                if (!pendingInput.length) {
+                    inputInFlight = false;
+                    return;
+                }
+                inputInFlight = true;
+                var total = pendingInput.reduce(function (n, a) { return n + a.length; }, 0);
+                var merged = new Uint8Array(total);
+                var offset = 0;
+                pendingInput.forEach(function (a) { merged.set(a, offset); offset += a.length; });
+                pendingInput = [];
+                rpc(BASE_PATH + SESSION_ID + '/input', { data: uint8ToB64(merged) })
+                    .catch(function () {})
+                    .then(flushInput);
+            }
+
             term.onData(function (data) {
-                var encoded = uint8ToB64(new TextEncoder().encode(data));
-                rpc(BASE_PATH + SESSION_ID + '/input', { data: encoded }).catch(function () {});
+                sendInput(new TextEncoder().encode(data));
             });
 
             term.onBinary(function (data) {
                 var arr = new Uint8Array(data.length);
                 for (var i = 0; i &lt; data.length; i++) arr[i] = data.charCodeAt(i) &amp; 255;
-                rpc(BASE_PATH + SESSION_ID + '/input', { data: uint8ToB64(arr) }).catch(function () {});
+                sendInput(arr);
             });
 
             // ── Resize ────────────────────────────────────────────────────
