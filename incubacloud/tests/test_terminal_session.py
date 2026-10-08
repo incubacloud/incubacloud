@@ -156,6 +156,33 @@ class TestCoreOpenProcess(BaseCase):
         self.assertTrue(isinstance(args[0], str) and args[0])
 
 
+class TestPumpEndsWithTheShell(BaseCase):
+    """``exit`` in the shell ends the session, and the page says so."""
+
+    def _session(self):
+        """A ``TerminalSession`` with its buffers, without thread or SSH."""
+        s = core_session.TerminalSession.__new__(core_session.TerminalSession)
+        s._closed = False
+        s._close_reason = None
+        s._input_queue = []
+        s._input_lock = threading.Lock()
+        s._output_buffer = []
+        s._output_lock = threading.Lock()
+        s._output_seq = 0
+        return s
+
+    def test_the_session_closes_when_the_remote_shell_exits(self):
+        s = self._session()
+        process = MagicMock(spec=asyncssh.SSHClientProcess)
+        process.stdout = MagicMock(spec=asyncssh.SSHReader)
+        process.stdout.read = AsyncMock(side_effect=[b'exit\r\n', b''])
+        process.stdin = MagicMock(spec=asyncssh.SSHWriter)
+        asyncio.run(asyncio.wait_for(s._pump(process), timeout=5))
+        self.assertTrue(s.closed)
+        self.assertIsNone(s.close_reason)
+        self.assertEqual(s._output_buffer, [(1, b'exit\r\n')])
+
+
 class TestSubprocessHandler(BaseCase):
     """The loopback HTTP API in front of a session enforces auth + routes."""
 
