@@ -26,6 +26,13 @@
     margin-bottom: 10px;
 }
 
+// The delete trash closes the action bar, as on an instance, even when an
+// extension appends its own buttons inside the bar after it.
+.ic-action-bar > .ic-ab-delete-sep,
+.ic-action-bar > .ic-ab-delete {
+    order: 1;
+}
+
 // Sub-line under the Overview "Disk" value (free / total breakdown).
 .rl-ov-sub {
     display: block;

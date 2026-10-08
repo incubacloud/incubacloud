@@ -149,6 +149,12 @@ msgstr "%s en cola."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "'%(address)s' is not an IP address or a host name."
+msgstr "«%(address)s» no es una dirección IP ni un nombre de host."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance_whitelist.py:0
 msgid ""
 "'%(value)s' is not a hostname. Write it as api.example.com, with no scheme, "
@@ -3318,6 +3324,12 @@ msgstr "Eliminar instancia archivada"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+msgid "Delete backup destination"
+msgstr "Eliminar destino de copia"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Delete completely"
 msgstr "Eliminar completamente"
@@ -3347,6 +3359,12 @@ msgstr "Eliminación fallida"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Delete host"
+msgstr "Eliminar host"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Delete instance"
 msgstr "Eliminar instancia"
@@ -3354,6 +3372,7 @@ msgstr "Eliminar instancia"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.js:0
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Delete project"
 msgstr "Eliminar proyecto"
 

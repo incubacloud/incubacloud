@@ -28,6 +28,22 @@
                                 <t t-else="" t-esc="state.backend.name" />
                             </h1>
                         </div>
+                        <!-- Same trash as the instance header, so
+                             deleting does not mean scrolling to the
+                             footer of a long form. -->
+                        <t t-if="!isNew">
+                            <div class="rl-pactions">
+                                <button
+                  class="rl-iconbtn danger"
+                  title="Delete"
+                  aria-label="Delete backup destination"
+                  t-att-disabled="state.deleting"
+                  t-on-click="deleteBackend"
+                >
+                                    <t t-out="env.icon('trash', 15)" />
+                                </button>
+                            </div>
+                        </t>
                     </div>
 
                     <!-- Tabs -->

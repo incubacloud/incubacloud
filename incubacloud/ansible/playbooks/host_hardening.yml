@@ -84,10 +84,32 @@
 
   tasks:
     # ── Phase 1: user and access ──────────────────────────────────────
+    # apt waits on a connection for as long as it stays open: on a new
+    # host, the cache update hung 17 minutes on one the mirror had already
+    # closed (2026-10-09). A stalled download now times out and is retried,
+    # here and in every apt run after it.
+    - name: Bound apt's downloads in time, and retry them
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/80incubacloud-network
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          Acquire::Retries "3";
+          Acquire::http::Timeout "30";
+          Acquire::https::Timeout "30";
+
     - name: Update the apt cache
       ansible.builtin.apt:
         update_cache: true
         cache_valid_time: 3600
+      # The floor under the timeouts above: whatever else holds the update,
+      # it is stopped and tried again rather than waited on.
+      timeout: 600
+      register: ic_apt_cache
+      retries: 3
+      delay: 10
+      until: ic_apt_cache is succeeded
 
     - name: Create the unprivileged operator user
       ansible.builtin.user:

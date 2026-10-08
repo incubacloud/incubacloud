@@ -6,6 +6,7 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Host Shell — <t t-esc="host_label"/></title>
+    <link rel="icon" type="image/svg+xml" href="/incubacloud/static/src/img/icon-solid.svg"/>
 
     <!-- xterm.js 5.3.0 vendored locally (offline-safe, no CDN);
          the same copy the instance terminal page loads -->

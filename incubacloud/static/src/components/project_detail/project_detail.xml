@@ -81,6 +81,19 @@
                                     </p>
                                 </t>
                             </div>
+                            <!-- Same trash as the instance header, so
+                                 deleting does not mean scrolling to the
+                                 footer of a long form. -->
+                            <t t-if="!isCreate">
+                                <div class="rl-pactions">
+                                    <button class="rl-iconbtn danger"
+                                            title="Delete"
+                                            aria-label="Delete project"
+                                            t-on-click="deleteProject">
+                                        <t t-out="env.icon('trash', 15)"/>
+                                    </button>
+                                </div>
+                            </t>
                         </div>
 
                         <!-- Tabs -->

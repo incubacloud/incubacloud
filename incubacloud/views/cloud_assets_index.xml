@@ -5,7 +5,10 @@
 <template id="incubacloud.index" name="Cloud Index">&lt;!DOCTYPE html&gt;
 <html>
     <head>
-        <title>Cloud</title>
+        <title>IncubaCloud</title>
+        <!-- Declared here: a customer's panel has no website module to
+             serve /favicon.ico, and its tab showed the browser's globe. -->
+        <link rel="icon" type="image/svg+xml" href="/incubacloud/static/src/img/icon-solid.svg"/>
 
         <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
         <meta http-equiv="content-type" content="text/html, charset=utf-8" />

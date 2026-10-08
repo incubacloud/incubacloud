@@ -44,7 +44,9 @@ DNS is case-insensitive, production already holds a host recorded as
 silently lower-case what an operator typed: a canonical hostname that
 differs from what they entered is its own kind of surprise.
 """
+import ipaddress
 import re
+from contextlib import suppress
 
 #: IANA cap on a fully-qualified domain name.
 MAX_HOSTNAME_LEN = 253
@@ -150,3 +152,27 @@ def validate_wildcard_domain(value, *, check_internal=False, reserved=()):
                 "reserved", "This domain is reserved by the platform.",
             )
     return candidate
+
+
+def is_host_address(value):
+    """Whether *value* is an address SSH can be pointed at.
+
+    An IP address (v4 or v6) or a DNS host name. A string of dotted
+    numbers has to be a real IPv4 address: ``232.123.321.22`` reads as one
+    and is not, and a host registered with it could never be set up
+    (2026-10-09).
+
+    :param str value: the address as typed.
+    :rtype: bool
+    """
+    value = (value or "").strip()
+    if not value:
+        return False
+    with suppress(ValueError):
+        ipaddress.ip_address(value)
+        return True
+    name = value.rstrip(".").lower()
+    labels = name.split(".")
+    if all(label.isdigit() for label in labels):
+        return False
+    return len(name) <= 253 and all(_LABEL_RE.match(label) for label in labels)

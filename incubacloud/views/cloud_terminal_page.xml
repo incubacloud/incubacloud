@@ -6,6 +6,7 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Terminal — <t t-esc="instance_name"/> / <t t-esc="service"/></title>
+    <link rel="icon" type="image/svg+xml" href="/incubacloud/static/src/img/icon-solid.svg"/>
 
     <!-- xterm.js 5.3.0 vendored locally (offline-safe, no CDN) -->
     <link rel="stylesheet" href="/incubacloud/static/lib/xterm/xterm.min.css"/>

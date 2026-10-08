@@ -168,3 +168,5 @@ from . import test_github_app_manifest
 from . import test_alert_resolution
 from . import test_egress_filter_probe
 from . import test_new_instance_form_hints
+from . import test_host_address
+from . import test_delete_in_header
