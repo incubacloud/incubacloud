@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.159] — 2026-10-08
+
+### Fixed
+
+- **A pull request preview can say where it is.** The preview comments its
+  URL on the pull request, and GitHub only lets an App with write access to
+  pull requests do that. The App manifest asked for read, so every comment
+  failed with a 403 that only reached the log. New Apps ask for write; an
+  App created before keeps read until its owner accepts the new permission
+  in GitHub (Settings → GitHub Apps → the App → Permissions).
+
 ## [1.0.158] — 2026-10-08
 
 ### Fixed
