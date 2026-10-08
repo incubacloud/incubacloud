@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.161] — 2026-10-09
+
+### Fixed
+
+- **The new-instance form says what to do.** The name's example read
+  `myproject-staging` on a production instance too; it now follows the
+  environment (`myproject` for production). With no host ready, the form
+  said only "No compatible hosts available"; it now says to add a server,
+  or finish its setup, in Hosts, and links there.
+
 ## [1.0.160] — 2026-10-08
 
 ### Fixed

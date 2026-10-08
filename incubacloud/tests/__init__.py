@@ -167,3 +167,4 @@ from . import test_terminal_input_order
 from . import test_github_app_manifest
 from . import test_alert_resolution
 from . import test_egress_filter_probe
+from . import test_new_instance_form_hints

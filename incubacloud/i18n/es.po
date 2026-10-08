@@ -5428,6 +5428,7 @@ msgstr ""
 #: code:addons/incubacloud/static/src/app/app.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Hosts"
 msgstr "Hosts"
 
@@ -7707,12 +7708,6 @@ msgstr "No hay bucket configurado."
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "No compatible hosts available."
-msgstr "No hay hosts compatibles disponibles."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "No copy"
 msgstr "Sin copia"
@@ -7741,6 +7736,16 @@ msgstr "Ningún host puede aceptar una instancia ahora mismo."
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "No host configured"
 msgstr "No hay host configurado"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"No host ready for this instance yet: add your server, or finish its setup, "
+"in"
+msgstr ""
+"Aún no hay ningún host listo para esta instancia: añade tu servidor, o "
+"termina de configurarlo, en"
 
 #. module: incubacloud
 #. odoo-python
@@ -13880,12 +13885,6 @@ msgstr "metrics.example.com"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "my-backup-bucket"
 msgstr "my-backup-bucket"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "myproject-staging"
-msgstr "myproject-staging"
 
 #. module: incubacloud
 #. odoo-python
