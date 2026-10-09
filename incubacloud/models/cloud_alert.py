@@ -12,6 +12,7 @@ from odoo.exceptions import AccessError
 from odoo.tools import config as odoo_config
 
 from ..github.http_utils import safe_urlopen
+from ..mail_layout import wrap_in_mail_layout
 from ..net.outbound import post_json
 from .res_users_ext import as_platform
 
@@ -520,7 +521,9 @@ class CloudAlert(models.Model):
                 f"[IncubaCloud] Resolved: {self.message}" if resolved
                 else f"[IncubaCloud] {level_label} alert: {self.message}"
             )
-            body = self._build_alert_email_body(resolved=resolved)
+            body = wrap_in_mail_layout(
+                self.env, self._build_alert_email_body(resolved=resolved),
+            )
             self.env["mail.mail"].sudo().create(
                 {
                     "subject": subject,

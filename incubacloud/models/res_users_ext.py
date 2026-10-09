@@ -6,6 +6,7 @@ from psycopg2 import sql as psql
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
 
+from ..mail_layout import wrap_in_mail_layout
 from .encrypted_char import EncryptedChar
 
 _logger = logging.getLogger(__name__)
@@ -233,9 +234,9 @@ class ResUsers(models.Model):
         values = self._cloud_digest_values(
             user, jobs.sudo(), alerts.sudo(), since, now,
         )
-        body = self.env['ir.qweb']._render(
+        body = wrap_in_mail_layout(self.env, self.env['ir.qweb']._render(
             'incubacloud.mail_cloud_digest', values,
-        )
+        ))
         subject = (
             f"[IncubaCloud] Daily digest: {values['failed_count']} failed"
             f" job(s), {values['alert_count']} new alert(s)"
@@ -306,6 +307,7 @@ class ResUsers(models.Model):
             'done_count': len(done),
             'alert_count': len(alert_rows),
             'console_url': f'{base_url}/cloud/ui',
+            'accent': self.env.company.email_secondary_color or '#875A7B',
         }
 
     @api.model

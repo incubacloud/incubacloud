@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.166] — 2026-10-09
+
+### Added
+
+- **Every email of the module goes out in one company layout.** Alerts,
+  job notifications and the daily digest were bare HTML, the digest with
+  one brand's green written into it, and the backup quota template had no
+  layout. They now share `incubacloud.mail_layout`: the company's logo
+  above the message, its email button colour as the accent, and its name,
+  website and contact address in the footer. Nothing in it names a brand,
+  so each installation's emails carry its own. Other modules' mail
+  templates can use it through `email_layout_xmlid`. A database that
+  cannot serve its own logo to mail clients, such as one that sleeps,
+  names another address in `incubacloud.mail_logo_url`.
+
 ## [1.0.165] — 2026-10-09
 
 ### Changed

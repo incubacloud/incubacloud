@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        The layout every email of this module goes out in: alerts, job
+        notifications, the daily digest and the mail templates, which
+        name it in ``email_layout_xmlid``. Other modules' templates may
+        name it too. The message itself is ``body``.
+
+        Nothing in it is written for one brand. Logo, accent colour,
+        name, website and contact address come from the sending company
+        (``company``, set by ``mail.render.mixin._render_encapsulate``):
+        the accent is the company's email button colour, the same one
+        Odoo's own layouts use. The logo is ``/logo.png`` of this
+        database unless ``incubacloud.mail_logo_url`` names another
+        address — for a database whose own address cannot be relied on
+        to answer an email client, such as one that sleeps.
+
+        Inline styles only: email clients ignore stylesheets.
+    -->
+    <template id="mail_layout" name="Mail: company layout">
+<t t-set="accent" t-value="company.email_secondary_color or '#875A7B'"/>
+<t t-set="logo_url" t-value="company.env['ir.config_parameter'].sudo().get_param('incubacloud.mail_logo_url') or ('/logo.png?company=%s' % company.id)"/>
+<t t-set="site_label" t-value="(company.website or '').split('//')[-1].rstrip('/')"/>
+<table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%"
+       style="padding: 24px 0; background-color: #f4f6f5; font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #0e1512; border-collapse: separate;">
+<tr><td align="center">
+
+    <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="600"
+           style="max-width: 600px; background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; border-collapse: separate;">
+        <tbody>
+            <tr>
+                <td t-att-style="'height: 4px; line-height: 4px; font-size: 0; background-color: %s;' % accent">&#160;</td>
+            </tr>
+            <tr>
+                <td align="left" style="padding: 22px 32px 6px;">
+                    <img t-att-src="logo_url" t-att-alt="company.name" height="32"
+                         style="height: 32px; width: auto; border: 0; display: block;"/>
+                </td>
+            </tr>
+            <tr>
+                <td align="left" style="padding: 14px 32px 28px; font-size: 14px; line-height: 1.6; color: #0e1512;">
+                    <t t-out="body"/>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="600"
+           style="max-width: 600px; border-collapse: separate;">
+        <tr><td align="center" style="padding: 14px 16px; font-size: 12px; line-height: 1.6; color: #5a6661;">
+            <t t-out="company.name"/>
+            <t t-if="company.website"> ·
+                <a t-att-href="company.website" t-att-style="'color: %s; text-decoration: none;' % accent" t-out="site_label"/>
+            </t>
+            <t t-if="company.email"> ·
+                <a t-attf-href="mailto:{{ company.email }}" t-att-style="'color: %s; text-decoration: none;' % accent" t-out="company.email"/>
+            </t>
+        </td></tr>
+    </table>
+
+</td></tr>
+</table>
+    </template>
+</odoo>

@@ -173,6 +173,17 @@ class TestAlertNotifyEmail(TransactionCase):
             before,
         )
 
+    def test_the_alert_email_goes_out_in_the_company_layout(self):
+        """Logo, frame and footer come from the layout, around the
+        alert itself."""
+        self.env.company.email_secondary_color = "#13579b"
+        self._user("ane-layout")
+        self._alert(code="disk_critical", level="critical")
+        body = self._alert_mails("ane-layout@example.com").body_html
+        self.assertIn("#13579b", body)
+        self.assertIn("/logo.png?company=", body)
+        self.assertIn("Test alert disk_critical", body)
+
 
 @tagged("post_install", "-at_install")
 class TestAlertNotifyExternal(TransactionCase):
@@ -461,3 +472,16 @@ class TestAlertNotifyDigest(TransactionCase):
         before = len(self._digest_mails("adg-c2"))
         self.env["res.users"]._cron_send_cloud_digest()
         self.assertEqual(len(self._digest_mails("adg-c2")), before)
+
+    def test_the_digest_goes_out_in_the_company_layout(self):
+        """The digest is content only now: the layout brings the frame,
+        and its accents are the company's, not a fixed green."""
+        self.env.company.email_secondary_color = "#13579b"
+        self._user("adg-layout")
+        self._qfail("host_probe", "uuid-digest-layout")
+        self.env["res.users"]._cron_send_cloud_digest()
+        body = self._digest_mails("adg-layout").body_html
+        self.assertIn("/logo.png?company=", body)
+        self.assertIn("Daily cloud digest", body)
+        self.assertIn("#13579b", body)
+        self.assertNotIn("#0c7a55", body)
