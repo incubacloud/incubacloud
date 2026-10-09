@@ -32,6 +32,16 @@
 
     &.env-production:hover .rl-ghi { color: $state-ok; }
     &.env-staging:hover .rl-ghi { color: $primary-blue; }
+
+    // Staging before there is a production to copy: it explains, it
+    // does not open the form.
+    &.is-disabled {
+        cursor: default;
+        opacity: 0.6;
+        box-shadow: none;
+
+        &:hover .rl-ghi { color: $text-secondary; }
+    }
 }
 
 // ── Body wrapper ─────────────────────────────────────────────────────────────

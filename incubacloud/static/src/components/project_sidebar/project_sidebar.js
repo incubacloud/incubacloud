@@ -138,6 +138,29 @@ export class ProjectSidebar extends Component {
         this.env.navigate("project_settings", { project_id: this.props.projectId });
     }
 
+    /**
+     * Whether adding to *environment* waits for a production instance:
+     * a staging is a copy of one.
+     *
+     * @param {string} environment ``production`` or ``staging``.
+     * @returns {boolean}
+     */
+    needsProduction(environment) {
+        return environment === "staging" && !this.grouped.production.length;
+    }
+
+    /**
+     * Tooltip of the add button of *environment*'s section.
+     *
+     * @param {string} environment ``production`` or ``staging``.
+     * @returns {string}
+     */
+    addTitle(environment) {
+        return this.needsProduction(environment)
+            ? _t("Create the production instance first: a staging is a copy of it.")
+            : _t("New instance");
+    }
+
     createInstance(environment) {
         this.env.navigate("create_instance", {
             project_id: this.props.projectId,

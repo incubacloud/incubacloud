@@ -27,11 +27,15 @@
                                     <h3>Production</h3>
                                     <p>Live environment</p>
                                 </div>
-                                <div class="rl-ghcard ic-pd-onboard-card env-staging"
-                                     t-on-click="() => this.createInstance('staging')">
+                                <!-- Not a way in: a staging is a copy of
+                                     production, and a customer used to
+                                     starting on a development copy made
+                                     staging their only instance. -->
+                                <div class="rl-ghcard ic-pd-onboard-card env-staging is-disabled"
+                                     aria-disabled="true">
                                     <span class="rl-ghi"><t t-out="env.icon('flask', 22)"/></span>
                                     <h3>Staging</h3>
-                                    <p>Pre-production testing</p>
+                                    <p>A copy of your production instance, to try changes on. Create production first, then clone it from the side menu.</p>
                                 </div>
                             </div>
                         </div>

@@ -996,6 +996,11 @@ class CrudMixin:
             'project_license': project.project_license or 'BSL-1.0',
             'status': project.status,
             'instance_count': len(project.instance_ids),
+            # A new instance form opens on production until the project
+            # has one: a staging is a copy of it.
+            'has_production': any(
+                i.environment == 'production' for i in project.instance_ids
+            ),
             'tags': [
                 {'id': t.id, 'name': t.name, 'color': t.color}
                 for t in project.tag_ids

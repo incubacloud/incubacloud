@@ -453,6 +453,16 @@ msgstr ""
 "artefacto de archivo."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
+msgid ""
+"A copy of your production instance, to try changes on. Create production "
+"first, then clone it from the side menu."
+msgstr ""
+"Una copia de tu instancia de producción, para probar cambios. Crea primero "
+"la producción y luego clónala desde el menú lateral."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
@@ -2898,6 +2908,13 @@ msgid ""
 msgstr ""
 "Crear instancias de staging/dev, desplegar y reconstruir en los proyectos "
 "asignados. Sin terminal, registros ni copias de seguridad."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.js:0
+msgid "Create the production instance first: a staging is a copy of it."
+msgstr ""
+"Crea primero la instancia de producción: una staging es una copia de ella."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7596,7 +7613,7 @@ msgstr "Nuevo host"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
+#: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.js:0
 msgid "New instance"
 msgstr "Nueva instancia"
 
@@ -8939,12 +8956,6 @@ msgstr "Versión de PostgreSQL"
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "PostgreSQL console"
 msgstr "Consola PostgreSQL"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
-msgid "Pre-production testing"
-msgstr "Pruebas de pre-producción"
 
 #. module: incubacloud
 #. odoo-javascript

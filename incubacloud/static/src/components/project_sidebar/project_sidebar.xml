@@ -35,7 +35,9 @@
                         <div class="rl-ctx-sech">
                             <span t-esc="envLabel(envKey)"/>
                             <t t-if="env.permissions?.can_create_instance">
-                                <button class="rl-ctx-add" title="New instance"
+                                <button class="rl-ctx-add"
+                                        t-att-title="addTitle(envKey)"
+                                        t-att-disabled="needsProduction(envKey) or null"
                                         t-on-click="() => this.createInstance(envKey)">
                                     <t t-out="env.icon('plus', 13)"/>
                                 </button>
