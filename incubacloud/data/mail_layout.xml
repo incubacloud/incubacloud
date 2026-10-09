@@ -15,6 +15,9 @@
         address — for a database whose own address cannot be relied on
         to answer an email client, such as one that sleeps.
 
+        The logo is shown at its own size: ``/logo.png`` is Odoo's copy
+        reduced to 180 pixels wide, and stretching it would blur it.
+
         Inline styles only: email clients ignore stylesheets.
     -->
     <template id="mail_layout" name="Mail: company layout">
@@ -33,8 +36,8 @@
             </tr>
             <tr>
                 <td align="left" style="padding: 22px 32px 6px;">
-                    <img t-att-src="logo_url" t-att-alt="company.name" height="32"
-                         style="height: 32px; width: auto; border: 0; display: block;"/>
+                    <img t-att-src="logo_url" t-att-alt="company.name"
+                         style="max-width: 180px; height: auto; border: 0; display: block;"/>
                 </td>
             </tr>
             <tr>
