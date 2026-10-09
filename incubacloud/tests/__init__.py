@@ -171,3 +171,4 @@ from . import test_new_instance_form_hints
 from . import test_host_address
 from . import test_delete_in_header
 from . import test_staging_needs_production
+from . import test_mail_layout

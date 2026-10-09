@@ -18,6 +18,7 @@ from odoo.addons.queue_job.delay import chain as delay_chain
 from odoo.addons.queue_job.exception import JobError, RetryableJobError
 
 from ..github.http_utils import safe_urlopen
+from ..mail_layout import wrap_in_mail_layout
 from ..net.outbound import post_json
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .encrypted_char import EncryptedChar
@@ -1866,7 +1867,9 @@ class CloudJob(models.Model):
                 continue
             state_label = "completed" if state == "done" else state
             subject = f"[IncubaCloud] Job '{job.name}' {state_label}"
-            body = self._build_email_body(job, state)
+            body = wrap_in_mail_layout(
+                self.env, self._build_email_body(job, state),
+            )
             self.env["mail.mail"].sudo().create(
                 {
                     "subject": subject,
