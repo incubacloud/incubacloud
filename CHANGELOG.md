@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.165] — 2026-10-09
+
+### Changed
+
+- **A project starts with production; staging waits until there is one.**
+  A customer used to platforms where an instance starts on a development
+  copy made a staging the only instance of their project. Here a staging
+  is a copy of production: an empty project now offers production alone,
+  with the staging card explaining that, the sidebar's add button for
+  staging is off until production exists, and a new instance form opens
+  on production until the project has one.
+
 ## [1.0.164] — 2026-10-09
 
 ### Changed

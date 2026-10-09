@@ -13,6 +13,14 @@
   padding: 12px 10px 24px;
 }
 
+// Staging's add button before the project has a production to copy.
+.ic-psidebar .rl-ctx-add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+
+  &:hover { background: none; color: var(--rl-muted); }
+}
+
 .ic-psidebar-loading {
   padding: 16px;
   color: $text-secondary;

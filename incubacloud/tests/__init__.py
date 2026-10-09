@@ -170,3 +170,4 @@ from . import test_egress_filter_probe
 from . import test_new_instance_form_hints
 from . import test_host_address
 from . import test_delete_in_header
+from . import test_staging_needs_production

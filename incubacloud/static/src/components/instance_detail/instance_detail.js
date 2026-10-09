@@ -548,7 +548,11 @@ export class InstanceDetail extends JobsMixin(
         }
         this.state.form = {
           name: "",
-          environment: this.props.environment || "staging",
+          // Production until the project has one: a staging is a copy
+          // of it, and a customer used to environments that start on a
+          // development copy picked staging for their only instance.
+          environment: this.props.environment
+            || (project?.has_production ? "staging" : "production"),
           host_id: null,
           odoo_version: parseFloat(project?.odoo_version) || 19.0,
           odoo_initial_lang: null,
