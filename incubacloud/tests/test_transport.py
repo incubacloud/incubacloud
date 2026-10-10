@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import asyncssh
 
-from odoo.tests.common import BaseCase
+from odoo.tests.common import BaseCase, tagged
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -367,6 +367,88 @@ class TestAbstractExecutorAfterCommandsHook(unittest.TestCase):
         # stop_on_failure; it's the executor's parse_results that decides.
         _run(ex._async_entry())
         self.assertEqual(len(called), 1)
+
+
+# ---------------------------------------------------------------------------
+# 5b. AbstractExecutor._async_entry: how a lost connection is logged
+# ---------------------------------------------------------------------------
+
+
+@tagged('post_install', '-at_install')
+class TestAsyncEntryLogsALostConnection(BaseCase):
+    """A probe that will retry does not log its lost connection as an error.
+
+    A host's scheduled reboot refuses connections for a few minutes. A
+    probe retries through it, and if the host stays away the job's
+    terminal state raises ``host_unreachable``. An ERROR per attempt
+    would instead reach the log scraper of whoever reads this database's
+    log, and come back as an ``instance_error_logs`` alert every time a
+    host reboots for its security updates.
+    """
+
+    def _executor(self, executor_cls, error):
+        """An executor of *executor_cls* whose host refuses with *error*.
+
+        Built without ``__init__``: ``_async_entry`` only needs the host
+        record, its address and the log buffer.
+        """
+        from contextlib import AbstractAsyncContextManager
+
+        from odoo.addons.incubacloud.models.cloud_host import CloudHost
+
+        connecting = MagicMock(spec=AbstractAsyncContextManager)
+        connecting.__aenter__.side_effect = error
+        host = MagicMock(spec=CloudHost)
+        host.get_transport.return_value = connecting
+        executor = object.__new__(executor_cls)
+        executor._host_record = host
+        executor.host, executor.port = "192.0.2.10", 22
+        executor._log_buffer = []
+        return executor
+
+    def test_a_probe_that_will_retry_logs_a_warning(self):
+        from odoo.addons.incubacloud.models.host_metrics_executor import (
+            HostMetricsExecutor,
+        )
+
+        executor = self._executor(
+            HostMetricsExecutor, asyncssh.ConnectionLost("Connection lost"),
+        )
+        with self.assertLogs("AbstractExecutor", level="DEBUG") as logs:
+            with self.assertRaises(asyncssh.ConnectionLost):
+                _run(executor._async_entry())
+        levels = {record.levelname for record in logs.records}
+        self.assertIn("WARNING", levels)
+        self.assertNotIn("ERROR", levels)
+        self.assertIn(
+            ("✗ ConnectionLost: Connection lost", "system"),
+            executor._log_buffer,
+        )
+
+    def test_a_job_that_will_not_retry_still_logs_an_error(self):
+        from odoo.addons.incubacloud.models.backup_list_executor import (
+            BackupListExecutor,
+        )
+
+        executor = self._executor(
+            BackupListExecutor, asyncssh.ConnectionLost("Connection lost"),
+        )
+        with self.assertLogs("AbstractExecutor", level="ERROR"):
+            with self.assertRaises(asyncssh.ConnectionLost):
+                _run(executor._async_entry())
+
+    def test_a_probe_that_fails_for_another_reason_still_logs_an_error(self):
+        from odoo.addons.incubacloud.models.host_metrics_executor import (
+            HostMetricsExecutor,
+        )
+
+        executor = self._executor(
+            HostMetricsExecutor,
+            asyncssh.PermissionDenied("Permission denied"),
+        )
+        with self.assertLogs("AbstractExecutor", level="ERROR"):
+            with self.assertRaises(asyncssh.PermissionDenied):
+                _run(executor._async_entry())
 
 
 # ---------------------------------------------------------------------------

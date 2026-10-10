@@ -392,7 +392,18 @@ class AbstractExecutor(ABC):
 
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
-            logger.exception("[_async_entry] Exception: %s", e)
+            if self._retry_on_connection_loss and is_transient_connection_error(e):
+                # ``cloud.job.execute`` retries it, and a host that stays
+                # away raises ``host_unreachable`` when the retries run
+                # out. An ERROR per attempt would reach whoever scrapes
+                # this database's log as an incident — every scheduled
+                # 04:00 reboot of a host for its security updates.
+                logger.warning(
+                    "[_async_entry] Connection failed, the job will retry: "
+                    "%s: %s", type(e).__name__, e,
+                )
+            else:
+                logger.exception("[_async_entry] Exception: %s", e)
             self._sys(f"✗ {type(e).__name__}: {e}")
             raise
 
