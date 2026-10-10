@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.167] — 2026-10-10
+
+### Fixed
+
+- **A host's scheduled reboot no longer shows up as an error in the log.**
+  A host with automatic security updates reboots at 04:00 when a kernel
+  update lands, and refuses connections for a few minutes before. The
+  monitoring probes retry through it, but every attempt was logged as an
+  ERROR with its traceback, so whoever watches this database's log saw an
+  incident each time. An attempt that will be retried is now a warning;
+  a host that stays away still raises `host_unreachable` once the retries
+  run out, and any other failure is still an error.
+
 ## [1.0.166] — 2026-10-09
 
 ### Added
