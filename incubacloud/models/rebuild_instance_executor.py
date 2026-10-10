@@ -135,14 +135,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 ),
             ))
 
-        # 3c. Cap the backup container hostname at 64 bytes (see the deploy
+        # 3c. Cap every container hostname at 64 bytes (see the deploy
         #     executor for the full rationale). ``copier update`` regenerates
-        #     common.yaml, so this runs on every rebuild too.
-        if self._backup_enabled() and inst.environment == 'production':
-            cmds.append((
-                "Cap backup hostname",
-                self.run_script("deploy.sh", ["cap-backup-hostname", d, name]),
-            ))
+        #     the compose files, so this runs on every rebuild too.
+        cmds.append((
+            "Cap container hostnames",
+            self.run_script("deploy.sh", ["cap-hostnames", d]),
+        ))
 
         cmds += [
             # 4. Overwrite backup.env with ours (adds AWS_ENDPOINT_URL).

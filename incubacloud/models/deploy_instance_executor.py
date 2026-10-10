@@ -1182,21 +1182,19 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 )
             )
 
-        # 2f. Cap the backup container hostname at 64 bytes.
-        #     doodba renders "hostname: backup.<first_main_domain>" in
-        #     common.yaml (inherited by prod.yaml via `extends`). A long
-        #     production domain pushes it past the kernel limit
-        #     (__NEW_UTS_LEN = 64) and the backup container dies on start
-        #     with "sethostname: invalid argument".
-        if self._backup_enabled() and inst.environment == "production":
-            cmds.append(
-                (
-                    "Cap backup hostname",
-                    self.run_script(
-                        "deploy.sh", ["cap-backup-hostname", d, name],
-                    ),
-                )
+        # 2f. Cap every container hostname at 64 bytes. doodba renders
+        #     them from the instance's domain — the odoo service's is the
+        #     domain itself, the backup's "backup.<domain>" — and a long
+        #     domain pushes them past the kernel limit (__NEW_UTS_LEN =
+        #     64): Docker then refuses to create the container ("hostname
+        #     ... is too long") and the deploy stops at its first
+        #     ``docker compose run``.
+        cmds.append(
+            (
+                "Cap container hostnames",
+                self.run_script("deploy.sh", ["cap-hostnames", d]),
             )
+        )
 
         cmds += [
             # 3. Overwrite backup.env with ours (adds AWS_ENDPOINT_URL if set;

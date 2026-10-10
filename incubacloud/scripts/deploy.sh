@@ -6,7 +6,7 @@
 #   deploy.sh copier-deploy      <dir> <answers_file> <template_ref>
 #   deploy.sh ensure-secret-key  <dir>
 #   deploy.sh inject-secret-env  <dir>
-#   deploy.sh cap-backup-hostname <dir> <project_name>
+#   deploy.sh cap-hostnames      <dir>
 #   deploy.sh set-system-params  <dir> <pg_user> <dbname> <base_url_sql> <report_url>
 #
 # The executor keeps each deploy step as its own labelled command (so
@@ -100,31 +100,51 @@ print(f'INCUBACLOUD_SECRET_KEY={Fernet.generate_key().decode()}')" \
         done
         ;;
 
-    cap-backup-hostname)
-        ic_require_args 1 "$#" \
-            "deploy.sh cap-backup-hostname <dir> <project_name>"
-        name="$1"
-        # doodba renders "hostname: backup.<first_domain>"; a long
-        # production domain pushes it past the kernel's 64-byte limit and
-        # the backup container dies on start ("sethostname: invalid
-        # argument"). Only rewrite when the rendered value exceeds 64,
-        # falling back to doodba's own short form ("backup.<project>")
-        # capped and stripped of any trailing "." / "-".
+    cap-hostnames)
+        # Docker refuses a container hostname over 64 bytes (the kernel's
+        # __NEW_UTS_LEN), and doodba renders several from the instance's
+        # domain: the odoo service's is the domain itself, the backup's
+        # "backup.<domain>". An instance under a long domain then failed
+        # at its first "docker compose run" ("hostname ... is too long").
+        # Every over-long value is cut at a label boundary, keeping its
+        # leftmost labels — the ones that tell the service and the
+        # instance apart — so the result is still a valid host name. A
+        # first label over 63 bytes is itself cut to 63.
         cd "$dir"
-        short="backup.$name"
-        short="$(printf '%s' "$short" | cut -c1-64 | sed 's/[.-]*$//')"
-        for f in common.yaml prod.yaml; do
+        for f in common.yaml prod.yaml test.yaml; do
             [ -f "$f" ] || continue
-            cur="$(awk '/hostname: backup/{print $2; exit}' "$f")"
-            [ -n "$cur" ] || continue
-            if [ "${#cur}" -gt 64 ]; then
-                sed -i \
-                    "s|hostname:[[:space:]]*backup[^[:space:]]*|hostname: $short|" \
-                    "$f"
-                ic_log "capped backup hostname: $cur (${#cur}) -> $short"
-            else
-                ic_log "backup hostname OK: $cur (${#cur})"
-            fi
+            awk -v file="$f" '
+                function shorten(v,   n, parts, out, i) {
+                    n = split(v, parts, ".")
+                    out = substr(parts[1], 1, 63)
+                    for (i = 2; i <= n; i++) {
+                        if (length(out) + 1 + length(parts[i]) > 64) break
+                        out = out "." parts[i]
+                    }
+                    sub(/[.-]+$/, "", out)
+                    return out
+                }
+                /^[ \t]*hostname:[ \t]*/ {
+                    match($0, /^[ \t]*hostname:[ \t]*/)
+                    head = substr($0, 1, RLENGTH)
+                    v = substr($0, RLENGTH + 1)
+                    sub(/[ \t]+$/, "", v)
+                    q = ""
+                    if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) {
+                        q = substr(v, 1, 1)
+                        v = substr(v, 2, length(v) - 2)
+                    }
+                    if (length(v) > 64) {
+                        s = shorten(v)
+                        printf "[incubacloud] capped hostname in %s: %s (%d) -> %s\n", \
+                            file, v, length(v), s > "/dev/stderr"
+                        print head q s q
+                        next
+                    }
+                }
+                { print }
+            ' "$f" > "$f.ic-tmp"
+            mv "$f.ic-tmp" "$f"
         done
         ;;
 

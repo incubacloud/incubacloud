@@ -73,6 +73,12 @@
     # Who may reach the series-deletion route under the public name; the
     # other operator routes answer this host only.
     ic_operator_sources: []
+    # The public name reaches this host through a CDN, whose edge opens
+    # the connection: the deletion route then checks the address the CDN
+    # forwards (the rightmost X-Forwarded-For entry), not the edge's.
+    # Traefik only keeps that header from the ranges it trusts, so a
+    # caller reaching the host directly cannot hand it the address.
+    ic_public_forwarded: false
     # The panel's origin, allowed to frame the dashboards.
     ic_grafana_frame_ancestors: ""
     ic_grafana_admin_password: ""
@@ -326,6 +332,9 @@
                 traefik.http.routers.ic-central-delete.priority: "30"
                 traefik.http.routers.ic-central-delete.middlewares: ic-central-delete-sources
                 traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.sourcerange: "{{ ic_operator_sources | join(',') }}"
+          {% if ic_public_forwarded %}
+                traefik.http.middlewares.ic-central-delete-sources.ipwhitelist.ipstrategy.depth: "1"
+          {% endif %}
                 traefik.http.routers.ic-central-operator.rule: "Host(`{{ ic_public_host }}`) && (PathPrefix(`/admin-r/`) || PathPrefix(`/gadmin/`))"
                 traefik.http.routers.ic-central-operator.entrypoints: https
                 traefik.http.routers.ic-central-operator.service: ic-central-gateway

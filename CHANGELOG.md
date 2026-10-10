@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.168] — 2026-10-10
+
+### Fixed
+
+- **An instance under a long domain deploys.** doodba names the odoo
+  container after the instance's domain, and Docker refuses a hostname
+  over 64 bytes, so a production on a customer's own server
+  (`<instance>.vps.<tenant>.<zone>`) stopped at "Initialize database".
+  Only the backup container's name was shortened. Every container
+  hostname over 64 bytes is now cut at a label boundary, keeping its
+  leftmost labels, on deploy and on rebuild, in every environment.
+- **The panel can delete series on a central behind a CDN.** The
+  central's series-deletion route only answers the panel's address, and
+  behind a CDN the connection comes from the CDN's edge, so every
+  deletion was refused and `metrics_purge_failed` raised. When the
+  central's public name reaches its host through a CDN, the route now
+  checks the address the CDN forwards, as the host's rate limit already
+  does. A caller reaching the host directly still cannot hand it that
+  address: Traefik only keeps the header from the ranges it trusts.
+
 ## [1.0.167] — 2026-10-10
 
 ### Fixed

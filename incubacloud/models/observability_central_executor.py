@@ -396,6 +396,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # and Grafana through this host's Traefik under the name.
             "ic_public_host": public["host"] if public else "",
             "ic_public_tls": public["tls"] if public else "",
+            "ic_public_forwarded": public["forwarded"] if public else False,
             "ic_operator_sources": public["operator_sources"] if public else [],
             "ic_grafana_frame_ancestors": public["frame_ancestors"] if public else "",
             # Filled by the SaaS layer once Grafana is registered as an
@@ -410,8 +411,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         """Where the central is published, or None to keep it on the bridge.
 
         :param settings: the ``cloud.settings`` record.
-        :returns: ``{"host", "tls", "operator_sources", "frame_ancestors",
-            "read", "write", "grafana"}`` for a public name, else None.
+        :returns: ``{"host", "tls", "forwarded", "operator_sources",
+            "frame_ancestors", "read", "write", "grafana"}`` for a public
+            name, else None.
         :rtype: dict or None
         """
         host_name = (settings.metrics_central_public_host or "").strip().lower()
@@ -426,6 +428,10 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # Behind a CDN that already holds a certificate for the name,
             # the host's default one; otherwise one of its own.
             "tls": self._host()._router_tls_mode(host_name),
+            # Reached through a CDN, the connection comes from the CDN's
+            # edge, not from the operator: the deletion route then reads
+            # the address the CDN forwards, as the host's rate limit does.
+            "forwarded": self._host()._name_is_proxied(host_name),
             # The host itself always; whoever the operator names besides
             # (the panel's public address once it runs elsewhere).
             "operator_sources": ["127.0.0.1/32"]
