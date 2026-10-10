@@ -80,23 +80,44 @@ teardown() {
     [ "$(grep -c 'incubacloud.env' "$DIR/prod.yaml")" -eq 1 ]
 }
 
-@test "cap-backup-hostname shortens an over-long hostname" {
-    long="backup.$(printf 'a%.0s' {1..70}).example.com"
-    printf 'services:\n  backup:\n    hostname: %s\n' "$long" > "$DIR/prod.yaml"
-    cp "$DIR/prod.yaml" "$DIR/common.yaml"
-    run bash "$SCRIPT" cap-backup-hostname "$DIR" myproj
+@test "cap-hostnames cuts the odoo hostname of a long domain at a label" {
+    # The name QA's walk 6g2 deployed on 10-oct-2026: 68 bytes.
+    long="qa-addons-privado-production.vps.qa-20261010-2457-pago.incubacloud.io"
+    printf 'services:\n  odoo:\n    hostname: "%s"\n' "$long" > "$DIR/prod.yaml"
+    run bash "$SCRIPT" cap-hostnames "$DIR"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"capped backup hostname"* ]]
-    ! grep -q "$long" "$DIR/prod.yaml"
-    grep -q "hostname: backup.myproj" "$DIR/prod.yaml"
+    [[ "$output" == *"capped hostname in prod.yaml"* ]]
+    grep -q '    hostname: "qa-addons-privado-production.vps.qa-20261010-2457-pago"$' \
+        "$DIR/prod.yaml"
 }
 
-@test "cap-backup-hostname leaves a short hostname alone" {
-    printf 'services:\n  backup:\n    hostname: backup.short.io\n' \
-        > "$DIR/prod.yaml"
-    run bash "$SCRIPT" cap-backup-hostname "$DIR" myproj
+@test "cap-hostnames keeps the service label of every over-long value" {
+    long="backup.$(printf 'a%.0s' {1..50}).example.com"
+    printf 'services:\n  backup:\n    hostname: %s\n' "$long" > "$DIR/common.yaml"
+    printf 'services:\n  odoo:\n    hostname: %s.vps.example.com\n' "$(printf 'a%.0s' {1..50})" \
+        > "$DIR/test.yaml"
+    run bash "$SCRIPT" cap-hostnames "$DIR"
     [ "$status" -eq 0 ]
-    grep -q "hostname: backup.short.io" "$DIR/prod.yaml"
+    grep -q "^    hostname: backup.$(printf 'a%.0s' {1..50})$" "$DIR/common.yaml"
+    grep -q "^    hostname: $(printf 'a%.0s' {1..50}).vps.example$" "$DIR/test.yaml"
+}
+
+@test "cap-hostnames cuts a single label longer than 63 bytes" {
+    printf 'services:\n  odoo:\n    hostname: %s.io\n' "$(printf 'b%.0s' {1..70})" \
+        > "$DIR/prod.yaml"
+    run bash "$SCRIPT" cap-hostnames "$DIR"
+    [ "$status" -eq 0 ]
+    grep -q "^    hostname: $(printf 'b%.0s' {1..63})$" "$DIR/prod.yaml"
+}
+
+@test "cap-hostnames leaves short hostnames and other lines alone" {
+    printf 'services:\n  odoo:\n    hostname: "www.short.io"\n    image: x\n' \
+        > "$DIR/prod.yaml"
+    cp "$DIR/prod.yaml" "$TMP/before"
+    run bash "$SCRIPT" cap-hostnames "$DIR"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"capped"* ]]
+    cmp "$TMP/before" "$DIR/prod.yaml"
 }
 
 @test "copier-deploy exports the pipx PATH and runs copier" {

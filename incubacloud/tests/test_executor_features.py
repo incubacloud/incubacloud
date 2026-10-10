@@ -517,6 +517,41 @@ class TestGitConfigIdempotentGuard(BaseCase):
         )
 
 
+class TestEveryHostnameIsCapped(BaseCase):
+    """Deploy and rebuild cap every container hostname, in any environment.
+
+    The odoo service's hostname is the instance's domain, so a long one
+    broke the deploy whatever the backup did: on 10-oct-2026 Docker
+    refused "qa-addons-privado-production.vps.qa-…-pago.incubacloud.io"
+    (68 bytes) at the first ``docker compose run``.
+    """
+
+    def _cap(self, cmds):
+        """The cap step of *cmds*, or None."""
+        return _find_cmd(cmds, "Cap container hostnames")
+
+    def test_deploy_caps_in_every_environment(self):
+        for environment in ('production', 'staging'):
+            cmd = self._cap(
+                _make_deploy_executor(environment=environment).get_commands(),
+            )
+            self.assertIsNotNone(cmd, environment)
+            self.assertIn("cap-hostnames", cmd[1])
+
+    def test_deploy_caps_before_the_database_is_initialised(self):
+        labels = [c[0] for c in _make_deploy_executor().get_commands()]
+        init = next(i for i, label in enumerate(labels) if "Initialize" in label)
+        self.assertLess(labels.index("Cap container hostnames"), init)
+
+    def test_rebuild_caps_after_copier_regenerates_the_files(self):
+        for environment in ('production', 'staging'):
+            cmds = _make_rebuild_executor(environment=environment).get_commands()
+            labels = [c[0] for c in cmds]
+            self.assertIn("Cap container hostnames", labels, environment)
+            copier = next(i for i, label in enumerate(labels) if "copier" in label.lower())
+            self.assertLess(copier, labels.index("Cap container hostnames"))
+
+
 # ---------------------------------------------------------------------------
 # Class 10: TestDeleteCommandsWhenInstanceIsGone
 # ---------------------------------------------------------------------------

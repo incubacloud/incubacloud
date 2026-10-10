@@ -60,11 +60,14 @@ def _compose(**variables):
     ).render(**values)
 
 
-def _published(tls="acme", sources=("127.0.0.1/32", "198.51.100.7/32")):
+def _published(
+    tls="acme", sources=("127.0.0.1/32", "198.51.100.7/32"), forwarded=False,
+):
     """The compose file of a central published as PUBLIC, parsed."""
     return yaml.safe_load(_compose(
         ic_public_host=PUBLIC,
         ic_public_tls=tls,
+        ic_public_forwarded=forwarded,
         ic_operator_sources=list(sources),
         ic_grafana_frame_ancestors="https://panel.example.test",
     ))
@@ -107,6 +110,29 @@ class TestTheComposeFile(BaseCase):
                 ".ipwhitelist.sourcerange"
             ],
             "127.0.0.1/32,198.51.100.7/32",
+        )
+
+    def test_reached_directly_the_deletion_checks_the_connection(self):
+        labels = _published()["services"]["vmauth"]["labels"]
+        self.assertFalse(
+            [key for key in labels if ".ipstrategy." in key], labels,
+        )
+
+    def test_behind_a_cdn_the_deletion_checks_the_forwarded_address(self):
+        """The CDN's edge opens the connection, not the panel (10-oct-2026)."""
+        labels = _published(tls="default", forwarded=True)["services"]["vmauth"][
+            "labels"
+        ]
+        prefix = "traefik.http.middlewares.ic-central-delete-sources.ipwhitelist"
+        self.assertEqual(labels[f"{prefix}.ipstrategy.depth"], "1")
+        self.assertEqual(
+            labels[f"{prefix}.sourcerange"], "127.0.0.1/32,198.51.100.7/32",
+        )
+        # Only the deletion route: the others answer the host alone.
+        self.assertNotIn(
+            "traefik.http.middlewares.ic-central-host-only.ipwhitelist"
+            ".ipstrategy.depth",
+            labels,
         )
 
     def test_the_other_operator_routes_answer_the_host_only(self):
@@ -257,6 +283,7 @@ class TestTheDeployment(ObservabilityExecutorCase):
         self.assertEqual(extra["ic_operator_sources"], [])
 
     def test_the_playbook_gets_the_name_its_tls_and_the_sources(self):
+        self.host.behind_cdn = False
         self.settings.write({
             "metrics_central_public_host": PUBLIC,
             "metrics_central_operator_sources": "198.51.100.7/32\n",
@@ -264,12 +291,27 @@ class TestTheDeployment(ObservabilityExecutorCase):
         })
         extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
         self.assertEqual(extra["ic_public_host"], PUBLIC)
-        # The host is not behind a CDN: a certificate of its own.
+        # The host is not behind a CDN: a certificate of its own, and the
+        # deletion route checks the connection itself.
         self.assertEqual(extra["ic_public_tls"], "acme")
+        self.assertIs(extra["ic_public_forwarded"], False)
         self.assertEqual(
             extra["ic_operator_sources"], ["127.0.0.1/32", "198.51.100.7/32"],
         )
         self.assertEqual(extra["ic_grafana_root_url"], f"https://{PUBLIC}/grafana/")
+
+
+    def test_behind_a_cdn_the_playbook_is_told_the_name_is_forwarded(self):
+        self.settings.write({"metrics_central_public_host": PUBLIC})
+        self.host.behind_cdn = True
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.assertIs(extra["ic_public_forwarded"], True)
+
+    def test_without_a_name_nothing_is_forwarded(self):
+        self.settings.write({"metrics_central_public_host": False})
+        self.host.behind_cdn = True
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.assertIs(extra["ic_public_forwarded"], False)
 
 
 class TestTheSettings(ObservabilityExecutorCase):
