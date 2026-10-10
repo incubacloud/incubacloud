@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.169] — 2026-10-11
+
+### Fixed
+
+- **Deleting an instance while keeping it in the panel archives its
+  backups.** The archive step started the backup container with
+  `--entrypoint sh`, which skips the step where the image installs the
+  PostgreSQL client matching its `DB_VERSION`, so the dump died with
+  `psql: not found` and the deletion stopped before touching anything.
+  It now goes through the image's own entrypoint, as the nightly
+  backups do, and the dump waits up to a minute for the database the
+  step starts on a stopped instance. A failed archive also leaves the instance as it found it:
+  the services the step started (the database, the mail relay) are
+  stopped again, and only those, when what was running before could be
+  read.
+
 ## [1.0.168] — 2026-10-10
 
 ### Fixed
