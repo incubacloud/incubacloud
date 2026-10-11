@@ -123,6 +123,73 @@ class TestArchivedCopyVerification(_ArchivedBase):
         self.assertEqual(measure.call_count, 0)
 
 
+class TestArchivingClosesItsAlerts(_ArchivedBase):
+    """Nothing probes an archived instance, so nothing would ever close
+    an alert left lit about it (11-oct-2026: "instance down", raised
+    while the teardown was running, stayed active after the archive)."""
+
+    def test_every_alert_about_the_instance_closes(self):
+        Alert = self.env["cloud.alert"].sudo()
+        down = Alert.raise_alert("instance_down", "down", instance=self.instance)
+        logs = Alert.raise_alert(
+            "instance_error_logs", "logs", host=self.host, instance=self.instance,
+        )
+        self._archive()
+        self.assertEqual((down | logs).mapped("state"), ["dismissed", "dismissed"])
+        self.assertEqual((down | logs).mapped("resolution"), ["auto", "auto"])
+
+    def test_the_last_health_check_goes_with_it(self):
+        """Its services in green and "error" stayed on a deleted tenant's
+        instance whose containers were gone (11-oct-2026)."""
+        self.instance.write({
+            "service_states": {"db": "running", "smtp": "running", "odoo": "exited"},
+            "status": "error",
+        })
+        inst = self._archive()
+        self.assertFalse(inst.service_states)
+        self.assertEqual(inst.status, "ok")
+
+    def test_the_migration_clears_what_was_archived_before(self):
+        import importlib.util
+        import pathlib
+
+        from odoo.addons import incubacloud
+
+        live = self.env["cloud.instance"].create({
+            "name": "ar-live", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "state": "deployed",
+            "service_states": {"db": "running"}, "status": "error",
+        })
+        self.instance.write({
+            "active": False,
+            "archived_at": fields.Datetime.now(),
+            "service_states": {"db": "running"},
+            "status": "error",
+        })
+        path = (
+            pathlib.Path(incubacloud.__file__).parent
+            / "migrations" / "1.0.170" / "post-migrate.py"
+        )
+        spec = importlib.util.spec_from_file_location("mig_1_0_170", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.env.flush_all()
+        module.migrate(self.env.cr, "1.0.169")
+        self.env.invalidate_all()
+        self.assertFalse(self.instance.service_states)
+        self.assertEqual(self.instance.status, "ok")
+        self.assertEqual(live.service_states, {"db": "running"}, "a live one is checked")
+        self.assertEqual(live.status, "error")
+
+    def test_the_host_s_own_alerts_stay(self):
+        host_alert = self.env["cloud.alert"].sudo().raise_alert(
+            "host_unreachable", "gone", host=self.host,
+        )
+        self._archive()
+        self.assertEqual(host_alert.state, "active")
+
+
 class TestRevive(_ArchivedBase):
 
     def _enqueued(self):

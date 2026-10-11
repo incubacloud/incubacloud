@@ -374,6 +374,32 @@ class TestPurgeAlerts(_PurgeBase):
         self.assertEqual(alert.job_id, job)
         self.assertEqual(alert.host_id, self.host)
 
+    def _closes_on_success(self, label, table, payload):
+        """Raise *label*'s first alert, then run a clean delete; assert it closed."""
+        exit_code, (alert_code, _msg) = next(iter(table.items()))
+        self._executor(self._job(payload=payload))._alert_on_purge_failure(
+            {label: {"stdout": "", "exit_status": exit_code}}, self.instance,
+        )
+        self.assertTrue(self._active(alert_code), "fixture raised nothing")
+        ex = self._executor(self._job(payload=payload))
+        with patch.object(
+            type(self.host), "refresh_observability_labels", autospec=True,
+        ):
+            asyncio.run(ex.on_success({}))
+        self.assertFalse(self._active(alert_code))
+
+    def test_a_clean_delete_closes_the_purge_alert(self):
+        """Raised with the host, so closed with it: an alert's identity
+        includes the host, and a close without it never found one."""
+        self._closes_on_success(PURGE_LABEL, PURGE_ALERT_BY_EXIT, {})
+
+    def test_a_clean_archive_closes_the_archive_alert(self):
+        """Production, 11-oct-2026: the deleted tenant's archive alert
+        stayed lit after the retry archived it."""
+        self._closes_on_success(
+            ARCHIVE_LABEL, ARCHIVE_ALERT_BY_EXIT, {"keep_in_panel": True},
+        )
+
 
 class TestArchiveStep(_PurgeBase):
     """Keeping the record takes a copy instead of destroying them.

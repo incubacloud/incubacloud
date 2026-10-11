@@ -3315,10 +3315,22 @@ class CloudInstance(models.Model):
         # than on each of the four removal callers: the fewer places have
         # to be right, and a forgotten one there would skip a cleanup
         # silently.
+        #
+        # Its health goes with it: nothing checks an archived instance,
+        # so the last check's services and status would be shown for
+        # ever (11-oct-2026: "db" and "smtp" in green, "error", on an
+        # instance whose containers had been removed).
         self.with_context(ic_archive_instance=True).write({
             "active": False,
             "archived_at": fields.Datetime.now(),
+            "service_states": False,
+            "status": "ok",
         })
+        # Nothing probes an archived instance, so whatever was lit about
+        # it would stay lit for ever (11-oct-2026: an "instance down"
+        # raised while it was being torn down). The unlinked branch
+        # above needs none of this: its alerts go with the record.
+        self.env["cloud.alert"].sudo().resolve_instance_alerts(self)
 
     @api.model
     def _check_name_not_held_by_an_archived(self, vals):

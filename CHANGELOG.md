@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.170] — 2026-10-11
+
+### Fixed
+
+- **A clean delete closes the backup alerts an earlier attempt raised.**
+  The archive and purge alerts are raised for the instance on its host,
+  and an alert's identity includes the host, but a clean run closed them
+  for the instance alone, so it never found them and they stayed lit.
+  The same for the purge of an archived copy.
+- **Archiving an instance closes every alert about it.** Nothing probes
+  an archived instance, so an alert still lit about it (down, error
+  logs) stayed lit for ever. Its host's own alerts are left alone.
+- **An archived instance no longer shows its last health check.** Its
+  services and status are dropped when it is archived: nothing checks
+  it any more, so a deleted tenant's instance showed its database and
+  mail relay in green, and "error", after its containers had been
+  removed. A migration clears the instances archived before.
+
 ## [1.0.169] — 2026-10-11
 
 ### Fixed
