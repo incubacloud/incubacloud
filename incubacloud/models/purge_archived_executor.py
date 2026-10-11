@@ -164,8 +164,10 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         if not inst:
             return
         Alert = self.env["cloud.alert"].sudo()
+        # With the host they were raised with: an alert's identity
+        # includes it.
         for code, _msg in PURGE_ARCHIVED_ALERT_BY_EXIT.values():
-            Alert.resolve_alert(code, instance=inst)
+            Alert.resolve_alert(code, host=self._host(), instance=inst)
         Alert.resolve_alert("archive_copy_lost", instance=inst)
         # Deferred, not done here: an unlink from the hook cascades onto
         # this job's row and costs the job its commit (see

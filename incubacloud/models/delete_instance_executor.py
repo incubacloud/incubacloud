@@ -315,10 +315,12 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             return
         # A clean run closes whatever a previous attempt complained
         # about; leaving them lit would keep an operator chasing a
-        # problem that is already gone.
+        # problem that is already gone. With the host they were raised
+        # with (``_alert_on_purge_failure``): an alert's identity
+        # includes it, and without it none was ever found (11-oct-2026).
         Alert = self.env["cloud.alert"].sudo()
         for code in self._purge_alert_targets():
-            Alert.resolve_alert(code, instance=inst)
+            Alert.resolve_alert(code, host=self._host(), instance=inst)
         self._sys(f"✓ Instance '{inst.name}' removed from host.")
         host = inst.host_id
         keep = self._keeps_the_record()

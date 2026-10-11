@@ -311,6 +311,29 @@ class CloudAlert(models.Model):
                 record._notify_alert_resolved()
         return active
 
+    @api.model
+    def resolve_instance_alerts(self, instance):
+        """Dismiss every active alert about *instance*, whatever its code.
+
+        For an instance leaving the daily operation (archived): nothing
+        probes it any more, so an alert still lit about it — down, error
+        logs, a backup that failed — would stay lit for ever. Dismissed
+        as the platform and announced as resolved, like
+        :meth:`resolve_alert`.
+
+        :param instance: the ``cloud.instance`` record
+        :returns: the dismissed records (empty when there was nothing)
+        """
+        active = as_platform(self).search([
+            ("state", "=", "active"),
+            ("instance_id", "=", instance.id),
+        ])
+        if active:
+            active.write({"state": "dismissed", "resolution": "auto"})
+            for record in active:
+                record._notify_alert_resolved()
+        return active
+
     def _notify_alert_resolved(self):
         """Announce this alert's automatic resolution where it was raised.
 
