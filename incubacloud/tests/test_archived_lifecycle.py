@@ -117,10 +117,19 @@ class TestArchivedCopyVerification(_ArchivedBase):
 
     def test_live_instances_are_not_probed(self):
         """The cron is about archived records; measuring the fleet would
-        put a bucket call behind every instance, daily."""
+        put a bucket call behind every instance, daily.
+
+        The live instance has a path of its own, so only being live keeps
+        it out. The database may hold archived instances of its own (a
+        copy of production does), so this looks at the live one only."""
+        self.instance.custom_backup_dst = (
+            "boto3+s3://ar-bucket/backups/ar-proj/ar-inst"
+        )
         with self._measuring() as measure:
             self.env["cloud.instance"]._cron_verify_archived_copies()
-        self.assertEqual(measure.call_count, 0)
+        probed = [call.args[0] for call in measure.call_args_list]
+        self.assertNotIn(self.instance.custom_backup_dst, probed)
+        self.assertFalse(self.instance.archive_copy_checked_at)
 
 
 class TestArchivingClosesItsAlerts(_ArchivedBase):
