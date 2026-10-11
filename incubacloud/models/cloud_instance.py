@@ -20,6 +20,7 @@ from ..restore_staging import purge_stale
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
 from ._repo_requirements import _normalize_url
+from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
@@ -298,7 +299,7 @@ class CloudInstance(models.Model):
         string="PR Branch",
         help="Head branch of the PR.",
     )
-    pr_comment_id = fields.Integer(
+    pr_comment_id = BigInteger(
         string="GitHub Comment ID",
         help="ID of the GitHub issue comment posted on the PR.",
     )

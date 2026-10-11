@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.171] — 2026-10-11
+
+### Fixed
+
+- **A pull request preview keeps the id of its comment.** GitHub's
+  comment ids are past 2,147,483,647, the largest value of an Odoo
+  integer column, so storing the id of the "preview ready" comment
+  failed with "integer out of range": the preview ended in error
+  although it was running, and its comment could no longer be edited or
+  deleted. The id is now kept in a 64-bit column (``BigInteger``), which
+  Odoo converts in place on upgrade.
+
 ## [1.0.170] — 2026-10-11
 
 ### Fixed

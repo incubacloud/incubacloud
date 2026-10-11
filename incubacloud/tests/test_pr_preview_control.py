@@ -19,7 +19,7 @@ from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 from odoo.addons.incubacloud.github.client import GitHubAppClient
-from odoo.addons.incubacloud.models import cloud_github_event
+from odoo.addons.incubacloud.models import cloud_github_event, cloud_instance
 from odoo.addons.incubacloud.models.cloud_github_event import (
     PR_PREVIEW_FAILED_CODE,
 )
@@ -292,3 +292,54 @@ class TestPreviewAddress(_PreviewBase):
         repo = staging.repo_ids.filtered(lambda r: r.url == REPO_URL)
         self.assertEqual(repo.branch, 'feature-x')
         self.assertFalse(repo.commit_sha)
+
+
+class TestPreviewCommentId(_PreviewBase):
+    """The preview keeps the id of the comment it posts, to edit and delete
+    it later. GitHub's comment ids are past 2^31: storing one failed with
+    "integer out of range" and the preview ended in error (11-oct-2026)."""
+
+    BIG_ID = 3_456_789_012
+
+    def _preview(self):
+        """Clone the production instance as PR 7 without enqueuing jobs."""
+        with patch.object(
+            type(self.env['cloud.job']), 'enqueue_chain', return_value=[1, 2, 3],
+        ):
+            result = self.prod.clone_to_staging(
+                'pr-7', pr_number=7, pr_repo=REPO_FULL,
+                pr_head_branch='feature-x',
+            )
+        return self.env['cloud.instance'].browse(result['staging_id'])
+
+    def _comment_patches(self):
+        """Stand in for the GitHub App the preview comments with: return
+        (client mock, patchers); a new comment gets ``BIG_ID``."""
+        client = MagicMock(spec=GitHubAppClient)
+        client.post_issue_comment.return_value = {'id': self.BIG_ID}
+        Service = type(self.env['cloud.github.credential.service'])
+        return client, (
+            patch.object(cloud_instance, 'GitHubAppClient', return_value=client),
+            patch.object(Service, 'get_credentials', return_value=object()),
+        )
+
+    def test_a_comment_id_past_32_bits_is_kept_and_edited(self):
+        staging = self._preview()
+        client, patches = self._comment_patches()
+        with patches[0], patches[1]:
+            staging._post_or_update_pr_comment('ready')
+            self.env.flush_all()
+            staging.invalidate_recordset(['pr_comment_id'])
+            self.assertEqual(staging.pr_comment_id, self.BIG_ID)
+            staging._post_or_update_pr_comment('ready again')
+        client.patch_issue_comment.assert_called_once_with(
+            'owner', 'repo', self.BIG_ID, 'ready again',
+        )
+
+    def test_the_column_is_a_bigint(self):
+        self.env.cr.execute("""
+            SELECT udt_name FROM information_schema.columns
+             WHERE table_name = 'cloud_instance'
+               AND column_name = 'pr_comment_id'
+        """)
+        self.assertEqual(self.env.cr.fetchone()[0], 'int8')
