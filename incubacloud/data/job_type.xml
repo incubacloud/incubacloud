@@ -153,7 +153,7 @@
             <field name="name">Export for Development</field>
             <field name="code">export_instance</field>
             <field name="apply_to">instance</field>
-            <field name="description">Packages the instance folder as a tarball (respecting .gitignore) and makes it available for download.</field>
+            <field name="description">Packages the instance's Doodba project as a development copy — configuration, repositories and dependencies, without env files, keys, tokens or logs — and makes it available for download.</field>
         </record>
 
         <record id="setup_whitelist" model="cloud.job.type">

@@ -9,13 +9,15 @@ _TMP_PREFIX = "/tmp/.incubacloud"
 
 
 class ExportInstanceExecutor(AbstractSSHExecutor):
-    """Package the instance folder as a downloadable tarball.
+    """Package the instance folder as a downloadable development copy.
 
-    Uses ``tar --exclude-vcs-ignores`` to respect the instance's
-    ``.gitignore``, automatically skipping cloned VCS repos (odoo,
-    enterprise, queue…), build artefacts and other ignored paths —
-    mirroring what a ``git archive`` would produce.  Explicit excludes
-    cover common doodba data dirs (dumps, postgres, secrets).
+    ``scripts/export_sanitize.sh`` copies the project with ``rsync`` and
+    explicit excludes: VCS checkouts, data directories (dumps, postgres,
+    secrets), every env file, the logs and the override with the
+    platform's resource limits. It then strips repository tokens, SSH
+    keys and credentials from the Odoo conf and the copier answers,
+    points ``docker-compose.yml`` at ``devel.yaml`` and adds a
+    ``DEVELOPMENT.md`` with the steps to start it.
 
     The tarball is stored as an ``ir.attachment`` linked to the job.
     ``cloud.job._format()`` derives the download URL from that

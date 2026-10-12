@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.173] — 2026-10-12
+
+### Fixed
+
+- **"Export for Development" no longer ships credentials.** The export
+  rewrote three env files with placeholders but copied the rest as they
+  were: ``.docker/smtp.env`` reached the tarball with the instance's
+  real SMTP relay password, the project's ``.env`` with its production
+  compose project name, and ``odoo/custom/conf.d`` with whatever the
+  instance's Odoo conf held, an ``admin_passwd`` too if one was set. No env file
+  is exported any more, the Odoo conf loses every option whose name
+  speaks of a password, secret, token or key, and the copier answers
+  lose their backup and SMTP relay settings.
+
+### Changed
+
+- **The export is a development copy.** devel.yaml reads no env file, so
+  ``.docker/`` and every ``*.env`` stay out instead of travelling as
+  placeholders; the instance's ``logs/`` stay out too, and the
+  production proxy options leave the Odoo conf. ``docker-compose.yml``
+  points at ``devel.yaml``, and a ``DEVELOPMENT.md`` gives the steps to
+  start the copy, load a neutralized backup and, for whoever wants to
+  run ``prod.yaml`` elsewhere, which env files to write.
+
 ## [1.0.172] — 2026-10-12
 
 ### Changed
