@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.175] — 2026-10-12
+
+### Fixed
+
+- **A job cancelled while it runs ends cancelled, not failed.** queue_job
+  cannot stop a started job, so ``cancel_job`` sets a flag the executor
+  polls and the executor stops by raising, which queue_job stored as a
+  failure: a customer who cancelled a rebuild got a failure alert and a
+  "failed" email, then a "Resolved" one when the next rebuild finished.
+  The executor now stops with ``JobCancelled`` and ``queue.job.write``
+  records the stop as the cancellation it is — no alert, no failure
+  email, no queue_job failure message — and closes what waited on the
+  job in its chain as cancelled, as a failure already did.
+
 ## [1.0.174] — 2026-10-12
 
 ### Added

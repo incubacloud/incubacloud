@@ -1,6 +1,6 @@
 import logging
 
-from odoo import models
+from odoo import fields, models
 
 _logger = logging.getLogger(__name__)
 
@@ -57,7 +57,44 @@ class QueueJob(models.Model):
                 self.env["cloud.job"].invalidate_model(["queue_job_id"])
         return super().unlink()
 
+    def _cancelled_while_running(self):
+        """The jobs of ``self`` whose cloud job a person cancelled mid-run.
+
+        queue_job cannot stop a started job, so ``cloud.job.cancel_job``
+        marks the cloud job ``cancelled`` and the executor stops on that
+        flag (``JobCancelled``) — which queue_job then stores as a failure.
+        The flag is read from the row, not the cache: another transaction
+        wrote it while this job ran.
+        """
+        if not self.ids:
+            return self.browse()
+        self.env.cr.execute(
+            "SELECT q.id FROM queue_job q"
+            " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+            " WHERE q.id IN %s AND c.state = 'cancelled'",
+            (tuple(self.ids),),
+        )
+        return self.browse([row[0] for row in self.env.cr.fetchall()])
+
     def write(self, vals):
+        # A job a person cancelled while it ran ends cancelled, as one
+        # cancelled before it started does: queue_job stores the stop as
+        # a failure, which raised a failure alert and mailed the customer
+        # that a job they had stopped themselves had failed (12-oct-2026).
+        if vals.get("state") == "failed":
+            stopped = self._cancelled_while_running()
+            if stopped:
+                (self - stopped).write(vals)
+                return stopped.with_context(
+                    ic_cancelled_while_running=True,
+                ).write(vals | {
+                    "state": "cancelled",
+                    "date_cancelled": fields.Datetime.now(),
+                    "result": "Cancelled while it ran.",
+                    "exc_name": False,
+                    "exc_message": False,
+                    "exc_info": False,
+                })
         result = super().write(vals)
         new_state = vals.get("state")
         if new_state not in _TERMINAL:
@@ -97,15 +134,20 @@ class QueueJob(models.Model):
             )
 
             # When a job fails, cancel chained jobs stuck in
-            # wait_dependencies for the same instance.
-            if new_state == "failed" and cjob.instance_id:
+            # wait_dependencies for the same instance. A job cancelled
+            # while it ran ends its chain the same way: what waits on it
+            # would otherwise wait forever, holding the instance's slot.
+            ends_chain = new_state == "failed" or self.env.context.get(
+                "ic_cancelled_while_running"
+            )
+            if ends_chain and cjob.instance_id:
                 self.env.cr.execute(
-                    "UPDATE cloud_job SET state = 'failed',"
+                    "UPDATE cloud_job SET state = %s,"
                     " write_date = (now() at time zone 'UTC')"
                     " WHERE instance_id = %s"
                     "   AND state = 'wait_dependencies'"
                     "   AND id != %s",
-                    (cjob.instance_id.id, cjob.id),
+                    (new_state, cjob.instance_id.id, cjob.id),
                 )
                 if self.env.cr.rowcount:
                     self.env['cloud.job'].invalidate_model(['state'])
@@ -124,10 +166,10 @@ class QueueJob(models.Model):
                     " FROM cloud_job c"
                     " WHERE c.queue_job_id = q.id"
                     "   AND c.instance_id = %s"
-                    "   AND c.state = 'failed'"
+                    "   AND c.state = %s"
                     "   AND c.id != %s"
                     "   AND q.state = 'wait_dependencies'",
-                    (cjob.instance_id.id, cjob.id),
+                    (cjob.instance_id.id, new_state, cjob.id),
                 )
                 if self.env.cr.rowcount:
                     _logger.info(
@@ -142,16 +184,16 @@ class QueueJob(models.Model):
             # instance match above misses — that download waited forever
             # and held production's job slot. Every chain is linear, so
             # whatever still waits in the failed job's graph waits on it.
-            if new_state == "failed" and qjob.graph_uuid:
+            if ends_chain and qjob.graph_uuid:
                 self.env.cr.execute(
-                    "UPDATE cloud_job c SET state = 'failed',"
+                    "UPDATE cloud_job c SET state = %s,"
                     " write_date = (now() at time zone 'UTC')"
                     " FROM queue_job q"
                     " WHERE c.queue_job_id = q.id"
                     "   AND q.graph_uuid = %s"
                     "   AND q.state = 'wait_dependencies'"
                     "   AND c.id != %s",
-                    (qjob.graph_uuid, cjob.id),
+                    (new_state, qjob.graph_uuid, cjob.id),
                 )
                 if self.env.cr.rowcount:
                     self.env['cloud.job'].invalidate_model(['state'])
