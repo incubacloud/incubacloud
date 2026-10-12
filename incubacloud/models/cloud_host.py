@@ -2442,6 +2442,30 @@ class CloudHost(models.Model):
             self.behind_cdn,
         )
 
+    def _shipped_inverseproxy_yaml(self):
+        """Return the proxy's compose file a setup run should upload.
+
+        The stored template with this host's dashboard name and password
+        filled in. Like ``_shipped_traefik_yml``, the one place the file
+        is rendered: a module that adds to it extends this method rather
+        than rewriting the uploaded file afterwards, because a rewrite
+        from the stored template drops whatever was rendered before it
+        (11-oct-2026: every host the SaaS layer set up lost the CDN's
+        trusted ranges from its ``traefik.yml`` that way).
+
+        :rtype: str
+        """
+        self.ensure_one()
+        # Imported here: the executor module pulls in the whole executor
+        # stack, which this model does not otherwise need at import time.
+        from .full_setup_executor import _build_inverseproxy
+
+        return _build_inverseproxy(
+            self.traefik_inverseproxy_yaml or "",
+            self.wildcard_domain,
+            self.traefik_panel_password,
+        )
+
     @api.constrains("tls_default_cert", "tls_default_key")
     def _check_tls_default_pair(self):
         """Refuse a default certificate that cannot serve traffic.

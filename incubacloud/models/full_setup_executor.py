@@ -143,11 +143,7 @@ class FullSetupExecutor(
 
         # Upload Traefik config files (Phase 3)
         self._sys("Preparing Traefik configuration files...")
-        inverseproxy = _build_inverseproxy(
-            host.traefik_inverseproxy_yaml or "",
-            host.wildcard_domain,
-            host.traefik_panel_password,
-        )
+        inverseproxy = host._shipped_inverseproxy_yaml()
         # Rendered, not read straight from the fields: a host that
         # declares a proxy in front of it ships the matching Traefik
         # settings here, and they have to be interlocked — the static

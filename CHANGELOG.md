@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.172] — 2026-10-12
+
+### Changed
+
+- **A host renders its proxy's compose file in one place.**
+  ``cloud.host._shipped_inverseproxy_yaml`` joins
+  ``_shipped_traefik_yml``: Full Setup uploads what the host renders, so
+  a module that adds to either file extends the method instead of
+  rewriting the uploaded file after core. That rewrite is how the SaaS
+  layer's Full Setup dropped the CDN's trusted ranges from every host it
+  set up behind the CDN.
+
 ## [1.0.171] — 2026-10-11
 
 ### Fixed
