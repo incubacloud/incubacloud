@@ -1,0 +1,48 @@
+/* HostHardeningModal — Relay-styled. Preflight warnings use the shared
+ * rl-sevban primitive and footer buttons use rl-btn; only the modal
+ * width, the summary line and the typed prod-confirm gate are restyled
+ * here on rl tokens. */
+
+.ic-app .ic-hardening-modal {
+    max-width: 560px;
+    width: 100%;
+
+    .ic-modal__body {
+        max-height: 75vh;
+    }
+
+    .ic-hm-summary {
+        color: var(--rl-muted);
+        font-size: 13px;
+        line-height: 1.5;
+        margin: 0 0 14px;
+    }
+
+    /* Prod-confirm gate: rendered as a critical rl-sevban; tighten the
+       inner paragraph + typed-confirm field. */
+    .ic-hm-prod-gate {
+        p {
+            margin: 0 0 8px;
+            font-size: 13px;
+            color: var(--rl-fg2);
+        }
+
+        code {
+            background: var(--rl-bg);
+            border: 1px solid var(--rl-line2);
+            border-radius: 4px;
+            padding: 1px 5px;
+            color: var(--rl-red);
+            font-weight: 600;
+        }
+    }
+
+    .ic-hm-prod-frow {
+        margin: 0;
+        max-width: none;
+    }
+
+    .ic-hm-prod-input {
+        font-family: var(--rl-fm);
+    }
+}

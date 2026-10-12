@@ -57,6 +57,12 @@
                                         Behind the shipped templates
                                     </span>
                                 </t>
+                                <t t-if="state.host.hardened === false">
+                                    <span class="rl-pill pending"
+                                          title="The security recipe has not been applied to this host from the panel. Apply Hardening installs it; it is optional.">
+                                        Not hardened
+                                    </span>
+                                </t>
                             </t>
                         </h1>
                         <t t-if="!isNew">
@@ -86,6 +92,20 @@
                                 t-on-click="runFullSetup">
                             <t t-out="env.icon('settings', 15)"/> Full Setup
                         </button>
+                        <t t-if="state.host.hardened">
+                            <button class="rl-btn rl-btn-ghost"
+                                    title="Re-apply hardening (idempotent: re-runs are non-disruptive)"
+                                    t-on-click="() => this.openHardeningModal()">
+                                <t t-out="env.icon('shield', 15)"/> Re-apply Hardening
+                            </button>
+                        </t>
+                        <t t-else="">
+                            <button class="rl-btn rl-btn-ghost"
+                                    title="Apply hardening (Ubuntu 22.04+ or Debian 12+ with root or passwordless sudo)"
+                                    t-on-click="() => this.openHardeningModal()">
+                                <t t-out="env.icon('shield', 15)"/> Apply Hardening
+                            </button>
+                        </t>
                         <button class="rl-btn rl-btn-ghost" title="Import existing instance"
                                 t-on-click="openImportBrowser">
                             <t t-out="env.icon('download', 15)"/> Import Instance
@@ -767,6 +787,16 @@
                     hostId="props.host_id"
                     onSelect="(r) => this.onImportSelect(r)"
                     onCancel="() => this.closeImportBrowser()"/>
+            </t>
+
+            <!-- Hardening confirmation -->
+            <t t-if="hardeningState.open and state.host">
+                <HostHardeningModal
+                    hostId="state.host.id"
+                    hostName="state.host.name"
+                    offer="hardeningState.offer"
+                    onClose.bind="closeHardeningModal"
+                    onApplied.bind="onHardeningApplied"/>
             </t>
 
             <!-- Confirm dialog -->

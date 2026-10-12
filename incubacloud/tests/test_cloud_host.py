@@ -1204,3 +1204,106 @@ class TestStoreCertificatesDeclared(TransactionCase):
     def test_unreadable_yaml_declares_nothing(self):
         self.host.traefik_config_yml = "tls: [unclosed"
         self.assertFalse(self.host._declares_store_certificates())
+
+
+class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
+    """``/cloud/preflight_host_hardening`` and ``/cloud/apply_host_hardening``.
+
+    The dialog behind the host's "Apply Hardening" reads the first and
+    queues through the second; both are gated like every host action.
+    Reuses the parent's manager user, host and NOT NULL workaround.
+    """
+
+    def _call(self, method, user=None, **kwargs):
+        """Drive a CRUD route against the test cursor as *user* (manager)."""
+        from odoo.addons.incubacloud.controllers import data_load
+        from odoo.addons.incubacloud.controllers._data_load import (
+            _routes_crud,
+        )
+
+        fake_request = MagicMock(spec=http.Request)
+        fake_request.env = self.env(user=user or self.manager)
+        ctrl = data_load.CloudDataLoadController()
+        with (
+            patch.object(http, "request", fake_request),
+            patch.object(data_load, "request", fake_request),
+            patch.object(_routes_crud, "request", fake_request),
+        ):
+            return getattr(ctrl, method)(**kwargs)
+
+    def _host_jobs(self):
+        """Return the host's jobs, oldest first."""
+        return self.env["cloud.job"].sudo().search(
+            [("host_id", "=", self.host.id)], order="id",
+        )
+
+    def test_preflight_describes_a_host_never_set_up(self):
+        self.assertFalse(self._host_jobs())
+        data = self._call("cloud_preflight_host_hardening", host_id=self.host.id)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["running_instances"], 0)
+        self.assertEqual(data["prod_running"], 0)
+        self.assertFalse(data["full_setup_done"])
+        self.assertFalse(data["has_hardened_before"])
+        self.assertFalse(data["has_known_hosts_key"])
+        self.assertFalse(data["has_active_job"])
+        self.assertEqual(data["connecting_user"], "ubuntu")
+
+    def test_apply_queues_the_hardening(self):
+        self.assertFalse(self._host_jobs())
+        data = self._call("cloud_apply_host_hardening", host_id=self.host.id)
+        self.assertTrue(data["ok"])
+        jobs = self._host_jobs()
+        self.assertEqual(jobs.ids, data["job_ids"])
+        self.assertEqual(jobs.job_type_id.code, "host_hardening")
+
+    def test_apply_with_full_setup_queues_both_in_order(self):
+        self.assertFalse(self._host_jobs())
+        data = self._call(
+            "cloud_apply_host_hardening",
+            host_id=self.host.id, chain_full_setup=True,
+        )
+        self.assertTrue(data["ok"])
+        jobs = self.env["cloud.job"].sudo().browse(data["job_ids"])
+        self.assertEqual(
+            jobs.mapped("job_type_id.code"), ["host_hardening", "full_setup"],
+        )
+
+    def test_a_refused_chain_leaves_nothing_queued(self):
+        # ``state`` follows the queue job, so the busy job has to be
+        # queued for real, not created with a state.
+        busy = self.env["cloud.job"].sudo().browse(
+            self.env["cloud.job"].sudo().enqueue(
+                self.host.id, False, "full_setup",
+            )
+        )
+        self.assertIn(busy.state, busy._active_states)
+        data = self._call(
+            "cloud_apply_host_hardening",
+            host_id=self.host.id, chain_full_setup=True,
+        )
+        self.assertFalse(data["ok"])
+        self.assertEqual(self._host_jobs(), busy)
+
+    def test_preflight_sees_a_hardening_already_queued(self):
+        self._call("cloud_apply_host_hardening", host_id=self.host.id)
+        data = self._call("cloud_preflight_host_hardening", host_id=self.host.id)
+        self.assertTrue(data["has_active_job"])
+
+    def test_both_routes_are_for_whoever_manages_hosts(self):
+        developer = new_test_user(
+            self.env,
+            login="host_hardening_developer",
+            groups="base.group_user,incubacloud.group_cloud_developer",
+        )
+        for method in (
+            "cloud_preflight_host_hardening", "cloud_apply_host_hardening",
+        ):
+            with self.subTest(method=method), self.assertRaises(AccessError):
+                self._call(method, user=developer, host_id=self.host.id)
+        self.assertFalse(self._host_jobs())
+
+    def test_the_host_page_says_whether_it_is_hardened(self):
+        data = self._call("cloud_get_host", host_id=self.host.id)
+        self.assertIs(data["hardened"], False)
+        self.assertEqual(data["hardened_at"], "")

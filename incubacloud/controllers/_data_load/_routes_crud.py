@@ -774,6 +774,10 @@ class CrudMixin:
             'last_probed': host.last_probed,
             'instance_count': len(host.instance_ids),
             'traefik_deployed': host.traefik_deployed,
+            'hardened': host.hardened,
+            'hardened_at': (
+                host.hardened_at.isoformat() if host.hardened_at else ''
+            ),
             'config_dirty': host.config_dirty,
             'template_drift': host.template_drift,
             'template_drift_details': host.template_drift_details or '',
@@ -932,6 +936,112 @@ class CrudMixin:
             'previous_fingerprint': captured['previous_fingerprint'],
             'changed': captured['changed'],
         }
+
+    @http.route(
+        ['/cloud/preflight_host_hardening'], type='jsonrpc', auth='user',
+    )
+    def cloud_preflight_host_hardening(self, host_id):
+        """Return what the hardening confirmation needs to know about a host.
+
+        Read-only. The instance counts drive the dialog's warnings and the
+        typed confirmation a host running production asks for;
+        ``full_setup_done`` and ``connecting_user`` decide whether it
+        offers hardening and Full Setup as one chain, and
+        ``has_known_hosts_key`` whether the host can be reached at all.
+
+        :param int host_id: the ``cloud.host`` to harden
+        :returns: ``{'ok': True, ...}`` with the figures, or
+            ``{'ok': False, 'error': ...}`` when the host does not exist
+        :rtype: dict
+        """
+        self._sec()._check_can_manage_hosts()
+        host = request.env['cloud.host'].browse(host_id)
+        if not host.exists():
+            return {'ok': False, 'error': _('Host not found')}
+        # sudo: these are counts of what runs on the machine, which the
+        # warning is about whatever projects the caller belongs to.
+        Instance = request.env['cloud.instance'].sudo()
+        running = Instance.search_count([
+            ('host_id', '=', host.id),
+            ('running', '=', True),
+        ])
+        prod_running = Instance.search_count([
+            ('host_id', '=', host.id),
+            ('running', '=', True),
+            ('environment', '=', 'production'),
+        ])
+        Job = request.env['cloud.job'].sudo()
+        active_hardening = Job.search_count([
+            ('host_id', '=', host.id),
+            ('job_type_id.code', '=', 'host_hardening'),
+            ('state', 'in', Job._active_states),
+        ])
+        return {
+            'ok': True,
+            'host_id': host.id,
+            'host_name': host.name,
+            'running_instances': running,
+            'prod_running': prod_running,
+            # Full Setup is what brings Traefik up.
+            'full_setup_done': bool(host.traefik_deployed),
+            'has_hardened_before': bool(host.hardened),
+            'has_known_hosts_key': _has_encrypted(host, 'known_hosts_key'),
+            'connecting_user': host.user or '',
+            'has_active_job': bool(active_hardening),
+        }
+
+    @http.route(
+        ['/cloud/apply_host_hardening'], type='jsonrpc', auth='user',
+    )
+    def cloud_apply_host_hardening(self, host_id, chain_full_setup=False):
+        """Queue ``host_hardening`` for a host, optionally followed by Full Setup.
+
+        ``chain_full_setup`` queues ``host_hardening → full_setup``, the
+        order a host that was never set up needs: Full Setup then installs
+        its tools in the hardened user's home instead of root's.
+
+        :param int host_id: the ``cloud.host`` to harden
+        :param bool chain_full_setup: queue Full Setup after the hardening
+        :returns: ``{'ok': True, 'job_ids': [...]}`` in execution order, or
+            ``{'ok': False, 'error': ...}``
+        :rtype: dict
+        """
+        self._sec()._check_can_manage_hosts()
+        host = request.env['cloud.host'].browse(host_id)
+        if not host.exists():
+            return {'ok': False, 'error': _('Host not found')}
+        Job = request.env['cloud.job']
+        try:
+            # A refusal half-way (another job running on the host) must not
+            # leave the first job of the chain queued on its own.
+            with request.env.cr.savepoint():
+                self._before_host_hardening(host)
+                if chain_full_setup:
+                    job_ids = Job.enqueue_chain([
+                        {
+                            'host_id': host.id,
+                            'instance_id': False,
+                            'job_type_code': code,
+                        }
+                        for code in ('host_hardening', 'full_setup')
+                    ])
+                else:
+                    job_ids = [Job.enqueue(host.id, False, 'host_hardening')]
+        except Exception as exc:
+            return safe_error_response(exc, _("Failed to queue the hardening"))
+        return {'ok': True, 'job_ids': job_ids}
+
+    def _before_host_hardening(self, host):
+        """Prepare *host* right before its hardening is queued.
+
+        Core does nothing: it knows no public address of its own to put
+        in the SSH allowlist, so the hardening allows whatever
+        ``allowed_ssh_ips`` holds (any address when it is empty). A layer
+        that knows where the panel and its operator connect from can
+        override this to fill the allowlist in first.
+
+        :param host: the ``cloud.host`` about to be hardened
+        """
 
     @http.route(['/cloud/save_host'], type='jsonrpc', auth='user')
     def cloud_save_host(self, host_id, vals):
