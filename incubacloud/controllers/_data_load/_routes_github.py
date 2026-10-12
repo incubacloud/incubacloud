@@ -203,6 +203,31 @@ def _version_from_manifest_text(text):
     return _api_version_from_manifest_text(text)
 
 
+def _not_a_repo_url(url):
+    """Say why *url* is not a GitHub repository address, or nothing.
+
+    The repository form refuses such an address when it is saved
+    (``cloud.repo.mixin``), but the routes that read the repository
+    while the person types parsed it inside each credential attempt. A
+    branch folder pasted from the browser (``…/tree/staging/addons``)
+    was taken for a missing GitHub App, answered "No GitHub credentials
+    configured", and its parse error, logged as an ERROR, raised a log
+    alert on the customer's panel (12-oct-2026).
+
+    :param str url: what the person typed.
+    :returns: None, or the form's own message, translated.
+    """
+    try:
+        _parse_github_repo_path(url)
+    except ValueError:
+        return _(
+            "Repository URL '%s' is not a recognised GitHub "
+            "URL. Use the canonical form "
+            "'https://github.com/<owner>/<repo>'.",
+        ) % (url or '')
+    return None
+
+
 class GitHubMixin:
     """GitHub App endpoints, repo introspection, project import."""
 
@@ -382,6 +407,9 @@ class GitHubMixin:
         and left the branch list empty (8-oct-2026).
         """
         self._sec()._check_cloud_group('group_cloud_consultant')
+        problem = _not_a_repo_url(url)
+        if problem:
+            return {'ok': False, 'error': problem, 'branches': []}
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
@@ -487,6 +515,9 @@ class GitHubMixin:
     def cloud_get_branch_head(self, url, branch):
         """Return the HEAD commit SHA of a branch (for freeze)."""
         self._sec()._check_cloud_group('group_cloud_consultant')
+        problem = _not_a_repo_url(url)
+        if problem:
+            return {'ok': False, 'error': problem}
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
@@ -598,6 +629,9 @@ class GitHubMixin:
     def cloud_get_repo_modules(self, url, branch):
         """Return Odoo addon module names found at the root of a branch."""
         self._sec()._check_cloud_group('group_cloud_consultant')
+        problem = _not_a_repo_url(url)
+        if problem:
+            return {'ok': False, 'error': problem, 'modules': []}
 
         def _fetch(client):
             owner, repo = _parse_github_repo_path(url)
@@ -653,13 +687,12 @@ class GitHubMixin:
         """Fetch requirements.txt from the root of a GitHub repo branch."""
         self._sec()._check_cloud_group('group_cloud_consultant')
 
-        try:
-            owner, repo_name = _parse_github_repo_path(url)
-        except ValueError as exc:
-            return safe_error_response(
-                exc, _("Invalid repository URL"),
-                extra={'content': '', 'found': False},
-            )
+        problem = _not_a_repo_url(url)
+        if problem:
+            return {
+                'ok': False, 'error': problem, 'content': '', 'found': False,
+            }
+        owner, repo_name = _parse_github_repo_path(url)
 
         def _fetch(client):
             data = client.get(

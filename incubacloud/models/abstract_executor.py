@@ -197,6 +197,11 @@ class JobCancelled(Exception):
     """
 
 
+# What ``cloud.job.execute`` returns when the executor stopped on the
+# cancel flag, and what ``queue_job_ext`` recognises in the job it stores.
+CANCELLED_WHILE_RUNNING = "Cancelled while it ran."
+
+
 class AbstractExecutor(ABC):
 
     _job_type = None  # required in subclasses

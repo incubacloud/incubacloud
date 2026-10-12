@@ -2,6 +2,8 @@ import logging
 
 from odoo import fields, models
 
+from .abstract_executor import CANCELLED_WHILE_RUNNING
+
 _logger = logging.getLogger(__name__)
 
 # Terminal states that should sync cloud.job.state and notify the frontend.
@@ -62,7 +64,9 @@ class QueueJob(models.Model):
 
         queue_job cannot stop a started job, so ``cloud.job.cancel_job``
         marks the cloud job ``cancelled`` and the executor stops on that
-        flag (``JobCancelled``) — which queue_job then stores as a failure.
+        flag (``JobCancelled``). ``cloud.job.execute`` returns
+        ``CANCELLED_WHILE_RUNNING`` then, which queue_job stores as done;
+        a stop that still arrives as an exception is stored as a failure.
         The flag is read from the row, not the cache: another transaction
         wrote it while this job ran.
         """
@@ -81,7 +85,14 @@ class QueueJob(models.Model):
         # cancelled before it started does: queue_job stores the stop as
         # a failure, which raised a failure alert and mailed the customer
         # that a job they had stopped themselves had failed (12-oct-2026).
-        if vals.get("state") == "failed":
+        # ``execute`` returns the stop rather than raising it, so queue_job
+        # logs no traceback for it; that arrives here as "done" with the
+        # marker. A job that finished on its own as the person pressed
+        # cancel carries no marker and stays done.
+        if vals.get("state") == "failed" or (
+            vals.get("state") == "done"
+            and vals.get("result") == CANCELLED_WHILE_RUNNING
+        ):
             stopped = self._cancelled_while_running()
             if stopped:
                 (self - stopped).write(vals)
@@ -90,7 +101,8 @@ class QueueJob(models.Model):
                 ).write(vals | {
                     "state": "cancelled",
                     "date_cancelled": fields.Datetime.now(),
-                    "result": "Cancelled while it ran.",
+                    "date_done": False,
+                    "result": CANCELLED_WHILE_RUNNING,
                     "exc_name": False,
                     "exc_message": False,
                     "exc_info": False,

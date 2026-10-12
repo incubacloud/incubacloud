@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.177] — 2026-10-13
+
+### Fixed
+
+- **An address that is not a repository is answered as such.** A
+  customer pasted a branch folder from the browser
+  (``…/tree/staging/addons``) into the repository editor. The branch
+  list parsed it inside each credential attempt, took the parse error
+  for a missing GitHub App, answered "No GitHub credentials configured",
+  and logged the error with its traceback, which raised a log alert on
+  the customer's panel. The routes that read a repository (branches,
+  branch head, modules, requirements) now check the address first and
+  answer with the repository form's own message, without asking GitHub
+  and without an error in the log.
+- **A job cancelled while it runs no longer raises a log alert.** 1.0.175
+  stored the stop as a cancellation, but it still reached queue_job as an
+  exception, which queue_job logs with its traceback before storing the
+  job: the log scraper reported every cancellation as an
+  ``instance_error_logs`` alert on the customer's panel. ``execute`` now
+  returns the stop with a marker, queue_job stores it as done without a
+  traceback, and ``queue.job.write`` records that ending as the
+  cancellation it is. A job that finished by itself as the person pressed
+  cancel carries no marker and stays done.
+
 ## [1.0.176] — 2026-10-12
 
 ### Fixed

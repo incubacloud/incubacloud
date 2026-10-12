@@ -6421,12 +6421,6 @@ msgstr "La estructura de repos.yaml no es válida."
 #. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid "Invalid repository URL"
-msgstr "URL de repositorio no válida"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Invalid repository URL."
 msgstr "URL de repositorio no válida."
 
@@ -10079,6 +10073,7 @@ msgstr "URL del repositorio"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 #: code:addons/incubacloud/models/cloud_repo_mixin.py:0
 msgid ""
 "Repository URL '%s' is not a recognised GitHub URL. Use the canonical form "

@@ -23,8 +23,10 @@ from ..net.outbound import post_json
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .encrypted_char import EncryptedChar
 from .abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
     CONNECTION_RETRY_MARKER,
     CONNECTION_RETRY_SECONDS,
+    JobCancelled,
     is_transient_connection_error,
 )
 from .registry import executor_registry
@@ -578,6 +580,14 @@ class CloudJob(models.Model):
             # queue_job applies its retry semantics; wrapping it as
             # JobError would mark the job permanently failed instead.
             raise
+        except JobCancelled:
+            # A person cancelled it and the executor stopped on the flag.
+            # Returned, not raised: queue_job logs any exception with its
+            # traceback before storing it, and the log scraper turned
+            # each cancellation into an ``instance_error_logs`` alert on
+            # the customer's panel (12-oct-2026). ``queue_job_ext``
+            # stores this ending as the cancellation it is.
+            return CANCELLED_WHILE_RUNNING
         except OperationalError as e:
             # Serialisation failures belong to queue_job, which already
             # postpones and retries them (``_runjob`` matches the same
