@@ -20,16 +20,38 @@ setup() {
     OUT="$TMP/extracted"
 
     mkdir -p "$INST/.docker" "$INST/odoo/custom/src" "$INST/odoo/custom/ssh" \
+             "$INST/odoo/custom/conf.d" "$INST/odoo/custom/dependencies" \
              "$INST/odoo/auto" "$INST/dumps" "$INST/postgres" \
-             "$INST/secrets" "$INST/.git"
+             "$INST/secrets" "$INST/.git" "$INST/logs"
 
     # Files that must survive.
     echo "keep me" > "$INST/README.md"
+    echo "services: {}" > "$INST/devel.yaml"
+    echo "services: {}" > "$INST/prod.yaml"
+    ln -s prod.yaml "$INST/docker-compose.yml"
+    echo "requests==2.32.3" > "$INST/odoo/custom/dependencies/pip.txt"
+    echo "web: ['*']" > "$INST/odoo/custom/src/addons.yaml"
     cat > "$INST/.copier-answers.yml" <<'YAML'
 odoo_version: "19.0"
 backup_dst: s3://secret-bucket/path
+backup_email_to: ops@example.com
+smtp_relay_host: smtp.example.com
+smtp_relay_user: relay-user
 project_name: inst
+smtp_default_from: odoo@example.com
 YAML
+    cat > "$INST/odoo/custom/conf.d/inst.conf" <<'CONF'
+[options]
+admin_passwd = hunter2
+db_password=hunter2
+smtp_password: hunter2
+api_token = hunter2
+some_secret = hunter2
+workers = 2
+proxy_mode = True
+x_real_ip_header = CF-Connecting-IP
+x_real_ip_trusted = 173.245.48.0/20
+CONF
     cat > "$INST/odoo/custom/src/repos.yaml" <<'YAML'
 ./odoo:
   remotes:
@@ -41,7 +63,13 @@ YAML
     echo "PGPASSWORD=hunter2" > "$INST/.docker/db-access.env"
     echo "POSTGRES_PASSWORD=hunter2" > "$INST/.docker/db-creation.env"
     echo "AWS_SECRET_ACCESS_KEY=hunter2" > "$INST/.docker/backup.env"
-    echo "INCUBACLOUD_SECRET_KEY=fernetkey" > "$INST/.docker/incubacloud.env"
+    echo "INCUBACLOUD_SECRET_KEY=hunter2" > "$INST/.docker/incubacloud.env"
+    echo "RELAY_PASSWORD=hunter2" > "$INST/.docker/smtp.env"
+    echo "RELAY_PASSWORD=hunter2" > "$INST/.docker/smtp.env.bak"
+    echo "COMPOSE_PROJECT_NAME=inst-production" > "$INST/.env"
+    echo "TOKEN=hunter2" > "$INST/.env.bak"
+    echo "TOKEN=hunter2" > "$INST/odoo/custom/src/extra.env"
+    echo "odoo log line" > "$INST/logs/odoo.log"
     echo "PRIVATE KEY" > "$INST/odoo/custom/ssh/id_rsa"
     echo "PUBLIC KEY" > "$INST/odoo/custom/ssh/id_rsa.pub"
     echo "host ssh-ed25519 AAAA" > "$INST/odoo/custom/ssh/known_hosts"
@@ -76,23 +104,58 @@ run_export() {
     [ "$(cat "$OUT/README.md")" = "keep me" ]
 }
 
-@test "the Fernet key file is removed, not placeholdered" {
-    # The deploy only creates incubacloud.env when absent, so a
-    # placeholder would survive as an unusable key.
+@test "what a developer needs survives" {
     run_export
-    [ ! -f "$OUT/.docker/incubacloud.env" ]
+    [ -f "$OUT/devel.yaml" ]
+    [ -f "$OUT/prod.yaml" ]
+    [ -f "$OUT/odoo/custom/dependencies/pip.txt" ]
+    [ -f "$OUT/odoo/custom/src/addons.yaml" ]
+    [ -f "$OUT/odoo/custom/src/repos.yaml" ]
 }
 
-@test "the backup credentials file is removed" {
+@test "no env file of any kind reaches the archive" {
+    # devel.yaml reads none, so none is exported — not even as a
+    # placeholder — wherever it lives and whatever it is called.
     run_export
-    [ ! -f "$OUT/.docker/backup.env" ]
+    [ ! -e "$OUT/.docker" ]
+    [ -z "$(find "$OUT" \( -name '.env' -o -name '.env.*' \
+                           -o -name '*.env' -o -name '*.env.*' \))" ]
 }
 
-@test "env files a redeploy needs keep their shape with placeholders" {
+@test "the instance's logs are left out" {
     run_export
-    [ "$(cat "$OUT/.docker/odoo.env")" = "ADMIN_PASSWORD=changeme" ]
-    [ "$(cat "$OUT/.docker/db-access.env")" = "PGPASSWORD=changeme" ]
-    [ "$(cat "$OUT/.docker/db-creation.env")" = "POSTGRES_PASSWORD=changeme" ]
+    [ ! -e "$OUT/logs" ]
+}
+
+@test "the Odoo conf loses its credentials and production proxies" {
+    run_export
+    conf="$OUT/odoo/custom/conf.d/inst.conf"
+    # ``! cmd`` never fails a bats test unless it is the last line.
+    run grep -Eiq "passw|secret|token" "$conf"
+    [ "$status" -eq 1 ]
+    run grep -q "x_real_ip" "$conf"
+    [ "$status" -eq 1 ]
+    grep -q "^\[options\]" "$conf"
+    grep -q "^workers = 2" "$conf"
+    grep -q "^proxy_mode = True" "$conf"
+}
+
+@test "docker-compose.yml points at the development stack" {
+    run_export
+    [ -L "$OUT/docker-compose.yml" ]
+    [ "$(readlink "$OUT/docker-compose.yml")" = "devel.yaml" ]
+}
+
+@test "the link is left alone when there is no devel.yaml" {
+    rm "$INST/devel.yaml"
+    run_export
+    [ "$(readlink "$OUT/docker-compose.yml")" = "prod.yaml" ]
+}
+
+@test "a DEVELOPMENT.md explains how to start the copy" {
+    run_export
+    grep -q "invoke git-aggregate" "$OUT/DEVELOPMENT.md"
+    grep -q "Download Neutralized Backup" "$OUT/DEVELOPMENT.md"
 }
 
 @test "no real password reaches the archive" {
@@ -109,19 +172,22 @@ run_export() {
 
 @test "repository tokens are stripped but the URL still works" {
     run_export
-    ! grep -q "x-access-token" "$OUT/odoo/custom/src/repos.yaml"
+    run grep -q "x-access-token" "$OUT/odoo/custom/src/repos.yaml"
+    [ "$status" -eq 1 ]
     grep -q "https://github.com/acme/odoo.git" "$OUT/odoo/custom/src/repos.yaml"
 }
 
-@test "the backup destination is dropped from the copier answers" {
+@test "backup and SMTP relay settings are dropped from the copier answers" {
     run_export
-    ! grep -q "backup_dst" "$OUT/.copier-answers.yml"
+    run grep -Eq "^(backup_|smtp_relay_)" "$OUT/.copier-answers.yml"
+    [ "$status" -eq 1 ]
     grep -q "odoo_version" "$OUT/.copier-answers.yml"
+    grep -q "smtp_default_from" "$OUT/.copier-answers.yml"
 }
 
 @test "data directories and VCS checkouts are excluded" {
     run_export
-    for excluded in .git odoo/auto dumps postgres secrets \
+    for excluded in .git odoo/auto dumps postgres secrets logs \
                     docker-compose.override.yml; do
         [ ! -e "$OUT/$excluded" ] || {
             echo "leaked: $excluded"
