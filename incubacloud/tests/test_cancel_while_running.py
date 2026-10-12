@@ -4,11 +4,20 @@ queue_job cannot stop a started job, so ``cancel_job`` sets a flag the
 executor polls and the executor stops by raising — which queue_job
 stores as a failure. A customer who cancelled a rebuild to try the
 button got a failure alert and a "failed" mail, then a "Resolved" one
-when his next rebuild finished (12-oct-2026).
+when his next rebuild finished (12-oct-2026). Stored as a cancellation
+from then on, the stop still reached queue_job as an exception, which
+queue_job logs with its traceback: the log scraper raised an
+``instance_error_logs`` alert on the customer's panel for it. ``execute``
+now returns the stop instead.
 """
+from unittest.mock import patch
+
 from odoo.tests.common import TransactionCase
 
-from odoo.addons.incubacloud.models.abstract_executor import JobCancelled
+from odoo.addons.incubacloud.models.abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
+    JobCancelled,
+)
 from odoo.addons.incubacloud.models.host_probe_executor import HostProbeExecutor
 
 
@@ -107,3 +116,40 @@ class TestCancelWhileRunning(TransactionCase):
         self.assertEqual(waiting.state, 'cancelled')
         self.assertEqual(waiting_q.state, 'cancelled')
         self.assertFalse(self._failure_alerts(waiting))
+
+    def test_execute_returns_the_stop_without_a_traceback(self):
+        with patch.object(
+            HostProbeExecutor, 'pre_run_checks', autospec=True,
+        ), patch.object(
+            HostProbeExecutor, '_publish_bus', autospec=True,
+        ), patch.object(
+            HostProbeExecutor, 'run', autospec=True,
+            side_effect=JobCancelled('Job cancelled'),
+        ), self.assertNoLogs('odoo.addons.incubacloud', level='ERROR'):
+            result = self.cjob.execute()
+        self.assertEqual(result, CANCELLED_WHILE_RUNNING)
+
+    def test_a_stop_stored_as_done_ends_cancelled(self):
+        self.cjob.cancel_job()
+        self.env.flush_all()
+        # What queue_job writes once ``execute`` returned the stop.
+        self.qjob.write({
+            'state': 'done',
+            'result': CANCELLED_WHILE_RUNNING,
+            'date_done': '2026-10-13 00:00:00',
+        })
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(self.qjob.state, 'cancelled')
+        self.assertTrue(self.qjob.date_cancelled)
+        self.assertFalse(self.qjob.date_done)
+        self.assertEqual(self.cjob.state, 'cancelled')
+        self.assertFalse(self._failure_alerts(self.cjob))
+
+    def test_a_job_that_finished_as_cancel_was_pressed_stays_done(self):
+        self.cjob.cancel_job()
+        self.env.flush_all()
+        # The executor ended before it saw the flag: no marker.
+        self.qjob.write({'state': 'done', 'result': False})
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(self.qjob.state, 'done')
+        self.assertEqual(self.cjob.state, 'done')
