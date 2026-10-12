@@ -21,6 +21,8 @@ import urllib.request
 
 from odoo import _, http
 from odoo.http import request
+from odoo.tools.misc import consteq
+from odoo.tools.misc import hmac as hmac_sign
 
 from ..github.http_utils import safe_urlopen
 
@@ -30,8 +32,63 @@ _GITHUB_APP_NEW = "https://github.com/settings/apps/new"
 _GITHUB_MANIFEST_CONVERT = (
     "https://api.github.com/app-manifests/{code}/conversions"
 )
-_SESSION_STATE_KEY = "_github_app_setup_state"
+_STATE_SCOPE = "incubacloud.github_app_setup"
 _STATE_TTL_SECONDS = 600  # 10 minutes
+
+
+def _state_signature(env, uid, issued_at, nonce):
+    """Sign what a setup ``state`` carries, with the database's secret.
+
+    :param env: any environment; the secret is read as superuser.
+    :param int uid: the user who started the setup.
+    :param int issued_at: when, in epoch seconds.
+    :param str nonce: the state's random part.
+    :returns: the hex signature.
+    """
+    return hmac_sign(env(su=True), _STATE_SCOPE, f"{uid}:{issued_at}:{nonce}")
+
+
+def _make_state(env, uid, now=None):
+    """Return a ``state`` for *uid* that the callback can check by itself.
+
+    The state used to live in the session, and Odoo rewrites a session
+    whole whenever it records a new device for it — behind the CDN, any
+    request arriving from another edge address. One of those landing on
+    another worker while the setup page saved the state erased it, and
+    the customer came back from GitHub to "invalid state" (QA,
+    12-oct-2026; 3 in 30 on three workers). Signed, it needs no storage.
+
+    :param env: any environment.
+    :param int uid: the user starting the setup.
+    :param float now: epoch seconds; the current time when None.
+    :returns: ``<issued_at>.<nonce>.<signature>``.
+    """
+    issued_at = int(time.time() if now is None else now)
+    nonce = secrets.token_urlsafe(12)
+    return f"{issued_at}.{nonce}.{_state_signature(env, uid, issued_at, nonce)}"
+
+
+def _state_problem(env, uid, state, now=None):
+    """Say why the callback must refuse *state*, or nothing.
+
+    :param env: any environment.
+    :param int uid: the user GitHub sent back.
+    :param str state: what GitHub sent back.
+    :param float now: epoch seconds; the current time when None.
+    :returns: None, ``"invalid_state"`` (not ours, or not this user's)
+        or ``"state_expired"`` (ours, older than ten minutes).
+    """
+    try:
+        issued_raw, nonce, signature = (state or "").split(".")
+        issued_at = int(issued_raw)
+    except ValueError:
+        return "invalid_state"
+    if not consteq(signature, _state_signature(env, uid, issued_at, nonce)):
+        return "invalid_state"
+    age = (time.time() if now is None else now) - issued_at
+    if age > _STATE_TTL_SECONDS or age < -60:
+        return "state_expired"
+    return None
 
 
 class GitHubSetupController(http.Controller):
@@ -64,8 +121,8 @@ class GitHubSetupController(http.Controller):
 
         Builds a GitHub App manifest pre-filled with this Odoo instance's
         webhook URL and redirects the user to GitHub for confirmation.
-        A CSRF-style ``state`` token is stored in the session to validate
-        the callback.
+        A CSRF-style ``state`` token, signed for this user (see
+        :func:`_make_state`), lets the callback validate the return.
         """
         request.env['cloud.security.mixin']._check_can_manage_settings()
         # Build base URL — respect X-Forwarded-Proto from reverse proxies
@@ -84,11 +141,7 @@ class GitHubSetupController(http.Controller):
                 .rstrip("/")
             )
 
-        state = secrets.token_urlsafe(16)
-        request.session[_SESSION_STATE_KEY] = {
-            'state': state,
-            'created_at': time.time(),
-        }
+        state = _make_state(request.env, request.env.uid)
 
         # GitHub requires HTTPS for redirect_url — the manifest flow will 500
         # on their side if the base URL is HTTP (e.g. local development).
@@ -167,31 +220,17 @@ class GitHubSetupController(http.Controller):
         credentials (no auth required), stores them in ``cloud.github.app``.
         """
         request.env['cloud.security.mixin']._check_can_manage_settings()
-        session_data = request.session.pop(_SESSION_STATE_KEY, None)
-        if not isinstance(session_data, dict):
-            _logger.warning("GitHub App setup callback: no state in session")
-            return request.redirect(
-                "/cloud/settings?setup_error=invalid_state"
-            )
-        expected = session_data.get('state')
-        created_at = session_data.get('created_at') or 0
-        if time.time() - created_at > _STATE_TTL_SECONDS:
+        problem = _state_problem(request.env, request.env.uid, state)
+        if not problem and not code:
+            problem = "invalid_state"
+        if problem:
             _logger.warning(
-                "GitHub App setup callback: state expired (age=%ss)",
-                int(time.time() - created_at),
+                "GitHub App setup callback refused: %s (uid=%s)",
+                problem,
+                request.env.uid,
             )
             return request.redirect(
-                "/cloud/settings?setup_error=state_expired"
-            )
-        if not code or not state or state != expected:
-            _logger.warning(
-                "GitHub App setup callback: invalid state "
-                "(got=%r, expected=%r)",
-                state,
-                expected,
-            )
-            return request.redirect(
-                "/cloud/settings?setup_error=invalid_state"
+                f"/cloud/settings?setup_error={problem}"
             )
 
         # Refuse to overwrite an existing app via the manifest callback —

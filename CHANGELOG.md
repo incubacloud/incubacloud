@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.176] — 2026-10-12
+
+### Fixed
+
+- **Connecting a GitHub App no longer fails now and then with "invalid
+  state".** The setup kept its ``state`` in the session, and Odoo
+  rewrites a session whole whenever it records a new device for it —
+  behind the CDN, any request arriving from another edge address. One of
+  those landing on another worker while the setup page saved the state
+  erased it, and the customer came back from GitHub to "invalid state"
+  (3 setups in 30 on three workers). The state is now signed with the
+  database secret for the user who started the setup and expires after
+  ten minutes, so the callback checks it without reading the session.
+
 ## [1.0.175] — 2026-10-12
 
 ### Fixed
