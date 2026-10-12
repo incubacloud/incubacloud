@@ -173,3 +173,4 @@ from . import test_delete_in_header
 from . import test_staging_needs_production
 from . import test_mail_layout
 from . import test_cancel_while_running
+from . import test_github_setup_state
