@@ -898,6 +898,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#hardening-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hardening (optional)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#dns-for-https" class="md-nav__link">
     <span class="md-ellipsis">
       DNS for HTTPS
@@ -1404,6 +1413,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#hardening-optional" class="md-nav__link">
+    <span class="md-ellipsis">
+      Hardening (optional)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#dns-for-https" class="md-nav__link">
     <span class="md-ellipsis">
       DNS for HTTPS
@@ -1479,7 +1497,8 @@ and request HTTPS automatically.</p>
 <p>On the VPS, append it to the chosen user's <code>~/.ssh/authorized_keys</code>:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">"ssh-ed25519 AAAAC3..."</span><span class="w"> </span>&gt;&gt;<span class="w"> </span>~/.ssh/authorized_keys
 </span></code></pre></div>
-<p>Click <strong>Test connection</strong>. Green = we got in.</p>
+<p>Create the host, then click <strong>Trust SSH Key</strong> in its action bar. Green = we
+got in, and the panel keeps the host's key to check it on every connection.</p>
 <h3 id="4-run-check">4. Run <code>Check</code><a class="headerlink" href="#4-run-check" title="Permanent link">&para;</a></h3>
 <p>This probes the host: kernel, distro, free disk, RAM, Docker presence.
 Anything missing shows up so you can decide whether to install it manually
@@ -1488,6 +1507,34 @@ or let us run <strong>Full Setup</strong>.</p>
 <p>We install Docker (if missing), drop in Traefik, wire up cert auto-renewal,
 and run a final probe. Watch the log to follow each step.</p>
 <p>When it ends in green, the host is ready to receive instances.</p>
+<h2 id="hardening-optional">Hardening (optional)<a class="headerlink" href="#hardening-optional" title="Permanent link">&para;</a></h2>
+<p>The first time you trust a new host's SSH key, the panel offers to harden it.
+You can also do it at any time with <strong>Apply Hardening</strong> in the host's action
+bar; a host that has not been hardened shows <strong>Not hardened</strong> next to its
+name.</p>
+<p>Hardening applies a security recipe on the host:</p>
+<ul>
+<li>a non-root operator user when you connect as <code>root</code>, and SSH on a rotated
+  port, key-only, with root login disabled at the end;</li>
+<li>an nftables firewall that accepts only SSH, HTTP and HTTPS, plus fail2ban;</li>
+<li>kernel <code>sysctl</code> hardening, automatic security updates (with a reboot at
+  04:00 when a kernel update lands), a hardened Docker daemon, journald limits
+  and auditd rules.</li>
+</ul>
+<p>Before you apply it:</p>
+<ul>
+<li>It needs Ubuntu 22.04+ or Debian 12+, and <code>root</code> or a user with passwordless
+  <code>sudo</code>.</li>
+<li><strong>Services installed directly on the server, outside Docker, stop being
+  reachable from outside</strong>: the firewall only lets SSH, HTTP and HTTPS in.</li>
+<li>The first run restarts Docker, a 5–10 second interruption for the instances
+  already running there.</li>
+<li>If the host has never been set up and you connect as <code>root</code>, choose
+  <strong>Hardening + Full Setup</strong>: Full Setup then installs its tools in the new
+  user's home instead of root's.</li>
+</ul>
+<p>Afterwards the panel reaches the host as the operator user on the new port.
+Re-running it is safe: every step checks the host before it changes anything.</p>
 <h2 id="dns-for-https">DNS for HTTPS<a class="headerlink" href="#dns-for-https" title="Permanent link">&para;</a></h2>
 <p>For Let's Encrypt to issue a cert when you deploy a domain on this host,
 the domain must already point (A or AAAA) to the VPS IP <strong>at the moment of
