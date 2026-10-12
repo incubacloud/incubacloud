@@ -34,7 +34,8 @@ On the VPS, append it to the chosen user's `~/.ssh/authorized_keys`:
 echo "ssh-ed25519 AAAAC3..." >> ~/.ssh/authorized_keys
 ```
 
-Click **Test connection**. Green = we got in.
+Create the host, then click **Trust SSH Key** in its action bar. Green = we
+got in, and the panel keeps the host's key to check it on every connection.
 
 ### 4. Run `Check`
 
@@ -48,6 +49,37 @@ We install Docker (if missing), drop in Traefik, wire up cert auto-renewal,
 and run a final probe. Watch the log to follow each step.
 
 When it ends in green, the host is ready to receive instances.
+
+## Hardening (optional)
+
+The first time you trust a new host's SSH key, the panel offers to harden it.
+You can also do it at any time with **Apply Hardening** in the host's action
+bar; a host that has not been hardened shows **Not hardened** next to its
+name.
+
+Hardening applies a security recipe on the host:
+
+- a non-root operator user when you connect as `root`, and SSH on a rotated
+  port, key-only, with root login disabled at the end;
+- an nftables firewall that accepts only SSH, HTTP and HTTPS, plus fail2ban;
+- kernel `sysctl` hardening, automatic security updates (with a reboot at
+  04:00 when a kernel update lands), a hardened Docker daemon, journald limits
+  and auditd rules.
+
+Before you apply it:
+
+- It needs Ubuntu 22.04+ or Debian 12+, and `root` or a user with passwordless
+  `sudo`.
+- **Services installed directly on the server, outside Docker, stop being
+  reachable from outside**: the firewall only lets SSH, HTTP and HTTPS in.
+- The first run restarts Docker, a 5–10 second interruption for the instances
+  already running there.
+- If the host has never been set up and you connect as `root`, choose
+  **Hardening + Full Setup**: Full Setup then installs its tools in the new
+  user's home instead of root's.
+
+Afterwards the panel reaches the host as the operator user on the new port.
+Re-running it is safe: every step checks the host before it changes anything.
 
 ## DNS for HTTPS
 

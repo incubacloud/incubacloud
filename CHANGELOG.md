@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.174] — 2026-10-12
+
+### Added
+
+- **Hosts can be hardened from the host page.** The security recipe has
+  been part of this module, but nothing in its interface queued it, so a
+  host was only hardened if something above this module did it. The host
+  page now has **Apply Hardening** (**Re-apply Hardening** once done) in
+  its action bar, for whoever manages hosts. It opens a confirmation that
+  checks the host first — running and production instances, a hardening
+  already queued, an untrusted SSH key — warns that services installed
+  outside Docker lose their ports and that the first run restarts Docker,
+  asks for the host's name when production runs there, and offers
+  hardening and Full Setup as one chain when a root host was never set
+  up. Behind it, ``/cloud/preflight_host_hardening`` and
+  ``/cloud/apply_host_hardening``; ``_before_host_hardening`` lets a
+  downstream module prepare the host before the job is queued.
+- **A newly connected host is offered the hardening.** Trusting a host's
+  SSH key for the first time opens the same confirmation, which says the
+  hardening is optional and can be dismissed with "Not now".
+- **A host that has not been hardened says so.** Its page shows "Not
+  hardened" next to its name, and ``/cloud/get_host`` returns
+  ``hardened`` and ``hardened_at``.
+
 ## [1.0.173] — 2026-10-12
 
 ### Fixed

@@ -112,10 +112,10 @@ class HostHardeningExecutor(AnsibleExecutor):
     def _operator_ip(self):
         """Return the primary IP to seed the allowlist with.
 
-        Core has no cached operator IP of its own; the panel prefills
-        ``allowed_ssh_ips`` with the IP of the request that triggered
-        hardening, so here it returns ``''`` and the allowlist is built
-        entirely from ``allowed_ssh_ips``. SaaS subclasses may override.
+        Core knows no operator IP of its own, so it returns ``''`` and the
+        allowlist is built entirely from ``allowed_ssh_ips`` — open to any
+        address when that is empty. Downstream executors that know where
+        the panel connects from may override it.
         """
         return ""
 

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud.HostHardeningModal">
+        <div class="ic-modal-overlay" t-on-click="onOverlayClick">
+            <div class="ic-modal ic-modal--m ic-hardening-modal" t-on-click.stop=""
+                 role="dialog" aria-modal="true" aria-labelledby="ic-hardening-title">
+                <header class="ic-modal__header">
+                    <h3 id="ic-hardening-title">
+                        <t t-out="env.icon('shield', 15)"/>
+                        Apply hardening to <t t-esc="props.hostName"/>?
+                    </h3>
+                    <button class="ic-modal__close" t-on-click="cancel"
+                            aria-label="Close" title="Close">✕</button>
+                </header>
+
+                <section class="ic-modal__body">
+
+                    <t t-if="state.loading">
+                        <div class="rl-stub" role="status" aria-live="polite">
+                            <span class="rl-spin" aria-hidden="true"/>
+                            <h3>Checking compatibility…</h3>
+                        </div>
+                    </t>
+
+                    <t t-elif="state.error">
+                        <div class="rl-sevban critical" role="alert">
+                            <span class="rl-si2"><t t-out="env.icon('alert', 18)"/></span>
+                            <div><t t-esc="state.error"/></div>
+                        </div>
+                    </t>
+
+                    <t t-elif="state.preflight">
+                        <t t-if="props.offer">
+                            <div class="rl-sevban info">
+                                <span class="rl-si2"><t t-out="env.icon('shield', 18)"/></span>
+                                <div>
+                                    <strong>This server is now reachable.</strong>
+                                    Hardening it is optional: you can also apply it
+                                    later from the host's action bar.
+                                </div>
+                            </div>
+                        </t>
+
+                        <p class="ic-hm-summary">
+                            Hardening installs an in-host security recipe: a
+                            non-root operator user, SSH on a rotated port with root
+                            login disabled at the end, nftables, fail2ban, sysctl,
+                            unattended-upgrades, a hardened Docker daemon, journald
+                            limits and auditd. It needs Ubuntu 22.04+ or Debian 12+
+                            with root or passwordless sudo. Re-runs are idempotent
+                            and skip steps that already match.
+                        </p>
+
+                        <t t-if="keyUntrusted">
+                            <div class="rl-sevban critical">
+                                <span class="rl-si2"><t t-out="env.icon('alert', 18)"/></span>
+                                <div>
+                                    <strong>The SSH host key is not trusted yet.</strong>
+                                    Trust it from the action bar first.
+                                </div>
+                            </div>
+                        </t>
+                        <t t-if="!state.preflight.has_hardened_before">
+                            <div class="rl-sevban warning">
+                                <span class="rl-si2"><t t-out="env.icon('alert', 18)"/></span>
+                                <div>
+                                    <strong>Other services lose their ports.</strong>
+                                    The host firewall then accepts only SSH, HTTP and
+                                    HTTPS: a service installed directly on this server,
+                                    outside Docker, stops being reachable from outside.
+                                </div>
+                            </div>
+                        </t>
+                        <t t-if="state.preflight.running_instances > 0">
+                            <div class="rl-sevban warning">
+                                <span class="rl-si2"><t t-out="env.icon('alert', 18)"/></span>
+                                <div>
+                                    <strong>Running instances may be interrupted.</strong>
+                                    Restarting Docker may briefly interrupt
+                                    <strong><t t-esc="state.preflight.running_instances"/></strong>
+                                    <t t-if="state.preflight.running_instances === 1">running instance.</t>
+                                    <t t-else="">running instances.</t>
+                                </div>
+                            </div>
+                        </t>
+                        <t t-if="firstRunWarning">
+                            <div class="rl-sevban warning">
+                                <span class="rl-si2"><t t-out="env.icon('alert', 18)"/></span>
+                                <div>
+                                    <strong>First run.</strong>
+                                    Docker will be restarted (5-10 s outage).
+                                </div>
+                            </div>
+                        </t>
+                        <t t-elif="state.preflight.has_hardened_before">
+                            <div class="rl-sevban info">
+                                <span class="rl-si2"><t t-out="env.icon('check', 18)"/></span>
+                                <div>
+                                    <strong>Re-runs are non-disruptive.</strong>
+                                    Docker only restarts if config changed.
+                                </div>
+                            </div>
+                        </t>
+                        <t t-if="state.preflight.has_active_job">
+                            <div class="rl-sevban warning">
+                                <span class="rl-si2"><t t-out="env.icon('clock', 18)"/></span>
+                                <div>
+                                    <strong>A hardening job is already running for this host.</strong>
+                                    Wait for it to finish.
+                                </div>
+                            </div>
+                        </t>
+
+                        <t t-if="prodGated">
+                            <div class="rl-sevban critical ic-hm-prod-gate">
+                                <span class="rl-si2"><t t-out="env.icon('shield', 18)"/></span>
+                                <div>
+                                    <p>
+                                        This host runs
+                                        <strong><t t-esc="state.preflight.prod_running"/></strong>
+                                        <t t-if="state.preflight.prod_running === 1">production instance.</t>
+                                        <t t-else="">production instances.</t>
+                                        Type
+                                        <code class="rl-mono"><t t-esc="props.hostName"/></code>
+                                        to confirm:
+                                    </p>
+                                    <div class="rl-frow ic-hm-prod-frow">
+                                        <input type="text"
+                                               class="ic-hm-prod-input"
+                                               t-model="state.prodConfirmInput"
+                                               t-att-placeholder="props.hostName"
+                                               autocomplete="off"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </t>
+
+                    </t>
+                </section>
+
+                <footer class="ic-modal__footer">
+                    <button class="rl-btn rl-btn-ghost"
+                            t-on-click="cancel"
+                            t-att-disabled="state.submitting || null">
+                        <t t-if="props.offer">Not now</t>
+                        <t t-else="">Cancel</t>
+                    </button>
+
+                    <t t-if="state.preflight">
+                        <t t-if="showSmartSuggestion">
+                            <button class="rl-btn rl-btn-ghost"
+                                    t-att-disabled="!canSubmit || null"
+                                    t-on-click="applyHardeningOnly">
+                                <i t-if="state.submitting" class="fa fa-spinner fa-spin"/>
+                                Hardening only
+                            </button>
+                            <button t-att-class="'rl-btn ' + (prodGated ? 'rl-btn-danger' : 'rl-btn-primary')"
+                                    t-att-disabled="!canSubmit || null"
+                                    t-on-click="applyHardeningAndFullSetup"
+                                    title="Recommended order: hardening before Full Setup, so the tools Full Setup installs land in the new user's home, not root's.">
+                                <i t-if="state.submitting" class="fa fa-spinner fa-spin"/>
+                                <t t-out="env.icon('shield', 15)"/> Hardening + Full Setup
+                            </button>
+                        </t>
+                        <t t-else="">
+                            <button t-att-class="'rl-btn ' + (prodGated ? 'rl-btn-danger' : 'rl-btn-primary')"
+                                    t-att-disabled="!canSubmit || null"
+                                    t-on-click="applyHardeningOnly">
+                                <i t-if="state.submitting" class="fa fa-spinner fa-spin"/>
+                                <t t-out="env.icon('shield', 15)"/> Apply Hardening
+                            </button>
+                        </t>
+                    </t>
+                </footer>
+
+            </div>
+        </div>
+    </t>
+
+</templates>

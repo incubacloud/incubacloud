@@ -469,6 +469,12 @@ msgstr ""
 "la producción y luego clónala desde el menú lateral."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "A hardening job is already running for this host."
+msgstr "Ya hay un trabajo de hardening en ejecución para este host."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
@@ -1034,6 +1040,13 @@ msgid "Apply & Resolve"
 msgstr "Aplicar y resolver"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Apply Hardening"
+msgstr "Aplicar hardening"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__apply_to
 msgid "Apply To"
 msgstr "Aplicar a"
@@ -1049,6 +1062,20 @@ msgstr "Aplicar lista blanca"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Apply Whitelist on Host"
 msgstr "Aplicar lista blanca en el host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"Apply hardening (Ubuntu 22.04+ or Debian 12+ with root or passwordless sudo)"
+msgstr ""
+"Aplicar hardening (Ubuntu 22.04+ o Debian 12+ con root o sudo sin contraseña)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Apply hardening to"
+msgstr "¿Aplicar hardening a"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1730,6 +1757,7 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 #: code:addons/incubacloud/static/src/components/ic_confirm_dialog/ic_confirm_dialog.xml:0
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
@@ -2017,6 +2045,12 @@ msgstr "Verificando"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Checking compatibility…"
+msgstr "Comprobando compatibilidad…"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
 "Choose what reaches you and when. Muted projects never\n"
@@ -2108,6 +2142,7 @@ msgstr "Clonando…"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
@@ -3780,6 +3815,18 @@ msgstr "Límite de memoria Docker para el servicio odoo (ej. 2g, 512m)"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Docker only restarts if config changed."
+msgstr "Docker solo se reinicia si cambió la configuración."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Docker will be restarted (5-10 s outage)."
+msgstr "Docker se reiniciará (corte de 5-10 s)."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Domain"
@@ -4471,10 +4518,28 @@ msgid "Failed to purge audit logs"
 msgstr "Falló al purgar los logs de auditoría"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
+msgid "Failed to queue hardening."
+msgstr "No se pudo encolar el hardening."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid "Failed to queue the central deployment"
 msgstr "No se pudo encolar el despliegue del central"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
+msgid "Failed to queue the hardening"
+msgstr "No se pudo encolar el hardening"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
+msgid "Failed to queue."
+msgstr "No se pudo encolar."
 
 #. module: incubacloud
 #. odoo-python
@@ -4687,6 +4752,12 @@ msgid ""
 msgstr ""
 "Huella con la que se confiaba el host antes de cambiar su endpoint. Vuelva a "
 "confiar la clave: una huella idéntica significa que la máquina no cambió."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "First run."
+msgstr "Primera ejecución."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5232,6 +5303,67 @@ msgstr "Endurecido"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__hardened_at
 msgid "Hardened at"
 msgstr "Endurecido el"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Hardening + Full Setup"
+msgstr "Hardening + configuración completa"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
+msgid ""
+"Hardening + Full Setup chain queued. Watch the jobs panel for live progress."
+msgstr ""
+"Cadena de hardening + configuración completa encolada. Siga el progreso en "
+"el panel de trabajos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid ""
+"Hardening installs an in-host security recipe: a\n"
+"                            non-root operator user, SSH on a rotated port "
+"with root\n"
+"                            login disabled at the end, nftables, fail2ban, "
+"sysctl,\n"
+"                            unattended-upgrades, a hardened Docker daemon, "
+"journald\n"
+"                            limits and auditd. It needs Ubuntu 22.04+ or "
+"Debian 12+\n"
+"                            with root or passwordless sudo. Re-runs are "
+"idempotent\n"
+"                            and skip steps that already match."
+msgstr ""
+"El hardening instala en el host una receta de seguridad: un usuario operador "
+"sin privilegios de root, SSH en un puerto rotado con el acceso de root "
+"desactivado al final, nftables, fail2ban, sysctl, unattended-upgrades, un "
+"daemon de Docker endurecido, límites de journald y auditd. Requiere Ubuntu "
+"22.04+ o Debian 12+ con root o sudo sin contraseña. Repetirlo es idempotente "
+"y omite los pasos que ya están al día."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid ""
+"Hardening it is optional: you can also apply it\n"
+"                                    later from the host's action bar."
+msgstr ""
+"El hardening es opcional: también puede aplicarlo más tarde desde la barra "
+"de acciones del host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Hardening only"
+msgstr "Solo hardening"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
+msgid "Hardening queued. Watch the jobs panel for live progress."
+msgstr "Hardening encolado. Siga el progreso en el panel de trabajos."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__rebuild_fingerprint
@@ -8103,6 +8235,18 @@ msgstr "Sin enrolar todavía"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Not hardened"
+msgstr "Sin endurecer"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Not now"
+msgstr "Ahora no"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Not set"
 msgstr "No establecido"
@@ -8586,6 +8730,12 @@ msgstr "Tarea originante"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Other services lose their ports."
+msgstr "Los demás servicios pierden sus puertos."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_mails.js:0
 msgid "Outgoing email is real on production."
 msgstr "En producción el correo saliente es real."
@@ -9031,6 +9181,18 @@ msgstr "Consola PostgreSQL"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
+msgid "Preflight failed."
+msgstr "Falló la comprobación previa."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
+msgid "Preflight request failed."
+msgstr "Falló la petición de comprobación previa."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Preparing…"
 msgstr "Preparando…"
@@ -9434,6 +9596,24 @@ msgstr "Carga JSON recibida de GitHub."
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Re-apply Hardening"
+msgstr "Volver a aplicar hardening"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "Re-apply hardening (idempotent: re-runs are non-disruptive)"
+msgstr "Volver a aplicar hardening (idempotente: repetirlo no interrumpe nada)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Re-runs are non-disruptive."
+msgstr "Repetirlo no interrumpe nada."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Re-trust Key"
 msgstr "Volver a confiar en la clave"
 
@@ -9609,6 +9789,17 @@ msgstr "El email del destinatario no es válido"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Recommended for backups up to 2 GB"
 msgstr "Recomendado para backups de hasta 2 GB"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid ""
+"Recommended order: hardening before Full Setup, so the tools Full Setup "
+"installs land in the new user's home, not root's."
+msgstr ""
+"Orden recomendado: hardening antes de la configuración completa, para que "
+"las herramientas que esta instala queden en el home del nuevo usuario y no "
+"en el de root."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10080,6 +10271,12 @@ msgstr "Reiniciar instancia"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Restarting Docker may briefly interrupt"
+msgstr "Reiniciar Docker puede interrumpir brevemente"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Restore"
 msgstr "Restaurar"
@@ -10299,6 +10496,12 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__running
 msgid "Running"
 msgstr "En ejecución"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Running instances may be interrupted."
+msgstr "Las instancias en ejecución pueden verse interrumpidas."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10522,6 +10725,12 @@ msgstr "Guardar cambios"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Save the destination first to start measuring usage."
 msgstr "Guarda el destino primero para empezar a medir el consumo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+msgid "Save your changes first: the hardening reads the saved values."
+msgstr "Guarde antes sus cambios: el hardening lee los valores guardados."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11463,6 +11672,12 @@ msgstr ""
 "ámbito 'repo', o configura una GitHub App."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "The SSH host key is not trusted yet."
+msgstr "La clave SSH del host aún no es de confianza."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
@@ -11532,6 +11747,20 @@ msgstr ""
 "El host descarga el archivo por su cuenta, así que nada queda limitado por "
 "tu conexión ni por la nuestra. Se aceptan enlaces con usuario y contraseña; "
 "la contraseña se guarda cifrada y no se vuelve a mostrar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid ""
+"The host firewall then accepts only SSH, HTTP and\n"
+"                                    HTTPS: a service installed directly on "
+"this server,\n"
+"                                    outside Docker, stops being reachable "
+"from outside."
+msgstr ""
+"A partir de entonces el cortafuegos del host solo acepta SSH, HTTP y HTTPS: "
+"un servicio instalado directamente en este servidor, fuera de Docker, deja "
+"de ser accesible desde fuera."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__purge_cutoff_at
@@ -11678,6 +11907,16 @@ msgstr ""
 "listo\n"
 "                            para desplegarse otra vez aquí o en otro host.\n"
 "                            Vuelve vacío."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"The security recipe has not been applied to this host from the panel. Apply "
+"Hardening installs it; it is optional."
+msgstr ""
+"La receta de seguridad no se ha aplicado a este host desde el panel. "
+"«Aplicar hardening» la instala; es opcional."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__applied_config_snapshot
@@ -11870,6 +12109,12 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "This host runs"
+msgstr "Este host ejecuta"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
 "This instance has no backup destination, so what is\n"
@@ -12011,6 +12256,12 @@ msgid "This project has no deployed production instance to copy from."
 msgstr ""
 "Este proyecto no tiene ninguna instancia de producción desplegada de la que "
 "copiar."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "This server is now reachable."
+msgstr "El servidor ya es accesible."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12398,6 +12649,12 @@ msgstr "Confiar clave SSH"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Trust it from the action bar first."
+msgstr "Confíe primero en ella desde la barra de acciones."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Trusted"
 msgstr "De confianza"
@@ -12446,6 +12703,7 @@ msgstr "Actívela en Configuración; todos los hosts se enrolan automáticamente
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__backend_type
 msgid "Type"
@@ -12899,6 +13157,12 @@ msgstr "Los visitantes llegan a este host por un CDN o proxy inverso"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__volumes
 msgid "Volumes"
 msgstr "Volúmenes"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "Wait for it to finish."
+msgstr "Espere a que termine."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14136,6 +14400,18 @@ msgstr "producción"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "production instance."
+msgstr "instancia de producción."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "production instances."
+msgstr "instancias de producción."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_dashboard/project_dashboard.xml:0
 msgid "project"
 msgstr "proyecto"
@@ -14197,6 +14473,18 @@ msgstr "reconstruir al hacer push a repos no congelados"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "redirect to (optional)"
 msgstr "redirigir a (opcional)"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "running instance."
+msgstr "instancia en ejecución."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "running instances."
+msgstr "instancias en ejecución."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14290,6 +14578,12 @@ msgstr "el CDN de la plataforma, refrescado a diario"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "this host's own override, below"
 msgstr "la excepción propia de este anfitrión, abajo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "to confirm:"
+msgstr "para confirmar:"
 
 #. module: incubacloud
 #. odoo-javascript

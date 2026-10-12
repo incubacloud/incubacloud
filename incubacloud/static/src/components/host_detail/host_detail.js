@@ -15,6 +15,7 @@ import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required, hostname, portRange, when } from "../../utils/validators";
 import { confirmVia } from "../../utils/use_confirm";
+import { HostHardeningModal } from "../host_hardening_modal/host_hardening_modal";
 
 const TRAEFIK_FILES = [
     { key: "traefik_config_yml",        label: "config.yml" },
@@ -58,7 +59,10 @@ const EMPTY_FORM = () => ({
 export class HostDetail extends Component {
     static props = { host_id: { type: Number, optional: true } };
     static template = "incubacloud.HostDetail";
-    static components = { PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager };
+    static components = {
+        PasswordInput, RemoteFileBrowser, TagSelector, IcConfirmDialog, RlSelect, IcPager,
+        HostHardeningModal,
+    };
 
     /** Rows per page for the server-paginated audit log. */
     get pageSize() {
@@ -117,6 +121,9 @@ export class HostDetail extends Component {
             auditActions: [],
             auditPurging: false,
         });
+        // The hardening dialog; ``offer`` when the panel opened it for
+        // the operator instead of the operator asking for it.
+        this.hardeningState = useState({ open: false, offer: false });
 
         // Dirty tracking: snapshot the form after every load/save so
         // ``hasUnsavedChanges`` reflects real divergence, not the
@@ -445,6 +452,35 @@ export class HostDetail extends Component {
         }
     }
 
+    /**
+     * Open the hardening dialog.
+     *
+     * Refused while the form has unsaved changes: the hardening reads the
+     * host's saved values, not the ones on screen.
+     *
+     * @param {boolean} [offer=false] opened on the operator's behalf
+     */
+    openHardeningModal(offer = false) {
+        if (!this.state.host) return;
+        if (this.hasUnsavedChanges) {
+            this.env.toast?.warning(
+                _t("Save your changes first: the hardening reads the saved values.")
+            );
+            return;
+        }
+        Object.assign(this.hardeningState, { open: true, offer });
+    }
+
+    /** Close the hardening dialog. */
+    closeHardeningModal() {
+        Object.assign(this.hardeningState, { open: false, offer: false });
+    }
+
+    /** Refresh the host and its jobs once the hardening is queued. */
+    onHardeningApplied() {
+        this._silentRefresh();
+    }
+
     async runFullSetup() {
         try {
             await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, 'full_setup']);
@@ -552,6 +588,12 @@ export class HostDetail extends Component {
                     this.env.toast?.success(
                         _t("SSH host key trusted: %s", res.fingerprint || _t("captured"))
                     );
+                    // A key trusted for the first time is a server that
+                    // has just been connected: the moment to offer the
+                    // hardening, which is otherwise easy to never run.
+                    if (this.state.host?.hardened === false) {
+                        this.openHardeningModal(true);
+                    }
                 }
             } else {
                 this.env.toast?.error(res?.error || _t("Failed to trust SSH host key."));
