@@ -187,6 +187,16 @@ def validate_dup_time(raw):
     return raw
 
 
+class JobCancelled(Exception):
+    """A person cancelled the job while it ran, and the executor stopped.
+
+    Raised by ``_check_cancel`` once ``cloud.job.cancel_job`` has set the
+    cooperative stop flag. queue_job sees any exception as a failure;
+    ``queue.job.write`` (``queue_job_ext``) records this one as the
+    cancellation it is.
+    """
+
+
 class AbstractExecutor(ABC):
 
     _job_type = None  # required in subclasses
@@ -857,7 +867,7 @@ class AbstractExecutor(ABC):
         with self._durable_env() as env:
             job = env['cloud.job'].browse(self.job.id)
             if job.state == 'cancelled':
-                raise Exception("Job cancelled")
+                raise JobCancelled("Job cancelled")
 
     # ===============================
     # STREAM HANDLERS (OVERRIDABLE)
