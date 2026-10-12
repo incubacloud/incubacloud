@@ -6,11 +6,18 @@ only holds if starting the stack also retires services the file no
 longer declares — otherwise the run can add but never remove, which is
 how a host kept serving a container long after the file dropped it.
 """
+import asyncio
+import re
+from unittest.mock import MagicMock, patch
+
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.acme_store import AcmeStorePruneMixin
 from odoo.addons.incubacloud.models.full_setup_executor import (
+    _TMP,
     FullSetupExecutor,
 )
+from odoo.addons.incubacloud.models.transport import SSHTransport
 
 
 class TestFullSetupStartsTheStackConvergently(TransactionCase):
@@ -101,3 +108,52 @@ class TestRebuildDefersOnBusyCrons(TransactionCase):
             (c[0], c[1]) for c in self._executor().get_commands()
         )
         self.assertIn('cron_guard.sh', cmds['Update changed modules'])
+
+
+class TestTheHostRendersItsProxyCompose(TransactionCase):
+    """Full Setup uploads the compose file the host renders, as it does
+    ``traefik.yml``: the one place a module extends (11-oct-2026)."""
+
+    def setUp(self):
+        self.registry_enter_test_mode()
+        super().setUp()
+        self.host = self.env['cloud.host'].create({
+            'name': 'fs-compose-host',
+            'ip_address': '10.0.0.19',
+            'user': 'ubuntu',
+            'wildcard_domain': '*.fs-compose.example.com',
+        })
+
+    def test_the_dashboard_is_named_after_the_host(self):
+        rendered = self.host._shipped_inverseproxy_yaml()
+        self.assertIn('Host(`traefik.fs-compose.example.com`)', rendered)
+
+    def test_full_setup_uploads_what_the_host_renders(self):
+        job_type = self.env['cloud.job.type'].search(
+            [('code', '=', 'full_setup')], limit=1,
+        ) or self.env['cloud.job.type'].create({
+            'name': 'full_setup', 'code': 'full_setup', 'apply_to': 'host',
+        })
+        job = self.env['cloud.job'].create({
+            'host_id': self.host.id,
+            'job_type_id': job_type.id,
+            'name': 'Full Setup',
+        })
+        transport = MagicMock(spec=SSHTransport)
+        with patch.object(
+            AcmeStorePruneMixin, '_prepare_acme_prune',
+            autospec=True, return_value=None,
+        ):
+            asyncio.run(FullSetupExecutor(job, self.host).before_execute(transport))
+        uploaded = {}
+        for call in transport.upload_text_files.await_args_list:
+            uploaded.update(call.args[0])
+        # bcrypt salts every hash of the dashboard's password anew.
+        salted = re.compile(r'\$\$2y\$\$12\$\$[^\s"]+')
+        self.assertEqual(
+            salted.sub('<hash>', uploaded[f'{_TMP}-inverseproxy.yaml']),
+            salted.sub('<hash>', self.host._shipped_inverseproxy_yaml()),
+        )
+        self.assertEqual(
+            uploaded[f'{_TMP}-traefik.yml'], self.host._shipped_traefik_yml(),
+        )
