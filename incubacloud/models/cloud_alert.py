@@ -106,6 +106,16 @@ class CloudAlert(models.Model):
         ),
     )
     create_date = fields.Datetime(readonly=True)
+    was_critical = fields.Boolean(
+        readonly=True,
+        help=(
+            "Whether this alert was critical at any point while active. "
+            "Who is told it is over is decided by the worst it was, not "
+            "by its level at the end: an alert that paged someone as "
+            "critical and stepped down before clearing would otherwise "
+            "close without a word to exactly those people."
+        ),
+    )
     last_raised_at = fields.Datetime(
         string="Last Seen",
         readonly=True,
@@ -141,6 +151,9 @@ class CloudAlert(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        for vals in vals_list:
+            if vals.get("level") == "critical":
+                vals["was_critical"] = True
         records = super().create(vals_list)
         for record in records.filtered(
             lambda r: r.state == "active",
@@ -241,7 +254,8 @@ class CloudAlert(models.Model):
 
         Idempotent: a repeated call updates the message/level of the
         existing alert instead of creating a second one, so a cron that
-        re-evaluates every few minutes does not flood the operator.
+        re-evaluates every few minutes does not flood the operator. The
+        one refresh that notifies again is a warning turning critical.
 
         A *measurement* confirms itself first. The first sightings are
         kept apart as a ``cloud.alert.suspicion`` — not listed, not
@@ -306,7 +320,15 @@ class CloudAlert(models.Model):
         if payload is not None:
             vals["payload"] = payload
         if existing:
+            escalated = existing.level != "critical" and level == "critical"
+            if escalated:
+                vals["was_critical"] = True
             existing.write(vals)
+            if escalated:
+                # Notifications go out when an alert is created. One that
+                # turns critical while open is news to everyone whose
+                # level filtered out its warning, so it goes out again.
+                existing._dispatch_notifications()
             return existing
         if confirm_after is None or confirm_window is None:
             after, window = self.env["cloud.alert.policy"]._for_code(code)
@@ -572,14 +594,21 @@ class CloudAlert(models.Model):
         """Return True when *user* should receive this alert on *channel*.
 
         Encapsulates the notification-level + channel-toggle logic so the
-        email and external paths stay in sync.
+        email and external paths stay in sync. ``failures`` lets through
+        failed jobs and alerts that are, or have been, critical;
+        ``failures_warnings`` and ``all`` let every alert through.
         """
         if user.cloud_notification_level == "none":
             return False
         if channel == "email" and not user.cloud_email_enabled:
             return False
         if user.cloud_notification_level == "failures":
-            if self.code != "job_failed" and self.level != "critical":
+            # The worst the alert was, not its level now: whoever was
+            # paged when it turned critical is told when it is over,
+            # even if it stepped down to a warning before clearing.
+            if self.code != "job_failed" and not (
+                self.level == "critical" or self.was_critical
+            ):
                 return False
         return True
 

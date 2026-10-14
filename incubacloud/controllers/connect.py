@@ -437,7 +437,12 @@ class InstanceConnectController(http.Controller):
             # elsewhere. Correct today by accident in another file is
             # not a property worth keeping on an SSRF sink.
             return {'ok': False, 'error': 'Not available for this account'}
-        valid = {'all', 'failures', 'none'}
+        # The field's own choices, so a level added there is accepted
+        # here without a second list to keep in step.
+        valid = {
+            key for key, _label in
+            request.env['res.users']._fields['cloud_notification_level'].selection
+        }
         if cloud_notification_level not in valid:
             return {'ok': False, 'error': 'Invalid notification level'}
         if cloud_notification_mode not in ('immediate', 'daily_digest'):

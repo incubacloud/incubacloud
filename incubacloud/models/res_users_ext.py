@@ -54,18 +54,23 @@ class ResUsers(models.Model):
     cloud_notification_level = fields.Selection(
         selection=[
             ('all', 'All events (success + failure)'),
+            ('failures_warnings', 'Failures and warnings'),
             ('failures', 'Failures only'),
             ('none', 'None'),
         ],
-        string='Cloud Job Notifications',
+        string='Cloud Notifications',
         default='failures',
+        help='What reaches this user, for jobs and alerts alike. All: '
+             'every job outcome and every alert. Failures and warnings: '
+             'failed jobs, and critical and warning alerts. Failures '
+             'only: failed jobs and critical alerts. None: nothing.',
     )
 
     cloud_email_enabled = fields.Boolean(
         string='Email Notifications Enabled',
         default=True,
-        help='When unchecked, no cloud job emails are sent to this '
-             'user regardless of their notification level. Other '
+        help='When unchecked, no cloud emails are sent to this user '
+             'regardless of their notification level. Other '
              'notification channels are not affected.',
     )
 

@@ -7,13 +7,27 @@ user configures their own channels from the bell menu in the header
 ## What triggers a notification
 
 Job outcomes — a deploy, rebuild, backup or any other operation finishing
-(successfully or not) — and infrastructure alerts (host unreachable, disk
-critical, instance down…). Failed deploys and rebuilds are treated as **severe**
-and always delivered immediately.
+(successfully or not) — and alerts. Alerts come in two levels: **critical**
+(host unreachable, instance down, disk critical…) and **warning** (a container
+of an instance down, errors in an instance's log, a declined subscription
+payment…). Failed deploys and rebuilds are treated as **severe** and always
+delivered immediately.
+
+An open warning that turns critical is announced again, on every channel, to
+everyone whose level covers critical alerts.
 
 ## Your preferences
 
-- **Level** — `All` (every job outcome), `Failures only` (default), or `None`.
+- **Level** — decides both which job outcomes and which alerts reach you:
+
+    | Level | Jobs | Alerts |
+    | --- | --- | --- |
+    | `All` | every outcome | critical and warning |
+    | `Failures and warnings` | failed only | critical and warning |
+    | `Failures only` (default) | failed only | critical only |
+    | `None` | none | none |
+
+    The daily digest follows the same level.
 - **Muted projects** — silence everything from projects you don't care about.
 - Notifications only cover what you can already see: project visibility rules
   apply to every channel.
@@ -29,16 +43,17 @@ header. Real-time — no configuration needed.
 
 Toggle it on and pick a mode:
 
-- **Immediate** — one email per job outcome.
+- **Immediate** — one email per job outcome or alert.
 - **Daily digest** — a single summary email every morning. Severe failures
-  (deploy/rebuild) still arrive immediately.
+  (deploy/rebuild) and critical alerts still arrive immediately.
 
 ### Telegram
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) and paste the bot token.
 2. Send any message to your bot, then click **Detect chat ID** — the platform
    finds your chat automatically.
-3. **Send test** to verify. Done: job outcomes arrive as Telegram messages.
+3. **Send test** to verify. Done: job outcomes and alerts arrive as Telegram
+   messages, following your level.
 
 ### Webhook
 
@@ -89,6 +104,6 @@ body. Verify it with a constant-time comparison before trusting the payload.
 
 ## Backup usage alerts
 
-Separately from job notifications, each backup backend can email a warning when
+Separately from these notifications, each backup backend can email a warning when
 bucket usage crosses a threshold (default 80%). Configure it on the backend
 detail page.
