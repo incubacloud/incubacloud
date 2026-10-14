@@ -532,6 +532,12 @@ msgid "A rollback is already in progress."
 msgstr "Ya hay una reversión en curso."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_metric_rule.py:0
+msgid "A rule must confirm after at least one evaluation."
+msgstr "Una regla debe confirmarse tras al menos una evaluación."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
@@ -821,6 +827,11 @@ msgstr "Historial de alertas"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__payload
 msgid "Alert Payload"
 msgstr "Carga útil de la alerta"
+
+#. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_alert_suspicion
+msgid "Alert Suspicion"
+msgstr "Sospecha de alerta"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1149,6 +1160,11 @@ msgstr "Pide primero una clave de subida."
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Asleep"
 msgstr "Durmiendo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__audience
+msgid "Audience"
+msgstr "Audiencia"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2281,6 +2297,7 @@ msgstr "Etiqueta Cloud"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__code
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__code
 msgid "Code"
@@ -2468,6 +2485,11 @@ msgstr "Configurar manualmente"
 #: code:addons/incubacloud/static/src/utils/use_confirm.js:0
 msgid "Confirm"
 msgstr "Confirmar"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__confirm_cycles
+msgid "Confirm after"
+msgstr "Confirmar tras"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__action_confirm
@@ -3009,6 +3031,7 @@ msgstr "Crea tu primer proyecto para comenzar a gestionar instancias de Odoo."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__create_uid
@@ -3040,6 +3063,7 @@ msgid "Created by"
 msgstr "Creado por"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__create_date
@@ -3759,6 +3783,7 @@ msgstr "Descarta esta alerta para todos los usuarios"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_tracked_mixin__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__display_name
@@ -4092,6 +4117,19 @@ msgstr "Mensaje de error si el procesamiento falló."
 #: model:ir.actions.server,name:incubacloud.cron_cloud_metric_rule_evaluate_ir_actions_server
 msgid "Evaluate metric rules"
 msgstr "Evaluar las reglas de métricas"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__confirm_cycles
+msgid ""
+"Evaluations in a row the threshold must be breached before the alert is "
+"raised. 1 raises on the first sample: right for an expression that already "
+"measures over a window, wrong for an instant reading, where a single spike "
+"would page someone."
+msgstr ""
+"Evaluaciones seguidas en las que debe superarse el umbral antes de levantar "
+"la alerta. 1 la levanta con la primera muestra: correcto para una expresión "
+"que ya mide sobre una ventana, incorrecto para una lectura instantánea, en "
+"la que un único pico avisaría a alguien."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__event_id
@@ -4764,6 +4802,11 @@ msgstr "Primera ejecución."
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 msgid "Fleet metrics collected from your hosts."
 msgstr "Métricas de la flota recogidas de tus hosts."
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__audience__fleet
+msgid "Fleet operator"
+msgstr "Operador de la flota"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__remote_folder
@@ -5460,6 +5503,7 @@ msgstr "Alta"
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__host_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__host_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_whitelist__host_id
@@ -5721,6 +5765,7 @@ msgstr "Racha de fallos HTTP"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_tracked_mixin__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__id
@@ -6074,6 +6119,7 @@ msgstr "Instalados"
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 #: code:addons/incubacloud/static/src/components/monitoring/monitoring.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__instance_id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__instance_id
@@ -6752,6 +6798,11 @@ msgid "Last Seen"
 msgstr "Visto por última vez"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__last_seen_at
+msgid "Last Seen At"
+msgstr "Vista por última vez"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__last_probed
 msgid "Last Specs Probe"
 msgstr "Última verificación"
@@ -6763,6 +6814,7 @@ msgstr "Última actividad en el panel el"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__write_uid
@@ -6795,6 +6847,7 @@ msgstr "Última actualización por"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__write_date
@@ -8397,6 +8450,7 @@ msgstr "La observabilidad no está activada"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__occurrences
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__occurrences
 msgid "Occurrences"
 msgstr "Repeticiones"
 
@@ -8567,6 +8621,11 @@ msgstr "Una fila por bucket de rate-limit."
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_terminal_route_session_id_uniq
 msgid "One row per terminal session."
 msgstr "Una fila por sesión de terminal."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_alert_suspicion_target_uniq
+msgid "One suspicion per alert code and target."
+msgstr "Una sola sospecha por código de alerta y destino."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__block_direct_access
@@ -10971,6 +11030,11 @@ msgid "Service States"
 msgstr "Estado de los servicios"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__audience__provider
+msgid "Service provider"
+msgstr "Proveedor del servicio"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "Service:"
@@ -11139,6 +11203,11 @@ msgstr "Mostrando los primeros"
 #: code:addons/incubacloud/static/src/components/slide_over/slide_over.xml:0
 msgid "Side panel"
 msgstr "Panel lateral"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert_suspicion__occurrences
+msgid "Sightings in a row so far, the last within the window."
+msgstr "Avistamientos seguidos hasta ahora, el último dentro de la ventana."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13574,6 +13643,25 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__whitelist_ids
 msgid "Whitelist"
 msgstr "Lista blanca"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__audience
+msgid ""
+"Who can act on this alert. 'Fleet operator': whoever runs the hosts, "
+"instances and repositories of this panel. 'Service provider': whoever runs a "
+"service this panel depends on but does not own, such as the metrics central "
+"it reads or the key that encrypts its secrets. On a panel that owns "
+"everything both are the same person; on a hosted one, provider alerts are "
+"taken to the provider instead of paging the operator about something they "
+"cannot touch."
+msgstr ""
+"Quién puede actuar ante esta alerta. «Operador de la flota»: quien gestiona "
+"los hosts, instancias y repositorios de este panel. «Proveedor del "
+"servicio»: quien presta un servicio del que este panel depende pero que no "
+"es suyo, como la central de métricas que lee o la clave que cifra sus "
+"secretos. En un panel que lo gestiona todo ambos son la misma persona; en "
+"uno alojado, las alertas de proveedor se llevan al proveedor en lugar de "
+"avisar al operador de algo que no puede tocar."
 
 #. module: incubacloud
 #. odoo-javascript

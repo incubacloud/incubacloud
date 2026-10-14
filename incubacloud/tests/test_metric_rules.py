@@ -7,12 +7,14 @@ The most important test here is the fail-safe: when the backend is
 unreachable nothing may be resolved. Resolving on silence would turn an
 outage of the metrics stack into an all-green panel.
 """
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import psycopg2
 import requests
 
-from odoo.tests.common import TransactionCase
+from odoo import fields
+from odoo.tests.common import TransactionCase, tagged
 from odoo.tools import mute_logger
 
 from odoo.addons.incubacloud.models.cloud_metric_rule import (
@@ -50,8 +52,14 @@ class MetricRuleCase(TransactionCase):
             "user": "root",
             "wildcard_domain": "h1.example.com",
         })
-        # Start from a clean slate: seeded rules would also fire.
+        # Start from a clean slate: seeded rules would also fire, and a
+        # database restored from a real panel may carry an open backend
+        # alert or a half-counted suspicion.
         self.env["cloud.metric.rule"].sudo().search([]).write({"active": False})
+        self.env["cloud.alert"].sudo().search([
+            ("code", "=", BACKEND_UNREACHABLE_CODE), ("state", "=", "active"),
+        ]).write({"state": "dismissed"})
+        self.env["cloud.alert.suspicion"].sudo().search([]).unlink()
         self.rule = self.env["cloud.metric.rule"].sudo().create({
             "name": "Disk",
             "code": "test_disk",
@@ -60,6 +68,9 @@ class MetricRuleCase(TransactionCase):
             "threshold": 90,
             "level": "critical",
             "message": "Disk on %(host)s is %(value)s%% full.",
+            # These tests assert the judgement on one answer; the
+            # confirmation across cycles has tests of its own.
+            "confirm_cycles": 1,
         })
 
     def _alerts(self, code, state="active"):
@@ -74,6 +85,31 @@ class MetricRuleCase(TransactionCase):
         resp.raise_for_status.return_value = None
         with patch(f"{_MODULE}.requests.get", side_effect=exc,
                    return_value=resp) as mocked:
+            self.env["cloud.metric.rule"].sudo()._cron_evaluate()
+        return mocked
+
+    def _run_sequence(self, *answers):
+        """Evaluate the cron against one backend answer per request.
+
+        Each answer is a payload dict, an exception instance, or an
+        HTTP status code (answered as ``raise_for_status`` raising).
+        """
+        responses = []
+        for answer in answers:
+            if isinstance(answer, BaseException):
+                responses.append(answer)
+                continue
+            resp = MagicMock(spec=requests.Response)
+            if isinstance(answer, int):
+                resp.status_code = answer
+                error = requests.HTTPError(f"{answer} error", response=resp)
+                resp.raise_for_status.side_effect = error
+            else:
+                resp.json.return_value = answer
+                resp.raise_for_status.return_value = None
+            responses.append(resp)
+        with patch(f"{_MODULE}.requests.get",
+                   side_effect=responses) as mocked:
             self.env["cloud.metric.rule"].sudo()._cron_evaluate()
         return mocked
 
@@ -262,11 +298,45 @@ class TestRetiredHostsStopAlerting(MetricRuleCase):
 
 
 class TestBackendFailSafe(MetricRuleCase):
-    """The property that matters most: silence is not health."""
+    """The property that matters most: silence is not health.
+
+    The backend alert itself needs two failed evaluations in a row: one
+    slow answer through a CDN is not an outage (2026-10-13, a tenant
+    panel paged its customer over a single 10 s read timeout).
+    """
 
     def test_unreachable_backend_raises_its_own_alert(self):
         self._run_with(exc=requests.ConnectionError("boom"))
+        self._run_with(exc=requests.ConnectionError("boom"))
         self.assertTrue(self._alerts(BACKEND_UNREACHABLE_CODE))
+
+    def test_a_central_someone_else_runs_is_the_providers_problem(self):
+        """No central was ever deployed from this panel: it reads one it
+        does not own, so the outage is for whoever runs it."""
+        self.settings.metrics_central_host_id = False
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self.assertEqual(
+            self._alerts(BACKEND_UNREACHABLE_CODE).audience, "provider",
+        )
+
+    def test_a_central_of_our_own_is_our_problem(self):
+        self.settings.metrics_central_host_id = self.host
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self.assertEqual(
+            self._alerts(BACKEND_UNREACHABLE_CODE).audience, "fleet",
+        )
+
+    def test_one_failed_evaluation_is_not_yet_an_alert(self):
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self.assertFalse(self._alerts(BACKEND_UNREACHABLE_CODE))
+
+    def test_a_success_between_failures_starts_the_count_over(self):
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self._run_with(_promql())
+        self._run_with(exc=requests.ConnectionError("boom"))
+        self.assertFalse(self._alerts(BACKEND_UNREACHABLE_CODE))
 
     def test_unreachable_backend_does_not_resolve_existing_alerts(self):
         """A dead backend must never clear standing alerts."""
@@ -280,6 +350,7 @@ class TestBackendFailSafe(MetricRuleCase):
 
     def test_backend_recovery_clears_the_backend_alert(self):
         self._run_with(exc=requests.ConnectionError("boom"))
+        self._run_with(exc=requests.ConnectionError("boom"))
         self.assertTrue(self._alerts(BACKEND_UNREACHABLE_CODE))
         self._run_with(_promql())
         self.assertFalse(self._alerts(BACKEND_UNREACHABLE_CODE))
@@ -287,7 +358,107 @@ class TestBackendFailSafe(MetricRuleCase):
     def test_promql_error_status_is_treated_as_unreachable(self):
         """A malformed query is a backend problem, not 'all clear'."""
         self._run_with({"status": "error", "error": "parse failure"})
+        self._run_with({"status": "error", "error": "parse failure"})
         self.assertTrue(self._alerts(BACKEND_UNREACHABLE_CODE))
+
+
+class TestQueryRetry(MetricRuleCase):
+    """One transport hiccup is retried once; a refusal is not.
+
+    A fresh connection lands on another CDN edge, which is exactly what
+    cured the 2026-10-13 timeouts on the next cron tick.
+    """
+
+    def _breach(self):
+        """A sample of this test's host over the threshold."""
+        return _promql(({"host_id": str(self.host.id)}, 99.0))
+
+    def test_a_timeout_absorbed_by_the_retry_counts_for_nothing(self):
+        """The rules are evaluated as if the first attempt never happened."""
+        mocked = self._run_sequence(requests.Timeout("slow"), self._breach())
+        self.assertEqual(mocked.call_count, 2)
+        self.assertTrue(self._alerts("test_disk"))
+        self._run_sequence(requests.Timeout("slow"), self._breach())
+        self.assertFalse(self._alerts(BACKEND_UNREACHABLE_CODE))
+
+    def test_a_connection_error_is_retried(self):
+        mocked = self._run_sequence(
+            requests.ConnectionError("reset"), self._breach(),
+        )
+        self.assertEqual(mocked.call_count, 2)
+        self.assertTrue(self._alerts("test_disk"))
+
+    def test_a_server_error_is_retried(self):
+        mocked = self._run_sequence(502, self._breach())
+        self.assertEqual(mocked.call_count, 2)
+        self.assertTrue(self._alerts("test_disk"))
+
+    def test_a_client_error_is_not_retried(self):
+        """401/404 will answer the same twice: retrying only hides it."""
+        mocked = self._run_sequence(401, self._breach())
+        self.assertEqual(mocked.call_count, 1)
+        self.assertFalse(self._alerts("test_disk"))
+
+    def test_a_promql_error_is_not_retried(self):
+        mocked = self._run_sequence(
+            {"status": "error", "error": "parse failure"}, self._breach(),
+        )
+        self.assertEqual(mocked.call_count, 1)
+
+    def test_a_second_failure_in_a_row_is_reported(self):
+        mocked = self._run_sequence(
+            requests.Timeout("slow"), requests.Timeout("slow"),
+        )
+        self.assertEqual(mocked.call_count, 2)
+        self.assertFalse(self._alerts("test_disk"))
+
+
+class TestRuleConfirmation(MetricRuleCase):
+    """A rule confirms a breach across cycles before it alerts."""
+
+    def setUp(self):
+        super().setUp()
+        self.rule.confirm_cycles = 2
+
+    def _breach(self):
+        """A sample of this test's host over the threshold."""
+        return _promql(({"host_id": str(self.host.id)}, 99.0))
+
+    def _clear(self):
+        """A sample of this test's host under the threshold."""
+        return _promql(({"host_id": str(self.host.id)}, 10.0))
+
+    def test_the_default_is_two_cycles(self):
+        rule = self.env["cloud.metric.rule"].sudo().create({
+            "name": "D", "code": "test_default", "expression": "x",
+            "comparator": "gt", "threshold": 1, "message": "%(host)s",
+        })
+        self.assertEqual(rule.confirm_cycles, 2)
+
+    def test_one_breaching_sample_raises_nothing(self):
+        self._run_with(self._breach())
+        self.assertFalse(self._alerts("test_disk"))
+
+    def test_two_breaching_cycles_raise(self):
+        self._run_with(self._breach())
+        self._run_with(self._breach())
+        self.assertTrue(self._alerts("test_disk"))
+
+    def test_a_clear_sample_in_between_starts_over(self):
+        self._run_with(self._breach())
+        self._run_with(self._clear())
+        self._run_with(self._breach())
+        self.assertFalse(self._alerts("test_disk"))
+
+    def test_the_seeded_rules_declare_their_cycles(self):
+        """Windowed expressions confirm on their own; instant ones do not."""
+        ref = self.env.ref
+        self.assertEqual(ref("incubacloud.metric_rule_host_down").confirm_cycles, 1)
+        self.assertEqual(ref("incubacloud.metric_rule_disk_critical").confirm_cycles, 2)
+        self.assertEqual(ref("incubacloud.metric_rule_memory_high").confirm_cycles, 2)
+        self.assertEqual(ref("incubacloud.metric_rule_load_high").confirm_cycles, 2)
+        self.assertEqual(ref("incubacloud.metric_rule_instance_down").confirm_cycles, 2)
+        self.assertEqual(ref("incubacloud.metric_rule_instance_errors").confirm_cycles, 1)
 
 
 class TestAlertApi(TransactionCase):
@@ -340,6 +511,148 @@ class TestAlertApi(TransactionCase):
             ("code", "=", "c"), ("state", "=", "active"),
         ])
         self.assertEqual(remaining.instance_id, inst)
+
+
+# post_install: creating res.users at_install trips over the
+# autopost_bills not-null constraint account adds later.
+@tagged("post_install", "-at_install")
+class TestAlertConfirmation(TransactionCase):
+    """``confirm_after``: a measurement is only an alert once it has been
+    seen enough times in a row. The sightings before that are kept
+    apart from the alerts, so nothing that lists, counts or notifies
+    alerts ever sees a suspicion."""
+
+    def setUp(self):
+        super().setUp()
+        self.Alert = self.env["cloud.alert"].sudo()
+        self.Suspicion = self.env["cloud.alert.suspicion"].sudo()
+        self.host = self.env["cloud.host"].create({
+            "name": "HC", "ip_address": "10.0.0.3", "user": "root",
+            "wildcard_domain": "hc.example.com",
+        })
+
+    def _active(self, code="c"):
+        """Return the active alerts with *code*."""
+        return self.Alert.search([
+            ("code", "=", code), ("state", "=", "active"),
+        ])
+
+    def _suspicions(self, code="c"):
+        """Return the suspicions with *code*."""
+        return self.Suspicion.search([("code", "=", code)])
+
+    def test_the_default_is_the_old_behaviour(self):
+        self.Alert.raise_alert("c", "m", host=self.host)
+        self.assertTrue(self._active())
+        self.assertFalse(self._suspicions())
+
+    def test_the_first_sighting_is_a_suspicion_not_an_alert(self):
+        result = self.Alert.raise_alert(
+            "c", "m", host=self.host, confirm_after=2,
+        )
+        self.assertFalse(result)
+        self.assertFalse(self._active())
+        suspicion = self._suspicions()
+        self.assertEqual(len(suspicion), 1)
+        self.assertEqual(suspicion.occurrences, 1)
+        self.assertEqual(suspicion.host_id, self.host)
+
+    def test_the_nth_sighting_raises_and_clears_the_suspicion(self):
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=3)
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=3)
+        self.assertFalse(self._active())
+        alert = self.Alert.raise_alert(
+            "c", "now", host=self.host, confirm_after=3,
+        )
+        self.assertTrue(alert)
+        self.assertEqual(alert.message, "now")
+        self.assertFalse(self._suspicions())
+
+    def test_a_suspicion_is_notified_only_once_confirmed(self):
+        user = self.env["res.users"].create({
+            "name": "pm", "login": "pm-confirm", "email": "pm@example.com",
+            "group_ids": [
+                (4, self.env.ref("base.group_user").id),
+                (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
+            ],
+            "cloud_notification_level": "all",
+        })
+        Mail = self.env["mail.mail"].sudo()
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=2)
+        self.assertFalse(Mail.search([("email_to", "=", user.email)]))
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=2)
+        self.assertTrue(Mail.search([("email_to", "=", user.email)]))
+
+    def test_resolving_clears_a_pending_suspicion(self):
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=2)
+        self.Alert.resolve_alert("c", host=self.host)
+        self.assertFalse(self._suspicions())
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=2)
+        self.assertFalse(self._active(), "the count did not start over")
+
+    def test_an_old_suspicion_starts_over(self):
+        self.Alert.raise_alert(
+            "c", "m", host=self.host, confirm_after=2, confirm_window=600,
+        )
+        self._suspicions().write({
+            "last_seen_at": fields.Datetime.now() - timedelta(seconds=601),
+        })
+        self.Alert.raise_alert(
+            "c", "m", host=self.host, confirm_after=2, confirm_window=600,
+        )
+        self.assertFalse(self._active())
+        self.assertEqual(self._suspicions().occurrences, 1)
+
+    def test_a_recent_suspicion_counts(self):
+        self.Alert.raise_alert(
+            "c", "m", host=self.host, confirm_after=2, confirm_window=600,
+        )
+        self._suspicions().write({
+            "last_seen_at": fields.Datetime.now() - timedelta(seconds=599),
+        })
+        self.Alert.raise_alert(
+            "c", "m", host=self.host, confirm_after=2, confirm_window=600,
+        )
+        self.assertTrue(self._active())
+
+    def test_a_standing_alert_is_refreshed_without_counting(self):
+        self.Alert.raise_alert("c", "one", host=self.host)
+        alert = self.Alert.raise_alert(
+            "c", "two", host=self.host, confirm_after=2,
+        )
+        self.assertEqual(alert.message, "two")
+        self.assertFalse(self._suspicions())
+
+    def test_targets_are_counted_apart(self):
+        project = self.env["cloud.project"].create({"name": "PC"})
+        inst = self.env["cloud.instance"].create({
+            "name": "ic", "project_id": project.id, "environment": "staging",
+        })
+        self.Alert.raise_alert("c", "h", host=self.host, confirm_after=2)
+        self.Alert.raise_alert("c", "i", instance=inst, confirm_after=2)
+        self.assertFalse(self._active())
+        self.assertEqual(len(self._suspicions()), 2)
+        self.Alert.raise_alert("c", "h", host=self.host, confirm_after=2)
+        self.assertEqual(self._active().host_id, self.host)
+
+    def test_a_global_suspicion_is_counted_too(self):
+        self.Alert.raise_alert("g", "m", confirm_after=2)
+        self.assertFalse(self._active("g"))
+        self.Alert.raise_alert("g", "m", confirm_after=2)
+        self.assertTrue(self._active("g"))
+
+    def test_gc_drops_stale_suspicions(self):
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=2)
+        self._suspicions().write({
+            "last_seen_at": fields.Datetime.now() - timedelta(days=2),
+        })
+        self.Alert._gc()
+        self.assertFalse(self._suspicions())
+
+    def test_gc_keeps_fresh_suspicions(self):
+        self.Alert.raise_alert("c", "m", host=self.host, confirm_after=2)
+        self.Alert._gc()
+        self.assertTrue(self._suspicions())
 
 
 class TestBackendCredential(MetricRuleCase):
@@ -402,6 +715,8 @@ class TestInstanceScopedRules(MetricRuleCase):
             "expression": "irrelevant", "comparator": "gt",
             "threshold": 300.0, "level": "critical",
             "message": "Instance %(host)s is silent (%(value)s s).",
+            # One answer, one judgement; confirmation has its own tests.
+            "confirm_cycles": 1,
         })
 
     def _alerts(self):

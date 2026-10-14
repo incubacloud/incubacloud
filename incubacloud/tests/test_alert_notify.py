@@ -85,6 +85,68 @@ class TestAlertNotifyEmail(TransactionCase):
             domain.append(("email_to", "=", email))
         return self.env["mail.mail"].sudo().search(domain)
 
+    # ── the mail says which panel it comes from ───────────────────
+    # Every tenant panel mails the same support mailbox, and until
+    # 2026-10-13 nothing in the mail said which one was talking: the
+    # subject was identical and the log link was relative.
+
+    def _panel(self, url="https://arn-corp.example.com"):
+        """Give this panel a base URL, as a deployed one has."""
+        self.env["ir.config_parameter"].sudo().set_param("web.base.url", url)
+
+    def test_the_subject_names_the_panel(self):
+        self._panel()
+        user = self._user("subject-user")
+        self._alert(level="critical")
+        mail = self._alert_mails(user.email)
+        self.assertEqual(len(mail), 1)
+        self.assertIn("[IncubaCloud] arn-corp.example.com ·", mail.subject)
+        self.assertIn("Critical alert:", mail.subject)
+
+    def test_the_body_names_the_panel_and_links_absolutely(self):
+        self._panel()
+        user = self._user("body-user")
+        job_type = self.env["cloud.job.type"].search(
+            [("code", "=", "host_metrics")], limit=1,
+        )
+        job = self.env["cloud.job"].sudo().create({
+            "name": "Probe", "host_id": self.host.id,
+            "job_type_id": job_type.id,
+        })
+        self._alert(level="critical", job_id=job.id)
+        mail = self._alert_mails(user.email)
+        self.assertIn("arn-corp.example.com", mail.body_html)
+        self.assertIn(
+            f"https://arn-corp.example.com/cloud/log/{job.id}", mail.body_html,
+        )
+
+    def test_the_resolution_subject_names_the_panel_too(self):
+        self._panel()
+        user = self._user("resolved-user")
+        self._alert(code="disk_critical", level="critical")
+        self.env["cloud.alert"].sudo().resolve_alert(
+            "disk_critical", host=self.host,
+        )
+        mails = self.env["mail.mail"].sudo().search([
+            ("email_to", "=", user.email),
+            ("subject", "like", "%Resolved%"),
+        ])
+        self.assertEqual(len(mails), 1)
+        self.assertIn("[IncubaCloud] arn-corp.example.com ·", mails.subject)
+
+    def test_the_body_escapes_what_the_message_carries(self):
+        """Messages now cross from a customer's panel to the master and
+        carry names the customer chose: markup in them is text, never
+        a live link in an operator's mail."""
+        user = self._user("escape-user")
+        self._alert(
+            level="critical",
+            message='Instance <a href="https://evil.example">Open</a> gone',
+        )
+        mail = self._alert_mails(user.email)
+        self.assertNotIn('<a href="https://evil.example">', mail.body_html)
+        self.assertIn("&lt;a href=", mail.body_html)
+
     # ── failures-only: job_failed special case (C3 fix) ──────────
 
     def test_job_failed_warning_email_to_failures_user(self):
@@ -183,6 +245,94 @@ class TestAlertNotifyEmail(TransactionCase):
         self.assertIn("#13579b", body)
         self.assertIn("/logo.png?company=", body)
         self.assertIn("Test alert disk_critical", body)
+
+
+@tagged("post_install", "-at_install")
+class TestProviderAudience(TestAlertNotifyEmail):
+    """Who an alert is for.
+
+    A ``fleet`` alert is about what this panel's operator runs. A
+    ``provider`` alert is about a service the panel depends on but does
+    not own — the metrics central it reads, the key that encrypts its
+    secrets. On a self-hosted install both are the same person, so the
+    default routing changes nothing; a layer that knows a provider
+    exists overrides ``_route_provider_alert`` and takes the alert
+    there instead of mailing the operator about something they cannot
+    touch.
+    """
+
+    def test_the_default_audience_is_the_fleet(self):
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            "c", "m", host=self.host,
+        )
+        self.assertEqual(alert.audience, "fleet")
+
+    def test_a_producer_can_address_the_provider(self):
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            "c", "m", host=self.host, audience="provider",
+        )
+        self.assertEqual(alert.audience, "provider")
+
+    def test_a_refresh_keeps_the_audience(self):
+        Alert = self.env["cloud.alert"].sudo()
+        Alert.raise_alert("c", "m", host=self.host, audience="provider")
+        alert = Alert.raise_alert("c", "again", host=self.host)
+        self.assertEqual(alert.audience, "provider")
+
+    def test_without_a_provider_the_operator_is_told(self):
+        """Self-hosted: nobody else to tell."""
+        user = self._user("self-hosted")
+        self._alert(level="critical", audience="provider")
+        self.assertEqual(len(self._alert_mails(user.email)), 1)
+
+    def test_a_routed_provider_alert_is_not_mailed_here(self):
+        user = self._user("routed")
+        with patch.object(
+            type(self.env["cloud.alert"]), "_route_provider_alert",
+            return_value=True,
+        ) as route:
+            self._alert(level="critical", audience="provider")
+        route.assert_called_once()
+        self.assertFalse(self._alert_mails(user.email))
+
+    def test_a_routed_provider_alert_is_still_on_the_bus(self):
+        """The panel still shows it; only the paging goes elsewhere."""
+        with patch.object(
+            type(self.env["cloud.alert"]), "_route_provider_alert",
+            return_value=True,
+        ), patch.object(
+            type(self.env["cloud.alert"]), "_broadcast_overview",
+        ) as broadcast:
+            self._alert(level="critical", audience="provider")
+        broadcast.assert_called()
+
+    def test_a_fleet_alert_never_asks_the_provider(self):
+        user = self._user("fleet")
+        with patch.object(
+            type(self.env["cloud.alert"]), "_route_provider_alert",
+            return_value=True,
+        ) as route:
+            self._alert(level="critical")
+        route.assert_not_called()
+        self.assertEqual(len(self._alert_mails(user.email)), 1)
+
+    def test_the_resolution_follows_the_same_route(self):
+        user = self._user("resolved-routed")
+        Alert = self.env["cloud.alert"].sudo()
+        with patch.object(
+            type(self.env["cloud.alert"]), "_route_provider_alert",
+            return_value=True,
+        ) as route:
+            Alert.raise_alert(
+                "disk_critical", "m", level="critical", host=self.host,
+                audience="provider",
+            )
+            Alert.resolve_alert("disk_critical", host=self.host)
+        self.assertEqual(route.call_count, 2)
+        self.assertEqual(route.call_args_list[1].kwargs, {"resolved": True})
+        self.assertFalse(self.env["mail.mail"].sudo().search([
+            ("email_to", "=", user.email),
+        ]))
 
 
 @tagged("post_install", "-at_install")
@@ -449,6 +599,40 @@ class TestAlertNotifyDigest(TransactionCase):
         self.assertEqual(len(mails), 1)
         self.assertIn("1 failed job(s)", mails.subject)
         self.assertNotIn("job_failed", mails.body_html)
+
+    def test_a_provider_alert_is_digested_when_nobody_routes_it(self):
+        """Self-hosted: the operator is the provider, so they read it."""
+        self._user("adg-prov-local")
+        self._qfail("host_probe", "uuid-digest-prov-local")
+        self._alert(
+            code="metrics_backend_unreachable", level="critical",
+            audience="provider", message="Test alert metrics_backend_unreachable",
+        )
+        self.env["res.users"]._cron_send_cloud_digest()
+        mails = self._digest_mails("adg-prov-local")
+        self.assertEqual(len(mails), 1)
+        self.assertIn("Test alert metrics_backend_unreachable", mails.body_html)
+
+    def test_a_routed_provider_alert_stays_out_of_the_digest(self):
+        """What the provider was told about is not the operator's morning
+        reading either."""
+        self._user("adg-prov-routed")
+        self._qfail("host_probe", "uuid-digest-prov-routed")
+        with patch.object(
+            type(self.env["cloud.alert"]), "_provider_alerts_routed",
+            return_value=True,
+        ):
+            self._alert(
+                code="metrics_backend_unreachable", level="critical",
+                audience="provider",
+                message="Test alert metrics_backend_unreachable",
+            )
+            self.env["res.users"]._cron_send_cloud_digest()
+        mails = self._digest_mails("adg-prov-routed")
+        self.assertEqual(len(mails), 1)
+        self.assertNotIn(
+            "Test alert metrics_backend_unreachable", mails.body_html,
+        )
 
     def test_digest_alert_level_filter_for_failures_user(self):
         """M3 fix: 'failures'-only digest users must only see critical

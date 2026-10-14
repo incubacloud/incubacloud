@@ -312,10 +312,10 @@ class TestCloudAlertDedupIndex(TransactionCase):
         """
         self.env.cr.execute(
             "INSERT INTO cloud_alert"
-            " (code, host_id, message, level, state, occurrences,"
+            " (code, host_id, message, level, state, audience, occurrences,"
             "  create_date, write_date, create_uid, write_uid)"
-            " VALUES ('disk_critical', %s, 'winner', 'warning', 'active', 1,"
-            "         now(), now(), 1, 1)",
+            " VALUES ('disk_critical', %s, 'winner', 'warning', 'active',"
+            "         'fleet', 1, now(), now(), 1, 1)",
             (self.host.id,),
         )
         self.env['cloud.alert'].invalidate_model()

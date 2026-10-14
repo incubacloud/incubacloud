@@ -2,10 +2,12 @@ import hashlib
 import hmac
 import json
 import logging
+import urllib.parse
 import urllib.request
 from datetime import timedelta
 
 import psycopg2
+from markupsafe import escape
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
@@ -71,6 +73,19 @@ class CloudAlert(models.Model):
         [("warning", "Warning"), ("critical", "Critical")],
         default="warning",
         required=True,
+    )
+    audience = fields.Selection(
+        [("fleet", "Fleet operator"), ("provider", "Service provider")],
+        default="fleet",
+        required=True,
+        help="Who can act on this alert. 'Fleet operator': whoever runs "
+             "the hosts, instances and repositories of this panel. "
+             "'Service provider': whoever runs a service this panel "
+             "depends on but does not own, such as the metrics central "
+             "it reads or the key that encrypts its secrets. On a panel "
+             "that owns everything both are the same person; on a hosted "
+             "one, provider alerts are taken to the provider instead of "
+             "paging the operator about something they cannot touch.",
     )
     state = fields.Selection(
         [("active", "Active"), ("dismissed", "Dismissed")],
@@ -218,12 +233,25 @@ class CloudAlert(models.Model):
 
     @api.model
     def raise_alert(self, code, message, level="warning",
-                    host=None, instance=None, job=None, payload=None):
+                    host=None, instance=None, job=None, payload=None,
+                    confirm_after=1, confirm_window=900, audience="fleet"):
         """Create or refresh the active alert for (code, target).
 
         Idempotent: a repeated call updates the message/level of the
         existing alert instead of creating a second one, so a cron that
         re-evaluates every few minutes does not flood the operator.
+
+        A *measurement* confirms itself first. With ``confirm_after``
+        above 1 the first sightings are kept apart as a
+        ``cloud.alert.suspicion`` — not listed, not counted, not
+        notified — and the alert only exists once the condition has been
+        seen that many times in a row, each sighting within
+        ``confirm_window`` seconds of the last. An *event* (a job that
+        failed, a key that changed) passes nothing: one occurrence is the
+        truth. This is the one place the rule "never on the first sample"
+        is enforced, so a producer does not have to carry a streak
+        counter of its own — on 2026-10-13 a single 10 s read timeout
+        through a CDN paged a customer as a critical outage.
 
         The insert runs inside a savepoint because the search above
         cannot see a row another transaction has just written (Odoo
@@ -241,8 +269,15 @@ class CloudAlert(models.Model):
         :param instance: ``cloud.instance`` this alert is about, if any
         :param job: ``cloud.job`` that produced it, if any
         :param payload: structured detail stored on ``payload``, if any
+        :param int confirm_after: sightings in a row before the alert
+            exists; 1 (the default) raises on the spot
+        :param int confirm_window: seconds a sighting stays fresh; an
+            older one starts the count over
+        :param str audience: ``fleet`` (default) or ``provider``; see the
+            field. Set on creation, kept on a refresh.
         :returns: the active ``cloud.alert`` record, or an empty
-            recordset when a concurrent producer filed it first
+            recordset when a concurrent producer filed it first or the
+            sighting is still a suspicion
         """
         # An alert is the platform noticing something, never a user
         # action — but it is raised from wherever the failure happened,
@@ -267,12 +302,17 @@ class CloudAlert(models.Model):
         if existing:
             existing.write(vals)
             return existing
+        if confirm_after > 1 and not self.env["cloud.alert.suspicion"]._sight(
+            code, host, instance, confirm_after, confirm_window,
+        ):
+            return self.browse()
         try:
             with self.env.cr.savepoint():
                 return self.create({
                     "code": code,
                     "host_id": host.id if host else False,
                     "instance_id": instance.id if instance else False,
+                    "audience": audience,
                     **vals,
                 })
         except psycopg2.errors.UniqueViolation:
@@ -297,6 +337,9 @@ class CloudAlert(models.Model):
         # the platform closing its own incident, so ``write_uid`` must
         # not name whoever's request happened to clear the condition.
         self = as_platform(self)
+        # A clear reading also ends a suspicion that never became an
+        # alert: the next sighting starts counting from one again.
+        self.env["cloud.alert.suspicion"]._forget(code, host, instance)
         active = self.search(
             self._dedup_domain(code, host=host, instance=instance),
         )
@@ -344,6 +387,10 @@ class CloudAlert(models.Model):
         nothing of what the email had said.
         """
         self.ensure_one()
+        if self.audience == "provider" and self._route_provider_alert(
+            resolved=True,
+        ):
+            return
         self._notify_alert_external(resolved=True)
         self._notify_alert_email(resolved=True)
 
@@ -355,12 +402,48 @@ class CloudAlert(models.Model):
         that creates a ``cloud.alert`` gets full-channel delivery
         without needing to know which transports exist.
 
-        Critical alerts always bypass digest-mode gating.
+        Critical alerts always bypass digest-mode gating. A provider
+        alert the panel's provider layer takes elsewhere (see
+        :meth:`_route_provider_alert`) is still broadcast — the panel
+        shows it — but pages nobody here.
         """
         critical = self.level == "critical"
         self._broadcast_overview(critical=self if critical else self.browse())
+        if self.audience == "provider" and self._route_provider_alert():
+            return
         self._notify_alert_external()
         self._notify_alert_email()
+
+    def _route_provider_alert(self, resolved=False):
+        """Take a provider alert to the provider; return whether it went.
+
+        Core knows nobody but this panel's operator, so by default
+        nothing goes anywhere and the operator is notified as usual:
+        on a self-hosted install they *are* the provider. A layer that
+        has one (the tenant module, whose panel is hosted by
+        IncubaCloud) overrides this to hand the alert over and returns
+        True, which keeps it out of the operator's inbox and channels.
+
+        :param bool resolved: the alert just closed on its own, rather
+            than opened
+        :returns: True when the provider was told and local
+            notifications must be skipped
+        """
+        self.ensure_one()
+        return False
+
+    @api.model
+    def _provider_alerts_routed(self):
+        """Whether provider alerts leave this panel for a provider.
+
+        The model-level twin of :meth:`_route_provider_alert`, for the
+        readers that select alerts in bulk rather than notify one — the
+        daily digest must not list in the morning what the provider was
+        told about the night before. Core has no provider: False.
+
+        :returns: True when a provider layer takes provider alerts
+        """
+        return False
 
     def write(self, vals):
         # The alerts this write closes, to stamp how and when. A close
@@ -413,6 +496,7 @@ class CloudAlert(models.Model):
                 ("write_date", "<", cutoff),
             ]
         ).unlink()
+        self.env["cloud.alert.suspicion"].sudo()._gc()
 
     def _broadcast_overview(self, critical=None):
         """Notify every active internal user that the alert overview may
@@ -540,9 +624,13 @@ class CloudAlert(models.Model):
             if not email:
                 continue
             level_label = self.level.capitalize()
+            # Every panel of a fleet mails the same operator mailbox,
+            # so the subject says which one is talking.
+            panel = self._panel_host()
+            tag = f"[IncubaCloud] {panel} ·" if panel else "[IncubaCloud]"
             subject = (
-                f"[IncubaCloud] Resolved: {self.message}" if resolved
-                else f"[IncubaCloud] {level_label} alert: {self.message}"
+                f"{tag} Resolved: {self.message}" if resolved
+                else f"{tag} {level_label} alert: {self.message}"
             )
             body = wrap_in_mail_layout(
                 self.env, self._build_alert_email_body(resolved=resolved),
@@ -729,37 +817,50 @@ class CloudAlert(models.Model):
         :param bool resolved: render the resolution's email, which also
             names the job whose success closed the alert, if any.
         """
+        # Everything interpolated is text, never markup: the message and
+        # the names come from wherever the alert was raised — since the
+        # provider relay, from a customer's panel — and a link forged
+        # into an instance name must not be live in an operator's mail.
+        message = escape(self.message)
         instance_line = (
-            f"<tr><td><b>Instance</b></td><td>{self.instance_id.name}</td></tr>"
+            f"<tr><td><b>Instance</b></td><td>{escape(self.instance_id.name)}</td></tr>"
             if self.instance_id
             else ""
         )
         host_line = (
-            f"<tr><td><b>Host</b></td><td>{self.host_id.name}</td></tr>"
+            f"<tr><td><b>Host</b></td><td>{escape(self.host_id.name)}</td></tr>"
             if self.host_id
             else ""
         )
         job_line = (
-            f"<tr><td><b>Job</b></td><td>{self.job_id.name}</td></tr>"
+            f"<tr><td><b>Job</b></td><td>{escape(self.job_id.name)}</td></tr>"
             if self.job_id
             else ""
         )
-        log_url = f"/cloud/log/{self.job_id.id}" if self.job_id else ""
+        panel = escape(self._panel_host())
+        panel_line = (
+            f"<tr><td><b>Panel</b></td><td>{panel}</td></tr>" if panel else ""
+        )
+        # Absolute, like the Telegram and webhook links: a relative
+        # path opens nothing from a mail client.
+        base_url = self._base_url()
+        log_url = f"{base_url}/cloud/log/{self.job_id.id}" if self.job_id else ""
         level_label = self.level.capitalize()
         resolving = self.resolved_by_job_id if resolved else self.resolved_by_job_id.browse()
         resolving_line = (
             f"<tr><td><b>Resolved by</b></td><td>"
-            f"<a href='/cloud/log/{resolving.id}'>{resolving.name}</a></td></tr>"
+            f"<a href='{base_url}/cloud/log/{resolving.id}'>{escape(resolving.name)}</a></td></tr>"
             if resolving
             else ""
         )
         headline = (
-            f"<p><b>Resolved:</b> {self.message}</p>" if resolved
-            else f"<p><b>{level_label} alert:</b> {self.message}</p>"
+            f"<p><b>Resolved:</b> {message}</p>" if resolved
+            else f"<p><b>{level_label} alert:</b> {message}</p>"
         )
         return (
             headline
             + f"<table>"
+            f"{panel_line}"
             f"{instance_line}"
             f"{host_line}"
             f"{job_line}"
@@ -767,3 +868,118 @@ class CloudAlert(models.Model):
             f"</table>"
             + (f"<p><a href='{log_url}'>View logs</a></p>" if log_url else "")
         )
+
+    @api.model
+    def _base_url(self):
+        """Return this panel's ``web.base.url`` without a trailing slash."""
+        return (
+            self.env["ir.config_parameter"].sudo()
+            .get_param("web.base.url", "") or ""
+        ).rstrip("/")
+
+    @api.model
+    def _panel_host(self):
+        """Return the host name of this panel, or '' when unknown.
+
+        It is what tells one panel's mail from another's in a mailbox
+        that receives them all, so it is the host of ``web.base.url``
+        rather than a company name every panel shares.
+        """
+        return urllib.parse.urlsplit(self._base_url()).netloc
+
+
+class CloudAlertSuspicion(models.Model):
+    """A condition seen, but not yet often enough to be an alert.
+
+    One row per (code, target), bumped by ``cloud.alert.raise_alert``
+    on each sighting and dropped the moment the alert is raised or the
+    condition clears. It is deliberately not a ``cloud.alert`` in a
+    special state: nothing that lists, counts, notifies or garbage-
+    collects alerts has to know suspicions exist.
+    """
+
+    _name = "cloud.alert.suspicion"
+    _description = "Alert Suspicion"
+
+    code = fields.Char(required=True, index=True)
+    host_id = fields.Many2one("cloud.host", ondelete="cascade")
+    instance_id = fields.Many2one("cloud.instance", ondelete="cascade")
+    occurrences = fields.Integer(
+        default=1,
+        help="Sightings in a row so far, the last within the window.",
+    )
+    last_seen_at = fields.Datetime(required=True)
+
+    # Same key as ``cloud_alert_active_target_uidx`` and for the same
+    # reason: two producers under snapshot isolation cannot see each
+    # other's row, so only the database can keep one count per target.
+    _target_uniq = models.UniqueIndex(
+        "(code, COALESCE(host_id, 0), COALESCE(instance_id, 0))",
+        "One suspicion per alert code and target.",
+    )
+
+    #: Sightings older than this are not worth keeping: no window a
+    #: producer uses comes close, and a condition that stops being seen
+    #: has nothing to confirm.
+    _STALE_AFTER = timedelta(days=1)
+
+    @staticmethod
+    def _target_domain(code, host, instance):
+        """Return the domain identifying the suspicion for (code, target)."""
+        return [
+            ("code", "=", code),
+            ("host_id", "=", host.id if host else False),
+            ("instance_id", "=", instance.id if instance else False),
+        ]
+
+    @api.model
+    def _sight(self, code, host, instance, confirm_after, window):
+        """Record one sighting; return True when it is the confirming one.
+
+        The confirming sighting also removes the row, so the alert that
+        follows it starts from a clean count. A sighting older than
+        *window* seconds is forgotten and the count starts over at one.
+
+        :param str code: alert code being confirmed
+        :param host: ``cloud.host`` target, if any
+        :param instance: ``cloud.instance`` target, if any
+        :param int confirm_after: sightings in a row that confirm
+        :param int window: seconds a previous sighting stays fresh
+        :returns: whether the caller should now raise the alert
+        """
+        self = self.sudo()
+        now = fields.Datetime.now()
+        row = self.search(self._target_domain(code, host, instance), limit=1)
+        if row:
+            fresh = (now - row.last_seen_at).total_seconds() <= window
+            count = row.occurrences + 1 if fresh else 1
+            if count >= confirm_after:
+                row.unlink()
+                return True
+            row.write({"occurrences": count, "last_seen_at": now})
+            return False
+        try:
+            with self.env.cr.savepoint():
+                self.create({
+                    "code": code,
+                    "host_id": host.id if host else False,
+                    "instance_id": instance.id if instance else False,
+                    "occurrences": 1,
+                    "last_seen_at": now,
+                })
+        except psycopg2.errors.UniqueViolation:
+            # A concurrent producer filed the first sighting; this one
+            # is the same sighting, not a second one.
+            pass
+        return False
+
+    @api.model
+    def _forget(self, code, host, instance):
+        """Drop the suspicion for (code, target), if any."""
+        self.sudo().search(self._target_domain(code, host, instance)).unlink()
+
+    @api.model
+    def _gc(self):
+        """Drop suspicions nobody has refreshed for a day."""
+        cutoff = fields.Datetime.now() - self._STALE_AFTER
+        self.sudo().search([("last_seen_at", "<", cutoff)]).unlink()

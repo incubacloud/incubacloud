@@ -197,6 +197,9 @@ class DockerPruneExecutor(AnsibleExecutor):
                     level="critical",
                     host=host,
                     job=alert_env["cloud.job"].browse(self.job.id),
+                    # The protect label is the platform's to get
+                    # right; the operator only sees the damage.
+                    audience="provider",
                 )
                 self._sys(f"✗ Managed container(s) missing after prune: {shown}")
             else:
@@ -245,6 +248,9 @@ class DockerPruneExecutor(AnsibleExecutor):
                     level="critical",
                     host=host,
                     job=alert_env["cloud.job"].browse(self.job.id),
+                    # The protect label is the platform's to get
+                    # right; the operator only sees the damage.
+                    audience="provider",
                 )
                 self._sys(f"✗ Managed network(s) missing after prune: {shown}")
             else:

@@ -73,6 +73,9 @@ def unreadable_alert_vals(record, field_name):
     vals = {
         'code': f"{ALERT_CODE_UNREADABLE}:{record._name}.{field_name}",
         'level': 'critical',
+        # The key is the platform's: on a hosted panel its operator
+        # can do nothing about it.
+        'audience': 'provider',
         'message': (
             f"Cannot decrypt {record._name}.{field_name} (id={record.id}). "
             f"The ciphertext was written with a key that is no longer in "
