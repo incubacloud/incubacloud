@@ -123,6 +123,33 @@ class TestExternalNotifyGates(TransactionCase):
         mock_open.assert_called()
 
     @patch("odoo.addons.incubacloud.models.cloud_job.safe_urlopen")
+    def test_failures_and_warnings_hears_only_failed_jobs(self, mock_open):
+        """'failures_warnings' differs from 'failures' in alerts only: a
+        job that finished well stays as quiet as it is for 'failures'."""
+        sub = self._subscriber()
+        sub.write({"cloud_notification_level": "failures_warnings"})
+        Job = self.env["cloud.job"].with_context(test_external_notify=True)
+        job = self._job()
+        Job._notify_external(job, "done")
+        mock_open.assert_not_called()
+        Job._notify_external(job, "failed")
+        mock_open.assert_called()
+
+    def test_failures_and_warnings_gets_no_email_for_a_finished_job(self):
+        """Same rule on the email path: only 'all' hears of a done job."""
+        sub = self._subscriber()
+        sub.write({"cloud_notification_level": "failures_warnings"})
+        Mail = self.env["mail.mail"].sudo()
+        domain = [("email_to", "=", "ext@example.com")]
+        job = self._job()
+        self.assertFalse(Mail.search(domain))
+        self.env["cloud.job"]._notify_by_email(job, "done")
+        self.assertFalse(Mail.search(domain))
+        sub.write({"cloud_notification_level": "all"})
+        self.env["cloud.job"]._notify_by_email(job, "done")
+        self.assertEqual(len(Mail.search(domain)), 1)
+
+    @patch("odoo.addons.incubacloud.models.cloud_job.safe_urlopen")
     def test_muted_project_skipped(self, mock_open):
         """A user who muted the job's project gets no push."""
         sub = self._subscriber()

@@ -1870,7 +1870,9 @@ class CloudJob(models.Model):
                 lambda u: u.cloud_notification_mode != "daily_digest",
             )
         for user in users:
-            if user.cloud_notification_level == "failures" and state != "failed":
+            # Only ``all`` hears about jobs that did not fail; the
+            # failure levels differ in alerts, not in jobs.
+            if user.cloud_notification_level != "all" and state != "failed":
                 continue
             email = user.partner_id.email
             if not email:
@@ -1976,7 +1978,9 @@ class CloudJob(models.Model):
                 lambda u: u.cloud_notification_mode != "daily_digest",
             )
         for user in users:
-            if user.cloud_notification_level == "failures" and state != "failed":
+            # Only ``all`` hears about jobs that did not fail; the
+            # failure levels differ in alerts, not in jobs.
+            if user.cloud_notification_level != "all" and state != "failed":
                 continue
             if user.cloud_telegram_bot_token and user.cloud_telegram_chat_id:
                 try:

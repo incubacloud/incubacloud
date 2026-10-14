@@ -304,3 +304,16 @@ class TestPreferencesRoute(HttpCase):
             )
         self.assertTrue(result.get('ok'), result)
         self.assertEqual(user.cloud_webhook_url, 'https://hooks.example.com/x')
+
+    def test_the_failures_and_warnings_level_can_be_saved(self):
+        """The route keeps its own list of levels; a level the selector
+        offers but the route refuses would fail on every save."""
+        user = self._make_user('level-fw', ['base.group_user'])
+        self.authenticate('level-fw', 'level-fw')
+        self.assertEqual(user.cloud_notification_level, 'failures')
+        result = self._save(cloud_notification_level='failures_warnings')
+        self.assertTrue(result.get('ok'), result)
+        user.invalidate_recordset(['cloud_notification_level'])
+        self.assertEqual(user.cloud_notification_level, 'failures_warnings')
+        result = self._save(cloud_notification_level='warnings')
+        self.assertFalse(result.get('ok'))

@@ -207,6 +207,87 @@ class TestAlertNotifyEmail(TransactionCase):
             before,
         )
 
+    # ── failures-and-warnings user ────────────────────────────────
+
+    def test_failures_and_warnings_user_gets_warning_and_critical(self):
+        """The level between 'all' and 'failures': every alert, warning
+        included — the one thing 'failures' leaves out."""
+        self._user("ane-fw", cloud_notification_level="failures_warnings")
+        self.assertFalse(self._alert_mails("ane-fw@example.com"))
+        self._alert(code="pip_conflict", level="warning")
+        self.assertEqual(len(self._alert_mails("ane-fw@example.com")), 1)
+        self._alert(code="disk_critical", level="critical")
+        self.assertEqual(len(self._alert_mails("ane-fw@example.com")), 2)
+
+    # ── escalation of an open alert ───────────────────────────────
+
+    def test_only_a_warning_turning_critical_is_emailed_again(self):
+        """Notifications go out when an alert is created, so a warning
+        that turned critical while open used to reach nobody whose level
+        had filtered out the warning. Refreshing at the same level, or
+        stepping down, still stays quiet."""
+        self._user("ane-esc", cloud_notification_level="failures")
+        self._user("ane-esc-all", cloud_notification_level="all")
+        Alert = self.env["cloud.alert"]
+
+        def raise_(level):
+            Alert.raise_alert("disk_filling", "Disk filling", level=level, host=self.host)
+
+        def counts():
+            return (
+                len(self._alert_mails("ane-esc@example.com")),
+                len(self._alert_mails("ane-esc-all@example.com")),
+            )
+
+        raise_("warning")
+        self.assertEqual(counts(), (0, 1))
+        raise_("warning")
+        self.assertEqual(counts(), (0, 1))
+        raise_("critical")
+        self.assertEqual(counts(), (1, 2))
+        raise_("critical")
+        self.assertEqual(counts(), (1, 2))
+        raise_("warning")
+        self.assertEqual(counts(), (1, 2))
+        self.assertEqual(
+            Alert.search_count([("code", "=", "disk_filling"), ("state", "=", "active")]),
+            1,
+        )
+
+    def test_whoever_was_paged_as_critical_is_told_it_is_over(self):
+        """An alert that stepped back down to a warning before clearing
+        used to close without a word to the people its critical turn had
+        paged: the resolution was filtered by the level at the end."""
+        self._user("ane-paged", cloud_notification_level="failures")
+        Alert = self.env["cloud.alert"]
+
+        def raise_(level):
+            Alert.raise_alert("disk_filling", "Disk filling", level=level, host=self.host)
+
+        def resolved():
+            return self.env["mail.mail"].sudo().search_count([
+                ("subject", "like", "[IncubaCloud]%Resolved%"),
+                ("email_to", "=", "ane-paged@example.com"),
+            ])
+
+        raise_("warning")
+        raise_("critical")
+        self.assertEqual(len(self._alert_mails("ane-paged@example.com")), 1)
+        raise_("warning")
+        self.assertEqual(resolved(), 0)
+        Alert.resolve_alert("disk_filling", host=self.host)
+        self.assertEqual(resolved(), 1)
+
+    def test_a_warning_that_never_turned_critical_closes_quietly_for_them(self):
+        self._user("ane-quiet", cloud_notification_level="failures")
+        Alert = self.env["cloud.alert"]
+        Alert.raise_alert("disk_filling", "Disk filling", level="warning", host=self.host)
+        Alert.resolve_alert("disk_filling", host=self.host)
+        self.assertEqual(self.env["mail.mail"].sudo().search_count([
+            ("subject", "like", "[IncubaCloud]%"),
+            ("email_to", "=", "ane-quiet@example.com"),
+        ]), 0)
+
     # ── cloud_email_enabled toggle (C1 fix) ───────────────────────
 
     def test_email_disabled_blocks_alert_email(self):
@@ -643,6 +724,20 @@ class TestAlertNotifyDigest(TransactionCase):
         before = len(self._digest_mails("adg-m3"))
         self.env["res.users"]._cron_send_cloud_digest()
         self.assertEqual(len(self._digest_mails("adg-m3")), before)
+
+    def test_digest_lists_warnings_for_failures_and_warnings_user(self):
+        """The digest follows the level: a warning left out for
+        'failures' is listed for 'failures_warnings'."""
+        self._user("adg-fw", cloud_notification_level="failures_warnings")
+        self._alert(
+            code="pip_conflict", level="warning",
+            message="Digest warning for adg-fw",
+        )
+        self.assertFalse(self._digest_mails("adg-fw"))
+        self.env["res.users"]._cron_send_cloud_digest()
+        mails = self._digest_mails("adg-fw")
+        self.assertEqual(len(mails), 1)
+        self.assertIn("Digest warning for adg-fw", mails.body_html)
 
     def test_digest_respects_email_enabled(self):
         """C2 fix: cloud_email_enabled=False must suppress the digest

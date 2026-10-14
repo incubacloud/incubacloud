@@ -108,6 +108,24 @@ export class AppHeader extends Component {
         return !!this.state.webhookUrl;
     }
 
+    /**
+     * Options of the "What to receive" selector, from most to least.
+     * Built here rather than inline in the template so the labels go
+     * through _t(): strings inside a template expression are never
+     * translated.
+     */
+    get notifLevelOptions() {
+        return [
+            { value: "all", label: _t("All (every job outcome and every alert)") },
+            {
+                value: "failures_warnings",
+                label: _t("Failures and warnings (failed jobs and every alert)"),
+            },
+            { value: "failures", label: _t("Failures only (failed jobs and critical alerts)") },
+            { value: "none", label: _t("None") },
+        ];
+    }
+
     // ── UI helpers ───────────────────────────────────────────────────────
 
     onGlobalSearch(ev) {

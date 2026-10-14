@@ -6,6 +6,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.182] — 2026-10-14
+
+### Added
+
+- **A notification level for failures and warnings.** The level was one
+  setting for jobs and alerts alike, and "Failures only", the default,
+  let through critical alerts and nothing else: a warning reached no
+  email, Telegram, webhook or digest, only the panel, and most close on
+  their own before anyone opens it. Production raised them unseen — a
+  declined subscription payment, an instance's database container down,
+  disabled crons, a failed backup archive. The new level, between "All"
+  and "Failures only", sends failed jobs and every alert, critical and
+  warning, and the daily digest follows it. Existing users keep their
+  level and "Failures only" stays the default. The selector names what
+  each level covers, and its labels are now translated: they sat inside
+  a template expression, where no string is.
+
+### Fixed
+
+- **A warning that turns critical while open is announced again.**
+  Notifications went out when an alert was created, so an open warning
+  refreshed as critical — a paying tenant joining the queue for a host,
+  or a metric rule raised to critical — reached nobody whose level had
+  filtered out the warning. Refreshing at the same level, or stepping
+  down, still sends nothing.
+- **A resolution notice reaches whoever was paged.** An alert that turned
+  critical, stepped back to a warning and then cleared closed without a
+  word to the people whose level had been reached by its critical turn.
+  The alert remembers it was critical, and its closure goes to them.
+- **The notification texts no longer speak only of jobs.** The field,
+  the email and webhook help in the notifications dialog and the user
+  guide said "job notifications" for a setting that also decides which
+  alerts arrive.
+
 ## [1.0.181] — 2026-10-14
 
 ### Added

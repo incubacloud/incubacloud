@@ -196,11 +196,7 @@
                             <label>What to receive</label>
                             <RlSelect value="state.notifLevel"
                                       ariaLabel="'What to receive'"
-                                      options="[
-                                          { value: 'all',      label: 'All events (success + failure)' },
-                                          { value: 'failures', label: 'Failures only' },
-                                          { value: 'none',     label: 'None' },
-                                      ]"
+                                      options="notifLevelOptions"
                                       onChange="(value) => { state.notifLevel = value; }"/>
                         </div>
                         <div class="ic-form-row" t-if="state.notifLevel !== 'none'">
@@ -247,7 +243,7 @@
                     </div>
                     <div class="ic-notif-card-body" t-if="state.expandedSection === 'email'">
                         <p class="ic-notif-help">
-                            When enabled, cloud job notifications are sent to
+                            When enabled, notifications are sent to
                             <strong t-esc="env.userInfo?.email or 'your configured email'"/>
                             based on your general settings above.
                         </p>
@@ -334,7 +330,8 @@
                     <div class="ic-notif-card-body" t-if="state.expandedSection === 'webhook'">
                         <p class="ic-notif-help">
                             Receive POST notifications on your own HTTPS endpoint
-                            when jobs change state. When a signing secret is set,
+                            when jobs change state and when alerts are raised or
+                            resolved. When a signing secret is set,
                             payloads include an <code>X-IncubaCloud-Signature:
                             sha256=&lt;hex&gt;</code> header for your endpoint to
                             verify with HMAC-SHA256.
