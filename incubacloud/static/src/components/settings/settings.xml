@@ -628,6 +628,17 @@
                                    t-on-change="(ev) => this.onIntInput('metrics_retention_days', ev)"/>
                         </div>
 
+                        <div class="rl-ftoggle">
+                            <div>
+                                <div class="rl-tl-label">Send hosts' security logs</div>
+                                <div class="rl-th">SSH, sudo, auditd and fail2ban, kept 90 days in the central. A host can add lines there but never delete them. Applies when the agents are next installed.</div>
+                            </div>
+                            <button type="button"
+                                    t-att-class="'rl-sw' + (state.form.metrics_ship_security_logs ? ' on' : '')"
+                                    t-on-click="() => this.state.form.metrics_ship_security_logs = !this.state.form.metrics_ship_security_logs"
+                                    aria-label="Toggle sending hosts' security logs"/>
+                        </div>
+
                         <div class="rl-frow">
                             <label for="ic-grafana-url">Grafana base URL</label>
                             <input id="ic-grafana-url" type="text"

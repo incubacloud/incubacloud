@@ -150,6 +150,9 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             "ic_host_name": host.name or "",
             "ic_remote_write_url": settings.metrics_remote_write_url or "",
             "ic_logs_write_url": self._logs_write_url(settings),
+            # SSH, sudo, auditd and fail2ban, besides the access log. Only
+            # where the panel says so: the hosts have to be its own.
+            "ic_ship_security_logs": bool(settings.metrics_ship_security_logs),
             # User half of the credential. It is also the label the
             # central forces on everything this agent writes, so the copy
             # the agent sends is only a hint — the gateway overwrites it

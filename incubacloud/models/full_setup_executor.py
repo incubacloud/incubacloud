@@ -154,10 +154,14 @@ class FullSetupExecutor(
             f"{_TMP}-traefik.yml":       host._shipped_traefik_yml(),
             f"{_TMP}-config.yml":        host._shipped_config_yml(),
             f"{_TMP}-tls.yml":           host._shipped_tls_default_yml(),
+            f"{_TMP}-client-auth.yml":   host._shipped_tls_client_auth_yml(),
         }
         if cert and key:
             files[f"{_TMP}-default.crt"] = cert
             files[f"{_TMP}-default.key"] = key
+        client_ca = host._effective_cdn_client_ca()
+        if client_ca:
+            files[f"{_TMP}-cdn-ca.pem"] = client_ca
         pruned = await self._prepare_acme_prune(transport)
         if pruned:
             files[acme_store.LOCAL_PATH] = pruned
@@ -197,6 +201,15 @@ class FullSetupExecutor(
                 f" && mv {_TMP}-config.yml ~/traefik/config.yml",
             ),
             (
+                # The file provider reads one directory, and config.yml
+                # has to be in it: the middlewares every entrypoint names
+                # are defined there, and a proxy that starts without them
+                # answers nothing.
+                "Copy config.yml to dynamic directory",
+                "mkdir -p ~/traefik/dynamic"
+                " && cp ~/traefik/config.yml ~/traefik/dynamic/config.yml",
+            ),
+            (
                 # Same interlock as the proxy-settings push: a host with
                 # its own certificate serves it as the default, one
                 # without has the document removed rather than left
@@ -211,6 +224,27 @@ class FullSetupExecutor(
                 " else rm -f ~/traefik/dynamic/tls-default.yml"
                 " ~/traefik/certs/default.crt ~/traefik/certs/default.key;"
                 f" rm -f {_TMP}-tls.yml; fi",
+            ),
+            (
+                # Same shape as the default certificate: a host given an
+                # authority requires the CDN's client certificate; one
+                # without has the document removed, so nothing asks a
+                # visitor for a certificate it does not have.
+                "Require the CDN client certificate",
+                f"if [ -s {_TMP}-cdn-ca.pem ]; then"
+                f" mv {_TMP}-cdn-ca.pem ~/traefik/certs/cdn-client-ca.pem"
+                f" && mv {_TMP}-client-auth.yml"
+                " ~/traefik/dynamic/tls-client-auth.yml;"
+                " else rm -f ~/traefik/dynamic/tls-client-auth.yml"
+                " ~/traefik/certs/cdn-client-ca.pem;"
+                f" rm -f {_TMP}-client-auth.yml; fi",
+            ),
+            (
+                # Before the proxy starts: it writes its access log into
+                # this directory through a bind mount, and the rotation
+                # (30 days) is what keeps that file from filling the disk.
+                "Prepare the proxy access log",
+                self.run_script("proxy_access_log.sh", ["install"]),
             ),
             (
                 "Start Traefik",

@@ -50,6 +50,16 @@ Then verify, at minimum:
   dropped upstream — the executor must be adapted first);
 - domains and redirects appear in the Traefik labels of `prod.yaml`;
 - the backup service carries the rendered `DST`.
+- the Odoo routers still follow the scheme the login routers copy
+  (`DeployInstanceExecutor._login_router_labels`): names
+  `<project>-<version>-<prod|test>-<suffix>-<index>`, a `-secure` twin
+  with the TLS labels, service `<key>-main`, the `/web` router at
+  priority 10 with the `buffering`, `compress` and `forbid-crawlers`
+  middlewares (plus `addSTS`/`forceSecure` when TLS is on, `whitelist`
+  with a CIDR list). If the template changes any of it, adapt the login
+  routers in the same release: a mismatch does not break the site —
+  Traefik drops the login router and the login falls back to the
+  template's own — but the login limit is lost until then.
 
 ## 3. Canary on staging
 

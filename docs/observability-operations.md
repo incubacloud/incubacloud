@@ -153,6 +153,24 @@ Retention is set from Settings and applied on the next central deploy.
 Shortening it does not delete existing data immediately — VictoriaMetrics
 drops it as it ages out.
 
+Logs have two retentions in Loki, both applied on the next central
+deploy: **30 days** for the proxies' access logs (not longer, because the
+lines carry the instances' visitors' addresses) and **90 days** for the
+hosts' security logs (`log_type="security"`: SSH and sudo from the
+journal, auditd, fail2ban), because an incident is often found weeks
+after it began. Security logs are collected only where the panel turns on
+*Send hosts' security logs* (`metrics_ship_security_logs`) and the agents
+are reinstalled; the SaaS manager turns it on for its own hosts. A host's
+credential reaches only the push and read routes above — Loki's delete
+API is not routed — so a host that is compromised cannot erase what it
+already sent.
+
+On each host the collector reads the proxy's access log from its file
+(`/var/log/traefik/access.log`, rotated daily or past 100 MB, 30 days),
+falling back to the proxy container's output on a host not set up since
+the log moved there, and remembers its read positions on the host so a
+restart does not send the file again.
+
 ## Moving the central to its own VPS
 
 The destination is a parameter, not a hard-coded host. A central on a

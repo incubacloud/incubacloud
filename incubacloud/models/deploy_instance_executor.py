@@ -41,6 +41,25 @@ LOGS_DIRNAME = "logs"
 ODOO_LOG_DIR = "/var/log/odoo"
 ODOO_LOGFILE = f"{ODOO_LOG_DIR}/odoo.log"
 
+#: The endpoints that check a password: the web form and its second
+#: factor, the JSON session login, the password reset and the XML-RPC
+#: ``common`` service whose ``authenticate`` the RPC clients call. Each
+#: instance's login router matches only POSTs to these: an attempt, not
+#: a page view, so an office behind one address opening the form spends
+#: nothing of the budget.
+LOGIN_PATHS_RULE = (
+    "Path(`/web/login`) || Path(`/web/login/totp`)"
+    " || Path(`/web/session/authenticate`) || Path(`/web/reset_password`)"
+    " || Path(`/xmlrpc/2/common`)"
+)
+#: Above every router the template gives the same paths (the ``/web``
+#: crawler router is 10, the main one 1); the template's higher ones
+#: (websocket 20, allowed crawlers 100) match other paths. Kept below 30
+#: on purpose: a router put in front of an instance's paths for reasons
+#: of its own -- one that parks or refuses them -- sits at 30 and above,
+#: and the login limit must never step over it.
+LOGIN_ROUTER_PRIORITY = 15
+
 #: The command each environment's compose file gives the ``odoo``
 #: service, which the override *replaces* — so whatever the template
 #: put there has to be repeated here or it is silently lost. Verified
@@ -553,6 +572,78 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             f"{prefix}-forceSecure.redirectScheme.scheme": "https",
         }
 
+    def _login_router_labels(self):
+        """Return a login router beside each of the instance's routers.
+
+        The proxy limits every client to 300 requests a minute, the same
+        for every path, which lets one address try 300 passwords a minute;
+        Odoo's own cool-down counts per worker process. A router that
+        matches only the login endpoints and puts ``loginlimit@file`` (the
+        host's strict limit) first gives them their own, much lower
+        budget, the same whether the host is reached directly or through
+        a CDN, because the limit keys on the real client.
+
+        The router repeats what the template gives the router it takes
+        the login paths from -- name scheme, service, middlewares (the
+        instance's IP allowlist included), the TLS twin -- so the login
+        is never less protected than the rest of the site. That is
+        knowledge of the template, the same kind
+        ``_staging_shared_middleware_labels`` relies on: should a template
+        release rename these, Traefik drops this router alone and the login
+        falls back to the template's own, unlimited but working. RB-15 has
+        the check for a template bump.
+
+        :return: ``{label: value}`` to merge into the odoo service
+        """
+        inst = self._inst()
+        answers = inst._render_copier_answers()
+        production = inst.environment == "production"
+        groups = answers["domains_prod" if production else "domains_test"]
+        key = (
+            f"{answers['project_name']}-{float(answers['odoo_version']):.1f}"
+            f"-{'prod' if production else 'test'}"
+        ).replace(".", "-")
+        labels = {}
+        for index, group in enumerate(groups):
+            if group.get("redirect_to"):
+                continue  # a redirect serves no login
+            hosts = group["hosts"]
+            domains = (
+                f"Host(`{hosts[0]}`)" if len(hosts) == 1
+                else "(" + " || ".join(f"Host(`{h}`)" for h in hosts) + ")"
+            )
+            # The panel does not offer the template's IP allowlist today,
+            # so this never applies yet. It is here so that offering it
+            # one day cannot leave the login, which outranks the routers
+            # carrying the allowlist, open to every address.
+            basic = (["whitelist"] if answers.get("cidr_whitelist") else [])
+            if group.get("cert_resolver"):
+                basic += ["addSTS", "forceSecure"]
+            # The template's /web router adds forbid-crawlers; the login
+            # paths are all under /web.
+            middlewares = sorted(basic + ["buffering", "compress", "forbid-crawlers"])
+            chain = ", ".join(
+                ["loginlimit@file"] + [f"{key}-{m}" for m in middlewares],
+            )
+            names = [f"{key}-login-{index}"]
+            if group.get("cert_resolver"):
+                names.append(f"{key}-login-secure-{index}")
+            for name in names:
+                router = f"traefik.http.routers.{name}"
+                labels[f"{router}.rule"] = (
+                    f"{domains} && Method(`POST`) && ({LOGIN_PATHS_RULE})"
+                )
+                labels[f"{router}.service"] = f"{key}-main"
+                labels[f"{router}.middlewares"] = chain
+                labels[f"{router}.priority"] = str(LOGIN_ROUTER_PRIORITY)
+                if name.startswith(f"{key}-login-secure-"):
+                    labels[f"{router}.tls"] = "true"
+                    if isinstance(group["cert_resolver"], str):
+                        labels[f"{router}.tls.certResolver"] = (
+                            group["cert_resolver"]
+                        )
+        return labels
+
     def _resource_override_content(self):
         """Generate docker-compose.override.yml: limits, label, logs.
 
@@ -712,6 +803,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         if "odoo_net_setup" in allowed:
             services["odoo_net_setup"].update(self._net_setup_override())
         if "odoo" in allowed:
+            services["odoo"]["labels"].update(self._login_router_labels())
             services["odoo"]["command"] = self._odoo_command()
             services["odoo"]["volumes"] = [
                 f"./{LOGS_DIRNAME}:{ODOO_LOG_DIR}",

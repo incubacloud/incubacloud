@@ -570,6 +570,73 @@ class TestLogCollectorEndpoint(ObservabilityExecutorCase):
         self.assertEqual(extra["ic_logs_write_url"], "")
 
 
+class TestSecurityLogsAndTheAccessLogFile(ObservabilityExecutorCase):
+    """The collector reads the proxy's access log from its file, and the
+    host's security logs only when the panel says so."""
+
+    def _collector_config(self, ship):
+        """Render the collector configuration as Ansible would."""
+        import os
+
+        import yaml
+        from jinja2 import Environment
+
+        from odoo.modules.module import get_module_path
+
+        path = os.path.join(
+            get_module_path("incubacloud"), "ansible", "playbooks",
+            "host_observability.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            tasks = yaml.safe_load(fh)[0]["tasks"]
+        content = next(
+            t for t in tasks
+            if t.get("name") == "Write the access-log collector configuration"
+        )["ansible.builtin.copy"]["content"]
+        env = Environment(trim_blocks=True, autoescape=False)  # nosec B701
+        env.filters["bool"] = lambda v: (
+            v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes")
+        )
+        return yaml.safe_load(env.from_string(content).render(
+            ic_logs_write_url="https://m.example.com/lw/loki/api/v1/push",
+            ic_remote_write_user="acct", ic_host_name="host-x",
+            ic_ship_security_logs=ship,
+        ))
+
+    def test_the_setting_reaches_the_playbook(self):
+        self.settings.metrics_ship_security_logs = False
+        extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
+        self.assertIs(extra["ic_ship_security_logs"], False)
+        self.settings.metrics_ship_security_logs = True
+        extra = self._make(ObservabilityAgentsExecutor).get_extra_vars()
+        self.assertIs(extra["ic_ship_security_logs"], True)
+
+    def test_the_access_log_is_read_from_its_file(self):
+        jobs = {j["job_name"]: j for j in self._collector_config(False)["scrape_configs"]}
+        labels = jobs["traefik-access-file"]["static_configs"][0]["labels"]
+        self.assertEqual(labels["__path__"], "/var/log/traefik/access.log")
+
+    def test_security_logs_are_collected_only_when_asked(self):
+        off = {j["job_name"] for j in self._collector_config(False)["scrape_configs"]}
+        self.assertFalse({"security-journal", "security-files"} & off)
+        on = self._collector_config(True)["scrape_configs"]
+        jobs = {j["job_name"]: j for j in on}
+        self.assertIn("security-journal", jobs)
+        paths = {
+            c["labels"]["__path__"]: c["labels"]["log_type"]
+            for c in jobs["security-files"]["static_configs"]
+        }
+        self.assertEqual(paths, {
+            "/var/log/audit/audit.log": "security",
+            "/var/log/fail2ban.log": "security",
+        })
+
+    def test_read_positions_survive_a_restart(self):
+        """Otherwise every restart sends the 30-day file again."""
+        positions = self._collector_config(False)["positions"]["filename"]
+        self.assertTrue(positions.startswith("/var/lib/promtail/"))
+
+
 class TestFirstDeploymentIsUsable(ObservabilityExecutorCase):
     """A central that comes up accepting no writes is the worst outcome.
 

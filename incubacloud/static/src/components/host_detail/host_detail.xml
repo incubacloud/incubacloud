@@ -442,7 +442,7 @@
                                            t-att-value="state.form.http_conn_rate"
                                            t-on-input="(ev) => this.onInput('http_conn_rate', ev)"/>
                                     <span class="ic-form-note">
-                                        Per-source new-connection cap (per second) on ports 80/443, enforced by the host firewall. 0 disables it (default). Turn it on only after rehearsing on a throwaway VPS — see runbook RB-18. Applies on the next hardening run.
+                                        Per-source new-connection cap (per second) on ports 80/443, enforced by the host firewall. 0 disables it. Not applied behind a CDN, where the CDN's allowlist replaces it. Applies on the next hardening run.
                                     </span>
                                 </div>
                                 <div class="rl-frow rl-full">
@@ -493,6 +493,16 @@
                                     </div>
                                     <span class="ic-form-note">
                                         Refuses HTTPS requests that reached this host without going through one of them, so its address cannot be used to bypass the edge. Ignored while no range is applied above, where it would lock out every visitor — the override box being empty does not mean that, since the platform may be supplying the list.
+                                    </span>
+                                </div>
+                                <div class="rl-frow rl-full">
+                                    <label>CDN client certificate authority</label>
+                                    <textarea rows="4" spellcheck="false"
+                                              placeholder="-----BEGIN CERTIFICATE-----"
+                                              t-att-value="state.form.cdn_client_ca"
+                                              t-on-input="(ev) => this.onInput('cdn_client_ca', ev)"/>
+                                    <span class="ic-form-note">
+                                        With direct access refused, also require every TLS connection to present a client certificate signed by this authority. The CDN's addresses are shared by all its customers; only your zone's certificate tells your traffic apart. Leave empty to accept any connection the firewall lets in. Applied by Full Setup or Push Trusted Proxy Settings.
                                     </span>
                                 </div>
                             </div>

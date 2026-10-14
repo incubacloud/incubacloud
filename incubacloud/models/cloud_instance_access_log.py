@@ -57,12 +57,34 @@ class CloudInstance(models.Model):
     def _access_log_command(self, tail=_MAX_TAIL):
         """Return the shell command that dumps the proxy's recent log.
 
-        :param tail: how many lines of container output to read.
+        The proxy writes its access log to a file on the host (1.0.183);
+        a host whose proxy has not been set up since still logs to the
+        container's output, which is read instead until its next Full
+        Setup. The hardening creates the file empty before that (the
+        web-login jail needs it to exist), so an empty file with nothing
+        rotated beside it counts as "not set up yet": otherwise such a
+        host would show an empty page while its proxy keeps logging to
+        the container.
+
+        The file starts empty every night when it is rotated, so the end
+        of the previous one is read first: otherwise the page would show
+        next to nothing right after midnight. The previous file is the
+        newest rotated one that is not compressed yet (rotation compresses
+        one night late).
+
+        :param tail: how many lines to read.
         :return: a command string safe to run over SSH.
         """
         self.ensure_one()
         tail = max(1, min(int(tail or _MAX_TAIL), _MAX_TAIL))
-        return f"docker logs --tail {tail} {_PROXY_CONTAINER} 2>&1"
+        path = self.env["cloud.host"].PROXY_ACCESS_LOG
+        return (
+            f"if [ -s {path} ] || ls {path}.* >/dev/null 2>&1; then "
+            f"{{ prev=$(ls -1t {path}.* 2>/dev/null | grep -v '\\.gz$' | head -n 1); "
+            f'[ -z "$prev" ] || tail -n {tail} "$prev"; tail -n {tail} {path}; }} '
+            f"| tail -n {tail}; "
+            f"else docker logs --tail {tail} {_PROXY_CONTAINER} 2>&1; fi"
+        )
 
     def _access_log_matches(self, entry):
         """Return True when a parsed log line belongs to this instance.

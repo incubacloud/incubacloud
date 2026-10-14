@@ -54,6 +54,79 @@ class TestFullSetupStartsTheStackConvergently(TransactionCase):
         self.assertIn('-p inverseproxy', cmd)
         self.assertIn('inverseproxy.yaml', cmd)
 
+    def test_config_is_copied_into_the_dynamic_directory_before_the_proxy_starts(self):
+        """The file provider reads one directory; the middlewares every
+        entrypoint names live in config.yml, so a proxy started without
+        its copy there answers nothing."""
+        commands = list(self._commands().items())
+        labels = [label for label, _ in commands]
+        copy_at = labels.index('Copy config.yml to dynamic directory')
+        self.assertIn(
+            'cp ~/traefik/config.yml ~/traefik/dynamic/config.yml',
+            commands[copy_at][1],
+        )
+        self.assertLess(copy_at, labels.index('Start Traefik'))
+
+    def test_the_templates_read_the_dynamic_directory(self):
+        """The default certificate and the CDN's client-certificate
+        requirement are documents of their own: only a directory provider
+        picks them up, and only a container that mounts it can read it."""
+        host = self.env['cloud.host'].create({
+            'name': 'fs-tpl-host',
+            'ip_address': '10.0.0.19',
+            'user': 'ubuntu',
+            'wildcard_domain': 'fs-tpl.example.com',
+        })
+        self.assertIn('directory: /etc/traefik/dynamic', host.traefik_yml)
+        self.assertNotIn('filename: /etc/traefik/config.yml', host.traefik_yml)
+        self.assertIn(
+            './dynamic:/etc/traefik/dynamic:ro', host.traefik_inverseproxy_yaml,
+        )
+
+    def test_a_host_stored_with_the_single_file_provider_ships_the_directory(self):
+        """Hosts from before 1.0.183 keep ``filename`` in the database;
+        what they are sent is the directory form, and a compose file that
+        mounts it, without the stored copy being rewritten."""
+        host = self.env['cloud.host'].create({
+            'name': 'fs-old-host',
+            'ip_address': '10.0.0.29',
+            'user': 'ubuntu',
+            'wildcard_domain': 'fs-old.example.com',
+        })
+        host.write({
+            'traefik_yml': host.traefik_yml.replace(
+                'directory: /etc/traefik/dynamic',
+                'filename: /etc/traefik/config.yml',
+            ),
+            'traefik_inverseproxy_yaml': host.traefik_inverseproxy_yaml.replace(
+                '      - ./dynamic:/etc/traefik/dynamic:ro\n', '',
+            ),
+        })
+        self.assertIn('filename: /etc/traefik/config.yml', host.traefik_yml)
+        self.assertNotIn('./dynamic:', host.traefik_inverseproxy_yaml)
+        shipped = host._shipped_traefik_yml()
+        self.assertIn('directory: /etc/traefik/dynamic', shipped)
+        self.assertNotIn('filename:', shipped)
+        self.assertIn(
+            '- ./dynamic:/etc/traefik/dynamic:ro', host._shipped_inverseproxy_yaml(),
+        )
+        # Rendering, not rewriting.
+        self.assertIn('filename: /etc/traefik/config.yml', host.traefik_yml)
+
+    def test_the_access_log_is_prepared_before_the_proxy_starts(self):
+        """The proxy writes its access log into a directory mounted from
+        the host; the rotation that keeps it to 30 days comes first."""
+        commands = list(self._commands())
+        self.assertIn('Prepare the proxy access log', commands)
+        self.assertLess(
+            commands.index('Prepare the proxy access log'),
+            commands.index('Start Traefik'),
+        )
+        self.assertIn(
+            'proxy_access_log.sh',
+            self._commands()['Prepare the proxy access log'],
+        )
+
 
 class TestRebuildDefersOnBusyCrons(TransactionCase):
     """A rebuild blocked by a running cron must be rescheduled, not failed.

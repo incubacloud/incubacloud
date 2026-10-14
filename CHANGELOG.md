@@ -6,6 +6,101 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.183] — 2026-10-14
+
+### Added
+
+- **A login limit of its own for every instance.** The proxy limited
+  each client to 300 requests a minute on every path alike, which let one
+  address try 300 passwords a minute, and Odoo's own cool-down counts per
+  worker process. Every instance now gets a login router beside each of
+  its routers -- POSTs to `/web/login`, `/web/login/totp`,
+  `/web/session/authenticate`, `/web/reset_password` and
+  `/xmlrpc/2/common` -- with the host's new `loginlimit` middleware first
+  (20 a minute, burst 10, tunable live) and otherwise the template's own
+  middlewares, so the login is never less protected than the rest of the
+  site. Behind a CDN it keys on the real client like the general limit.
+  Priority 15: above the template's routers for the same paths, below any
+  router set in front of an instance at 30 or more. It lands on each
+  instance's next deploy or rebuild.
+- **Repeated failed logins are banned at the host firewall.** fail2ban
+  watched SSH only. A new jail bans for an hour an address that fails ten
+  web logins in ten minutes, on the forward hook and on 80/443 only. It
+  reads the proxy's access log, not Odoo's: Odoo writes the login it was
+  sent as-is, so a login carrying a newline could forge whole lines and
+  get anyone banned, whereas Traefik writes JSON and escapes what the
+  client sends. A form login that fails is answered 200; one that
+  succeeds is redirected. Off on a host behind a CDN, where the connecting
+  address is the CDN's; whatever the proxy trusts as a proxy is exempt.
+  The jail has a chain of its own in fail2ban's table: with the action's
+  default name its rule landed in the chain the sshd jail creates on the
+  input hook wherever the distro bans with nftables (Ubuntu 24.04), where
+  instance traffic never passes, and banned nothing.
+- **Authenticated Origin Pulls on hosts behind a CDN.** A host can be
+  given the authority the CDN's client certificate is signed by
+  (`cdn_client_ca`); with direct access refused, the proxy then requires
+  that certificate on every TLS connection. The CDN's addresses are shared
+  by all of its customers, and only the zone's own certificate tells its
+  traffic apart from anybody else's pointed at the same origin.
+- **Hosts' security logs can be sent to the central** (SSH and sudo from
+  the journal, auditd and fail2ban), where they are kept 90 days and a
+  host's credential can add lines but never delete them. Off by default
+  (`metrics_ship_security_logs`).
+
+### Changed
+
+- **The connection-rate cap is on by default (50 per second per
+  source).** It shipped off since 2026-08-14 pending a rehearsal, and its
+  rule also counted the containers' own outbound 80/443, so an Odoo
+  calling an API in a burst was throttled like a visitor. It now weighs
+  only connections redirected to the proxy, with the same guards as the
+  CDN allowlist. New hosts get 50; hosts at 0 are moved to 50 and the cap
+  applies on their next hardening run. Behind a CDN no cap is rendered,
+  whether or not the host also refuses direct traffic: every visitor
+  arrives from the same handful of edge addresses there, and a host still
+  open at the origin -- the state a pool host is in between moving its
+  names and closing its firewall -- would have throttled the CDN itself.
+- **The proxy's access log has its own file, kept 30 days.** It went to
+  stdout, where Docker kept 30 MB in all -- hours of history on a busy
+  host -- under a path that changed with every recreate of the container.
+  It is now `/var/log/traefik/access.log`, rotated daily or past 100 MB
+  (looked at every ten minutes by a timer of its own, since the distro's
+  daily run alone would let a flooded host fill its disk between two
+  runs), compressed and removed after 30 days; the panel's "Recent requests",
+  the log collector and the web-login jail read it ("Recent requests"
+  also reads the end of the previous file, so it is not empty right after
+  the nightly rotation, and reads the container until the first Full
+  Setup fills the file). Hosts move on their next Full Setup. The central
+  keeps access logs 30 days (was 14).
+- **The proxy's file provider reads a directory.** The default
+  certificate and the CDN's client-certificate requirement are dynamic
+  documents of their own, and Traefik reads either one file or one
+  directory: with the shipped `filename` form they were written and never
+  read, so on a core-only install a host said to require the certificate
+  required nothing. The template now names `/etc/traefik/dynamic`, the
+  compose file mounts it, Full Setup copies `config.yml` in (the
+  middlewares every entrypoint names live there), and a host stored with
+  the single-file form is rendered in the directory form on its next
+  setup. The proxy push, which ships no compose file, keeps the
+  single-file form on a host whose container has no such mount yet.
+- **auditd keeps weeks, not days.** It rotated by size in five 8 MB
+  files, which on a busy host was two or three days, three quarters of it
+  BPF events systemd raises for every container start and stop. Those are
+  excluded and the log holds twelve 25 MB files.
+
+### Fixed
+
+- **A hardened host audited nothing until its next reboot.** On Ubuntu
+  22.04 a journald started without an `Audit=` setting switches the
+  kernel's auditing off, and hardening restarts journald to apply its
+  limits -- after auditd has loaded its rules. auditd kept running and
+  wrote nothing. The journald drop-in now says `Audit=yes`, which keeps
+  auditing on and turns it back on for hosts hardened before, on their
+  next hardening run.
+- **A private key pasted along with the CDN authority is refused.** The
+  parser read the first certificate and ignored the rest, so the key
+  would have gone unnoticed and landed on every host in a readable file.
+
 ## [1.0.182] — 2026-10-14
 
 ### Added

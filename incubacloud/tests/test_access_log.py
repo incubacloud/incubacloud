@@ -12,6 +12,11 @@ copier, whereas a host can serve several domains and redirect between
 them.
 """
 import json
+import os
+import subprocess
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 from odoo.tests.common import TransactionCase
 
@@ -133,7 +138,78 @@ class TestCommandBounds(AccessLogCase):
     def test_the_tail_is_capped(self):
         """One click must not drag the entire log across the wire."""
         command = self.instance._access_log_command(tail=10 ** 9)
+        self.assertIn("tail -n 5000 /var/log/traefik/access.log", command)
         self.assertIn("--tail 5000", command)
 
     def test_a_missing_tail_still_produces_a_command(self):
         self.assertIn("docker logs", self.instance._access_log_command())
+
+    def test_the_file_is_read_and_the_container_only_as_a_fallback(self):
+        """1.0.183 moved the log to its own file; a host not set up since
+        still logs to the container, and is read there until then."""
+        command = self.instance._access_log_command()
+        self.assertTrue(command.startswith(
+            "if [ -s /var/log/traefik/access.log ]"
+            " || ls /var/log/traefik/access.log.* >/dev/null 2>&1; then ",
+        ))
+        self.assertIn("else docker logs", command)
+
+    def test_an_empty_file_with_nothing_rotated_means_not_set_up_yet(self):
+        """The hardening creates the file empty before Full Setup moves
+        the proxy's log into it; until then the proxy still logs to the
+        container, and an empty page would be a lie."""
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "access.log").write_text("")
+            path = os.path.join(directory, "access.log")
+            with patch.object(
+                type(self.env["cloud.host"]), "PROXY_ACCESS_LOG", path,
+            ):
+                command = self.instance._access_log_command(tail=5)
+            branch = subprocess.run(
+                ["bash", "-c", command.replace("docker logs", "echo container")],
+                capture_output=True, text=True, check=True,
+            ).stdout
+            self.assertIn("container", branch)
+
+    def test_an_empty_file_right_after_a_rotation_is_still_the_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "access.log").write_text("")
+            Path(directory, "access.log.2026-10-13-1").write_text("y-1\ny-2\n")
+            self.assertEqual(
+                self._run_access_log_command(directory, tail=5), ["y-1", "y-2"],
+            )
+
+    def _run_access_log_command(self, directory, tail):
+        """Run the command against a log kept in *directory*; return lines."""
+        path = os.path.join(directory, "access.log")
+        with patch.object(
+            type(self.env["cloud.host"]), "PROXY_ACCESS_LOG", path,
+        ):
+            command = self.instance._access_log_command(tail=tail)
+        result = subprocess.run(
+            ["bash", "-c", command], capture_output=True, text=True,
+            check=True,
+        )
+        return result.stdout.splitlines()
+
+    def test_right_after_a_rotation_the_previous_file_is_read_too(self):
+        """Rotation empties the file every night; the page must not."""
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "access.log").write_text("today-1\n")
+            rotated = Path(directory, "access.log.2026-10-13-1")
+            rotated.write_text("".join(f"yesterday-{i}\n" for i in range(5)))
+            older = Path(directory, "access.log.2026-10-12-1.gz")
+            older.write_text("compressed, never read\n")
+            os.utime(older, (1, 1))
+            os.utime(rotated, (2, 2))
+            self.assertEqual(
+                self._run_access_log_command(directory, tail=3),
+                ["yesterday-3", "yesterday-4", "today-1"],
+            )
+
+    def test_before_any_rotation_only_the_file_is_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "access.log").write_text("a\nb\n")
+            self.assertEqual(
+                self._run_access_log_command(directory, tail=5), ["a", "b"],
+            )

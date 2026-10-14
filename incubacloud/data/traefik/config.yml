@@ -18,6 +18,15 @@ http:
         average: 300
         period: 1m
         burst: 100
+    # Login attempts per source IP: each instance's login router (POSTs
+    # to the endpoints that check a password) puts this first, giving
+    # them a budget far below the general one. Behind a CDN it keys on
+    # the forwarded chain like ``ratelimit``. Tunable live.
+    loginlimit:
+      rateLimit:
+        average: 20
+        period: 1m
+        burst: 10
     buffering:
       buffering:
         retryExpression: IsNetworkError() && Attempts() < 5

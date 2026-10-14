@@ -228,13 +228,13 @@ class CloudHost(models.Model):
 
     http_conn_rate = fields.Integer(
         string="HTTP Connection-Rate Cap",
-        default=0,
+        default=50,
         help="Per-source new-connection cap (per second) on ports 80/443, "
-             "enforced on the nftables forward hook by host hardening. 0 "
-             "disables it (the default). Turn it on only after rehearsing the "
-             "change on a throwaway VPS — an unrehearsed drop on that hook "
-             "can break Docker's published ports (see runbook RB-18). Applies "
-             "on the next hardening run.",
+             "enforced on the nftables forward hook by host hardening. Only "
+             "connections redirected to the proxy are counted, never the "
+             "containers' own outbound traffic. 0 disables it. A host "
+             "behind a CDN gets the CDN's allowlist instead, so the rate is "
+             "not applied there. Applies on the next hardening run.",
     )
 
     # ── Server specs + disk health (updated by cron every 5 min) ──────────
@@ -524,6 +524,17 @@ class CloudHost(models.Model):
              "TLS. Leave empty to keep obtaining certificates on the "
              "host itself.",
     )
+    cdn_client_ca = fields.Text(
+        string="CDN Client Certificate Authority",
+        help="PEM certificate the CDN's own client certificate is signed "
+             "by (or that certificate itself, when it is self-signed). "
+             "On a host reached through the CDN and closed to direct "
+             "traffic, the proxy then requires it on every TLS "
+             "connection: the CDN's addresses are shared by all of its "
+             "customers, and only this certificate tells our zone apart "
+             "from anybody else's pointing at the same origin. Leave "
+             "empty to accept any connection the firewall lets in.",
+    )
     tls_default_key = EncryptedText(
         string="Default TLS Private Key",
         help="Private key for the certificate above. Stored encrypted "
@@ -665,6 +676,7 @@ class CloudHost(models.Model):
             "block_direct_access",
             "behind_cdn",
             "tls_default_cert",
+            "cdn_client_ca",
         ]
 
     def _render_config_snapshot(self):
@@ -731,13 +743,70 @@ class CloudHost(models.Model):
     # A template setting is also satisfied by the sibling listed here.
     # Not an exception list: these are the SAME feature written the other
     # way, and Traefik accepts either. Its file provider reads one
-    # ``filename`` or a whole ``directory``; a deployment layer that needs
-    # to drop in extra dynamic files switches to the directory form, and
-    # calling that "drift" would leave a warning nobody can ever clear —
-    # which is how a drift signal stops being read at all.
+    # ``filename`` or a whole ``directory``. The template says
+    # ``directory`` (1.0.183); a host stored before that still says
+    # ``filename`` and is rendered as ``directory`` anyway (see
+    # ``_shipped_traefik_yml``), so calling that "drift" would leave a
+    # warning nobody can ever clear — which is how a drift signal stops
+    # being read at all.
     _TRAEFIK_TEMPLATE_EQUIVALENTS = {
-        "traefik_yml": {"providers.file.filename": "providers.file.directory"},
+        "traefik_yml": {"providers.file.directory": "providers.file.filename"},
     }
+
+    @staticmethod
+    def _patch_traefik_yml_dynamic_directory(content):
+        """Return *content* with the file provider reading the directory.
+
+        The template switched from one ``filename`` to the ``directory``
+        in 1.0.183, because the default certificate and the CDN's
+        client-certificate requirement are documents of their own that
+        only a directory provider picks up. A host stored before that
+        keeps its ``filename`` form in the database; this is applied at
+        render time, so it ships the directory form on its next setup
+        without the stored copy being rewritten behind the operator.
+        Idempotent: content already in the directory form is returned
+        unchanged.
+
+        :param str content: a ``traefik.yml`` document.
+        :rtype: str
+        """
+        import re
+
+        if not content or "/etc/traefik/dynamic" in content:
+            return content
+        return re.sub(
+            r"^(\s*)filename:\s*/etc/traefik/config\.yml[ \t]*$",
+            r"\1directory: /etc/traefik/dynamic",
+            content,
+            count=1,
+            flags=re.MULTILINE,
+        )
+
+    @staticmethod
+    def _patch_inverseproxy_yaml_dynamic_mount(content):
+        """Return *content* with the dynamic directory mounted into the proxy.
+
+        The counterpart of ``_patch_traefik_yml_dynamic_directory`` for
+        the compose file: a provider pointing at a directory the
+        container does not have would lose every middleware the
+        entrypoints name. Idempotent; content that already mounts it is
+        returned unchanged, as is content without the ``config.yml``
+        mount to anchor on.
+
+        :param str content: an ``inverseproxy.yaml`` document.
+        :rtype: str
+        """
+        import re
+
+        if not content or "./dynamic:" in content:
+            return content
+        return re.sub(
+            r"^(\s*)(- \./config\.yml:/etc/traefik/config\.yml[^\n]*)$",
+            r"\1\2\n\1- ./dynamic:/etc/traefik/dynamic:ro",
+            content,
+            count=1,
+            flags=re.MULTILINE,
+        )
 
     @staticmethod
     def _missing_template_paths(template, current, prefix=""):
@@ -1614,16 +1683,21 @@ class CloudHost(models.Model):
             )
         return out.rstrip("\n") + "\n" + CloudHost._TRAEFIK_METRICS_BLOCK
 
-    # Kept short on purpose: the seed template explains at length why the
-    # log goes to stdout and why headers are dropped, and that prose is
-    # already on every host provisioned from it. What a retrofitted host
-    # needs is the block plus a note saying where it came from.
+    #: Where the proxy writes its access log on the host, mounted into
+    #: the container at the same path. Full Setup rotates it (30 days).
+    PROXY_ACCESS_LOG = "/var/log/traefik/access.log"
+
+    # Kept short on purpose: the seed template explains at length where
+    # the log goes and why headers are dropped, and that prose is already
+    # on every host provisioned from it. What a retrofitted host needs is
+    # the block plus a note saying where it came from.
     _TRAEFIK_ACCESS_LOG_BLOCK = (
-        "\n# Auto-added by IncubaCloud: per-request access log, in JSON, on\n"
-        "# stdout. This is what attributes a request to an instance; the\n"
-        "# metrics carry neither client IP nor path. Headers are dropped so\n"
-        "# no cookie or Authorization value is ever written to the host.\n"
+        "\n# Auto-added by IncubaCloud: per-request access log, in JSON, in\n"
+        "# its own rotated file. This is what attributes a request to an\n"
+        "# instance; the metrics carry neither client IP nor path. Headers\n"
+        "# are dropped so no cookie or Authorization value is ever written.\n"
         "accessLog:\n"
+        "  filePath: /var/log/traefik/access.log\n"
         "  format: json\n"
         "  bufferingSize: 100\n"
         "  fields:\n"
@@ -1663,6 +1737,95 @@ class CloudHost(models.Model):
             + "\n"
             + CloudHost._TRAEFIK_ACCESS_LOG_BLOCK
         )
+
+    @staticmethod
+    def _add_traefik_access_log_file(traefik_yml):
+        """Return ``traefik.yml`` writing the access log to its own file.
+
+        Hosts set up before 1.0.183 log to stdout, where Docker kept 30 MB
+        and the path changed with every recreate of the container. The
+        file is what the web-login jail watches and what is kept 30 days.
+        Added only to an ``accessLog`` block that names no destination: an
+        operator who chose one keeps it.
+
+        :param traefik_yml: the host's stored static configuration
+        :return: the configuration with ``filePath``, or the input untouched
+        :rtype: str
+        """
+        import re
+
+        if not traefik_yml:
+            return traefik_yml
+        match = re.search(
+            r"^accessLog:[ \t]*\n(?P<body>(?:[ \t]+.*\n|[ \t]*\n)*)",
+            traefik_yml if traefik_yml.endswith("\n") else traefik_yml + "\n",
+            re.MULTILINE,
+        )
+        if not match or re.search(
+            r"^[ \t]+filePath:", match.group("body"), re.MULTILINE,
+        ):
+            return traefik_yml
+        indent = re.match(r"[ \t]+", match.group("body") or "  ")
+        indent = indent.group(0) if indent else "  "
+        insert_at = match.start("body")
+        return (
+            traefik_yml[:insert_at]
+            + f"{indent}filePath: {CloudHost.PROXY_ACCESS_LOG}\n"
+            + traefik_yml[insert_at:]
+        )
+
+    @staticmethod
+    def _add_proxy_access_log_volume(inverseproxy_yaml):
+        """Return the proxy's compose file mounting the access log directory.
+
+        The proxy writes the access log inside the container; without the
+        bind mount it would land in the container's own filesystem, lost
+        on the next recreate and invisible to the host. Added as the first
+        entry of the ``proxy`` service's ``volumes`` list; a file whose
+        proxy service has no such list, or already mounts the directory,
+        is left alone.
+
+        :param inverseproxy_yaml: the host's stored compose file
+        :return: the file with the mount, or the input untouched
+        :rtype: str
+        """
+        import re
+
+        if not inverseproxy_yaml:
+            return inverseproxy_yaml
+        directory = CloudHost.PROXY_ACCESS_LOG.rsplit("/", 1)[0]
+        if f"{directory}:{directory}" in inverseproxy_yaml:
+            return inverseproxy_yaml
+        service = re.search(
+            r"^(?P<sindent>[ \t]+)proxy:[ \t]*\n", inverseproxy_yaml,
+            re.MULTILINE,
+        )
+        if not service:
+            return inverseproxy_yaml
+        depth = len(service.group("sindent"))
+        lines = inverseproxy_yaml[service.end():].splitlines(keepends=True)
+        offset = service.end()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                if len(line) - len(line.lstrip()) <= depth:
+                    break  # left the proxy service
+                if stripped == "volumes:":
+                    item = next(
+                        (l for l in lines[i + 1:] if l.strip().startswith("- ")),
+                        None,
+                    )
+                    if item is None:
+                        break
+                    item_indent = item[:len(item) - len(item.lstrip())]
+                    at = offset + len(line)
+                    return (
+                        inverseproxy_yaml[:at]
+                        + f"{item_indent}- {directory}:{directory}\n"
+                        + inverseproxy_yaml[at:]
+                    )
+            offset += len(line)
+        return inverseproxy_yaml
 
     @staticmethod
     def _add_traefik_security_headers(config_yml):
@@ -1859,6 +2022,57 @@ class CloudHost(models.Model):
         "{i}      period: 1m\n"
         "{i}      burst: 100\n"
     )
+
+    # The login limit: each instance's login router puts it first, so the
+    # endpoints that check a password get a budget of their own, far
+    # below the general one. Same indent convention as above.
+    _TRAEFIK_LOGINLIMIT_MIDDLEWARE = (
+        "{i}  # Login attempts per source IP. Auto-added by IncubaCloud: each\n"
+        "{i}  # instance's login router (POSTs to the endpoints that check a\n"
+        "{i}  # password) puts it first. Tunable live -- this file is watched.\n"
+        "{i}  loginlimit:\n"
+        "{i}    rateLimit:\n"
+        "{i}      average: 20\n"
+        "{i}      period: 1m\n"
+        "{i}      burst: 10\n"
+    )
+
+    @staticmethod
+    def _add_traefik_loginlimit_middleware(config_yml):
+        """Return ``config.yml`` with the ``loginlimit`` middleware.
+
+        Same insertion as ``ratelimit``: into the ``middlewares`` mapping
+        under ``http:``. A login router naming a middleware the file does
+        not define is dropped by Traefik on its own -- the login then falls
+        back to the instance's ordinary routers -- so a host that misses
+        this loses the limit, never the site.
+
+        Idempotent, and a no-op when the file does not have the mapping.
+
+        :param config_yml: the host's stored dynamic configuration.
+        :return: the configuration with ``loginlimit`` defined, or the
+            input untouched.
+        :rtype: str
+        """
+        import re
+
+        if not config_yml:
+            return config_yml
+        if re.search(r"^[ \t]+loginlimit:[ \t]*$", config_yml, re.MULTILINE):
+            return config_yml
+        match = re.search(
+            r"^http:[ \t]*\n"
+            r"(?:[ \t]*\n)*"
+            r"(?P<indent>[ \t]+)middlewares:[ \t]*\n",
+            config_yml,
+            re.MULTILINE,
+        )
+        if not match:
+            return config_yml
+        block = CloudHost._TRAEFIK_LOGINLIMIT_MIDDLEWARE.format(
+            i=match.group("indent"),
+        )
+        return config_yml[: match.end()] + block + config_yml[match.end():]
 
     @staticmethod
     def _add_traefik_ratelimit_middleware(config_yml):
@@ -2359,15 +2573,18 @@ class CloudHost(models.Model):
             return text
         mark = CloudHost._TRUSTED_PROXY_MARK
 
-        # Rate limit: key on the forwarded client.
-        match = behind_cdn and re.search(
-            r"^(?P<indent>[ \t]+)ratelimit:[ \t]*\n"
-            r"(?P=indent)[ \t]+rateLimit:[ \t]*\n"
-            r"(?P<body>(?:(?P=indent)[ \t]{2,}\S.*\n)+)",
-            text,
-            re.MULTILINE,
-        )
-        if match:
+        # Rate limits -- the general one and the login one: key on the
+        # forwarded client.
+        for limiter in ("ratelimit", "loginlimit") if behind_cdn else ():
+            match = re.search(
+                rf"^(?P<indent>[ \t]+){limiter}:[ \t]*\n"
+                r"(?P=indent)[ \t]+rateLimit:[ \t]*\n"
+                r"(?P<body>(?:(?P=indent)[ \t]{2,}\S.*\n)+)",
+                text,
+                re.MULTILINE,
+            )
+            if not match:
+                continue
             # Indent taken from the block's own first line, not computed
             # from the key above it: a template written with a different
             # step still comes out as valid YAML.
@@ -2375,9 +2592,10 @@ class CloudHost(models.Model):
             addition = (
                 body_indent + "sourceCriterion:  " + mark + "\n"
                 + body_indent + "  ipStrategy:\n"
-                # depth 1 reads the rightmost forwarded entry: the address
-                # the trusted proxy saw and appended itself. Anything the
-                # caller wrote sits to the left of it and is never read.
+                # depth 1 reads the rightmost forwarded entry: the
+                # address the trusted proxy saw and appended itself.
+                # Anything the caller wrote sits to the left of it and
+                # is never read.
                 + body_indent + "    depth: 1\n"
             )
             text = (
@@ -2427,7 +2645,8 @@ class CloudHost(models.Model):
         self.ensure_one()
         ranges = self._effective_trusted_proxy_ranges()
         return self._patch_traefik_yml_trusted_proxies(
-            self.traefik_yml or "", ranges, self.block_direct_access,
+            self._patch_traefik_yml_dynamic_directory(self.traefik_yml or ""),
+            ranges, self.block_direct_access,
         )
 
     def _shipped_config_yml(self):
@@ -2461,7 +2680,9 @@ class CloudHost(models.Model):
         from .full_setup_executor import _build_inverseproxy
 
         return _build_inverseproxy(
-            self.traefik_inverseproxy_yaml or "",
+            self._patch_inverseproxy_yaml_dynamic_mount(
+                self.traefik_inverseproxy_yaml or "",
+            ),
             self.wildcard_domain,
             self.traefik_panel_password,
         )
@@ -2483,6 +2704,20 @@ class CloudHost(models.Model):
             problem = self._tls_pair_error(
                 host.tls_default_cert, host.tls_default_key,
             )
+            if problem:
+                raise ValidationError(problem)
+
+    @api.constrains("cdn_client_ca")
+    def _check_cdn_client_ca(self):
+        """Refuse an authority the proxy could not load.
+
+        Unreadable, it would leave the proxy unable to complete any TLS
+        handshake -- the whole host, not one router.
+
+        :raise ValidationError: when the text is not one PEM certificate.
+        """
+        for host in self:
+            problem = tls_names.authority_problem(host.cdn_client_ca)
             if problem:
                 raise ValidationError(problem)
 
@@ -2573,6 +2808,50 @@ class CloudHost(models.Model):
         """
         self.ensure_one()
         return (self.tls_default_cert or "", self.tls_default_key or "")
+
+    def _effective_cdn_client_ca(self):
+        """Return the authority a CDN's client certificate must chain to.
+
+        Only for a host reached through the CDN and closed to direct
+        traffic: anywhere else a visitor would be asked for a certificate
+        no browser has. The host's own field; modules that hold the
+        certificate for a whole zone override this for the hosts they know
+        sit behind it.
+
+        :return: a PEM certificate, or ``""``
+        :rtype: str
+        """
+        self.ensure_one()
+        if not (self.behind_cdn and self.block_direct_access):
+            return ""
+        return (self.cdn_client_ca or "").strip()
+
+    def _shipped_tls_client_auth_yml(self):
+        """Return the dynamic document that requires the CDN's certificate.
+
+        Empty when there is no authority to require, which is also the
+        signal to remove the file. Sets the *default* TLS options, so it
+        reaches every router on the host, the catch-all and the panel's
+        own included -- all of them reached through the CDN on a host this
+        applies to.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        if not self._effective_cdn_client_ca():
+            return ""
+        return (
+            "# Auto-generated by IncubaCloud. Do not edit by hand.\n"
+            "# Only the CDN, presenting the client certificate of our zone,\n"
+            "# completes a TLS handshake with this host.\n"
+            "tls:\n"
+            "  options:\n"
+            "    default:\n"
+            "      clientAuth:\n"
+            "        caFiles:\n"
+            "          - /etc/certs/cdn-client-ca.pem\n"
+            "        clientAuthType: RequireAndVerifyClientCert\n"
+        )
 
     def _effective_client_ip_header(self):
         """Return the header this host states the visitor's address in.
@@ -2874,6 +3153,29 @@ class CloudHost(models.Model):
                 _logger.info(
                     "Added Traefik access log config for host: %s", host.name,
                 )
+            # 1.0.183: the access log moves to its own file, which the
+            # proxy can only write through the directory mounted for it.
+            # The pair goes together, like HSTS: a path with no mount
+            # writes inside the container and is lost on the next recreate.
+            with_file = self._add_traefik_access_log_file(
+                vals.get("traefik_yml", host.traefik_yml),
+            )
+            with_mount = self._add_proxy_access_log_volume(
+                vals.get(
+                    "traefik_inverseproxy_yaml", host.traefik_inverseproxy_yaml,
+                ),
+            )
+            mount_line = self.PROXY_ACCESS_LOG.rsplit("/", 1)[0]
+            if (
+                with_file != vals.get("traefik_yml", host.traefik_yml)
+                and f"{mount_line}:{mount_line}" in (with_mount or "")
+            ):
+                vals["traefik_yml"] = with_file
+                vals["traefik_inverseproxy_yaml"] = with_mount
+                _logger.info(
+                    "Moved the Traefik access log to its own file for host: %s",
+                    host.name,
+                )
 
             # The security headers the ``secure`` middleware gained later.
             with_headers = self._add_traefik_security_headers(
@@ -2926,6 +3228,19 @@ class CloudHost(models.Model):
                 vals["traefik_config_yml"] = with_rl
                 _logger.info(
                     "Added Traefik ratelimit middleware for host: %s",
+                    host.name,
+                )
+
+            # 1.0.183: the login limit each instance's login router uses.
+            with_ll = self._add_traefik_loginlimit_middleware(
+                vals.get("traefik_config_yml", host.traefik_config_yml),
+            )
+            if with_ll != (
+                vals.get("traefik_config_yml", host.traefik_config_yml)
+            ):
+                vals["traefik_config_yml"] = with_ll
+                _logger.info(
+                    "Added Traefik loginlimit middleware for host: %s",
                     host.name,
                 )
 

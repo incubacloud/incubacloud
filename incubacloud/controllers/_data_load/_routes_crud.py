@@ -792,6 +792,7 @@ class CrudMixin:
             'behind_cdn': host.behind_cdn,
             'trusted_proxy_ranges': host.trusted_proxy_ranges or '',
             'block_direct_access': host.block_direct_access,
+            'cdn_client_ca': host.cdn_client_ca or '',
             # The default certificate is shown and described; its key is
             # only ever reported as stored or not, never returned.
             'tls_default_cert': host.tls_default_cert or '',
@@ -831,6 +832,7 @@ class CrudMixin:
         'traefik_config_yml', 'traefik_inverseproxy_yaml', 'traefik_yml',
         'exclude_from_autoassign', 'http_conn_rate',
         'trusted_proxy_ranges', 'block_direct_access', 'behind_cdn',
+        'cdn_client_ca',
         # The key is write-only: the model ignores an empty one, so a
         # save that does not paste a new key keeps the stored one.
         'tls_default_cert', 'tls_default_key',
@@ -1655,6 +1657,7 @@ class CrudMixin:
                 settings.metrics_remote_write_token
             ),
             'metrics_retention_days': settings.metrics_retention_days or 0,
+            'metrics_ship_security_logs': bool(settings.metrics_ship_security_logs),
             'grafana_base_url': settings.grafana_base_url or '',
             'metrics_central_public_host':
                 settings.metrics_central_public_host or '',
@@ -1685,6 +1688,7 @@ class CrudMixin:
         log_search_max_files=None, log_search_timeout_s=None,
         trusted_proxy_ranges=None, metrics_central_public_host=None,
         metrics_central_operator_sources=None,
+        metrics_ship_security_logs=None,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1810,6 +1814,10 @@ class CrudMixin:
         metrics_vals = {}
         if metrics_enabled is not None:
             metrics_vals['metrics_enabled'] = bool(metrics_enabled)
+        if metrics_ship_security_logs is not None:
+            metrics_vals['metrics_ship_security_logs'] = bool(
+                metrics_ship_security_logs,
+            )
         for field, value in (
             ('metrics_central_url', metrics_central_url),
             ('metrics_remote_write_url', metrics_remote_write_url),

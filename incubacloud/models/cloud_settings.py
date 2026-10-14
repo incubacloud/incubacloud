@@ -543,6 +543,15 @@ class CloudSettings(models.Model):
         help='How long the central keeps series. Passed to the central '
              'deployment playbook.',
     )
+    metrics_ship_security_logs = fields.Boolean(
+        string="Send hosts' security logs",
+        default=False,
+        help="Also send each host's security logs to the central: SSH and "
+             "sudo from the journal, auditd and fail2ban. Kept 90 days "
+             "there, where a host's own credentials can add lines but "
+             "never delete them, so the record outlives the host. Off by "
+             "default: a panel turns it on for hosts that are its own.",
+    )
     grafana_base_url = fields.Char(
         string='Grafana base URL',
         help='Base URL of the Grafana embedded in the panel, e.g. '
