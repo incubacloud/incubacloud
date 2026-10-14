@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 from odoo.tests.common import TransactionCase
 
 from ..models import acme_store
-from ..models.full_setup_executor import FullSetupExecutor
+from ..models.full_setup_executor import _TMP, FullSetupExecutor
 from ..models.push_trusted_proxies_executor import PushTrustedProxiesExecutor
 from ..models.transport import CommandResult, SSHTransport
 
@@ -83,6 +83,18 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
         move = self._cmds()["Move Traefik configuration"]
         self.assertIn("~/traefik/traefik.yml", move)
         self.assertIn("~/traefik/config.yml", move)
+
+    def test_the_static_file_is_only_pointed_at_a_directory_the_proxy_has(self):
+        """This job ships no compose file. On a host set up before the
+        directory form existed, the container has no such mount, and a
+        provider pointing at it would drop every middleware the
+        entrypoints name: the file is put back to the single-file form
+        until the host's next Full Setup."""
+        move = self._cmds()["Move Traefik configuration"]
+        self.assertIn('docker inspect inverseproxy-proxy-1', move)
+        self.assertIn('/etc/traefik/dynamic ', move)
+        self.assertIn('filename: /etc/traefik/config.yml', move)
+        self.assertIn(f'mv {_TMP}-traefik.yml ~/traefik/traefik.yml', move)
 
     def test_the_dynamic_copy_is_refreshed(self):
         # The file provider reads config.yml from the dynamic directory

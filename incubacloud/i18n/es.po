@@ -515,6 +515,18 @@ msgid "A move is already in progress for this instance."
 msgstr "Ya hay una migración en curso para esta instancia."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_alert.py:0
+msgid "A policy must confirm after at least one sighting."
+msgstr "Una política debe confirmar tras al menos una observación."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_alert.py:0
+msgid "A policy's window must be at least one second."
+msgstr "La ventana de una política debe ser de al menos un segundo."
+
+#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_instance_one_production_per_project
 msgid "A project can only have one production instance."
 msgstr "Un proyecto solo puede tener una instancia de producción."
@@ -887,6 +899,12 @@ msgstr "Todos"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "All (every job outcome and every alert)"
+msgstr "Todo (cada resultado de trabajo y cada alerta)"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "All actions"
@@ -935,6 +953,20 @@ msgstr "IPs SSH permitidas"
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Already imported"
 msgstr "Ya importada"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_ship_security_logs
+msgid ""
+"Also send each host's security logs to the central: SSH and sudo from the "
+"journal, auditd and fail2ban. Kept 90 days there, where a host's own "
+"credentials can add lines but never delete them, so the record outlives the "
+"host. Off by default: a panel turns it on for hosts that are its own."
+msgstr ""
+"Enviar también al central los logs de seguridad de cada host: SSH y sudo del"
+" journal, auditd y fail2ban. Allí se guardan 90 días, y las credenciales del"
+" propio host pueden añadir líneas pero nunca borrarlas, así que el registro "
+"sobrevive al host. Desactivado por defecto: un panel lo activa para los "
+"hosts que son suyos."
 
 #. module: incubacloud
 #. odoo-python
@@ -1670,6 +1702,17 @@ msgid "Button Icon"
 msgstr "Icono del botón"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__cdn_client_ca
+msgid "CDN Client Certificate Authority"
+msgstr "Autoridad del certificado de cliente de la CDN"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid "CDN client certificate authority"
+msgstr "Autoridad del certificado de cliente de la CDN"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__trusted_proxy_ranges
 msgid ""
 "CIDR ranges of the proxies in front of this host, one per line. Traefik "
@@ -2254,8 +2297,8 @@ msgstr "Sesión de terminal de instancia Cloud"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_notification_level
-msgid "Cloud Job Notifications"
-msgstr "Notificaciones de jobs Cloud"
+msgid "Cloud Notifications"
+msgstr "Notificaciones Cloud"
 
 #. module: incubacloud
 #: model:ir.model,name:incubacloud.model_cloud_project
@@ -4633,9 +4676,26 @@ msgid "Failed to trust SSH host key."
 msgstr "Falló al confiar en la clave SSH del host."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__failures_warnings
+msgid "Failures and warnings"
+msgstr "Fallos y advertencias"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Failures and warnings (failed jobs and every alert)"
+msgstr "Fallos y advertencias (trabajos fallidos y todas las alertas)"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__failures
 msgid "Failures only"
 msgstr "Solo fallos"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
+msgid "Failures only (failed jobs and critical alerts)"
+msgstr "Solo fallos (trabajos fallidos y alertas críticas)"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8218,6 +8278,7 @@ msgstr ""
 "duplicity siempre respalda la base de datos + filestore como una cadena."
 
 #. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__odoo_proxy__none
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_security__none
@@ -8877,6 +8938,24 @@ msgstr ""
 "host."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__cdn_client_ca
+msgid ""
+"PEM certificate the CDN's own client certificate is signed by (or that "
+"certificate itself, when it is self-signed). On a host reached through the "
+"CDN and closed to direct traffic, the proxy then requires it on every TLS "
+"connection: the CDN's addresses are shared by all of its customers, and only"
+" this certificate tells our zone apart from anybody else's pointing at the "
+"same origin. Leave empty to accept any connection the firewall lets in."
+msgstr ""
+"Certificado PEM con el que está firmado el certificado de cliente de la CDN "
+"(o ese mismo certificado, si es autofirmado). En un host al que se llega por"
+" la CDN y cerrado al tráfico directo, el proxy lo exige entonces en cada "
+"conexión TLS: las direcciones de la CDN las comparten todos sus clientes, y "
+"solo este certificado distingue nuestra zona de la de cualquier otro que "
+"apunte al mismo origen. Déjelo vacío para aceptar cualquier conexión que "
+"deje pasar el firewall."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "PR #"
@@ -9030,29 +9109,29 @@ msgstr "DST de duplicity por instancia: {backend_dst}/{project}/{instance}"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid ""
 "Per-source new-connection cap (per second) on ports 80/443, enforced by the "
-"host firewall. 0 disables it (default). Turn it on only after rehearsing on "
-"a throwaway VPS — see runbook RB-18. Applies on the next hardening run."
+"host firewall. 0 disables it. Not applied behind a CDN, where the CDN's "
+"allowlist replaces it. Applies on the next hardening run."
 msgstr ""
-"Límite de conexiones nuevas por segundo y por origen en los puertos 80/443, "
-"aplicado por el cortafuegos del host. 0 lo desactiva (valor por defecto). "
-"Actívelo solo después de ensayarlo en un VPS desechable; consulte el runbook"
-" RB-18. Se aplica en la siguiente ejecución de hardening."
+"Límite de conexiones nuevas por origen (por segundo) en los puertos 80/443, "
+"aplicado por el firewall del host. 0 lo desactiva. No se aplica detrás de "
+"una CDN, donde lo sustituye la lista de direcciones de la CDN. Se aplica en "
+"la próxima ejecución del hardening."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__http_conn_rate
 msgid ""
 "Per-source new-connection cap (per second) on ports 80/443, enforced on the "
-"nftables forward hook by host hardening. 0 disables it (the default). Turn "
-"it on only after rehearsing the change on a throwaway VPS — an unrehearsed "
-"drop on that hook can break Docker's published ports (see runbook RB-18). "
-"Applies on the next hardening run."
+"nftables forward hook by host hardening. Only connections redirected to the "
+"proxy are counted, never the containers' own outbound traffic. 0 disables "
+"it. A host behind a CDN gets the CDN's allowlist instead, so the rate is not"
+" applied there. Applies on the next hardening run."
 msgstr ""
-"Límite de conexiones nuevas por segundo y por origen en los puertos 80/443, "
-"aplicado por el hardening del host en el hook forward de nftables. 0 lo "
-"desactiva (valor por defecto). Actívelo solo después de ensayar el cambio en"
-" un VPS desechable: un descarte sin ensayar en ese hook puede romper los "
-"puertos publicados de Docker (consulte el runbook RB-18). Se aplica en la "
-"siguiente ejecución de hardening."
+"Límite de conexiones nuevas por origen (por segundo) en los puertos 80/443, "
+"aplicado por el hardening del host en el hook forward de nftables. Solo "
+"cuenta las conexiones redirigidas al proxy, nunca el tráfico saliente de los"
+" propios contenedores. 0 lo desactiva. Un host detrás de una CDN recibe en "
+"su lugar la lista de direcciones de la CDN, así que allí no se aplica. Se "
+"aplica en la próxima ejecución del hardening."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9743,11 +9822,13 @@ msgstr "Reconstruyendo…"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
 "Receive POST notifications on your own HTTPS endpoint\n"
-"                            when jobs change state. When a signing secret is set,\n"
+"                            when jobs change state and when alerts are raised or\n"
+"                            resolved. When a signing secret is set,\n"
 "                            payloads include an"
 msgstr ""
 "Reciba notificaciones POST en su propio endpoint HTTPS\n"
-"                            cuando los trabajos cambien de estado. Si se define un secreto de firma,\n"
+"                            cuando los trabajos cambien de estado y cuando se abran o\n"
+"                            se resuelvan alertas. Si se define un secreto de firma,\n"
 "                            las cargas útiles incluyen una"
 
 #. module: incubacloud
@@ -10690,6 +10771,18 @@ msgid "SSH user is required"
 msgstr "El usuario SSH es obligatorio"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"SSH, sudo, auditd and fail2ban, kept 90 days in the central. A host can add "
+"lines there but never delete them. Applies when the agents are next "
+"installed."
+msgstr ""
+"SSH, sudo, auditd y fail2ban, guardados 90 días en el central. Un host puede"
+" añadir líneas allí, pero nunca borrarlas. Se aplica la próxima vez que se "
+"instalen los agentes."
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__smtp_relay_security__ssl
 msgid "SSL/TLS"
 msgstr "SSL/TLS"
@@ -10941,6 +11034,13 @@ msgstr "Enviar notificación por correo en backup exitoso"
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Send email notifications"
 msgstr "Enviar notificaciones por correo"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_ship_security_logs
+msgid "Send hosts' security logs"
+msgstr "Enviar los logs de seguridad de los hosts"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12456,6 +12556,12 @@ msgid "Toggle pull request previews"
 msgstr "Activar o desactivar las vistas previas de pull requests"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "Toggle sending hosts' security logs"
+msgstr "Activar o desactivar el envío de los logs de seguridad de los hosts"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_restore_upload_grant__token
 msgid "Token"
 msgstr "Identificador"
@@ -13212,6 +13318,11 @@ msgstr ""
 "fallo sin serlo, así que hay que avisar al operador antes, no después."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__was_critical
+msgid "Was Critical"
+msgstr "Fue crítica"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_job_duration_watch_ir_actions_server
 msgid "Watch long-running jobs (duration ceiling)"
 msgstr "Vigilar trabajos de larga duración (techo de duración)"
@@ -13305,6 +13416,19 @@ msgstr ""
 "enterrada en la del host."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_notification_level
+msgid ""
+"What reaches this user, for jobs and alerts alike. All: every job outcome "
+"and every alert. Failures and warnings: failed jobs, and critical and "
+"warning alerts. Failures only: failed jobs and critical alerts. None: "
+"nothing."
+msgstr ""
+"Lo que recibe este usuario, tanto de trabajos como de alertas. Todo: cada "
+"resultado de trabajo y cada alerta. Fallos y advertencias: los trabajos "
+"fallidos y las alertas críticas y de advertencia. Solo fallos: los trabajos "
+"fallidos y las alertas críticas. Ninguno: nada."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_state
 msgid ""
 "What the last verification pass found at the frozen backup path. Written by "
@@ -13331,13 +13455,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "When enabled, cloud job notifications are sent to"
-msgstr ""
-"Cuando está activado, las notificaciones de trabajos de la nube se envían a"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
 "When enabled, new instances will be automatically placed on the\n"
@@ -13347,6 +13464,12 @@ msgstr ""
 "Cuando está activado, las nuevas instancias se colocan automáticamente en el\n"
 "                        host con más recursos disponibles. Cuando está desactivado, se debe\n"
 "                        seleccionar un host manualmente."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
+msgid "When enabled, notifications are sent to"
+msgstr "Cuando está activado, las notificaciones se envían a"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_project__pr_reviews_enabled
@@ -13509,12 +13632,12 @@ msgstr ""
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_res_users__cloud_email_enabled
 msgid ""
-"When unchecked, no cloud job emails are sent to this user regardless of "
-"their notification level. Other notification channels are not affected."
+"When unchecked, no cloud emails are sent to this user regardless of their "
+"notification level. Other notification channels are not affected."
 msgstr ""
-"Cuando está desmarcado, no se envían correos de trabajos de la nube a este "
-"usuario, independientemente de su nivel de notificación. Los demás canales "
-"de notificación no se ven afectados."
+"Cuando está desmarcado, no se envían correos de notificación a este usuario,"
+" independientemente de su nivel de notificación. Los demás canales de "
+"notificación no se ven afectados."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13563,6 +13686,19 @@ msgstr ""
 "trabajo de instalación y el cron de reconciliación; nunca se deduce de las "
 "lecturas, porque una lectura prueba que los agentes funcionaron en algún "
 "momento, no que sigan ahí."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__was_critical
+msgid ""
+"Whether this alert was critical at any point while active. Who is told it is"
+" over is decided by the worst it was, not by its level at the end: an alert "
+"that paged someone as critical and stepped down before clearing would "
+"otherwise close without a word to exactly those people."
+msgstr ""
+"Si esta alerta fue crítica en algún momento mientras estuvo activa. A quién "
+"se avisa de su cierre lo decide lo peor que llegó a ser, no su nivel al "
+"final: una alerta que avisó a alguien como crítica y bajó de nivel antes de "
+"resolverse se cerraría, si no, sin decir nada precisamente a esas personas."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pip_dependency_sources
@@ -13671,6 +13807,22 @@ msgstr "Inicio de ventana"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__with_filestore
 msgid "With Filestore"
 msgstr "Con Filestore"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+msgid ""
+"With direct access refused, also require every TLS connection to present a "
+"client certificate signed by this authority. The CDN's addresses are shared "
+"by all its customers; only your zone's certificate tells your traffic apart."
+" Leave empty to accept any connection the firewall lets in. Applied by Full "
+"Setup or Push Trusted Proxy Settings."
+msgstr ""
+"Con el acceso directo rechazado, exigir además en cada conexión TLS un "
+"certificado de cliente firmado por esta autoridad. Las direcciones de la CDN"
+" las comparten todos sus clientes; solo el certificado de su zona distingue "
+"su tráfico. Déjelo vacío para aceptar cualquier conexión que deje pasar el "
+"firewall. Se aplica con Full Setup o Push Trusted Proxy Settings."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14800,104 +14952,3 @@ msgstr "↻ Verificar instalación"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "↻ Re-detect installation"
 msgstr "↻ Re-detectar instalación"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_alert.py:0
-msgid "A policy must confirm after at least one sighting."
-msgstr "Una política debe confirmar tras al menos una observación."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_alert.py:0
-msgid "A policy's window must be at least one second."
-msgstr "La ventana de una política debe ser de al menos un segundo."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
-msgid "All (every job outcome and every alert)"
-msgstr "Todo (cada resultado de trabajo y cada alerta)"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_notification_level
-msgid "Cloud Notifications"
-msgstr "Notificaciones Cloud"
-
-#. module: incubacloud
-#: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__failures_warnings
-msgid "Failures and warnings"
-msgstr "Fallos y advertencias"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
-msgid "Failures and warnings (failed jobs and every alert)"
-msgstr "Fallos y advertencias (trabajos fallidos y todas las alertas)"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.js:0
-msgid "Failures only (failed jobs and critical alerts)"
-msgstr "Solo fallos (trabajos fallidos y alertas críticas)"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid ""
-"Receive POST notifications on your own HTTPS endpoint\n"
-"                            when jobs change state and when alerts are raised or\n"
-"                            resolved. When a signing secret is set,\n"
-"                            payloads include an"
-msgstr ""
-"Reciba notificaciones POST en su propio endpoint HTTPS\n"
-"                            cuando los trabajos cambien de estado y cuando se abran o\n"
-"                            se resuelvan alertas. Si se define un secreto de firma,\n"
-"                            las cargas útiles incluyen una"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__was_critical
-msgid "Was Critical"
-msgstr "Fue crítica"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_notification_level
-msgid ""
-"What reaches this user, for jobs and alerts alike. All: every job outcome "
-"and every alert. Failures and warnings: failed jobs, and critical and "
-"warning alerts. Failures only: failed jobs and critical alerts. None: "
-"nothing."
-msgstr ""
-"Lo que recibe este usuario, tanto de trabajos como de alertas. Todo: cada "
-"resultado de trabajo y cada alerta. Fallos y advertencias: los trabajos "
-"fallidos y las alertas críticas y de advertencia. Solo fallos: los trabajos "
-"fallidos y las alertas críticas. Ninguno: nada."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
-msgid "When enabled, notifications are sent to"
-msgstr "Cuando está activado, las notificaciones se envían a"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_res_users__cloud_email_enabled
-msgid ""
-"When unchecked, no cloud emails are sent to this user regardless of their "
-"notification level. Other notification channels are not affected."
-msgstr ""
-"Cuando está desmarcado, no se envían correos de notificación a este usuario,"
-" independientemente de su nivel de notificación. Los demás canales de "
-"notificación no se ven afectados."
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_alert__was_critical
-msgid ""
-"Whether this alert was critical at any point while active. Who is told it is"
-" over is decided by the worst it was, not by its level at the end: an alert "
-"that paged someone as critical and stepped down before clearing would "
-"otherwise close without a word to exactly those people."
-msgstr ""
-"Si esta alerta fue crítica en algún momento mientras estuvo activa. A quién "
-"se avisa de su cierre lo decide lo peor que llegó a ser, no su nivel al "
-"final: una alerta que avisó a alguien como crítica y bajó de nivel antes de "
-"resolverse se cerraría, si no, sin decir nada precisamente a esas personas."

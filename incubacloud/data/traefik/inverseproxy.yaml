@@ -18,8 +18,13 @@ services:
     restart: unless-stopped
     tty: true
     volumes:
+      # The access log, in its own file the host rotates (30 days).
+      - /var/log/traefik:/var/log/traefik
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./config.yml:/etc/traefik/config.yml:ro
+      # Every dynamic document, config.yml's copy included: this is
+      # what traefik.yml's file provider reads.
+      - ./dynamic:/etc/traefik/dynamic:ro
       - ./certs:/etc/certs:rw,Z
       - acme:/etc/traefik/acme:rw,Z
     #

@@ -61,10 +61,19 @@ Hardening applies a security recipe on the host:
 
 - a non-root operator user when you connect as `root`, and SSH on a rotated
   port, key-only, with root login disabled at the end;
-- an nftables firewall that accepts only SSH, HTTP and HTTPS, plus fail2ban;
+- an nftables firewall that accepts only SSH, HTTP and HTTPS, with a cap of
+  new connections per visitor's address (50 a second by default, set on the
+  host's Advanced tab);
+- fail2ban: an address that fails SSH three times, or the Odoo login form ten
+  times in ten minutes, is banned for an hour (the login ban is off on a host
+  behind a CDN);
 - kernel `sysctl` hardening, automatic security updates (with a reboot at
   04:00 when a kernel update lands), a hardened Docker daemon, journald limits
-  and auditd rules.
+  and auditd rules, with the audit log kept for weeks.
+
+Every instance also gets a stricter limit on its login endpoints (20 attempts
+a minute per address) on top of the general one, from its next deploy or
+rebuild. The proxy's access log is kept 30 days on the host.
 
 Before you apply it:
 

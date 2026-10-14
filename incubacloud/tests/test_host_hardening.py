@@ -10,9 +10,12 @@ SSH-dependent finalize (``_finalize_disable_root``) is proven live on a
 real VPS, not here — it opens a real asyncssh connection.
 """
 import asyncio
+import importlib.util
+import os
 
 from unittest.mock import MagicMock
 
+from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.host_hardening_executor import (
@@ -176,22 +179,27 @@ class TestHardeningPreflight(TransactionCase):
         already the only addresses nftables lets near the port.
         """
         play = self._playbook()
-        jails = [
-            t for t in (play.get("tasks") or [])
+        jails = {
+            str(t["ansible.builtin.copy"]["dest"]): t["ansible.builtin.copy"]["content"]
+            for t in (play.get("tasks") or [])
             if "fail2ban/jail.d" in str(
                 t.get("ansible.builtin.copy", {}).get("dest", "")
             )
-        ]
-        self.assertEqual(
-            len(jails), 1, "hardening must ship exactly one sshd jail",
-        )
-        content = jails[0]["ansible.builtin.copy"]["content"]
-        self.assertIn("ignoreip", content)
-        self.assertIn(
-            "ic_fail2ban_ignoreip", content,
-            "the jail must exempt the operators the firewall trusts — "
-            "including the control IP the play itself came from",
-        )
+        }
+        # The sshd jail, and since 1.0.183 the web-login one: a ban on
+        # 80/443 of the panel's address would cut its health checks and
+        # every tenant it serves from there.
+        self.assertEqual(set(jails), {
+            "/etc/fail2ban/jail.d/sshd-incubacloud.local",
+            "/etc/fail2ban/jail.d/incubacloud-weblogin.local",
+        })
+        for dest, content in jails.items():
+            self.assertIn("ignoreip", content, dest)
+            self.assertIn(
+                "ic_fail2ban_ignoreip", content,
+                "every jail must exempt the operators the firewall trusts — "
+                "including the control IP the play itself came from",
+            )
 
     def test_fail2ban_never_exempts_the_whole_internet(self):
         """The exemption list must not inherit the firewall's catch-all.
@@ -594,13 +602,16 @@ class TestHardeningPreflight(TransactionCase):
         self.assertIn(self._FWD_DROP, forward)
 
     def test_a_host_reached_directly_judges_nothing_in_forward(self):
-        """Without ranges the forward chain stays what every host runs:
-        the plain policy, plus the cap when a rate is set."""
-        for extra in ({}, {"ic_http_conn_rate": 50}):
-            forward = self._forward_chain(self._render_ruleset(**extra))
-            self.assertFalse(
-                [l for l in forward if "ct status dnat" in l], extra,
-            )
+        """Without ranges the forward chain allowlists nobody: the plain
+        policy, plus the cap when a rate is set -- whose meters are the
+        only rules there."""
+        forward = self._forward_chain(self._render_ruleset())
+        self.assertFalse([l for l in forward if "ct status dnat" in l])
+        forward = self._forward_chain(self._render_ruleset(ic_http_conn_rate=50))
+        judged = [l for l in forward if "ct status dnat" in l]
+        self.assertEqual(len(judged), 2)
+        self.assertTrue(all("meter ic_http_conn" in l for l in judged))
+        self.assertFalse([l for l in forward if "@ic_cdn_v" in l])
 
     def test_a_host_with_no_ipv6_range_judges_no_ipv6_in_forward(self):
         forward = self._forward_chain(self._render_ruleset(
@@ -612,13 +623,11 @@ class TestHardeningPreflight(TransactionCase):
         self.assertNotIn(self._FWD_ACCEPT6, forward)
         self.assertIn(self._FWD_DROP, forward)
 
-    def test_conn_rate_meter_is_off_by_default(self):
-        """The fleet ruleset must not change unless a rate is set.
+    def test_conn_rate_meter_is_absent_without_a_rate(self):
+        """A run that passes no rate renders no cap.
 
-        ``ic_http_conn_rate`` defaults to 0, so the meter block is absent
-        and the rendered ruleset is the plain accept path every host
-        already runs. Shipping an enabled drop on the forward hook without
-        a throwaway-VPS rehearsal is the 2026-08-14 failure mode.
+        The executor always passes the host's rate; a playbook run by
+        hand without one, or a host set to 0, keeps the plain accept path.
         """
         active = self._active_lines(self._render_ruleset())
         self.assertFalse(
@@ -653,6 +662,28 @@ class TestHardeningPreflight(TransactionCase):
             "the meter must sit in the forward chain, between forward and "
             "output",
         )
+
+    def test_the_cap_weighs_only_connections_redirected_to_the_proxy(self):
+        """The cap carries the same four guards as the CDN allowlist.
+
+        Matched on ``tcp dport`` alone it also counted the containers'
+        own outbound 80/443, so an Odoo calling an API in a burst was
+        throttled like a visitor. ``ct status dnat`` keeps that traffic
+        out, ``ct original proto-dst`` names the port the visitor
+        dialled, and ``meta l4proto tcp`` comes first because nftables
+        1.0.2 cannot type the original port without it.
+        """
+        forward = self._forward_chain(self._render_ruleset(ic_http_conn_rate=50))
+        meters = [l for l in forward if "meter ic_http_conn" in l]
+        self.assertEqual(len(meters), 2)
+        for line in meters:
+            self.assertTrue(line.startswith("meta l4proto tcp ct "), line)
+            for guard in (
+                "ct state new", "ct status dnat",
+                "ct original proto-dst { 80, 443 }",
+            ):
+                self.assertIn(guard, line)
+            self.assertNotIn("tcp dport", line)
 
     def test_conn_rate_never_breaks_the_ruleset(self):
         """On or off, the ruleset stays valid and Docker-safe.
@@ -695,6 +726,11 @@ class TestHardeningExecutorWiring(TransactionCase):
         host.allowed_ssh_ips = host_attrs.get("allowed_ssh_ips", "203.0.113.7")
         host.auto_security_updates = host_attrs.get("auto_security_updates", True)
         host.http_conn_rate = host_attrs.get("http_conn_rate", 0)
+        host.behind_cdn = host_attrs.get("behind_cdn", False)
+        host.block_direct_access = host_attrs.get("block_direct_access", False)
+        host._effective_trusted_proxy_ranges.return_value = host_attrs.get(
+            "trusted_proxy_ranges", [],
+        )
 
         ex = object.__new__(HostHardeningExecutor)
         ex.env = self.env
@@ -724,13 +760,50 @@ class TestHardeningExecutorWiring(TransactionCase):
         self.assertFalse(ex._needs_user_creation)
 
     def test_extra_vars_carries_the_http_conn_rate(self):
-        """The per-host conn-rate cap reaches the playbook, off by default."""
+        """The per-host conn-rate cap reaches the playbook as set, 0 included."""
         off = self._make(user="root", port=22).get_extra_vars()
         self.assertEqual(off["ic_http_conn_rate"], 0)
         on = self._make(
             user="root", port=22, http_conn_rate=50,
         ).get_extra_vars()
         self.assertEqual(on["ic_http_conn_rate"], 50)
+
+    def test_behind_a_cdn_the_cap_is_left_out_whatever_the_host_says(self):
+        """Every visitor arrives from the same handful of edge addresses
+        there, so a per-source cap would throttle the CDN itself. Open or
+        closed at the origin alike: open is the state a pool host is in
+        between moving its names and closing its firewall."""
+        open_ = self._make(
+            user="root", port=22, http_conn_rate=50, behind_cdn=True,
+        ).get_extra_vars()
+        self.assertEqual(open_["ic_http_conn_rate"], 0)
+        closed = self._make(
+            user="root", port=22, http_conn_rate=50, behind_cdn=True,
+            block_direct_access=True, trusted_proxy_ranges=["198.51.100.0/24"],
+        ).get_extra_vars()
+        self.assertEqual(closed["ic_http_conn_rate"], 0)
+
+    def test_extra_vars_name_the_proxies_the_jail_must_not_ban(self):
+        ex = self._make(
+            user="root", port=22,
+            trusted_proxy_ranges=["198.51.100.0/24", "2001:db8::/32"],
+        )
+        self.assertEqual(
+            ex.get_extra_vars()["ic_trusted_proxy_ranges"],
+            "198.51.100.0/24 2001:db8::/32",
+        )
+        self.assertEqual(
+            self._make(user="root", port=22).get_extra_vars()["ic_trusted_proxy_ranges"],
+            "",
+        )
+
+    def test_extra_vars_tell_the_playbook_whether_a_cdn_fronts_the_host(self):
+        """The web-login jail bans by connecting address, which is the
+        CDN's on a host behind one: the playbook needs to know."""
+        direct = self._make(user="root", port=22).get_extra_vars()
+        self.assertIs(direct["ic_behind_cdn"], False)
+        fronted = self._make(user="root", port=22, behind_cdn=True).get_extra_vars()
+        self.assertIs(fronted["ic_behind_cdn"], True)
 
     def test_parse_results_gates_on_port_listening(self):
         """parse_results refuses to proceed unless the new port came up."""
@@ -805,3 +878,92 @@ class TestHardeningExecutorWiring(TransactionCase):
         finally:
             executor_registry._executors.pop(code, None)
             executor_registry._overridden.discard(code)
+
+
+def _load_conn_rate_migration():
+    """Import the 1.0.183 post-migrate script as a module."""
+    path = os.path.join(
+        get_module_path("incubacloud"), "migrations", "1.0.183",
+        "post-migrate.py",
+    )
+    spec = importlib.util.spec_from_file_location(
+        "ic_post_migrate_1_0_179", path,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestConnRateDefault(TransactionCase):
+    """The cap is on by default, for new hosts and for those left at 0."""
+
+    def _host(self, name, **vals):
+        """Create a host with the minimum fields, plus *vals*."""
+        return self.env["cloud.host"].create({
+            "name": name,
+            "ip_address": "192.0.2.40",
+            "user": "root",
+            "wildcard_domain": f"{name}.example.com",
+        } | vals)
+
+    def test_a_new_host_gets_the_cap(self):
+        """50 new connections per second per source, not 0."""
+        self.assertEqual(self._host("rate-new").http_conn_rate, 50)
+
+    def test_the_migration_raises_only_hosts_left_at_zero(self):
+        """A host at 0 takes the default; one tuned by hand keeps its rate."""
+        off = self._host("rate-off", http_conn_rate=0)
+        tuned = self._host("rate-tuned", http_conn_rate=120)
+        _load_conn_rate_migration().migrate(self.env.cr, "1.0.181")
+        (off | tuned).invalidate_recordset(["http_conn_rate"])
+        self.assertEqual(off.http_conn_rate, 50)
+        self.assertEqual(tuned.http_conn_rate, 120)
+
+
+
+class TestAuditRetention(TransactionCase):
+    """auditd keeps weeks, not days (13-oct-2026: Cloud 1 held 2-3 days)."""
+
+    def _tasks(self):
+        """Return the hardening playbook's tasks."""
+        import yaml
+
+        path = os.path.join(
+            get_module_path("incubacloud"), "ansible", "playbooks",
+            "host_hardening.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            return yaml.safe_load(fh)[0]["tasks"]
+
+    def test_container_bpf_noise_is_excluded_before_the_real_rules(self):
+        """Three quarters of the log was systemd's BPF loads for container
+        starts and stops; "never" rules only spare what follows them."""
+        rules = next(
+            t for t in self._tasks() if t.get("name") == "Write the auditd rules"
+        )["ansible.builtin.copy"]["content"]
+        lines = [
+            l for l in rules.splitlines() if l.strip() and not l.startswith("#")
+        ]
+        self.assertEqual(lines[0], "-a never,exclude -F msgtype=BPF")
+        self.assertEqual(lines[1], "-a never,exit -F arch=b64 -S bpf")
+        self.assertTrue(all(l.startswith("-w ") or "always" in l for l in lines[2:]))
+
+    def test_the_log_is_capped_and_kept_long(self):
+        """Rotation is by size: 12 files of 25 MB, 300 MB at most."""
+        task = next(
+            t for t in self._tasks()
+            if t.get("name") == "Set how much the audit log keeps"
+        )
+        values = {i["key"]: i["value"] for i in task["loop"]}
+        self.assertEqual(values["max_log_file"], "25")
+        self.assertEqual(values["num_logs"], "12")
+        self.assertEqual(values["max_log_file_action"], "ROTATE")
+
+    def test_restarting_journald_leaves_auditing_on(self):
+        """On Ubuntu 22.04 the journald restart of this very playbook
+        switched the kernel's auditing off until the next reboot."""
+        content = next(
+            t for t in self._tasks()
+            if t.get("name") == "Write the journald limits"
+        )["ansible.builtin.copy"]["content"]
+        self.assertIn("\nAudit=yes\n", content)

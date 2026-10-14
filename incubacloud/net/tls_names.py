@@ -157,6 +157,34 @@ def pair_problem(cert_pem, key_pem):
     return None
 
 
+def authority_problem(cert_pem):
+    """Return why *cert_pem* cannot serve as a client-certificate authority.
+
+    The proxy loads it to verify every TLS connection; a file it cannot
+    read leaves it unable to complete any handshake, which takes the whole
+    host off the air. Exactly one PEM certificate is expected.
+
+    :param str cert_pem: PEM text, possibly empty (nothing to check)
+    :return: a message for whoever pasted it, or None when it is usable
+    :rtype: str | None
+    """
+    pem = (cert_pem or "").strip()
+    if not pem:
+        return None
+    if "PRIVATE KEY-----" in pem:
+        # The parser reads the first certificate and ignores the rest,
+        # so a key pasted along would go unnoticed here and end up on
+        # every host, in a world-readable file.
+        return "This is an authority's certificate only: paste no private key."
+    if pem.count("-----BEGIN CERTIFICATE-----") != 1:
+        return "Paste exactly one PEM certificate (-----BEGIN CERTIFICATE-----)."
+    try:
+        x509.load_pem_x509_certificate(pem.encode())
+    except (ValueError, TypeError):
+        return "The certificate cannot be read: check that it was pasted whole."
+    return None
+
+
 def certificate_info(cert_pem):
     """Describe a PEM certificate, or return None when nothing reads.
 

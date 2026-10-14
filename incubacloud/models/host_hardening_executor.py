@@ -136,12 +136,28 @@ class HostHardeningExecutor(AnsibleExecutor):
             "ic_ssh_port": self._new_port,
             "ic_ssh_allowlist": self._ssh_allowlist,
             "ic_auto_reboot": bool(host.auto_security_updates),
-            "ic_http_conn_rate": host.http_conn_rate or 0,
+            # The per-source cap counts new connections by the address
+            # that opened them. Behind a CDN every visitor arrives from
+            # the same handful of edge addresses, so the cap would throttle
+            # the CDN itself and protect nobody -- whether or not the host
+            # also refuses direct traffic. A host still open at the origin
+            # while behind the CDN (the state a pool host is in between
+            # moving its names and closing its firewall) therefore gets no
+            # cap at all, exactly as before the cap existed. The rate is
+            # kept on the host record: it comes back the day the host
+            # leaves the CDN.
+            "ic_http_conn_rate": 0 if host.behind_cdn else (host.http_conn_rate or 0),
+            # The web-login jail bans by the address that opened the
+            # connection. Behind a CDN that address is the CDN's, and
+            # banning it would cut every visitor that edge serves.
+            "ic_behind_cdn": bool(host.behind_cdn),
+            # Addresses the proxy is told to trust as proxies are never
+            # visitors, so the web-login jail must not ban them either:
+            # a failed login arriving through one is the visitor's, not
+            # the proxy's.
+            "ic_trusted_proxy_ranges": " ".join(host._effective_trusted_proxy_ranges()),
             # Filtering 80/443 to the CDN's ranges replaces the per-source
             # rate cap; both at once would count the edge as one visitor.
-            # The rate is still handed over -- it is the host's setting --
-            # and the ruleset template leaves the cap out whenever the
-            # ranges are present, so the box gets one or the other.
             # Deliberately gated on the host also refusing direct access
             # at the proxy: enabling the firewall half on its own is how
             # a host stops answering anybody without the panel saying so.

@@ -74,6 +74,9 @@
       loop:
         - "{{ ic_obs_dir }}"
         - "{{ ic_obs_dir }}/textfile"
+        # Where the log collector remembers how far it read each file, so
+        # a restart does not send the 30-day access log again.
+        - "{{ ic_obs_dir }}/promtail-positions"
 
     - name: Write the remote-write credentials
       # 0600: this secret authorises writes into the central. It is
@@ -223,12 +226,18 @@
       register: ic_scrape_cfg
 
     - name: Write the access-log collector configuration
-      # Only the proxy's own container is read, and only its JSON access
-      # lines: Traefik's operational messages share the same stream and
-      # are noise here. The service name becomes a label, which is what
-      # makes "show me this instance's requests" a cheap query — its
-      # cardinality is bounded by the instances on this host, not by
-      # anything unbounded like a path or an IP.
+      # The proxy's access log, from the file it writes on the host
+      # (1.0.183) -- and from its container output while the host has not
+      # been set up since and still logs there; the two never overlap.
+      # Only JSON access lines are kept. The service name becomes a label,
+      # which is what makes "show me this instance's requests" a cheap
+      # query -- its cardinality is bounded by the instances on this host,
+      # not by anything unbounded like a path or an IP.
+      #
+      # When the panel says so, the host's security logs as well: SSH and
+      # sudo from the journal, auditd and fail2ban from their files. The
+      # central keeps them 90 days (``log_type="security"``), and this
+      # host's credential can add lines there but never delete them.
       when: ic_logs_write_url | length > 0
       ansible.builtin.copy:
         dest: "{{ ic_obs_dir }}/promtail.yaml"
@@ -238,13 +247,59 @@
             http_listen_port: 9080
             grpc_listen_port: 0
           positions:
-            filename: /tmp/positions.yaml
+            filename: /var/lib/promtail/positions.yaml
           clients:
             - url: {{ ic_logs_write_url }}
               basic_auth:
                 username: {{ ic_remote_write_user }}
                 password_file: /etc/remote_write_token
           scrape_configs:
+            - job_name: traefik-access-file
+              static_configs:
+                - targets: [localhost]
+                  labels:
+                    job: traefik-access
+                    host: "{{ ic_host_name }}"
+                    __path__: /var/log/traefik/access.log
+              pipeline_stages:
+                - drop:
+                    expression: '^[^{]'
+                - json:
+                    expressions:
+                      service: ServiceName
+                      status: DownstreamStatus
+                - labels:
+                    service:
+          {% if ic_ship_security_logs | default(false) | bool %}
+            - job_name: security-journal
+              journal:
+                path: /var/log/journal
+                max_age: 12h
+                labels:
+                  log_type: security
+                  host: "{{ ic_host_name }}"
+              relabel_configs:
+                - source_labels: ['__journal__systemd_unit', '__journal_syslog_identifier']
+                  separator: ';'
+                  regex: '(ssh|sshd)(@[^;]*)?\.service;.*|fail2ban\.service;.*|.*;sudo'
+                  action: keep
+                - source_labels: ['__journal_syslog_identifier']
+                  target_label: source
+            - job_name: security-files
+              static_configs:
+                - targets: [localhost]
+                  labels:
+                    log_type: security
+                    source: auditd
+                    host: "{{ ic_host_name }}"
+                    __path__: /var/log/audit/audit.log
+                - targets: [localhost]
+                  labels:
+                    log_type: security
+                    source: fail2ban
+                    host: "{{ ic_host_name }}"
+                    __path__: /var/log/fail2ban.log
+          {% endif %}
             - job_name: traefik-access
               docker_sd_configs:
                 - host: unix:///var/run/docker.sock
@@ -320,8 +375,15 @@
               volumes:
                 - {{ ic_obs_dir }}/promtail.yaml:/etc/promtail/promtail.yaml:ro
                 - {{ ic_obs_dir }}/.remote_write_token:/etc/remote_write_token:ro
+                - {{ ic_obs_dir }}/promtail-positions:/var/lib/promtail
+                # Read-only: the access log, and -- when sent -- auditd,
+                # fail2ban and the journal all live under /var/log.
+                - /var/log:/var/log:ro
+                # The journal reader needs the machine id to find it.
+                - /etc/machine-id:/etc/machine-id:ro
                 # Read-only socket: it only needs to discover and read the
-                # proxy container's log stream.
+                # proxy container's log stream on hosts not set up since
+                # the access log moved to its file.
                 - /var/run/docker.sock:/var/run/docker.sock:ro
           {% endif %}
 

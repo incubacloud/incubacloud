@@ -8,8 +8,12 @@ providers:
     exposedByDefault: false
     network: traefik_shared
 
+  # The whole directory, not one file: the default certificate and the
+  # CDN's client-certificate requirement are documents of their own,
+  # dropped in and removed by the panel. Full Setup copies config.yml
+  # in there too, since Traefik reads either one file or one directory.
   file:
-    filename: /etc/traefik/config.yml
+    directory: /etc/traefik/dynamic
     watch: true
 
 # Uncomment for DEBUG logs
@@ -59,13 +63,15 @@ api:
 # Headers are dropped: keeping them would put cookies and Authorization
 # on disk on every host, and the point of this file is diagnosing
 # traffic, not archiving credentials.
-# Written to stdout on purpose, not to a file. A file would need
-# rotation, and an unrotated access log on a busy instance fills the
-# disk — the failure nobody notices until the host stops. Docker's
-# json-file driver already rotates every container's output at 10 MB
-# (set fleet-wide by the hardening playbook), so stdout inherits a
-# rotation policy that exists and is enforced.
+# Written to its own file on the host, rotated daily and kept 30 days by
+# the logrotate entry Full Setup installs (it signals the proxy to reopen
+# the file). It used to go to stdout, where Docker's rotation kept 30 MB
+# in all -- hours of history on a busy host -- and its path changed with
+# every recreate of the container, so nothing could watch it. The panel's
+# "Recent requests", the log collector and the host's web-login jail all
+# read this file.
 accessLog:
+  filePath: /var/log/traefik/access.log
   format: json
   bufferingSize: 100
   fields:

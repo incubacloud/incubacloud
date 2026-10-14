@@ -16,7 +16,7 @@ from .abstract_executor import AbstractSSHExecutor
 from .full_setup_executor import _TMP
 
 #: Snapshot keys this job is allowed to declare applied.
-_PROXY_KEYS = {'trusted_proxy_ranges', 'block_direct_access'}
+_PROXY_KEYS = {'trusted_proxy_ranges', 'block_direct_access', 'cdn_client_ca'}
 
 
 class PushTrustedProxiesExecutor(
@@ -41,10 +41,14 @@ class PushTrustedProxiesExecutor(
             f'{_TMP}-traefik.yml': host._shipped_traefik_yml(),
             f'{_TMP}-config.yml': host._shipped_config_yml(),
             f'{_TMP}-tls.yml': host._shipped_tls_default_yml(),
+            f'{_TMP}-client-auth.yml': host._shipped_tls_client_auth_yml(),
         }
         if cert and key:
             files[f'{_TMP}-default.crt'] = cert
             files[f'{_TMP}-default.key'] = key
+        client_ca = host._effective_cdn_client_ca()
+        if client_ca:
+            files[f'{_TMP}-cdn-ca.pem'] = client_ca
         pruned = await self._prepare_acme_prune(transport)
         if pruned:
             files[acme_store.LOCAL_PATH] = pruned
@@ -114,8 +118,25 @@ class PushTrustedProxiesExecutor(
     def get_commands(self):
         commands = [
             (
+                # The static file names the dynamic *directory*, which the
+                # container only has once a Full Setup mounted it. This job
+                # does not ship the compose file, so on a host set up
+                # before the directory form existed the file is put back
+                # to the single-file form it is running with: a provider
+                # pointing at a directory the container does not have
+                # loses every middleware the entrypoints name, and the
+                # proxy answers nothing. Such a host keeps its proxy as it
+                # was and takes the directory at its next Full Setup.
                 'Move Traefik configuration',
-                f'mv {_TMP}-traefik.yml ~/traefik/traefik.yml'
+                'if ! docker inspect inverseproxy-proxy-1'
+                ' --format "{{range .Mounts}}{{.Destination}} {{end}}"'
+                ' 2>/dev/null | grep -q "/etc/traefik/dynamic "; then'
+                f' sed -i "s#^\\(\\s*\\)directory: /etc/traefik/dynamic#'
+                f'\\1filename: /etc/traefik/config.yml#" {_TMP}-traefik.yml'
+                ' && echo "proxy not yet set up for the dynamic directory;'
+                ' keeping the single-file provider until its next Full Setup";'
+                ' fi;'
+                f' mv {_TMP}-traefik.yml ~/traefik/traefik.yml'
                 f' && mv {_TMP}-config.yml ~/traefik/config.yml',
             ),
             (
@@ -159,6 +180,23 @@ class PushTrustedProxiesExecutor(
                 f' rm -f {_TMP}-tls.yml; fi',
             ),
         ]
+        commands.append((
+            # Same interlock as the default certificate: an authority
+            # makes the proxy require the CDN's client certificate; none
+            # removes the requirement. Applied with the restart below.
+            'Require the CDN client certificate',
+            'ic_put() { mv "$1" "$2" 2>/dev/null'
+            ' || sudo mv "$1" "$2"; };'
+            f' if [ -s {_TMP}-cdn-ca.pem ]; then'
+            f' ic_put {_TMP}-cdn-ca.pem ~/traefik/certs/cdn-client-ca.pem'
+            f' && ic_put {_TMP}-client-auth.yml'
+            ' ~/traefik/dynamic/tls-client-auth.yml;'
+            ' else rm -f ~/traefik/dynamic/tls-client-auth.yml'
+            ' ~/traefik/certs/cdn-client-ca.pem 2>/dev/null'
+            ' || sudo rm -f ~/traefik/dynamic/tls-client-auth.yml'
+            ' ~/traefik/certs/cdn-client-ca.pem;'
+            f' rm -f {_TMP}-client-auth.yml; fi',
+        ))
         prune = self._acme_prune_step()
         if prune:
             commands.append(prune)

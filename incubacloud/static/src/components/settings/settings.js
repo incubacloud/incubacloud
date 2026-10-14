@@ -227,6 +227,7 @@ export class Settings extends Component {
             this.state.form.metrics_remote_write_url = general.metrics_remote_write_url || "";
             this.state.form.metrics_remote_write_token = "";
             this.state.form.metrics_retention_days = general.metrics_retention_days || 90;
+            this.state.form.metrics_ship_security_logs = !!general.metrics_ship_security_logs;
             this.state.form.grafana_base_url = general.grafana_base_url || "";
             this.state.form.metrics_central_public_host =
                 general.metrics_central_public_host || "";
@@ -398,6 +399,7 @@ export class Settings extends Component {
                 metrics_remote_write_url: this.state.form.metrics_remote_write_url,
                 metrics_remote_write_token: this.state.form.metrics_remote_write_token,
                 metrics_retention_days: this.state.form.metrics_retention_days,
+                metrics_ship_security_logs: this.state.form.metrics_ship_security_logs,
                 grafana_base_url: this.state.form.grafana_base_url,
                 trusted_proxy_ranges: this.state.form.trusted_proxy_ranges,
                 metrics_central_public_host: this.state.form.metrics_central_public_host,

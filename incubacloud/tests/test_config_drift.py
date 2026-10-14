@@ -207,21 +207,22 @@ class TestTemplateDrift(TransactionCase):
     def test_an_equivalent_spelling_is_not_drift(self):
         """``filename`` and ``directory`` are the same file provider.
 
-        A layer that needs to drop extra dynamic files switches to the
-        directory form. Flagging that would leave a warning nobody can
-        clear, which is how a drift signal stops being read at all.
+        A host stored before the template switched to the directory form
+        still says ``filename``, and is rendered as ``directory`` anyway.
+        Flagging that would leave a warning nobody can clear, which is
+        how a drift signal stops being read at all.
         """
         self.host.traefik_yml = self.host.traefik_yml.replace(
-            "filename: /etc/traefik/config.yml",
             "directory: /etc/traefik/dynamic",
+            "filename: /etc/traefik/config.yml",
         )
         details = self._drift().template_drift_details or ""
-        self.assertNotIn("providers.file.filename", details)
+        self.assertNotIn("providers.file.directory", details)
 
     def test_the_equivalence_only_covers_its_own_pair(self):
         """Dropping the provider outright is still drift."""
         self.host.traefik_yml = self.host.traefik_yml.replace(
-            "    filename: /etc/traefik/config.yml\n", "",
+            "    directory: /etc/traefik/dynamic\n", "",
         )
         self.assertTrue(self._drift().template_drift)
 

@@ -176,3 +176,7 @@ from . import test_mail_layout
 from . import test_cancel_while_running
 from . import test_github_setup_state
 from . import test_repo_url_not_a_repo
+from . import test_weblogin_jail
+from . import test_proxy_access_log_file
+from . import test_login_router
+from . import test_cdn_client_auth
