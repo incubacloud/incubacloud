@@ -1423,15 +1423,53 @@ user configures their own channels from the bell menu in the header
 (<strong>Notifications</strong> modal).</p>
 <h2 id="what-triggers-a-notification">What triggers a notification<a class="headerlink" href="#what-triggers-a-notification" title="Permanent link">&para;</a></h2>
 <p>Job outcomes — a deploy, rebuild, backup or any other operation finishing
-(successfully or not) — and infrastructure alerts (host unreachable, disk
-critical, instance down…). Failed deploys and rebuilds are treated as <strong>severe</strong>
-and always delivered immediately.</p>
+(successfully or not) — and alerts. Alerts come in two levels: <strong>critical</strong>
+(host unreachable, instance down, disk critical…) and <strong>warning</strong> (a container
+of an instance down, errors in an instance's log, a declined subscription
+payment…). Failed deploys and rebuilds are treated as <strong>severe</strong> and always
+delivered immediately.</p>
+<p>An open warning that turns critical is announced again, on every channel, to
+everyone whose level covers critical alerts.</p>
 <h2 id="your-preferences">Your preferences<a class="headerlink" href="#your-preferences" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Level</strong> — <code>All</code> (every job outcome), <code>Failures only</code> (default), or <code>None</code>.</li>
-<li><strong>Muted projects</strong> — silence everything from projects you don't care about.</li>
-<li>Notifications only cover what you can already see: project visibility rules
-  apply to every channel.</li>
+<li>
+<p><strong>Level</strong> — decides both which job outcomes and which alerts reach you:</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Jobs</th>
+<th>Alerts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>All</code></td>
+<td>every outcome</td>
+<td>critical and warning</td>
+</tr>
+<tr>
+<td><code>Failures and warnings</code></td>
+<td>failed only</td>
+<td>critical and warning</td>
+</tr>
+<tr>
+<td><code>Failures only</code> (default)</td>
+<td>failed only</td>
+<td>critical only</td>
+</tr>
+<tr>
+<td><code>None</code></td>
+<td>none</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>The daily digest follows the same level.
+- <strong>Muted projects</strong> — silence everything from projects you don't care about.
+- Notifications only cover what you can already see: project visibility rules
+  apply to every channel.</p>
+</li>
 </ul>
 <h2 id="channels">Channels<a class="headerlink" href="#channels" title="Permanent link">&para;</a></h2>
 <h3 id="in-app-always-on">In-app (always on)<a class="headerlink" href="#in-app-always-on" title="Permanent link">&para;</a></h3>
@@ -1440,16 +1478,17 @@ header. Real-time — no configuration needed.</p>
 <h3 id="email">Email<a class="headerlink" href="#email" title="Permanent link">&para;</a></h3>
 <p>Toggle it on and pick a mode:</p>
 <ul>
-<li><strong>Immediate</strong> — one email per job outcome.</li>
+<li><strong>Immediate</strong> — one email per job outcome or alert.</li>
 <li><strong>Daily digest</strong> — a single summary email every morning. Severe failures
-  (deploy/rebuild) still arrive immediately.</li>
+  (deploy/rebuild) and critical alerts still arrive immediately.</li>
 </ul>
 <h3 id="telegram">Telegram<a class="headerlink" href="#telegram" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Create a bot with <a href="https://t.me/BotFather">@BotFather</a> and paste the bot token.</li>
 <li>Send any message to your bot, then click <strong>Detect chat ID</strong> — the platform
    finds your chat automatically.</li>
-<li><strong>Send test</strong> to verify. Done: job outcomes arrive as Telegram messages.</li>
+<li><strong>Send test</strong> to verify. Done: job outcomes and alerts arrive as Telegram
+   messages, following your level.</li>
 </ol>
 <h3 id="webhook">Webhook<a class="headerlink" href="#webhook" title="Permanent link">&para;</a></h3>
 <p>Point the platform at any HTTPS endpoint to integrate with Slack bridges,
@@ -1491,7 +1530,7 @@ looking at it.</p>
 <code>X-IncubaCloud-Signature: sha256=&lt;hex&gt;</code> header — the HMAC-SHA256 of the raw
 body. Verify it with a constant-time comparison before trusting the payload.</p>
 <h2 id="backup-usage-alerts">Backup usage alerts<a class="headerlink" href="#backup-usage-alerts" title="Permanent link">&para;</a></h2>
-<p>Separately from job notifications, each backup backend can email a warning when
+<p>Separately from these notifications, each backup backend can email a warning when
 bucket usage crosses a threshold (default 80%). Configure it on the backend
 detail page.</p>
 
