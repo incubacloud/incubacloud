@@ -811,6 +811,11 @@ msgstr ""
 "hosts se enrolan automáticamente — no hay nada que instalar a mano."
 
 #. module: incubacloud
+#: model:ir.model,name:incubacloud.model_cloud_alert_policy
+msgid "Alert Confirmation Policy"
+msgstr "Política de confirmación de alertas"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__alert_email
@@ -844,6 +849,16 @@ msgstr "Umbral de aviso (%)"
 #: model:ir.actions.server,name:incubacloud.cron_check_github_webhook_silence_ir_actions_server
 msgid "Alert When GitHub Webhooks Stop Arriving"
 msgstr "Avisar cuando dejen de llegar webhooks de GitHub"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert_policy__code
+msgid ""
+"Alert code as the producer raises it. A trailing or embedded '*' matches a "
+"family of codes; an exact row wins over a pattern."
+msgstr ""
+"Código de alerta tal como lo levanta el productor. Un '*' al final o "
+"intercalado abarca una familia de códigos; una fila exacta prevalece sobre "
+"un patrón."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_metric_rule__code
@@ -2297,6 +2312,7 @@ msgstr "Etiqueta Cloud"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__code
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__code
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__code
@@ -2487,6 +2503,7 @@ msgid "Confirm"
 msgstr "Confirmar"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__confirm_after
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__confirm_cycles
 msgid "Confirm after"
 msgstr "Confirmar tras"
@@ -3031,6 +3048,7 @@ msgstr "Crea tu primer proyecto para comenzar a gestionar instancias de Odoo."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__create_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__create_uid
@@ -3063,6 +3081,7 @@ msgid "Created by"
 msgstr "Creado por"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__create_date
@@ -3783,6 +3802,7 @@ msgstr "Descarta esta alerta para todos los usuarios"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__display_name
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_tracked_mixin__display_name
@@ -5171,6 +5191,23 @@ msgid "GitHub Webhook Events"
 msgstr "Eventos webhook de GitHub"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_github_event.py:0
+msgid ""
+"GitHub attempted %(attempted)s webhook deliveries in the last %(hours)s "
+"hours and %(missing)s of %(attempted)s never reached this panel (last "
+"attempt %(when)s, GitHub saw: %(status)s). Repository pushes are not "
+"triggering rebuilds. Check the App's webhook URL and any source-address "
+"allowlist in front of /cloud/github/webhook."
+msgstr ""
+"GitHub intentó %(attempted)s entregas de webhook en las últimas %(hours)s "
+"horas y %(missing)s de %(attempted)s nunca llegaron a este panel (último "
+"intento %(when)s, GitHub recibió: %(status)s). Los push a los repositorios "
+"no están disparando reconstrucciones. Revise la URL del webhook de la App y "
+"cualquier lista de direcciones de origen permitidas delante de /cloud/github/"
+"webhook."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__github_event_truncate_days
 msgid "GitHub event payload truncation (days)"
 msgstr "Truncado de payload de eventos GitHub (días)"
@@ -5699,6 +5736,17 @@ msgid "Hosts"
 msgstr "Hosts"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert_policy__confirm_window
+msgid ""
+"How long a sighting stays fresh. The next one must come within this many "
+"seconds or the count starts over. Three ticks of the producer's schedule is "
+"the usual value."
+msgstr ""
+"Cuánto tiempo sigue vigente una observación. La siguiente debe llegar dentro "
+"de estos segundos o la cuenta vuelve a empezar. Lo habitual son tres ciclos "
+"de la programación del productor."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_retention_days
 msgid ""
 "How long the central keeps series. Passed to the central deployment playbook."
@@ -5765,6 +5813,7 @@ msgstr "Racha de fallos HTTP"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__id
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_tracked_mixin__id
@@ -6814,6 +6863,7 @@ msgstr "Última actividad en el panel el"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__write_uid
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__write_uid
@@ -6847,6 +6897,7 @@ msgstr "Última actualización por"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__write_date
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_app__write_date
@@ -7876,21 +7927,6 @@ msgstr ""
 "Token de Acceso Personal (PAT) para acceder a repositorios privados."
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_github_event.py:0
-msgid ""
-"No GitHub webhook delivery has been recorded in the last %(hours)s hours "
-"(last seen: %(last_seen)s). Repository pushes are not reaching the platform, "
-"so automatic rebuilds have stopped. Check the App installation and any "
-"source-address allowlist in front of /cloud/github/webhook."
-msgstr ""
-"No se ha registrado ninguna entrega de webhook de GitHub en las últimas "
-"%(hours)s horas (última vez: %(last_seen)s). Los cambios subidos a los "
-"repositorios no están llegando a la plataforma, así que las reconstrucciones "
-"automáticas se han detenido. Revisa la instalación de la App y cualquier "
-"lista de direcciones de origen permitidas delante de /cloud/github/webhook."
-
-#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_domain__cert_resolver__none
@@ -8305,6 +8341,11 @@ msgid "Not trusted"
 msgstr "No de confianza"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__note
+msgid "Note"
+msgstr "Nota"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
@@ -8593,6 +8634,11 @@ msgstr ""
 "Un rango CIDR por línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32. Una "
 "entrada que no sea un rango se rechaza al guardar, en vez de descartarse en "
 "silencio."
+
+#. module: incubacloud
+#: model:ir.model.constraint,message:incubacloud.constraint_cloud_alert_policy_code_uniq
+msgid "One confirmation policy per alert code."
+msgstr "Una política de confirmación por código de alerta."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11210,6 +11256,16 @@ msgid "Sightings in a row so far, the last within the window."
 msgstr "Avistamientos seguidos hasta ahora, el último dentro de la ventana."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert_policy__confirm_after
+msgid ""
+"Sightings in a row, each within the window of the last, before the alert "
+"exists and anyone is told. 1 raises on the first sighting."
+msgstr ""
+"Observaciones seguidas, cada una dentro de la ventana de la anterior, antes "
+"de que la alerta exista y se avise a alguien. Con 1 se levanta en la primera "
+"observación."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "Signing secret"
@@ -13688,6 +13744,13 @@ msgid "Who may delete series on the central"
 msgstr "Quién puede borrar series en el central"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert_policy__note
+msgid ""
+"Why this code is a measurement and what one lone reading would have cost."
+msgstr ""
+"Por qué este código es una medición y qué habría costado una lectura aislada."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__wildcard_domain
@@ -13707,6 +13770,11 @@ msgid ""
 "Will be folded into the rebuild triggered when the current one finishes."
 msgstr ""
 "Se integrará en la reconstrucción que se lance cuando termine la actual."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__confirm_window
+msgid "Window (seconds)"
+msgstr "Ventana (segundos)"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_rate_limit__window_start
@@ -14391,12 +14459,6 @@ msgstr "metrics.example.com"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "my-backup-bucket"
 msgstr "my-backup-bucket"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_github_event.py:0
-msgid "never"
-msgstr "nunca"
 
 #. module: incubacloud
 #. odoo-javascript

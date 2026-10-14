@@ -1,7 +1,7 @@
 import json
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
@@ -114,19 +114,28 @@ class CloudGitHubEvent(models.Model):
             """
         )
 
-    @api.model
+    #: A delivery GitHub made this recently may still be on its way
+    #: through the edge and the controller; it is not missing yet.
+    _DELIVERY_GRACE = timedelta(minutes=10)
+
     @api.model
     def _cron_check_delivery_silence(self):
-        """Alert when no webhook has arrived for longer than configured.
+        """Alert when GitHub tried to deliver and nothing arrived here.
 
         Only meaningful once an App exists: without one the platform is
         not expecting deliveries, and the webhook secret lookup returns
         before hashing anything. The check therefore stays quiet on an
         install that never wired GitHub up.
 
-        Silence is measured against the newest event of any kind rather
-        than against processed ones, so a run of failures still counts as
-        "traffic is arriving" — the failure has its own alert.
+        Silence alone cannot tell a broken edge from a quiet repository,
+        so when nothing has been recorded for an hour the check reads
+        the App's delivery log at GitHub and compares it, by delivery id,
+        with the events recorded in the window: an attempt old enough to
+        have landed that has no row here was dropped, whatever GitHub
+        was answered. A window with no attempts is a quiet week and
+        raises nothing. A log GitHub cannot serve decides nothing this
+        hour: raising would blame the edge for GitHub's outage, and
+        resolving would clear a real alert nobody re-checked.
 
         :return: the raised alert, or an empty recordset when quiet
         """
@@ -137,25 +146,71 @@ class CloudGitHubEvent(models.Model):
         if hours <= 0 or not configured:
             Alert.resolve_alert(GITHUB_WEBHOOK_SILENT_CODE)
             return Alert.browse()
-        cutoff = fields.Datetime.now() - timedelta(hours=hours)
-        if self.sudo().search_count([('create_date', '>=', cutoff)]):
+        now = fields.Datetime.now()
+        cutoff = now - timedelta(hours=hours)
+        recent = self.sudo().search_fetch(
+            [('create_date', '>=', cutoff)], ['delivery_id', 'create_date'],
+        )
+        if any(e.create_date >= now - timedelta(hours=1) for e in recent):
+            # Traffic this hour is proof enough; GitHub is not asked.
             Alert.resolve_alert(GITHUB_WEBHOOK_SILENT_CODE)
             return Alert.browse()
-        latest = self.sudo().search([], order='create_date desc', limit=1)
-        last_seen = (
-            fields.Datetime.to_string(latest.create_date) if latest
-            else _('never')
-        )
+        try:
+            deliveries = self._hook_deliveries()
+        except Exception as exc:  # noqa: BLE001 - logged, decides nothing
+            _logger.warning("GitHub hook deliveries unreadable: %s", exc)
+            return Alert.browse()
+        attempted = [
+            d for d in deliveries
+            if cutoff <= (self._delivered_at(d) or cutoff - timedelta(seconds=1))
+            <= now - self._DELIVERY_GRACE
+        ]
+        received = {e.delivery_id for e in recent if e.delivery_id}
+        missing = [d for d in attempted if d.get('guid') not in received]
+        if not missing:
+            Alert.resolve_alert(GITHUB_WEBHOOK_SILENT_CODE)
+            return Alert.browse()
+        newest = max(missing, key=self._delivered_at)
         return Alert.raise_alert(
             GITHUB_WEBHOOK_SILENT_CODE,
-            _("No GitHub webhook delivery has been recorded in the last "
-              "%(hours)s hours (last seen: %(last_seen)s). Repository pushes "
-              "are not reaching the platform, so automatic rebuilds have "
-              "stopped. Check the App installation and any source-address "
-              "allowlist in front of /cloud/github/webhook.",
-              hours=hours, last_seen=last_seen),
+            _("GitHub attempted %(attempted)s webhook deliveries in the last "
+              "%(hours)s hours and %(missing)s of %(attempted)s never reached "
+              "this panel (last attempt %(when)s, GitHub saw: %(status)s). "
+              "Repository pushes are not triggering rebuilds. Check the "
+              "App's webhook URL and any source-address allowlist in front "
+              "of /cloud/github/webhook.",
+              attempted=len(attempted), missing=len(missing), hours=hours,
+              when=fields.Datetime.to_string(self._delivered_at(newest)),
+              status=newest.get('status') or newest.get('status_code') or '?'),
             level='warning',
         )
+
+    @api.model
+    def _hook_deliveries(self):
+        """Return the App's latest delivery attempts as GitHub lists them.
+
+        :return: list of delivery dicts, newest first
+        :raises: whatever the GitHub client raises when the log cannot
+            be read; the caller treats that as "blind this hour"
+        """
+        creds = self.env['cloud.github.credential.service'].get_credentials()
+        return GitHubAppClient(creds).list_hook_deliveries()
+
+    @staticmethod
+    def _delivered_at(delivery):
+        """Return a delivery's ``delivered_at`` as a naive UTC datetime.
+
+        :param dict delivery: one entry of GitHub's delivery log
+        :return: ``datetime`` or None when the entry carries no usable time
+        """
+        raw = delivery.get('delivered_at') or ''
+        try:
+            parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        except ValueError:
+            return None
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        return parsed
 
     def _purge_old(self):
         """Two-stage retention run from the daily cron.

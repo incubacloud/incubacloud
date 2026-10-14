@@ -324,10 +324,10 @@ class TestProviderAudience(TestAlertNotifyEmail):
             return_value=True,
         ) as route:
             Alert.raise_alert(
-                "disk_critical", "m", level="critical", host=self.host,
+                "key_unreadable", "m", level="critical", host=self.host,
                 audience="provider",
             )
-            Alert.resolve_alert("disk_critical", host=self.host)
+            Alert.resolve_alert("key_unreadable", host=self.host)
         self.assertEqual(route.call_count, 2)
         self.assertEqual(route.call_args_list[1].kwargs, {"resolved": True})
         self.assertFalse(self.env["mail.mail"].sudo().search([

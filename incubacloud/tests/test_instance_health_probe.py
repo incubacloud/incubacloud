@@ -107,6 +107,13 @@ class TestHealthProbeClassification(TransactionCase):
         asyncio.run(executor.on_success(results))
         return executor
 
+    def _confirmed_probe(self, executor_cls, container_state, http_exit=1):
+        """Probe twice in a row: ``instance_down`` and the companion
+        alerts are measurements, so ``cloud.alert.policy`` keeps the
+        first sighting as a suspicion and the second one raises."""
+        self._probe(executor_cls, container_state, http_exit=http_exit)
+        return self._probe(executor_cls, container_state, http_exit=http_exit)
+
     def _down_alert(self):
         return self.env["cloud.alert"].search([
             ("instance_id", "=", self.instance.id),
@@ -114,8 +121,27 @@ class TestHealthProbeClassification(TransactionCase):
             ("state", "=", "active"),
         ])
 
-    def test_exited_odoo_is_an_incident_by_default(self):
+    def test_one_probe_is_a_suspicion_not_an_incident(self):
+        """A deploy, a rebuild or a wake-up restarts odoo for seconds; a
+        probe landing inside that window used to mail the customer a
+        critical outage. The status still says error, the alert waits."""
         self._probe(InstanceHealthExecutor, self._states(odoo="exited"))
+        self.assertEqual(self.instance.status, "error")
+        self.assertFalse(self._down_alert())
+        suspicion = self.env["cloud.alert.suspicion"].search([
+            ("code", "=", "instance_down"),
+            ("instance_id", "=", self.instance.id),
+        ])
+        self.assertEqual(len(suspicion), 1)
+
+    def test_a_recovery_between_probes_starts_the_count_over(self):
+        self._probe(InstanceHealthExecutor, self._states(odoo="exited"))
+        self._probe(InstanceHealthExecutor, self._states())
+        self._probe(InstanceHealthExecutor, self._states(odoo="exited"))
+        self.assertFalse(self._down_alert())
+
+    def test_exited_odoo_is_an_incident_by_default(self):
+        self._confirmed_probe(InstanceHealthExecutor, self._states(odoo="exited"))
         self.assertEqual(self.instance.status, "error")
         alert = self._down_alert()
         self.assertEqual(len(alert), 1)
@@ -123,7 +149,7 @@ class TestHealthProbeClassification(TransactionCase):
 
     def test_missing_odoo_says_so(self):
         """A pruned stack must not hide behind the generic wording."""
-        self._probe(InstanceHealthExecutor, self._states(odoo=None))
+        self._confirmed_probe(InstanceHealthExecutor, self._states(odoo=None))
         alert = self._down_alert()
         self.assertEqual(len(alert), 1)
         self.assertIn("missing", alert.message)
@@ -136,7 +162,7 @@ class TestHealthProbeClassification(TransactionCase):
 
     def test_expected_sleep_still_grades_companions(self):
         """Sablier stops only ``odoo`` — a dead ``db`` is an issue."""
-        self._probe(_SleepAwareProbe, self._states(odoo="exited", db="exited"))
+        self._confirmed_probe(_SleepAwareProbe, self._states(odoo="exited", db="exited"))
         self.assertEqual(self.instance.status, "warning")
         self.assertFalse(self._down_alert())
         svc_alert = self.env["cloud.alert"].search([
@@ -148,7 +174,7 @@ class TestHealthProbeClassification(TransactionCase):
 
     def test_missing_odoo_alerts_even_when_sleep_is_expected(self):
         """Slept and pruned are different things: absent always alerts."""
-        self._probe(_SleepAwareProbe, self._states(odoo=None))
+        self._confirmed_probe(_SleepAwareProbe, self._states(odoo=None))
         self.assertEqual(self.instance.status, "error")
         alert = self._down_alert()
         self.assertEqual(len(alert), 1)
@@ -156,7 +182,7 @@ class TestHealthProbeClassification(TransactionCase):
 
     def test_expected_sleep_resolves_a_previous_down_alert(self):
         """Wake→sleep cycles must not leave a stale critical behind."""
-        self._probe(InstanceHealthExecutor, self._states(odoo=None))
+        self._confirmed_probe(InstanceHealthExecutor, self._states(odoo=None))
         self.assertTrue(self._down_alert())
         self._probe(_SleepAwareProbe, self._states(odoo="exited"))
         self.assertFalse(self._down_alert())
@@ -184,9 +210,9 @@ class TestHealthProbeClassification(TransactionCase):
 
     def test_parked_stack_resolves_what_was_standing(self):
         """Parking closes the alerts raised before, or mid-stop."""
-        self._probe(InstanceHealthExecutor, self._states(odoo="exited"))
-        self._probe(_SleepAwareProbe, self._states(odoo="exited", db="exited"))
-        self._probe(InstanceHealthExecutor, self._states(odoo="exited"))
+        self._confirmed_probe(InstanceHealthExecutor, self._states(odoo="exited"))
+        self._confirmed_probe(_SleepAwareProbe, self._states(odoo="exited", db="exited"))
+        self._confirmed_probe(InstanceHealthExecutor, self._states(odoo="exited"))
         self.assertTrue(self._down_alert())
         self.assertTrue(self._service_alerts())
         self._probe(_ParkedProbe, self._all_stopped())
@@ -194,13 +220,13 @@ class TestHealthProbeClassification(TransactionCase):
         self.assertFalse(self._service_alerts())
 
     def test_stopped_stack_is_an_incident_by_default(self):
-        self._probe(InstanceHealthExecutor, self._all_stopped())
+        self._confirmed_probe(InstanceHealthExecutor, self._all_stopped())
         self.assertEqual(self.instance.status, "error")
         self.assertEqual(len(self._down_alert()), 1)
 
     def test_missing_odoo_alerts_even_when_parked(self):
         """Parked and pruned are different things: absent always alerts."""
-        self._probe(_ParkedProbe, self._states(odoo=None))
+        self._confirmed_probe(_ParkedProbe, self._states(odoo=None))
         self.assertEqual(self.instance.status, "error")
         alert = self._down_alert()
         self.assertEqual(len(alert), 1)
@@ -320,9 +346,10 @@ class TestUnresponsiveHysteresis(TransactionCase):
         self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
         self._probe(InstanceHealthExecutor, self._states(), http_exit=7)
         self.assertTrue(self._alert())
-        self._probe(
-            InstanceHealthExecutor, self._states(odoo="exited"), http_exit=1,
-        )
+        for _ in range(2):  # ``instance_down`` confirms over two probes
+            self._probe(
+                InstanceHealthExecutor, self._states(odoo="exited"), http_exit=1,
+            )
         self.assertFalse(self._alert())
         down = self.env["cloud.alert"].search([
             ("instance_id", "=", self.instance.id),

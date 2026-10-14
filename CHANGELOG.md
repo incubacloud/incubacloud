@@ -6,6 +6,48 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.181] — 2026-10-14
+
+### Added
+
+- **Which alerts confirm is one table.** `cloud.alert.policy` holds,
+  per alert code (or per family, `instance_service_*_down`), how many
+  sightings in a row make a measured condition an alert and how fresh
+  each must be. `raise_alert` reads it for every caller that brings no
+  count of its own, so the producers that measure — the health probe,
+  the SSH disk probe, the metric-rule cron's backend check — raise their
+  code and nothing else, and 1.0.180's "never on the first sample" no
+  longer depends on each producer remembering to ask. Shipped rows, all
+  at two sightings within three ticks: the metrics backend (moved out of
+  the code), `instance_down`, the companion containers and
+  `disk_critical`. A code with no row is an event and raises on the spot;
+  metric rules keep their own `confirm_cycles`, because their codes are
+  the operator's.
+
+### Changed
+
+- **A stopped container is an outage on the second probe, not the first.**
+  A deploy, a rebuild or a tenant waking up restarts odoo for seconds,
+  and a health probe landing inside that window mailed the customer a
+  critical "Container 'odoo' is not running" that the next probe
+  resolved. The same for the companion containers and for the SSH disk
+  reading, which a backup dump or an image pull spikes for minutes. The
+  instance's status still turns to error on the first probe; the alert,
+  and the mail, wait for the second, about five minutes.
+- **The webhook-silence alert measures what GitHub tried against what
+  arrived.** Silence alone could not tell a broken edge from a quiet
+  repository: a customer who pushes twice a week was told their pushes
+  were not reaching the platform. When nothing has been recorded for an
+  hour, the check now reads the App's delivery log at GitHub and
+  compares it, by delivery id, with the events recorded in the window.
+  A window with no attempts raises nothing; attempts old enough to have
+  landed that have no row here raise the alert, which says how many of
+  how many and what GitHub was answered (a 403 names the edge allowlist,
+  a 200 says the delivery was lost past it). A log GitHub cannot serve
+  decides nothing that hour.
+
+---
+
 ## [1.0.180] — 2026-10-14
 
 ### Added

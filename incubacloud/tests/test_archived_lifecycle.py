@@ -139,7 +139,11 @@ class TestArchivingClosesItsAlerts(_ArchivedBase):
 
     def test_every_alert_about_the_instance_closes(self):
         Alert = self.env["cloud.alert"].sudo()
-        down = Alert.raise_alert("instance_down", "down", instance=self.instance)
+        # Standing alerts are the fixture here; the policy that makes
+        # ``instance_down`` confirm first is not what is under test.
+        down = Alert.raise_alert(
+            "instance_down", "down", instance=self.instance, confirm_after=1,
+        )
         logs = Alert.raise_alert(
             "instance_error_logs", "logs", host=self.host, instance=self.instance,
         )
