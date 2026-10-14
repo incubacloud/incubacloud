@@ -19,7 +19,8 @@ import logging
 
 import requests
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ BACKEND_UNREACHABLE_CODE = "metrics_backend_unreachable"
 
 def promql_query(
     base_url, expression, timeout=_QUERY_TIMEOUT, token=None, user=None,
+    retries=1,
 ):
     """Run a PromQL instant query and return ``[(labels, value), ...]``.
 
@@ -40,6 +42,14 @@ def promql_query(
     instance-liveness cron) so there is one place that knows the wire
     format. Raises on transport or protocol failure — callers must treat
     an exception as "unknown", never as "healthy".
+
+    A transport failure (no connection, timeout) or a 5xx is asked once
+    more on a fresh connection before it counts: a tenant panel reaches
+    its central through a CDN, and on 2026-10-13 one edge delivered a
+    request 9 s late while the next connection, through another edge,
+    was answered in milliseconds. A 4xx or a PromQL error is not
+    retried — it would answer the same twice, and retrying would only
+    hide it.
 
     :param token: password half of this panel's metrics credential.
     :param user: user half — the panel's metrics account. It is not
@@ -49,14 +59,29 @@ def promql_query(
         a fixed literal before per-account credentials existed; callers
         that omit it send no credentials at all rather than guessing, so
         a misconfiguration fails loudly instead of reading nothing.
+    :param int retries: extra attempts after a transport failure or 5xx.
     """
-    response = requests.get(
-        f"{base_url.rstrip('/')}/api/v1/query",
-        params={"query": expression},
-        timeout=timeout,
-        auth=(user, token) if (token and user) else None,
-    )
-    response.raise_for_status()
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            response = requests.get(
+                f"{base_url.rstrip('/')}/api/v1/query",
+                params={"query": expression},
+                timeout=timeout,
+                auth=(user, token) if (token and user) else None,
+            )
+            response.raise_for_status()
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt > retries:
+                raise
+            continue
+        except requests.HTTPError as exc:
+            status = getattr(exc.response, "status_code", 0) or 0
+            if attempt > retries or status < 500:
+                raise
+            continue
+        break
     payload = response.json()
     if payload.get("status") != "success":
         raise ValueError(
@@ -135,6 +160,25 @@ class CloudMetricRule(models.Model):
              "label does not resolve to a host is skipped rather than "
              "raising an unattributable alert.",
     )
+    confirm_cycles = fields.Integer(
+        string="Confirm after",
+        default=2,
+        required=True,
+        help="Evaluations in a row the threshold must be breached "
+             "before the alert is raised. 1 raises on the first sample: "
+             "right for an expression that already measures over a "
+             "window, wrong for an instant reading, where a single "
+             "spike would page someone.",
+    )
+
+    @api.constrains("confirm_cycles")
+    def _check_confirm_cycles(self):
+        """Refuse a cycle count that could never confirm."""
+        for rule in self:
+            if rule.confirm_cycles < 1:
+                raise ValidationError(
+                    _("A rule must confirm after at least one evaluation."),
+                )
 
     # Partial on ``active``, not a plain UNIQUE (code): only active rules
     # are evaluated (``_cron_evaluate`` searches with the default
@@ -197,18 +241,50 @@ class CloudMetricRule(models.Model):
             }
         except Exception as exc:  # noqa: BLE001 - reported, not swallowed
             _logger.warning("[metrics] backend unreachable: %s", exc)
+            # Two evaluations in a row, not one: a single slow answer
+            # is not an outage, and the retry inside ``promql_query``
+            # has already absorbed one hiccup by the time we get here.
             Alert.raise_alert(
                 BACKEND_UNREACHABLE_CODE,
                 "The metrics backend is unreachable, so infrastructure "
                 "alerts are not being evaluated. Metric-based alerts "
                 "shown here may be stale.",
                 level="critical",
+                confirm_after=2,
+                confirm_window=self._confirm_window(),
+                # A central never deployed from this panel is one it
+                # reads but does not run: its outage is for whoever
+                # runs it, not for this panel's operator.
+                audience=(
+                    "fleet" if settings.metrics_central_host_id
+                    else "provider"
+                ),
             )
             return
 
         Alert.resolve_alert(BACKEND_UNREACHABLE_CODE)
         for rule in rules:
             rule._sync_alerts(results[rule.id])
+
+    @api.model
+    def _confirm_window(self):
+        """Seconds a sighting stays fresh: three ticks of this cron.
+
+        Wide enough that a tick the runner delayed still counts as the
+        next one; narrow enough that a breach seen this morning cannot
+        confirm one seen tonight. Falls back to 15 minutes when the cron
+        record is gone.
+        """
+        cron = self.env.ref(
+            "incubacloud.cron_cloud_metric_rule_evaluate",
+            raise_if_not_found=False,
+        )
+        if not cron:
+            return 900
+        unit = {
+            "minutes": 60, "hours": 3600, "days": 86400, "weeks": 604800,
+        }.get(cron.interval_type, 60)
+        return 3 * max(cron.interval_number, 1) * unit
 
     def _query(self, base_url, token=None, user=None):
         """Run this rule's PromQL and return ``[(labels, value), ...]``.
@@ -242,6 +318,10 @@ class CloudMetricRule(models.Model):
         Alert = self.env["cloud.alert"].sudo()
         Host = self.env["cloud.host"].sudo()
         Instance = self.env["cloud.instance"].sudo()
+        confirm = {
+            "confirm_after": self.confirm_cycles,
+            "confirm_window": self._confirm_window(),
+        }
         for labels, value in samples:
             if self.scope == "instance":
                 target = self._resolve_instance(Instance, labels)
@@ -262,6 +342,7 @@ class CloudMetricRule(models.Model):
                 if self._breached(value):
                     Alert.raise_alert(
                         self.code, text, level=self.level, instance=target,
+                        **confirm,
                     )
                 else:
                     Alert.resolve_alert(self.code, instance=target)
@@ -276,7 +357,7 @@ class CloudMetricRule(models.Model):
             }
             if self._breached(value):
                 Alert.raise_alert(
-                    self.code, text, level=self.level, host=host,
+                    self.code, text, level=self.level, host=host, **confirm,
                 )
             else:
                 Alert.resolve_alert(self.code, host=host)

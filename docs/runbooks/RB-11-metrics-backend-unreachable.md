@@ -3,8 +3,18 @@
 **Trigger:** a critical alert with code `metrics_backend_unreachable`, or
 the Monitoring dashboards showing no recent data.
 
-**What it means:** the panel's rule cron could not query VictoriaMetrics.
+**What it means:** the panel's rule cron could not query VictoriaMetrics
+on **two consecutive evaluations** (about ten minutes; a single failed
+query, or one that succeeded on its automatic retry, raises nothing).
 While this lasts, **metric-based alerts are not being evaluated**.
+
+If the alert comes from a panel that does not host its own central —
+a tenant panel reading `metrics.<base domain>` — it is a *provider*
+alert: the tenant module relays it to the master, where it shows as
+`tenant_metrics_backend_unreachable` on that tenant's instance, and the
+tenant's own operators are not paged. The fault may be between that
+panel and the CDN rather than on the central: check the central's
+access log for the panel's requests before touching the stack.
 
 !!! warning "Read this first"
     Standing alerts are deliberately **not** resolved while the backend is

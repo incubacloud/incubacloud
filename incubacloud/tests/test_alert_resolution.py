@@ -73,7 +73,8 @@ class TestAlertResolution(TransactionCase):
     def _resolved_mails(self):
         """The resolution emails the watcher received."""
         return self.env["mail.mail"].sudo().search([
-            ("subject", "like", "[IncubaCloud] Resolved:%"),
+            # The panel's host sits between the tag and the verdict.
+            ("subject", "like", "[IncubaCloud]%Resolved:%"),
             ("email_to", "=", "resolution-watcher@example.com"),
         ])
 

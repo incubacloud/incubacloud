@@ -16,6 +16,8 @@
         <field name="name">Host stopped reporting</field>
         <field name="sequence">1</field>
         <field name="code">metrics_host_absent</field>
+        <!-- Measures over its own window: one sample is already a verdict. -->
+        <field name="confirm_cycles">1</field>
         <!-- Age, per host, of the last sample that arrived.
              Two earlier attempts were wrong, both verified against a
              live VictoriaMetrics rather than by reading:
@@ -48,6 +50,8 @@
         <field name="name">Disk almost full</field>
         <field name="sequence">10</field>
         <field name="code">metrics_disk_critical</field>
+        <!-- An instant reading: a lone spike must not page anyone. -->
+        <field name="confirm_cycles">2</field>
         <field name="expression">100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100)</field>
         <field name="comparator">gt</field>
         <field name="threshold">90</field>
@@ -59,6 +63,8 @@
         <field name="name">Memory nearly exhausted</field>
         <field name="sequence">20</field>
         <field name="code">metrics_memory_high</field>
+        <!-- An instant reading: a lone spike must not page anyone. -->
+        <field name="confirm_cycles">2</field>
         <field name="expression">100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100)</field>
         <field name="comparator">gt</field>
         <field name="threshold">92</field>
@@ -70,6 +76,8 @@
         <field name="name">Sustained CPU saturation</field>
         <field name="sequence">30</field>
         <field name="code">metrics_cpu_saturated</field>
+        <!-- An instant reading: a lone spike must not page anyone. -->
+        <field name="confirm_cycles">2</field>
         <!-- Load per core over 15 min: survives a burst, catches a stuck host. -->
         <field name="expression">node_load15 / count without (cpu, mode) (node_cpu_seconds_total{mode="idle"})</field>
         <field name="comparator">gt</field>
@@ -95,6 +103,8 @@
         <field name="name">Instance stopped reporting</field>
         <field name="sequence">40</field>
         <field name="code">metrics_instance_absent</field>
+        <!-- An instant reading: a lone spike must not page anyone. -->
+        <field name="confirm_cycles">2</field>
         <field name="scope">instance</field>
         <!-- Age of the newest container sample for this instance. Same
              shape as the host watchdog, and for the same reason: a
@@ -113,6 +123,8 @@
         <field name="name">Instance returning server errors</field>
         <field name="sequence">50</field>
         <field name="code">metrics_instance_5xx</field>
+        <!-- Measures over its own window: one sample is already a verdict. -->
+        <field name="confirm_cycles">1</field>
         <field name="scope">instance</field>
         <!-- Server errors per second over five minutes, attributed by
              the Traefik relabelling. This is the signal that says "the

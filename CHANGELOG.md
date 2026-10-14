@@ -6,6 +6,64 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.180] — 2026-10-14
+
+### Added
+
+- **A measurement confirms itself before it becomes an alert.**
+  `cloud.alert.raise_alert` takes `confirm_after`: the first sightings of
+  a condition are kept as a `cloud.alert.suspicion` -- not listed, not
+  counted, not notified -- and the alert only exists once the condition
+  has been seen that many times in a row, each within `confirm_window`
+  seconds of the last. A clear reading, or the alert's own resolution,
+  forgets the suspicion. Events keep raising on the spot. This is now
+  the one place the rule "never on the first sample" lives, instead of
+  a streak counter in each producer that remembered to have one.
+- **Metric rules declare how many evaluations confirm them**
+  (`confirm_cycles`, default 2). The shipped rules on an instant
+  reading -- disk, memory, load, instance silence -- confirm over two
+  ticks; those that already measure over a window -- host silence
+  (1 h), instance 5xx (`rate[5m]`) -- keep raising on the first.
+- **An alert says who can act on it.** `cloud.alert.audience` is
+  `fleet` -- whoever runs this panel's hosts, instances and repositories
+  -- or `provider` -- whoever runs a service the panel depends on but
+  does not own. On a panel that owns everything both are the same person
+  and nothing changes. A hosted panel's provider layer overrides
+  `_route_provider_alert()` to take provider alerts to the provider; the
+  panel still shows them, but its operator is no longer paged about
+  something they cannot touch. Marked `provider`: the metrics central
+  when none was deployed from this panel, an undecryptable secret
+  (`INCUBACLOUD_SECRET_KEY` is the platform's), an instance record that
+  could not be deleted after its stack was, and managed containers or
+  networks a prune swept away.
+
+### Changed
+
+- **One slow answer from the metrics central is not an outage.** A
+  tenant panel reaches its central through a CDN, and on 13 October one
+  edge delivered a query 9 s late while the origin answered in
+  milliseconds: the 10 s read timeout fired, the panel raised the
+  critical "metrics backend unreachable" alert on that single failure
+  and its customer was paged by email, five minutes before the next
+  tick resolved it. `promql_query` now asks once more on a fresh
+  connection after a transport failure or a 5xx (never after a 4xx or
+  a PromQL error, which would answer the same twice), for the rule,
+  liveness and specs crons alike, and the backend alert needs two
+  failed evaluations in a row, about ten minutes.
+- **Alert mails say which panel sent them.** Every panel of a fleet
+  mails the same operator mailbox with an identical subject and a
+  relative log link that opens nothing. The subject now carries the
+  panel's host (`[IncubaCloud] arn-corp.example.com · Critical alert:
+  …`), the body names it, and the log links are absolute, as the
+  Telegram and webhook ones already were.
+- **Alert mails show the message and the names as text.** The body
+  interpolated them raw; now that a provider alert crosses from a
+  customer's panel to the master carrying names the customer chose, a
+  link forged into an instance name would have been live in an
+  operator's mail. Escaped, for local producers too.
+
+---
+
 ## [1.0.177] — 2026-10-13
 
 ### Fixed

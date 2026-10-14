@@ -619,6 +619,8 @@ class AbstractExecutor(ABC):
                         host=env["cloud.host"].browse(host_id),
                         instance=rec,
                         job=env["cloud.job"].browse(job_id),
+                        # "See the server log": only the platform can.
+                        audience="provider",
                     )
 
         # ``_job_cr`` is set by ``_dispatch_outcome``; a hook invoked

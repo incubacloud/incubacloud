@@ -158,6 +158,26 @@ class TestLiveness(InstanceLivenessCase):
 
 class TestLivenessFailSafes(InstanceLivenessCase):
 
+    def test_a_timeout_absorbed_by_the_retry_still_refreshes(self):
+        """One slow answer is asked again; the cron then runs as usual."""
+        self.inst.write({"running": False})
+        self.env.flush_all()
+        responses = [requests.Timeout("slow")]
+        for body in (
+            _samples((self.inst.id, 20)),
+            _samples((self.inst.id, 20)),
+            _host_samples(),
+        ):
+            resp = MagicMock(spec=requests.Response)
+            resp.json.return_value = body
+            resp.raise_for_status.return_value = None
+            responses.append(resp)
+        with patch(f"{_MODULE}.requests.get", side_effect=responses) as get:
+            self.env["cloud.instance"]._cron_refresh_running_from_metrics()
+        self.assertEqual(get.call_count, 4)
+        self.inst.invalidate_recordset()
+        self.assertTrue(self.inst.running)
+
     def test_unreachable_backend_changes_nothing(self):
         self.inst.write({"running": True})
         self._run(exc=requests.ConnectionError("down"))

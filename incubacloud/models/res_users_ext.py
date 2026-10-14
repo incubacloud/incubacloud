@@ -200,6 +200,10 @@ class ResUsers(models.Model):
             # section already lists every failed job with its log URL.
             ('code', '!=', 'job_failed'),
         ]
+        if self.env['cloud.alert']._provider_alerts_routed():
+            # What the provider was told about is not this operator's
+            # morning reading either.
+            alert_domain.append(('audience', '=', 'fleet'))
         if muted_ids:
             alert_domain += [
                 '!', '|',

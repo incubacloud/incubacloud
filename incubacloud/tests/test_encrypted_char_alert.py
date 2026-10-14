@@ -94,6 +94,12 @@ class TestEncryptedCharUnreadableAlert(TransactionCase):
         self.assertIn('cloud.host.password', vals['message'])
         self.assertIn(str(self.host.id), vals['message'])
 
+    def test_the_alert_is_for_whoever_holds_the_key(self):
+        """``INCUBACLOUD_SECRET_KEY`` is the platform's, not the fleet's:
+        on a hosted panel the customer cannot do anything about it."""
+        _link_field, vals = unreadable_alert_vals(self.host, 'password')
+        self.assertEqual(vals['audience'], 'provider')
+
     def test_alert_is_created_once_and_deduplicated(self):
         """A secret read in a loop must not open one alert per read."""
         first = create_unreadable_alert(self.env, self.host, 'password')
