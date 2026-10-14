@@ -241,17 +241,16 @@ class CloudMetricRule(models.Model):
             }
         except Exception as exc:  # noqa: BLE001 - reported, not swallowed
             _logger.warning("[metrics] backend unreachable: %s", exc)
-            # Two evaluations in a row, not one: a single slow answer
-            # is not an outage, and the retry inside ``promql_query``
-            # has already absorbed one hiccup by the time we get here.
+            # Not on the first evaluation: ``cloud.alert.policy`` holds
+            # how many in a row (two, shipped), and the retry inside
+            # ``promql_query`` has already absorbed one hiccup by the
+            # time we get here.
             Alert.raise_alert(
                 BACKEND_UNREACHABLE_CODE,
                 "The metrics backend is unreachable, so infrastructure "
                 "alerts are not being evaluated. Metric-based alerts "
                 "shown here may be stale.",
                 level="critical",
-                confirm_after=2,
-                confirm_window=self._confirm_window(),
                 # A central never deployed from this panel is one it
                 # reads but does not run: its outage is for whoever
                 # runs it, not for this panel's operator.

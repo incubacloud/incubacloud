@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Which alert codes are measurements, and how many sightings in a
+        row make one an alert. Read by ``cloud.alert.raise_alert`` for
+        every caller that brings no count of its own; a code absent here
+        is an event and raises on the first sighting.
+
+        NOT ``noupdate``: these are tuning knobs that follow the module,
+        like the metric rules. Windows are three ticks of the producer's
+        schedule, so a tick the runner delayed still counts as the next
+        one and a sighting this morning cannot confirm one tonight.
+    -->
+
+    <!-- The metric-rule cron (every 5 min) could not query the metrics
+         central. On 2026-10-13 one 10 s read timeout through a CDN paged
+         a customer as a critical outage while the central answered in
+         milliseconds. -->
+    <record id="alert_policy_metrics_backend_unreachable" model="cloud.alert.policy">
+        <field name="code">metrics_backend_unreachable</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">900</field>
+        <field name="note">Read every 5 min over the network; one slow answer is not an outage.</field>
+    </record>
+
+    <!-- The health probe (every 5 min) found the odoo container not
+         running. True at that instant, but a deploy, a rebuild or a
+         tenant waking up restarts it for seconds, and a probe landing
+         inside that window mailed the customer a critical outage. -->
+    <record id="alert_policy_instance_down" model="cloud.alert.policy">
+        <field name="code">instance_down</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">900</field>
+        <field name="note">A restart caught mid-way is not an outage; the next probe tells.</field>
+    </record>
+
+    <!-- Same probe, same restarts, for the companion containers
+         (db, backup, ...). -->
+    <record id="alert_policy_instance_service_down" model="cloud.alert.policy">
+        <field name="code">instance_service_*_down</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">900</field>
+        <field name="note">Companion containers restart with the stack; one probe is not a verdict.</field>
+    </record>
+
+    <!-- The SSH probe (every 5 min, hosts without metrics) read the
+         root filesystem over the threshold. A backup dump or an image
+         pull fills it for minutes; the metric rule for the same reading
+         confirms over two ticks too. -->
+    <record id="alert_policy_disk_critical" model="cloud.alert.policy">
+        <field name="code">disk_critical</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">900</field>
+        <field name="note">Temporary files spike the reading; matches the disk metric rule.</field>
+    </record>
+</odoo>

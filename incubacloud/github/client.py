@@ -273,6 +273,21 @@ class GitHubAppClient:
             for item in (data if isinstance(data, list) else [])
         ]
 
+    def list_hook_deliveries(self, per_page: int = 100) -> list:
+        """Return the App webhook's latest delivery attempts, newest first.
+
+        JWT auth: the log belongs to the App, not to an installation.
+        Each entry is GitHub's own dict — ``guid`` (what arrives as
+        ``X-GitHub-Delivery``), ``delivered_at`` (ISO 8601, UTC),
+        ``status`` and ``status_code`` (what the endpoint answered, as
+        GitHub saw it), ``event``, ``redelivery``.
+
+        :param int per_page: entries to ask for, at most 100
+        :return: list of delivery dicts, empty when GitHub has none
+        """
+        data = self._jwt_get(f"/app/hook/deliveries?per_page={per_page}")
+        return data if isinstance(data, list) else []
+
     def test_connection(self) -> dict:
         """Verify credentials by authenticating as the App and fetching a token.
 

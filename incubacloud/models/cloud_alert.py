@@ -1,3 +1,4 @@
+import fnmatch
 import hashlib
 import hmac
 import json
@@ -9,8 +10,8 @@ from datetime import timedelta
 import psycopg2
 from markupsafe import escape
 
-from odoo import api, fields, models
-from odoo.exceptions import AccessError
+from odoo import _, api, fields, models
+from odoo.exceptions import AccessError, ValidationError
 from odoo.tools import config as odoo_config
 
 from ..github.http_utils import safe_urlopen
@@ -234,24 +235,28 @@ class CloudAlert(models.Model):
     @api.model
     def raise_alert(self, code, message, level="warning",
                     host=None, instance=None, job=None, payload=None,
-                    confirm_after=1, confirm_window=900, audience="fleet"):
+                    confirm_after=None, confirm_window=None,
+                    audience="fleet"):
         """Create or refresh the active alert for (code, target).
 
         Idempotent: a repeated call updates the message/level of the
         existing alert instead of creating a second one, so a cron that
         re-evaluates every few minutes does not flood the operator.
 
-        A *measurement* confirms itself first. With ``confirm_after``
-        above 1 the first sightings are kept apart as a
-        ``cloud.alert.suspicion`` — not listed, not counted, not
-        notified — and the alert only exists once the condition has been
-        seen that many times in a row, each sighting within
-        ``confirm_window`` seconds of the last. An *event* (a job that
-        failed, a key that changed) passes nothing: one occurrence is the
-        truth. This is the one place the rule "never on the first sample"
-        is enforced, so a producer does not have to carry a streak
-        counter of its own — on 2026-10-13 a single 10 s read timeout
-        through a CDN paged a customer as a critical outage.
+        A *measurement* confirms itself first. The first sightings are
+        kept apart as a ``cloud.alert.suspicion`` — not listed, not
+        counted, not notified — and the alert only exists once the
+        condition has been seen enough times in a row, each sighting
+        within a window of the last. How many, and how fresh, comes from
+        ``cloud.alert.policy`` by code: a producer that measures raises
+        its code and nothing else, so the rule "never on the first
+        sample" lives in one table rather than in a streak counter per
+        producer — on 2026-10-13 a single 10 s read timeout through a
+        CDN paged a customer as a critical outage. A caller that owns
+        its own count (a metric rule, whose code the operator writes)
+        passes ``confirm_after`` and ``confirm_window`` and the table is
+        not consulted. An *event* (a job that failed, a key that
+        changed) has no row and raises on the spot.
 
         The insert runs inside a savepoint because the search above
         cannot see a row another transaction has just written (Odoo
@@ -270,9 +275,10 @@ class CloudAlert(models.Model):
         :param job: ``cloud.job`` that produced it, if any
         :param payload: structured detail stored on ``payload``, if any
         :param int confirm_after: sightings in a row before the alert
-            exists; 1 (the default) raises on the spot
-        :param int confirm_window: seconds a sighting stays fresh; an
-            older one starts the count over
+            exists; None (the default) asks ``cloud.alert.policy``,
+            which answers 1 for a code it does not list
+        :param int confirm_window: seconds a sighting stays fresh, an
+            older one starts the count over; None asks the policy too
         :param str audience: ``fleet`` (default) or ``provider``; see the
             field. Set on creation, kept on a refresh.
         :returns: the active ``cloud.alert`` record, or an empty
@@ -302,6 +308,10 @@ class CloudAlert(models.Model):
         if existing:
             existing.write(vals)
             return existing
+        if confirm_after is None or confirm_window is None:
+            after, window = self.env["cloud.alert.policy"]._for_code(code)
+            confirm_after = after if confirm_after is None else confirm_after
+            confirm_window = window if confirm_window is None else confirm_window
         if confirm_after > 1 and not self.env["cloud.alert.suspicion"]._sight(
             code, host, instance, confirm_after, confirm_window,
         ):
@@ -983,3 +993,90 @@ class CloudAlertSuspicion(models.Model):
         """Drop suspicions nobody has refreshed for a day."""
         cutoff = fields.Datetime.now() - self._STALE_AFTER
         self.sudo().search([("last_seen_at", "<", cutoff)]).unlink()
+
+
+class CloudAlertPolicy(models.Model):
+    """How many sightings in a row make a measured condition an alert.
+
+    One row per alert code, or per family of codes when the code carries
+    a ``*`` (``instance_service_*_down``). ``cloud.alert.raise_alert``
+    reads it for every code whose caller did not bring a count of its
+    own, so the producers that measure — the health probe, the SSH disk
+    probe, the metric-rule cron's backend check — stay unaware of the
+    rule, and which alerts confirm is read from this table rather than
+    from their code. Shipped rows are data, not ``noupdate``: tuning
+    knobs that follow the module. A code with no row is an event and
+    raises on its first sighting.
+    """
+
+    _name = "cloud.alert.policy"
+    _description = "Alert Confirmation Policy"
+    _order = "code"
+
+    code = fields.Char(
+        required=True,
+        index=True,
+        help="Alert code as the producer raises it. A trailing or "
+             "embedded '*' matches a family of codes; an exact row wins "
+             "over a pattern.",
+    )
+    confirm_after = fields.Integer(
+        string="Confirm after",
+        default=2,
+        required=True,
+        help="Sightings in a row, each within the window of the last, "
+             "before the alert exists and anyone is told. 1 raises on "
+             "the first sighting.",
+    )
+    confirm_window = fields.Integer(
+        string="Window (seconds)",
+        default=900,
+        required=True,
+        help="How long a sighting stays fresh. The next one must come "
+             "within this many seconds or the count starts over. Three "
+             "ticks of the producer's schedule is the usual value.",
+    )
+    note = fields.Char(
+        help="Why this code is a measurement and what one lone reading "
+             "would have cost.",
+    )
+
+    _code_uniq = models.Constraint(
+        "UNIQUE(code)", "One confirmation policy per alert code.",
+    )
+
+    #: What ``_for_code`` answers for a code nobody listed.
+    _DEFAULT = (1, 900)
+
+    @api.constrains("confirm_after", "confirm_window")
+    def _check_counts(self):
+        """Refuse a policy that could never confirm."""
+        for policy in self:
+            if policy.confirm_after < 1:
+                raise ValidationError(_(
+                    "A policy must confirm after at least one sighting.",
+                ))
+            if policy.confirm_window < 1:
+                raise ValidationError(_(
+                    "A policy's window must be at least one second.",
+                ))
+
+    @api.model
+    def _for_code(self, code):
+        """Return ``(confirm_after, confirm_window)`` for *code*.
+
+        An exact row wins; otherwise the first pattern row, in code
+        order, that matches; otherwise the default of one sighting.
+
+        :param str code: the alert code about to be raised
+        :returns: a ``(sightings, seconds)`` tuple
+        """
+        rows = self.sudo().search_fetch([], ["code", "confirm_after", "confirm_window"])
+        exact = rows.filtered(lambda r: r.code == code)
+        if exact:
+            return exact[0].confirm_after, exact[0].confirm_window
+        for row in rows:
+            if "*" in row.code and fnmatch.fnmatchcase(code, row.code):
+                return row.confirm_after, row.confirm_window
+        return self._DEFAULT
+

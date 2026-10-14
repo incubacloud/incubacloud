@@ -63,10 +63,10 @@ class TestAlertResolutionNotify(TransactionCase):
     @patch("odoo.addons.incubacloud.models.cloud_alert.post_json")
     def test_resolution_reaches_the_webhook(self, mock_open):
         self.Alert.raise_alert(
-            "disk_critical", "disk almost full", level="critical",
+            "disk_probe", "disk almost full", level="critical",
             host=self.host,
         )
-        self.Alert.resolve_alert("disk_critical", host=self.host)
+        self.Alert.resolve_alert("disk_probe", host=self.host)
         events = self._events(mock_open)
         self.assertIn("alert", events)
         self.assertIn("alert_resolved", events)
@@ -76,7 +76,7 @@ class TestAlertResolutionNotify(TransactionCase):
         """An operator dismissing by hand is already looking at the
         panel; only automatic resolution announces closure."""
         alert = self.Alert.raise_alert(
-            "disk_critical", "disk almost full", level="critical",
+            "disk_probe", "disk almost full", level="critical",
             host=self.host,
         )
         mock_open.reset_mock()
@@ -85,5 +85,5 @@ class TestAlertResolutionNotify(TransactionCase):
 
     @patch("odoo.addons.incubacloud.models.cloud_alert.post_json")
     def test_resolving_nothing_sends_nothing(self, mock_open):
-        self.Alert.resolve_alert("disk_critical", host=self.host)
+        self.Alert.resolve_alert("disk_probe", host=self.host)
         self.assertEqual(self._events(mock_open), [])

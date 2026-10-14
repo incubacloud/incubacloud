@@ -278,10 +278,10 @@ class TestCloudAlertDedupIndex(TransactionCase):
 
     def test_raise_alert_is_idempotent(self):
         first = self.env['cloud.alert'].raise_alert(
-            'disk_critical', 'first', host=self.host,
+            'disk_probe', 'first', host=self.host,
         )
         second = self.env['cloud.alert'].raise_alert(
-            'disk_critical', 'second', level='critical', host=self.host,
+            'disk_probe', 'second', level='critical', host=self.host,
         )
         self.assertEqual(first, second)
         self.assertEqual(first.message, 'second')
@@ -291,13 +291,13 @@ class TestCloudAlertDedupIndex(TransactionCase):
         """The guarantee the Python search cannot give."""
         from psycopg2 import errors
         self.env['cloud.alert'].raise_alert(
-            'disk_critical', 'first', host=self.host,
+            'disk_probe', 'first', host=self.host,
         )
         self.env.flush_all()
         with self.assertRaises(errors.UniqueViolation):
             with self.env.cr.savepoint():
                 self.env['cloud.alert'].create({
-                    'code': 'disk_critical',
+                    'code': 'disk_probe',
                     'host_id': self.host.id,
                     'message': 'smuggled past the search',
                 })
@@ -314,7 +314,7 @@ class TestCloudAlertDedupIndex(TransactionCase):
             "INSERT INTO cloud_alert"
             " (code, host_id, message, level, state, audience, occurrences,"
             "  create_date, write_date, create_uid, write_uid)"
-            " VALUES ('disk_critical', %s, 'winner', 'warning', 'active',"
+            " VALUES ('disk_probe', %s, 'winner', 'warning', 'active',"
             "         'fleet', 1, now(), now(), 1, 1)",
             (self.host.id,),
         )
@@ -323,12 +323,12 @@ class TestCloudAlertDedupIndex(TransactionCase):
             type(self.env['cloud.alert']), 'search', return_value=self.env['cloud.alert'],
         ):
             result = self.env['cloud.alert'].raise_alert(
-                'disk_critical', 'loser', host=self.host,
+                'disk_probe', 'loser', host=self.host,
             )
         self.assertFalse(result, "the loser must report nothing, not crash")
         self.env.cr.execute(
             "SELECT count(*) FROM cloud_alert"
-            " WHERE code = 'disk_critical' AND host_id = %s"
+            " WHERE code = 'disk_probe' AND host_id = %s"
             "   AND state = 'active'",
             (self.host.id,),
         )
@@ -345,7 +345,7 @@ class TestCloudAlertDedupIndex(TransactionCase):
         would break it silently.
         """
         self.env['cloud.alert'].raise_alert(
-            'disk_critical', 'first', host=self.host,
+            'disk_probe', 'first', host=self.host,
         )
         self.env.flush_all()
         with patch.object(
@@ -355,7 +355,7 @@ class TestCloudAlertDedupIndex(TransactionCase):
             return_value=self.env['cloud.alert'],
         ):
             self.env['cloud.alert'].raise_alert(
-                'disk_critical', 'loser', host=self.host,
+                'disk_probe', 'loser', host=self.host,
             )
         dispatch.assert_not_called()
 

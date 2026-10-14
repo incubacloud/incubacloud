@@ -125,6 +125,7 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
         """Nothing else would ever clear it — the rule uses another code."""
         self.env["cloud.alert"].sudo().raise_alert(
             "disk_critical", "Disk at 99%", host=self.host, level="critical",
+            confirm_after=1,  # already standing: the fixture, not a probe
         )
         self._refresh_with_disk_usage(20)
         self.assertFalse(

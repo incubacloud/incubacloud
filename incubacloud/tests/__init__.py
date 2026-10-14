@@ -15,6 +15,7 @@ from . import (
     test_client_ip_helper,
     test_github_webhook_cost,
     test_cloud_alert,
+    test_alert_policy,
     test_alert_notify,
     test_bus_notifications,
     test_cloud_audit_log,
