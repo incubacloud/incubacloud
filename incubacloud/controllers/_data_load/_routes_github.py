@@ -6,7 +6,6 @@ Mixed into ``CloudDataLoadController`` in ``data_load.py``.
 import base64
 import json
 import logging
-import re
 import urllib.error
 import urllib.request
 from contextlib import suppress
@@ -425,6 +424,24 @@ class GitHubMixin:
                 page += 1
             return branches
 
+        branches, error = self._github_read(_fetch, 'branches')
+        if error:
+            return {**error, 'branches': []}
+        return {'ok': True, 'branches': branches}
+
+    def _github_read(self, fetch, tag):
+        """Run *fetch* with the App, then the PAT, then anonymously.
+
+        One ladder for every route that reads a repository, so each
+        answers the same way: a public repository needs no credentials,
+        and when nothing answers the error says what to configure
+        (``settings_hint`` lets the editor link to the settings).
+
+        :param fetch: called with a GitHub client; returns the value.
+        :param str tag: names the route in the log.
+        :return: ``(value, None)``, or ``(None, error)`` with *error* the
+            response to give: ``ok``, ``error`` and ``settings_hint``.
+        """
         svc = request.env['cloud.github.credential.service'].sudo()
         app_status = 'not_configured'  # not_configured | no_access | error
         pat_status = 'not_configured'
@@ -432,51 +449,42 @@ class GitHubMixin:
         # 1. Try GitHub App first (has org-level access)
         try:
             creds = svc.get_credentials()
-            branches = _fetch(GitHubAppClient(creds))
-            return {'ok': True, 'branches': branches}
+            return fetch(GitHubAppClient(creds)), None
         except GitHubAPIError as exc:
-            _logger.info("[branches] App %s: %s", exc.status_code, exc)
+            _logger.info("[%s] App %s: %s", tag, exc.status_code, exc)
             app_status = 'no_access'
             if exc.status_code not in (404, 401, 403):
                 app_status = 'error'
         except (ValueError, UserError):
-            _logger.debug("[branches] App not configured", exc_info=True)
+            _logger.debug("[%s] App not configured", tag, exc_info=True)
             # app_status stays not_configured
         except Exception:
-            _logger.exception("[branches] App unexpected error")
+            _logger.exception("[%s] App unexpected error", tag)
             app_status = 'error'
 
         # 2. Fall back to PAT
         pat = svc.get_pat()
         if pat:
             try:
-                branches = _fetch(GitHubPATClient(pat))
-                return {'ok': True, 'branches': branches}
+                return fetch(GitHubPATClient(pat)), None
             except GitHubAPIError as exc:
-                _logger.info("[branches] PAT %s: %s", exc.status_code, exc)
+                _logger.info("[%s] PAT %s: %s", tag, exc.status_code, exc)
                 pat_status = 'no_access'
             except Exception:
-                _logger.exception("[branches] PAT unexpected error")
+                _logger.exception("[%s] PAT unexpected error", tag)
                 pat_status = 'error'
 
         # 3. A public repository, anonymously. A private one answers 404
         #    here too, and the message below says what to configure.
         try:
-            branches = _fetch(GitHubAnonymousClient())
-            return {'ok': True, 'branches': branches}
+            return fetch(GitHubAnonymousClient()), None
         except GitHubAPIError as exc:
-            _logger.info("[branches] anonymous %s: %s", exc.status_code, exc)
+            _logger.info("[%s] anonymous %s: %s", tag, exc.status_code, exc)
         except Exception:
-            _logger.exception("[branches] anonymous unexpected error")
+            _logger.exception("[%s] anonymous unexpected error", tag)
 
-        # Build contextual error message
-        msg = self._build_github_error(
-            app_status, pat_status, bool(pat),
-        )
-        # ``settings_hint`` tells the frontend this error is fixable in the
-        # global GitHub settings, so it can render a direct link there (the
-        # message itself no longer points at an ambiguous "Settings" menu).
-        return {'ok': False, 'error': msg, 'branches': [], 'settings_hint': True}
+        msg = self._build_github_error(app_status, pat_status, bool(pat))
+        return None, {'ok': False, 'error': msg, 'settings_hint': True}
 
     @staticmethod
     def _build_github_error(app_status, pat_status, has_pat):
@@ -513,57 +521,40 @@ class GitHubMixin:
 
     @http.route(['/cloud/get_branch_head'], type='jsonrpc', auth='user')
     def cloud_get_branch_head(self, url, branch):
-        """Return the HEAD commit SHA of a branch (for freeze)."""
+        """Return the HEAD commit SHA of a branch (for freeze).
+
+        The same ladder as the branch list, so a panel with no GitHub
+        credentials pins a public repository, and one that cannot read
+        the repository is told what to configure rather than "Unexpected
+        error" (a customer's panel, 2026-10-15). A branch that is not in
+        a repository GitHub does show is named as the problem.
+        """
         self._sec()._check_cloud_group('group_cloud_consultant')
         problem = _not_a_repo_url(url)
         if problem:
             return {'ok': False, 'error': problem}
+        owner, repo = _parse_github_repo_path(url)
 
         def _fetch(client):
-            owner, repo = _parse_github_repo_path(url)
             data = client.get(
                 f'/repos/{_gh_seg(owner)}/{_gh_seg(repo)}'
                 f'/branches/{_gh_seg(branch)}'
             )
             return data['commit']['sha']
 
-        svc = request.env['cloud.github.credential.service'].sudo()
-
-        # 1. Try GitHub App first
-        try:
-            sha = _fetch(
-                GitHubAppClient(svc.get_credentials())
-            )
+        sha, error = self._github_read(_fetch, 'branch_head')
+        if not error:
             return {'ok': True, 'sha': sha}
-        except GitHubAPIError as exc:
-            if exc.status_code not in (404, 401, 403):
-                return safe_error_response(
-                    exc, _("Failed to fetch branch head"),
-                )
-        except (ValueError, UserError):
-            _logger.debug("[branch_head] App not configured", exc_info=True)
-        except Exception:
-            _logger.debug("[branch_head] App unexpected error", exc_info=True)
-
-        # 2. Fall back to PAT
-        try:
-            pat = svc.get_pat()
-            if pat:
-                return {
-                    'ok': True,
-                    'sha': _fetch(GitHubPATClient(pat)),
-                }
-        except (GitHubAPIError, ValueError, UserError) as exc:
-            return safe_error_response(
-                exc, _("Failed to fetch branch head"),
-            )
-        except Exception:
-            _logger.exception(
-                "Error fetching branch HEAD for %s@%s",
-                url, branch,
-            )
-
-        return {'ok': False, 'error': _('Unexpected error')}
+        with suppress(Exception):
+            GitHubAnonymousClient().get(f'/repos/{_gh_seg(owner)}/{_gh_seg(repo)}')
+            return {
+                'ok': False,
+                'error': _(
+                    "Branch %(branch)s does not exist in this repository.",
+                    branch=branch,
+                ),
+            }
+        return error
 
     @http.route(['/cloud/freeze_repo'], type='jsonrpc', auth='user')
     def cloud_freeze_repo(self, repo_id, model):

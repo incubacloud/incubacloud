@@ -513,6 +513,7 @@ export class ProjectDetail extends Component {
                 backup_backend_id: this.state.form.backup_backend_id || null,
                 tag_ids: this.state.selectedTags.map(t => t.id),
                 repos: this.state.repos.map(r => ({
+                    id: r.id || null,
                     url: r.url,
                     branch: r.branch || "main",
                     addons: r.addons || "",
@@ -532,10 +533,14 @@ export class ProjectDetail extends Component {
                 this._savedForm = JSON.stringify(this.state.form);
                 this.env.navigate("project_detail", { project_id: result.id });
             } else {
-                await rpc("/cloud/save_project", {
+                const saved = await rpc("/cloud/save_project", {
                     project_id: this.props.project_id,
                     vals,
                 });
+                // The rows' ids as saved, in the order sent: a new row
+                // gets its id, so pinning it finds it.
+                const rows = this.state.repos.filter(r => (r.url || "").trim());
+                (saved?.repos || []).forEach((r, i) => { if (rows[i]) rows[i].id = r.id; });
                 this.state.project.name = this.state.form.name;
                 this.env.toast?.success(_t("Changes saved"));
                 this._savedForm = JSON.stringify(this.state.form);
