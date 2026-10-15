@@ -176,7 +176,6 @@ export class RepoEditor extends Component {
     async toggleFreeze() {
         const { id, url, branch } = this.props.repo;
         const model = this.props.repoModel;
-        // Freeze/HEAD failures are not credential issues — clear any stale hint.
         this.state.branchSettingsHint = false;
 
         if (this.isFrozen) {
@@ -199,6 +198,7 @@ export class RepoEditor extends Component {
                     sha = res.sha;
                 } else {
                     this.state.branchError = res.error || "Could not freeze";
+                    this.state.branchSettingsHint = !!res.settings_hint;
                     return;
                 }
             } else {
@@ -208,6 +208,7 @@ export class RepoEditor extends Component {
                     sha = res.sha;
                 } else {
                     this.state.branchError = res.error || "Could not fetch HEAD";
+                    this.state.branchSettingsHint = !!res.settings_hint;
                     return;
                 }
             }

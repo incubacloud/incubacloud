@@ -1648,6 +1648,12 @@ msgstr "Rama"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid "Branch %(branch)s does not exist in this repository."
+msgstr "La rama %(branch)s no existe en este repositorio."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_repo_mixin.py:0
 msgid ""
 "Branch '%s' contains characters that are not allowed (use letters, digits, "

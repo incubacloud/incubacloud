@@ -13,7 +13,6 @@ from odoo import _, fields, http
 from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.http import request
 
-from ...github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
 from ...models._repo_requirements import (
     CONFLICT_RE,
     _parse_req_line,
@@ -40,7 +39,6 @@ from ._helpers import (
     _TAG_MODEL_BY_SCOPE,
     _capped_search,
     _has_encrypted,
-    _has_pat,
 )
 
 _logger = logging.getLogger(__name__)
@@ -1225,22 +1223,40 @@ class CrudMixin:
             safe_vals['member_ids'] = [fields.Command.set(member_ids)]
         if safe_vals:
             project.write(safe_vals)
+        saved_repos = []
         if repos is not None:
-            project.repo_ids.unlink()
+            # Rows are kept by id, as an instance's are: every save used
+            # to delete and recreate them, so the editor's rows carried
+            # ids that no longer existed and pinning one answered "Repo
+            # not found" (a customer's panel, 2026-10-15).
             Repo = request.env['cloud.project.repo'].with_context(
                 skip_apply_requirements=True,
             )
+            existing_ids = set(project.repo_ids.ids)
+            kept_ids = set()
             for seq, repo in enumerate(repos, start=10):
-                if repo.get('url', '').strip():
-                    Repo.create({
-                        'project_id': project.id,
-                        'sequence': seq,
-                        'url': repo['url'].strip(),
-                        'branch': repo.get('branch', 'main').strip() or 'main',
-                        'addons': repo.get('addons', '').strip(),
-                        'excludes': repo.get('excludes', '').strip(),
-                        'commit_sha': repo.get('commit_sha', '').strip(),
-                    })
+                url = (repo.get('url') or '').strip()
+                if not url:
+                    continue
+                rid = repo.get('id')
+                vals = {
+                    'sequence': seq,
+                    'url': url,
+                    'branch': (repo.get('branch') or 'main').strip() or 'main',
+                    'addons': (repo.get('addons') or '').strip(),
+                    'excludes': (repo.get('excludes') or '').strip(),
+                    'commit_sha': (repo.get('commit_sha') or '').strip(),
+                }
+                if rid and rid in existing_ids:
+                    row = Repo.browse(rid)
+                    row.write(vals)
+                    kept_ids.add(rid)
+                else:
+                    row = Repo.create({'project_id': project.id, **vals})
+                saved_repos.append({'id': row.id, 'url': url})
+            to_unlink = existing_ids - kept_ids
+            if to_unlink:
+                Repo.browse(list(to_unlink)).unlink()
         # ── Pip conflict detection ────────────────────────────────────────────
         pip_deps = project.pip_dependencies or ''
         conflicts = detect_pip_conflicts(pip_deps)
@@ -1257,7 +1273,8 @@ class CrudMixin:
             ], limit=1)
             if active:
                 active.write({'state': 'dismissed'})
-        return {'ok': True}
+        # The rows' ids, in the order sent, so the editor keeps them.
+        return {'ok': True, 'repos': saved_repos}
 
     @http.route(['/cloud/get_host_instances'], type='jsonrpc', auth='user')
     def cloud_get_host_instances(self, host_id):

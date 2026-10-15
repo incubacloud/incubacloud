@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.185] — 2026-10-15
+
+### Fixed
+
+- **Pinning a repository works from a panel with no GitHub credentials,
+  and says what is wrong when it cannot.** Saving a project deleted and
+  recreated its repository rows, so the editor's rows carried ids that no
+  longer existed and the pin answered "Repo not found"; rows are now kept
+  by id, as an instance's are, and a new row gets its id back. The
+  branch-head route tried the GitHub App and the PAT only and gave up
+  with "Unexpected error"; it now reads public repositories anonymously,
+  like the branch list, and otherwise answers the same message as the
+  branch list, with the link to the settings. A branch that is not in a
+  repository GitHub does show is named as the problem. Seen on a
+  customer's panel on 2026-10-15.
+
 ## [1.0.184] — 2026-10-15
 
 ### Fixed
