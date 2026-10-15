@@ -30,6 +30,7 @@ from . import (
     test_general_settings,
     test_cloud_instance,
     test_cloud_instance_move,
+    test_move_chain_hooks,
     test_cloud_instance_domain,
     test_cloud_instance_repo,
     test_cloud_github_app,

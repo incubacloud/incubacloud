@@ -114,4 +114,5 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
                 ('code', '=', 'move_stuck'),
                 ('state', '=', 'active'),
             ]).write({'state': 'dismissed'})
+            inst._on_move_rolled_back()
         self._sys("✓ Rollback cleanup complete. Markers cleared.")

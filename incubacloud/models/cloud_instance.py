@@ -1724,6 +1724,14 @@ class CloudInstance(models.Model):
         A-record at the new host IP and finalize the tenant.
         """
 
+    def _on_move_rolled_back(self):
+        """Hook fired once a move that did not happen is undone.
+
+        By then the move markers are cleared and the instance is running
+        on its source host again. Core: no-op. SaaS overrides this to give
+        the tenant back the state the move had taken from it.
+        """
+
     def move_to_host(self, target_host):
         """Move this deployed instance to ``target_host``, preserving data.
 
@@ -3003,6 +3011,9 @@ class CloudInstance(models.Model):
                         "move_rollback_in_progress": False,
                     }
                 )
+                # The source was restarted: the move is undone even if the
+                # target could not be cleaned.
+                inst._on_move_rolled_back()
                 if not Alert.search_count(
                     [
                         ("instance_id", "=", inst.id),
