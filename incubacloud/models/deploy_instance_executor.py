@@ -1517,7 +1517,14 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 **inst._applied_config_vals(),
             }
         )
-        inst._transition("deployed")
+        # A move deploys the record on its target while it is still live
+        # on its source: it is 'deployed' already and stays so, and the
+        # cutover is what moves it. Transitioning here refused 'deployed'
+        # -> 'deployed' and failed every move at its first step, from the
+        # state machine (2026-07-30) until a customer's upgrade hit it
+        # (2026-10-15).
+        if not inst.move_origin_host_id:
+            inst._transition("deployed")
         # The host's metric label map is a snapshot of its instance list;
         # without this the new instance's containers report unattributed.
         inst.host_id.refresh_observability_labels(reason="deploy")

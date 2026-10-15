@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.184] — 2026-10-15
+
+### Fixed
+
+- **Moving an instance to another host works again.** A move deploys the
+  instance on its target while it is still live on its source, so it is
+  already `deployed`; the deploy's success hook still asked the state
+  machine for `deployed` -> `deployed`, which it refuses. Every move failed
+  at its first step from 1.0.20 (the state machine, 2026-07-30) until a
+  customer's upgrade to a paid plan hit it on 2026-10-15. The deploy now
+  leaves the state alone during a move; the cutover is what moves it. A
+  new test closes every job of a move in order on the same instance,
+  through the executors the job runner picks, which is what none of the
+  move tests did.
+
+### Added
+
+- **A hook for a move that was undone.** `cloud.instance._on_move_rolled_back()`
+  fires once a rollback has cleared the move markers -- after the target
+  is cleaned, or when the watchdog gives up cleaning it -- with the
+  instance running on its source again. Core does nothing with it; an
+  inheriting layer can give back what the move took (SaaS puts the tenant
+  back in `active`).
+
 ## [1.0.183] — 2026-10-14
 
 ### Added
