@@ -1742,17 +1742,20 @@ class CloudInstance(models.Model):
         recoverable (see ``rollback_move`` / ``cron_recover_stuck_moves``)::
 
             [pre-steps] → deploy(target) → stop(source, odoo only) →
-            backup_create(source) → backup_download(source) →
-            restore(target) → move_cutover(target) →
-            move_cleanup_source(source)
+            backup_download(source, live) → restore(target) →
+            move_cutover(target) → move_cleanup_source(source)
 
-        Only the ``odoo`` service is stopped on the source (not ``db`` or
-        ``backup``) so the backup container stays alive for the following
-        steps. ``backup_create`` freshes a snapshot to S3 (db up, odoo
-        quiesced = consistent) so ``backup_download`` restores a current
-        copy rather than a potentially stale scheduled backup.
-        ``host_id`` flips to ``target_host`` only inside ``move_cutover``
-        on success.
+        Only the ``odoo`` service is stopped on the source, so ``db``
+        stays up for a live dump (``time='live'``): a database nothing
+        writes to any more, dumped with its filestore by a one-off
+        container and handed over through the panel's disk to the
+        restore. It needs neither the instance's ``backup`` container
+        nor a bucket. The move used to take a duplicity snapshot through
+        that container first, and an instance without one (a free plan's,
+        which leaves it out to save memory) failed there: on 2026-10-15
+        QA's walk of a free customer paying for a plan stopped at "service
+        backup is not running". ``host_id`` flips to ``target_host`` only
+        inside ``move_cutover`` on success.
         """
         self.ensure_one()
         self.env["cloud.security.mixin"]._check_can_manage_hosts()
@@ -1773,22 +1776,14 @@ class CloudInstance(models.Model):
             )
         if self.move_origin_host_id:
             raise UserError(_("A move is already in progress for this instance."))
-        if not self.instance_backup_dst:
-            raise UserError(
-                _(
-                    "This instance has no resolvable backup backend, so a "
-                    "move cannot transfer its data. Configure a backup "
-                    "backend (instance, project or global) first."
-                )
-            )
 
         self.move_origin_host_id = source.id
         self.move_target_host_id = target_host.id
 
         pre = self._move_pre_steps(source)
-        # pre … deploy(+0) stop(+1) backup_create(+2) download(+3):
-        # restore references the download job by its 0-indexed position.
-        download_idx = len(pre) + 3
+        # pre … deploy(+0) stop(+1) download(+2): restore references the
+        # download job by its 0-indexed position.
+        download_idx = len(pre) + 2
         steps = pre + [
             {
                 "host_id": target_host.id,
@@ -1804,14 +1799,9 @@ class CloudInstance(models.Model):
             {
                 "host_id": source.id,
                 "instance_id": self.id,
-                "job_type_code": "backup_create",
-            },
-            {
-                "host_id": source.id,
-                "instance_id": self.id,
                 "job_type_code": "backup_download",
                 "payload": {
-                    "time": "latest",
+                    "time": "live",
                     "download_type": "all",
                     "handoff": "host",
                 },

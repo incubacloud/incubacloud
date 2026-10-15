@@ -12250,17 +12250,6 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
-"This instance has no resolvable backup backend, so a move cannot transfer "
-"its data. Configure a backup backend (instance, project or global) first."
-msgstr ""
-"Esta instancia no tiene un backend de respaldo resoluble, por lo que un "
-"traslado no puede transferir sus datos. Configure un backend de respaldo "
-"(instancia, proyecto o global) primero."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_instance.py:0
-msgid ""
 "This instance has no resolvable backup backend, so a pre-restore safety "
 "backup cannot be taken. Configure a backup backend (instance, project or "
 "global) first."

@@ -33,7 +33,7 @@ teardown() {
 @test "a db-only live dump asks for no filestore" {
     run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip db
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"docker compose run --rm -v /tmp:/host-tmp odoo click-odoo-backupdb --no-filestore prod /host-tmp/out.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose run --rm -l traefik.enable=false -v /tmp:/host-tmp odoo click-odoo-backupdb --no-filestore prod /host-tmp/out.zip"* ]]
 }
 
 @test "an 'all' live dump includes the filestore" {
@@ -41,6 +41,14 @@ teardown() {
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"--filestore prod"* ]]
     [[ "$(cat "$CALLS")" != *"--no-filestore"* ]]
+}
+
+@test "a live dump's one-off container stays out of Traefik" {
+    # It inherits the service's labels; the proxy would send visitors to a
+    # container that serves nothing while the dump runs.
+    run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip all
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"run --rm -l traefik.enable=false "* ]]
 }
 
 @test "a live dump never touches the backup container" {

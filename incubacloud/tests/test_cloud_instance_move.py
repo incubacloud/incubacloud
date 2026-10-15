@@ -47,7 +47,7 @@ class TestInstanceMove(TransactionCase):
     def _patch_chain(self):
         return patch.object(
             type(self.env['cloud.job']), 'enqueue_chain',
-            return_value=[1, 2, 3, 4, 5, 6, 7],
+            return_value=[1, 2, 3, 4, 5, 6],
         )
 
     def _patch_enqueue(self, return_value=8):
@@ -64,40 +64,32 @@ class TestInstanceMove(TransactionCase):
         self.assertTrue(res['ok'])
         steps = m.call_args[0][0]
         expected_codes = [
-            'deploy_instance', 'stop_instance', 'backup_create',
-            'backup_download', 'restore_instance', 'move_cutover',
-            'move_cleanup_source',
+            'deploy_instance', 'stop_instance', 'backup_download',
+            'restore_instance', 'move_cutover', 'move_cleanup_source',
         ]
         self.assertEqual(
             [s['job_type_code'] for s in steps], expected_codes,
         )
-        self.assertEqual(steps[0]['host_id'], self.target.id)
-        self.assertEqual(steps[1]['host_id'], self.source.id)
-        self.assertEqual(steps[2]['host_id'], self.source.id)
-        self.assertEqual(steps[3]['host_id'], self.source.id)
-        self.assertEqual(steps[4]['host_id'], self.target.id)
-        self.assertEqual(steps[5]['host_id'], self.target.id)
-        self.assertEqual(steps[6]['host_id'], self.source.id)
-        self.assertEqual(steps[1]['payload'], {'services': ['odoo']})
         self.assertEqual(
-            steps[4]['payload']['source_job_id'], '__chain_job_3__',
+            [s['host_id'] for s in steps],
+            [self.target.id, self.source.id, self.source.id,
+             self.target.id, self.target.id, self.source.id],
         )
-        # The move transfers its data host-to-host: the archive is
-        # staged on the source (handoff) and streamed by the restore —
-        # it must never round-trip through an ir.attachment.
-        self.assertEqual(steps[3]['payload']['handoff'], 'host')
-        self.assertEqual(steps[4]['payload']['mode'], 'from_host')
-        idx_stop = expected_codes.index('stop_instance')
-        idx_create = expected_codes.index('backup_create')
-        idx_download = expected_codes.index('backup_download')
-        self.assertLess(idx_create, idx_download)
-        self.assertLess(idx_stop, idx_download)
-        self.assertEqual(steps[idx_stop]['payload']['services'], ['odoo'])
+        self.assertEqual(steps[1]['payload'], {'services': ['odoo']})
+        # The data goes as a live dump of the stopped panel's database,
+        # staged on the source (handoff) and streamed by the restore: no
+        # backup container, no bucket, never an ir.attachment.
+        self.assertEqual(
+            steps[2]['payload'],
+            {'time': 'live', 'download_type': 'all', 'handoff': 'host'},
+        )
+        self.assertEqual(steps[3]['payload']['mode'], 'from_host')
+        self.assertEqual(
+            steps[3]['payload']['source_job_id'], '__chain_job_2__',
+        )
         self.assertEqual(self.inst.move_origin_host_id, self.source)
         self.assertEqual(self.inst.move_target_host_id, self.target)
-        self.assertEqual(
-            self.inst.move_chain_job_ids, '1,2,3,4,5,6,7',
-        )
+        self.assertEqual(self.inst.move_chain_job_ids, '1,2,3,4,5,6')
 
     def test_move_validations(self):
         with self._patch_chain():
@@ -120,14 +112,20 @@ class TestInstanceMove(TransactionCase):
             with self.assertRaises(UserError):
                 self.inst.move_to_host(self.target)
 
-    def test_move_requires_backup_backend(self):
+    def test_a_move_needs_no_backup_backend(self):
+        """A free plan's instance has no backup container and may have no
+        backend: the move used to stop at "service backup is not
+        running" (QA, 2026-10-15). It carries a live dump instead."""
         self.inst.backup_backend_id = False
         self.env['ir.config_parameter'].sudo().set_param(
             'incubacloud.backup_backend_id', '',
         )
-        with self._patch_chain():
-            with self.assertRaises(UserError):
-                self.inst.move_to_host(self.target)
+        self.assertFalse(self.inst.instance_backup_dst)
+        with self._patch_chain() as m:
+            self.inst.move_to_host(self.target)
+        codes = [s['job_type_code'] for s in m.call_args[0][0]]
+        self.assertNotIn('backup_create', codes)
+        self.assertEqual(m.call_args[0][0][2]['payload']['time'], 'live')
 
     def test_core_deploy_job_type(self):
         self.assertEqual(
