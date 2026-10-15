@@ -54,7 +54,10 @@ case "$op" in
             *) ic_die "unknown scope: $scope (expected db or all)" ;;
         esac
         ic_log "dumping $dbname live ($scope)"
-        docker compose run --rm -v /tmp:/host-tmp odoo \
+        # Out of Traefik: a one-off container inherits the service's
+        # labels, and the proxy would send visitors to one that serves
+        # nothing while the dump runs.
+        docker compose run --rm -l traefik.enable=false -v /tmp:/host-tmp odoo \
             click-odoo-backupdb "$filestore_flag" "$dbname" \
             "/host-tmp/$(basename "$archive")"
         ;;

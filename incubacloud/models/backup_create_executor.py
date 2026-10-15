@@ -74,6 +74,9 @@ class BackupCreateExecutor(AbstractSSHExecutor):
             (
                 "Create backup",
                 f"cd {d} && docker compose run --rm"
+                # Out of Traefik, like every one-off container: it carries
+                # the service's labels and serves nothing.
+                f" -l traefik.enable=false"
                 f" -v /tmp:/host-tmp"
                 f" odoo click-odoo-backupdb"
                 f" {filestore_flag} {dbname} /host-tmp/{remote_filename}",

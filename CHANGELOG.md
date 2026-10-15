@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.186] — 2026-10-16
+
+### Fixed
+
+- **A free plan's instance can move to another host.** The move took a
+  duplicity snapshot through the instance's own ``backup`` container
+  before carrying it over, and a free plan's instance has none (it is
+  left out to save memory): QA's walk of a free customer paying for a
+  plan stopped at "service backup is not running" and the move was
+  undone. With ``odoo`` stopped on the source the database is quiet, so
+  the move now carries a live dump of it with its filestore
+  (``backup_download`` with ``time='live'``), handed to the restore
+  through the panel's disk as before. It needs neither the backup
+  container nor a bucket, so ``move_to_host`` no longer asks for a backup
+  backend, and the data skips the round trip through the bucket.
+- **A one-off dump container stays out of Traefik.** The live dump and a
+  non-production backup run ``click-odoo-backupdb`` in a ``docker compose
+  run`` container, which inherits the service's labels: the proxy could
+  send visitors to it while it ran, and they got a 502.
+
 ## [1.0.185] — 2026-10-15
 
 ### Fixed
