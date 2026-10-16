@@ -34,7 +34,11 @@ class TestPinningWithoutCredentials(HttpCase):
 
     def setUp(self):
         super().setUp()
+        # Both credentials, not only the PAT: a database with an App of
+        # its own — production's clone, which the deploy tests on — read
+        # the repository through it and never reached the anonymous path.
         self.env["cloud.settings"].sudo()._get().github_pat = False
+        self.env["cloud.github.app"].sudo().search([]).unlink()
         self.env["res.users"].create({
             "name": "pin-consultant",
             "login": "pin-consultant",
