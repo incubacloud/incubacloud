@@ -89,11 +89,26 @@ class QueueJob(models.Model):
         # logs no traceback for it; that arrives here as "done" with the
         # marker. A job that finished on its own as the person pressed
         # cancel carries no marker and stays done.
+        #
+        # A started job queue_job puts back in the queue is the same stop.
+        # Storing its end updates the cloud job's row, which the flag
+        # changed after the job's transaction began: PostgreSQL refuses
+        # it, queue_job retries the whole job five seconds later, and the
+        # retry wrote ``started`` over the flag and ran the job again
+        # from the start. No cancellation of a running job had ever ended
+        # cancelled (16-oct-2026); the postpone is read in a cursor of its
+        # own, which sees the flag.
         if vals.get("state") == "failed" or (
             vals.get("state") == "done"
             and vals.get("result") == CANCELLED_WHILE_RUNNING
         ):
-            stopped = self._cancelled_while_running()
+            candidates = self
+        elif vals.get("state") == "pending":
+            candidates = self.filtered(lambda job: job.state == "started")
+        else:
+            candidates = self.browse()
+        if candidates:
+            stopped = candidates._cancelled_while_running()
             if stopped:
                 (self - stopped).write(vals)
                 return stopped.with_context(

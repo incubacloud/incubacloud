@@ -145,6 +145,41 @@ class TestCancelWhileRunning(TransactionCase):
         self.assertEqual(self.cjob.state, 'cancelled')
         self.assertFalse(self._failure_alerts(self.cjob))
 
+    def test_a_stop_queue_job_puts_back_in_the_queue_ends_cancelled(self):
+        """Storing the stop collides with the flag's own write; queue_job
+        postponed the job and ran it again from the start (16-oct-2026)."""
+        self.cjob.cancel_job()
+        self.env.flush_all()
+        # What queue_job's ``retry_postpone`` writes after PostgreSQL
+        # refused to store the end.
+        self.qjob.write({
+            'state': 'pending',
+            'eta': '2026-10-16 08:12:30',
+            'date_started': False,
+            'result': 'could not serialize access due to concurrent update',
+        })
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(self.qjob.state, 'cancelled')
+        self.assertEqual(self.qjob.result, CANCELLED_WHILE_RUNNING)
+        self.assertTrue(self.qjob.date_cancelled)
+        self.assertEqual(self.cjob.state, 'cancelled')
+        self.assertFalse(self._failure_alerts(self.cjob))
+
+    def test_a_retry_nobody_cancelled_goes_back_to_the_queue(self):
+        self.qjob.write({'state': 'pending', 'eta': '2026-10-16 08:12:30'})
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(self.qjob.state, 'pending')
+        self.assertEqual(self.cjob.state, 'pending')
+
+    def test_a_cancelled_job_requeued_by_hand_goes_back_to_the_queue(self):
+        cjob, qjob = self._started('uuid-requeued', state='cancelled')
+        self.assertEqual(cjob.state, 'cancelled')
+        # What queue_job's ``requeue`` stores.
+        qjob.write({'state': 'pending', 'date_cancelled': False, 'retry': 0})
+        self.env['cloud.job'].invalidate_model(['state'])
+        self.assertEqual(qjob.state, 'pending')
+        self.assertEqual(cjob.state, 'pending')
+
     def test_a_job_that_finished_as_cancel_was_pressed_stays_done(self):
         self.cjob.cancel_job()
         self.env.flush_all()

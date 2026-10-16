@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.187] — 2026-10-16
+
+### Fixed
+
+- **A job cancelled while it runs ends cancelled, instead of running
+  again from the start.** Cancelling a started job raises a flag on its
+  ``cloud.job`` row that the executor stops on. The job's own
+  transaction began before that flag was written, so storing its end
+  updated a row changed since: PostgreSQL refused it, queue_job put the
+  job back in the queue five seconds later, and the retry wrote
+  ``started`` over the flag and ran the whole job again. No cancellation
+  of a running job had ever ended cancelled; in QA one was retried 24
+  times. A started job queue_job puts back in the queue while its cloud
+  job carries the flag is now stored as the cancellation it is.
+
 ## [1.0.186] — 2026-10-16
 
 ### Fixed
