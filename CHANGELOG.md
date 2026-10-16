@@ -21,6 +21,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   times. A started job queue_job puts back in the queue while its cloud
   job carries the flag is now stored as the cancellation it is.
 
+### Tests
+
+- **The pinning tests for a panel without GitHub credentials remove the
+  App too.** They cleared the PAT only, so on production's clone, which
+  the deploy runs the suite on, the branch head came through
+  production's own App and the anonymous path they test was never
+  reached: the deploy stopped there.
+
 ## [1.0.186] — 2026-10-16
 
 ### Fixed
