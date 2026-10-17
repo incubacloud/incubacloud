@@ -9,9 +9,14 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import asyncssh
+from psycopg2 import OperationalError
 
+from odoo.exceptions import AccessError, MissingError, UserError
+from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.sql_db import Cursor
 from odoo.tools import file_path
+
+from odoo.addons.queue_job.exception import RetryableJobError
 
 from ._concurrency import read_committed_cursor
 from ._repo_requirements import has_pip_conflicts
@@ -201,10 +206,45 @@ class JobCancelled(Exception):
 # cancel flag, and what ``queue_job_ext`` recognises in the job it stores.
 CANCELLED_WHILE_RUNNING = "Cancelled while it ran."
 
+# What ``cloud.job.execute`` returns when ``blocking_alert`` stopped the
+# job before it started: it waits, ``blocked_alert_id`` says on what.
+BLOCKED_BY_ALERT = "Blocked until an alert is resolved."
+
+
+class JobRefused(RuntimeError):
+    """A check of the executor's own refused to go on, before any step ran.
+
+    The message says why and is all there is to say: it is logged as a
+    warning, without the traceback an unexpected exception gets, so the
+    log scrapers that page on ERROR lines are not handed a decision the
+    job already reported as its own failure.
+    """
+
+
+def _is_refusal(exc):
+    """Whether *exc* is a refusal the job reports, not a defect of ours.
+
+    ``JobRefused`` and a ``UserError``: its message is the whole story.
+    An ``AccessError`` or a ``MissingError`` is a ``UserError`` too, but
+    in a job it means our code read what it may not or what is gone.
+
+    :rtype: bool
+    """
+    return isinstance(exc, (JobRefused, UserError)) and not isinstance(
+        exc, (AccessError, MissingError),
+    )
+
 
 class AbstractExecutor(ABC):
 
     _job_type = None  # required in subclasses
+
+    # Set on the instance once ``on_success`` / ``on_failure`` returned
+    # (``_dispatch_outcome``): an exception after that point already had
+    # its hook, one before it gets ``on_abort``.
+    _outcome_dispatched = False
+    # Set when that hook raised instead: a defect, whatever the exception.
+    _hook_raised = False
 
     # Connection-retry opt-in. When True, a transient connection failure
     # (see ``is_transient_connection_error``) does not fail the job on the
@@ -407,20 +447,61 @@ class AbstractExecutor(ABC):
 
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
-            if self._retry_on_connection_loss and is_transient_connection_error(e):
-                # ``cloud.job.execute`` retries it, and a host that stays
-                # away raises ``host_unreachable`` when the retries run
-                # out. An ERROR per attempt would reach whoever scrapes
-                # this database's log as an incident — every scheduled
-                # 04:00 reboot of a host for its security updates.
+            retrying = self._will_be_retried(e)
+            cancelled = isinstance(e, JobCancelled)
+            # Neither ``on_success`` nor ``on_failure`` ran, and nothing
+            # will run this job again: ``on_abort`` closes it.
+            aborting = not (retrying or cancelled or self._outcome_dispatched)
+            if retrying:
+                # The job runs again, and a host that stays away raises
+                # ``host_unreachable`` when the retries run out. An ERROR
+                # per attempt would reach whoever scrapes this database's
+                # log as an incident — every scheduled 04:00 reboot of a
+                # host for its security updates.
                 logger.warning(
-                    "[_async_entry] Connection failed, the job will retry: "
+                    "[_async_entry] Attempt failed, the job will retry: "
                     "%s: %s", type(e).__name__, e,
                 )
+            elif cancelled:
+                # A person asked for it; ``queue_job_ext`` records it.
+                logger.info("[_async_entry] Job cancelled: %s", e)
+            elif self._outcome_dispatched or (
+                _is_refusal(e) and not self._hook_raised
+            ):
+                # A step that failed (``on_failure`` already ran and the
+                # job log holds its output) or a refusal of our own: the
+                # message is the whole story. Its traceback, at ERROR,
+                # reached the platform's log scraper as an incident of
+                # the panel's every time a customer's job failed for a
+                # reason the customer had already been told (16-oct-2026).
+                logger.warning("[_async_entry] Job failed: %s", e)
             else:
                 logger.exception("[_async_entry] Exception: %s", e)
-            self._sys(f"✗ {type(e).__name__}: {e}")
+            if not (aborting and self._handles_abort()):
+                self._sys(f"✗ {type(e).__name__}: {e}")
+            if aborting:
+                await self._dispatch_abort(e)
             raise
+
+    def _will_be_retried(self, exc):
+        """Whether *exc* ends this attempt only, not the job.
+
+        queue_job runs the job again after a ``RetryableJobError`` and
+        after a lost serialisation race; ``cloud.job.execute`` turns a
+        transient connection failure into the former for executors that
+        opt in. None of them is the job's end, so none gets ``on_abort``.
+
+        :param Exception exc: what stopped this attempt
+        :rtype: bool
+        """
+        if isinstance(exc, RetryableJobError):
+            return True
+        if isinstance(exc, OperationalError):
+            return exc.pgcode in PG_CONCURRENCY_ERRORS_TO_RETRY
+        return bool(
+            self._retry_on_connection_loss
+            and is_transient_connection_error(exc)
+        )
 
     async def _run_steps(self, transport, commands):
         """Run the job's steps in order and report what ran and what did not.
@@ -528,11 +609,46 @@ class AbstractExecutor(ABC):
             "[_dispatch_outcome] %s START job_id=%s errors=%s",
             hook.__name__, self.job.id, errors,
         )
-        # A durable environment, READ COMMITTED: this is where
-        # ``on_success`` stamps ``cloud_instance``, the same rows the
-        # metrics cron stamps on its own schedule. See ``_concurrency``
-        # for why losing that race is worse than waiting for it, and
-        # ``_durable_env`` for why the wait is capped.
+        try:
+            await self._run_hook_durably(hook, *args)
+        except Exception:
+            # Whatever it raised, a ``UserError`` included, is a defect
+            # of ours: logged with its traceback, not as a refusal.
+            self._hook_raised = True
+            raise
+        # Only once the hook returned: one that raised has not dealt with
+        # the outcome, and is handed to ``on_abort``.
+        self._outcome_dispatched = True
+        logger.debug(
+            "[_dispatch_outcome] %s END job_id=%s", hook.__name__, self.job.id,
+        )
+        if errors:
+            raise RuntimeError("; ".join(errors))
+
+    async def _run_hook_durably(self, hook, *args):
+        """Await *hook* with ``self.job``/``self.env`` on a durable cursor.
+
+        A durable environment, READ COMMITTED: this is where
+        ``on_success`` stamps ``cloud_instance``, the same rows the
+        metrics cron stamps on its own schedule. See ``_concurrency`` for
+        why losing that race is worse than waiting for it, and
+        ``_durable_env`` for why the wait is capped. The executor's
+        ``job``/``env`` are restored afterwards.
+
+        :param hook: coroutine function to await
+        :param args: positional arguments for *hook*
+        """
+        with self._as_durable():
+            await hook(*args)
+
+    @contextlib.contextmanager
+    def _as_durable(self):
+        """Run the block with ``self.job``/``self.env`` on a durable cursor.
+
+        What the block writes through them commits when it ends, whatever
+        becomes of the job's transaction; both are restored afterwards.
+        See :meth:`_run_hook_durably`.
+        """
         # The job's own cursor, pinned before the swap below: a hook that
         # needs something to happen *after* the job commits registers it
         # there (``_unlink_after_job_commit``), never on the hook cursor,
@@ -543,14 +659,37 @@ class AbstractExecutor(ABC):
             self.job = env['cloud.job'].browse(self.job.id)
             self.env = self.job.env
             try:
-                await hook(*args)
+                yield env
             finally:
                 self.job, self.env = _orig_job, _orig_env
-        logger.debug(
-            "[_dispatch_outcome] %s END job_id=%s", hook.__name__, self.job.id,
-        )
-        if errors:
-            raise RuntimeError("; ".join(errors))
+
+    def _handles_abort(self):
+        """Whether this executor overrides ``on_abort``.
+
+        An override writes the failure to the job log itself (a deploy's
+        ``on_failure`` does), so the run does not write it a second time.
+
+        :rtype: bool
+        """
+        return type(self).on_abort is not AbstractExecutor.on_abort
+
+    async def _dispatch_abort(self, exc):
+        """Give ``on_abort`` the exception that ended the run before its steps.
+
+        Never raises: the caller is re-raising *exc*, and a failure here
+        must not take its place. Logged instead.
+
+        :param Exception exc: what stopped the run
+        """
+        if not self._handles_abort():
+            return  # nothing to do, so no cursor to open
+        try:
+            await self._run_hook_durably(self.on_abort, exc)
+        except Exception:
+            logging.getLogger("AbstractExecutor").exception(
+                "[_dispatch_abort] on_abort failed for job %s",
+                getattr(getattr(self, "job", None), "id", None),
+            )
 
     def _unlink_after_job_commit(self, inst, sudo=False):
         """Unlink *inst* once this job's own transaction has committed.
@@ -915,7 +1054,7 @@ class AbstractExecutor(ABC):
             })
 
     def pre_run_checks(self):
-        """Called before connecting. Raises RuntimeError to abort the job.
+        """Called before connecting. Raises ``JobRefused`` to abort the job.
 
         Checks pip_dependencies for conflict markers.
         Subclasses may extend this with additional checks.
@@ -930,7 +1069,7 @@ class AbstractExecutor(ABC):
                 " before retrying."
             )
             self._write_system_direct(msg)
-            raise RuntimeError(msg)
+            raise JobRefused(msg)
 
     # ===============================
     # ALERT HELPERS
@@ -1173,6 +1312,52 @@ class AbstractExecutor(ABC):
 
     async def on_failure(self, results, errors):
         """Called when parse_results returns one or more error strings."""
+
+    async def on_abort(self, exc):
+        """Called when the job ended with neither ``on_success`` nor ``on_failure``.
+
+        A check that refused, before or inside the run, a failed
+        connection, an exception in ``before_execute`` or between two
+        steps, a terminal hook that raised: ``on_failure`` only follows
+        steps that ran to their end. Runs on a durable cursor like the
+        other terminal hooks. Not called for a run that will be retried
+        nor for a cancellation. An override writes *exc* to the job log
+        (``_handles_abort``).
+
+        :param Exception exc: what stopped the run
+        """
+
+    def blocking_alert(self):
+        """Return the alert this job must wait for, before anything runs.
+
+        Called by ``cloud.job.execute`` before ``run``, in the job's own
+        transaction — on a durable cursor for a step of a chain, which
+        fails and rolls that transaction back. An alert returned blocks
+        the job: it ends at once
+        with ``BLOCKED_BY_ALERT``, ``blocked_alert_id`` points at the
+        alert, and resolving the alert dispatches the job again. Whoever
+        returns one has already raised it and said why in the job log.
+
+        Only a job nothing runs after can wait. A step of a chain whose
+        executor returns an alert fails with ``JobRefused`` instead, and
+        the chain is cancelled.
+
+        :return: an active ``cloud.alert``, or an empty recordset to run
+        """
+        return self.job.env['cloud.alert'].browse()
+
+    def on_blocked(self, alert):
+        """Called when ``blocking_alert`` stopped the job, in its transaction.
+
+        :param alert: the ``cloud.alert`` the job now waits for
+        """
+
+    def on_unblocked(self):
+        """Called when a job that waited is dispatched again, before it is.
+
+        Runs in the transaction of whoever resolved the alert, the
+        counterpart of ``on_blocked``.
+        """
 
 
 # Backward-compat alias — kept so existing executor imports don't break.

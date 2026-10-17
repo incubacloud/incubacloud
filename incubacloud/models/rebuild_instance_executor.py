@@ -50,7 +50,6 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         inst = self._inst()
         if not inst:
             raise ValueError("rebuild_instance job has no instance_id")
-        await self._preflight_addon_check()
         self._preflight_tls_check()
         self._sys(f"Preparing rebuild for '{inst.name}'...")
         await self._upload_copier_files(transport)
@@ -325,6 +324,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         ]
 
     async def on_success(self, results):
+        self._cancel_stale_waits()
         inst = self._inst()
         write_vals = {"status": "ok"}
         services_out = (
@@ -399,6 +399,16 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 "⚠ Failed to enqueue coalesced rebuild — pending pushes"
                 " preserved for the next attempt."
             )
+
+    async def on_abort(self, exc):
+        """A rebuild that ended without an outcome leaves the record alone.
+
+        Most often nothing ran (a refused check, a host that did not
+        answer) and the instance still runs its last build: the deploy's
+        ``on_abort`` would mark it in error. The job log says what
+        happened; the next probe says how the instance is.
+        """
+        self._sys(f"✗ {type(exc).__name__}: {exc}")
 
     async def on_failure(self, results, errors):
         for err in errors:

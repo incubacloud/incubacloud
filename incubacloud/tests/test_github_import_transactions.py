@@ -96,6 +96,8 @@ class TestGitHubImportTransactions(TransactionCase):
             return_value={"ok": True},
         ) as create:
             inspector = Inspector.return_value
+            # Set in ``__init__``, so the class's spec does not carry it.
+            inspector.budget = None
             inspector.inspect_preview.return_value = {"ok": True}
             inspector.inspect_import.return_value = {
                 "ok": True,
@@ -247,6 +249,8 @@ class TestGitHubImportTransactions(TransactionCase):
             routes, "GitHubImportInspector", autospec=True,
         ) as Inspector:
             inspector = Inspector.return_value
+            # Set in ``__init__``, so the class's spec does not carry it.
+            inspector.budget = None
             inspector.inspect_import.return_value = {
                 "ok": True,
                 "repo_name": "deadline-project",

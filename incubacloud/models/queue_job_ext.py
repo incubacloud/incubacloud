@@ -2,7 +2,7 @@ import logging
 
 from odoo import fields, models
 
-from .abstract_executor import CANCELLED_WHILE_RUNNING
+from .abstract_executor import BLOCKED_BY_ALERT, CANCELLED_WHILE_RUNNING
 
 _logger = logging.getLogger(__name__)
 
@@ -58,6 +58,32 @@ class QueueJob(models.Model):
             if self.env.cr.rowcount:
                 self.env["cloud.job"].invalidate_model(["queue_job_id"])
         return super().unlink()
+
+    def _message_post_on_failure(self):
+        """Leave the platform's jobs out of queue_job's failure messages.
+
+        queue_job posts a "job failed" message on the job and subscribes
+        every Job Queue Manager and the job's creator, so each of them is
+        mailed. A ``cloud.job`` failure already has its channel —
+        ``job_failed`` and its siblings, which follow each user's level,
+        muted projects and digest — so that mail was the same failure a
+        second time, outside all of it, and to the cron bot, which has no
+        address (16-oct-2026). Jobs that are not the platform's keep
+        queue_job's behaviour.
+        """
+        if not self.ids:
+            return super()._message_post_on_failure()
+        self.env.cr.execute(
+            "SELECT q.id FROM queue_job q"
+            " JOIN cloud_job c ON c.queue_job_uuid = q.uuid"
+            " WHERE q.id IN %s",
+            (tuple(self.ids),),
+        )
+        ours = self.browse([row[0] for row in self.env.cr.fetchall()])
+        rest = self - ours
+        if rest:
+            return super(QueueJob, rest)._message_post_on_failure()
+        return None
 
     def _cancelled_while_running(self):
         """The jobs of ``self`` whose cloud job a person cancelled mid-run.
@@ -246,9 +272,18 @@ class QueueJob(models.Model):
             # so there is a single, unified code path. For successful
             # completion we still notify directly because no alert is
             # created for done/cancelled.
+            blocked = qjob.result == BLOCKED_BY_ALERT
+            # queue_job stores a job that ended blocked as done; the
+            # browser is told 'blocked', which it does not toast. "Deploy
+            # Instance completed" was shown for a deploy that waited.
             self.env['cloud.job']._broadcast_job_update(
-                cjob.id, state=new_state,
+                cjob.id, state='blocked' if blocked else new_state,
             )
+            # A job that ended blocked did nothing: there is no success to
+            # announce, no failure to dismiss and nobody's activity to
+            # count. The alert it waits for is what people are told about.
+            if blocked:
+                continue
             if new_state != 'failed':
                 self.env['cloud.job']._notify_by_email(cjob, new_state)
                 self.env['cloud.job']._notify_external(cjob, new_state)

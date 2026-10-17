@@ -10,12 +10,14 @@ serialized payload.
 """
 import asyncio
 import pathlib
+from unittest.mock import patch
 
 from odoo.tests.common import BaseCase, TransactionCase
 
 from odoo.addons.incubacloud.models.instance_health_executor import (
     _ERROR_CONTEXT_CHARS,
     _ERROR_CONTEXT_TAIL,
+    _ERROR_GROUPS_MAX,
     InstanceHealthExecutor,
 )
 
@@ -202,6 +204,37 @@ class TestErrorLogContext(TransactionCase):
         groups = self._groups("\n".join([_HEADER, *noise]))
         stored = sum(len(line) for line in groups[0]["context"])
         self.assertLessEqual(stored, _ERROR_CONTEXT_CHARS)
+
+    def test_a_record_known_not_to_be_an_incident_frees_its_place(self):
+        """A layer above leaves a record out before records are grouped,
+        ranked and capped: the record does not count, and an incident
+        further down the ranking takes the place it would have held."""
+        expected = (
+            "2026-08-16 17:52:00,000 7 ERROR prod expected.logger: known"
+        )
+        raw = "\n".join(
+            [expected] * 50
+            + [
+                f"2026-08-16 17:53:{i:02d},000 7 ERROR prod logger{97 + i:c}: "
+                f"incident {97 + i:c}"
+                for i in range(_ERROR_GROUPS_MAX)
+            ]
+        )
+        executor = self._executor()
+        with patch.object(
+            InstanceHealthExecutor, "_error_block_is_expected", autospec=True,
+            side_effect=lambda _self, header, context: "expected.logger" in header,
+        ):
+            groups = executor._dedupe_error_lines(raw)
+        fingerprints = [g["fingerprint"] for g in groups]
+        self.assertEqual(len(groups), _ERROR_GROUPS_MAX)
+        self.assertFalse([f for f in fingerprints if "expected.logger" in f])
+
+    def test_core_expects_every_record(self):
+        """Core knows of no record that is not an incident."""
+        self.assertFalse(
+            self._executor()._error_block_is_expected(_HEADER, _TRACEBACK),
+        )
 
     def test_alert_payload_ships_the_context(self):
         executor = self._executor()

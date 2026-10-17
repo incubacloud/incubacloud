@@ -30,7 +30,7 @@ from contextlib import suppress
 
 from odoo.exceptions import UserError
 
-from ..github.http_utils import safe_urlopen
+from ..github.http_utils import read_json_limited, safe_urlopen
 
 from ..github.client import GitHubAppClient, GitHubAPIError, GitHubPATClient
 
@@ -503,9 +503,14 @@ def repo_key_for_source_label(repos, label):
 # ── Alert helper ───────────────────────────────────────────────────────────
 
 def create_pip_conflict_alert(
-    env, conflicts, instance_id=None, project_id=None,
+    env, conflicts, instance_id=None, project_id=None, job_id=None,
 ):
-    """Create or update a pip_conflict alert for the given target."""
+    """Create or update a pip_conflict alert for the given target.
+
+    :param job_id: the job that found the conflicts, when one did; its
+        failure is then this alert's news and raises no ``job_failed``
+    :return: the alert, or None when there is nothing to raise
+    """
     if not conflicts or (not instance_id and not project_id):
         return None
     Alert = env['cloud.alert']
@@ -519,14 +524,18 @@ def create_pip_conflict_alert(
         names += f' (+{len(conflicts) - 3} more)'
     message = f"Pip dependency conflicts: {names}"
     existing = Alert.search(domain, limit=1)
+    job_vals = {'job_id': job_id} if job_id else {}
     if existing:
-        existing.write({'conflict_data': conflicts, 'message': message})
+        existing.write({
+            'conflict_data': conflicts, 'message': message, **job_vals,
+        })
         return existing
     vals = {
         'code': 'pip_conflict',
         'level': 'warning',
         'message': message,
         'conflict_data': conflicts,
+        **job_vals,
     }
     if instance_id:
         vals['instance_id'] = instance_id
@@ -1042,14 +1051,25 @@ def apply_sync(instance, actions):
             })
 
 
-async def detect_addon_conflicts(env, repos):
+# GitHub cuts a recursive tree at 7 MB; one answer is read at most this.
+_ADDON_TREE_BYTES = 8 * 1024 * 1024
+
+
+async def detect_addon_conflicts(env, repos, unread=None, budget=None):
     """Fetch module lists from all repos and find cross-repo duplicates.
 
     For each repo, resolves its effective module set by applying the
     ``addons`` and ``excludes`` fields.  When the repo uses a wildcard
     (empty ``addons``), the full module list is fetched from GitHub.
 
-    Returns a list of ``{'addon': str, 'repos': [alias, ...]}``.
+    A wildcard repo GitHub would not list is left out of the comparison,
+    so "no conflict" then only speaks for the repos that were read.
+
+    :param list unread: when given, the aliases of the repos that could
+        not be read are appended to it
+    :param budget: an ``HTTPBudget`` every GitHub request is charged to
+        and timed against; a repository it leaves no room for is unread
+    :return: a list of ``{'addon': str, 'repos': [alias, ...]}``
     """
     repo_modules: dict[str, set[str]] = {}
 
@@ -1073,7 +1093,9 @@ async def detect_addon_conflicts(env, repos):
         def _get(client):
             tree = client.get(
                 f'/repos/{owner}/{repo_name}'
-                f'/git/trees/{branch}?recursive=1'
+                f'/git/trees/{branch}?recursive=1',
+                budget=budget,
+                max_bytes=_ADDON_TREE_BYTES if budget is not None else None,
             )
             return sorted({
                 item['path'].rsplit('/', 2)[-2]
@@ -1094,8 +1116,17 @@ async def detect_addon_conflicts(env, repos):
             'Accept': 'application/vnd.github+json',
         })
         with suppress(Exception):
-            with safe_urlopen(req, timeout=4) as resp:  # nosec B310 — hardcoded https://api.github.com
-                data = json.loads(resp.read().decode())
+            timeout = 4
+            if budget is not None:
+                budget.begin_request()
+                timeout = budget.remaining_timeout(timeout)
+            with safe_urlopen(req, timeout=timeout) as resp:  # nosec B310 — hardcoded https://api.github.com
+                if budget is not None:
+                    data = read_json_limited(
+                        resp, budget=budget, max_bytes=_ADDON_TREE_BYTES,
+                    )
+                else:
+                    data = json.loads(resp.read().decode())
             return sorted({
                 item['path'].rsplit('/', 2)[-2]
                 for item in data.get('tree', [])
@@ -1129,6 +1160,8 @@ async def detect_addon_conflicts(env, repos):
                 "Addon check: could not fetch addons for %s@%s",
                 alias, repo.branch,
             )
+            if unread is not None:
+                unread.append(alias)
             return
 
         _logger.info(

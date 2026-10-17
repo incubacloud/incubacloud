@@ -68,6 +68,10 @@ class HTTPBudget:
         """Raise when the shared operation deadline has expired."""
         self._check_deadline()
 
+    def remaining_seconds(self):
+        """Return the seconds left before the shared deadline, never below 0."""
+        return max(0.0, self.deadline - self._clock())
+
     def read(self, response, max_response_bytes):
         """Read a response body without exceeding per-response/total caps.
 

@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import hashlib
 import hmac
@@ -23,10 +24,13 @@ from ..net.outbound import post_json
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .encrypted_char import EncryptedChar
 from .abstract_executor import (
+    BLOCKED_BY_ALERT,
     CANCELLED_WHILE_RUNNING,
     CONNECTION_RETRY_MARKER,
     CONNECTION_RETRY_SECONDS,
     JobCancelled,
+    JobRefused,
+    _is_refusal,
     is_transient_connection_error,
 )
 from .registry import executor_registry
@@ -569,9 +573,35 @@ class CloudJob(models.Model):
             job_record=self,
             host_record=self.host_id,
         )
+        # ``run`` hands a failure inside it to ``on_abort`` itself; one
+        # before it is handed over here.
+        running = False
         try:
             ssh_executor.pre_run_checks()
+            if not self._has_dependents():
+                blocking = ssh_executor.blocking_alert()
+                if blocking:
+                    # A failure while it is left blocked rolls back to
+                    # here: what ``on_blocked`` wrote is undone and the
+                    # instance's row freed, which ``on_abort`` writes on a
+                    # cursor of its own — it waited 30 s for it, failed,
+                    # and the instance stayed in 'deploying'.
+                    with self.env.cr.savepoint():
+                        return self._block_on(ssh_executor, blocking)
+            else:
+                # A step of a chain cannot wait: queue_job would store it
+                # done and run the next step — on a move, stop the source
+                # and restore onto a target never deployed. It fails, so
+                # the chain is cancelled as before. Its alert is raised
+                # on a cursor of its own: the failure rolls this
+                # transaction back, and the alert is what says why.
+                with ssh_executor._as_durable():
+                    blocking = ssh_executor.blocking_alert()
+                    refusal = blocking.message if blocking else None
+                if refusal:
+                    raise JobRefused(refusal)
             ssh_executor._publish_bus()
+            running = True
             ssh_executor.run()
         except RetryableJobError:
             # Executors can raise RetryableJobError to ask queue_job to
@@ -599,6 +629,8 @@ class CloudJob(models.Model):
             # as an ``instance_error_logs`` alert. Let it through.
             if e.pgcode in PG_CONCURRENCY_ERRORS_TO_RETRY:
                 raise
+            if not running:
+                self._abort_before_run(ssh_executor, e)
             raise JobError(str(e)) from e
         except Exception as e:
             # Transient connection failures on opt-in executors (the host
@@ -629,6 +661,8 @@ class CloudJob(models.Model):
                     f"{type(e).__name__}: {e}",
                     seconds=CONNECTION_RETRY_SECONDS,
                 ) from e
+            if not running:
+                self._abort_before_run(ssh_executor, e)
             raise JobError(str(e)) from e
         finally:
             # After a long-running SSH job, the ORM environment used
@@ -639,6 +673,77 @@ class CloudJob(models.Model):
             with contextlib.suppress(Exception):
                 self.env.cr.execute("SELECT 1")
                 self.env.clear()
+
+    def _has_dependents(self):
+        """Whether queue_job runs another job once this one ends.
+
+        True for every step of an ``enqueue_chain`` but the last: queue_job
+        starts the next step when this one is stored done, whatever it
+        returned.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        deps = self.sudo().queue_job_id.dependencies or {}
+        return bool(deps.get("reverse_depends_on"))
+
+    def _abort_before_run(self, executor, exc):
+        """Report, and hand ``on_abort``, a failure before the run started.
+
+        ``_async_entry`` dispatches ``on_abort`` for what fails inside the
+        run. A refused check (``pre_run_checks``) or the conflict check of
+        ``blocking_alert`` fail before it, and a deploy's instance stayed
+        in 'deploying' for good. The log and the job log get the lines
+        ``_async_entry`` would have written: a refusal is a warning, and
+        anything else a defect of ours with its traceback — on a tenant's
+        panel, the only record of it IncubaCloud reads, since the probe
+        leaves queue_job's tracebacks of a ``cloud.job`` out.
+
+        Never raises: the caller raises *exc*'s ``JobError`` next.
+
+        :param executor: the executor whose run never started
+        :param Exception exc: what ended the job
+        """
+        logger = logging.getLogger("AbstractExecutor")
+        if _is_refusal(exc):
+            logger.warning("[execute] Job refused before it ran: %s", exc)
+        else:
+            logger.error(
+                "[execute] Exception before the run: %s", exc, exc_info=exc,
+            )
+        if not executor._handles_abort():
+            executor._sys(f"✗ {type(exc).__name__}: {exc}")
+        asyncio.run(executor._dispatch_abort(exc))
+        try:
+            executor._flush_logs()
+        except Exception:
+            _logger.exception("job %s: could not log its refusal", self.id)
+
+    def _block_on(self, executor, alert):
+        """End this job blocked on *alert*, before anything ran.
+
+        Returned, not raised, for the reason a cancellation is: queue_job
+        logs any exception with its traceback and stores a failure, and a
+        failure raised ``job_failed`` and mailed everyone about what the
+        alert already says (16-oct-2026). Everything is written in the
+        job's own transaction, which commits when queue_job stores the
+        job done; ``execute`` clears the environment afterwards, so it is
+        flushed here.
+
+        :param executor: the executor that refused to start
+        :param alert: the ``cloud.alert`` the job waits for
+        :return: ``BLOCKED_BY_ALERT``, what queue_job stores as the result
+        """
+        self.write({"blocked_alert_id": alert.id})
+        executor.on_blocked(alert)
+        executor._sys(_("Waiting for the alert to be resolved: %s", alert.message))
+        executor._flush_logs()
+        self.env.flush_all()
+        # The browser hears of the end through queue_job anyway; a bus
+        # that fails here must not fail the block.
+        with contextlib.suppress(Exception):
+            executor._publish_bus()
+        return BLOCKED_BY_ALERT
 
     def _get_executor(self):
         executor_cls = executor_registry.get(self.job_type_id.code)
@@ -1116,8 +1221,25 @@ class CloudJob(models.Model):
             a targetless alert would be invisible to the member-scoped
             record rule (targetless rows are reserved for global
             platform events).
+          * Jobs whose failure is an active conflict alert of their own
+            (``pip_conflict`` / ``addon_conflict`` with this ``job_id``)
+            that is, or was, critical: it reached the people a
+            ``job_failed`` would. A ``pip_conflict`` is a warning, which
+            the default notification level does not send, so its job
+            still raises ``job_failed``.
         """
         if cjob.job_type_id.code in self._get_hidden_job_types():
+            return None
+        # A job that failed on a critical conflict it raised itself has
+        # said so: the conflict alert names it and carries the Resolve
+        # flow. A second, critical alert for the same failure mailed
+        # everyone the same news twice (aitrax, 16-oct-2026).
+        if self.env["cloud.alert"].sudo().search_count([
+            ("job_id", "=", cjob.id),
+            ("code", "in", list(self._get_actionable_alert_codes())),
+            ("state", "=", "active"),
+            "|", ("level", "=", "critical"), ("was_critical", "=", True),
+        ], limit=1):
             return None
         # ``cloud.job.host_id`` is required by the schema, so every
         # row has at least one target. Defensive check kept for child
@@ -1540,15 +1662,14 @@ class CloudJob(models.Model):
         started job cannot be force-cancelled by queue_job (its runner is
         mid-flight), so we set ``state`` cancelled as a cooperative stop
         flag the executor polls on a separate cursor (``_check_cancel``).
+
+        A job that waits for an alert is not running and is not queued:
+        cancelling it only stops resolving the alert from dispatching it.
         """
         self.ensure_one()
         if self.blocked_alert_id:
-            raise UserError(
-                _(
-                    "Blocked jobs cannot be cancelled. "
-                    "Resolve the pip dependency conflict first, then cancel if needed."
-                )
-            )
+            self.write({"state": "cancelled", "blocked_alert_id": False})
+            return
         if self.state not in self._active_states:
             raise UserError(_("Only active jobs can be cancelled."))
         if self.state == "started" or not self.queue_job_id:
@@ -1561,8 +1682,8 @@ class CloudJob(models.Model):
         if self.blocked_alert_id:
             raise UserError(
                 _(
-                    "Blocked jobs cannot be retried. "
-                    "Resolve the pip dependency conflict first."
+                    "This job waits for an alert and starts by itself once "
+                    "it is resolved. Resolve it in Alerts."
                 )
             )
         if self.state != "failed":
@@ -1678,28 +1799,53 @@ class CloudJob(models.Model):
             orphan.unlink()
 
     def unblock_and_enqueue(self):
-        """Called by the resolve endpoint after a pip conflict is resolved.
+        """Dispatch a job that waited for an alert, now that it is resolved.
+
+        Called by the resolve endpoints (pip and addon conflicts), by a
+        repository save that leaves no conflict, and by a new deploy of
+        an instance whose deploy was waiting.
 
         Guarded like ``enqueue``: the job has been sitting blocked, possibly
         for a long time, and the operator may well have started something
-        else on the same target meanwhile. This job was never dispatched —
-        it has no ``queue_job_id`` and therefore no active state — so it
-        cannot block itself.
+        else on the same target meanwhile. A blocked job is never active —
+        it was not dispatched, or its run ended blocked — so it cannot
+        block itself.
+
+        The job goes where its instance is now, and the other jobs of the
+        same type waiting on the same instance are cancelled: this one
+        does what they would have.
         """
         self.ensure_one()
+        inst = self.instance_id
+        # An instance that is not deployed can change host while its
+        # deploy waits; the job would deploy on the old one and leave an
+        # orphan stack there while the record names the new one.
+        if inst and not inst.deployed and inst.host_id != self.host_id:
+            self.host_id = inst.host_id
         # Same role gate as ``enqueue``: dispatching runs under the
-        # unblocking user's env. Blocked jobs are only pip-conflicted
-        # deploys/rebuilds today (consultant-level), so this is symmetry
-        # and RPC safety, not a behaviour change.
+        # unblocking user's env.
         self._check_job_type_allowed(
             self.job_type_id.code,
-            self.instance_id.id if self.instance_id else None,
+            inst.id if inst else None,
         )
         self._guard_no_active_job(
             self.host_id.id,
-            self.instance_id.id if self.instance_id else False,
+            inst.id if inst else False,
         )
+        if inst:
+            twins = self.search([
+                ("id", "!=", self.id),
+                ("instance_id", "=", inst.id),
+                ("job_type_id", "=", self.job_type_id.id),
+                ("blocked_alert_id", "!=", False),
+            ])
+            # Resolving an alert dispatched one of them; the guard above
+            # refused the rest, which then waited for good.
+            twins.write({"state": "cancelled", "blocked_alert_id": False})
         self.blocked_alert_id = False
+        executor_cls = executor_registry.get(self.job_type_id.code)
+        if executor_cls:
+            executor_cls(job_record=self, host_record=self.host_id).on_unblocked()
         channel, priority = self._resolve_channel_priority(
             self.job_type_id,
             self.instance_id.id if self.instance_id else False,

@@ -128,9 +128,11 @@ class TestBlockedJob(TransactionCase):
         # No queue_job, so state should be None/False (not 'blocked')
         self.assertNotEqual(formatted[0]['state'], 'blocked')
 
-    def test_cancel_blocked_job_raises_user_error(self):
-        with self.assertRaises(UserError):
-            self.job.cancel_job()
+    def test_a_blocked_job_can_be_cancelled(self):
+        """It waits rather than runs: cancelling it stops the dispatch."""
+        self.job.cancel_job()
+        self.assertEqual(self.job.state, 'cancelled')
+        self.assertFalse(self.job.blocked_alert_id)
 
     def test_retry_blocked_job_raises_user_error(self):
         with self.assertRaises(UserError):

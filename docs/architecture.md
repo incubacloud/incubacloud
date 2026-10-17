@@ -170,6 +170,11 @@ All remote operations are modelled as `cloud.job` records and executed asynchron
    → Takes a PostgreSQL advisory lock (per instance, or per host for
      host-level jobs) so concurrent workers cannot double-run
    → Looks up the executor class in the registry
+   → Asks executor.blocking_alert(): an alert returned ends the job at
+     once, blocked on it (blocked_alert_id; resolving the alert
+     dispatches it again) — the deploy's addon pre-flight. A step of a
+     chain cannot wait: it fails instead, and the chain is cancelled
+   → A failure before run() (a refused check) calls on_abort()
    → Calls executor.run()
 
 3. AbstractSSHExecutor.run()
@@ -178,7 +183,10 @@ All remote operations are modelled as `cloud.job` records and executed asynchron
    → Streams stdout/stderr into a buffer, periodically flushed to
      cloud.job.log.chunk (fresh cursor)
    → Notifies the frontend via the PostgreSQL bus (cloud_jobs channel)
-   → Calls on_success() or on_failure() in a fresh DB cursor
+   → Calls on_success() or on_failure() in a fresh DB cursor; a run
+     that ends with neither (a refused check, no connection, a hook
+     that raised) calls on_abort() there instead, unless the job will
+     be retried or was cancelled
 
 4. Frontend (OWL)
    → Listens on bus channels cloud_jobs / cloud_overview
@@ -192,7 +200,8 @@ All remote operations are modelled as `cloud.job` records and executed asynchron
 - **Transient connection retry** — executors that opt in (the monitoring probes) retry SSH connection failures up to 10 attempts (30 s backoff via `RetryableJobError`, ~10 min in all — sized to outlast a host's own maintenance reboot). Whether an attempt was the last is queue_job's decision, not the executor's: the critical `host_unreachable` alert is raised from the job's **terminal** `failed` state, never mid-flight, because the runner can hand a job one more attempt than its budget.
 - **Chains** — `enqueue_chain(steps)` builds an OCA DelayableChain. Payloads may reference earlier steps with `__chain_job_N__` placeholders (0-indexed), resolved to real job ids at enqueue. When a step fails, dependent jobs stuck in `wait_dependencies` are cancelled at both the `cloud.job` and `queue.job` level — those of the same instance and every one still waiting in the failed job's `queue.job` graph, since a chain can cross instances (a staging built from production takes its dump on production).
 - **Cancel** — not-yet-started jobs are cancelled through the queue; started jobs get a cooperative cancel flag that the executor polls between commands on a separate cursor. The job then ends `cancelled`, also when storing its end collides with the flag's own write and queue_job would otherwise put it back in the queue (`queue_job_ext.write`).
-- **Cross-host move** — `cloud.instance.move_to_host()` chains deploy(target) → stop `odoo` only (source) → live dump of the quiet database with its filestore (`backup_download`, `time='live'`, staged on the source) → restore(target, fetched through the panel's disk) → cutover → cleanup(source). It needs no backup container and no bucket. `host_id` flips only on successful cutover; a watchdog cron recovers instances stranded by a chain that died before cutover (restarts the source, raises a `move_stuck` alert), and `rollback_move` does the same on demand. The record stays `deployed` throughout: the deploy on the target does not touch its state during a move. Hooks for an inheriting layer: `_move_deploy_job_type`, `_move_pre_steps`, `_on_move_cutover` and `_on_move_rolled_back` (fired once a rollback has cleared the markers).
+- **Cross-host move** — `cloud.instance.move_to_host()` chains deploy(target) → stop `odoo` only (source) → live dump of the quiet database with its filestore (`backup_download`, `time='live'`, staged on the source) → restore(target, fetched through the panel's disk) → cutover → cleanup(source). It needs no backup container and no bucket. `host_id` flips only on successful cutover; a watchdog cron recovers instances stranded by a chain that died before cutover (restarts the source, raises a `move_stuck` alert), and `rollback_move` does the same on demand. The record stays `deployed` throughout: the deploy on the target does not touch its state during a move. Hooks for an inheriting layer: `_move_deploy_job_type`, `_move_pre_steps`, `_move_post_restore_steps` (between the restore and the cutover), `_on_move_cutover` and `_on_move_rolled_back` (fired once a rollback has cleared the markers).
+- **Blocked deploys** — a deploy whose repositories define an addon twice waits on one `addon_conflict` alert instead of failing, and leaves the instance in `draft`; resolving the alert, or a repository save that leaves no conflict (`_check_addon_conflicts`, also run after an import; a repository GitHub would not list closes nothing), dispatches it again, on the host the instance is on by then, and cancels the other jobs of its type waiting on the instance; a deploy or rebuild that goes through cancels those that waited on the alert it closes. Only a job nothing runs after waits: a step of a chain fails. A job whose failure its own critical conflict alert explains raises no `job_failed`, and queue_job's own failure message is left out for platform jobs.
 
 ### Implementing a new executor
 
@@ -262,7 +271,9 @@ Two primitives on `AbstractExecutor` cover every durable write:
 | `with self._durable_env() as env:` | Writes that must last. A fresh READ COMMITTED cursor, committed on exit and rolled back if the block raises; the lock wait is capped at 30 s, so a mixed-transaction deadlock becomes an error instead of a stuck worker. Same user, superuser flag and context as the job. |
 | `self._persist(record, vals)` | A durable write the rest of the job must also *see*. Writes through `_durable_env()`, then copies the committed values — and the stored computed fields of the same record that depend on them — into the job's cache. |
 
-`on_success` / `on_failure` already run inside `_durable_env()` (see `_dispatch_outcome`) and write with `self.env`. `pre_run_checks`, `before_execute`, `get_commands`, `get_extra_vars`, `after_commands` and `parse_results` do not. The one write that waits for the job's own commit is `_unlink_after_job_commit`.
+`on_success` / `on_failure` / `on_abort` already run inside `_durable_env()` (see `_dispatch_outcome`, `_dispatch_abort` and `_as_durable`) and write with `self.env`. `pre_run_checks`, `before_execute`, `get_commands`, `get_extra_vars`, `after_commands` and `parse_results` do not. The one write that waits for the job's own commit is `_unlink_after_job_commit`.
+
+Two exceptions write the job's own transaction, on purpose. `blocking_alert` and `on_blocked` run there when a job ends blocked: it ends without an error, so that transaction commits, and `cloud.job._block_on` flushes it before `execute` clears the environment. For a step of a chain, which cannot wait and fails instead, `execute` runs `blocking_alert` inside `_as_durable()`, so the alert outlives the rollback. `on_unblocked` runs in the transaction of whoever resolved the alert.
 
 ```python
 # Durable; invisible to the rest of this job (alerts, logs, state for a retry):

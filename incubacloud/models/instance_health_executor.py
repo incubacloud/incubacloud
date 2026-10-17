@@ -628,26 +628,30 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         which closes the context of whatever preceded it — and so does
         the next log record of any level (``_LOG_LINE_RE``): ``grep -A``
         counts lines, not frames, so what follows a traceback is what
-        happened next, not what explains it.
+        happened next, not what explains it. A record
+        ``_error_block_is_expected`` knows is left out before grouping.
         """
-        groups = {}
-        order = []
-        current = None
+        blocks = []  # [header, context lines], in log order
+        block = None
         for line in raw.splitlines():
             line = line.rstrip()
             if not line or line == '--':
-                current = None
+                block = None
                 continue
             if not _ERROR_HEADER_RE.match(line):
                 if _LOG_LINE_RE.match(line):
                     # The next record: the traceback above ended here.
-                    current = None
-                elif current is not None:
-                    self._append_context(current, line)
+                    block = None
+                elif block is not None:
+                    block[1].append(line)
                 continue
-            fp = self._fingerprint(line)
-            if not fp:
-                current = None
+            block = [line, []]
+            blocks.append(block)
+        groups = {}
+        order = []
+        for header, context in blocks:
+            fp = self._fingerprint(header)
+            if not fp or self._error_block_is_expected(header, context):
                 continue
             if fp not in groups:
                 groups[fp] = {
@@ -661,8 +665,9 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             grp = groups[fp]
             grp['count'] += 1
             if len(grp['samples']) < _ERROR_SAMPLE_PER_GRP:
-                grp['samples'].append(line[:512])
-            current = grp
+                grp['samples'].append(header[:512])
+            for line in context:
+                self._append_context(grp, line)
         ordered = sorted(
             (groups[fp] for fp in order),
             key=itemgetter('count'),
@@ -672,6 +677,22 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         for group in shipped:
             self._compact_context(group)
         return shipped
+
+    def _error_block_is_expected(self, header, context):
+        """Whether one ERROR record is known not to be an incident.
+
+        Asked for every record, with its whole traceback, before records
+        are grouped, ranked and capped: one left out does not count and
+        frees its group's place for an incident. One record at a time,
+        because a group mixes records — every job queue_job fails logs
+        the same header. Core knows of none; a layer that knows the
+        instance better overrides it.
+
+        :param str header: the ERROR line
+        :param list context: the lines logged under it, uncompacted
+        :rtype: bool
+        """
+        return False
 
     # ── Outcome ───────────────────────────────────────────────────────────
 

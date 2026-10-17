@@ -6,6 +6,84 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.188] — 2026-10-17
+
+### Fixed
+
+- **A deploy that cannot start waits on its alert instead of failing,
+  and the instance is not stranded in 'deploying'.** The addon
+  pre-flight raised: the customer got the conflict alert, then a
+  `job_failed` for the same news, and support@ a third mail from
+  queue_job's chatter; `on_failure` only follows steps that ran, so the
+  instance stayed in 'deploying' and could be neither deployed again nor
+  deleted (aitrax, 16-oct-2026). The pre-flight now runs as the
+  executor's `blocking_alert`: the job ends blocked on one
+  `addon_conflict` alert, the instance goes back to 'draft', and
+  resolving the alert dispatches the job again — on the host the
+  instance is on by then, cancelling the other jobs of its type that
+  waited on it. Deploying again while it waits says so; once the alert
+  is closed it dispatches the waiting job, and while it is not, looks
+  for conflicts again first: the repositories may have been fixed in
+  GitHub. The browser is told the job is blocked, not that it completed;
+  a blocked job can be cancelled, from its timeline too; and a deploy or
+  rebuild that goes through cancels the jobs that waited on the conflict
+  alert it closes, which used to wait on a closed alert for ever. If two
+  transactions file the alert at once, the one that cannot see it
+  refuses the deploy rather than run it.
+- **A step of a chain is never left waiting.** queue_job stores a
+  blocked job as done and starts the next step: a move would have
+  stopped its source and restored onto a target never deployed. A step
+  whose `blocking_alert` answers fails instead, the chain is cancelled
+  as before, and its alert is raised on a cursor of its own so the
+  failure does not roll it back.
+- **A job that ends with no outcome gets `on_abort`.** A check that
+  refused, before or inside the run, a host that would not connect, a
+  terminal hook that raised: none reached `on_failure`. A failure before
+  the run is now logged as one inside it is — a refusal as a warning,
+  anything else with its traceback. For a deploy,
+  `on_abort` is now that failure path (status `error`, back to 'draft',
+  and the layers above hear of it); a rebuild leaves the instance as it
+  was. Not called for an attempt that will be retried nor for a
+  cancellation. Migration: instances left 'deploying' with no job in
+  flight go back to 'draft'.
+- **One alert per failure.** A job whose own critical conflict alert
+  explains its failure raises no `job_failed`; a `pip_conflict`, a
+  warning the default notification level does not send, still does.
+  queue_job's "job failed" message — mailed to every Job Queue Manager
+  and the job's creator, outside every notification setting — is left
+  out for platform jobs. The cron bot reads its notifications in Odoo:
+  it has no address.
+- **A refusal is a warning, not a traceback.** The executor logs a
+  failed step (whose output is in the job log), a `UserError` and a
+  check of its own (`JobRefused`) without their traceback, and a
+  cancellation at INFO. An `AccessError` or a `MissingError`, and
+  anything a terminal hook raised, a `UserError` included, keep their
+  traceback: they are defects.
+  queue_job still logs its own traceback of every failed job.
+- **The webhook silence check ignores GitHub's pings.** GitHub pings
+  the webhook as it creates the App, before the callback stores the
+  secret; refused for want of one, the ping was reported for two days
+  as pushes that never arrived. A ping carries no push.
+- **The import's branch field waits for the branches.** A branch typed
+  before they arrived was replaced by the default one when they did,
+  and the import took `main` (QA walk 6g2).
+
+### Added
+
+- **Addon conflicts are checked where repositories are set** — after an
+  import, within the time the import has left, every GitHub request
+  included (its summary says so), and within 20 seconds when an
+  instance is created, when its repositories are saved and when a
+  deploy that waits is asked for again — instead of at the first
+  deploy. A save
+  that leaves none closes the alert and dispatches what waited; a
+  repository GitHub would not list closes nothing.
+- **Hooks**: `on_unblocked` on executors, the counterpart of
+  `on_blocked`; `_move_post_restore_steps`, for the layer above to run
+  steps on the target between a move's restore and its cutover; and
+  `_error_block_is_expected` on the health probe, which leaves an
+  ERROR record out before records are grouped and capped.
+
 ## [1.0.187] — 2026-10-16
 
 ### Fixed

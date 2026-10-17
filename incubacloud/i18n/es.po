@@ -148,6 +148,12 @@ msgid "%s queued."
 msgstr "%s en cola."
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "%s repositories imported"
+msgstr "%s repositorios importados"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_host.py:0
 msgid "'%(address)s' is not an IP address or a host name."
@@ -1596,25 +1602,6 @@ msgid "Behind the shipped templates"
 msgstr "Por detrás de las plantillas distribuidas"
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_job.py:0
-msgid ""
-"Blocked jobs cannot be cancelled. Resolve the pip dependency conflict first,"
-" then cancel if needed."
-msgstr ""
-"Los trabajos bloqueados no se pueden cancelar. Resuelve antes el conflicto "
-"de dependencias de pip y cancela después si hace falta."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_job.py:0
-msgid ""
-"Blocked jobs cannot be retried. Resolve the pip dependency conflict first."
-msgstr ""
-"Los trabajos bloqueados no se pueden reintentar. Resuelve antes el conflicto"
-" de dependencias de pip."
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__blocked_alert_id
 msgid "Blocking Alert"
 msgstr "Alerta bloqueante"
@@ -1753,6 +1740,18 @@ msgstr ""
 "identifique a quien llama y no al proxy. Déjelo vacío cuando no haya nada "
 "delante de esta instalación: entonces se usa la dirección de la conexión tal"
 " cual, lo cual es más restrictivo pero nunca falsificable."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Cloning repository..."
+msgstr "Clonando el repositorio..."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Could not fetch branches"
+msgstr "No se pudieron obtener las ramas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3672,6 +3671,12 @@ msgstr "Detectar"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Detected: %s project"
+msgstr "Detectado: proyecto %s"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Detection failed."
 msgstr "Falló la detección."
@@ -4116,6 +4121,12 @@ msgstr ""
 "Endpoint incorrecto (redirección 301): el bucket existe pero se sirve desde "
 "un endpoint/región/jurisdicción distinto al configurado. Revise la URL del "
 "endpoint S3."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Enter the repository URL first"
+msgstr "Introduzca primero la URL del repositorio"
 
 #. module: incubacloud
 #. odoo-python
@@ -7109,6 +7120,12 @@ msgstr "Carga y tiempo activo"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Loading branches…"
+msgstr "Cargando ramas…"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.xml:0
 msgid "Loading directory…"
 msgstr "Cargando directorio…"
@@ -9410,6 +9427,12 @@ msgstr "Producción envía correo real; no hay buzón de captura que leer."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__project_id
 msgid "Project"
 msgstr "Proyecto"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Project \"%s\" created"
+msgstr "Proyecto «%s» creado"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12290,6 +12313,16 @@ msgstr ""
 "                    así que no queda nada de ella salvo la ficha."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"This job waits for an alert and starts by itself once it is resolved. "
+"Resolve it in Alerts."
+msgstr ""
+"Esta tarea espera a que se resuelva una alerta y empezará sola en cuanto se "
+"resuelva. Resuélvala en Alertas."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid ""
@@ -14947,3 +14980,29 @@ msgstr "↻ Verificar instalación"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "↻ Re-detect installation"
 msgstr "↻ Re-detectar instalación"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"%(count)s module(s) are defined in more than one repository: %(names)s. "
+"Choose which repository keeps each one in Alerts before deploying."
+msgstr ""
+"%(count)s módulo(s) están definidos en más de un repositorio: %(names)s. "
+"Elija en Alertas qué repositorio conserva cada uno antes de desplegar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"A deploy of '%(name)s' is waiting for an alert to be resolved: %(alert)s. "
+"Resolve it in Alerts and the deploy starts by itself."
+msgstr ""
+"Un despliegue de «%(name)s» está esperando a que se resuelva una alerta: "
+"%(alert)s. Resuélvala en Alertas y el despliegue empezará solo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Waiting for the alert to be resolved: %s"
+msgstr "Esperando a que se resuelva la alerta: %s"

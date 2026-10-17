@@ -47,8 +47,19 @@ WRITE_CALLS = frozenset({
     "raise_alert", "resolve_alert", "set_param",
 })
 
-#: The terminal hooks, which ``_dispatch_outcome`` runs on a durable cursor.
-HOOKS = frozenset({"on_success", "on_failure"})
+#: The terminal hooks, which run on a durable cursor: ``_dispatch_outcome``
+#: runs ``on_success`` and ``on_failure``, ``_dispatch_abort`` ``on_abort``.
+HOOKS = frozenset({"on_success", "on_failure", "on_abort"})
+
+#: The two hooks that write with ``self.env`` and are not terminal, named
+#: one by one because each is an exception to the rule. ``on_blocked``
+#: writes the job's own transaction: a blocked job ends without an error,
+#: so that transaction commits, and ``cloud.job._block_on`` flushes it
+#: before ``execute`` clears the environment. ``on_unblocked`` runs in
+#: the transaction of whoever resolved the alert, before the job is
+#: queued again. Neither may call a ``HOOK_HELPERS`` method, which counts
+#: on a durable cursor.
+OWN_TRANSACTION_HOOKS = frozenset({"on_blocked", "on_unblocked"})
 
 #: Methods that write with ``self.env`` and are only ever called from a
 #: hook, so they write on the hook's durable cursor. Each is verified to
@@ -212,7 +223,10 @@ def check_sources(sources, context=None):
                     helper_callers.setdefault(name, []).append(
                         (where.format(call.lineno), method.name),
                     )
-                if method.name in HOOKS or method.name in HOOK_HELPERS:
+                if (
+                    method.name in HOOKS | OWN_TRANSACTION_HOOKS
+                    or method.name in HOOK_HELPERS
+                ):
                     continue
                 for call in visitor.writes:
                     receiver = ast.unparse(call.func.value)
@@ -229,7 +243,7 @@ def check_sources(sources, context=None):
             if caller not in HOOKS:
                 violations.append(
                     f"{where}: calls {helper}(), which writes on the hook's "
-                    "cursor and is only allowed from on_success/on_failure"
+                    "cursor and is only allowed from the terminal hooks"
                 )
     return sorted(violations)
 

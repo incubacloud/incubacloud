@@ -25,6 +25,7 @@ from ...models._repo_requirements import (
     merge_pip_requirements,
     repo_key_for_source_label,
 )
+from ...models.cloud_instance import ADDON_CHECK_SECONDS
 from ...models.cloud_settings import (
     CONTAINER_LOG_MAX_FILE_DEFAULT,
     LOG_DOWNLOAD_MAX_MB_DEFAULT,
@@ -72,6 +73,18 @@ def _domain_vals(payload, env):
         'cert_resolver': resolver,
         'redirect_permanent': bool(payload.get('redirect_permanent')),
     }
+
+
+def _repo_lines(instance):
+    """Return what an instance's repositories build from, in order.
+
+    :param instance: ``cloud.instance`` record
+    :return: list of ``(url, branch, addons, excludes)`` tuples
+    """
+    return [
+        (r.url, r.branch or '', r.addons or '', r.excludes or '')
+        for r in instance.repo_ids
+    ]
 
 
 class CrudMixin:
@@ -514,7 +527,8 @@ class CrudMixin:
             'ok': True,
             'id': job.id,
             'name': job.name,
-            'state': job.state,
+            # A job that waits for an alert is stored done; it did nothing.
+            'state': 'blocked' if job_sudo.blocked_alert_id else job.state,
             'target_name': job_sudo.instance_id.name or job_sudo.host_id.name or '',
             'host_id': job_sudo.host_id.id or False,
             'instance_id': job_sudo.instance_id.id or False,
@@ -1619,6 +1633,7 @@ class CrudMixin:
                         'excludes': repo.get('excludes') or '',
                         'commit_sha': repo.get('commit_sha') or '',
                     })
+        instance._check_addon_conflicts(seconds=ADDON_CHECK_SECONDS)
         return {'id': instance.id, 'name': instance.name}
 
     # ── General settings ──────────────────────────────────────────────────
@@ -2266,6 +2281,7 @@ class CrudMixin:
             Repo = request.env['cloud.instance.repo'].with_context(
                 skip_apply_requirements=True,
             )
+            repos_before = _repo_lines(inst)
             existing_ids = set(inst.repo_ids.ids)
             kept_ids = set()
             for repo in repos:
@@ -2298,6 +2314,12 @@ class CrudMixin:
             to_unlink = existing_ids - kept_ids
             if to_unlink:
                 Repo.browse(list(to_unlink)).unlink()
+            inst.invalidate_recordset(['repo_ids'])
+            # Only when they changed: the check asks GitHub for every
+            # repository listed with "all its modules", and an instance
+            # saved for its domains or its notes must not wait on that.
+            if _repo_lines(inst) != repos_before:
+                inst._check_addon_conflicts(seconds=ADDON_CHECK_SECONDS)
         # Egress whitelist — replaced wholesale, like the host's. The
         # list is short, ordered by the operator, and its order is part
         # of the copier answer, so rewriting it is both simpler and
