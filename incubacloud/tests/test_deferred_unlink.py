@@ -154,10 +154,15 @@ class TestTheHookMarksInsteadOfUnlinking(_DeferredUnlinkBase):
 
     def test_the_unlink_is_armed_on_the_job_cursor_not_the_hook_s(self):
         """``_dispatch_outcome`` swaps the executor onto the hook's cursor
-        for the duration of the hook and pins the job's cursor first.
-        Armed on the hook's cursor, the unlink would fire on *its*
-        commit — which is exactly the commit that must be waited for."""
+        for the duration of the hook (``_run_hook_durably``, through
+        ``_as_durable``) and pins the job's cursor first. Armed on the
+        hook's cursor, the unlink would fire on *its* commit — which is
+        exactly the commit that must be waited for."""
         src = inspect.getsource(AbstractExecutor._dispatch_outcome)
+        self.assertIn("self._run_hook_durably(hook", src)
+        src = inspect.getsource(AbstractExecutor._run_hook_durably)
+        self.assertIn("with self._as_durable()", src)
+        src = inspect.getsource(AbstractExecutor._as_durable)
         self.assertLess(
             src.index('self._job_cr = self.job.env.cr'),
             src.index('with self._durable_env()'),

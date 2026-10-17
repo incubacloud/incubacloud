@@ -837,7 +837,7 @@
                                                         </span>
                                                         <div class="rl-acts">
                                                             <t
-                                  t-if="isActiveJob(job.state)"
+                                  t-if="isActiveJob(job.state) or job.state === 'blocked'"
                                 >
                                                                 <button
                                     class="rl-tl-abtn"

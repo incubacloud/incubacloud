@@ -27,6 +27,8 @@ export class ImportProjectModal extends Component {
             step: "input",  // input | progress | done | error
             repoUrl: "",
             branches: [],
+            // The URL ``branches`` was fetched for.
+            branchesFor: null,
             branch: "",
             loadingBranches: false,
             branchError: null,
@@ -56,7 +58,27 @@ export class ImportProjectModal extends Component {
     }
 
     get isUrlValid() {
-        return /github\.com[:/][^/]+\/[^/]+/.test(this.state.repoUrl.trim());
+        // Every "/" escaped, also inside the classes where JS does not
+        // need it: Babel's extractor takes an unescaped one for the end
+        // of the literal and missed every translatable string after it.
+        return /github\.com[:\/][^\/]+\/[^\/]+/.test(this.state.repoUrl.trim());
+    }
+
+    /**
+     * Whether the branch field waits for the branches of the URL entered.
+     * A branch typed before they arrive was replaced by the default one
+     * when they did, and the import took ``main`` (QA walk 6g2).
+     * @returns {boolean}
+     */
+    get branchLocked() {
+        return this.state.loadingBranches || this.state.branchesFor !== this.state.repoUrl;
+    }
+
+    /** @returns {string} what the branch field says while it waits, or its hint */
+    get branchPlaceholder() {
+        if (this.state.loadingBranches) return _t("Loading branches…");
+        if (this.branchLocked) return _t("Enter the repository URL first");
+        return "main";
     }
 
     onUrlKeydown(ev) {
@@ -76,21 +98,31 @@ export class ImportProjectModal extends Component {
         this.state.branch = "";
         try {
             const data = await rpc("/cloud/get_repo_branches", { url });
-            this.state.branches = data.branches || [];
-            if (!data.ok && data.error) {
-                this.state.branchError = data.error;
-            }
-            if (this.state.branches.includes("main")) {
-                this.state.branch = "main";
-            } else if (this.state.branches.includes("master")) {
-                this.state.branch = "master";
-            } else if (this.state.branches.length) {
-                this.state.branch = this.state.branches[0];
-            }
+            this._applyBranches(data);
         } catch {
             this.state.branchError = _t("Could not fetch branches");
         } finally {
+            this.state.branchesFor = url;
             this.state.loadingBranches = false;
+        }
+    }
+
+    /**
+     * Fill the branch field from ``/cloud/get_repo_branches``: its list,
+     * and ``main``, ``master`` or the first branch as the default.
+     * @param {{ok: boolean, branches?: string[], error?: string}} data
+     */
+    _applyBranches(data) {
+        this.state.branches = data.branches || [];
+        if (!data.ok && data.error) {
+            this.state.branchError = data.error;
+        }
+        if (this.state.branches.includes("main")) {
+            this.state.branch = "main";
+        } else if (this.state.branches.includes("master")) {
+            this.state.branch = "master";
+        } else if (this.state.branches.length) {
+            this.state.branch = this.state.branches[0];
         }
     }
 

@@ -808,8 +808,15 @@ class GitHubMixin:
                 'error': _('Could not inspect the repository safely.'),
             }
 
-    def _create_bounded_github_import(self, inspected, budget_check=None):
-        """Create project, repos and production instance from inspected data."""
+    def _create_bounded_github_import(self, inspected, budget_check=None,
+                                      budget=None):
+        """Create project, repos and production instance from inspected data.
+
+        :param dict inspected: what the import inspector read
+        :param budget_check: raises once the import's deadline is spent
+        :param budget: the import's ``HTTPBudget``; the addon check after
+            the import gets what is left of its time
+        """
         def _check_budget():
             """Check the shared import deadline between local operations."""
             if budget_check:
@@ -915,6 +922,29 @@ class GitHubMixin:
             result['sha_warning'] = _translate_inspection_warning(
                 inspected['sha_warning'],
             )
+        # Here, where the repositories came from, rather than at the
+        # first deploy: the import is where the customer can still make
+        # sense of a module two of them define. Only within the import's
+        # time: a spent budget leaves it to the deploy's pre-flight
+        # rather than fail an import that is done.
+        try:
+            _check_budget()
+        except ImportInspectionError:
+            conflicts = []
+        else:
+            conflicts = instance._check_addon_conflicts(
+                seconds=budget.remaining_seconds() if budget else None,
+            )
+        if conflicts:
+            names = ', '.join(c['addon'] for c in conflicts[:5])
+            if len(conflicts) > 5:
+                names += f' (+{len(conflicts) - 5})'
+            result['addon_conflict_warning'] = _(
+                '%(count)s module(s) are defined in more than one '
+                'repository: %(names)s. Choose which repository keeps each '
+                'one in Alerts before deploying.',
+                count=len(conflicts), names=names,
+            )
         return result
 
     # ── Project import (unified: doodba / odoo.sh / simple) ─────────────────
@@ -973,6 +1003,7 @@ class GitHubMixin:
             with request.env.cr.savepoint():
                 return self._create_bounded_github_import(
                     inspected, budget_check=inspector.ensure_budget,
+                    budget=inspector.budget,
                 )
         except ImportInspectionError as exc:
             return {'ok': False, 'error': _translated_inspection_error(exc)}

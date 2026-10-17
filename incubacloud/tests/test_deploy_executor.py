@@ -685,10 +685,9 @@ class TestTlsPreflight(TransactionCase):
                 cert_resolver="custom",
                 hostname=f"{cls.__name__.lower()}.example.com",
             )
-            with (
-                patch.object(cls, "_preflight_addon_check", new_callable=AsyncMock),
-                patch.object(cls, "_upload_copier_files", new_callable=AsyncMock) as upload,
-            ):
+            with patch.object(
+                cls, "_upload_copier_files", new_callable=AsyncMock,
+            ) as upload:
                 with self.assertRaisesRegex(RuntimeError, "holds none"):
                     asyncio.run(executor.before_execute(transport=None))
                 upload.assert_not_called()

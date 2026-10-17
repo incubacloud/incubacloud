@@ -1,5 +1,8 @@
 import { describe, expect, test } from "@odoo/hoot";
-import { ImportOdooshModal } from "@incubacloud/components/import_odoojs_modal/import_odoojs_modal";
+import {
+    ImportOdooshModal,
+    ImportProjectModal,
+} from "@incubacloud/components/import_odoojs_modal/import_odoojs_modal";
 
 /**
  * ImportOdooshModal pure-logic tests.
@@ -260,5 +263,61 @@ describe("ImportOdooshModal — branch auto-selection in _fetchBranches", () => 
 
     test("returns empty string for no branches", () => {
         expect(autoSelectBranch([])).toBe("");
+    });
+});
+
+describe("ImportProjectModal — the branch field waits for its list", () => {
+    /**
+     * A branch typed before the list arrived was replaced by the default
+     * one when it did, and the import took ``main`` (QA walk 6g2).
+     */
+    const modal = (state) => {
+        const cmp = Object.create(ImportProjectModal.prototype);
+        cmp.state = {
+            repoUrl: "", branches: [], branchesFor: null, branch: "",
+            loadingBranches: false, branchError: null, ...state,
+        };
+        return cmp;
+    };
+    const url = "https://github.com/acme/project";
+
+    test("is locked before any URL was looked up", () => {
+        const cmp = modal({ repoUrl: url });
+        expect(cmp.branchLocked).toBe(true);
+        expect(cmp.branchPlaceholder).toBe("Enter the repository URL first");
+    });
+
+    test("is locked while the branches load", () => {
+        const cmp = modal({ repoUrl: url, loadingBranches: true });
+        expect(cmp.branchLocked).toBe(true);
+        expect(cmp.branchPlaceholder).toBe("Loading branches…");
+    });
+
+    test("opens once the branches of that URL arrived", () => {
+        const cmp = modal({ repoUrl: url, branchesFor: url });
+        expect(cmp.branchLocked).toBe(false);
+        expect(cmp.branchPlaceholder).toBe("main");
+    });
+
+    test("locks again when the URL changes", () => {
+        const cmp = modal({ repoUrl: `${url}-2`, branchesFor: url });
+        expect(cmp.branchLocked).toBe(true);
+    });
+
+    test("defaults to main, then master, then the first branch", () => {
+        const cmp = modal({});
+        cmp._applyBranches({ ok: true, branches: ["dev", "master", "main"] });
+        expect(cmp.state.branch).toBe("main");
+        cmp._applyBranches({ ok: true, branches: ["dev", "master"] });
+        expect(cmp.state.branch).toBe("master");
+        cmp._applyBranches({ ok: true, branches: ["dev"] });
+        expect(cmp.state.branch).toBe("dev");
+    });
+
+    test("keeps the error of a list GitHub refused", () => {
+        const cmp = modal({});
+        cmp._applyBranches({ ok: false, error: "Not found" });
+        expect(cmp.state.branchError).toBe("Not found");
+        expect(cmp.state.branches).toEqual([]);
     });
 });

@@ -27,7 +27,11 @@ from ._repo_requirements import (
     merge_pip_requirements,
     resolve_github_client,
 )
-from .abstract_executor import AbstractSSHExecutor, sql_escape_literal
+from .abstract_executor import (
+    AbstractSSHExecutor,
+    JobRefused,
+    sql_escape_literal,
+)
 from .docker_prune_executor import PROTECT_LABEL
 
 _logger = logging.getLogger(__name__)
@@ -951,9 +955,9 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             )
             with self._durable_env() as env:
                 create_pip_conflict_alert(
-                    env, conflicts, instance_id=inst.id,
+                    env, conflicts, instance_id=inst.id, job_id=self.job.id,
                 )
-            raise RuntimeError(
+            raise JobRefused(
                 f"Pre-flight: {len(conflicts)} pip dependency conflict(s)"
             )
         if not (added or updated):
@@ -1036,69 +1040,79 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
 
         self._sys("✓ Configuration files uploaded.")
 
-    async def _preflight_addon_check(self):
-        """Detect ALL addon conflicts before running gitaggregate."""
+    #: Whether this executor checks the instance's repositories for an
+    #: addon defined twice before it starts (``blocking_alert``). A warm
+    #: claim ships the repositories the warm was built from and skips it.
+    _preflight_addons = True
+
+    def blocking_alert(self):
+        """Hold the job on an ``addon_conflict`` alert before it connects.
+
+        Doodba refuses an addon that two repositories define, so a deploy
+        with one fails half-way. Every conflict is found here instead,
+        from GitHub's module lists, and the job waits on one alert that
+        names them all: resolving it dispatches the job again. It used to
+        fail instead, which left the instance in 'deploying' and mailed
+        the same news three times (16-oct-2026).
+
+        :return: the active ``addon_conflict`` alert, or an empty recordset
+        """
+        Alert = self.job.env["cloud.alert"]
         inst = self._inst()
-        if not inst or not inst.repo_ids:
-            return
+        if not self._preflight_addons or not inst or not inst.repo_ids:
+            return Alert.browse()
         self._sys("Checking for addon conflicts across repos…")
-        conflicts = await detect_addon_conflicts(
-            self.job.env,
-            inst.repo_ids,
+        conflicts = asyncio.run(
+            detect_addon_conflicts(self.job.env, inst.repo_ids),
         )
         if not conflicts:
             self._sys("✓ No addon conflicts found.")
-            return
+            return Alert.browse()
         names = ", ".join(c["addon"] for c in conflicts[:5])
         if len(conflicts) > 5:
             names += f" (+{len(conflicts) - 5} more)"
         self._sys(f"✗ Found {len(conflicts)} addon conflict(s): {names}")
-        self._sys("Resolve all conflicts before deploying.")
-        self._create_preflight_addon_alert(conflicts)
-        raise RuntimeError(f"Pre-flight: {len(conflicts)} addon conflict(s)")
-
-    def _create_preflight_addon_alert(self, conflicts):
-        """Create a single addon_conflict alert with ALL conflicts."""
-        inst = self._inst()
-        names = ", ".join(c["addon"] for c in conflicts[:3])
-        if len(conflicts) > 3:
-            names += f" (+{len(conflicts) - 3} more)"
-        message = (
-            f"Addon conflict: {names} defined in multiple"
-            " repos — resolve all conflicts and redeploy"
-        )
-        with self._durable_env() as env:
-            Alert = env["cloud.alert"]
-            existing = Alert.search(
-                [
-                    ("instance_id", "=", inst.id),
-                    ("code", "=", "addon_conflict"),
-                    ("state", "=", "active"),
-                ],
-                limit=1,
+        self._sys("Resolve all conflicts; the job then runs by itself.")
+        alert = inst._raise_addon_conflict_alert(conflicts, job=self.job)
+        if not alert:
+            # Filed at the same moment by a transaction this one cannot
+            # see: nothing to wait on here, and the deploy must not run.
+            raise JobRefused(
+                f"Pre-flight: {len(conflicts)} addon conflict(s): {names}",
             )
-            vals = {
-                "message": message,
-                "conflict_data": conflicts,
-                "job_id": self.job.id,
-            }
-            if existing:
-                existing.write(vals)
-            else:
-                Alert.create(
-                    {
-                        "instance_id": inst.id,
-                        "code": "addon_conflict",
-                        "level": "critical",
-                        **vals,
-                    }
-                )
+        return alert
+
+    def on_blocked(self, alert):
+        """A deploy that waits leaves the instance in 'draft'.
+
+        Nothing reached the host. In 'deploying' the instance could be
+        neither deployed again nor deleted while it waited; it goes back
+        to 'deploying' when the job is dispatched again (``on_unblocked``).
+        """
+        inst = self._inst()
+        if inst.state == "deploying":
+            inst._transition("draft")
+
+    def on_unblocked(self):
+        """A deploy that waited in 'draft' enters 'deploying' again."""
+        inst = self._inst()
+        if inst and inst.state == "draft":
+            inst._transition("deploying")
+
+    async def on_abort(self, exc):
+        """A run that ended before its steps failed like one whose steps did.
+
+        A refused check, a host that would not connect: ``on_failure``
+        only followed steps that ran, so the instance stayed in
+        'deploying' for good (aitrax, 16-oct-2026), and the layers above
+        never heard of the failure either.
+        """
+        await self.on_failure({}, [f"{type(exc).__name__}: {exc}"])
 
     async def before_execute(self, transport):
         inst = self._inst()
         if not inst:
             raise ValueError("deploy_instance job has no instance_id")
-        await self._preflight_addon_check()
         self._preflight_tls_check()
         self._sys(f"Preparing deployment for '{inst.name}'...")
         await self._upload_copier_files(transport)
@@ -1119,7 +1133,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         resolved to, which is the only place the decision ``auto`` took
         is visible without reading code.
 
-        :raise RuntimeError: when a domain asks for the host's
+        :raise JobRefused: when a domain asks for the host's
             certificate and the host holds none.
         """
         inst = self._inst().sudo()
@@ -1150,7 +1164,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                     )
             self._sys(f"TLS for {domain.hostname}: {description}")
         if missing:
-            raise RuntimeError(
+            raise JobRefused(
                 "These domains ask for the host's certificate and the host "
                 f"holds none: {', '.join(missing)}. Load one on the host "
                 "(Traefik tab, or RB-12) or pick another option for the "
@@ -1435,74 +1449,65 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 conflicts.append({"addon": addon, "repos": repos})
         if not conflicts:
             return
-        names = ", ".join(c["addon"] for c in conflicts[:3])
-        if len(conflicts) > 3:
-            names += f" (+{len(conflicts) - 3} more)"
-        message = (
-            f"Addon conflict: {names} defined in multiple repos"
-            " — add excludes to the offending repo and redeploy"
-        )
-        with self._durable_env() as env:
-            Alert = env["cloud.alert"]
-            existing = Alert.search(
-                [
-                    ("instance_id", "=", inst.id),
-                    ("code", "=", "addon_conflict"),
-                    ("state", "=", "active"),
-                ],
-                limit=1,
-            )
-            if existing:
-                existing.write(
-                    {
-                        "message": message,
-                        "conflict_data": conflicts,
-                        "job_id": self.job.id,
-                    }
-                )
-            else:
-                Alert.create(
-                    {
-                        "instance_id": inst.id,
-                        "code": "addon_conflict",
-                        "level": "critical",
-                        "message": message,
-                        "conflict_data": conflicts,
-                        "job_id": self.job.id,
-                    }
-                )
+        # ``on_failure`` runs on a durable cursor already (see
+        # ``_dispatch_outcome``), so the alert outlives the failed job.
+        inst._raise_addon_conflict_alert(conflicts, job=self.job)
 
     def _dismiss_addon_conflict_alerts(self):
-        """Dismiss any active addon_conflict alerts for this instance."""
+        """Close this instance's addon_conflict alert: the deploy went through.
+
+        Through ``resolve_alert``, like the repository save that finds
+        none left, so the closing is the platform's and is announced.
+        """
         inst = self._inst()
         if not inst:
             return
         with self._durable_env() as env:
-            env["cloud.alert"].search(
-                [
-                    ("instance_id", "=", inst.id),
-                    ("code", "=", "addon_conflict"),
-                    ("state", "=", "active"),
-                ]
-            ).write({"state": "dismissed"})
+            env["cloud.alert"].resolve_alert(
+                "addon_conflict", instance=env["cloud.instance"].browse(inst.id),
+            )
 
     def _dismiss_pip_conflict_alerts(self):
+        """Close this instance's pip_conflict alerts: the deploy went through."""
         inst = self._inst()
         if not inst:
             return
         with self._durable_env() as env:
-            env["cloud.alert"].search(
+            closed = env["cloud.alert"].search(
                 [
                     ("instance_id", "=", inst.id),
                     ("code", "=", "pip_conflict"),
                     ("state", "=", "active"),
                 ]
-            ).write({"state": "dismissed"})
+            )
+            closed.write({"state": "dismissed"})
+
+    def _cancel_stale_waits(self):
+        """Cancel this instance's jobs that wait on an alert no longer open.
+
+        A build of the instance went through, so what waited is behind
+        it — on the alert this build closed, or on one a repository save
+        closed while the job could not be dispatched (another job ran).
+        Left blocked on a closed alert, a rebuild queued by an earlier
+        push showed "Action required" for ever, its Resolve led to an
+        empty Alerts page, and it could not be cancelled.
+        """
+        inst = self._inst()
+        if not inst:
+            return
+        with self._durable_env() as env:
+            env["cloud.job"].search([
+                ("instance_id", "=", inst.id),
+                ("blocked_alert_id", "!=", False),
+                ("blocked_alert_id.state", "!=", "active"),
+                ("id", "!=", self.job.id),
+            ]).write({"state": "cancelled", "blocked_alert_id": False})
 
     async def on_success(self, results):
         self._sys("✓ Instance deployed successfully.")
         self._dismiss_pip_conflict_alerts()
         self._dismiss_addon_conflict_alerts()
+        self._cancel_stale_waits()
         inst = self._inst()
         services_out = results.get("List services", {}).get("stdout") or ""
         services = [s.strip() for s in services_out.splitlines() if s.strip()]

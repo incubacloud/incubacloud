@@ -160,9 +160,15 @@ class CloudGitHubEvent(models.Model):
         except Exception as exc:  # noqa: BLE001 - logged, decides nothing
             _logger.warning("GitHub hook deliveries unreadable: %s", exc)
             return Alert.browse()
+        # A ``ping`` carries no push. GitHub sends it as it creates the
+        # App, while the callback that stores the secret to verify it is
+        # still on its way: 70 ms before the secret was saved on aitrax,
+        # answered 401 and reported for two days as pushes that never
+        # arrived (15-oct-2026).
         attempted = [
             d for d in deliveries
-            if cutoff <= (self._delivered_at(d) or cutoff - timedelta(seconds=1))
+            if d.get('event') != 'ping'
+            and cutoff <= (self._delivered_at(d) or cutoff - timedelta(seconds=1))
             <= now - self._DELIVERY_GRACE
         ]
         received = {e.delivery_id for e in recent if e.delivery_id}

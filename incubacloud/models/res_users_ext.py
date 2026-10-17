@@ -435,7 +435,10 @@ class ResUsers(models.Model):
                 'partner_id': partner_id,
                 'active': True,
                 'share': False,
-                'notification_type': 'email',
+                # No address: Odoo notifications reach it in the inbox.
+                # 'email' turned every message it followed into a failed
+                # mail notification.
+                'notification_type': 'inbox',
             })
             _logger.info("created incubacloud cron bot user id=%s", user.id)
 
@@ -460,6 +463,9 @@ class ResUsers(models.Model):
             self.env.ref('incubacloud.group_cloud_manager').id,
             self.env.ref('base.group_user').id,
             self.env.ref('queue_job.group_queue_job_manager').id,
+            # Odoo derives ``notification_type`` from this group, so the
+            # 'inbox' set at creation only holds while the bot is in it.
+            self.env.ref('mail.group_mail_notification_type_inbox').id,
         ]
         user.sudo().write({'group_ids': [(4, gid) for gid in required]})
 

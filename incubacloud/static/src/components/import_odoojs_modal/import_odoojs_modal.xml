@@ -59,8 +59,8 @@
                                 options="state.branches"
                                 value="state.branch"
                                 onChange="(v) => { state.branch = v; }"
-                                placeholder="'main'"
-                                loading="state.loadingBranches"
+                                placeholder="branchPlaceholder"
+                                disabled="branchLocked"
                                 allowFreeText="true"
                                 emptyLabel.translate="— select branch —"
                             />
@@ -115,6 +115,12 @@
                             <div class="ic-alert ic-alert--warning mt-3" role="alert">
                                 <span class="ic-alert__icon"><t t-out="env.icon('alert', 15)"/></span>
                                 <span t-esc="state.result.sha_warning"/>
+                            </div>
+                        </t>
+                        <t t-if="state.result?.addon_conflict_warning">
+                            <div class="ic-alert ic-alert--warning mt-3" role="alert">
+                                <span class="ic-alert__icon"><t t-out="env.icon('alert', 15)"/></span>
+                                <span t-esc="state.result.addon_conflict_warning"/>
                             </div>
                         </t>
                     </section>

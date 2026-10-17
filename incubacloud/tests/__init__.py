@@ -182,3 +182,4 @@ from . import test_weblogin_jail
 from . import test_proxy_access_log_file
 from . import test_login_router
 from . import test_cdn_client_auth
+from . import test_blocked_and_aborted_jobs

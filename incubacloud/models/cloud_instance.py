@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -9,6 +10,7 @@ from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
 from ..github.client import GitHubAppClient
+from ..github.http_utils import HTTPBudget
 from ..net.outbound import OutboundError
 from ..net.restore_source import (
     curl_resolve_argument,
@@ -19,7 +21,7 @@ from ..net.restore_source import (
 from ..restore_staging import purge_stale
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
-from ._repo_requirements import _normalize_url
+from ._repo_requirements import _normalize_url, detect_addon_conflicts
 from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
@@ -29,6 +31,13 @@ from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
 _GLOBAL_BACKUP_PARAM = "incubacloud.backup_backend_id"
+# What the GitHub trees of an addon check may read in all: each answer
+# is parsed whole, so this guards memory, not time.
+_ADDON_CHECK_MAX_BYTES = 128 * 1024 * 1024
+#: How long the addon check of a request a person waits on (a save, a
+#: deploy) may take, every GitHub request included: a GitHub that is
+#: slow with many repositories would otherwise outlast the request.
+ADDON_CHECK_SECONDS = 20
 
 # Staging autopurge: how much notice an expiring staging gets, in days
 # before its deadline. Constants rather than settings because the two
@@ -1262,21 +1271,182 @@ class CloudInstance(models.Model):
         return False
 
     def deploy(self):
-        """Enqueue a deploy_instance job for this instance."""
+        """Enqueue a deploy_instance job for this instance.
+
+        One that waits for an alert is this instance's deploy: it is
+        dispatched again once the alert is closed — an addon conflict is
+        looked for again first, since the repositories may have been
+        fixed in GitHub — and refused while it is not. A deploy that ends
+        blocked at once leaves the instance in 'draft'.
+
+        :return: the id of the ``cloud.job`` that deploys
+        :raises UserError: no host, already deployed, or a deploy waits
+            for an alert that is still open
+        """
         self.ensure_one()
         if not self.host_id:
             raise UserError(_("Instance has no host assigned."))
         if self.deployed:
             raise UserError(_("Instance is already deployed. Use Rebuild instead."))
         self._check_backup_backend()
+        waiting = self.env["cloud.job"].search([
+            ("instance_id", "=", self.id),
+            ("job_type_id.code", "=", "deploy_instance"),
+            ("blocked_alert_id", "!=", False),
+        ], order="id desc", limit=1)
+        if waiting:
+            # One deploy per instance: the one already waiting is the
+            # deploy. Another would wait beside it for the same alert,
+            # and resolving the alert dispatches only one of them.
+            alert = waiting.blocked_alert_id
+            if alert.state == "active" and alert.code == "addon_conflict":
+                # Fixed in GitHub, perhaps, which no save here has seen:
+                # a check that finds none left dispatches the deploy.
+                self._check_addon_conflicts(seconds=ADDON_CHECK_SECONDS)
+                if not waiting.blocked_alert_id:
+                    return waiting.id
+            if waiting.blocked_alert_id.state == "active":
+                raise UserError(_(
+                    "A deploy of '%(name)s' is waiting for an alert to be "
+                    "resolved: %(alert)s. Resolve it in Alerts and the "
+                    "deploy starts by itself.",
+                    name=self.name,
+                    alert=waiting.blocked_alert_id.message,
+                ))
+            waiting.unblock_and_enqueue()
+            return waiting.id
         # Enter 'deploying' before enqueuing: the transition map is what
         # rejects a second deploy while the first is still in flight.
         self._transition("deploying")
-        return self.env["cloud.job"].enqueue(
+        job_id = self.env["cloud.job"].enqueue(
             self.host_id.id,
             self.id,
             "deploy_instance",
         )
+        if self.env["cloud.job"].browse(job_id).blocked_alert_id:
+            # Blocked at enqueue (a dependency conflict): nothing was
+            # dispatched, so nothing is deploying.
+            self._transition("draft")
+        return job_id
+
+    def _check_addon_conflicts(self, seconds=None):
+        """Compare this instance's repositories now, not at the next deploy.
+
+        Doodba refuses an addon two repositories define, and the deploy's
+        pre-flight is where that used to surface — hours after the
+        repositories were set, for a customer who imported a project of 86
+        and found 9 such addons when deploying (aitrax, 16-oct-2026).
+        Called where repositories are set (import, instance create and
+        save): conflicts raise the ``addon_conflict`` alert with its
+        Resolve flow; none left closes an open one, and a deploy that was
+        waiting on it goes ahead.
+
+        Never raises, and runs in a savepoint: a GitHub that cannot be
+        read decides nothing — a repository it did not list may be the
+        one that conflicts, so an open alert stays open — and the
+        deploy's pre-flight checks again.
+
+        :param float seconds: at most this long, every GitHub request
+            included; a repository there is no time left for is unread
+        :return: the conflicts found (empty when none or unknown)
+        :rtype: list
+        """
+        self.ensure_one()
+        # Callers have just written the repository lines.
+        self.invalidate_recordset(["repo_ids"])
+        if not self.repo_ids:
+            return []
+        unread = []
+        budget = None
+        if seconds is not None:
+            budget = HTTPBudget(
+                3 * len(self.repo_ids) + 2, _ADDON_CHECK_MAX_BYTES, seconds,
+            )
+        try:
+            conflicts = asyncio.run(detect_addon_conflicts(
+                self.env, self.repo_ids, unread=unread, budget=budget,
+            ))
+            with self.env.cr.savepoint():
+                if conflicts:
+                    self._raise_addon_conflict_alert(conflicts)
+                elif not unread:
+                    self._release_addon_conflict()
+        except Exception:
+            _logger.warning(
+                "addon conflict check failed for instance %s", self.id,
+                exc_info=True,
+            )
+            return []
+        return conflicts
+
+    def _release_addon_conflict(self):
+        """Close this instance's ``addon_conflict``; dispatch what waited on it.
+
+        A job left blocked on a closed alert would wait for ever. One
+        that cannot be dispatched right now (another job runs) stays
+        blocked on the closed alert: a deploy that waits is dispatched by
+        the next ``deploy``, the next build of the instance that goes
+        through cancels the rest (``_cancel_stale_waits``), and each can
+        be cancelled from its timeline.
+        """
+        self.ensure_one()
+        alerts = self.env["cloud.alert"].resolve_alert(
+            "addon_conflict", instance=self,
+        )
+        if not alerts:
+            return
+        waiting = self.env["cloud.job"].search([
+            ("blocked_alert_id", "in", alerts.ids),
+        ], order="id desc")
+        for job in waiting:
+            if not job.blocked_alert_id:
+                continue  # cancelled as the twin of one dispatched before
+            try:
+                with self.env.cr.savepoint():
+                    job.unblock_and_enqueue()
+            except UserError as exc:
+                _logger.info(
+                    "job %s stays blocked after its conflict closed: %s",
+                    job.id, exc,
+                )
+
+    def _raise_addon_conflict_alert(self, conflicts, job=None):
+        """Raise, or refresh, this instance's one ``addon_conflict`` alert.
+
+        One alert names every conflict: the panel's Resolve flow picks,
+        addon by addon, which repository keeps it and excludes it from
+        the others. Raised through ``raise_alert``, which files it as the
+        platform and in a savepoint: two saves that find the same
+        conflicts at once end with one alert, not a failed save.
+
+        :param list conflicts: ``[{'addon': str, 'repos': [alias, ...]}]``
+        :param job: the ``cloud.job`` that found them, when one did; its
+            failure is then this alert's news and raises no ``job_failed``
+        :return: the active ``cloud.alert``, or an empty recordset when
+            another transaction filed it and this one cannot see it yet
+        """
+        self.ensure_one()
+        names = ", ".join(c["addon"] for c in conflicts[:3])
+        if len(conflicts) > 3:
+            names += f" (+{len(conflicts) - 3} more)"
+        Alert = self.env["cloud.alert"]
+        alert = Alert.raise_alert(
+            "addon_conflict",
+            f"Addon conflict: {names} defined in multiple repos — "
+            "resolve them in Alerts; a deploy waiting on them then starts "
+            "by itself",
+            level="critical",
+            instance=self,
+            job=job,
+        )
+        if not alert:
+            # Another transaction filed it first; it is the one, if this
+            # transaction can see it — one started earlier cannot.
+            alert = Alert.sudo().search(
+                Alert._dedup_domain("addon_conflict", instance=self), limit=1,
+            )
+        as_platform(alert).write({"conflict_data": conflicts})
+        return alert
 
     def list_backups(self):
         """Enqueue a backup_list job for this instance."""
@@ -1715,6 +1885,20 @@ class CloudInstance(models.Model):
         """
         return []
 
+    def _move_post_restore_steps(self, target_host):
+        """Return extra chain steps to run on the target after the restore.
+
+        They run once the destination holds the source's data and before
+        the cutover hands it the traffic. Core: none. Inheriting layers
+        (SaaS) re-apply there what the restore brought back from the
+        source in a state that no longer holds, such as the plan the
+        panel's database still describes.
+
+        :param target_host: the ``cloud.host`` the instance moves to
+        :return: list of chain step dicts, as for :meth:`_move_pre_steps`
+        """
+        return []
+
     def _on_move_cutover(self, origin_host):
         """Hook fired on a successful host-move cutover, after ``host_id``
         has flipped to the destination.
@@ -1743,7 +1927,8 @@ class CloudInstance(models.Model):
 
             [pre-steps] → deploy(target) → stop(source, odoo only) →
             backup_download(source, live) → restore(target) →
-            move_cutover(target) → move_cleanup_source(source)
+            [post-restore steps] → move_cutover(target) →
+            move_cleanup_source(source)
 
         Only the ``odoo`` service is stopped on the source, so ``db``
         stays up for a live dump (``time='live'``): a database nothing
@@ -1815,6 +2000,7 @@ class CloudInstance(models.Model):
                     "source_job_id": f"__chain_job_{download_idx}__",
                 },
             },
+        ] + self._move_post_restore_steps(target_host) + [
             {
                 "host_id": target_host.id,
                 "instance_id": self.id,

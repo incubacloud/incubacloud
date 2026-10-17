@@ -17,7 +17,7 @@ from ..github.client import GitHubAPIError, GitHubAppClient
 from ..models.cloud_github_event import GITHUB_WEBHOOK_SILENT_CODE
 
 
-def _attempt(hours_ago, guid, status="OK", status_code=200):
+def _attempt(hours_ago, guid, status="OK", status_code=200, event="push"):
     """Render one entry of GitHub's delivery log, *hours_ago* old."""
     when = fields.Datetime.now() - timedelta(hours=hours_ago)
     return {
@@ -25,7 +25,7 @@ def _attempt(hours_ago, guid, status="OK", status_code=200):
         "delivered_at": when.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "status": status,
         "status_code": status_code,
-        "event": "push",
+        "event": event,
         "redelivery": False,
     }
 
@@ -162,6 +162,27 @@ class TestWebhookSilenceAlert(TransactionCase):
         self._check(deliveries=[])
         self.listed.assert_not_called()
         self.assertFalse(self._active())
+
+    def test_the_ping_that_beat_the_app_to_its_secret_is_not_a_drop(self):
+        """GitHub pings the webhook as it creates the App, 70 ms before
+        the callback stores the secret: the ping is refused for want of
+        one and carried no push (aitrax, 15-oct-2026)."""
+        self._check(deliveries=[
+            _attempt(3, "ping-1", "Invalid HTTP Response: 401", 401,
+                     event="ping"),
+        ])
+        self.assertFalse(self._active())
+
+    def test_a_dropped_push_after_the_ping_still_counts(self):
+        """Leaving pings out does not hide a push that did not land."""
+        self._check(deliveries=[
+            _attempt(3, "ping-1", "Invalid HTTP Response: 401", 401,
+                     event="ping"),
+            _attempt(2, "push-1", "Invalid HTTP Response: 403", 403),
+        ])
+        alert = self._active()
+        self.assertTrue(alert)
+        self.assertIn("1 of 1", alert.message)
 
     def test_no_app_configured_never_alerts(self):
         """An install that never wired GitHub up is not broken."""
