@@ -29,6 +29,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `pipefail`: a `grep` that stopped at its match while `docker` was still
   writing failed the pipe, and switching on refused with "the database is
   not running" (seen in the tests under load). The whole list is read now.
+- **The continuous recovery card ends where its jobs leave it.** It read
+  the status once, as a switch was queued, and never again: switched off,
+  it still said "Archiving" until the page was reloaded. While a job of
+  the module runs for the instance it now reads the status every few
+  seconds, and says "Switching off…" while it switches off.
+  `incubacloud_pitr` 1.0.2.
 
 ## [1.0.189] — 2026-10-19
 

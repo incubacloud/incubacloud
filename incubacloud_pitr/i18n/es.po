@@ -495,3 +495,9 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_timelines
 msgid "Restores to a Moment"
 msgstr "Restauraciones a un momento"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Switching off…"
+msgstr "Desactivándose…"
