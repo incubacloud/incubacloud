@@ -9,9 +9,12 @@
  *  The times the server sends are UTC; the panel shows and asks for
  *  local times and converts.
  */
-import { Component, onWillStart, useState } from "@odoo/owl";
+import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+
+/** How often the card reads the status again while a job of it runs. */
+const FOLLOW_MS = 5000;
 
 /** "2026-10-18 22:10:29" (UTC) → Date. */
 function fromUtc(value) {
@@ -53,7 +56,13 @@ export class PitrPanel extends Component {
             confirmName: "",
             busy: false,
         });
+        this.followTimer = null;
+        this.alive = true;
         onWillStart(() => this.load());
+        onWillUnmount(() => {
+            this.alive = false;
+            clearTimeout(this.followTimer);
+        });
     }
 
     async load() {
@@ -71,9 +80,28 @@ export class PitrPanel extends Component {
         } finally {
             this.state.loading = false;
         }
+        this.follow();
+    }
+
+    /** Read the status again while a job of this module runs for the
+     *  instance, so the card ends where the jobs leave it — switched on,
+     *  off or restored — without reloading the page. A read that fails
+     *  is tried again on the next tick rather than shown. */
+    follow() {
+        clearTimeout(this.followTimer);
+        if (this.alive && this.state.data?.busy) {
+            this.followTimer = setTimeout(
+                () => this.load().catch(() => this.follow()),
+                FOLLOW_MS,
+            );
+        }
     }
 
     get stateLabel() {
+        const data = this.state.data;
+        if (data && !data.enabled && data.state !== "off" && data.busy) {
+            return _t("Switching off…");
+        }
         return {
             off: _t("Off"),
             enabling: _t("Switching on…"),
