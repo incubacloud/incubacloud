@@ -53,6 +53,8 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         self._preflight_tls_check()
         self._sys(f"Preparing rebuild for '{inst.name}'...")
         await self._upload_copier_files(transport)
+        await self._ship_secret_key(transport)
+        await self._stage_extra_env_files(transport)
 
     def get_commands(self):
         inst = self._inst()
@@ -149,8 +151,11 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
                 f"f={self._tmp('backup.env')};"
                 f" [ -f \"$f\" ] && mv \"$f\" {d}/.docker/backup.env || true",
             ),
-            # 4b. Ensure .docker/incubacloud.env exists (generate once,
-            #     never overwrite — survives rebuilds).
+            *self._write_extra_env_step(d),
+            # 4b. Write the panel's copy of the encryption key (merged
+            #     with the host's in ``before_execute``), then make sure
+            #     the file exists.
+            self._write_secret_key_step(d),
             (
                 "Ensure incubacloud.env",
                 self.run_script("deploy.sh", ["ensure-secret-key", d]),
@@ -348,6 +353,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             f" with updated configuration."
         )
         self._enqueue_coalesced_rebuild_if_pending(inst)
+        self._call_addon_hook(inst, "_after_stack_rendered")
 
     def _enqueue_coalesced_rebuild_if_pending(self, inst):
         """Fold queued pushes into a follow-up rebuild after a successful one.

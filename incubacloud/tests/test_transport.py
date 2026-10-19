@@ -214,7 +214,7 @@ def _make_file_ctx():
     return ctx, fh
 
 
-class TestSSHTransportFileOps(unittest.TestCase):
+class TestSSHTransportFileOps(BaseCase):
     def _transport_with_sftp(self):
         sftp = MagicMock(spec=asyncssh.SFTPClient)
         sftp.put = AsyncMock()
@@ -243,6 +243,22 @@ class TestSSHTransportFileOps(unittest.TestCase):
         self.assertEqual(sftp.open.call_count, 2)
         fh1.write.assert_called_once_with("content-a")
         fh2.write.assert_called_once_with("content-b")
+        # No mode asked: the server's default, as before.
+        attrs = sftp.open.call_args_list[0].args[2]
+        self.assertIsNone(attrs.permissions)
+
+    def test_a_secret_is_created_readable_by_its_owner_only(self):
+        """A key staged in /tmp is 0600 from its first byte."""
+        transport, sftp = self._transport_with_sftp()
+        file_ctx, fh = _make_file_ctx()
+        sftp.open = MagicMock(return_value=file_ctx)
+
+        _run(transport.upload_text_files({"/tmp/k.env": "K=v\n"}, mode=0o600))
+
+        path, flags, attrs = sftp.open.call_args.args
+        self.assertEqual((path, flags), ("/tmp/k.env", "w"))
+        self.assertEqual(attrs.permissions, 0o600)
+        fh.write.assert_called_once_with("K=v\n")
 
     def test_upload_file_calls_sftp_put(self):
         transport, sftp = self._transport_with_sftp()

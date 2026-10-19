@@ -284,6 +284,8 @@ class TestInstanceHealthBlockingJobs(BaseCase):
         self.executor.job.instance_id.id = 7
         self.JobModel = MagicMock()
         self.JobModel._active_states = ['pending', 'enqueued', 'started']
+        # What addons add to the probe's own list (none here).
+        self.JobModel._get_health_blocking_job_types.return_value = set()
         # __getitem__ on env yields the model
         self.executor.env = MagicMock()
         self.executor.env.__getitem__.return_value = self.JobModel

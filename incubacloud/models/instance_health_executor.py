@@ -188,11 +188,12 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         if not inst:
             return False
         Job = self.env['cloud.job']
+        codes = set(self._blocking_job_types) | Job._get_health_blocking_job_types()
         return bool(Job.search_count([
             ('id', '!=', self.job.id),
             ('instance_id', '=', inst.id),
             ('state', 'in', Job._active_states),
-            ('job_type_id.code', 'in', list(self._blocking_job_types)),
+            ('job_type_id.code', 'in', list(codes)),
         ]))
 
     def _odoo_stop_is_expected(self):

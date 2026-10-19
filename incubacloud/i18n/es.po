@@ -6004,6 +6004,7 @@ msgstr "Importar instancia existente"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
 #: code:addons/incubacloud/static/src/components/remote_file_browser/remote_file_browser.js:0
 msgid "Import failed"
 msgstr "Importación fallida"
@@ -15006,3 +15007,60 @@ msgstr ""
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid "Waiting for the alert to be resolved: %s"
 msgstr "Esperando a que se resuelva la alerta: %s"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "'%(host)s' refused the SSH allowlist change: %(output)s"
+msgstr "«%(host)s» rechazó el cambio de su lista de acceso SSH: %(output)s"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_capture_secret_keys_ir_actions_server
+msgid "Capture instance encryption keys"
+msgstr "Capturar las claves de cifrado de las instancias"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_resolve_readable_secrets_ir_actions_server
+msgid "Close alerts on secrets that read again"
+msgstr "Cerrar las alertas de secretos que vuelven a leerse"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "Could not reach '%(host)s' to change its SSH allowlist: %(error)s"
+msgstr ""
+"No se pudo conectar con «%(host)s» para cambiar su lista de acceso SSH: "
+"%(error)s"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__secret_key
+msgid "Encryption Key"
+msgstr "Clave de cifrado"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "No address given."
+msgstr "No se indicó ninguna dirección."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "Unknown allowlist operation: %s"
+msgstr "Operación de lista de acceso desconocida: %s"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__secret_key
+msgid ""
+"The INCUBACLOUD_SECRET_KEY chain this instance's Odoo encrypts its own "
+"secrets with (comma-separated Fernet keys, primary first). Generated with "
+"the instance and written to .docker/incubacloud.env on every deploy and "
+"rebuild; what the host already holds is merged in first, so no key is ever "
+"dropped. A neutralized copy of production keeps its own."
+msgstr ""
+"La cadena INCUBACLOUD_SECRET_KEY con la que el Odoo de esta instancia cifra "
+"sus propios secretos (claves Fernet separadas por comas, la principal "
+"primero). Se genera con la instancia y se escribe en .docker/incubacloud.env"
+" en cada despliegue y reconstrucción; antes se incorpora lo que ya tenga el "
+"host, de modo que nunca se pierde una clave. Una copia neutralizada de "
+"producción conserva la suya."

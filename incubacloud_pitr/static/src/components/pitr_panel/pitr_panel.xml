@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-name="incubacloud_pitr.PitrPanel">
+        <div class="rl-card rl-card-pad ic-pitr-panel" t-if="props.environment === 'production'">
+            <div class="ic-pitr-head">
+                <strong>Continuous recovery</strong>
+                <t t-if="state.data">
+                    <span t-att-class="'ic-pitr-state ic-pitr-state--' + state.data.state" t-esc="stateLabel"/>
+                </t>
+            </div>
+            <t t-if="state.loading and !state.data">
+                <div class="ic-pitr-muted"><i class="fa fa-spinner fa-spin"/> Loading…</div>
+            </t>
+            <t t-elif="state.error">
+                <div class="ic-pitr-muted" role="alert" t-esc="state.error"/>
+            </t>
+            <t t-elif="state.data and !state.data.available">
+                <div class="ic-pitr-muted">
+                    Needs a backup backend: this instance could then be restored to any minute of its backup window.
+                </div>
+            </t>
+            <t t-elif="state.data and state.data.state === 'off' and !state.data.enabled">
+                <div class="ic-pitr-muted">
+                    Off. Switched on, the database is archived continuously and the files copied as they change, so the instance can be restored to any minute of the last <t t-esc="state.data.window_days"/> days. Switching it on rebuilds the instance and restarts its database once.
+                </div>
+                <div class="ic-pitr-actions" t-if="props.canManage">
+                    <button class="rl-btn rl-btn-primary rl-btn-sm" t-att-disabled="state.busy or state.data.busy" t-on-click="enable">Switch on</button>
+                </div>
+            </t>
+            <t t-elif="state.data">
+                <div class="ic-pitr-facts">
+                    <div t-if="windowFrom">
+                        Can be restored to any minute from <strong t-esc="formatDate(windowFrom)"/> until now.
+                    </div>
+                    <div t-elif="state.data.state === 'enabling'">Taking the first base copy…</div>
+                    <div t-if="minutesSinceArchived !== null">
+                        Last archived <t t-esc="minutesSinceArchived"/> min ago.
+                    </div>
+                    <div>
+                        Loses at most
+                        <t t-if="props.canManage and !state.data.external">
+                            <select class="ic-pitr-objective" t-att-disabled="state.busy or state.data.busy" t-on-change="setObjective">
+                                <t t-foreach="state.data.objectives" t-as="o" t-key="o">
+                                    <option t-att-value="o" t-att-selected="o === state.data.objective" t-esc="objectiveLabel(o)"/>
+                                </t>
+                            </select>
+                        </t>
+                        <t t-else=""><t t-esc="objectiveLabel(state.data.objective)"/></t>.
+                    </div>
+                </div>
+                <div class="ic-pitr-actions" t-if="props.canManage and !state.data.external">
+                    <button class="rl-btn rl-btn-primary rl-btn-sm" t-att-disabled="state.busy or state.data.busy or !windowFrom" t-on-click="openRestore">Restore to a moment…</button>
+                    <button class="rl-btn rl-btn-ghost rl-btn-sm" t-att-disabled="state.busy or state.data.busy" t-on-click="disable">Switch off</button>
+                </div>
+                <div class="ic-pitr-restore" t-if="state.restoring">
+                    <p>
+                        The database and the files go back to the moment chosen; whatever happened after it is undone. Odoo is stopped meanwhile. A backup of the present is taken first.
+                    </p>
+                    <label>Moment (your local time)
+                        <input type="datetime-local" class="rl-input" t-att-min="minInput" t-att-max="maxInput" t-model="state.when"/>
+                    </label>
+                    <label>Type <strong t-esc="props.instanceName"/> to confirm
+                        <input type="text" class="rl-input" t-model="state.confirmName" autocomplete="off"/>
+                    </label>
+                    <div class="ic-pitr-actions">
+                        <button class="rl-btn rl-btn-danger rl-btn-sm" t-att-disabled="!restoreReady or state.busy" t-on-click="restore">Restore</button>
+                        <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="closeRestore">Cancel</button>
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

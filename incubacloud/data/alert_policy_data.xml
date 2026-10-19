@@ -53,4 +53,14 @@
         <field name="confirm_window">900</field>
         <field name="note">Temporary files spike the reading; matches the disk metric rule.</field>
     </record>
+
+    <!-- The daily key capture (``cron_capture_secret_keys``) could not
+         read an instance's encryption key on its host. A host rebooting
+         at that minute is not news; two days in a row is. -->
+    <record id="alert_policy_secret_key_not_escrowed" model="cloud.alert.policy">
+        <field name="code">secret_key_not_escrowed</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">172800</field>
+        <field name="note">Read once a day; one unreachable host is not a lost key.</field>
+    </record>
 </odoo>

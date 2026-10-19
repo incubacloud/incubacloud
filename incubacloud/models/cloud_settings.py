@@ -11,13 +11,19 @@ from odoo.exceptions import UserError, ValidationError
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from .cloud_instance import AUTOPURGE_FINAL_DAYS, AUTOPURGE_WARN_DAYS
 from .cloud_instance_domain import _HOSTNAME_RE
-from .encrypted_char import EncryptedChar, EncryptedFieldMixin
+from .encrypted_char import (
+    ALERT_CODE_UNREADABLE,
+    EncryptedChar,
+    EncryptedFieldMixin,
+)
 from .password_utils import (
+    decrypt_value,
     generate_password,
     is_on_primary_key,
     key_is_configured,
     rotate_value,
 )
+from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
 
@@ -975,6 +981,22 @@ class CloudSettings(models.Model):
                 "and similar fields will raise. Configure the variable in "
                 "the Odoo container environment before going to production."
             )
+            return
+        # The right key usually arrives with a restart: look again now
+        # rather than at the next hourly pass.
+        cron = self.env.ref(
+            "incubacloud.cron_resolve_readable_secrets",
+            raise_if_not_found=False,
+        )
+        if cron:
+            try:
+                with self.env.cr.savepoint():
+                    cron._trigger()
+            except Exception:  # noqa: BLE001 — never block the startup
+                _logger.warning(
+                    "Could not schedule the readable-secrets pass at "
+                    "startup.", exc_info=True,
+                )
 
     # ── Secret rotation ────────────────────────────────────────────────────
     # Rotation workflow (operator-driven, not time-based):
@@ -1155,6 +1177,120 @@ class CloudSettings(models.Model):
                     cr.execute(update_stmt, (new_value, rid))
                     rotated += 1
         return rotated, failed
+
+    # ── Unreadable-secret alerts close themselves ─────────────────────────
+
+    #: Codes, by prefix, of the alerts about a secret the key chain
+    #: cannot open (``<prefix><model>.<field>``).
+    _UNREADABLE_SECRET_PREFIXES = (
+        f"{ALERT_CODE_UNREADABLE}:",
+        "secret_rotation_stranded:",
+    )
+
+    @api.model
+    def _cron_resolve_readable_secrets(self):
+        """Close every unreadable-secret alert whose values read again.
+
+        The alert is opened by a failed read (``encrypted_char``) or a
+        failed rotation; nothing used to close it. Installing the missing
+        key and restarting fixed the panel and left the alert lit, and
+        the operator had to dismiss it by hand (two panels, 18-oct-2026).
+        A read in the hot path cannot close it either: the process that
+        failed keeps its cached key chain, and the one with the right
+        key never saw the failure.
+
+        So this pass reads again, hourly and once at startup: for every
+        active alert, each value of that field on the rows the alert
+        points at is decrypted from its raw column. When all of them
+        open — or the rows are gone — the alert is dismissed as the
+        platform and announced as resolved (which, for a provider
+        alert, reaches the provider too).
+
+        :return: how many alerts were closed
+        :rtype: int
+        """
+        if not key_is_configured():
+            return 0
+        Alert = as_platform(self.env["cloud.alert"])
+        domain = ["|"] * (len(self._UNREADABLE_SECRET_PREFIXES) - 1) + [
+            ("code", "=like", f"{prefix}%")
+            for prefix in self._UNREADABLE_SECRET_PREFIXES
+        ]
+        closed = 0
+        for alert in Alert.search([("state", "=", "active")] + domain):
+            target = alert.code.partition(":")[2]
+            model_name, _dot, field_name = target.rpartition(".")
+            Model = self.env.get(model_name)
+            field = Model._fields.get(field_name) if Model is not None else None
+            if not (isinstance(field, EncryptedFieldMixin) and field.store):
+                continue
+            row_ids = self._unreadable_alert_rows(Model, alert)
+            if row_ids is None:
+                continue
+            if not self._encrypted_rows_readable(Model, field_name, row_ids):
+                continue
+            alert.write({"state": "dismissed", "resolution": "auto"})
+            alert._notify_alert_resolved()
+            closed += 1
+            _logger.info(
+                "Alert %s (%s) closed: the value reads again.",
+                alert.id, alert.code,
+            )
+        return closed
+
+    def _unreadable_alert_rows(self, Model, alert):
+        """Return the ids of *Model*'s rows an unreadable-secret alert covers.
+
+        An alert on a host, instance or project secret points at that
+        record. One on another model points at the row's host, instance
+        or project instead (``encrypted_char._alert_link``), and dedups
+        per target: it stands for every row of the model linked to it.
+
+        :param Model: the model whose field the alert is about
+        :param alert: the ``cloud.alert`` record
+        :return: the row ids, or None when the alert's target cannot be
+            told (left alone)
+        :rtype: list or None
+        """
+        self_target = self._ROTATION_SELF_ALERT.get(Model._name)
+        if self_target:
+            target = alert[self_target]
+            return [target.id] if target else None
+        for link in ("host_id", "instance_id", "project_id"):
+            if link in Model._fields and alert[link]:
+                return Model.sudo().with_context(active_test=False).search(
+                    [(link, "=", alert[link].id)],
+                ).ids
+        return None
+
+    def _encrypted_rows_readable(self, Model, field_name, row_ids):
+        """Return whether the current key chain opens every value of the rows.
+
+        Read from the raw column, like the rotation: no plaintext enters
+        the ORM cache, and a failure here opens no new alert.
+
+        :param Model: the model
+        :param str field_name: an encrypted, stored field of it
+        :param list row_ids: the rows to check; none left counts as readable
+        :rtype: bool
+        """
+        if not row_ids:
+            return True
+        self.env.cr.execute(
+            sql.SQL(
+                "SELECT {f} FROM {t} WHERE id IN %s AND {f} LIKE 'enc:%%'"
+            ).format(
+                t=sql.Identifier(Model._table),
+                f=sql.Identifier(field_name),
+            ),
+            (tuple(row_ids),),
+        )
+        for (value,) in self.env.cr.fetchall():
+            try:
+                decrypt_value(value)
+            except Exception:  # noqa: BLE001 — any failure: still unreadable
+                return False
+        return True
 
     # Models that ARE the alert target — an alert on a host points to
     # the host itself via ``host_id``.

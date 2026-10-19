@@ -96,6 +96,9 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         self._inst().write({
             'status': 'ok', 'running': True,
         })
+        self._call_addon_hook(
+            self._inst(), '_after_restore_hook', 'backup_restore',
+        )
 
     async def on_failure(self, results, errors):
         for err in errors:

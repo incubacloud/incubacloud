@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <t t-inherit="incubacloud.InstanceDetail.tabBody" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('ic-backups-toolbar')]" position="after">
+            <PitrPanel
+                instanceId="props.instance_id"
+                instanceName="state.inst.name"
+                environment="state.inst.environment"
+                canManage="!!env.permissions?.can_manage_hosts"
+                enqueue.bind="_enqueueJob"
+            />
+        </xpath>
+    </t>
+
+</templates>

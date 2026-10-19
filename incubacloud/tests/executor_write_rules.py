@@ -62,8 +62,8 @@ HOOKS = frozenset({"on_success", "on_failure", "on_abort"})
 OWN_TRANSACTION_HOOKS = frozenset({"on_blocked", "on_unblocked"})
 
 #: Methods that write with ``self.env`` and are only ever called from a
-#: hook, so they write on the hook's durable cursor. Each is verified to
-#: have no other caller.
+#: hook (or from another of them), so they write on the hook's durable
+#: cursor. Each is verified to have no other caller.
 HOOK_HELPERS = {
     "_record_shipped_accounts": "records the ACL a successful run shipped",
     "_sync_backup_records": "mirrors the listed backups after success",
@@ -71,6 +71,7 @@ HOOK_HELPERS = {
     "_alert_on_purge_failure": "alerts on a failed teardown",
     "_stamp_core_commit": "stamps the core release a run shipped",
     "_stamp_tenant_module_commit": "stamps the tenant module a run shipped",
+    "_record_rehome": "warns when a moved panel kept its old host admitted",
 }
 
 #: Calls named like a write that do not touch the database, keyed by
@@ -189,14 +190,17 @@ def _parse(sources):
     return {name: ast.parse(text, filename=name) for name, text in sources.items()}
 
 
-def check_sources(sources, context=None):
+def check_sources(sources, context=None, helpers=None):
     """Return the rule violations in *sources*, one readable line each.
 
     :param dict sources: ``{filename: source}`` to check
     :param dict context: ``{filename: source}`` read only to resolve
         base classes, e.g. core's executors when checking saas
+    :param dict helpers: the checked code's own hook helpers, added to
+        ``HOOK_HELPERS`` (name → what it writes)
     :return: a sorted list of ``"file:line Class.method: message"``
     """
+    hook_helpers = HOOK_HELPERS | (helpers or {})
     trees = _parse(sources)
     context_trees = _parse(context or {})
     executors = _executor_classes({**context_trees, **trees})
@@ -225,7 +229,7 @@ def check_sources(sources, context=None):
                     )
                 if (
                     method.name in HOOKS | OWN_TRANSACTION_HOOKS
-                    or method.name in HOOK_HELPERS
+                    or method.name in hook_helpers
                 ):
                     continue
                 for call in visitor.writes:
@@ -238,9 +242,10 @@ def check_sources(sources, context=None):
                         where.format(call.lineno)
                         + f": {receiver}.{call.func.attr}() — {RULE}"
                     )
-    for helper in HOOK_HELPERS:
+    for helper in hook_helpers:
         for where, caller in helper_callers.get(helper, ()):
-            if caller not in HOOKS:
+            # Another helper may call it: each is held to the same rule.
+            if caller not in HOOKS and caller not in hook_helpers:
                 violations.append(
                     f"{where}: calls {helper}(), which writes on the hook's "
                     "cursor and is only allowed from the terminal hooks"
@@ -248,14 +253,17 @@ def check_sources(sources, context=None):
     return sorted(violations)
 
 
-def check(paths, context_paths=()):
+def check(paths, context_paths=(), helpers=None):
     """Return the rule violations in the Python files *paths*.
 
     :param paths: files to check
     :param context_paths: files read only to resolve base classes
+    :param dict helpers: see :func:`check_sources`
     :return: see :func:`check_sources`
     """
-    return check_sources(_read_sources(paths), _read_sources(context_paths))
+    return check_sources(
+        _read_sources(paths), _read_sources(context_paths), helpers,
+    )
 
 
 def executors_in(paths, context_paths=()):

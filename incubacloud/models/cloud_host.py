@@ -3,6 +3,9 @@ import base64
 import hashlib
 import json
 import logging
+import re
+import secrets
+import shlex
 from contextlib import asynccontextmanager
 
 import asyncssh
@@ -1309,6 +1312,86 @@ class CloudHost(models.Model):
             parts += ["-p", str(self.port)]
         parts.append(f"{self.user}@{self.ip_address}")
         return " ".join(parts)
+
+    #: The line ``ssh_allowlist.sh`` ends with, naming the resulting list.
+    _SSH_ALLOW_RE = re.compile(r"^IC_SSH_ALLOW (.+)$", re.MULTILINE)
+
+    def _ssh_allowlist_change(self, op, ips):
+        """Let *ips* open SSH on this host, or stop letting them, right now.
+
+        Runs ``scripts/ssh_allowlist.sh`` over SSH: the in-host firewall
+        changes live and in the ruleset the host boots with, nothing is
+        restarted, and an open session survives. The list the host then
+        allows is kept in ``allowed_ssh_ips``, so a later hardening run,
+        which rebuilds the list from that field, does not undo it.
+
+        Synchronous on purpose: the panel that moves to another host
+        calls it, from its old host, on each of its customer's servers
+        before it leaves — the move must not start until every one of
+        them admits the new host.
+
+        A host that was never hardened has no such firewall: nothing to
+        change there, and ``None`` is returned.
+
+        :param str op: ``add`` or ``remove``
+        :param ips: IPv4 addresses or networks
+        :return: the list the host now allows, as the script printed it,
+            or ``None`` for a host that was never hardened
+        :rtype: str | None
+        :raise UserError: when the host refused or could not be reached
+        """
+        self.ensure_one()
+        if op not in ("add", "remove"):
+            raise UserError(_("Unknown allowlist operation: %s", op))
+        ips = [ip.strip() for ip in ips or () if ip and ip.strip()]
+        if not ips:
+            raise UserError(_("No address given."))
+        if not self.hardened:
+            return None
+        files = {}
+        for rel in ("ssh_allowlist.sh", "lib/common.sh"):
+            with file_open(f"incubacloud/scripts/{rel}") as f:
+                files[rel] = f.read()
+        root = f"/tmp/.incubacloud-allowlist-{secrets.token_hex(6)}"
+        command = (
+            f"bash {root}/ssh_allowlist.sh {op} "
+            f"{shlex.join(ips)} 2>&1"
+        )
+
+        async def _run():
+            async with self.get_transport() as transport:
+                await transport.run(f"mkdir -p -m 700 {root}/lib")
+                await transport.upload_text_files(
+                    {f"{root}/{rel}": text for rel, text in files.items()},
+                )
+                try:
+                    return await transport.run(command, timeout=120)
+                finally:
+                    await transport.run(f"rm -rf {root}")
+
+        try:
+            result = asyncio.run(_run())
+        except Exception as exc:
+            raise UserError(
+                _("Could not reach '%(host)s' to change its SSH allowlist: "
+                  "%(error)s", host=self.name, error=exc)
+            ) from exc
+        match = self._SSH_ALLOW_RE.search(result.stdout or "")
+        if result.exit_status != 0 or not match:
+            tail = "\n".join((result.stdout or "").splitlines()[-3:])
+            raise UserError(
+                _("'%(host)s' refused the SSH allowlist change: %(output)s",
+                  host=self.name, output=tail)
+            )
+        # What the host allows now, as the host says: the field may not
+        # have held everything (the control address a hardening run
+        # adds, a catch-all), and a later run rebuilds the list from it.
+        self.sudo().write({"allowed_ssh_ips": match.group(1).strip()})
+        _logger.info(
+            "SSH allowlist of host %s (%s %s): %s",
+            self.name, op, ", ".join(ips), match.group(1),
+        )
+        return match.group(1)
 
     @asynccontextmanager
     async def get_transport(self):

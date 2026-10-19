@@ -892,6 +892,7 @@ class CloudJob(models.Model):
     # Override _get_hidden_job_types() in submodules to extend this list.
     _hidden_job_types = [
         "host_metrics", "docker_prune", "instance_health", "read_last_login",
+        "capture_secret_key",
     ]
 
     # Job types whose failure should raise a critical alert — these
@@ -952,6 +953,9 @@ class CloudJob(models.Model):
         # enqueued by a manager-gated page, a cron or a sudo chain, so the
         # gate costs no legitimate flow anything.
         "host_probe": "group_cloud_manager",
+        # Reads an instance's encryption key into the panel; only the
+        # daily cron queues it.
+        "capture_secret_key": "group_cloud_manager",
         "host_metrics": "group_cloud_manager",
         "host_hardening": "group_cloud_manager",
         "full_setup": "group_cloud_manager",
@@ -987,6 +991,20 @@ class CloudJob(models.Model):
         # because historical jobs still reference it.
         "delete_project": "group_cloud_manager",
     }
+
+    def _get_health_blocking_job_types(self):
+        """Job types, besides the probe's own list, that skip a health pass.
+
+        A job that restarts an instance's containers on purpose makes the
+        probe see an outage that is not one. The probe keeps its list
+        (``InstanceHealthExecutor._blocking_job_types``); an addon whose
+        jobs do that extends this instead of overriding the probe, which a
+        layer above may have replaced already.
+
+        :return: job type codes; none in core
+        :rtype: set
+        """
+        return set()
 
     def _get_hidden_job_types(self):
         """Return job type codes that should not appear in the UI job drawer.

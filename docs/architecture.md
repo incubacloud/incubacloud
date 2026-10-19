@@ -380,12 +380,12 @@ Sensitive fields use the custom `EncryptedChar` field type (a `fields.Char` subc
 - **Key rotation** is built in: the variable accepts a comma-separated list of Fernet keys (MultiFernet). The first key encrypts new values; every listed key can decrypt. See `docs/runbooks/RB-01-rotate-secret-key.md` for the full rotation procedure.
 - Legacy plaintext values (no `enc:` prefix) pass through unchanged on read, which is what migration code relies on.
 
-**Encrypted fields (14 across 7 models):**
+**Encrypted fields (15 across 7 models, and `pitr_key` with `incubacloud_pitr`):**
 
 | Model | Fields |
 |---|---|
 | `cloud.host` | `password`, `key_file`, `traefik_panel_password` |
-| `cloud.instance` | `odoo_admin_password`, `odoo_admin_user_password`, `postgres_password`, `smtp_relay_password` |
+| `cloud.instance` | `odoo_admin_password`, `odoo_admin_user_password`, `postgres_password`, `smtp_relay_password`, `secret_key` |
 | `cloud.backup.backend` | `s3_secret_access_key`, `passphrase` |
 | `cloud.github.app` | `webhook_secret` |
 | `cloud.settings` | `github_pat` |
@@ -394,6 +394,20 @@ Sensitive fields use the custom `EncryptedChar` field type (a `fields.Char` subc
 | `res.users` | `cloud_telegram_bot_token`, `cloud_webhook_secret` |
 
 The frontend cannot read encrypted values directly. `/cloud/get_secret` exposes a whitelisted subset (see `docs/api-endpoints.md`) to developers with write access on the record.
+
+### Each instance's own key, kept by the panel
+
+An instance that runs this module encrypts *its* secrets with the `INCUBACLOUD_SECRET_KEY` in its `.docker/incubacloud.env`. That file used to exist on its host only — `deploy.sh ensure-secret-key` generated it and nothing ever read it back — so an instance moved to another host, rebuilt on a new one or cloned to staging got a new key, and its restored database could no longer read what it had encrypted (two panels, 18-oct-2026). **`cloud.instance.secret_key`** (developer-only, never copied, never in the config snapshot, the copier answers or a job payload) is now the panel's copy:
+
+- A new instance is born with a key. One created already on its host (an import) waits for the host's.
+- Every deploy, rebuild and warm claim (`SecretKeyEscrowMixin._ship_secret_key`) reads what the host holds, **merges** it with the panel's copy (`merge_secret_key_lines`: the host's keys first — the running Odoo keeps its primary — then any the panel has that the host lacks; no key is ever dropped, whichever side is stale), saves the merge, and writes it to the host before `ensure-secret-key`, which then keeps it. During a move the job runs on the target, where nothing exists yet: the key is read on the origin, where the instance still lives.
+- The file is staged in `/tmp` created 0600 (`_upload_private_files`) and removed when the job ends, failed or not; it is moved into place 0600. The value is never logged; who changed it is (INFO).
+- A staging keeps a key of its own when its copy of production is neutralized (a clone always is): neutralizing clears every encrypted column, so nothing it holds was encrypted with production's key. A refresh left live (`neutralize=False`) keeps production's secrets, so it gives the staging production's keys too and recreates its Odoo.
+- Instances deployed before this existed are read once by the daily `cron_capture_secret_keys` (hidden job `capture_secret_key`, which only reads); one whose host cannot be read raises `secret_key_not_escrowed` on the second day.
+
+What this concentrates: whoever holds the panel's database and its `INCUBACLOUD_SECRET_KEY` can now read every instance's key — but already held every host's SSH key and every instance's admin password, so the threat model does not change. The panel's own key becomes the root of trust of the fleet's: it must have a copy off its host (see RB-01).
+
+**An alert on an unreadable secret closes itself.** `cloud.settings._cron_resolve_readable_secrets` (hourly, and once at startup — the right key usually arrives with a restart) decrypts again, from the raw column, every value an active `encrypted_value_unreadable:*` or `secret_rotation_stranded:*` alert stands for: the record itself for a host/instance/project secret, every row of the model linked to the alert's target otherwise. When all of them open, or the rows are gone, the alert is dismissed as the platform and announced resolved (a provider alert reaches its provider). A read in the hot path cannot do this: the process that failed keeps its cached key chain.
 
 ---
 
@@ -406,6 +420,10 @@ The frontend cannot read encrypted values directly. `/cloud/get_secret` exposes 
 - **Rate limiting**: DB-backed counters protect the public endpoints (webhook, health), the restore upload and terminal opens. Caps are tunable in Settings → Rates.
 - **Web terminal**: PTY subprocesses are isolated per session with an encrypted routing token; only the owning user can attach. Idle sessions are reaped (see RB-03).
 - **Host shell**: a login shell on the machine itself, for Administrators only (`_check_can_manage_hosts`) — the role that already runs root there through every host job, with the same key. Same subprocess isolation as the web terminal, its own cap (3/min per user and per host), one open session per user and host, and an immutable `cloud.host.session` row per session. What is typed is not recorded: a shell receives passwords on stdin. Only `host_terminal_session.py` may open a command-less PTY; `test_terminal_session.py` fails the build if one appears anywhere else.
+
+### Who may open SSH on a host
+
+The hardening ruleset admits SSH from a named set, `inet filter ic_ssh_allow` (the operator's address, the address the play connected from, and `allowed_ssh_ips`), like the CDN sets: a named set can change without Ansible and without reloading the ruleset. `cloud.host._ssh_allowlist_change(op, ips)` runs `scripts/ssh_allowlist.sh` on the host — the whole set replaced in one nft transaction, never left empty, and the set's line in `/etc/nftables.conf` rewritten after the live change worked (the file parsed with `nft -c` first; the CDN sets' stale lines there are left alone) — and keeps the change in `allowed_ssh_ips`, which the next hardening rebuilds the set from. A host hardened before the set existed has its list inlined in the rule: the first change converts it, live (the set created, the rule replaced by handle) and on disk. `auto-merge` lets a catch-all load beside an address. The SaaS layer uses it to move a panel's own servers with the panel (the old host is the only one they admit until told otherwise).
 
 ### Host edge protection (network layers)
 
@@ -550,7 +568,9 @@ In the browser the HTML body renders in an `iframe` with an empty `sandbox`, so 
 
 **Audience.** `cloud.alert.audience` is `fleet` (default: whoever runs this panel's hosts, instances and repositories) or `provider` (whoever runs a service the panel depends on but does not own: the metrics central when `metrics_central_host_id` is empty, an undecryptable secret, an instance record left behind, a prune that swept managed containers). `_dispatch_notifications` and `_notify_alert_resolved` ask `_route_provider_alert(resolved=)` before paging anyone about a provider alert; core's default returns False, so a self-hosted operator — who is the provider — is notified as usual. The bus broadcast is never skipped: the panel shows the alert either way. The SaaS tenant module overrides the hook to relay the alert to IncubaCloud (`/saas/alert`), where it is raised against the tenant's instance on the master.
 
-Alert codes in use: `job_failed`, `disk_critical`, `host_unreachable`, `instance_down`, `instance_unresponsive`, `instance_high_cpu`, `instance_high_memory`, per-service container-down codes, `instance_error_logs`, `pip_conflict`, `addon_conflict`, `move_stuck`, `secret_rotation_stranded:<field>`. `pip_conflict`/`addon_conflict` are *actionable*: they block re-enqueue of the affected operation and are excluded from bulk dismiss.
+**Provider alerts are inventoried.** `cloud_alert.PROVIDER_ALERT_CODES` lists every code core raises with `audience='provider'`; `test_provider_alert_inventory` reads the source (every call or dict that can set the audience to `'provider'`, conditionally or not) and fails on one missing from the list or listed but no longer raised. `encrypted_value_unreadable` reached customers' panels before anybody knew it was one (18-oct-2026).
+
+Alert codes in use: `secret_key_not_escrowed`, `job_failed`, `disk_critical`, `host_unreachable`, `instance_down`, `instance_unresponsive`, `instance_high_cpu`, `instance_high_memory`, per-service container-down codes, `instance_error_logs`, `pip_conflict`, `addon_conflict`, `move_stuck`, `secret_rotation_stranded:<field>`. `pip_conflict`/`addon_conflict` are *actionable*: they block re-enqueue of the affected operation and are excluded from bulk dismiss.
 
 ### Notification channels
 
@@ -588,6 +608,33 @@ When a secret is configured the request carries `X-IncubaCloud-Signature: sha256
 A separate email alert covers **backup bucket usage** (quota threshold per backend, 7-day debounce), outside the alert panel.
 
 ---
+
+## Extending an instance's stack (addon hooks)
+
+Deploy, rebuild and warm claim render the whole stack in `DeployInstanceExecutor` and its subclasses. An addon adds to it through `cloud.instance` hooks instead of patching executors; each answers "nothing" in core, so an instance without such an addon is rendered exactly as before:
+
+- `_extra_services()` — compose services the addon adds. Listed in `expected_services()`: they get the platform's protect label and log rotation, start with the stack and are watched by the health probe. Each must be defined by a fragment (with its `image`).
+- `_compose_override_fragments()` — `{service: {key: value}}` merged into `docker-compose.override.yml` and never over it: mappings gain keys the platform did not set, `volumes`/`env_file`/`depends_on` gain entries, any other key is set only when absent (a fragment cannot replace Odoo's `command` or a limit).
+- `_extra_env_files()` — files shipped into the instance directory on every build, staged 0600 and moved into place 0600 before the stack starts ("Write extra env files"). A file an addon stops listing stays until the addon removes it.
+- `_teardown_pre_steps(dir, keep_in_panel)` — steps run before a delete tears the stack down; never on a move's cleanup of the copy it left (the instance lives on).
+- `_after_stack_rendered()` — called by deploy and rebuild success: what the hooks answered is now on the host and running.
+- `_after_restore_hook(kind)` — called once the database was replaced: `restore` (a copy restored onto it), `backup_restore` (one of its own backups, a revival included), `move` (its cutover, after the restore on the target).
+
+`cloud.job._get_health_blocking_job_types()` lets an addon whose jobs restart containers on purpose keep the health probe from reporting them, without overriding the probe.
+
+## Continuous recovery (`incubacloud_pitr`)
+
+A separate module, off until switched on per production instance (managers; a staging never archives). Once on, the instance's database hands its write-ahead log to its own backup bucket and its filestore is copied as it changes, so it can be restored to **any minute** of its backup window (its backend's retention; a SaaS plan's retention for a tenant's panel). The recovery objective — the most it may lose — is 1, 5, 15 or 60 minutes.
+
+- **The credentials never reach the database's container.** Odoo connects as a superuser, and a superuser's SQL can read that container's environment (`COPY … FROM PROGRAM`): an addon of the instance's would hold the bucket's key, which often opens every instance's backups. They live in one container, the **`pitr` agent** (rclone image, by digest), with `.docker/pitr.env` (0600). `db` only mounts `.walg/` read-only, and its `archive_command` is `/opt/walg/archive %f`, a script that holds nothing secret: it waits, up to a minute, for the mark `spool/done/<segment>` the agent leaves once it uploaded that segment, and fails otherwise (PostgreSQL keeps the segment, retries and counts the failure).
+- **The agent** sees the data directory read-only. Every second it uploads, in order, the segments PostgreSQL marked ready (`pg_wal/archive_status/*.ready`), each under **its cluster's** prefix (`<prefix>/<system identifier>`, read from `pg_control`): a move or a new deploy initialises a new cluster, whose segment names would otherwise land on the old one's, and the prefix follows a change of backend with the next rebuild. Every objective it copies the filestore's files changed since the last copy that worked (`--max-age`, no listing of the bucket; `spool/fs-ok` records when it started); once a day an exact copy, whose deletions are moved to `deleted/<day>` so a restore to before them brings them back. Encrypted (rclone crypt, a password derived from `pitr_key`). It runs the base copies too, connecting to `db` with Odoo's password.
+- **wal-g**, pinned (`_constants.WALG_VERSION`, sha256 checked on the host, a download file of its own per install), compresses (brotli) and encrypts (libsodium, with `cloud.instance.pitr_key`, born with the instance; a neutralized copy gets a new one when switched on) before uploading. Its builds are for glibc and the images are Alpine: `pitr.sh install` copies the host's glibc loader and the four libraries wal-g needs into `.walg/` and runs it through them (`--argv0`, so the copies of itself wal-g starts go through the same wrapper).
+- **Archiving** is switched with `ALTER SYSTEM` (`postgresql.auto.conf` lives in the data volume and survives recreations; `CONF_EXTRA` would be replaced by the override): `archive_mode` (one restart, Odoo stopped around it and started again however it ends), `archive_timeout` = the objective. Switching on checks one segment end to end; switching off starts a stopped database to drop the settings (left there, its next start would archive to a command the rebuild removes and keep every segment).
+- **Base copies**: the first of a cluster is full; then daily (an hour per instance, 01–05 UTC), delta, and full again whenever the newest copy is of another timeline — wal-g would otherwise build a delta on a copy taken before a restore to the past, which holds changes the restored database never had. Then housekeeping, each part on its own: what leaves the window (`delete before FIND_FULL`, so a kept delta keeps its full copy), old filestore deletions, a previous cluster's archive once out of the window (never the current one). A base copy whose housekeeping failed is still recorded.
+- **Watch**: every ten minutes, for running instances not moving, one policy (`_pitr_reconcile`, also called after a rebuild) switches on what is wanted and off what is not, never again within a day of a switch that failed; and `pitr_status` reads `pg_stat_archiver`, the segments waiting in `pg_wal/archive_status` (none waiting means nothing is owed, however long ago the last left: an idle database is not behind), whether the agent runs, and `fs-ok`. Archiving off or a new cluster → switched on again; failures or the agent down → `pitr_failing` (critical); the log or the files behind by more than three objectives → `pitr_archive_lagging`; no base copy, or none for 36 h → `pitr_base_missing`.
+- **Restore to a moment** (`pitr_restore`, after a duplicity snapshot of the present when the instance has one). The base copy is chosen by the panel (`choose_base`): each restore starts a new timeline at its promotion, branching off the moment it went back to (`pitr_timelines`); the copy must have been taken before the moment on the timeline live at that moment, or serve the moment that timeline branched off — a copy taken after the branch on the old timeline holds a history that was abandoned. The restore itself runs on the host, **detached** (`pitr.sh restore-start` hands it to a process of its own, holding `.walg/restore/lock`): Odoo stops, what the database still holds is archived, the copy is fetched **beside** the current data (wal-g only fetches into an empty directory) with room checked against the data as it is, swapped in, and recovered in a database container of its own that has the credentials `wal-fetch` needs — the `db` service never does, and nothing of the instance's runs meanwhile. If it does not come up, or the process is interrupted before it did, the previous data is put back; however it ends, the instance is started again and `.walg/restore/result` says how. The job follows it for 50 minutes and hands it to a job of the same type (`follow`) while it runs; the same job run again follows its restore instead of starting a second one. Then the filestore, a record of the new timeline and a full base copy of it.
+- **Its pieces reach the stack through the hooks above**: the mount on `db`, the `pitr` service, `.docker/pitr.env` (kept while the instance has an archive, so a delete purges it with fresh credentials), and the README files that create `.walg/` and its spool as the host user. Switching on is a rebuild then `pitr_enable`; a plan applied by a rebuild switches it with `_after_stack_rendered`, without a second one. Deleting the instance purges its prefix (`<folder>/<name>-pitr`, beside the duplicity prefix, never under it), once with the stack up and once more after the agent and the database stopped.
+- `pitr_*` fields are written by managers or by the panel itself only (`write` refuses others): switching the archive off, or pointing it at the wrong cluster to purge, loses a customer's history. `pitr_stack_external`: a stack whose compose is not the panel's (the platform's own manager): the panel only watches it and takes its base copies; switching and restoring go through its runbook (`invoke pitr-manager`). Uninstalling the module is refused while an instance archives.
 
 ## Frontend SPA
 

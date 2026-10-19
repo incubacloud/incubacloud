@@ -62,6 +62,7 @@ from . import delete_host_executor
 from . import stop_instance_executor
 from . import start_instance_executor
 from . import read_last_login_executor
+from . import capture_secret_key_executor
 from . import restart_instance_executor
 from . import rebuild_instance_executor
 from . import restore_instance_executor

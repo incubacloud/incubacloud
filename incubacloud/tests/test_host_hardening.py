@@ -491,7 +491,8 @@ class TestHardeningPreflight(TransactionCase):
         active = "\n".join(
             self._active_lines(self._render_ruleset(**self._CDN)),
         )
-        self.assertEqual(active.count("flags interval"), 2)
+        cdn_sets = active.split("set ic_cdn_v4 {", 1)[1]
+        self.assertEqual(cdn_sets.count("flags interval"), 2)
 
     def test_the_rule_names_the_set_rather_than_the_ranges(self):
         """The whole point: a named set can be refreshed later without

@@ -187,6 +187,17 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             },
         ),)
 
+    def _addon_teardown_steps(self, inst, inst_dir):
+        """Return what addons run before the teardown (see the model hook).
+
+        Only when this run ends the instance's life here: a move's cleanup
+        tears down a copy of an instance that lives on, whose addon state
+        (a continuous archive, say) is still its own.
+        """
+        if not self._owns_instance_lifecycle:
+            return ()
+        return tuple(inst._teardown_pre_steps(inst_dir, self._keeps_the_record()))
+
     def _step_exit_status(self, results, label):
         """Return *label*'s exit code, or None if that step did not run."""
         data = (results or {}).get(label)
@@ -239,6 +250,7 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         return [
             *self._archive_step(inst, d),
             *self._purge_step(inst, d),
+            *self._addon_teardown_steps(inst, d),
             # 1. Shut down containers (the script skips a missing dir)
             (
                 "Stop and remove containers",

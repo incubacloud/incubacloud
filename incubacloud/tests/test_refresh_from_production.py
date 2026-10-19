@@ -177,6 +177,9 @@ class TestRefreshFromProduction(TransactionCase):
                 "source_job_id": "__chain_job_0__",
                 "neutralize": True,
                 "reset_base_url": True,
+                # Neutralized: production's secrets are cleared, so the
+                # staging keeps its own key (test_secret_key_escrow).
+                "share_secret_key": False,
             },
         )
 

@@ -6,6 +6,57 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.189] — 2026-10-19
+
+### Added
+
+- **Continuous recovery (`incubacloud_pitr`, a new module).** A production
+  instance can be restored to any minute of its backup window: its database
+  hands its write-ahead log to its own backup bucket (wal-g, compressed and
+  encrypted on the host, with a daily base copy) and its filestore is copied
+  as it changes (rclone, encrypted). The credentials live in a container of
+  their own, the `pitr` agent, never in the database's, whose SQL Odoo runs
+  as a superuser. A restore runs detached on the host, puts the previous data
+  back if the restored copy does not come up, and is followed by the panel
+  across jobs. Off until a manager switches it on for an instance, from its
+  Backups tab, which then shows the window and restores to a moment
+  confirmed by the instance's name; a staging never archives. The objective
+  (how much it may lose) is 1, 5, 15 or 60 minutes. Uninstalling is refused
+  while an instance archives. See `docs/architecture.md`, "Continuous
+  recovery".
+- **The panel keeps each instance's encryption key.** An instance running
+  this module encrypts its secrets with the key in its
+  `.docker/incubacloud.env`, which existed on its host only: a move or a new
+  host generated another and the restored database could read none of its
+  secrets (two panels, 18-oct-2026). `cloud.instance.secret_key` is now born
+  with the instance, merged with what the host holds and written back on
+  every deploy, rebuild and warm claim (no key is ever dropped), read on the
+  origin during a move, taken from production by a refresh left live (a
+  neutralized copy keeps its own), and captured once a day for instances
+  deployed before (`capture_secret_key`, `secret_key_not_escrowed`).
+- **An alert on a secret that will not decrypt closes itself** once the
+  value reads again (hourly, and at startup), as does a stranded rotation.
+- **Who may open SSH on a host changes live.** The hardening ruleset keeps
+  the list in a named set (`ic_ssh_allow`); `cloud.host._ssh_allowlist_change`
+  adds or removes addresses without Ansible and keeps them in
+  `allowed_ssh_ips`. A host hardened before is converted on its first change.
+- **Addon hooks on an instance's stack**: `_extra_services`,
+  `_compose_override_fragments`, `_extra_env_files`, `_teardown_pre_steps`,
+  `_after_stack_rendered`, `_after_restore_hook`, and
+  `cloud.job._get_health_blocking_job_types`. Without an addon nothing
+  changes. A hook that raises from a job's success is rolled back and
+  logged; the job's outcome stands.
+- The executor write rule's checker takes an addon's own hook helpers
+  (`check(..., helpers=)`), which may call each other.
+- **Provider alerts are inventoried** (`PROVIDER_ALERT_CODES`), and a test
+  fails on one raised without being listed.
+
+### Changed
+
+- `_on_move_rolled_back(target_host=None)`: the hook is told where the move
+  was going, read before the markers are cleared.
+- Restored copies of production are neutralized of the new keys too.
+
 ## [1.0.188] — 2026-10-17
 
 ### Fixed

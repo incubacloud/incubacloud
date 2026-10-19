@@ -1,0 +1,497 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 19.0\n"
+"Report-Msgid-Bugs-To: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid "%(when)s is outside the window this instance can be restored to."
+msgstr ""
+"%(when)s queda fuera de la ventana a la que se puede restaurar esta "
+"instancia."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "%s min"
+msgstr "%s min"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_objective__60
+msgid "1 hour"
+msgstr "1 hora"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_objective__1
+msgid "1 minute"
+msgstr "1 minuto"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_objective__15
+msgid "15 minutes"
+msgstr "15 minutos"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_objective__5
+msgid "5 minutes"
+msgstr "5 minutos"
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid "A continuous recovery job is already running."
+msgstr "Ya hay un trabajo de recuperación continua en curso."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_failed_count
+msgid "Archive Failures"
+msgstr "Fallos de archivado"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_enabled
+msgid ""
+"Archive this production instance's database continuously and copy its "
+"filestore as it changes, so it can be restored to any minute of its backup "
+"window. Needs a backup backend. Switching it on or off rebuilds the instance"
+" and restarts its database once."
+msgstr ""
+"Archiva de forma continua la base de datos de esta instancia de producción y"
+" copia su filestore a medida que cambia, para poder restaurarla a cualquier "
+"minuto de su ventana de backups. Necesita un backend de backups. Activarla o"
+" desactivarla reconstruye la instancia y reinicia su base de datos una vez."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_cluster_id
+msgid "Archived Cluster"
+msgstr "Clúster archivado"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_state__ok
+msgid "Archiving"
+msgstr "Archivando"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_state__lagging
+msgid "Behind"
+msgstr "Con retraso"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Can be restored to any minute from"
+msgstr "Se puede restaurar a cualquier minuto desde el"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Cancel"
+msgstr "Cancelar"
+
+#. module: incubacloud_pitr
+#: model:ir.model,name:incubacloud_pitr.model_cloud_instance
+msgid "Cloud Instance"
+msgstr "Instancia en la nube"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_previous_clusters
+msgid ""
+"Clusters archived before this one (a move or a new deploy starts a new one),"
+" with the moment they stopped: [{'id': ..., 'until': ISO}]. Purged once out "
+"of the window."
+msgstr ""
+"Clústeres archivados antes que este (una mudanza o un despliegue nuevo crean"
+" otro), con el momento en que dejaron de archivarse: [{'id': ..., 'until': "
+"ISO}]. Se purgan cuando quedan fuera de la ventana."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_enabled
+msgid "Continuous Recovery"
+msgstr "Recuperación continua"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Continuous recovery"
+msgstr "Recuperación continua"
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid ""
+"Continuous recovery needs a production instance with an S3 backup backend."
+msgstr ""
+"La recuperación continua necesita una instancia de producción con un backend"
+" de backups S3."
+
+#. module: incubacloud_pitr
+#: model:ir.actions.server,name:incubacloud_pitr.cron_pitr_base_backups_ir_actions_server
+msgid "Continuous recovery: daily base copies"
+msgstr "Recuperación continua: copias base diarias"
+
+#. module: incubacloud_pitr
+#: model:ir.actions.server,name:incubacloud_pitr.cron_pitr_watch_ir_actions_server
+msgid "Continuous recovery: watch and reconcile"
+msgstr "Recuperación continua: vigilar y conciliar"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Could not change the objective"
+msgstr "No se pudo cambiar el objetivo"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Could not read it."
+msgstr "No se pudo leer."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Could not switch it off"
+msgstr "No se pudo desactivar"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Could not switch it on"
+msgstr "No se pudo activar"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__display_name
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_job__display_name
+msgid "Display Name"
+msgstr "Nombre mostrado"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_key
+msgid ""
+"Encrypts the archive on the host before it is uploaded. Lost with the panel,"
+" the archive cannot be read."
+msgstr ""
+"Cifra el archivo en el host antes de subirlo. Si se pierde con el panel, el "
+"archivo no se puede leer."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_state__failed
+msgid "Failing"
+msgstr "Fallando"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__id
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_job__id
+msgid "ID"
+msgstr "ID"
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid "Instance '%s' has no continuous recovery key."
+msgstr "La instancia «%s» no tiene clave de recuperación continua."
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/controllers/main.py:0
+msgid "Instance not found"
+msgstr "Instancia no encontrada"
+
+#. module: incubacloud_pitr
+#: model:ir.model,name:incubacloud_pitr.model_cloud_job
+msgid "Job executed remotely on a host"
+msgstr "Trabajo ejecutado de forma remota en un host"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_last_archived_at
+msgid "Last Archived"
+msgstr "Último archivado"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_last_base_at
+msgid "Last Base Copy"
+msgstr "Última copia base"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Last archived"
+msgstr "Último archivado hace"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Loading…"
+msgstr "Cargando…"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Loses at most"
+msgstr "Pierde como máximo"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Moment (your local time)"
+msgstr "Momento (su hora local)"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid ""
+"Needs a backup backend: this instance could then be restored to any minute "
+"of its backup window."
+msgstr ""
+"Necesita un backend de backups: con él, esta instancia podría restaurarse a "
+"cualquier minuto de su ventana de backups."
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid "Not a date and time: %s"
+msgstr "No es una fecha y hora: %s"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_state__off
+msgid "Off"
+msgstr "Desactivada"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid ""
+"Off. Switched on, the database is archived continuously and the files copied"
+" as they change, so the instance can be restored to any minute of the last"
+msgstr ""
+"Desactivada. Activada, la base de datos se archiva de forma continua y los "
+"ficheros se copian a medida que cambian, de modo que la instancia se puede "
+"restaurar a cualquier minuto de los últimos"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_previous_clusters
+msgid "Previous Clusters"
+msgstr "Clústeres anteriores"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_oldest_base_at
+msgid "Recoverable From"
+msgstr "Recuperable desde"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_key
+msgid "Recovery Encryption Key"
+msgstr "Clave de cifrado de la recuperación"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_checked_at
+msgid "Recovery Last Checked"
+msgstr "Última comprobación de la recuperación"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_objective
+msgid "Recovery Objective"
+msgstr "Objetivo de recuperación"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_state
+msgid "Recovery State"
+msgstr "Estado de la recuperación"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Restore"
+msgstr "Restaurar"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Restore failed"
+msgstr "La restauración falló"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Restore to a moment…"
+msgstr "Restaurar a un momento…"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_stack_external
+msgid "Stack Configured Outside the Panel"
+msgstr "Pila configurada fuera del panel"
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/__init__.py:0
+msgid ""
+"Switch continuous recovery off on %s instance(s) before uninstalling this "
+"module."
+msgstr ""
+"Desactive la recuperación continua en %s instancia(s) antes de desinstalar "
+"este módulo."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Switch off"
+msgstr "Desactivar"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Switch on"
+msgstr "Activar"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_state__enabling
+msgid "Switching on"
+msgstr "Activándose"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Switching on…"
+msgstr "Activándose…"
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_cluster_id
+msgid "System identifier of the PostgreSQL cluster being archived."
+msgstr "Identificador de sistema del clúster de PostgreSQL que se archiva."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Taking the first base copy…"
+msgstr "Tomando la primera copia base…"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid ""
+"The database and the files go back to the moment chosen; whatever happened "
+"after it is undone. Odoo is stopped meanwhile. A backup of the present is "
+"taken first."
+msgstr ""
+"La base de datos y los ficheros vuelven al momento elegido; lo ocurrido "
+"después se deshace. Odoo se detiene mientras tanto. Antes se toma un backup "
+"del estado actual."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_stack_external
+msgid ""
+"The instance's compose files are maintained outside the panel (the "
+"platform's own manager): the panel never rebuilds it for continuous "
+"recovery, and only runs the daily base copy and the watch."
+msgstr ""
+"Los ficheros compose de la instancia se mantienen fuera del panel (el "
+"manager de la propia plataforma): el panel nunca la reconstruye para la "
+"recuperación continua y solo ejecuta la copia base diaria y la vigilancia."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_objective
+msgid ""
+"The most the instance may lose: how often the database hands its log to the "
+"archive when it is quiet, and how often new files are copied."
+msgstr ""
+"Lo máximo que puede perder la instancia: cada cuánto entrega la base de "
+"datos su registro al archivo cuando está tranquila, y cada cuánto se copian "
+"los ficheros nuevos."
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid ""
+"This instance's stack is configured outside the panel: restore it with its "
+"runbook."
+msgstr ""
+"La pila de esta instancia se configura fuera del panel: restáurela con su "
+"procedimiento."
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid ""
+"This instance's stack is configured outside the panel: switch continuous "
+"recovery with its runbook."
+msgstr ""
+"La pila de esta instancia se configura fuera del panel: active o desactive "
+"la recuperación continua con su procedimiento."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Type"
+msgstr "Escriba"
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/controllers/main.py:0
+msgid "Type the instance's name to confirm the restore."
+msgstr "Escriba el nombre de la instancia para confirmar la restauración."
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid "Unknown recovery objective: %s"
+msgstr "Objetivo de recuperación desconocido: %s"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid ""
+"days. Switching it on rebuilds the instance and restarts its database once."
+msgstr ""
+"días. Activarla reconstruye la instancia y reinicia su base de datos una "
+"vez."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "min ago."
+msgstr "min."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "to confirm"
+msgstr "para confirmar"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "until now."
+msgstr "hasta ahora."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_timelines
+msgid ""
+"Each restore to a moment starts a new timeline of the cluster: [{'job', "
+"'cluster', 'timeline', 'since', 'target'}]. A later restore follows them to "
+"pick its base copy."
+msgstr ""
+"Cada restauración a un momento inicia una nueva línea temporal del clúster: "
+"[{'job', 'cluster', 'timeline', 'since', 'target'}]. Una restauración "
+"posterior las sigue para elegir su copia base."
+
+#. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_timelines
+msgid "Restores to a Moment"
+msgstr "Restauraciones a un momento"

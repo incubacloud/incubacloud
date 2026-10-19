@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="cron_pitr_watch" model="ir.cron">
+            <field name="name">Continuous recovery: watch and reconcile</field>
+            <field name="model_id" ref="incubacloud.model_cloud_instance"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_pitr_watch()</field>
+            <field name="interval_number">10</field>
+            <field name="interval_type">minutes</field>
+            <field name="active">True</field>
+        </record>
+
+        <record id="cron_pitr_base_backups" model="ir.cron">
+            <field name="name">Continuous recovery: daily base copies</field>
+            <field name="model_id" ref="incubacloud.model_cloud_instance"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_pitr_base_backups()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active">True</field>
+        </record>
+
+    </data>
+</odoo>

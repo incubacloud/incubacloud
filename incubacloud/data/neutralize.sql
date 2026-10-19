@@ -18,7 +18,7 @@ UPDATE cloud_host SET password = '', key_file = NULL, traefik_panel_password = '
 UPDATE cloud_backup_backend SET s3_secret_access_key = NULL, passphrase = NULL;
 UPDATE cloud_github_app SET webhook_secret = NULL, private_key = '';
 UPDATE cloud_instance SET odoo_admin_password = NULL, odoo_admin_user_password = NULL,
-    postgres_password = NULL, smtp_relay_password = NULL;
+    postgres_password = NULL, smtp_relay_password = NULL, secret_key = NULL;
 UPDATE cloud_settings SET github_pat = NULL, metrics_remote_write_token = NULL,
     metrics_operator_token = NULL, grafana_admin_password = NULL,
     metrics_delete_auth_key = NULL;

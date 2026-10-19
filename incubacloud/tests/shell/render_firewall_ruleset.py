@@ -32,9 +32,12 @@ CDN_V4_ONLY = {
 }
 #: Every shape the template can take: reached directly, with the
 #: per-source cap, behind a CDN (with and without an IPv6 range), and
-#: behind a CDN with a cap left on the host.
+#: behind a CDN with a cap left on the host. ``direct_catchall`` is the
+#: SSH set when no operator address is known: the catch-all overlaps the
+#: control address, which the set only loads with ``auto-merge``.
 VARIANTS = {
     "direct": {},
+    "direct_catchall": {"ic_effective_allowlist": "0.0.0.0/0, 203.0.113.7"},
     "direct_rate": {"ic_http_conn_rate": 50},
     "cdn": CDN,
     "cdn_rate": CDN | {"ic_http_conn_rate": 50},
@@ -62,7 +65,7 @@ def main(out_dir):
         trim_blocks=True, autoescape=False,
     ).from_string(ruleset_template())
     for name, extra in VARIANTS.items():
-        (out / f"{name}.nft").write_text(template.render(**BASE, **extra))
+        (out / f"{name}.nft").write_text(template.render(**(BASE | extra)))
         print(f"rendered {name}.nft")
 
 
