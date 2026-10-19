@@ -222,7 +222,11 @@ class TestWhatReachesTheStack(_PitrCase):
     def test_the_database_gets_the_scripts_and_nothing_secret(self):
         """Odoo's superuser could read the db container's environment."""
         frag = self.inst._compose_override_fragments()
-        self.assertEqual(frag["db"], {"volumes": ["./.walg:/opt/walg:ro"]})
+        self.assertEqual(frag["db"], {
+            "volumes": ["./.walg:/opt/walg:ro"],
+            # Born archiving: switching on reloads instead of restarting.
+            "command": ["-c", "archive_mode=on"],
+        })
         agent = frag["pitr"]
         self.assertTrue(agent["image"].startswith("rclone/rclone:"))
         self.assertIn("@sha256:", agent["image"])

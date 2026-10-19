@@ -323,12 +323,18 @@ class CloudInstance(models.Model):
     def _compose_override_fragments(self):
         """The archive command's mount on ``db``; the agent.
 
-        ``db`` gets the scripts and nothing secret. The agent gets the
-        credentials, the filestore, the data directory read-only (it
-        reads the log the database marked ready, and the base copies),
-        and the spool, the one place it writes the marks the archive
-        command waits for. It idles until ``pitr_enable`` installed its
-        script, and is recreated then.
+        ``db`` gets the scripts and nothing secret, and starts archiving
+        (``-c archive_mode=on``, which only a restart changes): switching
+        on is then a reload, not a database restarting under whoever
+        opens the instance. Until then it has no archive command and
+        keeps its segments, which ``pitr_enable`` follows within minutes;
+        ``pitr_disable`` lets them go until a rebuild drops the flag.
+
+        The agent gets the credentials, the filestore, the data directory
+        read-only (it reads the log the database marked ready, and the
+        base copies), and the spool, the one place it writes the marks
+        the archive command waits for. It idles until ``pitr_enable``
+        installed its script, and is recreated then.
 
         :rtype: dict
         """
@@ -343,7 +349,7 @@ class CloudInstance(models.Model):
             " || exec sleep infinity"
         )
         fragments = dict(fragments)
-        fragments["db"] = {"volumes": [mount]}
+        fragments["db"] = {"volumes": [mount], "command": ["-c", "archive_mode=on"]}
         fragments[AGENT_SERVICE] = {
             "image": RCLONE_IMAGE,
             "entrypoint": ["sh", "-c"],

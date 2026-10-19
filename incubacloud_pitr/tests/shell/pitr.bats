@@ -32,6 +32,9 @@ case "$*" in
     *"ps --status running --services"*) printf '%b' "${STUB_RUNNING:-db\nodoo\npitr\n}" ;;
     *"test -x /opt/walg/archive"*) exit "${STUB_ARCHIVE_MOUNTED:-0}" ;;
     *"SHOW archive_mode"*) echo "${STUB_ARCHIVE_MODE:-on}" ;;
+    *"FROM pg_settings WHERE name = 'archive_mode'"*) echo "${STUB_ARCHIVE_SOURCE:-configuration file}" ;;
+    # One more segment archived on every read: the end-to-end check passes.
+    *"archived_count"*) n="$(cat "$CALLS.archived" 2>/dev/null || echo 0)"; echo $((n + 1)) > "$CALLS.archived"; echo "$n" ;;
     *"pg_control_checkpoint"*) echo "${STUB_TIMELINE:-00000002}" ;;
     *"pg_control_system"*) echo 7698138691441184802 ;;
     *"backup-list --json"*) echo "${STUB_BASES:-[]}" ;;
@@ -99,6 +102,30 @@ STUB
     [ -n "$agent" ] && [ -n "$command" ]
     [ "$agent" -lt "$command" ]
     grep -q "ALTER SYSTEM SET archive_command = '/opt/walg/archive %f'" "$CALLS"
+}
+
+@test "enable on a database already archiving reloads it and stops nothing" {
+    install -m 755 /dev/null "$DIR/.walg/archive"
+    export STUB_ARCHIVE_MODE=on
+    run bash "$SCRIPT" enable "$DIR" odoo 300
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"restarted=0"* ]]
+    grep -q "pg_reload_conf" "$CALLS"
+    # Written down too, for a restore's recovery, started without the
+    # stack's command line.
+    grep -q "ALTER SYSTEM SET archive_mode = 'on'" "$CALLS"
+    ! grep -q "compose stop odoo" "$CALLS"
+    ! grep -q "compose restart db" "$CALLS"
+}
+
+@test "enable restarts a database not archiving yet, with Odoo stopped around it" {
+    install -m 755 /dev/null "$DIR/.walg/archive"
+    export STUB_ARCHIVE_MODE=off
+    run bash "$SCRIPT" enable "$DIR" odoo 300
+    stop="$(grep -n "compose stop odoo" "$CALLS" | cut -d: -f1)"
+    restart="$(grep -n "compose restart db" "$CALLS" | cut -d: -f1)"
+    start="$(grep -n "compose start odoo" "$CALLS" | cut -d: -f1)"
+    [ -n "$stop" ] && [ "$stop" -lt "$restart" ] && [ "$restart" -lt "$start" ]
 }
 
 @test "a base copy after a timeline change is a full one" {
@@ -267,6 +294,17 @@ STUB
     [ "$up" -lt "$reset" ] && [ "$reset" -lt "$stop" ]
     # Not Odoo: it was not the one stopped.
     ! grep -q "compose stop odoo" "$CALLS"
+}
+
+@test "switching off a database the stack keeps archiving lets its segments go, without a restart" {
+    export STUB_ARCHIVE_MODE=on STUB_ARCHIVE_SOURCE='command line'
+    run bash "$SCRIPT" disable "$DIR" odoo
+    [ "$status" -eq 0 ]
+    grep -q "ALTER SYSTEM SET archive_command = '/bin/true'" "$CALLS"
+    ! grep -q "RESET archive_command" "$CALLS"
+    grep -q "pg_reload_conf" "$CALLS"
+    ! grep -q "compose stop odoo" "$CALLS"
+    ! grep -q "compose restart db" "$CALLS"
 }
 
 @test "switching off waits for a restore" {
