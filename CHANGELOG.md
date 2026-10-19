@@ -16,6 +16,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   such a copy does not have yet: one unknown column aborts the whole
   neutralization, Odoo's own included. That column is now cleared on its
   own and skipped where the copy predates it.
+- **Switching continuous recovery on no longer restarts the instance just
+  announced ready.** A plan with continuous recovery switched it on as soon
+  as a new instance was deployed, which restarted its database with Odoo
+  stopped: a customer opening the panel from the mail that said it was ready
+  met an error and a page that never loaded. A stack with continuous
+  recovery now starts its database archiving, and switching on is a reload;
+  switching off lets the segments go until the rebuild that follows, instead
+  of a restart. `incubacloud_pitr` 1.0.1.
+- **Continuous recovery could read a running database as stopped.** Whether
+  a service runs was read with `grep -q` behind `docker compose ps` under
+  `pipefail`: a `grep` that stopped at its match while `docker` was still
+  writing failed the pipe, and switching on refused with "the database is
+  not running" (seen in the tests under load). The whole list is read now.
 
 ## [1.0.189] — 2026-10-19
 

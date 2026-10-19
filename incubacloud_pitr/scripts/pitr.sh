@@ -85,7 +85,9 @@ cluster_id() {
 
 # Whether a service of the stack is running now.
 running() {
-    docker compose ps --status running --services 2>/dev/null | grep -qx "$1"
+    # The whole list is read: grep -q would stop at the first match and,
+    # under pipefail, a docker still writing makes it "not running".
+    docker compose ps --status running --services 2>/dev/null | grep -x "$1" >/dev/null
 }
 
 # Wait until the database answers.
@@ -214,13 +216,17 @@ EOF
         docker compose up -d --no-deps --force-recreate "$AGENT"
         cluster="$(cluster_id "$user")"
         mode="$(db_psql "$user" -c "SHOW archive_mode")"
+        # archive_mode is written down even when the stack's command line
+        # has it on: a restore's recovery starts the data directory
+        # without that line, and must archive the timeline it begins.
         db_psql "$user" \
             -c "ALTER SYSTEM SET archive_command = '/opt/walg/archive %f'" \
-            -c "ALTER SYSTEM SET archive_timeout = '$timeout'"
+            -c "ALTER SYSTEM SET archive_timeout = '$timeout'" \
+            -c "ALTER SYSTEM SET archive_mode = 'on'"
         restarted=0
         if [ "$mode" != "on" ]; then
-            # archive_mode only changes with a restart.
-            db_psql "$user" -c "ALTER SYSTEM SET archive_mode = 'on'"
+            # archive_mode only changes with a restart. A stack rendered
+            # with this module starts with it on: a reload is enough.
             restart_db "$user"
             restarted=1
         else
@@ -679,11 +685,22 @@ EOF
             started=1
         fi
         mode="$(db_psql "$user" -c "SHOW archive_mode")"
+        # On from the stack's command line, it stays on until the rebuild
+        # that follows drops the flag, whatever restarts it: the segments
+        # are let go until then instead of kept, and nothing restarts.
+        from="$(db_psql "$user" -c \
+            "SELECT source FROM pg_settings WHERE name = 'archive_mode'")"
+        command="RESET archive_command"
+        if [ "$from" = "command line" ]; then
+            command="SET archive_command = '/bin/true'"
+        fi
         db_psql "$user" \
-            -c "ALTER SYSTEM RESET archive_command" \
+            -c "ALTER SYSTEM $command" \
             -c "ALTER SYSTEM RESET archive_timeout" \
             -c "ALTER SYSTEM RESET archive_mode"
-        if [ "$mode" = "on" ] && [ "$started" -eq 1 ]; then
+        if [ "$from" = "command line" ]; then
+            db_psql "$user" -c "SELECT pg_reload_conf()" >/dev/null
+        elif [ "$mode" = "on" ] && [ "$started" -eq 1 ]; then
             docker compose restart db
             wait_db "$user"
         elif [ "$mode" = "on" ]; then
