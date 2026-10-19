@@ -101,6 +101,7 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
     async def on_success(self, results):
         inst = self.job.instance_id
         if inst.exists():
+            target = inst.move_target_host_id
             inst.write({
                 'move_origin_host_id': False,
                 'move_target_host_id': False,
@@ -114,5 +115,5 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
                 ('code', '=', 'move_stuck'),
                 ('state', '=', 'active'),
             ]).write({'state': 'dismissed'})
-            inst._on_move_rolled_back()
+            inst._on_move_rolled_back(target_host=target)
         self._sys("✓ Rollback cleanup complete. Markers cleared.")

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="pitr_enable" model="cloud.job.type">
+            <field name="name">Switch Continuous Recovery On</field>
+            <field name="code">pitr_enable</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Installs wal-g for the instance, turns database archiving on (one restart of the database) and takes the first base copy.</field>
+            <field name="priority_tier">normal</field>
+        </record>
+
+        <record id="pitr_disable" model="cloud.job.type">
+            <field name="name">Switch Continuous Recovery Off</field>
+            <field name="code">pitr_disable</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Turns database archiving off (one restart of the database) and stops the filestore copy. The archive stays in the bucket until the instance is deleted.</field>
+            <field name="priority_tier">normal</field>
+        </record>
+
+        <record id="pitr_base_backup" model="cloud.job.type">
+            <field name="name">Continuous Recovery Base Copy</field>
+            <field name="code">pitr_base_backup</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Takes the daily base copy of the database and removes from the archive what is older than the backup window.</field>
+            <field name="priority_tier">low</field>
+        </record>
+
+        <record id="pitr_status" model="cloud.job.type">
+            <field name="name">Continuous Recovery Watch</field>
+            <field name="code">pitr_status</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Reads how far the database's archiving is behind. Changes nothing.</field>
+            <field name="priority_tier">low</field>
+        </record>
+
+        <record id="pitr_restore" model="cloud.job.type">
+            <field name="name">Restore to a Moment</field>
+            <field name="code">pitr_restore</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Restores the instance's database to a chosen minute of its window, and its filestore with it. Odoo is stopped meanwhile.</field>
+            <field name="priority_tier">high</field>
+        </record>
+
+    </data>
+</odoo>

@@ -33,6 +33,7 @@ from .abstract_executor import (
     sql_escape_literal,
 )
 from .docker_prune_executor import PROTECT_LABEL
+from .secret_key_escrow import SecretKeyEscrowMixin
 
 _logger = logging.getLogger(__name__)
 
@@ -132,7 +133,35 @@ def _github_authed_url(url, token):
     return url
 
 
-class DeployInstanceExecutor(AbstractSSHExecutor):
+#: Compose keys whose list an addon fragment may add entries to. Any
+#: other list (``command``, ``entrypoint``) is one value, never appended.
+_ADDITIVE_LISTS = frozenset({"volumes", "env_file", "depends_on"})
+
+
+def _merge_override_fragment(entry, fragment):
+    """Merge an addon's override *fragment* into one service's *entry*.
+
+    Never over what the platform rendered: mappings gain the keys it did
+    not set, the lists of ``_ADDITIVE_LISTS`` gain the entries they lack,
+    and any other key is set only when absent (see
+    ``cloud.instance._compose_override_fragments``).
+
+    :param dict entry: the service's rendered override, changed in place
+    :param dict fragment: what the addon adds
+    """
+    for key, value in fragment.items():
+        if isinstance(value, dict):
+            target = entry.setdefault(key, {})
+            for sub, sub_value in value.items():
+                target.setdefault(sub, sub_value)
+        elif key in _ADDITIVE_LISTS:
+            target = entry.setdefault(key, [])
+            target.extend(v for v in value if v not in target)
+        else:
+            entry.setdefault(key, value)
+
+
+class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     """Deploy a doodba instance via copier copy."""
 
     _job_type = "deploy_instance"
@@ -812,6 +841,8 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
             services["odoo"]["volumes"] = [
                 f"./{LOGS_DIRNAME}:{ODOO_LOG_DIR}",
             ]
+        for svc, fragment in self._addon_override_fragments().items():
+            _merge_override_fragment(services.setdefault(svc, {}), fragment)
         data = {"services": services}
         return yaml.dump(
             data,
@@ -1116,6 +1147,63 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         self._preflight_tls_check()
         self._sys(f"Preparing deployment for '{inst.name}'...")
         await self._upload_copier_files(transport)
+        await self._ship_secret_key(transport)
+        await self._stage_extra_env_files(transport)
+
+    def _addon_override_fragments(self):
+        """Return what addons add to the stack's override, by service.
+
+        :return: ``cloud.instance._compose_override_fragments()``
+        :rtype: dict
+        """
+        return self._inst()._compose_override_fragments() or {}
+
+    def _addon_env_files(self):
+        """Return the files addons add to the instance's directory.
+
+        :return: ``cloud.instance._extra_env_files()``, path → content
+        :rtype: dict
+        """
+        return self._inst()._extra_env_files() or {}
+
+    def _extra_env_tmp(self, relpath):
+        """Return where an addon's env file is staged on the job's host.
+
+        :param str relpath: the file's path relative to the instance dir
+        :rtype: str
+        """
+        return self._tmp("extra-" + relpath.replace("/", "_"))
+
+    async def _stage_extra_env_files(self, transport):
+        """Upload the files ``cloud.instance._extra_env_files`` lists, 0600.
+
+        :param transport: the job's open transport
+        """
+        files = self._addon_env_files()
+        if files:
+            await self._upload_private_files(
+                transport,
+                {self._extra_env_tmp(rel): text for rel, text in files.items()},
+            )
+
+    def _write_extra_env_step(self, d):
+        """Return the step moving the staged addon files into place, or ().
+
+        :param str d: the instance directory
+        :return: a one-step tuple, empty when no addon ships a file
+        :rtype: tuple
+        """
+        rels = sorted(self._addon_env_files())
+        if not rels:
+            return ()
+        # One failed move fails the step, wherever it is in the list.
+        moves = " && ".join(
+            f'{{ f={self._extra_env_tmp(rel)}; if [ -f "$f" ]; then'
+            f' mkdir -p "$(dirname {d}/{rel})" && mv "$f" {d}/{rel}'
+            f" && chmod 600 {d}/{rel}; fi; }}"
+            for rel in rels
+        )
+        return (("Write extra env files", moves),)
 
     def _preflight_tls_check(self):
         """Say how each domain will get its certificate; refuse the impossible.
@@ -1249,7 +1337,9 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 "Set compose project name",
                 f'echo "COMPOSE_PROJECT_NAME={name}" >> {d}/.env',
             ),
-            # 2b. Ensure .docker/incubacloud.env exists with a Fernet key.
+            # 2b. Put the panel's copy of the encryption key in place,
+            #     then make sure the file exists (it does, by now).
+            self._write_secret_key_step(d),
             (
                 "Ensure incubacloud.env",
                 self.run_script("deploy.sh", ["ensure-secret-key", d]),
@@ -1311,6 +1401,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
                 f' [ -f "$f" ] &&'
                 f' mv "$f" {d}/.docker/backup.env || true',
             ),
+            *self._write_extra_env_step(d),
             # 3b. Write docker-compose.override.yml: resource limits,
             #     protect label and container log rotation.
             (
@@ -1533,6 +1624,7 @@ class DeployInstanceExecutor(AbstractSSHExecutor):
         # The host's metric label map is a snapshot of its instance list;
         # without this the new instance's containers report unattributed.
         inst.host_id.refresh_observability_labels(reason="deploy")
+        self._call_addon_hook(inst, "_after_stack_rendered")
 
     def _detect_pip_conflicts(self):
         """If pip_dependencies has conflict markers, create/update a pip_conflict alert."""

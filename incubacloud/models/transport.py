@@ -14,6 +14,8 @@ import contextlib
 from abc import ABC, abstractmethod
 from typing import NamedTuple
 
+import asyncssh
+
 # Default per-command SSH timeout. Long enough for big deploys and
 # heavy backup restores; short enough that a runaway command (infinite
 # loop, hung process) eventually surfaces as a clear timeout instead
@@ -58,10 +60,12 @@ class BaseTransport(ABC):
         """
 
     @abstractmethod
-    async def upload_text_files(self, files: dict) -> None:
+    async def upload_text_files(self, files: dict, mode=None) -> None:
         """Write text files to the remote target.
 
-        *files* is ``{remote_path: text_content}``.
+        *files* is ``{remote_path: text_content}``. *mode*, when given,
+        is the permission bits a file is created with (``0o600`` for a
+        secret, so it is never readable by others, not even briefly).
         """
 
     @abstractmethod
@@ -142,10 +146,14 @@ class SSHTransport(BaseTransport):
             exit_status=result.exit_status,
         )
 
-    async def upload_text_files(self, files: dict) -> None:
+    async def upload_text_files(self, files: dict, mode=None) -> None:
+        attrs = (
+            asyncssh.SFTPAttrs(permissions=mode) if mode is not None
+            else asyncssh.SFTPAttrs()
+        )
         async with self._conn.start_sftp_client() as sftp:
             for path, content in files.items():
-                async with sftp.open(path, 'w') as fh:
+                async with sftp.open(path, 'w', attrs) as fh:
                     await fh.write(content)
 
     async def upload_file(self, local_path: str, remote_path: str) -> None:

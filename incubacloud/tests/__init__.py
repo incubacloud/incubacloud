@@ -148,6 +148,11 @@ from . import test_metrics_gateway_frameguard
 from . import test_pr_preview_control
 from . import test_staging_autopurge_clock
 from . import test_read_last_login
+from . import test_provider_alert_inventory
+from . import test_secret_key_escrow
+from . import test_readable_secrets
+from . import test_ssh_allowlist
+from . import test_instance_addon_hooks
 from . import test_staging_autopurge_cron
 from . import test_staging_autopurge_panel
 from . import test_form_field_width

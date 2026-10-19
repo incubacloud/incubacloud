@@ -254,3 +254,79 @@ def is_on_primary_key(value, env=None):
 def generate_password(length=20):
     """Return a cryptographically strong URL-safe password (~27 chars for length=20)."""
     return secrets.token_urlsafe(length)
+
+
+def generate_secret_key():
+    """Return a new Fernet key, as the text ``INCUBACLOUD_SECRET_KEY`` holds.
+
+    :return: one url-safe base64 key (44 characters)
+    :rtype: str
+    """
+    from cryptography.fernet import Fernet
+
+    return Fernet.generate_key().decode()
+
+
+def parse_secret_key_line(text):
+    """Return the valid Fernet keys a key chain names, in order, once each.
+
+    Accepts either the bare chain (``"k1,k2"``, as
+    ``cloud.instance.secret_key`` stores it) or the content of an
+    ``incubacloud.env`` file, whose ``INCUBACLOUD_SECRET_KEY=`` line is
+    read and every other line ignored. Quotes around the value are
+    dropped. A token that is not a Fernet key is left out rather than
+    raised on: what is read from a host is not trusted to be well
+    formed, and a chain must never carry a key Odoo would refuse.
+
+    :param str text: a key chain, an env file's content, or ``None``
+    :return: the keys, primary first
+    :rtype: list[str]
+    """
+    from cryptography.fernet import Fernet
+
+    if not text:
+        return []
+    raw = text.strip()
+    prefix = f"{_KEY_ENV_VAR}="
+    if prefix in raw or "\n" in raw:
+        raw = ""
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith(prefix):
+                raw = line[len(prefix):].strip()
+    raw = raw.strip("'\"")
+    keys = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token or token in keys:
+            continue
+        try:
+            Fernet(token.encode())
+        except Exception:  # noqa: BLE001 — anything Fernet refuses is dropped
+            continue
+        keys.append(token)
+    return keys
+
+
+def merge_secret_key_lines(*chains):
+    """Join key chains so that no key any of them holds is lost.
+
+    The keys of the first chain come first — its first key stays the one
+    new values are encrypted with — and every key of the following
+    chains that is not there yet is appended. A value encrypted with any
+    of them can still be read with the result: that is what makes it
+    safe to merge what a host holds with what the panel keeps for it,
+    whichever of the two is the stale one.
+
+    :param chains: key chains or env file contents (see
+        :func:`parse_secret_key_line`); empty ones are skipped
+    :return: the merged chain (``"k1,k2"``), or ``""`` when none holds a
+        valid key
+    :rtype: str
+    """
+    merged = []
+    for chain in chains:
+        for key in parse_secret_key_line(chain):
+            if key not in merged:
+                merged.append(key)
+    return ",".join(merged)

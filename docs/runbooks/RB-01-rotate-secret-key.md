@@ -200,7 +200,44 @@ The value cannot be recovered without the original key. Resolution:
 put the old key back in `INCUBACLOUD_SECRET_KEY` (as a trailing entry)
 if you still have it, or set the secret again from source — regenerate
 the host password, re-enter the backup passphrase, re-issue the token.
-Dismiss the alert once the value is readable again.
+The alert closes by itself once the value reads again: an hourly pass,
+and one at every start (`_cron_resolve_readable_secrets`), decrypts it
+again and dismisses the alert. There is nothing to dismiss by hand.
+
+## The instances' own keys
+
+An instance that runs this module (a panel this panel deploys) encrypts
+its own secrets with the `INCUBACLOUD_SECRET_KEY` in its
+`.docker/incubacloud.env`. Since 1.0.189 this panel keeps a copy of each
+(`cloud.instance.secret_key`, encrypted with **this** panel's key) and
+writes it to the host on every deploy and rebuild, merged with what the
+host holds — see `docs/architecture.md`, "Each instance's own key".
+
+- **This panel's key is now the root of trust of every instance's.**
+  Lose it and the copies are lost with it: keep a copy of this panel's
+  `INCUBACLOUD_SECRET_KEY` **off its host**, with the date it became
+  primary, as you keep a retired key.
+- **Rotating an instance's key** — the merge puts the host's keys first,
+  so the order on the host decides which key is primary:
+  1. On the instance's host, prepend the new key in
+     `.docker/incubacloud.env` (`INCUBACLOUD_SECRET_KEY=NEW,OLD`).
+  2. Rebuild the instance from the panel. The rebuild reads that file,
+     keeps `NEW,OLD` as the panel's copy and restarts the instance with
+     it.
+  3. Run this runbook's rotation on that instance, up to its step 6.
+
+  Setting the panel's `secret_key` to `"NEW,OLD"` instead does **not**
+  rotate anything: the host's `OLD` comes first in the merge and stays
+  primary.
+- **Retiring an instance's old key** (its step 7): nothing drops a key
+  on its own, so remove it in both places before the rebuild — set the
+  panel's `secret_key` to `"NEW"` (developer, in a shell) and the host's
+  file to `INCUBACLOUD_SECRET_KEY=NEW` — then rebuild. Removing it from
+  one place only brings it back from the other.
+- An instance deployed before 1.0.189 has its key read once by the
+  daily capture (`cron_capture_secret_keys`). `secret_key_not_escrowed`
+  on an instance means its host could not be read two days running:
+  its key still exists there only.
 
 ## References
 

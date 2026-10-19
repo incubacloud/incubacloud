@@ -1,0 +1,43 @@
+.ic-pitr-panel {
+    margin-bottom: 12px;
+
+    .ic-pitr-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .ic-pitr-state {
+        font-size: 12px;
+        padding: 1px 8px;
+        border-radius: 10px;
+        background: var(--rl-surface-2, #eef0f3);
+    }
+
+    .ic-pitr-state--ok { background: #e3f6ea; color: #1d7a43; }
+    .ic-pitr-state--lagging { background: #fff4dc; color: #8a5a00; }
+    .ic-pitr-state--failed { background: #fde7e7; color: #a12a2a; }
+
+    .ic-pitr-muted { color: var(--rl-text-muted, #6b7280); }
+
+    .ic-pitr-facts > div { margin: 2px 0; }
+
+    .ic-pitr-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+
+    .ic-pitr-restore {
+        margin-top: 10px;
+        border-top: 1px solid var(--rl-border, #e5e7eb);
+        padding-top: 10px;
+
+        label {
+            display: block;
+            margin: 6px 0;
+        }
+    }
+}

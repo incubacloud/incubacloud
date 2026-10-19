@@ -26,7 +26,7 @@ from .big_integer import BigInteger
 from .cloud_host import parse_memory_to_gb
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar
-from .password_utils import generate_password
+from .password_utils import generate_password, generate_secret_key
 from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
@@ -357,6 +357,21 @@ class CloudInstance(models.Model):
     postgres_password = EncryptedChar(
         string="DB Password",
         groups="incubacloud.group_cloud_developer",
+    )
+    # The panel keeps the key; the host only receives it. A host that is
+    # lost, or an instance moved off it, used to take the key along:
+    # the new copy generated another one and could no longer read what
+    # its database had encrypted (two panels, 18-oct-2026).
+    secret_key = EncryptedChar(
+        string="Encryption Key",
+        groups="incubacloud.group_cloud_developer",
+        copy=False,
+        help="The INCUBACLOUD_SECRET_KEY chain this instance's Odoo "
+        "encrypts its own secrets with (comma-separated Fernet keys, "
+        "primary first). Generated with the instance and written to "
+        ".docker/incubacloud.env on every deploy and rebuild; what the "
+        "host already holds is merged in first, so no key is ever "
+        "dropped. A neutralized copy of production keeps its own.",
     )
 
     domain_ids = fields.One2many(
@@ -1241,13 +1256,108 @@ class CloudInstance(models.Model):
             svcs = ["odoo", "db", "smtp"]
             if self._egress_whitelist():
                 svcs += ["proxy_general", "odoo_net_setup"]
-            return tuple(svcs)
-        svcs = ["odoo", "db"]
-        if self._backup_enabled():
-            svcs.append("backup")
-        if self.smtp_relay_host:
-            svcs.append("smtp")
+        else:
+            svcs = ["odoo", "db"]
+            if self._backup_enabled():
+                svcs.append("backup")
+            if self.smtp_relay_host:
+                svcs.append("smtp")
+        svcs += [s for s in self._extra_services() if s not in svcs]
         return tuple(svcs)
+
+    # ── Extension hooks: what an addon adds to an instance's stack ────────
+    #
+    # Core renders the whole stack inside the deploy executor and its
+    # subclasses. These hooks let an addon add to it without patching
+    # executors: every hook answers "nothing" here, so an instance without
+    # such an addon deploys, rebuilds and deletes exactly as before.
+
+    def _extra_services(self):
+        """Compose services an addon adds to this instance's stack.
+
+        Each one must be defined by :meth:`_compose_override_fragments`
+        (with its ``image``): the copier template does not know it. Being
+        listed here is what gets it the platform's label and log rotation,
+        started with the stack and watched by the health probe.
+
+        :return: service names; none in core
+        :rtype: tuple
+        """
+        self.ensure_one()
+        return ()
+
+    def _compose_override_fragments(self):
+        """Extra ``docker-compose.override.yml`` content, by service.
+
+        Merged into what the platform renders and never over it:
+        mappings (``environment``, ``labels``) gain keys the platform
+        does not set, ``volumes``, ``env_file`` and ``depends_on`` gain
+        entries, and any other key is set only where the platform set
+        none. So a fragment can neither replace Odoo's ``command`` nor a
+        limit.
+
+        :return: ``{service: {key: value}}``; empty in core
+        :rtype: dict
+        """
+        self.ensure_one()
+        return {}
+
+    def _extra_env_files(self):
+        """Files an addon ships into the instance directory on every build.
+
+        Written by deploy, rebuild and warm claim after copier, before
+        the stack starts, readable by their owner only — they hold
+        credentials. The content is never logged. A file an addon stops
+        listing stays on the host until the addon removes it.
+
+        :return: ``{relative_path: content}``; empty in core
+        :rtype: dict
+        """
+        self.ensure_one()
+        return {}
+
+    def _teardown_pre_steps(self, inst_dir, keep_in_panel):
+        """Steps an addon runs before a delete tears the stack down.
+
+        Only on the delete that ends the instance's life on its host,
+        never on a move's cleanup of the copy it left behind: that
+        instance lives on elsewhere. The stack is still up, so a step can
+        use its containers.
+
+        :param str inst_dir: the instance directory on the host
+        :param bool keep_in_panel: the record stays as an archived draft
+        :return: ``(label, command[, opts])`` tuples; none in core
+        :rtype: list
+        """
+        self.ensure_one()
+        return []
+
+    def _after_stack_rendered(self):
+        """Called once a deploy or rebuild has shipped the current stack.
+
+        What the addon hooks answered is now on the host, and running: an
+        addon that needs a step after its pieces are in place (switching
+        on what they serve) takes it here rather than rebuilding again.
+        Called on the job's durable cursor, from its success hook. During
+        a move it is the target's deploy, while the instance still lives
+        on its source.
+        """
+        self.ensure_one()
+
+    def _after_restore_hook(self, kind):
+        """Called once the instance's database has been replaced.
+
+        A restore starts the database from another point in its history,
+        which anything that tracked its history (a continuous archive)
+        must hear of. Called on the job's durable cursor, from the
+        outcome hook of the job that did it.
+
+        :param str kind: ``restore`` (a copy was restored onto it: clone,
+            refresh, the destination of a move), ``backup_restore`` (one
+            of its own backups, a revival included) or ``move`` (its
+            cutover onto a new host, after the restore there)
+        """
+        self.ensure_one()
 
     def _job_history_floor(self):
         """Datetime before which this instance's jobs belong to another life.
@@ -1857,6 +1967,10 @@ class CloudInstance(models.Model):
                         "source_job_id": "__chain_job_0__",
                         "neutralize": bool(neutralize),
                         "reset_base_url": True,
+                        # A copy left live reads production's secrets, so
+                        # it needs production's key. A neutralized one has
+                        # them cleared and keeps its own.
+                        "share_secret_key": not neutralize,
                     },
                 },
             ]
@@ -1908,12 +2022,15 @@ class CloudInstance(models.Model):
         A-record at the new host IP and finalize the tenant.
         """
 
-    def _on_move_rolled_back(self):
+    def _on_move_rolled_back(self, target_host=None):
         """Hook fired once a move that did not happen is undone.
 
         By then the move markers are cleared and the instance is running
         on its source host again. Core: no-op. SaaS overrides this to give
         the tenant back the state the move had taken from it.
+
+        :param target_host: the ``cloud.host`` the move was going to, read
+            before the markers were cleared (None when unknown)
         """
 
     def move_to_host(self, target_host):
@@ -3136,6 +3253,48 @@ class CloudInstance(models.Model):
         return queued
 
     @api.model
+    def cron_capture_secret_keys(self, limit=200):
+        """Queue a key capture for every deployed instance the panel lacks it for.
+
+        An instance deployed before the panel kept encryption keys, or
+        imported, has its key on its host only (see
+        ``capture_secret_key_executor``). Once read it is kept, so after
+        the first pass this finds nothing: a deploy or rebuild keeps the
+        key of every instance it touches, and new ones are born with it.
+
+        Bounded per run, so the first pass after an upgrade does not
+        flood one host's queue; the rest follow the next day.
+
+        :param int limit: most captures queued in one run
+        :return: how many captures were queued
+        :rtype: int
+        """
+        instances = self.search(
+            [
+                ("deployed", "=", True),
+                ("host_id", "!=", False),
+                ("secret_key", "=", False),
+            ]
+            + self._periodic_maintenance_domain(),
+            limit=limit,
+        )
+        queued = 0
+        for inst in instances:
+            try:
+                self.env["cloud.job"].enqueue(
+                    inst.host_id.id, inst.id, "capture_secret_key",
+                )
+                queued += 1
+            except Exception as exc:
+                # One instance with a job in flight must not cost the
+                # others their capture: it is retried tomorrow.
+                _logger.warning(
+                    "Could not enqueue capture_secret_key for %s: %s",
+                    inst.name, exc,
+                )
+        return queued
+
+    @api.model
     def cron_recover_stuck_moves(self):
         """Watchdog: recover instances stranded by a failed host move.
 
@@ -3179,6 +3338,7 @@ class CloudInstance(models.Model):
                 continue
             origin = inst.move_origin_host_id
             if inst.move_rollback_in_progress:
+                target = inst.move_target_host_id
                 inst.write(
                     {
                         "move_origin_host_id": False,
@@ -3189,7 +3349,7 @@ class CloudInstance(models.Model):
                 )
                 # The source was restarted: the move is undone even if the
                 # target could not be cleaned.
-                inst._on_move_rolled_back()
+                inst._on_move_rolled_back(target_host=target)
                 if not Alert.search_count(
                     [
                         ("instance_id", "=", inst.id),
@@ -3585,6 +3745,14 @@ class CloudInstance(models.Model):
             for field in self._REQUIRED_PASSWORD_FIELDS:
                 if not vals.get(field):
                     vals[field] = generate_password()
+            # A new instance gets its key here, so the panel holds it
+            # before any host does. One born already on a host (an
+            # import) has a key there that nothing must replace: its
+            # first deploy or rebuild, or the daily capture, reads it.
+            if not vals.get("secret_key") and (
+                vals.get("state") not in self._ON_HOST_STATES
+            ):
+                vals["secret_key"] = generate_secret_key()
             project_id = vals.get("project_id")
             if project_id:
                 project = self.env["cloud.project"].browse(project_id)

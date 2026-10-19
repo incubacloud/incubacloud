@@ -423,27 +423,33 @@ class AbstractExecutor(ABC):
             async with self._host_record.get_transport() as transport:
                 logger.debug("[_async_entry] Connection established")
                 self._sys("Connection established.")
-                await self.before_execute(transport)
-
-                # Materialise the commands before running any of them:
-                # ``run_script()`` queues its uploads while
-                # ``get_commands()`` builds the tuples, so the scripts
-                # have to reach the host before the first command fires.
-                commands = list(self.get_commands())
-                await self._upload_scripts(transport)
-
                 try:
-                    results, skipped = await self._run_steps(
-                        transport, commands,
-                    )
-                    # Inside the try so ``after_commands`` can still run
-                    # a script, and in a finally so a failed job cleans
-                    # up after itself too.
-                    await self._dispatch_outcome(
-                        results, transport, skipped=skipped,
-                    )
+                    await self.before_execute(transport)
+
+                    # Materialise the commands before running any of
+                    # them: ``run_script()`` queues its uploads while
+                    # ``get_commands()`` builds the tuples, so the
+                    # scripts have to reach the host before the first
+                    # command fires.
+                    commands = list(self.get_commands())
+                    await self._upload_scripts(transport)
+
+                    try:
+                        results, skipped = await self._run_steps(
+                            transport, commands,
+                        )
+                        # Inside the try so ``after_commands`` can still
+                        # run a script, and in a finally so a failed job
+                        # cleans up after itself too.
+                        await self._dispatch_outcome(
+                            results, transport, skipped=skipped,
+                        )
+                    finally:
+                        await self._cleanup_scripts(transport)
                 finally:
-                    await self._cleanup_scripts(transport)
+                    # Outermost, so a secret staged by ``before_execute``
+                    # is gone even when that hook is what failed.
+                    await self._discard_private_uploads(transport)
 
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
@@ -820,6 +826,27 @@ class AbstractExecutor(ABC):
                     "SET LOCAL lock_timeout = %s", (DURABLE_LOCK_TIMEOUT,),
                 )
             yield self.job.env(cr=cr)
+
+    def _call_addon_hook(self, inst, name, *args):
+        """Call ``inst.<name>(*args)`` from an outcome hook, in a savepoint.
+
+        The job did what it was for, whatever an addon does next: a hook
+        that raises has its own writes rolled back and is reported in the
+        job's log, and the job's outcome stands.
+
+        :param inst: the ``cloud.instance`` the hook is called on
+        :param str name: ``_after_stack_rendered`` or ``_after_restore_hook``
+        :param args: the hook's arguments
+        """
+        try:
+            with inst.env.cr.savepoint():
+                getattr(inst, name)(*args)
+        except Exception as exc:  # noqa: BLE001 — never undo the job's outcome
+            logging.getLogger(__name__).warning(
+                "Job %s: %s of instance %s raised.", self.job.id, name, inst.id,
+                exc_info=True,
+            )
+            self._sys(f"⚠ A follow-up step for '{inst.name}' failed: {exc}")
 
     def _persist(self, record, vals):
         """Write *vals* on *record* durably and let this job see the result.
@@ -1243,6 +1270,37 @@ class AbstractExecutor(ABC):
         await transport.upload_text_files(files)
         self._scripts_uploaded = True
         self._sys(f"Uploaded {len(files)} script file(s) to {root}.")
+
+    #: Remote paths of the secrets this job staged with
+    #: :meth:`_upload_private_files` (a tuple, so an executor built
+    #: without ``__init__`` still has one).
+    _private_uploads = ()
+
+    async def _upload_private_files(self, transport, files):
+        """Stage secret files on the host, readable by their owner only.
+
+        Created ``0600`` from the first byte, unlike
+        ``upload_text_files``'s default, and remembered: whatever a step
+        has not moved into place by the end of the job is removed by
+        :meth:`_discard_private_uploads`, so a failed job leaves no key
+        lying in ``/tmp``.
+
+        :param transport: the job's open transport
+        :param dict files: ``{remote_path: text_content}``
+        """
+        await transport.upload_text_files(files, mode=0o600)
+        self._private_uploads = (*self._private_uploads, *files)
+
+    async def _discard_private_uploads(self, transport):
+        """Remove what :meth:`_upload_private_files` staged (best effort).
+
+        A path a step already moved is simply not there any more. Errors
+        are suppressed for the reason :meth:`_cleanup_scripts` gives.
+        """
+        if not self._private_uploads:
+            return
+        with contextlib.suppress(Exception):
+            await transport.run(f"rm -f {shlex.join(self._private_uploads)}")
 
     async def _cleanup_scripts(self, transport):
         """Remove this job's remote script directory (best effort).

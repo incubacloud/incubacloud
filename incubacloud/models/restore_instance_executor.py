@@ -9,9 +9,11 @@ from .abstract_executor import (
     handoff_archive_path,
     sql_escape_literal,
 )
+from .password_utils import merge_secret_key_lines
+from .secret_key_escrow import SecretKeyEscrowMixin
 
 
-class RestoreInstanceExecutor(AbstractSSHExecutor):
+class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
     """Restore a doodba instance database from a .zip backup.
 
     Payload:
@@ -38,9 +40,17 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
             ``web.base.url.freeze``. Skipped when the instance has no
             domain — writing an empty parameter would be worse than
             leaving the inherited one.
+        share_secret_key: give this instance the encryption keys of the
+            instance the data comes from (a refresh from production): the
+            restored database was encrypted with them. Odoo is then
+            recreated rather than started, so it reads the new file.
     """
 
     _job_type = "restore_instance"
+
+    #: Set by ``before_execute`` when the instance takes the keys of the
+    #: one whose data it receives; ``get_commands`` then writes them.
+    _writes_secret_key = False
 
     def _inst(self):
         return self.job.instance_id
@@ -272,6 +282,48 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
         else:
             raise ValueError(f"Unknown restore mode: {mode!r}")
 
+        if payload.get('share_secret_key'):
+            await self._take_source_secret_key(transport)
+
+    async def _take_source_secret_key(self, transport):
+        """Give this instance the keys of the instance its data comes from.
+
+        A staging refreshed from production receives a database encrypted
+        with production's key; with its own, its Odoo could not read a
+        secret of it. Production's chain comes first, then what the
+        staging's host holds and the panel's copy, so nothing is lost.
+        Production's chain is the panel's copy, or what its host holds
+        when the panel has none yet.
+
+        :param transport: the job's open transport (this instance's host)
+        """
+        source = self._source_job().instance_id
+        if not source or source == self._inst():
+            return
+        theirs = source.sudo().secret_key or ""
+        if not theirs and source.host_id:
+            async with source.host_id.get_transport() as src_transport:
+                theirs = await self._read_host_secret_key(
+                    src_transport, source,
+                )
+        if not merge_secret_key_lines(theirs):
+            self._sys(
+                f"⚠ The encryption key of '{source.name}' is not known: "
+                f"this instance keeps its own, and may not read the "
+                f"secrets its new data holds."
+            )
+            return
+        held = await self._read_host_secret_key(transport)
+        chain = self._keep_secret_key(theirs, held)
+        if chain == merge_secret_key_lines(held):
+            return
+        await self._stage_secret_key(transport, chain)
+        self._writes_secret_key = True
+        self._sys(
+            f"This instance takes the encryption keys of '{source.name}', "
+            f"whose data it receives."
+        )
+
     def get_commands(self):
         inst = self._inst()
         d = self._inst_dir(inst)
@@ -338,6 +390,12 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
                 ),
             ))
 
+        # A container keeps the environment it was created with: Odoo is
+        # recreated (``up``) when it has a new key to read.
+        start_op = "start"
+        if self._writes_secret_key:
+            cmds.append(self._write_secret_key_step(d))
+            start_op = "up"
         cmds += [
             (
                 "Ensure incubacloud_connect",
@@ -345,7 +403,7 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
             ),
             (
                 "Start Odoo service",
-                self.run_script("compose_op.sh", [d, "start", "odoo"]),
+                self.run_script("compose_op.sh", [d, start_op, "odoo"]),
             ),
             # Left inline: a lone ``rm -f`` is not worth a versioned
             # script, and unquoted the remote shell expands any ``~``.
@@ -374,6 +432,7 @@ class RestoreInstanceExecutor(AbstractSSHExecutor):
         await self._cleanup_cross_host_handoff()
         inst = self._inst()
         inst.write({"status": "ok", "running": True})
+        self._call_addon_hook(inst, "_after_restore_hook", "restore")
         if inst.pr_number:
             inst._post_or_update_pr_comment(inst._pr_preview_ready_body())
 

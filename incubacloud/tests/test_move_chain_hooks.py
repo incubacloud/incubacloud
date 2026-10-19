@@ -94,7 +94,9 @@ class TestAMoveClosesEveryStep(TransactionCase):
             Instance, "_on_move_rolled_back", autospec=True,
         ) as rolled_back:
             self._close(cleanup)
-        rolled_back.assert_called_once_with(self.inst)
+        rolled_back.assert_called_once_with(
+            self.inst, target_host=self.target,
+        )
         self.assertFalse(self.inst.move_origin_host_id)
         self.assertEqual(self.inst.host_id, self.source)
 
@@ -111,7 +113,9 @@ class TestAMoveClosesEveryStep(TransactionCase):
             Instance, "_on_move_rolled_back", autospec=True,
         ) as rolled_back:
             self.env["cloud.instance"].cron_recover_stuck_moves()
-        rolled_back.assert_called_once_with(self.inst)
+        rolled_back.assert_called_once_with(
+            self.inst, target_host=self.target,
+        )
         self.assertFalse(self.inst.move_origin_host_id)
 
     def test_a_first_deploy_still_ends_deployed(self):

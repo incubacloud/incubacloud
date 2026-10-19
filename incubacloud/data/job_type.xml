@@ -276,5 +276,13 @@
             <field name="priority_tier">low</field>
         </record>
 
+        <record id="capture_secret_key" model="cloud.job.type">
+            <field name="name">Capture Encryption Key</field>
+            <field name="code">capture_secret_key</field>
+            <field name="apply_to">instance</field>
+            <field name="description">Reads the encryption key an instance holds on its host, so the panel keeps a copy and a move or a new host never loses it. Changes nothing on the host.</field>
+            <field name="priority_tier">low</field>
+        </record>
+
     </data>
 </odoo>

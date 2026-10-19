@@ -58,6 +58,7 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         # Hook: SaaS re-points DNS at the new host IP and finalizes the
         # tenant. Core is a no-op.
         inst._on_move_cutover(origin)
+        self._call_addon_hook(inst, "_after_restore_hook", "move")
         # Nothing re-pointed DNS: say so loudly. The move succeeded but
         # the instance answers on a new IP, so it is unreachable until a
         # human updates the record — silence here reads as a broken move.

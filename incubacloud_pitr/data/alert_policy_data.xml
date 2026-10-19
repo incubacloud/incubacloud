@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Read by the continuous recovery watch every ten minutes: one
+         reading is a moment, two in a row a condition (see core's
+         alert_policy_data.xml for the rule). -->
+    <record id="alert_policy_pitr_archive_lagging" model="cloud.alert.policy">
+        <field name="code">pitr_archive_lagging</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">1800</field>
+        <field name="note">A slow upload of one large segment is not a backlog.</field>
+    </record>
+    <record id="alert_policy_pitr_base_missing" model="cloud.alert.policy">
+        <field name="code">pitr_base_missing</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">1800</field>
+        <field name="note">Read every ten minutes; the hourly cron catches up first.</field>
+    </record>
+</odoo>

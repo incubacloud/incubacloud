@@ -37,6 +37,9 @@ def _make_deploy_executor(smtp_relay_host='', environment='production',
 
     ex = object.__new__(DeployInstanceExecutor)
     ex._inst = lambda: inst
+    # The addon hooks, as core answers them: nothing to add.
+    ex._addon_env_files = dict
+    ex._addon_override_fragments = dict
     ex._inst_dir = lambda i: f"~/projects/{i.name}"
     ex._tmp = lambda suffix: f"/tmp/.incubacloud-test_proj-{suffix}"
     ex._base_url = lambda: "https://test.example.com"
@@ -81,6 +84,8 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
 
     ex = object.__new__(RebuildInstanceExecutor)
     ex._inst = lambda: inst
+    ex._addon_env_files = dict
+    ex._addon_override_fragments = dict
     ex._inst_dir = lambda i: f"~/projects/{i.name}"
     ex._tmp = lambda suffix: f"/tmp/.incubacloud-test_proj-{suffix}"
     ex._base_url = lambda: "https://test.example.com"
@@ -320,7 +325,7 @@ class TestSmartRebuildCommands(unittest.TestCase):
 # incubacloud.env injection
 # ---------------------------------------------------------------------------
 
-class TestIncubaclouEnvInjection(unittest.TestCase):
+class TestIncubaclouEnvInjection(BaseCase):
     """The env_file injection runs ``deploy.sh inject-secret-env`` on both
     deploy and rebuild. Here we pin the wiring — the step is present and
     invokes that operation; the behaviour it guarantees (targets prod.yaml
@@ -347,6 +352,33 @@ class TestIncubaclouEnvInjection(unittest.TestCase):
 
     def test_rebuild_inject_step_invokes_the_script(self):
         self._assert_inject_op(self._rebuild_inject_cmd())
+
+    def _labels(self, cmds):
+        return [c[0] for c in cmds]
+
+    def test_deploy_writes_the_panels_key_between_copier_and_ensure(self):
+        """Copier creates ``.docker/``; ``ensure-secret-key`` must then
+        find the panel's key there and keep it, never generate one."""
+        cmds = _make_deploy_executor().get_commands()
+        labels = self._labels(cmds)
+        write = labels.index("Write incubacloud.env")
+        self.assertGreater(write, labels.index("Deploy with copier"))
+        self.assertLess(write, labels.index("Ensure incubacloud.env"))
+        cmd = _find_cmd(cmds, "Write incubacloud.env")[1]
+        self.assertIn("/tmp/.incubacloud-test_proj-incubacloud.env", cmd)
+        self.assertIn("~/projects/test-inst/.docker/incubacloud.env", cmd)
+        self.assertIn("chmod 600 ~/projects/test-inst/.docker/incubacloud.env", cmd)
+
+    def test_rebuild_writes_the_panels_key_before_ensure(self):
+        labels = self._labels(_make_rebuild_executor().get_commands())
+        self.assertLess(
+            labels.index("Write incubacloud.env"),
+            labels.index("Ensure incubacloud.env"),
+        )
+        self.assertGreater(
+            labels.index("Write incubacloud.env"),
+            labels.index("Update with copier"),
+        )
 
 
 # ---------------------------------------------------------------------------

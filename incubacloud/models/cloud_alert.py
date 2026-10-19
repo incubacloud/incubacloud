@@ -21,6 +21,24 @@ from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
 
+#: Every alert code core raises with ``audience='provider'`` (``*``
+#: stands for a variable part). A provider alert leaves the panel for
+#: whoever runs the service behind it, instead of paging the operator who
+#: sees it, so each one is a decision: ``test_provider_alert_inventory``
+#: reads the code and fails on one missing here. Layers that raise their
+#: own keep their list next to them.
+PROVIDER_ALERT_CODES = frozenset({
+    # A secret the key chain cannot open (``encrypted_char``).
+    "encrypted_value_unreadable:*.*",
+    # The metrics central, when this panel reads it but does not run it.
+    "metrics_backend_unreachable",
+    # A deleted instance whose record could not be removed.
+    "instance_unlink_failed",
+    # A prune that swept what the protect label should have spared.
+    "prune_swept_managed",
+    "prune_swept_network",
+})
+
 
 class CloudAlert(models.Model):
     _name = "cloud.alert"

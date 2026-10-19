@@ -426,6 +426,21 @@
           delete table inet filter
 
           table inet filter {
+              # Who may open SSH, as a named set for the reason the CDN
+              # sets below are one: the panel changes it over SSH, without
+              # Ansible (``ssh_allowlist.sh``). An instance moving its
+              # panel to another host must let the new host into the
+              # customer's servers before it leaves the old one; with the
+              # list inlined in the rule that took a hand-edited file
+              # (18-oct-2026). ``auto-merge`` lets overlapping entries
+              # (a catch-all next to an address) load: the script always
+              # replaces the whole set, never one element.
+              set ic_ssh_allow {
+                  type ipv4_addr
+                  flags interval
+                  auto-merge
+                  elements = { {{ ic_effective_allowlist }} }
+              }
               {% if ic_http_allowed_ranges | default('') | trim %}
               # Named sets rather than the ranges written straight into
               # the rule below. Both accept the same traffic, but only a
@@ -457,7 +472,7 @@
                   ct state invalid drop
                   meta l4proto icmp limit rate 10/second accept
                   meta l4proto ipv6-icmp limit rate 10/second accept
-                  tcp dport {{ ssh_port }} ip saddr { {{ ic_effective_allowlist }} } accept
+                  tcp dport {{ ssh_port }} ip saddr @ic_ssh_allow accept
                   {% if ic_http_allowed_ranges | default('') | trim %}
                   # The host is reached through a CDN, so its origin has
                   # no business answering anyone else. This rule covers
