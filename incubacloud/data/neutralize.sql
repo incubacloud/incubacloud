@@ -18,13 +18,21 @@ UPDATE cloud_host SET password = '', key_file = NULL, traefik_panel_password = '
 UPDATE cloud_backup_backend SET s3_secret_access_key = NULL, passphrase = NULL;
 UPDATE cloud_github_app SET webhook_secret = NULL, private_key = '';
 UPDATE cloud_instance SET odoo_admin_password = NULL, odoo_admin_user_password = NULL,
-    postgres_password = NULL, smtp_relay_password = NULL, secret_key = NULL;
+    postgres_password = NULL, smtp_relay_password = NULL;
 UPDATE cloud_settings SET github_pat = NULL, metrics_remote_write_token = NULL,
     metrics_operator_token = NULL, grafana_admin_password = NULL,
     metrics_delete_auth_key = NULL;
 UPDATE cloud_host SET tls_default_key = NULL, tls_default_cert = NULL;
 UPDATE cloud_job SET secret_payload = NULL;
 UPDATE res_users SET cloud_telegram_bot_token = NULL, cloud_webhook_secret = NULL;
+-- A column added after a copy was taken is missing from it, and a copy is
+-- neutralized before it is upgraded: one unknown column aborts the whole
+-- neutralization, Odoo's own included. Such a column is cleared on its own,
+-- skipped where the copy predates it (secret_key: 1.0.189).
+DO $$ BEGIN
+    UPDATE cloud_instance SET secret_key = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
 
 -- 2. Clear known_hosts fingerprints (prod-specific)
 UPDATE cloud_host SET known_hosts_key = NULL;

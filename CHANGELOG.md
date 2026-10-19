@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.190] — 2026-10-19
+
+### Fixed
+
+- **A copy taken before 1.0.189 is neutralized again.** A copy is
+  neutralized before it is upgraded (a QA refresh, a neutralized download, a
+  restore into development), and clearing the instance key named a column
+  such a copy does not have yet: one unknown column aborts the whole
+  neutralization, Odoo's own included. That column is now cleared on its
+  own and skipped where the copy predates it.
+
 ## [1.0.189] — 2026-10-19
 
 ### Added
