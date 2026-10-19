@@ -25,6 +25,7 @@ alone without pretending saas columns exist.
 """
 import re
 
+from odoo.modules.neutralize import neutralize_database
 from odoo.tests.common import TransactionCase, tagged
 from odoo.tools.misc import file_open
 
@@ -39,7 +40,9 @@ class TestNeutralize(TransactionCase):
 
         Comments are stripped rather than skipped: every statement in
         these files is preceded by one, and dropping commented parts
-        would hide most of the script from the checks.
+        would hide most of the script from the checks. A statement
+        guarded by ``DO $$ BEGIN ... EXCEPTION`` (a column newer than
+        the copies it must neutralize) counts as the statement it guards.
         """
         statements = []
         installed = self.env["ir.module.module"].search([
@@ -52,7 +55,9 @@ class TestNeutralize(TransactionCase):
             except FileNotFoundError:
                 continue
             statements.extend(
-                (module.name, " ".join(part.lower().split()))
+                (module.name, re.sub(
+                    r"^do \$\$ begin ", "", " ".join(part.lower().split())
+                ))
                 for part in body.split(";")
                 if part.strip()
             )
@@ -140,3 +145,30 @@ class TestNeutralize(TransactionCase):
             "neutralization and leaves the database armed: %s"
             % ", ".join(sorted(stale)),
         )
+
+    def test_a_copy_from_before_the_instance_key_is_neutralized(self):
+        """A copy taken before 1.0.189 has no ``cloud_instance.secret_key``.
+
+        qa-refresh, a neutralized download and a restore into devel all
+        neutralize a copy before upgrading it; naming that column aborted
+        the whole neutralization, and the QA refresh of 19-oct-2026 with it.
+        """
+        host = self.env["cloud.host"].create({
+            "name": "neutralize-old-copy",
+            "ip_address": "192.0.2.10",
+            "user": "root",
+            "wildcard_domain": "old-copy.example.com",
+            "password": "kept-by-production",
+        })
+        self.env.flush_all()
+        self.env.cr.execute("ALTER TABLE cloud_instance DROP COLUMN secret_key")
+        neutralize_database(self.env.cr)
+        self.env.cr.execute(
+            "SELECT active, password FROM cloud_host WHERE id = %s", (host.id,)
+        )
+        self.assertEqual(self.env.cr.fetchone(), (False, ""))
+        self.env.cr.execute(
+            "SELECT value FROM ir_config_parameter"
+            " WHERE key = 'database.is_neutralized'"
+        )
+        self.assertEqual(self.env.cr.fetchone(), ("true",))
