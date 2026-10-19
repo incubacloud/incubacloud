@@ -257,8 +257,24 @@
                 badge.textContent = text;
             }
 
-            function onClosed(reason) {
+            // Ends the console's session on the server: its audit row and
+            // route go, and the next console on this host is not refused
+            // as one still open. Once, whether the shell ended or the tab.
+            var sessionClosed = false;
+            function closeSession() {
+                if (sessionClosed) return;
+                sessionClosed = true;
                 polling = false;
+                fetch(BASE_PATH + SESSION_ID + '/close', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Csrf-Token': CSRF },
+                    keepalive: true,
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'call', id: 0, params: {} }),
+                });
+            }
+
+            function onClosed(reason) {
+                closeSession();
                 setBadge('closed', 'Closed');
                 if (reason === 'timeout') {
                     var msg = '\r\n\x1b[33m⏱  Session closed due to inactivity. Open a new terminal to reconnect.\x1b[0m\r\n';
@@ -334,15 +350,7 @@
                 }
             });
 
-            window.addEventListener('beforeunload', function () {
-                polling = false;
-                fetch(BASE_PATH + SESSION_ID + '/close', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-Csrf-Token': CSRF },
-                    keepalive: true,
-                    body: JSON.stringify({ jsonrpc: '2.0', method: 'call', id: 0, params: {} }),
-                });
-            });
+            window.addEventListener('beforeunload', closeSession);
         })();
     </script>
 

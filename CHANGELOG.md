@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.191] — 2026-10-19
+
+### Fixed
+
+- **A console ended with `exit` no longer blocks the next one.** The server
+  keeps one open console per user and host, and the web terminals ended
+  their session only when their tab was closed: a shell left with `exit`
+  stayed open on the server, and a second console on that host was refused
+  ("You already have an open console") until the tab was closed or the
+  routes' clean-up came. Both terminals, a host's and an instance's, now
+  end their session as soon as the shell ends, and still when the tab
+  closes.
+
 ## [1.0.190] — 2026-10-19
 
 ### Fixed
