@@ -4,40 +4,76 @@
     .ic-pitr-head {
         display: flex;
         align-items: center;
-        gap: 8px;
-        margin-bottom: 6px;
+        gap: 10px;
+        margin-bottom: 10px;
     }
 
-    .ic-pitr-state {
-        font-size: 12px;
-        padding: 1px 8px;
-        border-radius: 10px;
-        background: var(--rl-surface-2, #eef0f3);
+    .ic-pitr-tz {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--rl-muted);
     }
 
-    .ic-pitr-state--ok { background: #e3f6ea; color: #1d7a43; }
-    .ic-pitr-state--lagging { background: #fff4dc; color: #8a5a00; }
-    .ic-pitr-state--failed { background: #fde7e7; color: #a12a2a; }
+    .ic-pitr-muted { color: var(--rl-muted); }
 
-    .ic-pitr-muted { color: var(--rl-text-muted, #6b7280); }
+    // Facts on the left, the objective and the actions on the right:
+    // the one thing to set and the two things to do stand apart from
+    // what is only read.
+    .ic-pitr-body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px 32px;
+        align-items: start;
 
-    .ic-pitr-facts > div { margin: 2px 0; }
+        @media (max-width: 720px) {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .ic-pitr-facts {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 6px 14px;
+        margin: 0;
+
+        dt {
+            font-family: var(--rl-fm);
+            font-size: 10.5px;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            color: var(--rl-muted);
+            padding-top: 2px;
+        }
+
+        dd { margin: 0; }
+    }
+
+    .ic-pitr-side {
+        min-width: 220px;
+
+        .rl-frow { margin-block-end: 10px; }
+    }
 
     .ic-pitr-actions {
         display: flex;
         gap: 8px;
-        margin-top: 8px;
         flex-wrap: wrap;
     }
+}
 
-    .ic-pitr-restore {
-        margin-top: 10px;
-        border-top: 1px solid var(--rl-border, #e5e7eb);
-        padding-top: 10px;
+.ic-pitr-restore-note {
+    margin: 0;
+    color: var(--rl-muted);
+}
 
-        label {
-            display: block;
-            margin: 6px 0;
-        }
-    }
+.ic-pitr-range {
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+// The name to type, as it is: the label around it is upper-cased.
+.ic-pitr-confirm-name {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 12px;
 }

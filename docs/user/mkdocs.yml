@@ -112,6 +112,7 @@ nav:
   - Backups:
     - backups/index.md
     - Restore a backup: backups/restore.md
+    - Restore to any minute: backups/any-minute.md
   - Billing: billing/index.md
   - Migrations:
     - migrations/index.md

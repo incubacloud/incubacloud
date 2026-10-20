@@ -866,6 +866,12 @@ class CloudInstance(models.Model):
             "last_base": fields.Datetime.to_string(
                 self.pitr_last_base_at,
             ) if self.pitr_last_base_at else False,
+            # When the watch last read the host: "last archived" is as
+            # fresh as this, and the card says so rather than let a
+            # ten-minute-old reading pass for archiving behind.
+            "checked": fields.Datetime.to_string(
+                self.pitr_checked_at,
+            ) if self.pitr_checked_at else False,
             "busy": self._pitr_job_in_flight(),
         }
 

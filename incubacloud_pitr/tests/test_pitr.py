@@ -319,6 +319,25 @@ class TestOnlyAManagerChangesIt(_PitrCase):
         self.assertEqual(self.inst.apt_dependencies, "curl")
 
 
+class TestWhatTheCardIsTold(_PitrCase):
+
+    def test_the_status_says_when_the_host_was_last_read(self):
+        """"Last archived" is as fresh as the watch's reading, every ten
+        minutes: shown alone it passed for archiving behind."""
+        when = datetime(2026, 10, 20, 22, 34, 55)
+        self.inst.write({
+            "pitr_state": "ok", "pitr_enabled": True,
+            "pitr_oldest_base_at": datetime(2026, 10, 20, 17, 24, 53),
+            "pitr_last_archived_at": when, "pitr_checked_at": when,
+        })
+        vals = self.inst._pitr_status_vals()
+        self.assertEqual(vals["checked"], "2026-10-20 22:34:55")
+        self.assertEqual(vals["last_archived"], "2026-10-20 22:34:55")
+        self.assertEqual(vals["from"], "2026-10-20 17:24:53")
+        self.inst.pitr_checked_at = False
+        self.assertFalse(self.inst._pitr_status_vals()["checked"])
+
+
 class TestTheActions(_PitrCase):
 
     def _chain(self, call):

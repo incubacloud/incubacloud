@@ -91,6 +91,7 @@ Treat it like a master key — store a copy in your password manager.
 
 - Set up your first backup backend (use the [marketing site quickstart](https://www.incubacloud.io/docs/backups))
 - [Restore a backup](restore.md)
+- [Restore to any minute](any-minute.md) with continuous recovery
 - Receive an email when a backup completes (Backend detail → Notifications)
 - Override the project-level backend on a single instance
   (Instance detail → Settings → Backup backend)

@@ -1,6 +1,6 @@
 {
     "name": "IncubaCloud Continuous Recovery",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "summary": "Restore a production instance to any minute of its backup "
                "window (PostgreSQL archiving with wal-g, filestore copied "
                "as it changes)",
@@ -27,6 +27,10 @@ an instance still has it on.
     "assets": {
         "incubacloud.assets_prod": [
             "incubacloud_pitr/static/src/components/**/*",
+        ],
+        "web.assets_unit_tests": [
+            "incubacloud_pitr/static/src/components/**/*.js",
+            "incubacloud_pitr/static/tests/**/*.test.js",
         ],
     },
     "installable": True,
