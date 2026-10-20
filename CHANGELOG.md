@@ -71,6 +71,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   script or exempted with its reason, and no updatable cron declares itself
   active. A test neutralizes a copy for real and checks what it can no
   longer reach.
+- The hourly pass that closes unreadable-secret alerts is checked for its
+  schedule only: on the copy a deploy tests against, its crons are paused,
+  and an update no longer switches them back on.
 
 ## [1.0.192] — 2026-10-20
 
