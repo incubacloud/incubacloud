@@ -21,6 +21,9 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The list is kept on a cursor of its own: test mode makes it ride
+        # on this transaction, so the write is seen and rolled back.
+        self.registry_enter_test_mode()
         self.host = self.env['cloud.host'].create({
             'name': 'al-host', 'ip_address': '192.0.2.60', 'user': 'ubuntu',
             'wildcard_domain': 'al.example.com',
@@ -60,6 +63,17 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
         run = next(c for c in commands if 'ssh_allowlist.sh' in c)
         self.assertIn(' add 77.42.42.201', run)
         self.assertTrue(commands[-1].startswith('rm -rf /tmp/.incubacloud-'))
+
+    def test_the_list_is_kept_on_a_cursor_of_its_own(self):
+        """Not on the caller's transaction, which may be long and whose
+        snapshot made the write a serialization conflict (QA, 20-oct-2026)."""
+        from odoo.addons.incubacloud.models import cloud_host
+        with patch.object(
+            cloud_host, 'read_committed_cursor', wraps=cloud_host.read_committed_cursor,
+        ) as durable:
+            self._change('add', ['77.42.42.201'])
+        durable.assert_called_once_with(self.env.registry)
+        self.assertEqual(self.host.allowed_ssh_ips, '203.0.113.7, 77.42.42.201')
 
     def test_an_address_taken_out_is_forgotten_too(self):
         self.host.allowed_ssh_ips = '203.0.113.7, 77.42.42.201'
