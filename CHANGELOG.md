@@ -22,6 +22,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The gateway's tests (who may frame Grafana, which operator routes are
   denied) no longer skip where `docs/` is stripped: they read the file
   from the module, and so run in the deploy's own check of the image too.
+- The host-key tests that ask OpenSSH itself (`ssh-keygen`) for the
+  fingerprint and the `known_hosts` lookup no longer skip in CI: its test
+  job installs `openssh-client`, and without the tool they fail.
 
 ## [1.0.193] — 2026-10-20
 
