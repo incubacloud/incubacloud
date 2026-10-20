@@ -17,6 +17,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   kept by hand drifting from the code that renders the other half of
   these routes.
 
+- **Hardening a server just bought waits for its first boot.** cloud-init
+  runs apt on a new server and holds its lock, and the cache update waited
+  on it until the task's 600 s ran out (QA, 20-oct-2026). Hardening now
+  waits for cloud-init to finish, where there is one, and bounds each apt
+  update on its own (3 minutes, 3 retries) rather than the task as a whole.
+
 ### Tests
 
 - The gateway's tests (who may frame Grafana, which operator routes are

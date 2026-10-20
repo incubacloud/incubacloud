@@ -99,17 +99,28 @@
           Acquire::http::Timeout "30";
           Acquire::https::Timeout "30";
 
+    # A server just bought is still on its first boot: cloud-init runs apt
+    # itself and holds its lock, and the update below waited on it until
+    # the task's 600 s ran out (QA, 2026-10-20). A host without cloud-init
+    # (one the customer brings) has nothing to wait for; cloud-init's own
+    # errors are not this play's, only its end is.
+    - name: Wait for the server's first boot (cloud-init) to finish
+      ansible.builtin.shell: |
+        command -v cloud-init >/dev/null || exit 0
+        cloud-init status --wait >/dev/null || true
+      changed_when: false
+      timeout: 900
+
+    # Each attempt is bounded on its own, so one that hangs is stopped and
+    # tried again instead of using up the whole task's time.
     - name: Update the apt cache
-      ansible.builtin.apt:
-        update_cache: true
-        cache_valid_time: 3600
-      # The floor under the timeouts above: whatever else holds the update,
-      # it is stopped and tried again rather than waited on.
-      timeout: 600
+      ansible.builtin.command: timeout 180 apt-get -q update  # noqa: command-instead-of-module
+      changed_when: false
       register: ic_apt_cache
       retries: 3
       delay: 10
       until: ic_apt_cache is succeeded
+      timeout: 900
 
     - name: Create the unprivileged operator user
       ansible.builtin.user:

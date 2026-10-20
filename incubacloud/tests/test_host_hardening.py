@@ -116,11 +116,28 @@ class TestHardeningPreflight(TransactionCase):
         content = config["ansible.builtin.copy"]["content"]
         self.assertIn('Acquire::Retries "3";', content)
         self.assertIn('Acquire::https::Timeout "30";', content)
-        self.assertEqual(update["timeout"], 600)
+        # Each attempt has its own limit, under the task's.
+        self.assertTrue(
+            update["ansible.builtin.command"].startswith("timeout 180 apt-get"),
+        )
         self.assertEqual(update["retries"], 3)
         self.assertEqual(update["until"], "ic_apt_cache is succeeded")
+        self.assertGreater(update["timeout"], 4 * (180 + update["delay"]))
         # Nothing privileged may come before the first of them.
         self.assertEqual(names.index(config["name"]), 0)
+
+    def test_apt_waits_for_the_first_boot(self):
+        """cloud-init holds apt's lock on a server just bought: the update
+        waited on it until it ran out of time (QA, 2026-10-20)."""
+        tasks = self._playbook()["tasks"]
+        names = [task.get("name") for task in tasks]
+        wait = names.index("Wait for the server's first boot (cloud-init) to finish")
+        self.assertLess(wait, names.index("Update the apt cache"))
+        script = tasks[wait]["ansible.builtin.shell"]
+        # Nothing to wait for without cloud-init; its own errors are its own.
+        self.assertIn("command -v cloud-init >/dev/null || exit 0", script)
+        self.assertIn("cloud-init status --wait", script)
+        self.assertIn("|| true", script)
 
     def test_the_rotated_port_survives_a_reboot(self):
         """The socket's listen port must be pinned by our own drop-in.
