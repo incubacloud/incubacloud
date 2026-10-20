@@ -399,7 +399,10 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         cmds += [
             (
                 "Ensure incubacloud_connect",
-                self.run_script("restore.sh", ["ensure-connect", d, dbname]),
+                self.run_script(
+                    "restore.sh",
+                    ["ensure-connect", d, inst.postgres_username or "odoo", dbname],
+                ),
             ),
             (
                 "Start Odoo service",

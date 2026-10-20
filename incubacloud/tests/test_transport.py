@@ -671,6 +671,7 @@ class TestRestoreInstanceVerifyBackupFile(BaseCase):
         inst = SimpleNamespace(
             id=42,
             name="myinst",
+            postgres_username="odoo",
             postgres_dbname="prod",
         )
         ex = object.__new__(RestoreInstanceExecutor)

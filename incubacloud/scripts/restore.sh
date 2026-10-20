@@ -112,8 +112,19 @@ AND smtp_host='invalid'; \
 END IF; END \$\$;"
         ;;
     ensure-connect)
-        ic_require_args 1 "$#" "restore.sh ensure-connect <dir> <dbname>"
-        dbname="$1"
+        ic_require_args 2 "$#" "restore.sh ensure-connect <dir> <pg_user> <dbname>"
+        pg_user="$1"; dbname="$2"
+        # Installed already (a panel restored by a move, most instances):
+        # booting an Odoo only to learn that took 7 s of the window a
+        # moving customer waits through (QA, 2026-10-20). Any other answer,
+        # none included, installs as before.
+        state="$(docker compose exec -T db psql -U "$pg_user" -d "$dbname" -tA -c \
+"SELECT state FROM ir_module_module WHERE name = 'incubacloud_connect'" \
+            2>/dev/null || true)"
+        if [ "$state" = "installed" ]; then
+            ic_log "incubacloud_connect is already installed on $dbname"
+            exit 0
+        fi
         ic_log "ensuring incubacloud_connect is installed on $dbname"
         docker compose run --rm odoo \
             odoo -d "$dbname" -i incubacloud_connect --stop-after-init --no-http

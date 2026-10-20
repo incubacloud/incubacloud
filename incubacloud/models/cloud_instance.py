@@ -1999,6 +1999,21 @@ class CloudInstance(models.Model):
         """
         return []
 
+    def _move_cut_steps(self, target_host):
+        """Return extra chain steps to run as the cut starts.
+
+        They run once the source is stopped, before its data is taken:
+        from then on nothing writes to it, and the destination, deployed
+        and stopped, waits for the data. What takes time and needs
+        neither (re-pointing the name a layer manages, say) can start
+        here and run while the restore does, instead of after it. Core:
+        none.
+
+        :param target_host: the ``cloud.host`` the instance moves to
+        :return: list of chain step dicts, as for :meth:`_move_pre_steps`
+        """
+        return []
+
     def _move_post_restore_steps(self, target_host):
         """Return extra chain steps to run on the target after the restore.
 
@@ -2042,7 +2057,8 @@ class CloudInstance(models.Model):
         over, so a failure at any earlier step leaves the source
         recoverable (see ``rollback_move`` / ``cron_recover_stuck_moves``)::
 
-            [pre-steps] → deploy(target) → stop(source, odoo only) →
+            [pre-steps] → deploy(target) → stop(target, odoo only) →
+            stop(source, odoo only) → [cut steps] →
             backup_download(source, live) → restore(target) →
             [post-restore steps] → move_cutover(target) →
             move_cleanup_source(source)
@@ -2083,14 +2099,24 @@ class CloudInstance(models.Model):
         self.move_target_host_id = target_host.id
 
         pre = self._move_pre_steps(source)
-        # pre … deploy(+0) stop(+1) download(+2): restore references the
-        # download job by its 0-indexed position.
-        download_idx = len(pre) + 2
+        cut = self._move_cut_steps(target_host)
+        # pre … deploy(+0) stop target(+1) stop(+2) cut… download: restore
+        # references the download job by its 0-indexed position.
+        download_idx = len(pre) + 3 + len(cut)
         steps = pre + [
             {
                 "host_id": target_host.id,
                 "instance_id": self.id,
                 "job_type_code": self._move_deploy_job_type(),
+            },
+            # The destination's odoo, which nothing uses yet, stops before
+            # the source does: the restore would stop it otherwise, inside
+            # the window the customer waits through (5 s in QA, 20-oct).
+            {
+                "host_id": target_host.id,
+                "instance_id": self.id,
+                "job_type_code": "stop_instance",
+                "payload": {"services": ["odoo"], "move_target": True},
             },
             {
                 "host_id": source.id,
@@ -2098,6 +2124,7 @@ class CloudInstance(models.Model):
                 "job_type_code": "stop_instance",
                 "payload": {"services": ["odoo"]},
             },
+        ] + cut + [
             {
                 "host_id": source.id,
                 "instance_id": self.id,

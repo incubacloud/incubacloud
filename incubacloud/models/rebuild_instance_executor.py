@@ -266,13 +266,19 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             ]
         cmds += [
             # 12b. Ensure incubacloud_connect is installed (restored DBs
-            #      may not have it; click-odoo-update only updates, not installs).
+            #      may not have it; click-odoo-update only updates, not
+            #      installs). The script asks the database first, and
+            #      boots no Odoo for a module already there.
             (
                 "Ensure incubacloud_connect",
-                f"cd {d} && docker compose run --rm odoo"
-                f" odoo -d {inst.postgres_dbname or 'prod'}"
-                f" -i incubacloud_connect"
-                f" --stop-after-init --no-http",
+                self.run_script(
+                    "restore.sh",
+                    [
+                        "ensure-connect", d,
+                        inst.postgres_username or "odoo",
+                        inst.postgres_dbname or "prod",
+                    ],
+                ),
             ),
             # 12b. Ready ``logs/`` (and its logrotate config) before the
             #      stack comes back up: Docker creates a missing

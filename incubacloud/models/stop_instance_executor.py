@@ -38,7 +38,10 @@ class StopInstanceExecutor(AbstractSSHExecutor):
     async def on_success(self, results):
         inst = self._inst()
         self._sys(f"✓ Instance '{inst.name}' stopped.")
-        inst.write({"running": False})
+        # A move stops its destination's copy before the cut; the instance
+        # itself still runs on its source until that stops too.
+        if not (self.job.payload or {}).get("move_target"):
+            inst.write({"running": False})
 
     async def on_failure(self, results, errors):
         for err in errors:
