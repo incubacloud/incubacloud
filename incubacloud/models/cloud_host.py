@@ -23,6 +23,7 @@ from ..net.hostname import (
 from ..net import tls_names
 from ..net.trusted_proxies import invalid_ranges, parse_ranges
 from . import _config_snapshot_diff as _snapshot_diff
+from ._concurrency import read_committed_cursor
 from .cloud_host_whitelist import DEFAULT_WHITELIST
 from .encrypted_char import EncryptedChar, EncryptedText
 from .password_utils import generate_password
@@ -1386,7 +1387,20 @@ class CloudHost(models.Model):
         # What the host allows now, as the host says: the field may not
         # have held everything (the control address a hardening run
         # adds, a catch-all), and a later run rebuilds the list from it.
-        self.sudo().write({"allowed_ssh_ips": match.group(1).strip()})
+        # Kept at once, on a cursor of its own at READ COMMITTED: the
+        # firewall has already changed, and the caller's transaction may
+        # be long (a moving panel changes its servers in one odoo shell)
+        # while others write the host's row. Under that transaction's
+        # snapshot the write failed as a serialization conflict, and the
+        # move did not start (QA, 20-oct-2026).
+        with read_committed_cursor(self.env.registry) as cr:
+            durable = api.Environment(cr, self.env.uid, self.env.context)
+            durable["cloud.host"].sudo().browse(self.id).write(
+                {"allowed_ssh_ips": match.group(1).strip()},
+            )
+        # Not flushed: a value this transaction still meant to write is
+        # older than the host's own answer, just kept.
+        self.invalidate_recordset(["allowed_ssh_ips"], flush=False)
         _logger.info(
             "SSH allowlist of host %s (%s %s): %s",
             self.name, op, ", ".join(ips), match.group(1),

@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.192] — 2026-10-20
+
+### Fixed
+
+- **A panel that moves no longer fails to let its new host into a server
+  over a busy row.** Before it moves, the panel lets its new host into each
+  of its customer's servers, then keeps the list the server now allows on
+  the server's record. It kept it in the transaction that changed the
+  firewall, a long one, while other work wrote that record: the write failed
+  as a serialization conflict and the move did not start (QA, 20-oct-2026).
+  The list is now kept at once on a cursor of its own at READ COMMITTED,
+  which waits for the other write instead.
+
 ## [1.0.191] — 2026-10-19
 
 ### Fixed
