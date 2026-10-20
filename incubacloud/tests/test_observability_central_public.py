@@ -69,7 +69,7 @@ def _published(
         ic_public_tls=tls,
         ic_public_forwarded=forwarded,
         ic_operator_sources=list(sources),
-        ic_grafana_frame_ancestors="https://panel.example.test",
+        ic_grafana_frame_ancestors="https://panel.example.test https://*.example.test",
     ))
 
 
@@ -168,7 +168,7 @@ class TestTheComposeFile(BaseCase):
                 "traefik.http.middlewares.ic-central-grafana-headers"
                 ".headers.contentsecuritypolicy"
             ],
-            "frame-ancestors 'self' https://panel.example.test",
+            "frame-ancestors 'self' https://panel.example.test https://*.example.test",
         )
         self.assertIn(
             "PathPrefix(`/grafana/`)",
@@ -300,6 +300,33 @@ class TestTheDeployment(ObservabilityExecutorCase):
         )
         self.assertEqual(extra["ic_grafana_root_url"], f"https://{PUBLIC}/grafana/")
 
+
+    def test_the_panel_may_frame_the_grafana_it_publishes(self):
+        """The list comes from the settings, where a layer can add to it:
+        built here, it named the panel alone, and every tenant's panel
+        got a blank frame (QA, 20-oct-2026)."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            "web.base.url", "https://panel.example.test",
+        )
+        self.settings.write({"metrics_central_public_host": PUBLIC})
+        with patch.object(
+            type(self.settings), "_grafana_frame_ancestors",
+            return_value=["https://panel.example.test", "https://*.example.test"],
+        ):
+            extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.assertEqual(
+            extra["ic_grafana_frame_ancestors"],
+            "https://panel.example.test https://*.example.test",
+        )
+        self.assertIn(
+            "https://panel.example.test",
+            self.settings._grafana_frame_ancestors(),
+        )
+
+    def test_without_a_name_nobody_is_told_to_frame(self):
+        self.settings.write({"metrics_central_public_host": False})
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_grafana_frame_ancestors"], "")
 
     def test_behind_a_cdn_the_playbook_is_told_the_name_is_forwarded(self):
         self.settings.write({"metrics_central_public_host": PUBLIC})

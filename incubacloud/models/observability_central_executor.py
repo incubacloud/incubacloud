@@ -22,7 +22,6 @@ request/response.
 """
 import base64
 import logging
-from urllib.parse import urlsplit
 
 import yaml
 
@@ -420,9 +419,6 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         if not host_name:
             return None
         base = f"https://{host_name}"
-        panel = urlsplit(
-            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
-        )
         return {
             "host": host_name,
             # Behind a CDN that already holds a certificate for the name,
@@ -436,9 +432,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             # (the panel's public address once it runs elsewhere).
             "operator_sources": ["127.0.0.1/32"]
             + parse_ranges(settings.metrics_central_operator_sources),
-            "frame_ancestors": (
-                f"{panel.scheme}://{panel.netloc}" if panel.netloc else ""
-            ),
+            # Whoever embeds the dashboards: the panel, and in the SaaS
+            # build its tenants' panels too.
+            "frame_ancestors": " ".join(settings._grafana_frame_ancestors()),
             "read": f"{base}/r",
             "write": f"{base}/w/api/v1/write",
             "grafana": f"{base}/grafana/",

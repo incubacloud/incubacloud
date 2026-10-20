@@ -202,11 +202,13 @@ copy the VictoriaMetrics data volume across before step 4 — otherwise
 expect the dashboards to start from the moment of the switch.
 
 What the deployment publishes under the name is what the hand-written
-gateway publishes (next section), with two differences: Traefik drops
-any `X-WEBAUTH-USER` header on its way to Grafana, and Grafana's
-`frame-ancestors` names the panel's origin only. Tenant dashboards are
-framed from the tenants' own origins, so before switching them on with a
-published central, widen that list the way the gateway file does.
+gateway publishes (next section), with one difference: Traefik drops
+any `X-WEBAUTH-USER` header on its way to Grafana. Grafana's
+`frame-ancestors` is the list `cloud.settings._grafana_frame_ancestors`
+returns, written again at every deployment: the panel's origin, and in
+the SaaS build `https://*.<dns_base_domain>`, where the tenants' panels
+frame the dashboards from, as the gateway file has it. A list widened by
+hand on the host would not survive the next run; widen it there instead.
 
 ## Labels
 
