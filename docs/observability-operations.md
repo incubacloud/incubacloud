@@ -616,13 +616,18 @@ router carries its own policy:
 | Router | `frame-ancestors` | Defined in |
 |---|---|---|
 | The panel, `www` | `'self'`, plus `X-Frame-Options: SAMEORIGIN` | `prod.yaml`, middleware `panel-privacy` |
-| Grafana, `metrics…/grafana/` | `'self' https://*.incubacloud.io` | `observability-traefik-metrics-gateway.yml` |
+| Grafana, `metrics…/grafana/` | `'self' https://*.incubacloud.io` | `incubacloud/data/observability-traefik-metrics-gateway.yml` |
 | vmauth, the rest of `metrics…` | none | JSON and 401s, never framed |
 
 The cost of the wildcard is written next to it in the gateway file:
 any site in the zone, a tenant's own included, can frame Grafana signed
 in as its viewer. Tenant users are Viewers there; the operator is Editor
 on its own dashboards. The panel is not reachable that way.
+
+The gateway file ships inside the module, so the release that changes
+it carries it: a panel whose central sits next to it installs it in its
+Traefik's dynamic directory with each release, never by hand, or its
+copy drifts from the code that renders the other half of these routes.
 
 When checking this by hand, look at the frame, not at the page holding
 it: the console names the framed URL and the list it was refused by.
