@@ -6,8 +6,9 @@
             <div class="ic-pitr-head">
                 <strong>Continuous recovery</strong>
                 <t t-if="state.data">
-                    <span t-att-class="'ic-pitr-state ic-pitr-state--' + state.data.state" t-esc="stateLabel"/>
+                    <span t-att-class="'rl-pill ' + pillClass"><span class="rl-d"/><t t-esc="stateLabel"/></span>
                 </t>
+                <span class="ic-pitr-tz" t-if="state.data and state.data.state !== 'off'">Times in your local time</span>
             </div>
             <t t-if="state.loading and !state.data">
                 <div class="ic-pitr-muted"><i class="fa fa-spinner fa-spin"/> Loading…</div>
@@ -29,46 +30,69 @@
                 </div>
             </t>
             <t t-elif="state.data">
-                <div class="ic-pitr-facts">
-                    <div t-if="windowFrom">
-                        Can be restored to any minute from <strong t-esc="formatDate(windowFrom)"/> until now.
-                    </div>
-                    <div t-elif="state.data.state === 'enabling'">Taking the first base copy…</div>
-                    <div t-if="minutesSinceArchived !== null">
-                        Last archived <t t-esc="minutesSinceArchived"/> min ago.
-                    </div>
-                    <div>
-                        Loses at most
-                        <t t-if="props.canManage and !state.data.external">
-                            <select class="ic-pitr-objective" t-att-disabled="state.busy or state.data.busy" t-on-change="setObjective">
-                                <t t-foreach="state.data.objectives" t-as="o" t-key="o">
-                                    <option t-att-value="o" t-att-selected="o === state.data.objective" t-esc="objectiveLabel(o)"/>
-                                </t>
-                            </select>
-                        </t>
-                        <t t-else=""><t t-esc="objectiveLabel(state.data.objective)"/></t>.
-                    </div>
-                </div>
-                <div class="ic-pitr-actions" t-if="props.canManage and !state.data.external">
-                    <button class="rl-btn rl-btn-primary rl-btn-sm" t-att-disabled="state.busy or state.data.busy or !windowFrom" t-on-click="openRestore">Restore to a moment…</button>
-                    <button class="rl-btn rl-btn-ghost rl-btn-sm" t-att-disabled="state.busy or state.data.busy" t-on-click="disable">Switch off</button>
-                </div>
-                <div class="ic-pitr-restore" t-if="state.restoring">
-                    <p>
-                        The database and the files go back to the moment chosen; whatever happened after it is undone. Odoo is stopped meanwhile. A backup of the present is taken first.
-                    </p>
-                    <label>Moment (your local time)
-                        <input type="datetime-local" class="rl-input" t-att-min="minInput" t-att-max="maxInput" t-model="state.when"/>
-                    </label>
-                    <label>Type <strong t-esc="props.instanceName"/> to confirm
-                        <input type="text" class="rl-input" t-model="state.confirmName" autocomplete="off"/>
-                    </label>
-                    <div class="ic-pitr-actions">
-                        <button class="rl-btn rl-btn-danger rl-btn-sm" t-att-disabled="!restoreReady or state.busy" t-on-click="restore">Restore</button>
-                        <button class="rl-btn rl-btn-ghost rl-btn-sm" t-on-click="closeRestore">Cancel</button>
+                <div class="ic-pitr-body">
+                    <dl class="ic-pitr-facts">
+                        <dt>Restorable to</dt>
+                        <dd>
+                            <t t-if="windowFrom">
+                                <t t-esc="windowText"/>
+                                <span class="ic-pitr-muted" t-esc="keptText"/>
+                            </t>
+                            <t t-elif="state.data.state === 'enabling'">nothing yet: taking the first base copy…</t>
+                            <t t-else="">nothing yet</t>
+                        </dd>
+                        <dt>Last archived</dt>
+                        <dd>
+                            <t t-if="lastArchived"><t t-esc="formatDate(lastArchived)"/> <span class="ic-pitr-muted">(<t t-esc="ago(lastArchived)"/>)</span></t>
+                            <t t-else="">—</t>
+                        </dd>
+                        <dt>Checked</dt>
+                        <dd>
+                            <t t-if="checkedAt"><t t-esc="ago(checkedAt)"/> <span class="ic-pitr-muted" t-esc="cadenceText"/></t>
+                            <t t-else="">not yet</t>
+                        </dd>
+                    </dl>
+                    <div class="ic-pitr-side">
+                        <div class="rl-frow">
+                            <label>Loses at most</label>
+                            <t t-if="props.canManage and !state.data.external">
+                                <RlSelect value="state.data.objective"
+                                          options="objectiveOptions"
+                                          disabled="state.busy or state.data.busy"
+                                          onChange="(value) => this.setObjective(value)"
+                                          ariaLabel="'Recovery objective'"/>
+                            </t>
+                            <t t-else=""><div t-esc="objectiveLabel(state.data.objective)"/></t>
+                        </div>
+                        <div class="ic-pitr-actions" t-if="props.canManage and !state.data.external">
+                            <button class="rl-btn rl-btn-primary rl-btn-sm" t-att-disabled="state.busy or state.data.busy or !windowFrom" t-on-click="openRestore">Restore to a moment…</button>
+                            <button class="rl-btn rl-btn-ghost rl-btn-sm" t-att-disabled="state.busy or state.data.busy" t-on-click="disable">Switch off</button>
+                        </div>
                     </div>
                 </div>
             </t>
+            <IcModal t-if="state.restoring" title="'Restore to a moment'" boxClass="'ic-restore-box'" onClose="() => this.closeRestore()">
+                <div class="ic-restore-header">
+                    <h3 class="ic-confirm-title">Restore to a moment</h3>
+                    <span class="ic-restore-instance-name" t-esc="props.instanceName"/>
+                </div>
+                <p class="ic-pitr-restore-note">
+                    The database and the files go back to the moment chosen; whatever happened after it is undone. Odoo is stopped meanwhile. A backup of the present is taken first.
+                </p>
+                <div class="rl-frow">
+                    <label>Moment (your local time)</label>
+                    <input type="datetime-local" class="rl-input" t-att-min="minInput" t-att-max="maxInput" t-model="state.when"/>
+                    <div class="ic-pitr-muted ic-pitr-range" t-esc="rangeText"/>
+                </div>
+                <div class="rl-frow">
+                    <label>Type <strong class="ic-pitr-confirm-name" t-esc="props.instanceName"/> to confirm</label>
+                    <input type="text" class="rl-input" t-model="state.confirmName" autocomplete="off"/>
+                </div>
+                <div class="ic-confirm-actions">
+                    <button class="ic-confirm-btn-cancel" t-on-click="closeRestore">Cancel</button>
+                    <button class="ic-confirm-btn-ok danger" t-att-disabled="!restoreReady or state.busy" t-on-click="restore">Restore</button>
+                </div>
+            </IcModal>
         </div>
     </t>
 

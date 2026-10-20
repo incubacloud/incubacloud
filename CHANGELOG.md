@@ -6,6 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.195] — unreleased
+
+### Changed
+
+- **The continuous recovery card looks like the rest of the panel**
+  (`incubacloud_pitr` 1.0.4). Its state is a panel pill that says `OK ·
+  Archiving` for a healthy one ("Archiving" alone read as something in
+  progress); the facts sit in a labelled grid with the window's two ends
+  and the days kept; the objective is the panel's own select with its
+  label, not a control inside a sentence; the restore opens in the same
+  dialog as a backup restore, on the present rather than on a guess;
+  every date is in the panel's format, in local time. The card now says
+  when the host was last read: "last archived 10 min ago" with a 5-minute
+  objective was the watch's ten-minute cadence, not the archive behind.
+
+### Documentation
+
+- The user guide gains *Restore to any minute* (what the card shows, how
+  a restore runs, what it undoes), and the runbooks RB-23 for its three
+  alerts, a restore that never ended and an instance that moved.
+
 ## [1.0.194] — 2026-10-20
 
 ### Changed

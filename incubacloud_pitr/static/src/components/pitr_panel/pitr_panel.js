@@ -12,23 +12,30 @@
 import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { IcModal } from "@incubacloud/components/ic_modal/ic_modal";
+import { RlSelect } from "@incubacloud/components/rl_select/rl_select";
+import { PILL_CLASSES, ago, formatDate, fromUtc, toLocalInput } from "./pitr_format";
 
 /** How often the card reads the status again while a job of it runs. */
 const FOLLOW_MS = 5000;
 
-/** "2026-10-18 22:10:29" (UTC) → Date. */
-function fromUtc(value) {
-    return value ? new Date(value.replace(" ", "T") + "Z") : null;
-}
+/** The chip's text per state. "OK" first for a healthy one: "Archiving"
+ *  alone read as something still in progress. */
+export const STATE_LABELS = {
+    off: _t("Off"),
+    enabling: _t("Switching on…"),
+    ok: _t("OK · Archiving"),
+    lagging: _t("Behind"),
+    failed: _t("Failing"),
+};
 
-/** Date → the "YYYY-MM-DDTHH:MM" a datetime-local input takes (local). */
-function toLocalInput(date) {
-    const pad = (n) => String(n).padStart(2, "0");
-    return (
-        `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-        `T${pad(date.getHours())}:${pad(date.getMinutes())}`
-    );
-}
+/** The recovery objective's label per value (minutes). */
+export const OBJECTIVE_LABELS = {
+    1: _t("1 minute"),
+    5: _t("5 minutes"),
+    15: _t("15 minutes"),
+    60: _t("1 hour"),
+};
 
 /** A datetime-local value (local time) → "YYYY-MM-DD HH:MM:SS" in UTC. */
 function localInputToUtc(value) {
@@ -38,6 +45,7 @@ function localInputToUtc(value) {
 
 export class PitrPanel extends Component {
     static template = "incubacloud_pitr.PitrPanel";
+    static components = { IcModal, RlSelect };
     static props = {
         instanceId: Number,
         instanceName: { type: String, optional: true },
@@ -97,18 +105,23 @@ export class PitrPanel extends Component {
         }
     }
 
+    /** The chip's text: the state, and for a healthy one that it is OK
+     *  — "Archiving" alone read as something in progress. */
     get stateLabel() {
         const data = this.state.data;
         if (data && !data.enabled && data.state !== "off" && data.busy) {
             return _t("Switching off…");
         }
-        return {
-            off: _t("Off"),
-            enabling: _t("Switching on…"),
-            ok: _t("Archiving"),
-            lagging: _t("Behind"),
-            failed: _t("Failing"),
-        }[this.state.data?.state] || "";
+        return STATE_LABELS[data?.state] || "";
+    }
+
+    /** The panel's own pill class for the state (``rl-pill``). */
+    get pillClass() {
+        const data = this.state.data;
+        if (data && !data.enabled && data.state !== "off" && data.busy) {
+            return "building";
+        }
+        return PILL_CLASSES[data?.state] || "stopped";
     }
 
     get windowFrom() {
@@ -119,17 +132,50 @@ export class PitrPanel extends Component {
         return fromUtc(this.state.data?.to);
     }
 
-    get minutesSinceArchived() {
-        const last = fromUtc(this.state.data?.last_archived);
-        return last ? Math.max(0, Math.round((Date.now() - last) / 60000)) : null;
+    get lastArchived() {
+        return fromUtc(this.state.data?.last_archived);
+    }
+
+    /** When the panel last read the host: "last archived" is only as
+     *  fresh as this, and the watch runs every ten minutes. */
+    get checkedAt() {
+        return fromUtc(this.state.data?.checked);
     }
 
     formatDate(date) {
-        return date ? date.toLocaleString() : "";
+        return formatDate(date);
+    }
+
+    /** Whole sentences, so each is translated as one. */
+    get windowText() {
+        return _t("any minute from %s to now", formatDate(this.windowFrom));
+    }
+
+    get keptText() {
+        return _t("(keeps %s days)", this.state.data?.window_days);
+    }
+
+    get cadenceText() {
+        return _t("(the watch runs every %s min)", 10);
+    }
+
+    get rangeText() {
+        return _t("Between %s and now.", formatDate(this.windowFrom));
+    }
+
+    ago(date) {
+        return ago(date);
     }
 
     objectiveLabel(minutes) {
-        return minutes === "60" ? _t("1 hour") : _t("%s min", minutes);
+        return OBJECTIVE_LABELS[minutes] || _t("%s min", minutes);
+    }
+
+    get objectiveOptions() {
+        return (this.state.data?.objectives || []).map((o) => ({
+            value: o,
+            label: this.objectiveLabel(o),
+        }));
     }
 
     async _run(route, params, label) {
@@ -155,17 +201,19 @@ export class PitrPanel extends Component {
         return this._run("/cloud/pitr/disable", {}, _t("Could not switch it off"));
     }
 
-    setObjective(ev) {
+    setObjective(value) {
+        if (!value || value === this.state.data?.objective) return null;
         return this._run(
             "/cloud/pitr/set_objective",
-            { objective: ev.target.value },
+            { objective: value },
             _t("Could not change the objective"),
         );
     }
 
+    /** The dialog opens on the present, to the minute: the operator
+     *  moves it back to the moment they want, never to a guess. */
     openRestore() {
-        const to = this.windowTo || new Date();
-        this.state.when = toLocalInput(new Date(to.getTime() - 15 * 60000));
+        this.state.when = toLocalInput(this.windowTo || new Date());
         this.state.confirmName = "";
         this.state.restoring = true;
     }
