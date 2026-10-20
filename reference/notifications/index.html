@@ -1449,12 +1449,12 @@ everyone whose level covers critical alerts.</p>
 <td>critical and warning</td>
 </tr>
 <tr>
-<td><code>Failures and warnings</code></td>
+<td><code>Failures and warnings</code> (default)</td>
 <td>failed only</td>
 <td>critical and warning</td>
 </tr>
 <tr>
-<td><code>Failures only</code> (default)</td>
+<td><code>Failures only</code></td>
 <td>failed only</td>
 <td>critical only</td>
 </tr>
@@ -1465,7 +1465,8 @@ everyone whose level covers critical alerts.</p>
 </tr>
 </tbody>
 </table>
-<p>The daily digest follows the same level.
+<p>The daily digest follows the same level. An account created before
+version 1.0.193 keeps the level it had (<code>Failures only</code> was the default).
 - <strong>Muted projects</strong> — silence everything from projects you don't care about.
 - Notifications only cover what you can already see: project visibility rules
   apply to every channel.</p>
