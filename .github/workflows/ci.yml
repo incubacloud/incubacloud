@@ -230,9 +230,10 @@ jobs:
 
       - name: Resolve base revision
         id: base
-        # PR → the target branch tip; push → the previous tip. A branch
-        # creation push has no previous tip (all-zeros): skip honestly
-        # rather than pretend an upgrade was exercised.
+        # PR → the target branch tip; push → the previous tip. A manual
+        # run (workflow_dispatch) and a branch's first push name none:
+        # the parent commit stands in, the step a push would have taken.
+        # Never skipped: green here means the upgrade really ran.
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
@@ -242,26 +243,25 @@ jobs:
           fi
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "$base" 2>/dev/null; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No usable base revision — skipping upgrade exercise."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "base=$base" >> "$GITHUB_OUTPUT"
+            base="$(git rev-parse --verify --quiet HEAD^ || true)"
+            echo "No previous tip: upgrading from the parent commit ($base)."
           fi
+          if [ -z "$base" ]; then
+            echo "::error::No revision to upgrade from: this is the first commit."
+            exit 1
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
 
       - name: Install extra dependencies
-        if: steps.base.outputs.skip != 'true'
         # Same pins as the test job (see rationale there).
         run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib'
 
       - name: Fetch OCA dependencies
-        if: steps.base.outputs.skip != 'true'
         run: |
           git clone --depth 1 --branch 19.0 https://github.com/OCA/queue.git /opt/odoo/addons-oca/queue
           ln -s /opt/odoo/addons-oca/queue/queue_job /opt/odoo/addons/queue_job
 
       - name: Install addons at the BASE revision
-        if: steps.base.outputs.skip != 'true'
         # POSIX sh on purpose: this container ships no bash, so GitHub
         # runs the step with ``sh -e``. No ``pipefail``, no ``${var//,/ }``.
         run: |
@@ -287,7 +287,6 @@ jobs:
             --stop-after-init --workers=0 --max-cron-threads=0
 
       - name: Upgrade to the new code
-        if: steps.base.outputs.skip != 'true'
         # ``-u`` against the database installed above runs every
         # pre/post-migrate between the two revisions — red here means a
         # real deployment would have failed to boot.
