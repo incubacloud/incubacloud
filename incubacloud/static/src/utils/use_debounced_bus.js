@@ -43,6 +43,29 @@
  */
 import { onWillUnmount } from "@odoo/owl";
 
+/**
+ * Whether a ``cloud_jobs`` event is one a page should refetch on.
+ *
+ * A running job publishes a ``progress`` event every half second it
+ * wrote output, and every page used to answer each with a full
+ * refetch: the host page reloaded itself and its job list twice a
+ * second through a deploy it does not even list (QA, 20-oct-2026).
+ * Output lines change nothing a page renders; a system message (a
+ * step done, a warning) is the job's "last message" in every list,
+ * so a ``progress`` event carrying one does count. ``created`` and
+ * ``state`` always do. An event without ``kind`` (an older server)
+ * counts too: refetching for nothing beats going stale.
+ *
+ * The live log page is not a caller: it wants every chunk.
+ *
+ * @param {{kind?: string, system?: boolean}} payload bus event
+ * @returns {boolean}
+ */
+export function refreshesOn(payload) {
+    if (payload?.kind !== "progress") return true;
+    return payload.system === true;
+}
+
 export function useDebouncedBus(callback, { delay = 300 } = {}) {
     let timer = null;
     let pendingArg = null;

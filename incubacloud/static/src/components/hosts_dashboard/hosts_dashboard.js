@@ -7,7 +7,7 @@ import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
 import { parseUTC } from "../../utils/dates";
 import { TruncationBanner } from "../truncation_banner/truncation_banner";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
-import { useDebouncedBus } from "../../utils/use_debounced_bus";
+import { useDebouncedBus, refreshesOn } from "../../utils/use_debounced_bus";
 import { mergeById } from "../../utils/merge_by_id";
 
 export class HostsDashboard extends Component {
@@ -42,11 +42,15 @@ export class HostsDashboard extends Component {
         // check ``state in (done, failed, cancelled)`` — but hosts
         // show metrics and last-job info that can change on any
         // transition, not just terminal ones. Refreshing on every
-        // event (coalesced to 300 ms) is correct and cheaper.
+        // event (coalesced to 300 ms) is correct and cheaper. Every
+        // host is listed, so no host filter; plain output is dropped.
         const triggerRefresh = useDebouncedBus(() => {
             if (!this._destroyed) this._silentRefresh();
         });
-        this._onJobUpdate = (payload) => triggerRefresh(payload.id);
+        this._onJobUpdate = (payload) => {
+            if (!refreshesOn(payload)) return;
+            triggerRefresh(payload.id);
+        };
         this._busService.subscribe("cloud_jobs", this._onJobUpdate);
         this._busService.start();
 

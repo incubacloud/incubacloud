@@ -23,6 +23,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   waits for cloud-init to finish, where there is one, and bounds each apt
   update on its own (3 minutes, 3 retries) rather than the task as a whole.
 
+- **A host move cuts shorter.** The 78 s a customer waited through in QA
+  (20-oct-2026) included work that needs no stopped panel. The
+  destination's Odoo now stops before the source's, outside the cut;
+  stopping it no longer marks the instance stopped. A restore installs
+  `incubacloud_connect` only when the database lacks it, skipping a full
+  Odoo start (about 7 s) on every move and rebuild of an instance that
+  has it. A new hook, `_move_cut_steps`, lets a layer run steps as the
+  cut starts, once the source is stopped and before its data is taken:
+  the SaaS layer re-points the panel's name there, so its propagation
+  runs during the restore instead of after the cutover.
+
+- **Tenants see the dashboards of a published central.** A central the
+  panel publishes under a name of its own let only the panel frame its
+  Grafana, so every tenant's panel showed a blank frame, and nothing
+  said so: a refused frame loads all the same (QA, 20-oct-2026). The
+  list now comes from `cloud.settings._grafana_frame_ancestors`, which
+  the SaaS layer widens with its tenants' domain, the rule the
+  hand-written gateway already serves production with.
+
+- **A page reloads when a job says something, not on every line it
+  writes.** A running job notifies its watchers every half second it
+  wrote output, and every page answered each one with a full refetch:
+  the host page reloaded its data and its job list twice a second
+  through a deploy of an instance it does not even list, the hosts
+  dashboard and the tenant list on any job in the fleet (QA,
+  20-oct-2026). The event now says what it is (`kind`: created,
+  progress, state) and whether a progress carries a message of the
+  job's own (`system`); the pages refetch on those and drop the rest.
+  The live log page keeps every chunk. A static test refuses a page
+  that watches the events without the filter, and QA's walk 7 bounds
+  the host page's reloads through a move.
+
 ### Tests
 
 - The gateway's tests (who may frame Grafana, which operator routes are

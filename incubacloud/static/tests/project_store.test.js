@@ -227,6 +227,31 @@ describe("project_store — bus scoping", () => {
         expect(counter.callCount()).toBe(2);
     });
 
+    test("a job's output does not trigger a refresh", async () => {
+        // Every half second of a deploy used to cost a get_project_full.
+        const counter = makeRpc([sample(), sample()]);
+        const bus = makeBus();
+        const store = createProjectStore({
+            busService: bus, rpcFn: counter.rpcFn, debounceMs: 10,
+        });
+        await store.load(7);
+        bus.emit({ id: 1, project_id: 7, instance_id: 10, kind: "progress", system: false });
+        await advanceTime(20);
+        expect(counter.callCount()).toBe(1);
+    });
+
+    test("a job's own message does", async () => {
+        const counter = makeRpc([sample(), sample()]);
+        const bus = makeBus();
+        const store = createProjectStore({
+            busService: bus, rpcFn: counter.rpcFn, debounceMs: 10,
+        });
+        await store.load(7);
+        bus.emit({ id: 1, project_id: 7, instance_id: 10, kind: "progress", system: true });
+        await advanceTime(20);
+        expect(counter.callCount()).toBe(2);
+    });
+
     test("a host-level job (no project) still refreshes", async () => {
         // get_project_full carries host rows, so a job with no project
         // can still change what this view renders. Unknown means
