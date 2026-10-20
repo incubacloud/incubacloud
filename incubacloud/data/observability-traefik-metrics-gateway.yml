@@ -1,4 +1,6 @@
 # /root/traefik/dynamic/metrics-gateway.yml on the central's host (Cloud1).
+# It ships in the module, and that host's deploy installs it from the
+# release it deploys: an edit here reaches the host with its release.
 #
 # Publishes the shared observability central for agents and browsers that
 # do NOT live on this host (today: the tenants on Tenants1). A separate

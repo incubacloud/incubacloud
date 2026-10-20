@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.194] — 2026-10-20
+
+### Changed
+
+- **The metrics gateway ships in the module.** The Traefik routes of a
+  central next to its panel (`observability-traefik-metrics-gateway.yml`)
+  moved from `docs/` to `incubacloud/data/`, so the release that changes
+  them carries them, and a deploy can install them instead of a copy
+  kept by hand drifting from the code that renders the other half of
+  these routes.
+
+### Tests
+
+- The gateway's tests (who may frame Grafana, which operator routes are
+  denied) no longer skip where `docs/` is stripped: they read the file
+  from the module, and so run in the deploy's own check of the image too.
+
 ## [1.0.193] — 2026-10-20
 
 ### Changed

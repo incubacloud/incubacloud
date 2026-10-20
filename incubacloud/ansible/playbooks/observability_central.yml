@@ -320,7 +320,7 @@
               # Published under its own name through this host's Traefik,
               # which reaches it over the shared network. The same routes
               # as the hand-written gateway of a central next to its panel
-              # (docs/observability-traefik-metrics-gateway.yml): the
+              # (incubacloud/data/observability-traefik-metrics-gateway.yml): the
               # account prefixes for everyone (vmauth asks each for its
               # credential), the deletion route for the panel only, the
               # rest of the operator routes for nobody off this host.
