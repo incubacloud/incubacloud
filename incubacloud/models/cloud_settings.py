@@ -1339,24 +1339,15 @@ class CloudSettings(models.Model):
             if not link_field:
                 log_only.append(rid)
                 continue
-            # Dedup: one active alert per (code, target) at a time.
-            if Alert.search_count([
-                ('code', '=', code),
-                ('state', '=', 'active'),
-                (link_field, '=', link_id),
-            ], limit=1):
-                continue
-            Alert.create({
-                'code': code,
-                'level': 'warning',
-                link_field: link_id,
-                'message': (
-                    f"Could not rotate {model_name}.{field_name} "
-                    f"(id={rid}) — ciphertext was encrypted with a key "
-                    f"no longer in INCUBACLOUD_SECRET_KEY. Regenerate "
-                    f"the value manually to resolve."
-                ),
-            })
+            # One active alert per (code, target) at a time.
+            Alert.raise_alert(
+                code,
+                f"Could not rotate {model_name}.{field_name} "
+                f"(id={rid}) — ciphertext was encrypted with a key "
+                f"no longer in INCUBACLOUD_SECRET_KEY. Regenerate "
+                f"the value manually to resolve.",
+                **Alert._link_target(link_field, link_id),
+            )
 
         if log_only:
             _logger.warning(

@@ -2966,35 +2966,17 @@ class CloudInstance(models.Model):
         )
         flagged = 0
         for inst in instances:
-            existing = Alert.search(
-                [
-                    ("code", "=", self._NO_BACKUP_ALERT_CODE),
-                    ("instance_id", "=", inst.id),
-                    ("state", "=", "active"),
-                ],
-                limit=1,
-            )
             if inst.effective_backup_backend:
-                existing.write({"state": "dismissed"})
+                Alert.resolve_alert(self._NO_BACKUP_ALERT_CODE, instance=inst)
                 continue
             flagged += 1
-            vals = {
-                "code": self._NO_BACKUP_ALERT_CODE,
-                "level": "warning",
-                "message": (
-                    f"Production instance '{inst.name}' has no backup "
-                    f"backend configured — it is not being backed up."
-                ),
-                "instance_id": inst.id,
-            }
-            if inst.project_id:
-                vals["project_id"] = inst.project_id.id
-            if inst.host_id:
-                vals["host_id"] = inst.host_id.id
-            if existing:
-                existing.write(vals)
-            else:
-                Alert.create(vals)
+            Alert.raise_alert(
+                self._NO_BACKUP_ALERT_CODE,
+                f"Production instance '{inst.name}' has no backup "
+                f"backend configured — it is not being backed up.",
+                host=inst.host_id or None,
+                instance=inst,
+            )
         return {"flagged": flagged}
 
     @api.model
@@ -3350,33 +3332,22 @@ class CloudInstance(models.Model):
                 # The source was restarted: the move is undone even if the
                 # target could not be cleaned.
                 inst._on_move_rolled_back(target_host=target)
-                if not Alert.search_count(
-                    [
-                        ("instance_id", "=", inst.id),
-                        ("code", "=", "move_rollback_failed"),
-                        ("state", "=", "active"),
-                    ]
-                ):
-                    Alert.create(
-                        {
-                            "code": "move_rollback_failed",
-                            "level": "warning",
-                            "message": _(
-                                "Rollback cleanup of '%(name)s' failed on "
-                                "target host '%(target)s'; source host "
-                                "'%(origin)s' was restarted. Manual cleanup "
-                                "of the target may be needed.",
-                                name=inst.name,
-                                origin=origin.name or "?",
-                                target=inst.move_target_host_id.name or "?",
-                            ),
-                            "instance_id": inst.id,
-                            "project_id": (
-                                inst.project_id.id if inst.project_id else False
-                            ),
-                            "host_id": origin.id,
-                        }
-                    )
+                Alert.raise_alert(
+                    "move_rollback_failed",
+                    _(
+                        "Rollback cleanup of '%(name)s' failed on "
+                        "target host '%(target)s'; source host "
+                        "'%(origin)s' was restarted. Manual cleanup "
+                        "of the target may be needed.",
+                        name=inst.name,
+                        origin=origin.name or "?",
+                        # The markers were cleared above: the target is
+                        # the one read before, not the record's.
+                        target=target.name or "?",
+                    ),
+                    host=origin or None,
+                    instance=inst,
+                )
                 continue
             try:
                 inst._do_rollback_move()
@@ -3386,31 +3357,19 @@ class CloudInstance(models.Model):
                     inst.id,
                 )
                 continue
-            if not Alert.search_count(
-                [
-                    ("instance_id", "=", inst.id),
-                    ("code", "=", "move_stuck"),
-                    ("state", "=", "active"),
-                ]
-            ):
-                Alert.create(
-                    {
-                        "code": "move_stuck",
-                        "level": "critical",
-                        "message": _(
-                            "Move of '%(name)s' failed before cutover; "
-                            "source host '%(host)s' was restarted "
-                            "automatically.",
-                            name=inst.name,
-                            host=origin.name or "?",
-                        ),
-                        "instance_id": inst.id,
-                        "project_id": (
-                            inst.project_id.id if inst.project_id else False
-                        ),
-                        "host_id": origin.id,
-                    }
-                )
+            Alert.raise_alert(
+                "move_stuck",
+                _(
+                    "Move of '%(name)s' failed before cutover; "
+                    "source host '%(host)s' was restarted "
+                    "automatically.",
+                    name=inst.name,
+                    host=origin.name or "?",
+                ),
+                level="critical",
+                host=origin or None,
+                instance=inst,
+            )
 
     # ── Resource estimation for auto-assign ───────────────────────────────
     _RESOURCE_DEFAULTS = {

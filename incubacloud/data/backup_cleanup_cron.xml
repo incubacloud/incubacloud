@@ -7,6 +7,5 @@
         <field name="code">model.cron_cleanup_backup_attachments()</field>
         <field name="interval_number">1</field>
         <field name="interval_type">hours</field>
-        <field name="active">True</field>
     </record>
 </odoo>

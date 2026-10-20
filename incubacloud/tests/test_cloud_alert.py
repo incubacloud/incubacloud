@@ -269,7 +269,7 @@ class TestCloudAlertDedupIndex(TransactionCase):
     def test_partial_unique_index_exists(self):
         self.env.cr.execute(
             "SELECT 1 FROM pg_indexes WHERE tablename = 'cloud_alert'"
-            "   AND indexname = 'cloud_alert_active_target_uidx'"
+            "   AND indexname = 'cloud_alert_active_identity_uidx'"
         )
         self.assertTrue(
             self.env.cr.fetchone(),

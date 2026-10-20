@@ -1280,19 +1280,6 @@ class CloudJob(models.Model):
         if excerpt:
             msg = f"{msg}: {excerpt}"
 
-        vals = {
-            "code": "job_failed",
-            "level": level,
-            "message": msg,
-            "job_id": cjob.id,
-        }
-        if cjob.instance_id:
-            vals["instance_id"] = cjob.instance_id.id
-            if cjob.instance_id.project_id:
-                vals["project_id"] = cjob.instance_id.project_id.id
-        if cjob.host_id:
-            vals["host_id"] = cjob.host_id.id
-
         # One incident, not one row per attempt. A failing cron job
         # re-enqueues on its own schedule, and every attempt used to
         # stack another alert *and* another mail/Telegram/webhook: on
@@ -1303,14 +1290,20 @@ class CloudJob(models.Model):
         # how long it has been going.
         Alert = self.env["cloud.alert"].sudo()
         existing = Alert.search(self._job_failed_domain(cjob), limit=1)
+        count = existing.occurrences + 1 if existing else 1
         if existing:
-            count = existing.occurrences + 1
             since = fields.Datetime.to_string(existing.create_date)
-            vals["occurrences"] = count
-            vals["message"] = f"{msg} (×{count} since {since} UTC)"
-            existing.write(vals)
-            return existing
-        return Alert.create(vals)
+            msg = f"{msg} (×{count} since {since} UTC)"
+        return Alert.raise_alert(
+            "job_failed",
+            msg,
+            level=level,
+            host=cjob.host_id or None,
+            instance=cjob.instance_id or None,
+            job=cjob,
+            key=self._job_failed_key(cjob),
+            extra={"occurrences": count},
+        )
 
     @api.model
     def _create_host_unreachable_alert(self, cjob, qjob):
@@ -1357,33 +1350,34 @@ class CloudJob(models.Model):
         )
 
     @api.model
+    def _job_failed_key(self, cjob):
+        """Return what tells *cjob*'s ``job_failed`` apart on its target.
+
+        :rtype: str
+        """
+        return f"job_type:{cjob.job_type_id.code}"
+
     def _job_failed_domain(self, cjob):
         """Return the domain identifying *cjob*'s open ``job_failed`` alert.
 
         Identity is (job type, target) rather than the job id, because
         ``retry_job`` creates a fresh ``cloud.job`` for every retry:
         keyed by id, a retry would file a second alert for the same
-        incident and the original would never be dismissed.
+        incident and the original would never be dismissed. It is the
+        engine's identity (``cloud.alert._dedup_domain``) with the job
+        type as key, so a host-scoped job never touches the
+        instance-scoped alerts of the same host.
 
         Shared with ``_dismiss_job_failed_alerts`` on purpose — raising
         and clearing must agree on what "the same incident" means, and
         two copies of that rule is precisely how they stop agreeing.
         """
-        domain = [
-            ("code", "=", "job_failed"),
-            ("state", "=", "active"),
-            ("job_id.job_type_id", "=", cjob.job_type_id.id),
-        ]
-        if cjob.instance_id:
-            domain.append(("instance_id", "=", cjob.instance_id.id))
-        else:
-            # Host-scoped job: never touch instance-scoped alerts that
-            # happen to live on the same host.
-            domain += [
-                ("host_id", "=", cjob.host_id.id),
-                ("instance_id", "=", False),
-            ]
-        return domain
+        return self.env["cloud.alert"]._dedup_domain(
+            "job_failed",
+            host=cjob.host_id or None,
+            instance=cjob.instance_id or None,
+            key=self._job_failed_key(cjob),
+        )
 
     @api.model
     def _dismiss_job_failed_alerts(self, cjob):

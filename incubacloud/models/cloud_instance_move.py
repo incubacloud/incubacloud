@@ -27,9 +27,9 @@ class CloudInstanceMove(models.Model):
     def _notify_move_dns_repoint(self, target_host):
         """Raise a warning alert asking the operator to re-point DNS.
 
-        No-op when DNS is managed for this instance. The alert is keyed
-        by ``code`` + ``instance_id`` so a second move updates the
-        existing one instead of stacking duplicates.
+        No-op when DNS is managed for this instance. The alert is about
+        the instance, so a second move updates the existing one instead
+        of stacking duplicates.
 
         :param target_host: the ``cloud.host`` the instance moved to.
         :return: the ``cloud.alert`` raised, or ``None``.
@@ -37,11 +37,9 @@ class CloudInstanceMove(models.Model):
         self.ensure_one()
         if self._move_dns_is_managed():
             return None
-        Alert = self.env["cloud.alert"].sudo()
-        vals = {
-            "code": self._DNS_REPOINT_ALERT_CODE,
-            "level": "warning",
-            "message": _(
+        return self.env["cloud.alert"].raise_alert(
+            self._DNS_REPOINT_ALERT_CODE,
+            _(
                 "Instance '%(instance)s' moved to host '%(host)s' — "
                 "re-point %(domain)s to %(ip)s or it stays unreachable.",
                 instance=self.name,
@@ -49,21 +47,6 @@ class CloudInstanceMove(models.Model):
                 domain=self.domain or _("its domain"),
                 ip=target_host.ip_address or _("the new host IP"),
             ),
-            "instance_id": self.id,
-        }
-        if self.project_id:
-            vals["project_id"] = self.project_id.id
-        if target_host:
-            vals["host_id"] = target_host.id
-        existing = Alert.search(
-            [
-                ("code", "=", self._DNS_REPOINT_ALERT_CODE),
-                ("instance_id", "=", self.id),
-                ("state", "=", "active"),
-            ],
-            limit=1,
+            host=target_host or None,
+            instance=self,
         )
-        if existing:
-            existing.write(vals)
-            return existing
-        return Alert.create(vals)

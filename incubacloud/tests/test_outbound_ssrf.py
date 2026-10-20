@@ -309,8 +309,8 @@ class TestPreferencesRoute(HttpCase):
         """The route keeps its own list of levels; a level the selector
         offers but the route refuses would fail on every save."""
         user = self._make_user('level-fw', ['base.group_user'])
+        user.cloud_notification_level = 'failures'
         self.authenticate('level-fw', 'level-fw')
-        self.assertEqual(user.cloud_notification_level, 'failures')
         result = self._save(cloud_notification_level='failures_warnings')
         self.assertTrue(result.get('ok'), result)
         user.invalidate_recordset(['cloud_notification_level'])

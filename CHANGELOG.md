@@ -6,6 +6,72 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.193] — 2026-10-20
+
+### Changed
+
+- **Warnings reach new users too.** The default notification level was
+  "Failures only", which sent failed jobs and critical alerts: a failed
+  backup archive, a backup or database container down or a production
+  instance without backups were warnings that reached nobody. A new user
+  now starts at "Failures and warnings"; an existing user keeps the level
+  they had.
+- **Every alert goes through the same engine.** Fourteen producers created
+  their alerts by hand, each with its own search for an open one: no
+  confirmation policy, no new notice when a warning turned critical, and
+  identities that drifted apart. They all call `raise_alert` now, which
+  learned what they needed: a key for what the target alone does not tell
+  apart (two backup backends, two types of failed job), a project for an
+  alert about a whole project, and an instance alert that stays the same
+  alert when the instance moves. The database's unique index follows the
+  same identity, and the upgrade gives the open alerts their key.
+- **A health check that finds nothing keeps only its verdict.** Its log is
+  held until the check ends: one that passed and raised nothing writes its
+  last line, any other writes every line, as before. Written in full every
+  five minutes for every instance, those logs were 83% of the panel's job
+  log rows.
+
+### Fixed
+
+- **Restore and Download line up in the backups list.** Download sits at the
+  edge of every row, with or without a Restore beside it, and both buttons
+  carry an icon.
+- **The cards that create a project's first instances are centred**, side by
+  side, and the members and SSH allowlist panels use the whole width like
+  the rest of the forms.
+- **A development export leaves continuous recovery out**: `.walg/` (wal-g,
+  the host's libraries it runs with, the logs of past restores) no longer
+  reaches the archive. `DEVELOPMENT.md` initialises the database before
+  starting Odoo, since `invoke resetdb` stops it, and says where it answers.
+- **A neutralized copy no longer reaches out of itself.** A copy of a panel
+  (development, QA, a neutralized download, a partner's staging) lost its
+  secrets but kept three ways to act on the real world: the users' webhooks,
+  called unsigned by its jobs and alerts; production's queue, whose
+  unfinished jobs would run there; and its metrics, still pushed to
+  production's central. Neutralizing now clears the webhooks, cancels the
+  unfinished jobs with the `cloud.job` that mirrors each, switches metrics
+  off and closes the consoles left open. The file's header names the
+  commands that really run it.
+- **A neutralized copy keeps its crons off through its next update.** Odoo's
+  neutralization switches every cron off, and 36 of ours (32 in
+  `incubacloud`, 2 in `incubacloud_pitr`, 2 in the manager) declared
+  `active` in updatable data, so the copy's first module update switched
+  them back on. They no longer declare it: a new cron is still born
+  active, and a cron someone paused stays paused through an update.
+  `incubacloud_pitr` 1.0.3.
+
+### Tests
+
+- `export_starts.bats` renders the project as the deploy does (the pinned
+  doodba template, the answers the panel emits), exports it and runs
+  `docker compose config` on the copy; a test keeps its pinned version in
+  step with the panel's. The CI installs copier for it.
+- `NeutralizeInventory`, which a repository mixes in to check its own
+  modules: every stored field that points outside the copy is cleared by a
+  script or exempted with its reason, and no updatable cron declares itself
+  active. A test neutralizes a copy for real and checks what it can no
+  longer reach.
+
 ## [1.0.192] — 2026-10-20
 
 ### Fixed

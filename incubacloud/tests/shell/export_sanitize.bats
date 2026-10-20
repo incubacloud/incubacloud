@@ -22,7 +22,7 @@ setup() {
     mkdir -p "$INST/.docker" "$INST/odoo/custom/src" "$INST/odoo/custom/ssh" \
              "$INST/odoo/custom/conf.d" "$INST/odoo/custom/dependencies" \
              "$INST/odoo/auto" "$INST/dumps" "$INST/postgres" \
-             "$INST/secrets" "$INST/.git" "$INST/logs"
+             "$INST/secrets" "$INST/.git" "$INST/logs" "$INST/.walg/restore"
 
     # Files that must survive.
     echo "keep me" > "$INST/README.md"
@@ -70,6 +70,8 @@ YAML
     echo "TOKEN=hunter2" > "$INST/.env.bak"
     echo "TOKEN=hunter2" > "$INST/odoo/custom/src/extra.env"
     echo "odoo log line" > "$INST/logs/odoo.log"
+    echo "binary" > "$INST/.walg/wal-g"
+    echo "restore output" > "$INST/.walg/restore/log"
     echo "PRIVATE KEY" > "$INST/odoo/custom/ssh/id_rsa"
     echo "PUBLIC KEY" > "$INST/odoo/custom/ssh/id_rsa.pub"
     echo "host ssh-ed25519 AAAA" > "$INST/odoo/custom/ssh/known_hosts"
@@ -127,6 +129,11 @@ run_export() {
     [ ! -e "$OUT/logs" ]
 }
 
+@test "the continuous recovery agent's directory is left out" {
+    run_export
+    [ ! -e "$OUT/.walg" ]
+}
+
 @test "the Odoo conf loses its credentials and production proxies" {
     run_export
     conf="$OUT/odoo/custom/conf.d/inst.conf"
@@ -156,6 +163,9 @@ run_export() {
     run_export
     grep -q "invoke git-aggregate" "$OUT/DEVELOPMENT.md"
     grep -q "Download Neutralized Backup" "$OUT/DEVELOPMENT.md"
+    # resetdb stops Odoo: the steps start it after, not before.
+    [ "$(grep -n '^invoke resetdb' "$OUT/DEVELOPMENT.md" | cut -d: -f1)" -lt \
+      "$(grep -n '^invoke start' "$OUT/DEVELOPMENT.md" | cut -d: -f1)" ]
 }
 
 @test "no real password reaches the archive" {

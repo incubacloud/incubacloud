@@ -1280,13 +1280,10 @@ class CrudMixin:
                 request.env, conflicts, project_id=project.id,
             )
         else:
-            active = Alert.search([
-                ('code', '=', 'pip_conflict'),
-                ('project_id', '=', project.id),
-                ('state', '=', 'active'),
-            ], limit=1)
-            if active:
-                active.write({'state': 'dismissed'})
+            # The project's own alert, never one of its instances'.
+            Alert.resolve_alert(
+                'pip_conflict', **Alert._link_target('project_id', project.id),
+            )
         # The rows' ids, in the order sent, so the editor keeps them.
         return {'ok': True, 'repos': saved_repos}
 
@@ -1559,11 +1556,15 @@ class CrudMixin:
                     safe['odoo_initial_lang'] = project.odoo_initial_lang.id
         # ── Block if project has unresolved pip conflicts ──────────────────
         if project_id:
-            pip_alert = request.env['cloud.alert'].search([
-                ('code', '=', 'pip_conflict'),
-                ('project_id', '=', project_id),
-                ('state', '=', 'active'),
-            ], limit=1)
+            # The project's own conflict: one of its instances' carries
+            # the project too, and blocks only that instance's deploys.
+            Alert = request.env['cloud.alert']
+            pip_alert = Alert.search(
+                Alert._dedup_domain(
+                    'pip_conflict', **Alert._link_target('project_id', project_id),
+                ),
+                limit=1,
+            )
             if pip_alert:
                 return {
                     'blocked': True,

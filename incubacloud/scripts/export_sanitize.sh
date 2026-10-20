@@ -28,8 +28,10 @@ archive="$(ic_expand_home "$3")"
 [ -d "$inst_dir" ] || ic_die "instance directory not found: $inst_dir"
 
 # 1. Copy the project, leaving out VCS checkouts, data directories, every
-#    env file (``.docker/`` holds nothing else), the instance's logs and
-#    the override that carries the platform's resource limits.
+#    env file (``.docker/`` holds nothing else), the instance's logs, the
+#    override that carries the platform's resource limits and the
+#    continuous recovery agent's ``.walg/`` (wal-g, the host's libraries it
+#    runs with, the logs of past restores).
 ic_log "copying $inst_dir to a staging area"
 rm -rf "$staging"
 mkdir -p "$staging"
@@ -41,6 +43,7 @@ rsync -a \
     --exclude='secrets' \
     --exclude='/.docker' \
     --exclude='/logs' \
+    --exclude='/.walg' \
     --exclude='.env' \
     --exclude='.env.*' \
     --exclude='*.env' \
@@ -105,8 +108,14 @@ You need the usual Doodba toolchain: Docker with Compose, `invoke`,
 invoke develop          # git init, docker-compose.yml -> devel.yaml
 invoke git-aggregate    # clone the repositories listed in repos.yaml
 invoke img-build --pull
+invoke resetdb          # a fresh `devel` database; or load the instance's data, below
 invoke start
 ```
+
+Odoo answers on `http://localhost:<Odoo major version>069`, 19069 for
+Odoo 19. `invoke resetdb` stops Odoo and leaves a cache database next to
+`devel`, so run `invoke start` after it and pick `devel` in the database
+selector.
 
 Private repositories: `repos.yaml` no longer carries an access token.
 Either put an SSH key with access to them in `odoo/custom/ssh/` and
@@ -114,9 +123,8 @@ switch those remotes to SSH, or add a token of your own to the URL.
 
 ## Data
 
-The export carries no database: the `devel` database Postgres creates on
-the first start is empty. Initialise it with `invoke resetdb`, or load
-the instance's data:
+The export carries no database. Instead of `invoke resetdb`, you can
+load the instance's data:
 
 1. Download a neutralized backup of the instance from the panel
    ("Download Neutralized Backup") into this folder as `backup.zip`.

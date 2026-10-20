@@ -8,6 +8,5 @@
         <field name="interval_number">1</field>
         <field name="interval_type">days</field>
         <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).strftime('%Y-%m-%d 07:00:00')"/>
-        <field name="active">True</field>
     </record>
 </odoo>

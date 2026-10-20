@@ -23,11 +23,12 @@ everyone whose level covers critical alerts.
     | Level | Jobs | Alerts |
     | --- | --- | --- |
     | `All` | every outcome | critical and warning |
-    | `Failures and warnings` | failed only | critical and warning |
-    | `Failures only` (default) | failed only | critical only |
+    | `Failures and warnings` (default) | failed only | critical and warning |
+    | `Failures only` | failed only | critical only |
     | `None` | none | none |
 
-    The daily digest follows the same level.
+    The daily digest follows the same level. An account created before
+    version 1.0.193 keeps the level it had (`Failures only` was the default).
 - **Muted projects** — silence everything from projects you don't care about.
 - Notifications only cover what you can already see: project visibility rules
   apply to every channel.

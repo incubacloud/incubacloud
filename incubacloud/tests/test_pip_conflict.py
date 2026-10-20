@@ -11,6 +11,7 @@ Tests cover:
     (tested at model level: unblock_and_enqueue method)
 """
 from contextlib import suppress
+from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
@@ -85,6 +86,30 @@ class TestCreatePipConflictAlert(TransactionCase):
     def test_message_contains_package_names(self):
         alert = self.create_alert(self.env, self.conflicts, instance_id=self.instance.id)
         self.assertIn('lib1', alert.message)
+
+    def test_an_instance_conflict_is_not_its_project_s(self):
+        """An instance's alert carries its project too (review, 20-oct-2026).
+
+        Read as the project's, one staging's conflict blocked every new
+        instance of the project, and saving the project dismissed it while
+        the staging was still in conflict.
+        """
+        alert = self.create_alert(self.env, self.conflicts, instance_id=self.instance.id)
+        self.assertEqual(alert.project_id, self.project)
+        Alert = self.env['cloud.alert']
+        project = Alert._link_target('project_id', self.project.id)
+        self.assertFalse(Alert.search(Alert._dedup_domain('pip_conflict', **project)))
+        Alert.resolve_alert('pip_conflict', **project)
+        self.assertEqual(alert.state, 'active')
+
+    def test_a_concurrent_raise_still_returns_the_alert(self):
+        """A producer that loses the race gets the winner's alert, so the
+        job it blocks points at it instead of at nothing (review, 20-oct)."""
+        winner = self.create_alert(self.env, self.conflicts, instance_id=self.instance.id)
+        Alert = type(self.env['cloud.alert'])
+        with patch.object(Alert, 'raise_alert', autospec=True, return_value=self.env['cloud.alert']):
+            again = self.create_alert(self.env, self.conflicts, instance_id=self.instance.id)
+        self.assertEqual(again, winner)
 
 
 class TestBlockedJob(TransactionCase):

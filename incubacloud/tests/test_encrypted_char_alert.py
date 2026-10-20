@@ -108,8 +108,8 @@ class TestEncryptedCharUnreadableAlert(TransactionCase):
         self.assertEqual(first.level, 'critical')
 
         again = create_unreadable_alert(self.env, self.host, 'password')
-        self.assertFalse(
-            again, 'a second read must reuse the open alert, not stack one',
+        self.assertEqual(
+            again, first, 'a second read must reuse the open alert, not stack one',
         )
         self.assertEqual(len(self.env['cloud.alert'].search([
             ('code', '=', self.code),

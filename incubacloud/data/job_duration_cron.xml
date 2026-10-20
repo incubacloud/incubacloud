@@ -7,6 +7,5 @@
         <field name="code">model._cron_watch_long_running()</field>
         <field name="interval_number">10</field>
         <field name="interval_type">minutes</field>
-        <field name="active">True</field>
     </record>
 </odoo>

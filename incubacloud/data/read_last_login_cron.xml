@@ -9,7 +9,6 @@
             <field name="code">model.cron_read_staging_logins()</field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
-            <field name="active">True</field>
         </record>
 
     </data>
