@@ -185,7 +185,7 @@ class CloudMetricRule(models.Model):
     # ``active_test``), so the damage this prevents exists only among
     # them — and a total UNIQUE would burn an archived rule's code
     # forever, a restriction nobody asked for. Same shape as
-    # ``cloud_alert_active_target_uidx``.
+    # ``cloud_alert_active_identity_uidx``.
     #
     # This was a ``_sql_constraints`` list until 1.0.98. Odoo 19 never
     # reads that attribute — ``_add_sql_constraints`` iterates

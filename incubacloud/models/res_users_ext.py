@@ -59,7 +59,9 @@ class ResUsers(models.Model):
             ('none', 'None'),
         ],
         string='Cloud Notifications',
-        default='failures',
+        # Warnings reach a new user too: on the default before 1.0.193,
+        # a failed backup archive or a declined payment reached nobody.
+        default='failures_warnings',
         help='What reaches this user, for jobs and alerts alike. All: '
              'every job outcome and every alert. Failures and warnings: '
              'failed jobs, and critical and warning alerts. Failures '

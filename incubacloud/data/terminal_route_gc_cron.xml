@@ -7,7 +7,6 @@
         <field name="code">model._gc()</field>
         <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
-        <field name="active">True</field>
     </record>
     <!-- The host shell's routes carry an encrypted bearer token for a
          login shell on the whole machine. Without a sweep they were only
@@ -20,6 +19,5 @@
         <field name="code">model._gc()</field>
         <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
-        <field name="active">True</field>
     </record>
 </odoo>

@@ -500,36 +500,24 @@ class CloudBackupBackend(models.Model):
         return {"ok": ok, "failed": failed}
 
     # ── Retention-owner ambiguous-state alert ───────────────────────────────
-    # cloud.alert has no backup_backend_id column — backend-scoped alerts
-    # (no host/instance/project target) are matched via the generic
-    # ``payload`` field instead of adding a new FK for two alert codes.
+    # cloud.alert has no backup_backend_id column: a backend's alerts have
+    # no host/instance/project target, and the backend is their key.
 
     _RETENTION_ALERT_CODE = "backup_retention_undeclared"
 
-    def _find_backend_alert(self, code):
-        """Return the active alert for *self* with *code*, matched via
-        ``payload['backup_backend_id']`` (self is a single record)."""
+    def _alert_key(self):
+        """Return what identifies this backend's alerts (``dedup_key``).
+
+        :rtype: str
+        """
         self.ensure_one()
-        return (
-            self.env["cloud.alert"]
-            .sudo()
-            .search(
-                [
-                    ("code", "=", code),
-                    ("state", "=", "active"),
-                ]
-            )
-            .filtered(
-                lambda a: (a.payload or {}).get("backup_backend_id") == self.id,
-            )
-        )
+        return f"backup_backend:{self.id}"
 
     def _resolve_retention_undeclared_alert(self):
+        """Dismiss this backend's undeclared-retention alert, if open."""
         self.ensure_one()
-        self._find_backend_alert(self._RETENTION_ALERT_CODE).write(
-            {
-                "state": "dismissed",
-            }
+        self.env["cloud.alert"].resolve_alert(
+            self._RETENTION_ALERT_CODE, key=self._alert_key(),
         )
 
     @api.model
@@ -541,26 +529,19 @@ class CloudBackupBackend(models.Model):
         Declaring an owner via ``write()`` resolves the alert; this
         cron never auto-resolves anything, only creates/refreshes.
         """
-        Alert = self.env["cloud.alert"].sudo()
+        Alert = self.env["cloud.alert"]
         undeclared = self.search([("retention_owner_declared", "=", False)])
         for backend in undeclared:
-            existing = backend._find_backend_alert(self._RETENTION_ALERT_CODE)
-            vals = {
-                "code": self._RETENTION_ALERT_CODE,
-                "level": "warning",
-                "message": (
-                    f"Backup backend '{backend.display_name}' has an "
-                    f"unconfirmed retention policy — old backups may "
-                    f"never be deleted. Open it and pick who owns "
-                    f"retention (Duplicity cron / bucket lifecycle / "
-                    f"nobody)."
-                ),
-                "payload": {"backup_backend_id": backend.id},
-            }
-            if existing:
-                existing.write(vals)
-            else:
-                Alert.create(vals)
+            Alert.raise_alert(
+                self._RETENTION_ALERT_CODE,
+                f"Backup backend '{backend.display_name}' has an "
+                f"unconfirmed retention policy — old backups may "
+                f"never be deleted. Open it and pick who owns "
+                f"retention (Duplicity cron / bucket lifecycle / "
+                f"nobody).",
+                key=backend._alert_key(),
+                payload={"backup_backend_id": backend.id},
+            )
         return {"flagged": len(undeclared)}
 
     # ── Managed backend orphan alert (P15 #9b) ──────────────────────────────
@@ -619,25 +600,18 @@ class CloudBackupBackend(models.Model):
 
         flagged = 0
         for backend in managed:
-            existing = backend._find_backend_alert(
-                self._MANAGED_UNUSED_ALERT_CODE,
-            )
             if backend.id in used_ids:
-                existing.write({"state": "dismissed"})
+                Alert.resolve_alert(
+                    self._MANAGED_UNUSED_ALERT_CODE, key=backend._alert_key(),
+                )
                 continue
             flagged += 1
-            vals = {
-                "code": self._MANAGED_UNUSED_ALERT_CODE,
-                "level": "warning",
-                "message": (
-                    f"Managed backup backend '{backend.display_name}' "
-                    f"is not assigned to any instance, project or the "
-                    f"global default — it's being paid for and unused."
-                ),
-                "payload": {"backup_backend_id": backend.id},
-            }
-            if existing:
-                existing.write(vals)
-            else:
-                Alert.create(vals)
+            Alert.raise_alert(
+                self._MANAGED_UNUSED_ALERT_CODE,
+                f"Managed backup backend '{backend.display_name}' "
+                f"is not assigned to any instance, project or the "
+                f"global default — it's being paid for and unused.",
+                key=backend._alert_key(),
+                payload={"backup_backend_id": backend.id},
+            )
         return {"flagged": flagged}

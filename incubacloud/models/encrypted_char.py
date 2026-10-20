@@ -90,29 +90,32 @@ def unreadable_alert_vals(record, field_name):
 
 
 def create_unreadable_alert(env, record, field_name):
-    """Create the alert for *record.field_name* in *env*, deduplicated.
+    """Raise the alert for *record.field_name* in *env*, deduplicated.
 
     Split from ``_alert_unreadable`` so the payload and the dedup rule
     are exercisable against a normal test environment: the production
     path hands in an environment built on a private cursor, which a
     test transaction cannot observe.
 
-    Returns the alert (empty recordset when deduplicated or targetless).
+    Returns the alert: the one already open when the secret was found
+    unreadable before (empty recordset when targetless).
     """
     link_field, vals = unreadable_alert_vals(record, field_name)
     if not link_field:
         _logger.critical('[encrypted] %s', vals['message'])
         return env['cloud.alert'].browse()
+    # One alert per (code, target): a secret read in a loop must not
+    # open one alert per read, nor write the open one at every read
+    # (concurrent readers would fight over its row).
     Alert = env['cloud.alert']
-    # Dedup per (code, target): a secret read in a loop must not open
-    # one alert per read.
-    if Alert.search_count([
-        ('code', '=', vals['code']),
-        ('state', '=', 'active'),
-        (link_field, '=', vals[link_field]),
-    ], limit=1):
-        return Alert.browse()
-    return Alert.create(vals)
+    target = Alert._link_target(link_field, vals[link_field])
+    existing = Alert.search(Alert._dedup_domain(vals['code'], **target), limit=1)
+    if existing:
+        return existing
+    return Alert.raise_alert(
+        vals['code'], vals['message'], level=vals['level'],
+        audience=vals['audience'], **target,
+    )
 
 
 def _alert_unreadable(record, field_name):

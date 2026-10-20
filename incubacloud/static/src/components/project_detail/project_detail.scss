@@ -18,11 +18,15 @@
     .ic-pd-onboarding-cards {
         margin-top: 18px;
         width: 100%;
-        max-width: 560px;
+        // Room for two cards of the grid's minimum (280px) and its gap, side
+        // by side; a narrow screen still stacks them.
+        max-width: 600px;
     }
 }
 
-.ic-pd-onboard-card {
+// Relay's `:root .rl-ghcard` (align-items: flex-start) outranks a lone class:
+// this one outranks it, and the card's icon and text are centred.
+.ic-pd-onboarding .rl-ghcard.ic-pd-onboard-card {
     cursor: pointer;
     text-align: center;
     align-items: center;
@@ -84,10 +88,6 @@
 }
 
 // ── Members panel ────────────────────────────────────────────────────────
-
-.ic-members-panel {
-    max-width: 600px;
-}
 
 .ic-members-add {
     margin-bottom: 12px;

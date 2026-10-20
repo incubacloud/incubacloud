@@ -26,6 +26,5 @@
         <field name="code">model._cron_reconcile_observability()</field>
         <field name="interval_number">15</field>
         <field name="interval_type">minutes</field>
-        <field name="active">True</field>
     </record>
 </odoo>

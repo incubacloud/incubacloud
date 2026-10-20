@@ -175,6 +175,18 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     # deploy and rebuild flows) without touching this module.
     _blocking_job_types = _BLOCKING_JOB_TYPES
 
+    # While the check runs (``run``) its log is held in memory, until it
+    # ends (``_log_settled``). A cycle that passed (``_verdict``, see
+    # ``_pass``) and reported nothing through ``_inst_alert`` — no alert,
+    # not even the suspicion of one (``_alerted``) — keeps only its
+    # verdict: the readings are on the instance already. Written in full
+    # every five minutes for every instance, those logs were 83% of the
+    # panel's job log rows (19-oct-2026). Any other cycle keeps its whole
+    # log, a job refused before it ran included: nothing is held then.
+    _log_settled = True
+    _verdict = None
+    _alerted = False
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _inst(self):
@@ -227,16 +239,56 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
     # ── AbstractSSHExecutor interface ─────────────────────────────────────
 
+    def run(self):
+        """Run the check holding its log until it ends (``_async_entry``).
+
+        :returns: what ``AbstractExecutor.run`` returns
+        """
+        self._log_settled = False
+        return super().run()
+
+    async def _async_entry(self):
+        """Run the check, then let its held log through.
+
+        :raises Exception: whatever the check raised; a check that
+            raised has no verdict, so its log is kept whole
+        """
+        try:
+            await super()._async_entry()
+        except BaseException:
+            self._verdict = None
+            raise
+        finally:
+            self._log_settled = True
+
+    def _flush_logs(self):
+        """Write the log once the check has ended, whole unless it passed.
+
+        Nothing is written while the check runs. A cycle that passed
+        without raising an alert keeps only its verdict; any other keeps
+        every line.
+
+        :returns: number of ``cloud.job.log.chunk`` rows created
+        """
+        if not self._log_settled:
+            return 0
+        if self._verdict and not self._alerted:
+            self._log_buffer[:] = [(self._verdict, 'system')]
+        return super()._flush_logs()
+
+    def _pass(self, verdict):
+        """Close a cycle that found nothing, with *verdict* as its last line.
+
+        :param str verdict: the line that says how the instance was found;
+            the only one its log keeps unless an alert was raised
+        """
+        self._sys(verdict)
+        self._verdict = verdict
+
     async def before_execute(self, transport):
         inst = self._inst()
         self._sys(f"Checking health of '{inst.name}'…")
         self._skipped = self._is_blocked_by_active_job()
-        if self._skipped:
-            self._sys(
-                "Skipped — an intrusive job (deploy / rebuild / restore) "
-                "is currently running on this instance. "
-                "Resource and log readings would be meaningless."
-            )
 
     def _error_lines_command(self, d, since, cutoff):
         """Return the command that samples ERROR lines for this cycle.
@@ -718,6 +770,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 'http_fail_streak': 0,
             })
             self._resolve_inst_alert('instance_unresponsive')
+            self._pass(
+                "Skipped — an intrusive job (deploy / rebuild / restore) "
+                "is currently running on this instance. "
+                "Resource and log readings would be meaningless."
+            )
             return
 
         # The log archive is about files on the host, not about the
@@ -762,7 +819,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 self._resolve_inst_alert('instance_down')
                 self._resolve_inst_alert('instance_unresponsive')
                 self._resolve_service_alerts(inst)
-                self._sys(f"✓ '{inst.name}' is stopped on purpose.")
+                self._pass(f"✓ '{inst.name}' is stopped on purpose.")
                 return
             if odoo_present and self._odoo_stop_is_expected():
                 # Present but stopped, and the stop is scheduled (e.g.
@@ -791,7 +848,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 issues = []
                 self._check_other_services(inst, issues)
                 inst.write({'status': 'warning' if issues else 'ok'})
-                self._sys(f"✓ '{inst.name}' is asleep (expected).")
+                asleep = f"✓ '{inst.name}' is asleep (expected)."
+                if issues:
+                    self._sys(asleep)
+                else:
+                    self._pass(asleep)
                 return
             vals = {
                 'status': 'error',
@@ -928,7 +989,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             inst.write({'status': 'warning'})
         else:
             inst.write({'status': 'ok'})
-            self._sys(
+            self._pass(
                 f"✓ '{inst.name}' healthy — "
                 f"CPU {self._cpu_current:.0f}% · Mem {self._mem_current:.0f}%"
             )
@@ -1040,6 +1101,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         an alert about a failure must survive the rollback of the
         transaction that failed.
         """
+        self._alerted = True
         inst = self._inst()
         with self._durable_env() as env:
             env['cloud.alert'].raise_alert(

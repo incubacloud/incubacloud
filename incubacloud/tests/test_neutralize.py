@@ -22,9 +22,19 @@ Scope is every installed module at once, which is how neutralization
 actually runs. A module absent from the database contributes neither
 fields nor a script, so a core-only install is checked against core
 alone without pretending saas columns exist.
+
+Secrets are not all a copy must lose. A field that makes it reach
+outside — a user's webhook — and a cron that the copy's next module
+update switches back on act on the real world with no secret at all.
+``NeutralizeInventory`` checks those per repository: each one checks its
+own modules and names its own exemptions, where its fields live.
 """
+import os
 import re
 
+from lxml import etree
+
+from odoo.modules.module import get_manifest, get_module_path
 from odoo.modules.neutralize import neutralize_database
 from odoo.tests.common import TransactionCase, tagged
 from odoo.tools.misc import file_open
@@ -32,8 +42,25 @@ from odoo.tools.misc import file_open
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedFieldMixin
 
 
-@tagged("post_install", "-at_install")
-class TestNeutralize(TransactionCase):
+#: A field whose name says it points somewhere: the copy would call it.
+OUTBOUND_RE = re.compile(r"(^|_)(url|uri|endpoint|webhook|hook)(_|$)")
+
+
+class NeutralizeInventory:
+    """What a repository checks of its own modules' neutralization.
+
+    Mixed into a ``TransactionCase``: core checks its modules with it, and
+    a layer above checks its own the same way, naming its exemptions
+    where its fields live. "Its modules" are the installed modules of the
+    repository ``_inventory_anchor`` belongs to. The class mixing it in
+    sets ``allow_inherited_tests_method``, or Odoo runs none of these.
+    """
+
+    #: A module of the repository whose modules are checked.
+    _inventory_anchor = None
+    #: ``{"table.column": why}``: fields that point outside the copy, that
+    #: no script clears, and why that is safe.
+    _outbound_exempt = {}
 
     def _scripts(self):
         """Return the statements of every installed module's script.
@@ -63,20 +90,6 @@ class TestNeutralize(TransactionCase):
             )
         return statements
 
-    def _secret_columns(self):
-        """Return ``(table, column)`` for every encrypted field stored."""
-        found = set()
-        for name in self.env.registry:
-            model = self.env[name]
-            if model._abstract or model._transient:
-                continue
-            found.update(
-                (model._table, field.name)
-                for field in model._fields.values()
-                if isinstance(field, EncryptedFieldMixin) and field.store
-            )
-        return found
-
     def _clears(self, statements, table, column):
         """Return whether any script empties ``table.column``.
 
@@ -91,6 +104,129 @@ class TestNeutralize(TransactionCase):
             ):
                 return True
         return False
+
+    def _inventory_modules(self):
+        """Return the installed modules of the anchor's repository.
+
+        Paths are resolved: modules are linked into one addons directory,
+        and their repository is where the links lead.
+
+        :rtype: set[str]
+        """
+        root = os.path.dirname(os.path.realpath(
+            get_module_path(self._inventory_anchor)
+        ))
+        installed = self.env["ir.module.module"].search([
+            ("state", "in", ("installed", "to upgrade")),
+        ]).mapped("name")
+        return {
+            name for name in installed
+            if (path := get_module_path(name, display_warning=False))
+            and os.path.dirname(os.path.realpath(path)) == root
+        }
+
+    def test_every_outbound_field_is_neutralized_or_exempt(self):
+        """A field the copy would call is cleared, or says why it is safe.
+
+        Encrypted fields are left to ``test_every_secret_field_is_neutralized``.
+        """
+        modules = self._inventory_modules()
+        statements = self._scripts()
+        found = set()
+        for name in self.env.registry:
+            model = self.env[name]
+            if model._abstract or model._transient:
+                continue
+            found.update(
+                (model._table, field.name)
+                for field in model._fields.values()
+                if field.store and field.type in ("char", "text")
+                and field._module in modules
+                and not isinstance(field, EncryptedFieldMixin)
+                and OUTBOUND_RE.search(field.name)
+            )
+        self.assertTrue(found, "no outbound fields found — check the filter")
+        missed = sorted(
+            f"{table}.{column}"
+            for table, column in found
+            if f"{table}.{column}" not in self._outbound_exempt
+            and not self._clears(statements, table, column)
+        )
+        self.assertFalse(
+            missed,
+            "a neutralized copy would still reach out through these fields; "
+            "clear them in data/neutralize.sql or say why they are safe: %s"
+            % ", ".join(missed),
+        )
+        stale = sorted(
+            key for key in self._outbound_exempt
+            if tuple(key.split(".", 1)) not in found
+        )
+        self.assertFalse(stale, "exemptions for fields that are gone: %s" % stale)
+
+    def test_no_updatable_cron_switches_itself_on(self):
+        """A copy's crons, switched off, stay off through its next update.
+
+        Odoo's neutralization switches every cron off; a record outside
+        ``noupdate`` that declares ``active`` writes it again on each
+        update. Left out, a new cron is still born active.
+        """
+        offending = []
+        for module in sorted(self._inventory_modules()):
+            for path in get_manifest(module).get("data", ()):
+                if not path.endswith(".xml"):
+                    continue
+                with file_open(f"{module}/{path}", "rb") as handle:
+                    root = etree.parse(handle).getroot()
+                for record in root.iter("record"):
+                    if record.get("model") != "ir.cron" or any(
+                        node.get("noupdate") in ("1", "True", "true")
+                        for node in (record, *record.iterancestors())
+                    ):
+                        continue
+                    offending.extend(
+                        f"{module}/{path}: {record.get('id')}"
+                        for field in record.iterfind("field[@name='active']")
+                        if (field.get("eval") or field.text or "").strip()
+                        in ("True", "1", "true")
+                    )
+        self.assertFalse(
+            offending,
+            "these crons switch themselves back on when a neutralized copy "
+            "is updated; leave 'active' out: %s" % ", ".join(offending),
+        )
+
+
+@tagged("post_install", "-at_install")
+class TestNeutralize(NeutralizeInventory, TransactionCase):
+
+    #: Odoo collects only the class's own methods otherwise.
+    allow_inherited_tests_method = True
+    _inventory_anchor = "incubacloud"
+    _outbound_exempt = {
+        "cloud_backup_backend.s3_endpoint_url":
+            "its credentials are cleared: nothing reaches it",
+        "cloud_instance_repo.url": "a repository the copy reads, never writes",
+        "cloud_project_repo.url": "a repository the copy reads, never writes",
+        "cloud_settings.copier_template_url": "a public template the copy reads",
+        "cloud_settings.grafana_base_url": "read only while metrics are on",
+        "cloud_settings.metrics_central_url": "read only while metrics are on",
+        "cloud_settings.metrics_remote_write_url": "read only while metrics are on",
+    }
+
+    def _secret_columns(self):
+        """Return ``(table, column)`` for every encrypted field stored."""
+        found = set()
+        for name in self.env.registry:
+            model = self.env[name]
+            if model._abstract or model._transient:
+                continue
+            found.update(
+                (model._table, field.name)
+                for field in model._fields.values()
+                if isinstance(field, EncryptedFieldMixin) and field.store
+            )
+        return found
 
     def test_every_secret_field_is_neutralized(self):
         secrets = self._secret_columns()
@@ -172,3 +308,66 @@ class TestNeutralize(TransactionCase):
             " WHERE key = 'database.is_neutralized'"
         )
         self.assertEqual(self.env.cr.fetchone(), ("true",))
+
+    def test_a_neutralized_copy_reaches_nothing_outside(self):
+        """No webhook, no metrics, no job of production's, no open console."""
+        host = self.env["cloud.host"].create({
+            "name": "neutralize-outside",
+            "ip_address": "192.0.2.11",
+            "user": "root",
+            "wildcard_domain": "outside.example.com",
+        })
+        self.env.user.cloud_webhook_url = "https://hooks.example.com/incubacloud"
+        self.env["cloud.settings"]._get_system().metrics_enabled = True
+        job_type = self.env["cloud.job.type"].search(
+            [("code", "=", "host_probe")], limit=1,
+        ) or self.env["cloud.job.type"].create({
+            "name": "host_probe", "code": "host_probe", "apply_to": "host",
+        })
+        jobs = {}
+        for state in ("pending", "started", "done"):
+            qjob = self.env["queue.job"].sudo().create({
+                "uuid": f"neutralize-{state}",
+                "name": f"qj-{state}",
+                "state": state,
+                "method_name": "noop",
+                "model_name": "cloud.job",
+                "func_string": "noop()",
+            })
+            jobs[state] = self.env["cloud.job"].sudo().create({
+                "host_id": host.id,
+                "job_type_id": job_type.id,
+                "name": f"Job {state}",
+                "queue_job_uuid": qjob.uuid,
+                "queue_job_id": qjob.id,
+            })
+        console = self.env["cloud.host.session"].sudo().create({
+            "host_id": host.id,
+            "user_id": self.env.user.id,
+            "session_id": "neutralize-console",
+        })
+        self.env.flush_all()
+        neutralize_database(self.env.cr)
+        cr = self.env.cr
+        cr.execute("SELECT cloud_webhook_url FROM res_users WHERE id = %s",
+                   (self.env.user.id,))
+        self.assertEqual(cr.fetchone(), (None,))
+        cr.execute("SELECT bool_or(metrics_enabled) FROM cloud_settings")
+        self.assertEqual(cr.fetchone(), (False,))
+        cr.execute(
+            "SELECT c.name, c.state, q.state FROM cloud_job c"
+            " JOIN queue_job q ON q.id = c.queue_job_id WHERE c.id IN %s"
+            " ORDER BY c.id",
+            (tuple(job.id for job in jobs.values()),),
+        )
+        self.assertEqual(cr.fetchall(), [
+            ("Job pending", "cancelled", "cancelled"),
+            ("Job started", "cancelled", "cancelled"),
+            # What production finished stays as it ended.
+            ("Job done", "done", "done"),
+        ])
+        cr.execute(
+            "SELECT state, closed_at IS NOT NULL FROM cloud_host_session"
+            " WHERE id = %s", (console.id,),
+        )
+        self.assertEqual(cr.fetchone(), ("closed", True))

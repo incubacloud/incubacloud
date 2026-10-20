@@ -7,6 +7,5 @@
         <field name="code">model.cron_collect_metrics()</field>
         <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
-        <field name="active">True</field>
     </record>
 </odoo>

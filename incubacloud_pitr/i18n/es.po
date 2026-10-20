@@ -63,13 +63,13 @@ msgstr "Fallos de archivado"
 msgid ""
 "Archive this production instance's database continuously and copy its "
 "filestore as it changes, so it can be restored to any minute of its backup "
-"window. Needs a backup backend. Switching it on or off rebuilds the instance"
-" and restarts its database once."
+"window. Needs a backup backend. Switching it on or off rebuilds the instance "
+"and restarts its database once."
 msgstr ""
-"Archiva de forma continua la base de datos de esta instancia de producción y"
-" copia su filestore a medida que cambia, para poder restaurarla a cualquier "
-"minuto de su ventana de backups. Necesita un backend de backups. Activarla o"
-" desactivarla reconstruye la instancia y reinicia su base de datos una vez."
+"Archiva de forma continua la base de datos de esta instancia de producción y "
+"copia su filestore a medida que cambia, para poder restaurarla a cualquier "
+"minuto de su ventana de backups. Necesita un backend de backups. Activarla o "
+"desactivarla reconstruye la instancia y reinicia su base de datos una vez."
 
 #. module: incubacloud_pitr
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_cluster_id
@@ -110,12 +110,12 @@ msgstr "Instancia en la nube"
 #. module: incubacloud_pitr
 #: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_previous_clusters
 msgid ""
-"Clusters archived before this one (a move or a new deploy starts a new one),"
-" with the moment they stopped: [{'id': ..., 'until': ISO}]. Purged once out "
+"Clusters archived before this one (a move or a new deploy starts a new one), "
+"with the moment they stopped: [{'id': ..., 'until': ISO}]. Purged once out "
 "of the window."
 msgstr ""
-"Clústeres archivados antes que este (una mudanza o un despliegue nuevo crean"
-" otro), con el momento en que dejaron de archivarse: [{'id': ..., 'until': "
+"Clústeres archivados antes que este (una mudanza o un despliegue nuevo crean "
+"otro), con el momento en que dejaron de archivarse: [{'id': ..., 'until': "
 "ISO}]. Se purgan cuando quedan fuera de la ventana."
 
 #. module: incubacloud_pitr
@@ -135,8 +135,8 @@ msgstr "Recuperación continua"
 msgid ""
 "Continuous recovery needs a production instance with an S3 backup backend."
 msgstr ""
-"La recuperación continua necesita una instancia de producción con un backend"
-" de backups S3."
+"La recuperación continua necesita una instancia de producción con un backend "
+"de backups S3."
 
 #. module: incubacloud_pitr
 #: model:ir.actions.server,name:incubacloud_pitr.cron_pitr_base_backups_ir_actions_server
@@ -179,10 +179,21 @@ msgid "Display Name"
 msgstr "Nombre mostrado"
 
 #. module: incubacloud_pitr
+#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_timelines
+msgid ""
+"Each restore to a moment starts a new timeline of the cluster: [{'job', "
+"'cluster', 'timeline', 'since', 'target'}]. A later restore follows them to "
+"pick its base copy."
+msgstr ""
+"Cada restauración a un momento inicia una nueva línea temporal del clúster: "
+"[{'job', 'cluster', 'timeline', 'since', 'target'}]. Una restauración "
+"posterior las sigue para elegir su copia base."
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_key
 msgid ""
-"Encrypts the archive on the host before it is uploaded. Lost with the panel,"
-" the archive cannot be read."
+"Encrypts the archive on the host before it is uploaded. Lost with the panel, "
+"the archive cannot be read."
 msgstr ""
 "Cifra el archivo en el host antes de subirlo. Si se pierde con el panel, el "
 "archivo no se puede leer."
@@ -278,8 +289,8 @@ msgstr "Desactivada"
 #. odoo-javascript
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid ""
-"Off. Switched on, the database is archived continuously and the files copied"
-" as they change, so the instance can be restored to any minute of the last"
+"Off. Switched on, the database is archived continuously and the files copied "
+"as they change, so the instance can be restored to any minute of the last"
 msgstr ""
 "Desactivada. Activada, la base de datos se archiva de forma continua y los "
 "ficheros se copian a medida que cambian, de modo que la instancia se puede "
@@ -334,6 +345,11 @@ msgid "Restore to a moment…"
 msgstr "Restaurar a un momento…"
 
 #. module: incubacloud_pitr
+#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_timelines
+msgid "Restores to a Moment"
+msgstr "Restauraciones a un momento"
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_stack_external
 msgid "Stack Configured Outside the Panel"
 msgstr "Pila configurada fuera del panel"
@@ -359,6 +375,12 @@ msgstr "Desactivar"
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "Switch on"
 msgstr "Activar"
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
+msgid "Switching off…"
+msgstr "Desactivándose…"
 
 #. module: incubacloud_pitr
 #: model:ir.model.fields.selection,name:incubacloud_pitr.selection__cloud_instance__pitr_state__enabling
@@ -459,8 +481,7 @@ msgstr "Objetivo de recuperación desconocido: %s"
 msgid ""
 "days. Switching it on rebuilds the instance and restarts its database once."
 msgstr ""
-"días. Activarla reconstruye la instancia y reinicia su base de datos una "
-"vez."
+"días. Activarla reconstruye la instancia y reinicia su base de datos una vez."
 
 #. module: incubacloud_pitr
 #. odoo-javascript
@@ -479,25 +500,3 @@ msgstr "para confirmar"
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "until now."
 msgstr "hasta ahora."
-
-#. module: incubacloud_pitr
-#: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_timelines
-msgid ""
-"Each restore to a moment starts a new timeline of the cluster: [{'job', "
-"'cluster', 'timeline', 'since', 'target'}]. A later restore follows them to "
-"pick its base copy."
-msgstr ""
-"Cada restauración a un momento inicia una nueva línea temporal del clúster: "
-"[{'job', 'cluster', 'timeline', 'since', 'target'}]. Una restauración "
-"posterior las sigue para elegir su copia base."
-
-#. module: incubacloud_pitr
-#: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_timelines
-msgid "Restores to a Moment"
-msgstr "Restauraciones a un momento"
-
-#. module: incubacloud_pitr
-#. odoo-javascript
-#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.js:0
-msgid "Switching off…"
-msgstr "Desactivándose…"

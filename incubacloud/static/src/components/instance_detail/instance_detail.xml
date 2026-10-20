@@ -1667,7 +1667,7 @@
                             <i class="fa fa-spinner fa-spin" /> Restoring…
                         </t>
                         <t t-else="">
-                            <i class="fa fa-undo" /> Restore
+                            <t t-out="env.icon('restore', 15)" /> Restore
                         </t>
                     </button>
                 </div>
@@ -2787,23 +2787,32 @@
                                         <td
                       t-esc="bk.size ? formatSize(bk.size) : '—'"
                     />
-                                        <td class="ic-bk-actions">
-                                            <button
-                        class="ic-bk-action-btn"
-                        title="Download"
-                        t-on-click="() => this.downloadRow(bk)"
-                      >
-                                                <t t-out="env.icon('download', 15)" />
-                                            </button>
-                                            <t t-if="!bk.attachment_id">
+                                        <td class="ic-bk-actions-cell">
+                                            <!-- Download always last, at the edge; a row
+                                                 that cannot be restored keeps the slot,
+                                                 so both form columns. -->
+                                            <div class="ic-bk-actions">
                                                 <button
+                          t-if="!bk.attachment_id"
                           class="ic-bk-action-btn ic-bk-restore-btn"
                           title="Restore"
                           t-on-click="() => this.openRestoreModal(bk.time)"
                         >
-                                                    <i class="fa fa-undo" />
+                                                    <t t-out="env.icon('restore', 15)" />
                                                 </button>
-                                            </t>
+                                                <span
+                          t-else=""
+                          class="ic-bk-action-slot"
+                          aria-hidden="true"
+                        />
+                                                <button
+                          class="ic-bk-action-btn"
+                          title="Download"
+                          t-on-click="() => this.downloadRow(bk)"
+                        >
+                                                    <t t-out="env.icon('download', 15)" />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 </t>

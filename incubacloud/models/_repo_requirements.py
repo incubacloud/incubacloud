@@ -505,7 +505,7 @@ def repo_key_for_source_label(repos, label):
 def create_pip_conflict_alert(
     env, conflicts, instance_id=None, project_id=None, job_id=None,
 ):
-    """Create or update a pip_conflict alert for the given target.
+    """Raise or refresh the pip_conflict alert for the given target.
 
     :param job_id: the job that found the conflicts, when one did; its
         failure is then this alert's news and raises no ``job_failed``
@@ -514,34 +514,26 @@ def create_pip_conflict_alert(
     if not conflicts or (not instance_id and not project_id):
         return None
     Alert = env['cloud.alert']
-    domain = [('code', '=', 'pip_conflict'), ('state', '=', 'active')]
-    if instance_id:
-        domain.append(('instance_id', '=', instance_id))
-    else:
-        domain.append(('project_id', '=', project_id))
     names = ', '.join(c['name'] for c in conflicts[:3])
     if len(conflicts) > 3:
         names += f' (+{len(conflicts) - 3} more)'
-    message = f"Pip dependency conflicts: {names}"
-    existing = Alert.search(domain, limit=1)
-    job_vals = {'job_id': job_id} if job_id else {}
-    if existing:
-        existing.write({
-            'conflict_data': conflicts, 'message': message, **job_vals,
-        })
-        return existing
-    vals = {
-        'code': 'pip_conflict',
-        'level': 'warning',
-        'message': message,
-        'conflict_data': conflicts,
-        **job_vals,
-    }
-    if instance_id:
-        vals['instance_id'] = instance_id
-    else:
-        vals['project_id'] = project_id
-    return Alert.create(vals)
+    target = (
+        {'instance': env['cloud.instance'].browse(instance_id)}
+        if instance_id
+        else Alert._link_target('project_id', project_id)
+    )
+    alert = Alert.raise_alert(
+        'pip_conflict',
+        f"Pip dependency conflicts: {names}",
+        job=env['cloud.job'].browse(job_id) if job_id else None,
+        extra={'conflict_data': conflicts},
+        **target,
+    )
+    # Empty when a concurrent producer filed it first: the job this
+    # blocks must point at that one, not at nothing.
+    return alert or Alert.search(
+        Alert._dedup_domain('pip_conflict', **target), limit=1,
+    )
 
 
 # ── GitHub fetch ───────────────────────────────────────────────────────────

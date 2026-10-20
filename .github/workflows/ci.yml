@@ -358,6 +358,11 @@ jobs:
           tar -xzf /tmp/bats.tar.gz -C /tmp
           sudo /tmp/bats-core-1.11.1/install.sh /usr/local
 
+      # export_starts.bats renders the doodba template, as a host's deploy
+      # does with the copier it installs through pipx (full_setup_install.sh).
+      - name: Install copier
+        run: pipx install copier==9.11.0
+
       - name: Run bats
         run: bats incubacloud/tests/shell incubacloud_pitr/tests/shell
 

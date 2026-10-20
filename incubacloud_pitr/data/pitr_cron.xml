@@ -9,7 +9,6 @@
             <field name="code">model._cron_pitr_watch()</field>
             <field name="interval_number">10</field>
             <field name="interval_type">minutes</field>
-            <field name="active">True</field>
         </record>
 
         <record id="cron_pitr_base_backups" model="ir.cron">
@@ -19,7 +18,6 @@
             <field name="code">model._cron_pitr_base_backups()</field>
             <field name="interval_number">1</field>
             <field name="interval_type">hours</field>
-            <field name="active">True</field>
         </record>
 
     </data>

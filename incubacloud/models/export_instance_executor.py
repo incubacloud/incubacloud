@@ -13,8 +13,9 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
 
     ``scripts/export_sanitize.sh`` copies the project with ``rsync`` and
     explicit excludes: VCS checkouts, data directories (dumps, postgres,
-    secrets), every env file, the logs and the override with the
-    platform's resource limits. It then strips repository tokens, SSH
+    secrets), every env file, the logs, the override with the
+    platform's resource limits and the continuous recovery agent's
+    ``.walg/``. It then strips repository tokens, SSH
     keys and credentials from the Odoo conf and the copier answers,
     points ``docker-compose.yml`` at ``devel.yaml`` and adds a
     ``DEVELOPMENT.md`` with the steps to start it.

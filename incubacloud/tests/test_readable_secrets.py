@@ -117,7 +117,12 @@ class TestUnreadableSecretAlertsCloseThemselves(TransactionCase):
 
     def test_the_pass_is_scheduled_hourly(self):
         cron = self.env.ref('incubacloud.cron_resolve_readable_secrets')
-        self.assertTrue(cron.active)
+        # A neutralized copy keeps every cron off, through updates too
+        # (1.0.193): there only the schedule is pinned.
+        if not self.env['ir.config_parameter'].sudo().get_param(
+            'database.is_neutralized',
+        ):
+            self.assertTrue(cron.active)
         self.assertEqual(
             (cron.interval_number, cron.interval_type), (1, 'hours'),
         )

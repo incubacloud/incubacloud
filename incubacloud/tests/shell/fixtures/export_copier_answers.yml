@@ -1,0 +1,40 @@
+# The answers the deploy renders for a production instance with backups and
+# an SMTP relay (cloud.instance._render_copier_answers), every secret
+# replaced by a dummy. Read by export_starts.bats.
+backup_aws_access_key_id: dummy-key-id
+backup_aws_secret_access_key: dummy-secret
+backup_backend_password: dummy-password
+backup_deletion: false
+backup_dst: s3://example-bucket/acme/acme-prod
+backup_email_from: backups@example.com
+backup_email_to: ops@example.com
+backup_image_version: latest
+backup_passphrase: dummy-passphrase
+backup_smtp_report_success: false
+backup_tz: UTC
+domains_prod:
+  - cert_resolver: letsencrypt
+    hosts: [acme.example.com]
+domains_test: []
+odoo_admin_password: dummy-admin
+odoo_initial_lang: en_US
+odoo_proxy: traefik
+odoo_version: 19.0
+postgres_dbname: prod
+postgres_password: dummy-db
+postgres_username: odoo
+postgres_version: "17"
+project_author: IncubaCloud
+project_license: BSL-1.0
+project_name: acme-prod
+smtp_canonical_default: example.com
+smtp_canonical_domains: []
+smtp_default_from: notifications@example.com
+smtp_relay_host: mail.example.com
+smtp_relay_password: dummy-relay
+smtp_relay_port: 587
+smtp_relay_user: notifications@example.com
+smtp_relay_version: latest
+whitelist_docker_project_test: acme-prod
+whitelisted_hosts_devel: []
+whitelisted_hosts_test: []

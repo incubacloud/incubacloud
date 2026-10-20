@@ -49,6 +49,16 @@ msgid "%(count)d project(s) use it as their default: %(names)s."
 msgstr "%(count)d proyecto(s) lo usan como predeterminado: %(names)s."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
+msgid ""
+"%(count)s module(s) are defined in more than one repository: %(names)s. "
+"Choose which repository keeps each one in Alerts before deploying."
+msgstr ""
+"%(count)s módulo(s) están definidos en más de un repositorio: %(names)s. "
+"Elija en Alertas qué repositorio conserva cada uno antes de desplegar."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_mails.js:0
 msgid "%(first)s and %(count)s more"
@@ -158,6 +168,12 @@ msgstr "%s repositorios importados"
 #: code:addons/incubacloud/models/cloud_host.py:0
 msgid "'%(address)s' is not an IP address or a host name."
 msgstr "«%(address)s» no es una dirección IP ni un nombre de host."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "'%(host)s' refused the SSH allowlist change: %(output)s"
+msgstr "«%(host)s» rechazó el cambio de su lista de acceso SSH: %(output)s"
 
 #. module: incubacloud
 #. odoo-python
@@ -467,6 +483,16 @@ msgid ""
 msgstr ""
 "Una copia de tu instancia de producción, para probar cambios. Crea primero "
 "la producción y luego clónala desde el menú lateral."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"A deploy of '%(name)s' is waiting for an alert to be resolved: %(alert)s. "
+"Resolve it in Alerts and the deploy starts by itself."
+msgstr ""
+"Un despliegue de «%(name)s» está esperando a que se resuelva una alerta: "
+"%(alert)s. Resuélvala en Alertas y el despliegue empezará solo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1743,18 +1769,6 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
-msgid "Cloning repository..."
-msgstr "Clonando el repositorio..."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
-msgid "Could not fetch branches"
-msgstr "No se pudieron obtener las ramas"
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "CPU"
 msgstr "CPU"
@@ -1977,6 +1991,11 @@ msgstr ""
 "el final de un log. 0 usa el valor por defecto."
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_capture_secret_keys_ir_actions_server
+msgid "Capture instance encryption keys"
+msgstr "Capturar las claves de cifrado de las instancias"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Category"
@@ -2187,6 +2206,12 @@ msgstr "Clonar a staging"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Cloning repository..."
+msgstr "Clonando el repositorio..."
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/project_sidebar/project_sidebar.xml:0
 msgid "Cloning…"
 msgstr "Clonando…"
@@ -2205,6 +2230,11 @@ msgstr "Cerrar"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_session__close_reason
 msgid "Close Reason"
 msgstr "Motivo de cierre"
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_resolve_readable_secrets_ir_actions_server
+msgid "Close alerts on secrets that read again"
+msgstr "Cerrar las alertas de secretos que vuelven a leerse"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2852,6 +2882,12 @@ msgid "Could not detect chat ID"
 msgstr "No se pudo detectar el ID de chat"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
+msgid "Could not fetch branches"
+msgstr "No se pudieron obtener las ramas"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid "Could not inspect the repository safely."
@@ -2904,6 +2940,14 @@ msgstr "No se pudo preparar la subida."
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Could not queue it."
 msgstr "No se pudo encolar."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "Could not reach '%(host)s' to change its SSH allowlist: %(error)s"
+msgstr ""
+"No se pudo conectar con «%(host)s» para cambiar su lista de acceso SSH: "
+"%(error)s"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3318,6 +3362,11 @@ msgstr ""
 "llega directo es el peor de los dos errores: una petición directa no lleva "
 "cadena reenviada, así que todos los visitantes se cuentan como el mismo y "
 "comparten un único límite."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__dedup_key
+msgid "Dedup Key"
+msgstr "Clave de deduplicación"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4081,6 +4130,11 @@ msgstr ""
 "deban controlarse manualmente."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__secret_key
+msgid "Encryption Key"
+msgstr "Clave de cifrado"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__passphrase
 msgid "Encryption Passphrase"
 msgstr "Frase de paso de encriptación"
@@ -4460,12 +4514,6 @@ msgstr "Falló al encolar la acción del host."
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Failed to enqueue whitelist job."
 msgstr "Error al encolar la tarea de lista blanca."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid "Failed to fetch branch head"
-msgstr "Falló al obtener el HEAD de la rama"
 
 #. module: incubacloud
 #. odoo-python
@@ -7988,6 +8036,12 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "No activity yet."
 msgstr "Sin actividad aún."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "No address given."
+msgstr "No se indicó ninguna dirección."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11816,6 +11870,22 @@ msgstr ""
 "hasta que se reinstale."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__secret_key
+msgid ""
+"The INCUBACLOUD_SECRET_KEY chain this instance's Odoo encrypts its own "
+"secrets with (comma-separated Fernet keys, primary first). Generated with "
+"the instance and written to .docker/incubacloud.env on every deploy and "
+"rebuild; what the host already holds is merged in first, so no key is ever "
+"dropped. A neutralized copy of production keeps its own."
+msgstr ""
+"La cadena INCUBACLOUD_SECRET_KEY con la que el Odoo de esta instancia cifra "
+"sus propios secretos (claves Fernet separadas por comas, la principal "
+"primero). Se genera con la instancia y se escribe en .docker/incubacloud.env"
+" en cada despliegue y reconstrucción; antes se incorpora lo que ya tenga el "
+"host, de modo que nunca se pierde una clave. Una copia neutralizada de "
+"producción conserva la suya."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__ip_address
 msgid "The IP address of the cloud host."
 msgstr "La dirección IP del host cloud."
@@ -12932,12 +13002,6 @@ msgstr ""
 "guarde para confirmar."
 
 #. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid "Unexpected error"
-msgstr "Error inesperado"
-
-#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.js:0
 msgid "Unexpected error during connection test."
@@ -12983,6 +13047,12 @@ msgstr "Descongelar todos"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__status__unknown
 msgid "Unknown"
 msgstr "Desconocido"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid "Unknown allowlist operation: %s"
+msgstr "Operación de lista de acceso desconocida: %s"
 
 #. module: incubacloud
 #. odoo-python
@@ -13322,6 +13392,12 @@ msgid "Waiting"
 msgstr "Esperando"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Waiting for the alert to be resolved: %s"
+msgstr "Esperando a que se resuelva la alerta: %s"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: code:addons/incubacloud/static/src/components/project_card/project_card.js:0
@@ -13456,6 +13532,18 @@ msgstr ""
 "resultado de trabajo y cada alerta. Fallos y advertencias: los trabajos "
 "fallidos y las alertas críticas y de advertencia. Solo fallos: los trabajos "
 "fallidos y las alertas críticas. Ninguno: nada."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_alert__dedup_key
+msgid ""
+"What tells two alerts with the same code and target apart, when the target "
+"alone does not: the backup backend, the type of the job that failed. Part of"
+" the alert's identity in raise_alert; empty for most alerts."
+msgstr ""
+"Lo que distingue dos alertas con el mismo código y destino cuando el destino"
+" no basta: el backend de backup, el tipo del trabajo que falló. Forma parte "
+"de la identidad de la alerta en raise_alert; vacío en la mayoría de las "
+"alertas."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archive_copy_state
@@ -14981,86 +15069,3 @@ msgstr "↻ Verificar instalación"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "↻ Re-detect installation"
 msgstr "↻ Re-detectar instalación"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
-msgid ""
-"%(count)s module(s) are defined in more than one repository: %(names)s. "
-"Choose which repository keeps each one in Alerts before deploying."
-msgstr ""
-"%(count)s módulo(s) están definidos en más de un repositorio: %(names)s. "
-"Elija en Alertas qué repositorio conserva cada uno antes de desplegar."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_instance.py:0
-msgid ""
-"A deploy of '%(name)s' is waiting for an alert to be resolved: %(alert)s. "
-"Resolve it in Alerts and the deploy starts by itself."
-msgstr ""
-"Un despliegue de «%(name)s» está esperando a que se resuelva una alerta: "
-"%(alert)s. Resuélvala en Alertas y el despliegue empezará solo."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_job.py:0
-msgid "Waiting for the alert to be resolved: %s"
-msgstr "Esperando a que se resuelva la alerta: %s"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_host.py:0
-msgid "'%(host)s' refused the SSH allowlist change: %(output)s"
-msgstr "«%(host)s» rechazó el cambio de su lista de acceso SSH: %(output)s"
-
-#. module: incubacloud
-#: model:ir.actions.server,name:incubacloud.cron_capture_secret_keys_ir_actions_server
-msgid "Capture instance encryption keys"
-msgstr "Capturar las claves de cifrado de las instancias"
-
-#. module: incubacloud
-#: model:ir.actions.server,name:incubacloud.cron_resolve_readable_secrets_ir_actions_server
-msgid "Close alerts on secrets that read again"
-msgstr "Cerrar las alertas de secretos que vuelven a leerse"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_host.py:0
-msgid "Could not reach '%(host)s' to change its SSH allowlist: %(error)s"
-msgstr ""
-"No se pudo conectar con «%(host)s» para cambiar su lista de acceso SSH: "
-"%(error)s"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__secret_key
-msgid "Encryption Key"
-msgstr "Clave de cifrado"
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_host.py:0
-msgid "No address given."
-msgstr "No se indicó ninguna dirección."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_host.py:0
-msgid "Unknown allowlist operation: %s"
-msgstr "Operación de lista de acceso desconocida: %s"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_instance__secret_key
-msgid ""
-"The INCUBACLOUD_SECRET_KEY chain this instance's Odoo encrypts its own "
-"secrets with (comma-separated Fernet keys, primary first). Generated with "
-"the instance and written to .docker/incubacloud.env on every deploy and "
-"rebuild; what the host already holds is merged in first, so no key is ever "
-"dropped. A neutralized copy of production keeps its own."
-msgstr ""
-"La cadena INCUBACLOUD_SECRET_KEY con la que el Odoo de esta instancia cifra "
-"sus propios secretos (claves Fernet separadas por comas, la principal "
-"primero). Se genera con la instancia y se escribe en .docker/incubacloud.env"
-" en cada despliegue y reconstrucción; antes se incorpora lo que ya tenga el "
-"host, de modo que nunca se pierde una clave. Una copia neutralizada de "
-"producción conserva la suya."

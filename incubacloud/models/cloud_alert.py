@@ -87,6 +87,14 @@ class CloudAlert(models.Model):
         index=True,
         help="Machine-readable identifier for deduplication (e.g. disk_critical).",
     )
+    dedup_key = fields.Char(
+        readonly=True,
+        index=True,
+        help="What tells two alerts with the same code and target apart, "
+             "when the target alone does not: the backup backend, the "
+             "type of the job that failed. Part of the alert's identity "
+             "in raise_alert; empty for most alerts.",
+    )
     message = fields.Char(required=True)
     level = fields.Selection(
         [("warning", "Warning"), ("critical", "Critical")],
@@ -199,8 +207,8 @@ class CloudAlert(models.Model):
           ``cloud.job._job_failed_domain``), so several may legitimately
           be active on one host at once — a failing backup and a failing
           rebuild are two incidents, not one.
-        * targetless rows (global platform events) are left alone: they
-          are rare, hand-written, and have no natural dedup key.
+        * targetless rows without a key (global platform events) are left
+          alone: they are rare, and have no natural dedup key.
 
         The DELETE is a one-shot dedupe keeping the newest row per key
         — newest because its message is the freshest description of a
@@ -217,22 +225,34 @@ class CloudAlert(models.Model):
                AND b.state = 'active'
                AND a.code = b.code
                AND a.code <> 'job_failed'
-               AND COALESCE(a.host_id, 0) = COALESCE(b.host_id, 0)
+               AND (a.instance_id IS NOT NULL
+                    OR COALESCE(a.host_id, 0) = COALESCE(b.host_id, 0))
                AND COALESCE(a.instance_id, 0) = COALESCE(b.instance_id, 0)
-               AND (a.host_id IS NOT NULL OR a.instance_id IS NOT NULL)
+               AND COALESCE(a.dedup_key, '') = COALESCE(b.dedup_key, '')
+               AND (a.host_id IS NOT NULL OR a.instance_id IS NOT NULL
+                    OR a.dedup_key IS NOT NULL)
                AND a.id < b.id
             """
         )
+        # The identity changed in 1.0.193 (``_dedup_domain``): the key
+        # joined it, and an instance's alert stopped depending on the host
+        # it runs on. The old index would refuse two backends' alerts on
+        # the same (empty) target.
+        cr.execute("DROP INDEX IF EXISTS cloud_alert_active_target_uidx")
         cr.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS
-                cloud_alert_active_target_uidx
+                cloud_alert_active_identity_uidx
             ON cloud_alert (
-                code, COALESCE(host_id, 0), COALESCE(instance_id, 0)
+                code,
+                (CASE WHEN instance_id IS NULL THEN COALESCE(host_id, 0) ELSE 0 END),
+                COALESCE(instance_id, 0),
+                COALESCE(dedup_key, '')
             )
             WHERE state = 'active'
               AND code <> 'job_failed'
-              AND (host_id IS NOT NULL OR instance_id IS NOT NULL)
+              AND (host_id IS NOT NULL OR instance_id IS NOT NULL
+                   OR dedup_key IS NOT NULL)
             """
         )
 
@@ -248,26 +268,62 @@ class CloudAlert(models.Model):
     # written twice is exactly how the two copies of a recipe drift apart.
 
     @staticmethod
-    def _dedup_domain(code, host=None, instance=None):
+    def _dedup_domain(code, host=None, instance=None, project=None, key=None):
         """Return the domain identifying the active alert for a target.
 
-        Identity is (code, host, instance, active). An alert about a host
-        and one about an instance are different alerts even with the same
-        code, which is what lets a per-instance rule fan out without
-        clobbering the host-level one.
+        Identity is (code, instance, key, active) for an alert about an
+        instance, and (code, host, key, active) for one about a host; the
+        project too when one is given. An alert about a host and one
+        about an instance are different alerts even with the same code,
+        which is what lets a per-instance rule fan out without clobbering
+        the host-level one. The host given with an instance only says
+        where it runs: the instance's alert stays the same alert when it
+        moves. *key* tells apart what the target alone does not (two
+        backup backends, two types of failed job); *project* is the
+        target of an alert about a whole project.
         """
-        return [
+        domain = [
             ("code", "=", code),
             ("state", "=", "active"),
-            ("host_id", "=", host.id if host else False),
             ("instance_id", "=", instance.id if instance else False),
+            ("dedup_key", "=", key or False),
         ]
+        if not instance:
+            domain.append(("host_id", "=", host.id if host else False))
+        if project:
+            domain.append(("project_id", "=", project.id))
+        return domain
+
+    @api.model
+    def _link_target(self, link_field, link_id):
+        """Turn a ``(link_field, id)`` pair into ``raise_alert`` targets.
+
+        For producers that find what their alert hangs on by field name
+        (``host_id``, ``instance_id`` or ``project_id``). An alert about a
+        project carries the project as its key too, so the unique index
+        that guards against twin alerts covers it.
+
+        :param str link_field: ``host_id``, ``instance_id`` or ``project_id``
+        :param int link_id: the id of that record
+        :return: keyword arguments for ``raise_alert``/``resolve_alert``
+        :rtype: dict
+        """
+        if link_field == "host_id":
+            return {"host": self.env["cloud.host"].browse(link_id)}
+        if link_field == "instance_id":
+            return {"instance": self.env["cloud.instance"].browse(link_id)}
+        if link_field == "project_id":
+            return {
+                "project": self.env["cloud.project"].browse(link_id),
+                "key": f"project:{link_id}",
+            }
+        raise ValueError(f"cloud.alert cannot hang on {link_field!r}")
 
     @api.model
     def raise_alert(self, code, message, level="warning",
                     host=None, instance=None, job=None, payload=None,
                     confirm_after=None, confirm_window=None,
-                    audience="fleet"):
+                    audience="fleet", project=None, key=None, extra=None):
         """Create or refresh the active alert for (code, target).
 
         Idempotent: a repeated call updates the message/level of the
@@ -313,6 +369,12 @@ class CloudAlert(models.Model):
             older one starts the count over; None asks the policy too
         :param str audience: ``fleet`` (default) or ``provider``; see the
             field. Set on creation, kept on a refresh.
+        :param project: ``cloud.project`` this alert is about, for one about
+            a whole project; part of its identity
+        :param str key: what tells this alert apart from others with the
+            same code and target (``dedup_key``); part of its identity
+        :param dict extra: other fields to write on creation and on every
+            refresh (``conflict_data``, ``occurrences``)
         :returns: the active ``cloud.alert`` record, or an empty
             recordset when a concurrent producer filed it first or the
             sighting is still a suspicion
@@ -324,11 +386,15 @@ class CloudAlert(models.Model):
         # future, instead of asking each of the callers to remember.
         self = as_platform(self)
         existing = self.search(
-            self._dedup_domain(code, host=host, instance=instance), limit=1,
+            self._dedup_domain(
+                code, host=host, instance=instance, project=project, key=key,
+            ),
+            limit=1,
         )
         # Stamped on create *and* on refresh: consumers that decide how
         # stale an alert is need the last sighting, not the first.
         vals = {
+            **(extra or {}),
             "message": message,
             "level": level,
             "last_raised_at": fields.Datetime.now(),
@@ -337,6 +403,9 @@ class CloudAlert(models.Model):
             vals["job_id"] = job.id
         if payload is not None:
             vals["payload"] = payload
+        if host:
+            # Where an instance runs now, on a refresh after a move.
+            vals["host_id"] = host.id
         if existing:
             escalated = existing.level != "critical" and level == "critical"
             if escalated:
@@ -362,6 +431,14 @@ class CloudAlert(models.Model):
                     "code": code,
                     "host_id": host.id if host else False,
                     "instance_id": instance.id if instance else False,
+                    # An instance's project rides along, for the views
+                    # that list a project's alerts; only a project given
+                    # on its own is part of the identity.
+                    "project_id": (
+                        project.id if project
+                        else instance.project_id.id if instance else False
+                    ) or False,
+                    "dedup_key": key or False,
                     "audience": audience,
                     **vals,
                 })
@@ -375,11 +452,13 @@ class CloudAlert(models.Model):
             return self.browse()
 
     @api.model
-    def resolve_alert(self, code, host=None, instance=None):
+    def resolve_alert(self, code, host=None, instance=None, project=None, key=None):
         """Dismiss the active alert for (code, target), if any.
 
         Idempotent: resolving something that was never raised is a no-op,
-        so callers do not have to track whether they alerted before.
+        so callers do not have to track whether they alerted before. The
+        target is the one ``raise_alert`` was given, *project* and *key*
+        included.
 
         :returns: the dismissed records (empty when there was nothing)
         """
@@ -391,7 +470,9 @@ class CloudAlert(models.Model):
         # alert: the next sighting starts counting from one again.
         self.env["cloud.alert.suspicion"]._forget(code, host, instance)
         active = self.search(
-            self._dedup_domain(code, host=host, instance=instance),
+            self._dedup_domain(
+                code, host=host, instance=instance, project=project, key=key,
+            ),
         )
         if active:
             active.write({"state": "dismissed", "resolution": "auto"})
@@ -967,9 +1048,9 @@ class CloudAlertSuspicion(models.Model):
     )
     last_seen_at = fields.Datetime(required=True)
 
-    # Same key as ``cloud_alert_active_target_uidx`` and for the same
-    # reason: two producers under snapshot isolation cannot see each
-    # other's row, so only the database can keep one count per target.
+    # For the reason ``cloud_alert_active_identity_uidx`` exists: two
+    # producers under snapshot isolation cannot see each other's row, so
+    # only the database can keep one count per target.
     _target_uniq = models.UniqueIndex(
         "(code, COALESCE(host_id, 0), COALESCE(instance_id, 0))",
         "One suspicion per alert code and target.",

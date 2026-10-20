@@ -9,7 +9,6 @@
             <field name="code">model.cron_instance_health()</field>
             <field name="interval_number">5</field>
             <field name="interval_type">minutes</field>
-            <field name="active">True</field>
         </record>
 
     </data>

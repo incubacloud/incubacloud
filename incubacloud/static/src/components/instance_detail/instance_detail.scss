@@ -854,11 +854,25 @@
     text-align: right;
 }
 
+// The cell stays a table cell (a flex <td> leaves the row's alignment);
+// the buttons line up inside it.
+.ic-bk-actions-cell {
+    text-align: right;
+    vertical-align: middle;
+}
+
 .ic-bk-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 4px;
+}
+
+// Where a row cannot be restored: its button's room, so the columns hold.
+.ic-bk-action-slot {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
 }
 
 .ic-bk-action-btn {

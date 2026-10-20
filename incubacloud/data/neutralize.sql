@@ -1,9 +1,10 @@
 -- IncubaCloud core — neutralize environment-specific data after prod restore.
--- Loaded by odoo neutralize / click-odoo-neutralize (no manifest entry needed).
+-- Run, with every installed module's own file, by `odoo neutralize -d <db>`
+-- and by `click-odoo-restoredb --neutralize` (no manifest entry needed).
+-- Each file is one statement: one error aborts the whole neutralization.
 --
 -- Usage:
---   click-odoo-copydb restore devel < dump.sql
---   click-odoo-neutralize -d devel
+--   click-odoo-restoredb --neutralize devel <backup>
 --   docker compose exec -T db psql -U odoo -d devel -c "DELETE FROM ir_mail_server
 --       WHERE name = 'neutralization - disable emails' AND smtp_host = 'invalid'"
 --   invoke restart
@@ -40,13 +41,33 @@ UPDATE cloud_host SET known_hosts_key = NULL;
 -- 3. Deactivate infra records to prevent accidental SSH/provisioning
 UPDATE cloud_host SET active = false;
 UPDATE cloud_instance SET active = false;
+-- Nothing else leaves the copy: its jobs and alerts would call the users'
+-- webhooks, and its metrics would go to production's central.
+UPDATE res_users SET cloud_webhook_url = NULL;
+UPDATE cloud_settings SET metrics_enabled = false;
+-- Production's queue travels with the copy, and what has not finished
+-- would run there: cancelled, with the cloud.job that mirrors it.
+WITH live AS (
+    UPDATE queue_job SET state = 'cancelled'
+     WHERE state IN ('wait_dependencies', 'pending', 'enqueued', 'started')
+    RETURNING id
+)
+UPDATE cloud_job SET state = 'cancelled' WHERE queue_job_id IN (SELECT id FROM live);
 
--- 4. Delete ephemeral session data
+-- 4. Delete ephemeral session data; a console open in production is not
+-- open in the copy (the host's console is younger than some copies).
 DELETE FROM cloud_terminal_route;
 DELETE FROM cloud_host_terminal_route;
 DELETE FROM cloud_restore_upload_grant;
 DELETE FROM cloud_rate_limit;
 DELETE FROM mail_mail;
+UPDATE cloud_instance_session SET state = 'closed',
+    closed_at = now() AT TIME ZONE 'UTC' WHERE state = 'open';
+DO $$ BEGIN
+    UPDATE cloud_host_session SET state = 'closed',
+        closed_at = now() AT TIME ZONE 'UTC' WHERE state = 'open';
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
 
 -- 5. Clear environment-specific ir.config_parameters
 DELETE FROM ir_config_parameter WHERE key = 'incubacloud.backup_backend_id';
