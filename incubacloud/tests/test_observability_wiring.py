@@ -74,17 +74,10 @@ class TestDashboardsMatchTheSpa(BaseCase):
         itself and feeds it the same project name it forces into
         COMPOSE_PROJECT_NAME, so the names are derived. The invariant
         worth pinning is therefore not "never filter by instance" but
-        "if a panel filters by it, the agent config must produce it".
+        "the agent config produces it", so a panel may: the rule is
+        checked whether or not a panel uses it yet, rather than the test
+        skipping until one does.
         """
-        filters_by_instance = any(
-            "traefik_" in target.get("expr", "")
-            and re.search(r'instance(_id)?\s*=', target.get("expr", ""))
-            for path in _dashboard_files()
-            for panel in json.loads(path.read_text())["panels"]
-            for target in panel.get("targets", [])
-        )
-        if not filters_by_instance:
-            self.skipTest("no Traefik panel filters by instance yet")
         playbook = (
             _ROOT / "ansible" / "playbooks" / "host_observability.yml"
         ).read_text()

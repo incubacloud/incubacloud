@@ -25,6 +25,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The host-key tests that ask OpenSSH itself (`ssh-keygen`) for the
   fingerprint and the `known_hosts` lookup no longer skip in CI: its test
   job installs `openssh-client`, and without the tool they fail.
+- **Every test runs.** Fifteen classes based on `unittest.TestCase`, which
+  Odoo's runner never collects, held 50 tests nobody had run; 13 had
+  drifted from the code (the prod services now come from the instance,
+  pip conflicts are written as markers, the transport awaits its line
+  callbacks). They run on `BaseCase` now, and a CI step refuses a test
+  class Odoo would not collect.
+- **The front end's tests run.** The 824 hoot tests under `@incubacloud`
+  only ran when someone opened `/web/tests`; an HTTP test now runs them
+  headless with the Python suite (and in the deploy's check of the
+  image), failing without a browser instead of skipping. Six of them read
+  translated strings with no catalogue loaded.
+- The key rotation tests build their own two-key state instead of
+  skipping on an environment that holds one key, the Traefik relabelling
+  check runs whether or not a panel filters by instance yet, and the
+  export's bats tests fail when copier, rsync, Docker Compose or GitHub
+  is missing instead of skipping.
 
 ## [1.0.193] — 2026-10-20
 

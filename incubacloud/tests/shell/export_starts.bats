@@ -7,16 +7,23 @@
 # script and runs ``docker compose config`` on the copy, so a template whose
 # development stack reads a file the export leaves out (an env file, as on
 # 12-oct-2026) fails here. Needs copier, Docker Compose and the network:
-# the template comes from GitHub. Skipped without them.
+# the template comes from GitHub. Fails without them, saying which: a
+# check that skips quietly is one nobody notices is not running.
+
+# Fail the test, naming what is missing.
+missing() {
+    echo "$1" >&2
+    return 1
+}
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/export_sanitize.sh"
     FIXTURES="${BATS_TEST_DIRNAME}/fixtures"
-    command -v copier >/dev/null || skip "copier is not installed"
-    command -v rsync >/dev/null || skip "rsync is not installed"
-    docker compose version >/dev/null 2>&1 || skip "Docker Compose is not available"
+    command -v copier >/dev/null || missing "copier is needed (pipx install copier)"
+    command -v rsync >/dev/null || missing "rsync is needed"
+    docker compose version >/dev/null 2>&1 || missing "Docker Compose is needed"
     git ls-remote https://github.com/Tecnativa/doodba-copier-template HEAD \
-        >/dev/null 2>&1 || skip "GitHub is not reachable"
+        >/dev/null 2>&1 || missing "GitHub is not reachable"
 
     TMP="$(mktemp -d)"
     INST="$TMP/acme-prod"

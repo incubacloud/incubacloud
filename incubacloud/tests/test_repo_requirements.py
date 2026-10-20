@@ -3,7 +3,6 @@ Tier 1 — Unit tests for _repo_requirements helpers.
 
 These tests cover the pure merge and parse logic without hitting the ORM.
 """
-import unittest
 
 from odoo.tests.common import BaseCase
 
@@ -16,7 +15,7 @@ from odoo.addons.incubacloud.models._repo_requirements import (
 )
 
 
-class TestParseReqLine(unittest.TestCase):
+class TestParseReqLine(BaseCase):
 
     def test_simple_package(self):
         result = _parse_req_line("requests")
@@ -49,7 +48,7 @@ class TestParseReqLine(unittest.TestCase):
         # (may return None or a tuple — just ensure no exception)
 
 
-class TestMergePipRequirements(unittest.TestCase):
+class TestMergePipRequirements(BaseCase):
 
     def test_empty_existing_returns_incoming(self):
         result = merge_pip_requirements("", "requests\nflask\n")
@@ -83,12 +82,17 @@ class TestMergePipRequirements(unittest.TestCase):
         self.assertEqual(c['existing'], 'lib1>=3.0')
         self.assertEqual(c['incoming'], 'lib1<3.0')
 
-    def test_conflict_keeps_existing_spec(self):
-        existing = "lib1>=3.0\n"
-        incoming = "lib1<3.0\n"
-        result = merge_pip_requirements(existing, incoming)
-        self.assertIn("lib1>=3.0", result['content'])
-        self.assertNotIn("lib1<3.0", result['content'])
+    def test_a_conflict_is_written_as_markers_naming_both_sides(self):
+        """Neither spec wins: both stay, for a person to choose."""
+        result = merge_pip_requirements(
+            "lib1>=3.0\n", "lib1<3.0\n",
+            repo_url="https://github.com/acme/addons", repo_branch="19.0",
+        )
+        self.assertEqual(
+            result['content'],
+            "<<<<<<< existing\nlib1>=3.0\n=======\nlib1<3.0\n"
+            ">>>>>>> acme/addons (19.0)\n",
+        )
 
     def test_multiple_conflicts(self):
         existing = "libA>=1.0\nlibB==2.0\n"
@@ -96,13 +100,10 @@ class TestMergePipRequirements(unittest.TestCase):
         result = merge_pip_requirements(existing, incoming)
         self.assertEqual(len(result['conflicts']), 2)
 
-    def test_blank_separator_added_before_new_packages(self):
-        existing = "requests\n"
-        incoming = "flask\n"
-        result = merge_pip_requirements(existing, incoming)
-        lines = result['content'].split('\n')
-        # There should be a blank line separating existing from added
-        self.assertIn('', lines)
+    def test_new_packages_follow_the_existing_ones(self):
+        result = merge_pip_requirements("requests\n", "flask\npillow\n")
+        self.assertEqual(result['content'], "requests\nflask\npillow")
+        self.assertEqual(result['added'], ["flask", "pillow"])
 
     def test_no_new_packages_content_unchanged(self):
         existing = "requests>=2.0\n"

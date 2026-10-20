@@ -65,6 +65,19 @@ jobs:
             exit 1
           fi
 
+      - name: Every test class runs
+        # Odoo's runner collects BaseCase classes only: one based on
+        # unittest.TestCase directly never runs, and 63 tests sat
+        # unseen that way until 20-oct-2026, 13 of them broken.
+        run: |
+          found=$(grep -rnE '^class \w+\((unittest\.)?TestCase\)' --include='test_*.py' \
+            incubacloud incubacloud_connect incubacloud_pitr || true)
+          if [ -n "$found" ]; then
+            echo "$found"
+            echo "::error::A test class based on unittest.TestCase never runs under Odoo: base it on BaseCase."
+            exit 1
+          fi
+
   js-syntax:
     name: Lint (JS syntax)
     runs-on: ubuntu-latest

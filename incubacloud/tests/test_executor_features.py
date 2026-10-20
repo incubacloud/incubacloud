@@ -3,7 +3,6 @@ Tests for executor features: stop_on_failure, _prod_services,
 SMTP stripping, safe boot test, and click-odoo-update integration.
 """
 import shlex
-import unittest
 
 from odoo.tests.common import BaseCase, TransactionCase
 
@@ -63,24 +62,24 @@ def _make_rebuild_executor(smtp_relay_host='', environment='production',
         RebuildInstanceExecutor,
     )
 
-    inst = SimpleNamespace(
-        id=42,
-        name='test-inst',
-        doodba_project_name='test_proj',
-        postgres_username='odoo',
-        postgres_dbname='prod',
-        postgres_version='17',
-        environment=environment,
-        smtp_relay_host=smtp_relay_host,
-        odoo_version=odoo_version,
-        domain='test.example.com',
-        project_id=SimpleNamespace(remote_folder='projects'),
-        odoo_initial_lang=None,
-        auto_update=auto_update,
-        rebuild_fingerprint='fp1',
-        last_rebuild_fingerprint='fp0',
-        **extra,
-    )
+    inst = SimpleNamespace(**{
+        "id": 42,
+        "name": 'test-inst',
+        "doodba_project_name": 'test_proj',
+        "postgres_username": 'odoo',
+        "postgres_dbname": 'prod',
+        "postgres_version": '17',
+        "environment": environment,
+        "smtp_relay_host": smtp_relay_host,
+        "odoo_version": odoo_version,
+        "domain": 'test.example.com',
+        "project_id": SimpleNamespace(remote_folder='projects'),
+        "odoo_initial_lang": None,
+        "auto_update": auto_update,
+        # A test of the smart rebuild names its own.
+        "rebuild_fingerprint": 'fp1',
+        "last_rebuild_fingerprint": 'fp0',
+    } | extra)
 
     ex = object.__new__(RebuildInstanceExecutor)
     ex._inst = lambda: inst
@@ -114,7 +113,7 @@ def _find_cmd(cmds, label_substring):
 # Class 1: TestStopOnFailure
 # ---------------------------------------------------------------------------
 
-class TestStopOnFailure(unittest.TestCase):
+class TestStopOnFailure(BaseCase):
     """Test that command tuples support 2-element and 3-element formats."""
 
     def test_two_tuple_has_no_opts(self):
@@ -137,26 +136,46 @@ class TestStopOnFailure(unittest.TestCase):
 # Class 2: TestProdServices
 # ---------------------------------------------------------------------------
 
-class TestProdServices(unittest.TestCase):
-    """Test that _prod_services() reflects SMTP configuration."""
+class TestProdServices(TransactionCase):
+    """The services a production stack runs follow its SMTP relay.
+
+    ``_prod_services`` hands the instance's own ``expected_services`` on
+    (the one list deploy, rebuild and the health probe share), so the
+    rule is pinned there, on real records.
+    """
+
+    def setUp(self):
+        super().setUp()
+        project = self.env["cloud.project"].create({"name": "ProdSvc"})
+        host = self.env["cloud.host"].create({
+            "name": "prodsvc-host", "ip_address": "192.0.2.72",
+            "user": "ubuntu", "wildcard_domain": "prodsvc.example.com",
+        })
+        self.instance = self.env["cloud.instance"].create({
+            "name": "prodsvc", "project_id": project.id,
+            "environment": "production", "host_id": host.id,
+        })
 
     def test_smtp_included_when_host_set(self):
-        ex = _make_deploy_executor(smtp_relay_host='mail.example.com')
-        self.assertIn('smtp', ex._prod_services())
+        self.instance.smtp_relay_host = 'mail.example.com'
+        self.assertIn('smtp', self.instance.expected_services())
 
-    def test_smtp_excluded_when_host_empty(self):
-        ex = _make_deploy_executor(smtp_relay_host='')
-        self.assertNotIn('smtp', ex._prod_services())
+    def test_smtp_excluded_without_a_relay(self):
+        for relay in ('', False):
+            with self.subTest(relay=relay):
+                self.instance.smtp_relay_host = relay
+                self.assertNotIn('smtp', self.instance.expected_services())
 
-    def test_smtp_excluded_when_host_none(self):
-        ex = _make_deploy_executor(smtp_relay_host=None)
-        self.assertNotIn('smtp', ex._prod_services())
+    def test_always_includes_odoo_and_db(self):
+        services = self.instance.expected_services()
+        self.assertIn('odoo', services)
+        self.assertIn('db', services)
 
-    def test_always_includes_odoo_db_backup(self):
-        result = _make_deploy_executor(smtp_relay_host='')._prod_services()
-        self.assertIn('odoo', result)
-        self.assertIn('db', result)
-        self.assertIn('backup', result)
+    def test_a_staging_always_has_its_mail_catcher(self):
+        """Not a relay: it keeps a copy of production from mailing anyone."""
+        self.instance.environment = 'staging'
+        self.instance.smtp_relay_host = False
+        self.assertIn('smtp', self.instance.expected_services())
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +241,7 @@ class TestRebuildCommandsBootTest(BaseCase):
 # Class 4: TestDeployCommandsChecksums
 # ---------------------------------------------------------------------------
 
-class TestDeployCommandsChecksums(unittest.TestCase):
+class TestDeployCommandsChecksums(BaseCase):
     """Test that deploy get_commands() includes checksums baseline step."""
 
     @classmethod
@@ -250,7 +269,7 @@ class TestDeployCommandsChecksums(unittest.TestCase):
 # Class 5: TestSmtpStripping
 # ---------------------------------------------------------------------------
 
-class TestSmtpStripping(unittest.TestCase):
+class TestSmtpStripping(BaseCase):
     """Test SMTP service stripping from prod.yaml when appropriate."""
 
     def test_smtp_strip_when_no_host_production(self):
@@ -275,7 +294,7 @@ class TestSmtpStripping(unittest.TestCase):
 # Smart Rebuild (fingerprint-based cache decision)
 # ---------------------------------------------------------------------------
 
-class TestSmartRebuildCommands(unittest.TestCase):
+class TestSmartRebuildCommands(BaseCase):
     """Test that rebuild uses --no-cache only when fingerprint changed."""
 
     def test_full_rebuild_when_fingerprint_differs(self):
