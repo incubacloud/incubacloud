@@ -140,6 +140,14 @@ jobs:
       # CN-009: Pinned to commit SHA to prevent mutable-tag supply-chain attacks.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
+      # OpenSSH's own tools: the host-key tests check the panel's
+      # fingerprint and known_hosts entry against what ssh-keygen says,
+      # and fail without it rather than skip (the image has none).
+      - name: Install OpenSSH's client (ssh-keygen)
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openssh-client
+
       - name: Install extra dependencies
         # CN-012/CN-020/CN-026: Exact pins match requirements.txt — reproducible CI.
         #

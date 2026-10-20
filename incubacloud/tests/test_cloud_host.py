@@ -632,8 +632,10 @@ class TestKnownHostsFingerprint(KnownHostsCase):
 
     def test_fingerprint_matches_ssh_keygen(self):
         """Ground truth: the same key, fingerprinted by OpenSSH's own tool."""
-        if not shutil.which("ssh-keygen"):
-            self.skipTest("ssh-keygen is not available in this image")
+        self.assertTrue(
+            shutil.which("ssh-keygen"),
+            "ssh-keygen is needed: install openssh-client (the CI does)",
+        )
         with tempfile.NamedTemporaryFile("w", suffix=".pub") as fh:
             fh.write(self.key_body + "\n")
             fh.flush()
@@ -762,8 +764,10 @@ class TestKnownHostsLabel(KnownHostsCase):
         """Ground truth, asked of OpenSSH itself: its lookup rule — not
         asyncssh's laxer one — is what the Ansible-backed jobs obey, and
         it is the rule the stored label has to satisfy."""
-        if not shutil.which("ssh-keygen"):
-            self.skipTest("ssh-keygen is not available in this image")
+        self.assertTrue(
+            shutil.which("ssh-keygen"),
+            "ssh-keygen is needed: install openssh-client (the CI does)",
+        )
         host = self._host(port=22626)
         self.assertFalse(
             self._openssh_finds(host.known_hosts_key, "[10.0.0.7]:22626"),
