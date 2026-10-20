@@ -43,6 +43,7 @@
 import { reactive } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { mergeMapById } from "../utils/merge_by_id";
+import { refreshesOn } from "../utils/use_debounced_bus";
 
 const REFRESH_DEBOUNCE_MS = 300;
 
@@ -204,6 +205,7 @@ export function createProjectStore({
     busService.subscribe("cloud_jobs", (payload) => {
         const projectId = payload?.project_id;
         if (projectId != null && projectId !== state.projectId) return;
+        if (!refreshesOn(payload)) return;
         scheduleRefresh();
     });
     busService.start();

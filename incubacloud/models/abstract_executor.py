@@ -299,6 +299,9 @@ class AbstractExecutor(ABC):
         # cheap (no per-flush COUNT(*) round-trip).
         self._chunks_persisted = 0
         self._cap_marker_emitted = False
+        # Whether the chunks written since the last publish include a
+        # system message: what ``_publish_bus`` tells the watchers.
+        self._flushed_system = False
         # Bus recipients for this run, resolved lazily on the first
         # publish and reused afterwards. See ``_publish_bus``.
         self._bus_audience_ids = None
@@ -977,6 +980,8 @@ class AbstractExecutor(ABC):
         with self._durable_env() as env:
             Log = env['cloud.job.log.chunk'].sudo()
             for line, source in entries:
+                if source == 'system':
+                    self._flushed_system = True
                 if self._chunks_persisted >= MAX_CHUNKS_PER_JOB:
                     Log.create({
                         'job_id': self.job.id,
@@ -989,6 +994,7 @@ class AbstractExecutor(ABC):
                         'source': 'system',
                     })
                     self._cap_marker_emitted = True
+                    self._flushed_system = True
                     written += 1
                     break
                 Log.create({
@@ -1002,6 +1008,11 @@ class AbstractExecutor(ABC):
 
     def _publish_bus(self):
         """Notify every watcher that new chunks are available.
+
+        A ``progress`` event, flagged ``system`` when the chunks since
+        the last one include a message of this executor's own: a job
+        list refreshes on those and ignores plain output
+        (``cloud.job._broadcast_job_update``).
 
         The executor's ``env.user`` is the queue_job worker identity
         (often OdooBot or SUPERUSER), *not* the user watching the
@@ -1031,7 +1042,9 @@ class AbstractExecutor(ABC):
                 ).ids
             Job._broadcast_job_update(
                 self.job.id, audience_ids=self._bus_audience_ids,
+                kind='progress', system=self._flushed_system,
             )
+            self._flushed_system = False
             logger.debug(
                 "[_publish_bus] broadcast done for job_id=%s", self.job.id,
             )

@@ -13,7 +13,7 @@ import {RepoEditor} from "../repo_editor/repo_editor";
 import {parseUTC} from "../../utils/dates";
 import {useSafePoll} from "../../utils/use_safe_poll";
 import {useVisibilityRefresh} from "../../utils/use_visibility_refresh";
-import {useDebouncedBus} from "../../utils/use_debounced_bus";
+import {useDebouncedBus, refreshesOn} from "../../utils/use_debounced_bus";
 import {useNavGuard} from "../../utils/use_nav_guard";
 import {useFormValidation} from "../../utils/use_form_validation";
 import {required, instanceName, portRange, when} from "../../utils/validators";
@@ -383,6 +383,7 @@ export class InstanceDetail extends JobsMixin(
     // ``job.instance_id``. Same predicate, no round-trip.
     this._onJobUpdate = (payload) => {
       if (payload?.instance_id !== this.props.instance_id) return;
+      if (!refreshesOn(payload)) return;
       triggerRefresh(payload.id);
     };
 

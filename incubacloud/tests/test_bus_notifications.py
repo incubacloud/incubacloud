@@ -212,6 +212,23 @@ class TestBroadcastPayload(_BusTestCase):
     def test_terminal_state_still_travels(self):
         _channel, payload = self._capture(self.job, state='done')[0]
         self.assertEqual(payload['state'], 'done')
+        self.assertEqual(payload['kind'], 'state')
+
+    def test_a_creation_says_so(self):
+        _channel, payload = self._capture(self.job)[0]
+        self.assertEqual(payload['kind'], 'created')
+        self.assertNotIn('system', payload)
+
+    def test_progress_says_whether_it_carries_a_system_message(self):
+        """A page refetches on a job's own message, never on its output:
+        each output line cost every page a full refetch (QA, 20-oct-2026)."""
+        for system in (True, False):
+            with self.subTest(system=system):
+                _channel, payload = self._capture(
+                    self.job, kind='progress', system=system,
+                )[0]
+                self.assertEqual(payload['kind'], 'progress')
+                self.assertIs(payload['system'], system)
 
     def test_hidden_job_types_send_nothing(self):
         hidden = self._job_type('host_metrics')
@@ -284,6 +301,56 @@ class TestBroadcastAudience(_BusTestCase):
         self.assertEqual(sent, [])
 
 
+class TestExecutorPublishesProgress(TestFlushLogsCount):
+    """What the executor tells the watchers on each flush.
+
+    Built on the flush tests for their executor and ``_no_write``: the
+    flag is set where the rows are counted.
+    """
+
+    def _executor(self):
+        ex = super()._executor()
+        ex._bus_audience_ids = [1]
+        ex._flushed_system = False
+        return ex
+
+    def _published(self, ex):
+        Job = type(self.env['cloud.job'])
+        with patch.object(
+            Job, '_broadcast_job_update', return_value=None,
+        ) as broadcast:
+            ex._publish_bus()
+        return broadcast.call_args.kwargs
+
+    def test_output_alone_is_progress_without_a_system_message(self):
+        ex = self._executor()
+        ex._log_buffer = [('line 1', 'stdout'), ('line 2', 'stderr')]
+        with self._no_write():
+            ex._flush_logs()
+        kwargs = self._published(ex)
+        self.assertEqual(kwargs['kind'], 'progress')
+        self.assertIs(kwargs['system'], False)
+
+    def test_a_system_message_is_flagged_once(self):
+        ex = self._executor()
+        ex._log_buffer = [('line', 'stdout'), ('✓ step done', 'system')]
+        with self._no_write():
+            ex._flush_logs()
+            self.assertIs(self._published(ex)['system'], True)
+            # Told once: the next flush, output only, says so.
+            ex._log_buffer = [('more', 'stdout')]
+            ex._flush_logs()
+            self.assertIs(self._published(ex)['system'], False)
+
+    def test_the_log_cap_marker_counts_as_a_system_message(self):
+        ex = self._executor()
+        ex._chunks_persisted = 10 ** 9
+        ex._log_buffer = [('line', 'stdout')]
+        with self._no_write():
+            ex._flush_logs()
+        self.assertIs(self._published(ex)['system'], True)
+
+
 class TestExecutorAudienceIsResolvedOnce(_BusTestCase):
     """The per-run cache is what keeps the ACL check off the hot path."""
 
@@ -291,6 +358,7 @@ class TestExecutorAudienceIsResolvedOnce(_BusTestCase):
         ex = object.__new__(_TestExecutor)
         ex.job = self.job
         ex._bus_audience_ids = None
+        ex._flushed_system = False
 
         Job = type(self.env['cloud.job'])
         with patch.object(

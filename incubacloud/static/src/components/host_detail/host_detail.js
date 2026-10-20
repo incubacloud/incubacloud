@@ -10,7 +10,7 @@ import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
 import { parseUTC } from "../../utils/dates";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
-import { useDebouncedBus } from "../../utils/use_debounced_bus";
+import { useDebouncedBus, refreshesOn } from "../../utils/use_debounced_bus";
 import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { required, hostname, portRange, when } from "../../utils/validators";
@@ -182,6 +182,7 @@ export class HostDetail extends Component {
         // event that shared a window with a non-matching one.
         this._onJobUpdate = (payload) => {
             if (payload?.host_id !== this.props.host_id) return;
+            if (!refreshesOn(payload)) return;
             triggerRefresh(payload.id);
         };
 

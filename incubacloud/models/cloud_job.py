@@ -1920,7 +1920,9 @@ class CloudJob(models.Model):
         )
 
     @api.model
-    def _broadcast_job_update(self, job_id, state=None, audience_ids=None):
+    def _broadcast_job_update(
+        self, job_id, state=None, audience_ids=None, kind=None, system=False,
+    ):
         """Send bus notification for a job state change to its audience.
 
         Hidden job types (host_metrics, instance_health, docker_prune,
@@ -1931,6 +1933,14 @@ class CloudJob(models.Model):
         of the job list; skipping the bus hop saves a lot of work on
         the server, network and client.
 
+        :param kind: what happened: ``created``, ``progress`` (the running
+            job wrote log lines) or ``state`` (it ended). Inferred from
+            ``state`` when not given: with one, ``state``; without,
+            ``created``. ``_publish_bus`` passes ``progress``.
+        :param bool system: for ``progress``, whether the lines include a
+            message of the executor's own (a step done, a warning): what
+            a job list shows as the job's last message. Output lines
+            change nothing a list renders.
         :param audience_ids: precomputed ``res.users`` ids from
             ``_bus_audience``. Pass it from repeating callers to avoid
             re-running the per-user ACL check on every event; omit it
@@ -1970,12 +1980,23 @@ class CloudJob(models.Model):
         # ``None``. Watchers must read that as "unknown, refresh
         # anyway" rather than "not mine" — a host job still changes the
         # host rows a project view renders.
+        #
+        # ``kind`` is what lets a watcher ignore the storm. A running job
+        # publishes every half second it wrote output, and every page
+        # used to answer each one with a full refetch: the host page
+        # reloaded its data and its jobs twice a second through a deploy
+        # of an instance it does not even list (QA, 20-oct-2026). A
+        # ``progress`` event changes a list only when it carries a
+        # system message (``system``); the live log page wants them all.
         payload = {
             "id": job_id,
             "host_id": job.host_id.id or None,
             "instance_id": job.instance_id.id or None,
             "project_id": job.instance_id.project_id.id or None,
+            "kind": kind or ("state" if state else "created"),
         }
+        if kind == "progress":
+            payload["system"] = bool(system)
         if state:
             payload["state"] = state
         for user in users:
