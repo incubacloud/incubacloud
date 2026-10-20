@@ -10,7 +10,7 @@ Updated 2026-07 to cover the robust rollback that cancels the chain and
 enqueues cleanup+start instead of silently ignoring the in-flight jobs.
 """
 import asyncio
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
@@ -47,7 +47,7 @@ class TestInstanceMove(TransactionCase):
     def _patch_chain(self):
         return patch.object(
             type(self.env['cloud.job']), 'enqueue_chain',
-            return_value=[1, 2, 3, 4, 5, 6],
+            return_value=[1, 2, 3, 4, 5, 6, 7],
         )
 
     def _patch_enqueue(self, return_value=8):
@@ -64,32 +64,79 @@ class TestInstanceMove(TransactionCase):
         self.assertTrue(res['ok'])
         steps = m.call_args[0][0]
         expected_codes = [
-            'deploy_instance', 'stop_instance', 'backup_download',
-            'restore_instance', 'move_cutover', 'move_cleanup_source',
+            'deploy_instance', 'stop_instance', 'stop_instance',
+            'backup_download', 'restore_instance', 'move_cutover',
+            'move_cleanup_source',
         ]
         self.assertEqual(
             [s['job_type_code'] for s in steps], expected_codes,
         )
         self.assertEqual(
             [s['host_id'] for s in steps],
-            [self.target.id, self.source.id, self.source.id,
+            [self.target.id, self.target.id, self.source.id, self.source.id,
              self.target.id, self.target.id, self.source.id],
         )
-        self.assertEqual(steps[1]['payload'], {'services': ['odoo']})
+        # The destination's odoo stops before the source's, outside the
+        # window the customer waits through; the instance is not marked
+        # stopped by it.
+        self.assertEqual(
+            steps[1]['payload'], {'services': ['odoo'], 'move_target': True},
+        )
+        self.assertEqual(steps[2]['payload'], {'services': ['odoo']})
         # The data goes as a live dump of the stopped panel's database,
         # staged on the source (handoff) and streamed by the restore: no
         # backup container, no bucket, never an ir.attachment.
         self.assertEqual(
-            steps[2]['payload'],
+            steps[3]['payload'],
             {'time': 'live', 'download_type': 'all', 'handoff': 'host'},
         )
-        self.assertEqual(steps[3]['payload']['mode'], 'from_host')
+        self.assertEqual(steps[4]['payload']['mode'], 'from_host')
         self.assertEqual(
-            steps[3]['payload']['source_job_id'], '__chain_job_2__',
+            steps[4]['payload']['source_job_id'], '__chain_job_3__',
         )
         self.assertEqual(self.inst.move_origin_host_id, self.source)
         self.assertEqual(self.inst.move_target_host_id, self.target)
-        self.assertEqual(self.inst.move_chain_job_ids, '1,2,3,4,5,6')
+        self.assertEqual(self.inst.move_chain_job_ids, '1,2,3,4,5,6,7')
+
+    def test_cut_steps_run_after_the_source_stops(self):
+        """A layer's cut steps go after the source stops and before its
+        data is taken; the restore still finds the download job."""
+        cut = [{
+            'host_id': self.target.id, 'instance_id': self.inst.id,
+            'job_type_code': 'deploy_instance',
+        }]
+        with self._patch_chain() as m, patch.object(
+            type(self.inst), '_move_cut_steps', return_value=cut,
+        ):
+            self.inst.move_to_host(self.target)
+        steps = m.call_args[0][0]
+        self.assertEqual(steps[3], cut[0])
+        self.assertEqual(steps[2]['host_id'], self.source.id)
+        self.assertEqual(steps[2]['job_type_code'], 'stop_instance')
+        self.assertEqual(steps[4]['job_type_code'], 'backup_download')
+        self.assertEqual(
+            steps[5]['payload']['source_job_id'], '__chain_job_4__',
+        )
+
+    def test_stopping_the_destination_leaves_the_instance_running(self):
+        """The source still serves until its own stop: only that one marks
+        the instance stopped."""
+        from ..models.stop_instance_executor import StopInstanceExecutor
+
+        for payload, running in (
+            ({'services': ['odoo'], 'move_target': True}, True),
+            ({'services': ['odoo']}, False),
+        ):
+            with self.subTest(payload=payload):
+                self.inst.running = True
+                ex = object.__new__(StopInstanceExecutor)
+                ex.job = MagicMock(spec=type(self.env['cloud.job']))
+                ex.job.instance_id = self.inst
+                ex.job.payload = payload
+                ex.env = self.env
+                ex._log_buffer = []
+                asyncio.run(ex.on_success([]))
+                self.assertEqual(self.inst.running, running)
 
     def test_move_validations(self):
         with self._patch_chain():
@@ -125,7 +172,7 @@ class TestInstanceMove(TransactionCase):
             self.inst.move_to_host(self.target)
         codes = [s['job_type_code'] for s in m.call_args[0][0]]
         self.assertNotIn('backup_create', codes)
-        self.assertEqual(m.call_args[0][0][2]['payload']['time'], 'live')
+        self.assertEqual(m.call_args[0][0][3]['payload']['time'], 'live')
 
     def test_core_deploy_job_type(self):
         self.assertEqual(

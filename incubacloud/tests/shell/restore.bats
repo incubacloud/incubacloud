@@ -20,6 +20,7 @@ setup() {
 echo "docker $*" >> "$CALLS"
 case "$*" in
     *"id -u"*) echo "1234" ;;
+    *"name = 'incubacloud_connect'"*) [ -n "${CONNECT_STATE:-}" ] && echo "$CONNECT_STATE" ;;
 esac
 STUB
     # sudo: record and run nothing (chown/chmod would need real perms).
@@ -132,14 +133,28 @@ STUB
     [ "$status" -eq 1 ]
 }
 
-@test "ensure-connect reinstalls the connect module headless" {
-    run bash "$SCRIPT" ensure-connect "$DIR" prod
+@test "ensure-connect installs the connect module headless when it is missing" {
+    run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
     [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"psql -U odoo -d prod"* ]]
     [[ "$(cat "$CALLS")" == *"docker compose run --rm odoo odoo -d prod -i incubacloud_connect --stop-after-init --no-http"* ]]
 }
 
+@test "ensure-connect boots no Odoo for a module already installed" {
+    CONNECT_STATE=installed run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already installed"* ]]
+    [[ "$(cat "$CALLS")" != *"docker compose run"* ]]
+}
+
+@test "ensure-connect installs when the module is only half there" {
+    CONNECT_STATE="to install" run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"-i incubacloud_connect"* ]]
+}
+
 @test "a tilde instance directory resolves against HOME" {
-    run bash "$SCRIPT" ensure-connect "~/projects/inst" prod
+    run bash "$SCRIPT" ensure-connect "~/projects/inst" odoo prod
     [ "$status" -eq 0 ]
 }
 
