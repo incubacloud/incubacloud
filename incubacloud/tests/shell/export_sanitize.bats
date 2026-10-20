@@ -10,7 +10,7 @@
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/export_sanitize.sh"
-    command -v rsync >/dev/null || skip "rsync is not installed"
+    command -v rsync >/dev/null || { echo "rsync is needed" >&2; return 1; }
 
     TMP="$(mktemp -d)"
     export HOME="$TMP/home"

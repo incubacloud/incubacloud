@@ -1,4 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
 import { SearchSelect } from "@incubacloud/components/search_select/search_select";
 
 describe("SearchSelect — class structure", () => {
@@ -15,11 +16,14 @@ describe("SearchSelect — class structure", () => {
     });
 
     test("defaultProps sets placeholder", () => {
-        expect(SearchSelect.defaultProps.placeholder).toBe("Search\u2026");
+        // Translated strings, read as text with the catalogue loaded.
+        allowTranslations();
+        expect(String(SearchSelect.defaultProps.placeholder)).toBe("Search\u2026");
     });
 
     test("defaultProps sets emptyLabel", () => {
-        expect(SearchSelect.defaultProps.emptyLabel).toBe("\u2014 select \u2014");
+        allowTranslations();
+        expect(String(SearchSelect.defaultProps.emptyLabel)).toBe("\u2014 select \u2014");
     });
 
     test("defaultProps sets allowFreeText to false", () => {

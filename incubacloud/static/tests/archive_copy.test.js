@@ -1,4 +1,5 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
 import {
     copyStateBadgeClass,
     copyStateLabel,
@@ -25,6 +26,10 @@ describe("archive_copy — formatBytes", () => {
 });
 
 describe("archive_copy — copyStateLabel", () => {
+    // The labels are translated strings: read without a loaded catalogue
+    // they throw, as they would before the web client loaded its own.
+    beforeEach(() => allowTranslations());
+
     test("maps the three real states", () => {
         expect(copyStateLabel("present").toString()).toBe("Present");
         expect(copyStateLabel("missing").toString()).toBe("Missing");

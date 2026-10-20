@@ -1,4 +1,5 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
 import {
     ImportOdooshModal,
     ImportProjectModal,
@@ -280,17 +281,20 @@ describe("ImportProjectModal — the branch field waits for its list", () => {
         return cmp;
     };
     const url = "https://github.com/acme/project";
+    // The placeholders are translated strings: read as text, with the
+    // catalogue loaded as the web client has it.
+    beforeEach(() => allowTranslations());
 
     test("is locked before any URL was looked up", () => {
         const cmp = modal({ repoUrl: url });
         expect(cmp.branchLocked).toBe(true);
-        expect(cmp.branchPlaceholder).toBe("Enter the repository URL first");
+        expect(String(cmp.branchPlaceholder)).toBe("Enter the repository URL first");
     });
 
     test("is locked while the branches load", () => {
         const cmp = modal({ repoUrl: url, loadingBranches: true });
         expect(cmp.branchLocked).toBe(true);
-        expect(cmp.branchPlaceholder).toBe("Loading branches…");
+        expect(String(cmp.branchPlaceholder)).toBe("Loading branches…");
     });
 
     test("opens once the branches of that URL arrived", () => {

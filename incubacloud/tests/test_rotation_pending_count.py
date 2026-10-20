@@ -24,9 +24,13 @@ is neutralised, so inheriting "whatever secrets happen to exist" would
 mean asserting on an empty set and passing for the wrong reason.
 """
 import os
+from unittest.mock import patch
+
+from cryptography.fernet import Fernet
 
 from odoo.tests.common import TransactionCase, tagged
 
+from ..models import password_utils
 from ..models.password_utils import is_on_primary_key
 
 
@@ -53,6 +57,28 @@ class TestRotationPendingCount(TransactionCase):
             'login_type': 'password',
             'password': 'written-by-this-test',
         })
+
+    def _rotating(self):
+        """Run on the configured key plus an older one: a rotation underway.
+
+        The two-key state the signal exists for is built here rather than
+        expected of the environment, which holds one key everywhere these
+        run (CI, devel, the deploy's check); the keys are read once and
+        kept, so the cache is cleared and given back afterwards.
+
+        :return: the older key, the one a value still waiting is on
+        :rtype: str
+        """
+        primary = _keys()[0]
+        older = Fernet.generate_key().decode()
+        environ = patch.dict(
+            os.environ, {'INCUBACLOUD_SECRET_KEY': f'{primary},{older}'},
+        )
+        environ.start()
+        self.addCleanup(environ.stop)
+        self.addCleanup(setattr, password_utils, '_fernet', password_utils._fernet)
+        password_utils._fernet = None
+        return older
 
     def _encrypt_with(self, key, plaintext):
         """Return an ``enc:`` token built with *key* specifically."""
@@ -84,14 +110,7 @@ class TestRotationPendingCount(TransactionCase):
 
     def test_a_value_on_an_older_key_is_pending(self):
         """The case the whole signal exists for."""
-        keys = _keys()
-        if len(keys) < 2:
-            self.skipTest(
-                'needs a second key in INCUBACLOUD_SECRET_KEY: with one key '
-                'there is no such thing as a value on an older key, so this '
-                'assertion would pass without exercising anything'
-            )
-        self._set_raw(self._encrypt_with(keys[1], 'seeded-under-old-key'))
+        self._set_raw(self._encrypt_with(self._rotating(), 'seeded-under-old-key'))
         before = self.settings.rotation_pending_count()
         self.assertGreaterEqual(
             before['total'], 1,
@@ -110,10 +129,7 @@ class TestRotationPendingCount(TransactionCase):
 
     def test_the_count_converges_where_the_rotated_tally_does_not(self):
         """The defect, pinned: rewriting is not the same as pending."""
-        keys = _keys()
-        if len(keys) < 2:
-            self.skipTest('needs a second key in INCUBACLOUD_SECRET_KEY')
-        self._set_raw(self._encrypt_with(keys[1], 'seeded-under-old-key'))
+        self._set_raw(self._encrypt_with(self._rotating(), 'seeded-under-old-key'))
 
         first = self.settings._rotate_all_secrets()
         second = self.settings._rotate_all_secrets()

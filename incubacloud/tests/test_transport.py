@@ -12,7 +12,6 @@ Covers:
 """
 
 import asyncio
-import unittest
 import shlex
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -50,7 +49,7 @@ def _async_iter(lines):
 # ---------------------------------------------------------------------------
 
 
-class TestBaseTransportIsAbstract(unittest.TestCase):
+class TestBaseTransportIsAbstract(BaseCase):
     def test_cannot_instantiate_directly(self):
         from odoo.addons.incubacloud.models.transport import BaseTransport
 
@@ -83,7 +82,19 @@ class TestBaseTransportIsAbstract(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestSSHTransportExecute(unittest.TestCase):
+def _collector():
+    """An async line callback, as ``SSHTransport.execute`` awaits, and
+    the list of lines it was given."""
+    lines = []
+
+    async def collect(line):
+        """Record *line*."""
+        lines.append(line)
+
+    return collect, lines
+
+
+class TestSSHTransportExecute(BaseCase):
     def _make_process(self, stdout_lines, stderr_lines, exit_status=0):
         process = MagicMock(spec=asyncssh.SSHClientProcess)
         process.stdout = _async_iter(stdout_lines)
@@ -100,8 +111,8 @@ class TestSSHTransportExecute(unittest.TestCase):
         conn.create_process = AsyncMock(return_value=process)
         transport = SSHTransport(conn)
 
-        captured = []
-        result = _run(transport.execute("cmd", captured.append, AsyncMock()))
+        collect, captured = _collector()
+        result = _run(transport.execute("cmd", collect, AsyncMock()))
         self.assertEqual(result.stdout, "line1\nline2")
         self.assertEqual(captured, ["line1", "line2"])
 
@@ -113,8 +124,8 @@ class TestSSHTransportExecute(unittest.TestCase):
         conn.create_process = AsyncMock(return_value=process)
         transport = SSHTransport(conn)
 
-        stderr_captured = []
-        _run(transport.execute("cmd", AsyncMock(), stderr_captured.append))
+        collect, stderr_captured = _collector()
+        _run(transport.execute("cmd", AsyncMock(), collect))
         self.assertEqual(stderr_captured, ["err1", "err2"])
 
     def test_exit_status_returned(self):
@@ -136,8 +147,8 @@ class TestSSHTransportExecute(unittest.TestCase):
         conn.create_process = AsyncMock(return_value=process)
         transport = SSHTransport(conn)
 
-        captured = []
-        _run(transport.execute("cmd", captured.append, AsyncMock()))
+        collect, captured = _collector()
+        _run(transport.execute("cmd", collect, AsyncMock()))
         # Blank lines stripped — only "real" survives
         self.assertNotIn("", captured)
         self.assertIn("real", captured)
@@ -148,7 +159,7 @@ class TestSSHTransportExecute(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestSSHTransportRun(unittest.TestCase):
+class TestSSHTransportRun(BaseCase):
     def test_returns_stdout_and_exit_status(self):
         from odoo.addons.incubacloud.models.transport import SSHTransport
 
@@ -281,7 +292,7 @@ class TestSSHTransportFileOps(BaseCase):
 # ---------------------------------------------------------------------------
 
 
-class TestAbstractExecutorAfterCommandsHook(unittest.TestCase):
+class TestAbstractExecutorAfterCommandsHook(BaseCase):
     """Verify after_commands is called on success and skipped on failure."""
 
     def _make_executor(self, commands, parse_errors=None):
@@ -472,7 +483,7 @@ class TestAsyncEntryLogsALostConnection(BaseCase):
 # ---------------------------------------------------------------------------
 
 
-class TestBackupCreateAfterCommands(unittest.TestCase):
+class TestBackupCreateAfterCommands(BaseCase):
     def _make_executor(self, environment="staging"):
         from odoo.addons.incubacloud.models.backup_create_executor import (
             BackupCreateExecutor,
@@ -701,7 +712,7 @@ class TestRestoreInstanceVerifyBackupFile(BaseCase):
 # ---------------------------------------------------------------------------
 
 
-class TestBackupDownloadAfterCommands(unittest.TestCase):
+class TestBackupDownloadAfterCommands(BaseCase):
     def _make_executor(self):
         from odoo.addons.incubacloud.models.backup_download_executor import (
             BackupDownloadExecutor,
