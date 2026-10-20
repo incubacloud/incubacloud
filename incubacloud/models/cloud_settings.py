@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import uuid
+from urllib.parse import urlsplit
 
 from psycopg2 import sql
 
@@ -487,6 +488,29 @@ class CloudSettings(models.Model):
             used to map each account to its own organisation.
         """
         return {}
+
+    def _grafana_frame_ancestors(self):
+        """Return the origins allowed to frame a Grafana the panel publishes.
+
+        A central published under a name of its own
+        (``metrics_central_public_host``) answers with its own
+        ``frame-ancestors``, and a browser refuses any frame this list
+        does not name, silently: the frame still fires ``load``. Core
+        frames Grafana from the panel alone, so the list is the panel's
+        origin, read from ``web.base.url``. The SaaS manager overrides
+        this to add its tenants' panels.
+
+        On the model rather than on the executor, like ``_grafana_oidc``:
+        who frames Grafana is the layer's knowledge, not the job's.
+
+        :return: origins such as ``https://panel.example.com``; empty
+            while the panel's own address is unknown.
+        :rtype: list
+        """
+        panel = urlsplit(
+            self.env["ir.config_parameter"].sudo().get_param("web.base.url") or ""
+        )
+        return [f"{panel.scheme}://{panel.netloc}"] if panel.netloc else []
 
     def _grafana_org_mapping(self, accounts):
         """Return Grafana's ``org_mapping`` string, one entry per account.
