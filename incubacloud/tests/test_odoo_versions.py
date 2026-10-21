@@ -18,6 +18,7 @@ from odoo.addons.incubacloud.models.deploy_instance_executor import (
 from odoo.addons.incubacloud.models.rebuild_instance_executor import (
     RebuildInstanceExecutor,
 )
+from odoo.addons.incubacloud.tests.test_cloud_security import CloudSecurityBase
 
 
 class TestTheSeriesCards(BaseCase):
@@ -38,6 +39,12 @@ class TestTheSeriesCards(BaseCase):
                 "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
                 "14.0", "15.0", "16.0", "17.0", "18.0", "19.0",
             )
+        }
+        # Being prepared: not offered, PostgreSQL 16 to 18, odoo db,
+        # template v10.0.3 (plan Odoo 20, lab of 22-oct-2026).
+        expected["20.0"] = {
+            "offered": False, "postgres": (16, 18, 17),
+            "db_tool": "odoo-db", "template_min": "v10.0.3",
         }
         self.assertEqual(dict(versions.VERSIONS), expected)
 
@@ -78,9 +85,16 @@ class TestTheSeriesCards(BaseCase):
         )
         self.assertEqual(versions.postgres_default("19.0"), "17")
 
+    def test_a_series_being_prepared_is_known_and_not_offered(self):
+        self.assertIn(("20.0", "20.0"), versions.ODOO_VERSION_SELECTION)
+        self.assertNotIn("20.0", versions.offered_versions())
+        self.assertEqual(versions.postgres_versions("20.0"), ("16", "17", "18"))
+        self.assertEqual(versions.script_env("20.0"), {"IC_DB_TOOL": "odoo-db"})
+
     def test_the_pickers_get_each_offered_series(self):
         facts = versions.picker_facts()
         self.assertEqual(tuple(facts), versions.offered_versions())
+        self.assertNotIn("20.0", facts)
         self.assertEqual(
             facts["19.0"],
             {"postgres": ["14", "15", "16", "17", "18"], "postgres_default": "17"},
@@ -96,25 +110,23 @@ class TestTheTemplateFloor(BaseCase):
                 self.assertTrue(versions.template_ref_allows("19.0", ref))
 
     def test_a_floor_is_compared_as_a_version(self):
-        """Checked through a card of the shape a series on 20 will have."""
-        card = versions._card(False, (16, 18, 17), "odoo-db", "v10.0.0")
-        with_floor = versions.VERSIONS | {"20.0": card}
-        original = versions.VERSIONS
-        try:
-            versions.VERSIONS = with_floor
-            for ref, expected in (
-                ("v10.0.0", True), ("v10.0.8", True), ("v11.0.0", True),
-                ("10.1.0", True), ("v9.7.0", False), ("v9.10.3", False),
-                ("", True), ("main", True), (None, True),
-            ):
-                with self.subTest(ref=ref):
-                    self.assertIs(versions.template_ref_allows("20.0", ref), expected)
-        finally:
-            versions.VERSIONS = original
+        """20.0 needs v10.0.3: compared as numbers, not as text."""
+        for ref, expected in (
+            ("v10.0.3", True), ("v10.0.8", True), ("v10.0.10", True),
+            ("v11.0.0", True), ("10.1.0", True), ("v10.0.2", False),
+            ("v9.7.0", False), ("v9.10.3", False),
+            ("", True), ("main", True), (None, True),
+        ):
+            with self.subTest(ref=ref):
+                self.assertIs(versions.template_ref_allows("20.0", ref), expected)
 
 
 class SeriesCardCase(TransactionCase):
-    """An instance of the one series the table offers today."""
+    """An instance of an offered series, and one of the series being prepared.
+
+    Created as the test's administrator, the only one who may choose a
+    series that is not offered.
+    """
 
     def setUp(self):
         super().setUp()
@@ -128,6 +140,14 @@ class SeriesCardCase(TransactionCase):
             "environment": "staging", "host_id": self.host.id,
             "odoo_version": "19.0",
         })
+        project20 = self.env["cloud.project"].create({
+            "name": "Series 20", "odoo_version": "20.0",
+        })
+        self.instance20 = self.env["cloud.instance"].create({
+            "name": "series20", "project_id": project20.id,
+            "environment": "staging", "host_id": self.host.id,
+            "odoo_version": "20.0",
+        })
 
 
 class TestWhatHangsOffTheCard(SeriesCardCase):
@@ -139,17 +159,11 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
         )
 
     def test_a_postgres_outside_the_series_range_is_refused(self):
-        """Checked through a card narrower than the field's own list, the
-        shape a series on 20 will have: 14 is a valid choice of the
-        field and still refused for this series."""
-        card = versions._card(True, (16, 18, 17), "click-odoo", None)
-        original = versions.VERSIONS
-        try:
-            versions.VERSIONS = original | {"19.0": card}
-            with self.assertRaises(ValidationError):
-                self.instance.postgres_version = "14"
-        finally:
-            versions.VERSIONS = original
+        """14 and 15 are choices of the field, and 20.0 does not run on them."""
+        for major in ("14", "15"):
+            with self.subTest(major=major), self.assertRaises(ValidationError):
+                self.instance20.postgres_version = major
+        self.instance20.postgres_version = "16"
 
     def test_every_postgres_of_the_range_is_taken(self):
         for major in versions.postgres_versions("19.0"):
@@ -162,16 +176,18 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
                 self.instance._check_template_ref(ref)
 
     def test_a_pin_too_old_for_the_series_is_refused_with_the_runbook(self):
-        card = versions._card(True, (16, 18, 17), "odoo-db", "v10.0.0")
-        original = versions.VERSIONS
-        try:
-            versions.VERSIONS = original | {"19.0": card}
-            with self.assertRaises(UserError) as caught:
-                self.instance._check_template_ref("v9.7.0")
-        finally:
-            versions.VERSIONS = original
-        self.assertIn("v10.0.0", str(caught.exception))
+        """Production's v9.7.0 cannot render 20.0: refused before copier."""
+        with self.assertRaises(UserError) as caught:
+            self.instance20._check_template_ref("v9.7.0")
+        self.assertIn("v10.0.3", str(caught.exception))
         self.assertIn("RB-15", str(caught.exception))
+        self.instance20._check_template_ref("v10.0.8")
+
+    def test_a_series_on_odoo_db_gets_it(self):
+        self.assertEqual(
+            versions.script_env(self.instance20.odoo_version),
+            {"IC_DB_TOOL": "odoo-db"},
+        )
 
     def test_the_deploy_and_the_rebuild_ask_before_uploading(self):
         """The check is the first thing both do with the instance."""
@@ -206,3 +222,36 @@ class TestThePickersRoute(BaseCase):
         answer = _routes_crud.CrudMixin().cloud_get_odoo_versions()
         self.assertEqual(answer["odoo_versions"], list(versions.offered_versions()))
         self.assertEqual(answer["facts"], versions.picker_facts())
+
+
+class TestOnlyAnAdministratorChoosesASeriesNotOffered(CloudSecurityBase):
+    """``may_choose``: the pickers hide a series, and RPC cannot reach it.
+
+    A manager of the panel is not an Odoo administrator; on a customer's
+    own panel that group is ours alone, so a customer cannot deploy a
+    series before its QA passed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.manager = self._create_user("series_manager", "group_cloud_manager")
+        self.assertFalse(self.manager.has_group("base.group_system"))
+
+    def test_a_manager_cannot_create_a_project_of_it(self):
+        Project = self.env["cloud.project"].with_user(self.manager)
+        with self.assertRaises(ValidationError):
+            Project.create({"name": "Too soon", "odoo_version": "20.0"})
+        Project.create({"name": "Fine", "odoo_version": "19.0"})
+
+    def test_a_manager_cannot_move_an_instance_to_it(self):
+        project = self._create_project(members=[self.manager])
+        instance = self._create_instance(project)
+        with self.assertRaises(ValidationError):
+            instance.with_user(self.manager).odoo_version = "20.0"
+
+    def test_an_administrator_can(self):
+        """As QA does, to deploy the series before it is offered."""
+        project = self.env["cloud.project"].create(
+            {"name": "QA 20", "odoo_version": "20.0"},
+        )
+        self.assertEqual(project.odoo_version, "20.0")

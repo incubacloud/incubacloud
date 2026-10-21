@@ -14,10 +14,10 @@ whole.
 Fields of a card:
 
 ``offered``
-    Whether the series appears in the pickers and the importer accepts
-    it. A series being prepared lives here with ``offered=False`` until
-    its QA passes, so the code that supports it can land without a
-    customer deploying it.
+    Whether the series appears in the pickers, the importer accepts it
+    and anyone may choose it (``may_choose``). A series being prepared
+    lives here with ``offered=False`` until its QA passes, so the code
+    that supports it can land without a customer deploying it.
 ``postgres``
     ``(lowest, highest, default)`` major versions of PostgreSQL the
     series runs on. The picker shows that range and ``cloud.instance``
@@ -83,6 +83,13 @@ VERSIONS = {
     "17.0": _card(True, (14, 18, 17), "click-odoo", None),
     "18.0": _card(True, (14, 18, 17), "click-odoo", None),
     "19.0": _card(True, (14, 18, 17), "click-odoo", None),
+    # Being prepared (plan Odoo 20, phase 2): not offered until its QA
+    # passes. PostgreSQL 16 to 18, as the template requires; odoo db,
+    # since click-odoo-contrib 1.24 refuses its database commands on 20
+    # (lab of 22-oct-2026); template v10.0.3, the first whose tasks also
+    # use odoo db on 20 (v10.0.2 renders it, but its ``invoke resetdb``
+    # would fail in an exported copy).
+    "20.0": _card(False, (16, 18, 17), "odoo-db", "v10.0.3"),
 }
 
 
@@ -102,6 +109,22 @@ def offered_versions():
     :rtype: tuple
     """
     return tuple(v for v, c in VERSIONS.items() if c["offered"])
+
+
+def may_choose(version, user):
+    """Whether *user* may give a project or an instance the series *version*.
+
+    An offered series, anyone. One that is not — being prepared, or
+    retired — only an Odoo administrator (``base.group_system``): QA
+    deploys a series before customers see it, and on a customer's own
+    panel that group is ours alone. A record that already holds a
+    series keeps it; this is asked when the series is chosen.
+
+    :param str version: a series.
+    :param user: the ``res.users`` record choosing it.
+    :rtype: bool
+    """
+    return card(version)["offered"] or user.has_group("base.group_system")
 
 
 def postgres_versions(version):

@@ -5,6 +5,7 @@ from odoo.fields import Domain
 from odoo.tools import SQL, Query
 from odoo.exceptions import UserError, ValidationError
 
+from . import _odoo_versions
 from ._odoo_versions import ODOO_VERSION_SELECTION
 
 
@@ -156,6 +157,22 @@ class CloudProject(models.Model):
         for project in self:
             if not project.remote_folder:
                 project.remote_folder = _slugify(project.name or '')
+
+    @api.constrains('odoo_version')
+    def _check_series_may_be_chosen(self):
+        """A series the panel does not offer is chosen by an administrator only.
+
+        The pickers only show offered series, but the value also arrives
+        by RPC and by import; see ``_odoo_versions.may_choose``.
+        """
+        for project in self:
+            if project.odoo_version and not _odoo_versions.may_choose(
+                project.odoo_version, self.env.user,
+            ):
+                raise ValidationError(_(
+                    "Odoo %(version)s is not offered yet.",
+                    version=project.odoo_version,
+                ))
 
     @api.constrains('remote_folder')
     def _check_remote_folder_shell_safe(self):
