@@ -19,11 +19,15 @@ already answers explicitly for exactly this reason.
 """
 from odoo.tests.common import TransactionCase
 
+from ._template import pin_template
+
 
 class TestWhitelistAnswers(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The old template's model; template v10's is test_template_v10_stack.
+        pin_template(self.env)
         self.project = self.env["cloud.project"].create({"name": "Egress"})
         self.host = self.env["cloud.host"].create({
             "name": "egress-host",

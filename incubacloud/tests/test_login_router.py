@@ -18,11 +18,15 @@ from odoo.addons.incubacloud.models.deploy_instance_executor import (
     DeployInstanceExecutor,
 )
 
+from ._template import pin_template
+
 
 class TestLoginRouter(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The old template's model; template v10's is test_template_v10_stack.
+        pin_template(self.env)
         self.project = self.env["cloud.project"].create({"name": "Login Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "login-host",

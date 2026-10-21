@@ -8,6 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.195] — 2026-10-21
 
+### Fixed
+
+- **The tests of a staging's stack say which template they render.** They
+  relied on the code's default pin, which only a fresh database takes:
+  in devel and production the stored v9.7.0 hid that seventeen of them
+  failed under v10.0.8, the default the CI's database got. They now pin
+  the template they test (`tests/_template.py`), and template v10's own
+  test checks what they checked for the old model: the routers'
+  middlewares, the login router, the prune label and the log rotation,
+  on the gatekeeper.
+
 ### Changed
 
 - **The firewall counts its verdicts on new web connections.** On a
@@ -30,8 +41,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   when the host was last read: "last archived 10 min ago" with a 5-minute
   objective was the watch's ten-minute cadence, not the archive behind.
 
-- **Doodba template v10.0.8 is the pin** (was v9.6.1), the first that
-  supports Odoo 20. Production stacks are rendered the same; a staging
+- **Doodba template v10.0.8 is the default pin** (was v9.6.1), the
+  first that supports Odoo 20. It is the default of a new panel's
+  setting only: a running panel keeps the version stored in **Settings →
+  Doodba template version** (v9.7.0 in production) until it is changed
+  there, the canary of RB-15. Production stacks are rendered the same; a staging
   with an allowlist closes its egress with the template's `gatekeeper`,
   which owns odoo's network namespace and filters with nftables, instead
   of the `proxy_general` + `odoo_net_setup` pair. Each stack keeps the
