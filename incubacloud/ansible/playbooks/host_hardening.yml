@@ -500,6 +500,10 @@
                   {% else %}
                   tcp dport { 80, 443 } accept
                   {% endif %}
+                  # Counted only, no verdict: what falls through to the
+                  # chain's drop policy. ``nft list ruleset`` shows it,
+                  # and QA keeps that listing when a walk fails.
+                  counter comment "input policy drop"
               }
               chain forward {
                   type filter hook forward priority filter; policy accept;
@@ -526,11 +530,14 @@
                   # ``ct original proto-dst`` once the transport protocol
                   # is stated; a newer nft infers it, and a ruleset
                   # checked only there was refused by the fleet.
-                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept
+                  # Each verdict counted: a CDN connection dropped, or
+                  # none accepted while a panel waits, shows in
+                  # ``nft list ruleset``.
+                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 counter accept
                   {% if ic_http_allowed_ranges_v6 | default('') | trim %}
-                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept
+                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 counter accept
                   {% endif %}
-                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } drop
+                  meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 } counter drop
                   {% elif (ic_http_conn_rate | default(0) | int) > 0 %}
                   # Per-source new-connection cap on the instances' 80/443.
                   # Tenant traffic is DNAT'd to the Traefik container, so it
@@ -552,8 +559,8 @@
                   {% set _burst = ic_http_conn_burst | default(ic_http_conn_rate) | int %}
                   {% set _new_redirected = 'meta l4proto tcp ct state new ct status dnat ct original proto-dst { 80, 443 }' %}
                   {% set _over = 'limit rate over ' ~ _rate ~ '/second burst ' ~ _burst ~ ' packets' %}
-                  {{ _new_redirected }} meter ic_http_conn4 { ip saddr {{ _over }} } drop
-                  {{ _new_redirected }} meter ic_http_conn6 { ip6 saddr {{ _over }} } drop
+                  {{ _new_redirected }} meter ic_http_conn4 { ip saddr {{ _over }} } counter drop
+                  {{ _new_redirected }} meter ic_http_conn6 { ip6 saddr {{ _over }} } counter drop
                   {% endif %}
               }
               chain output {
