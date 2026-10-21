@@ -135,3 +135,47 @@ class TestTheStackFollowsItsTemplate(TransactionCase):
         self.assertTrue(
             [k for k in services["odoo"]["labels"] if ".routers." in k],
         )
+
+    def test_the_gatekeeper_declares_the_middlewares_its_routers_use(self):
+        """The template declares a staging's router middlewares on
+        ``smtp``, which the deploy takes off Traefik; they are declared
+        again where the routers are, or Traefik drops every router and
+        the staging answers 404. Under v10 that is the gatekeeper."""
+        self.staging.odoo_version = "19.0"
+        services = self._override("v10.0.8")
+        prefix = (
+            "traefik.http.middlewares."
+            f"{self.staging.doodba_project_name}-19-0-test"
+        )
+        declared = [
+            key for key in services["gatekeeper"]["labels"]
+            if key.startswith("traefik.http.middlewares.")
+        ]
+        for name in ("addSTS", "buffering", "compress", "forbid-crawlers",
+                     "forceSecure"):
+            with self.subTest(middleware=name):
+                self.assertTrue(
+                    any(key.startswith(f"{prefix}-{name}.") for key in declared),
+                )
+        self.assertFalse([
+            key for key in services["odoo"]["labels"]
+            if key.startswith("traefik.http.")
+        ])
+        self.assertEqual(services["smtp"]["labels"]["traefik.enable"], "false")
+
+    def test_the_gatekeeper_carries_the_staging_login_router(self):
+        """The login router of a staging uses the template's test key."""
+        services = self._override("v10.0.8")
+        key = f"{self.staging.doodba_project_name}-19-0-test"
+        self.assertTrue([
+            label for label in services["gatekeeper"]["labels"]
+            if label.startswith(f"traefik.http.routers.{key}-login-")
+            and label.endswith(".rule")
+        ])
+
+    def test_the_gatekeeper_is_protected_and_rotates_its_log(self):
+        """Like every service of the stack: the prune spares it and its
+        log is capped."""
+        services = self._override("v10.0.8")
+        self.assertEqual(services["gatekeeper"]["labels"]["incubacloud.protect"], "1")
+        self.assertEqual(services["gatekeeper"]["logging"]["driver"], "json-file")

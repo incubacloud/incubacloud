@@ -22,11 +22,15 @@ from odoo.addons.incubacloud.models.rebuild_instance_executor import (
 )
 from odoo.addons.incubacloud.models.registry import executor_registry
 
+from ._template import pin_template
+
 
 class _OverrideCase(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The old template's model; template v10's is test_template_v10_stack.
+        pin_template(self.env)
         self.project = self.env["cloud.project"].create({"name": "Logrot Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "logrot-host",

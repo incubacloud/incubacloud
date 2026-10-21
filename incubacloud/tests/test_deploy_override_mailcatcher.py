@@ -30,11 +30,15 @@ from odoo.addons.incubacloud.models.rebuild_instance_executor import (
     RebuildInstanceExecutor,
 )
 
+from ._template import pin_template
+
 
 class _CatcherCase(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The old template's model; template v10's is test_template_v10_stack.
+        pin_template(self.env)
         self.project = self.env["cloud.project"].create({"name": "Catcher"})
         self.host = self.env["cloud.host"].create({
             "name": "catcher-host",
