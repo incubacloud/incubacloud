@@ -167,3 +167,45 @@ docker compose restart odoo_net_setup" ]
     run bash "$SCRIPT" "$HOME/project/inst" restart odoo_net_setup
     [ "$(cat "$DOCKER_CALLS")" = "docker compose restart odoo_net_setup" ]
 }
+
+# A staging rendered by template v10: odoo runs in gatekeeper's network.
+with_gatekeeper() {
+    export STUB_SERVICES="odoo\ndb\nsmtp\ngatekeeper\n"
+    export STUB_RUNNING="odoo\ndb\nsmtp\ngatekeeper\n"
+}
+
+@test "restarting the stack restarts odoo again after gatekeeper" {
+    with_gatekeeper
+    run bash "$SCRIPT" "$HOME/project/inst" restart
+    [ "$status" -eq 0 ]
+    [ "$(tail -1 "$DOCKER_CALLS")" = "docker compose restart odoo" ]
+}
+
+@test "starting gatekeeper by name restarts odoo after it" {
+    with_gatekeeper
+    run bash "$SCRIPT" "$HOME/project/inst" start gatekeeper
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "$(printf 'docker compose start gatekeeper\ndocker compose restart odoo')" ]
+}
+
+@test "an operation that leaves gatekeeper alone leaves odoo alone too" {
+    with_gatekeeper
+    run bash "$SCRIPT" "$HOME/project/inst" restart smtp
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose restart smtp" ]
+}
+
+@test "up leaves odoo to compose, which recreates it with gatekeeper" {
+    with_gatekeeper
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose up -d" ]
+}
+
+@test "odoo is left alone when it is not running" {
+    with_gatekeeper
+    export STUB_RUNNING="db\ngatekeeper\n"
+    run bash "$SCRIPT" "$HOME/project/inst" restart
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose restart" ]
+}

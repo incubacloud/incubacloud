@@ -1057,24 +1057,38 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         :param list issues: the probe's issues, appended to on alert.
         """
         code = 'instance_egress_filter_lost'
+        expected = inst.expected_services()
+        unhealthy = getattr(self, '_unhealthy_services', ())
         if not (
             self._container_running
-            and 'odoo_net_setup' in inst.expected_services()
-            and 'odoo_net_setup' in getattr(self, '_unhealthy_services', ())
+            and (
+                ('odoo_net_setup' in expected and 'odoo_net_setup' in unhealthy)
+                or ('gatekeeper' in expected and 'gatekeeper' in unhealthy)
+            )
         ):
             self._resolve_inst_alert(code)
             return
         issues.append('egress_filter:lost')
-        self._inst_alert(
-            code,
-            (
+        if 'gatekeeper' in expected:
+            # Template v10: the filter is the namespace odoo runs in, so
+            # nothing opens up; an unhealthy gatekeeper (its sync loop
+            # gone, its allowed set empty) is a staging that reaches
+            # nothing it is allowed to, which its users notice first.
+            message = (
+                f"The egress filter of '{inst.name}' is not working: its "
+                f"'gatekeeper' container is unhealthy, so odoo reaches "
+                f"nothing on the internet, allowed or not. Restart the "
+                f"instance."
+            )
+            self._sys("✗ Egress filter not working: 'gatekeeper' is unhealthy.")
+        else:
+            message = (
                 f"The egress filter of '{inst.name}' is not in force: odoo "
                 f"reaches the internet without its allowlist. Restart "
                 f"its 'odoo_net_setup' container."
-            ),
-            level='critical',
-        )
-        self._sys("✗ Egress filter not in force: 'odoo_net_setup' is unhealthy.")
+            )
+            self._sys("✗ Egress filter not in force: 'odoo_net_setup' is unhealthy.")
+        self._inst_alert(code, message, level='critical')
 
     def _resolve_service_alerts(self, inst):
         """Dismiss every per-service container alert of *inst*.

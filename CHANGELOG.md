@@ -21,11 +21,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   when the host was last read: "last archived 10 min ago" with a 5-minute
   objective was the watch's ten-minute cadence, not the archive behind.
 
+- **Doodba template v10.0.8 is the pin** (was v9.6.1), the first that
+  supports Odoo 20. Production stacks are rendered the same; a staging
+  with an allowlist closes its egress with the template's `gatekeeper`,
+  which owns odoo's network namespace and filters with nftables, instead
+  of the `proxy_general` + `odoo_net_setup` pair. Each stack keeps the
+  model of the template that rendered it until its next rebuild
+  (`stack_template_ref`), and the health probe, the deploy and
+  `expected_services()` read it. The override pins the gatekeeper's
+  image by digest and gives it the restart policy the template omits;
+  `compose_op.sh` restarts odoo after any start of the gatekeeper so it
+  joins the namespace the gatekeeper has now; an empty allowlist renders
+  the host's list, the meaning it always had, since the shared whitelist
+  network is gone. The probe grades an unhealthy gatekeeper as the
+  egress filter lost.
+
 ### Documentation
 
 - The user guide gains *Restore to any minute* (what the card shows, how
   a restore runs, what it undoes), and the runbooks RB-23 for its three
   alerts, a restore that never ended and an instance that moved.
+- `architecture.md` describes both egress models of a staging, and RB-15
+  what the v10 bump taught.
 
 ## [1.0.194] — 2026-10-20
 

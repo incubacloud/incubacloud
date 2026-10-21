@@ -52,13 +52,17 @@ class TestEgressFilterProbe(TransactionCase):
     def _listing(self, sidecar_status, odoo_state="running"):
         """A three-column ``docker compose ps -a`` of the staging.
 
-        :param str sidecar_status: the sidecar's ``Status`` text.
+        :param str sidecar_status: the filter's ``Status`` text, whichever
+            service filters (``odoo_net_setup`` or ``gatekeeper``).
         :param str odoo_state: odoo's ``State``.
         """
         lines = []
         for svc in self.staging.expected_services():
             state = odoo_state if svc == "odoo" else "running"
-            status = sidecar_status if svc == "odoo_net_setup" else "Up 2 hours"
+            status = (
+                sidecar_status if svc in ("odoo_net_setup", "gatekeeper")
+                else "Up 2 hours"
+            )
             lines.append(f"{svc}\t{state}\t{status}")
         return "\n".join(lines)
 
@@ -107,6 +111,19 @@ class TestEgressFilterProbe(TransactionCase):
 
     def test_a_stopped_odoo_reaches_nothing(self):
         self._probe(self._listing("Up 15 minutes (unhealthy)", odoo_state="exited"))
+        self.assertFalse(self._alert())
+
+    def test_an_unhealthy_gatekeeper_is_the_same_alert(self):
+        """A stack rendered by template v10 filters with a gatekeeper that
+        odoo's network lives in: unhealthy, odoo reaches nothing."""
+        self.staging.stack_template_ref = "v10.0.8"
+        self.assertIn("gatekeeper", self.staging.expected_services())
+        self._probe(self._listing("Up 15 minutes (unhealthy)"))
+        alert = self._alert()
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(alert.level, "critical")
+        self.assertIn("gatekeeper", alert.message)
+        self._probe(self._listing("Up 1 minute (healthy)"))
         self.assertFalse(self._alert())
 
     def test_a_two_column_listing_still_parses(self):

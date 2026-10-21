@@ -5,7 +5,7 @@ newer `doodba-copier-template` release for tenant deploys.
 
 Every instance deploy runs `copier copy` against the template pinned by
 **Settings → Doodba template version** (`copier_template_ref`,
-currently `v9.6.1`). Pinning means upstream improvements arrive when
+currently `v10.0.8`). Pinning means upstream improvements arrive when
 *you* run this runbook — never as a surprise inside a tenant deploy.
 
 > **Also re-check the odoo service's `command`.** The compose override
@@ -78,3 +78,27 @@ in the job log (`running copier into … @ vX.Y.Z`).
 Rebuilding an existing healthy instance is **not** required after a
 bump: the pin only affects the next `copier copy` run for each
 instance.
+
+## What past bumps taught
+
+**v9.6.1 → v10.0.8 (core 1.0.195, 2026-10).** The template changed the
+model of a staging's egress: one `gatekeeper` service that owns odoo's
+network namespace, filters with nftables and carries the Traefik
+labels, instead of `proxy_general` + `odoo_net_setup`. Three things
+the sandbox render does not show and this bump had to add:
+
+- the template gives the gatekeeper **no restart policy**; odoo cannot
+  start inside the namespace of a container that is not running, so
+  without one a host reboot left the staging down (the override adds
+  it, `_gatekeeper_override`);
+- the image has **no versions**, only `latest` and pull-request tags:
+  pinned by digest (`GATEKEEPER_IMAGE`); moving it is a decision like
+  this runbook's;
+- the shared whitelist network is gone, so **an empty allowlist means
+  no egress** rather than the host's proxies; the panel renders the
+  host's list in that case.
+
+A stack keeps the model it was rendered with until its next rebuild
+(`stack_template_ref`), so the probe and the deploy understand both;
+the host's `globalwhitelist` proxies stay until no old-model staging
+is left. Production's `prod.yaml` was identical in both versions.
