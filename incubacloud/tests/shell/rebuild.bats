@@ -326,3 +326,69 @@ STUB
     [ "$untrack_at" -lt "$stage_at" ]
 }
 
+
+# ── a staging rendered by template v10: odoo lives in the gatekeeper's namespace ──
+
+_gatekeeper_docker() {
+    # docker as a v10 staging answers it: the gatekeeper is a service, and
+    # its container is up.
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    "wait "*)                          echo 0 ;;
+    *"compose config --services"*)     printf 'db\ngatekeeper\nsmtp\nodoo\n' ;;
+    *"compose ps -q gatekeeper"*)      echo gk123 ;;
+    *"compose ps --services"*)         printf 'odoo\ndb\nsmtp\ngatekeeper\n' ;;
+esac
+STUB
+}
+
+@test "boot-test under the gatekeeper puts the throwaway PG in its namespace" {
+    # Docker refuses to connect a container that shares a network
+    # namespace to any other network: the first pull request preview
+    # under template v10 died on that (QA, 2026-10-21). The throwaway PG
+    # joins the gatekeeper's namespace and the boot container, which
+    # shares it, reaches it on the loopback; nothing is created or
+    # connected on a network of its own.
+    _gatekeeper_docker
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"--network container:gk123"* ]]
+    [[ "$calls" == *"PGHOST=127.0.0.1"* ]]
+    [[ "$calls" != *"network create ic_boot_42"* ]]
+    [[ "$calls" != *"network connect"* ]]
+    [[ "$calls" == *'click-odoo-update --database "$0"'* ]]
+    # The clean-up is the same: the containers go, the services come back.
+    [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
+    [[ "$calls" == *"compose start odoo db smtp gatekeeper"* ]]
+}
+
+@test "boot-test under the gatekeeper stops when the gatekeeper is not running" {
+    cat > "$TMP/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    *"compose config --services"*)     printf 'db\ngatekeeper\nsmtp\nodoo\n' ;;
+    *"compose ps -q gatekeeper"*)      : ;;
+    *"compose ps --services"*)         printf 'db\nsmtp\n' ;;
+esac
+STUB
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"the gatekeeper is not running"* ]]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" != *"postgres-autoconf"* ]]
+    # Whatever was running is put back all the same.
+    [[ "$calls" == *"compose start db smtp"* ]]
+}
+
+@test "boot-test without a gatekeeper keeps its own network, as before" {
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"network create ic_boot_42"* ]]
+    [[ "$calls" == *"--network ic_boot_42"* ]]
+    [[ "$calls" != *"container:"* ]]
+}
