@@ -10,6 +10,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **A staging's rebuild passes its safe boot test under template v10.** The
+  test boots the new image against a throwaway Postgres on a network of
+  its own; under v10 `odoo` shares the gatekeeper's network namespace and
+  Docker refuses to connect it to any other network, so every rebuild of
+  a staging with an allowlist failed there (the first pull request
+  preview under v10, QA of 21-oct-2026). The throwaway Postgres now
+  joins the gatekeeper's namespace and the boot container finds it on
+  the loopback; the gatekeeper accepts the loopback and the private
+  ranges, so the staging's egress stays filtered while the test runs.
+  Stacks without a gatekeeper are tested as before.
+
 - **The tests of a staging's stack say which template they render.** They
   relied on the code's default pin, which only a fresh database takes:
   in devel and production the stored v9.7.0 hid that seventeen of them

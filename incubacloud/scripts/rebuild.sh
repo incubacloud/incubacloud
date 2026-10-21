@@ -166,10 +166,34 @@ case "$op" in
         # postgres-autoconf (not vanilla postgres:*-alpine) bundles
         # pgvector, which the cloned Odoo 19 cluster needs to open its
         # ``ai`` embedding index.
+        #
+        # A staging rendered by doodba template v10 is different again:
+        # its ``odoo`` runs inside the network namespace of the
+        # template's ``gatekeeper`` (``network_mode: service:gatekeeper``),
+        # and Docker refuses to connect a container that shares a
+        # namespace to any other network — the first pull request
+        # preview under v10 died on exactly that (QA, 2026-10-21). There
+        # the throwaway PG joins the gatekeeper's namespace instead, and
+        # the boot container finds it on 127.0.0.1: the gatekeeper's
+        # rules accept the loopback and the private ranges, so the
+        # staging's egress stays filtered while the test runs.
         docker rm -f "$odoo_container" "$pg_container" 2>/dev/null || true
         docker network rm "$boot_net" 2>/dev/null || true
-        docker network create "$boot_net"
-        docker run -d --name "$pg_container" --network "$boot_net" \
+        gatekeeper=""
+        if docker compose config --services 2>/dev/null | grep -qx gatekeeper; then
+            gatekeeper="$(docker compose ps -q gatekeeper 2>/dev/null | head -n 1)"
+            [ -n "$gatekeeper" ] \
+                || ic_die "the gatekeeper is not running: nothing to boot the test in"
+        fi
+        if [ -n "$gatekeeper" ]; then
+            pg_host="127.0.0.1"
+            pg_network="container:$gatekeeper"
+        else
+            pg_host="$pg_container"
+            pg_network="$boot_net"
+            docker network create "$boot_net"
+        fi
+        docker run -d --name "$pg_container" --network "$pg_network" \
             -v "$clone_on_host:/var/lib/postgresql/data" \
             --user postgres --entrypoint postgres \
             "ghcr.io/tecnativa/postgres-autoconf:${pg_version}-alpine" \
@@ -184,15 +208,20 @@ case "$op" in
         #
         # ``docker compose run`` cannot attach a container to a network
         # outside the project, so it starts detached and joins the boot
-        # network right after. Doodba's own wait for Postgres has no
-        # deadline — an unreachable database hung the job for good — so
-        # it is replaced by a bounded one; and the unaccent hook, which
-        # would query before the network is joined, is skipped: the
-        # clone already carries the extension.
+        # network right after — unless it already shares the gatekeeper's
+        # namespace, where the throwaway PG waits on the loopback. Doodba's
+        # own wait for Postgres has no deadline — an unreachable database
+        # hung the job for good — so it is replaced by a bounded one; and
+        # the unaccent hook, which would query before the network is
+        # joined, is skipped: the clone already carries the extension.
+        ic_boot_join() {
+            [ -n "$gatekeeper" ] \
+                || docker network connect "$boot_net" "$odoo_container"
+        }
         set +e
         # shellcheck disable=SC2016  # expanded by the container's bash
         docker compose run -d --name "$odoo_container" \
-            -e "PGHOST=$pg_container" -e PGPORT=5432 \
+            -e "PGHOST=$pg_host" -e PGPORT=5432 \
             -e WAIT_DB=false -e UNACCENT=false odoo \
             bash -c 'for _ in $(seq 120); do
                          psql -l >/dev/null 2>&1 \
@@ -201,7 +230,7 @@ case "$op" in
                      done
                      echo "boot test: the throwaway postgres never answered" >&2
                      exit 1' "$dbname" \
-            && docker network connect "$boot_net" "$odoo_container" \
+            && ic_boot_join \
             && docker logs -f "$odoo_container"
         ic_test_exit=$?
         if [ "$ic_test_exit" -eq 0 ]; then
