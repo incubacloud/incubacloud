@@ -29,6 +29,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   offered today, which keep click-odoo and PostgreSQL 14 to 18; the
   table is the ground the next series stands on (plan Odoo 20, phase 2).
 
+### Added
+
+- **Odoo 20.0 has its card, not offered yet.** PostgreSQL 16 to 18, `odoo
+  db` (click-odoo-contrib 1.24 refuses its database commands on 20) and
+  doodba template v10.0.3 or newer, so production's v9.7.0 pin refuses a
+  20.0 deploy before copier runs. A series that is not offered is chosen
+  by an Odoo administrator only (`may_choose`): the pickers hide it, RPC
+  cannot reach it, and QA can deploy it before customers. Every dump and
+  load of the scripts was run on a real Odoo 20 instance with `odoo db`;
+  its database-only dump is `odoo db dump --no-filestore`, the same zip
+  as click-odoo's, which the download expects.
+
 ## [1.0.196] — 2026-10-22
 
 ### Added

@@ -3593,6 +3593,22 @@ class CloudInstance(models.Model):
                         )
                     )
 
+    @api.constrains("odoo_version")
+    def _check_series_may_be_chosen(self):
+        """A series the panel does not offer is chosen by an administrator only.
+
+        The pickers only show offered series, but the value also arrives
+        by RPC; see ``_odoo_versions.may_choose``.
+        """
+        for inst in self:
+            if inst.odoo_version and not _odoo_versions.may_choose(
+                inst.odoo_version, self.env.user,
+            ):
+                raise ValidationError(_(
+                    "Odoo %(version)s is not offered yet.",
+                    version=inst.odoo_version,
+                ))
+
     @api.constrains("odoo_version", "postgres_version")
     def _check_postgres_version_for_series(self):
         """A PostgreSQL the series does not run on is refused when saved.
