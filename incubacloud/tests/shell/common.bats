@@ -169,12 +169,12 @@ _repo_with_tracked_log() {
     [ "${IC_DB_ARGS[*]}" = "click-odoo-backupdb --no-filestore prod /host-tmp/out.zip" ]
 }
 
-@test "odoo-db dumps the zip, or a pg_dump for the database alone" {
+@test "odoo-db dumps the zip, with or without the filestore" {
     export IC_DB_TOOL=odoo-db
     ic_db_dump_args prod /host-tmp/out.zip all
     [ "${IC_DB_ARGS[*]}" = "odoo db dump prod /host-tmp/out.zip" ]
     ic_db_dump_args prod /host-tmp/out.zip db
-    [ "${IC_DB_ARGS[*]}" = "odoo db dump --format dump prod /host-tmp/out.zip" ]
+    [ "${IC_DB_ARGS[*]}" = "odoo db dump --no-filestore prod /host-tmp/out.zip" ]
 }
 
 @test "a dump scope the library does not know stops the script" {

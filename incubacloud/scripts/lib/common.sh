@@ -179,9 +179,8 @@ ic_db_tool() {
 # Fill IC_DB_ARGS with the argv that dumps <db> into <archive>.
 #   ic_db_dump_args <db> <archive> <all|db>
 # ``all`` carries the filestore, ``db`` the database alone. Both tools
-# write Odoo's own zip (dump.sql, filestore/, manifest.json) for ``all``;
-# for ``db`` click-odoo writes that zip without the filestore and odoo-db
-# a pg_dump custom-format file, which ``odoo db load`` reads back.
+# write Odoo's own zip (dump.sql, manifest.json, and filestore/ for
+# ``all``), so a download is the same archive whichever tool made it.
 # shellcheck disable=SC2034  # IC_DB_ARGS is read by the calling script
 ic_db_dump_args() {
     local database="$1" archive="$2" scope="$3" tool
@@ -202,7 +201,7 @@ ic_db_dump_args() {
             if [ "$scope" = all ]; then
                 IC_DB_ARGS=(odoo db dump "$database" "$archive")
             else
-                IC_DB_ARGS=(odoo db dump --format dump "$database" "$archive")
+                IC_DB_ARGS=(odoo db dump --no-filestore "$database" "$archive")
             fi
             ;;
     esac
