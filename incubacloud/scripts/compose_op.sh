@@ -64,6 +64,30 @@ reinject_egress_route() {
     docker compose restart odoo_net_setup
 }
 
+# gatekeeper, the egress of a staging rendered by template v10, owns the
+# network namespace odoo runs in (network_mode: service:gatekeeper).
+# Starting gatekeeper again gives it a new namespace and leaves odoo in
+# the old one, with no network at all, its database included. So once an
+# operation started gatekeeper (the whole stack, or gatekeeper by name),
+# odoo is restarted to join the one gatekeeper has now. ``up`` needs none
+# of it: compose recreates odoo itself when gatekeeper is recreated. A
+# stack without gatekeeper, or with odoo not running, is left as it is.
+#   $@  the service names the caller passed
+rejoin_gatekeeper() {
+    local services running svc touched=0
+    services="$(docker compose config --services 2>/dev/null || true)"
+    grep -qx gatekeeper <<<"$services" || return 0
+    [ "$#" -eq 0 ] && touched=1
+    for svc in "$@"; do
+        [ "$svc" = "gatekeeper" ] && touched=1
+    done
+    [ "$touched" -eq 1 ] || return 0
+    running="$(docker compose ps --status running --services 2>/dev/null || true)"
+    grep -qx odoo <<<"$running" || return 0
+    ic_log "restarting odoo after gatekeeper, so odoo runs in the network gatekeeper has now"
+    docker compose restart odoo
+}
+
 case "$op" in
     up)
         ic_log "starting containers in $dir"
@@ -95,5 +119,10 @@ case "$op" in
         if starts_odoo "$@"; then
             reinject_egress_route
         fi
+        ;;
+esac
+case "$op" in
+    start | restart)
+        rejoin_gatekeeper "$@"
         ;;
 esac

@@ -337,7 +337,11 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
     async def on_success(self, results):
         self._cancel_stale_waits()
         inst = self._inst()
-        write_vals = {"status": "ok"}
+        # The template this rebuild rendered with: from now on the stack's.
+        write_vals = {
+            "status": "ok",
+            "stack_template_ref": self._copier_template()[1] or False,
+        }
         services_out = (
             results.get("List services", {}).get("stdout") or ""
         )

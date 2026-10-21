@@ -320,6 +320,15 @@ class CloudInstance(models.Model):
         string="Odoo Version",
         default="19.0",
     )
+    stack_template_ref = fields.Char(
+        string="Doodba Template of the Stack",
+        readonly=True,
+        copy=False,
+        help="The doodba template version this instance's stack was last "
+             "rendered with (copier's --vcs-ref). Empty for a stack "
+             "rendered before the panel recorded it: those predate the "
+             "egress gatekeeper of template v10.",
+    )
     odoo_commit_sha = fields.Char(
         string="Pinned Odoo Commit",
         help=(
@@ -1170,26 +1179,40 @@ class CloudInstance(models.Model):
         bb = self.effective_backup_backend
         return bool(bb and bb.backup_dst)
 
-    def _egress_whitelist(self):
+    def _egress_whitelist(self, template_ref=None):
         """Hostnames this instance's own egress gateway may reach.
 
         Empty for production — a production instance is the customer's
-        own deployment and this platform does not filter its traffic —
-        and empty for any staging whose list nobody has filled in,
-        which leaves it on the host's central whitelist exactly as
-        before this model existed.
+        own deployment and this platform does not filter its traffic.
+
+        A staging whose own list nobody filled in used to fall back to
+        its host's central whitelist: the template joined every staging
+        to the host's shared proxies. Template v10 has no such network,
+        and a staging without an allowlist sits on an internal network
+        with no way out at all. So under v10 an empty list of its own
+        means the host's list (``cloud.host.whitelist``), rendered into
+        the staging's gatekeeper: the same meaning as before, enforced
+        by the staging itself. Under an older template it stays empty,
+        and the host's proxies answer, as they did.
 
         Order and duplicates are the operator's: the list is rendered
         into a copier answer that feeds the config-drift hash, so it
         has to read the same way twice.
 
+        :param str template_ref: the template the stack is, or will be,
+            rendered with; the pinned one by default (what a deploy runs)
         :return: list of hostnames, possibly empty
         """
         self.ensure_one()
         if self.environment == "production":
             return []
+        entries = self.whitelist_ids
+        if not entries and self._template_has_gatekeeper(
+            self._pinned_template_ref() if template_ref is None else template_ref
+        ):
+            entries = self.host_id.whitelist_ids
         seen = []
-        for entry in self.whitelist_ids:
+        for entry in entries:
             host = (entry.hostname or "").strip()
             if host and host not in seen:
                 seen.append(host)
@@ -1222,7 +1245,30 @@ class CloudInstance(models.Model):
             if svc and svc in allowed
         ]
 
-    def expected_services(self):
+    def _pinned_template_ref(self):
+        """The doodba template a deploy renders with now (``copier --vcs-ref``).
+
+        :rtype: str
+        """
+        return self.env["cloud.settings"].sudo()._get().copier_template_ref or ""
+
+    @staticmethod
+    def _template_has_gatekeeper(ref):
+        """Whether doodba template *ref* closes a staging's egress with a gatekeeper.
+
+        Template v10 replaced ``proxy_general`` and ``odoo_net_setup`` by
+        one ``gatekeeper`` service, whose network ``odoo`` uses
+        (``network_mode: service:gatekeeper``) and which carries the
+        staging's Traefik labels.
+
+        :param str ref: a template tag such as ``v10.0.8``; empty or not a
+            version means an older template
+        :rtype: bool
+        """
+        match = re.fullmatch(r"v?(\d+)(?:\.\d+)*", (ref or "").strip())
+        return bool(match) and int(match.group(1)) >= 10
+
+    def expected_services(self, template_ref=None):
         """Compose services this instance is supposed to render and run.
 
         Single source of truth consumed by deploy / rebuild (to emit
@@ -1240,9 +1286,11 @@ class CloudInstance(models.Model):
           unreachable by the override that keeps its mailbox off the
           public internet.
 
-          Plus ``proxy_general`` and ``odoo_net_setup`` when the
-          instance has an egress whitelist of its own: the template
-          renders both on exactly that condition. They belong here for
+          Plus, when the instance has an egress whitelist of its own,
+          what the template closes it with: ``proxy_general`` and
+          ``odoo_net_setup`` up to template v9, ``gatekeeper`` from v10
+          (*template_ref*, the stack's own by default: one rendered by
+          an older template keeps its sidecars until it is rebuilt). They belong here for
           the same reason ``smtp`` does — a sidecar nobody expects is
           a sidecar nobody probes, and ``odoo_net_setup`` is the one
           container whose silent death takes the whitelist down with
@@ -1254,8 +1302,12 @@ class CloudInstance(models.Model):
         self.ensure_one()
         if self.environment != "production":
             svcs = ["odoo", "db", "smtp"]
-            if self._egress_whitelist():
-                svcs += ["proxy_general", "odoo_net_setup"]
+            ref = self.stack_template_ref if template_ref is None else template_ref
+            if self._egress_whitelist(template_ref=ref):
+                svcs += (
+                    ["gatekeeper"] if self._template_has_gatekeeper(ref)
+                    else ["proxy_general", "odoo_net_setup"]
+                )
         else:
             svcs = ["odoo", "db"]
             if self._backup_enabled():

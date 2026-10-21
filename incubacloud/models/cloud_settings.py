@@ -186,16 +186,15 @@ class CloudSettings(models.Model):
         help='Copier source for new instances. Change it to deploy from a '
              'fork of the doodba template.',
     )
-    # Default pin: v9.6.1, validated 2026-07-30 by rendering the template
-    # in a sandbox with the exact answers the deploy executor emits
-    # (domains/redirects in Traefik labels, backup DST, secrets excluded
-    # from the answers file by the template's own secret marking). Bump
-    # via the runbook (RB-15): sandbox render first, then staging canary.
+    # Default pin: v10.0.8, rendered on 2026-10-20 in a sandbox with the
+    # answers the deploy executor emits (the first with Odoo 20; its
+    # stagings close their egress with a gatekeeper). Bump via the
+    # runbook (RB-15): sandbox render first, then staging canary.
     copier_template_ref = fields.Char(
         string='Doodba template version',
-        default='v9.6.1',
+        default='v10.0.8',
         help='Git tag/branch/commit to pin the template to (copier '
-             "--vcs-ref), e.g. 'v9.6.1'. Empty means the template's "
+             "--vcs-ref), e.g. 'v10.0.8'. Empty means the template's "
              'default branch: deploys then track upstream automatically '
              'and an upstream change can alter the next deploy without '
              'warning. The effective ref is recorded in the job log.',

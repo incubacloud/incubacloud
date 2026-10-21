@@ -68,11 +68,20 @@ LOGIN_ROUTER_PRIORITY = 15
 #: The command each environment's compose file gives the ``odoo``
 #: service, which the override *replaces* — so whatever the template
 #: put there has to be repeated here or it is silently lost. Verified
-#: against the pinned template (v9.6.1): ``prod.yaml`` sets none, so
+#: against the pinned template (v9.6.1, and v10.0.8 on 20-oct-2026):
+#: ``prod.yaml`` sets none, so
 #: the image's CMD applies; ``test.yaml`` pins the two worker options
 #: below. Re-check both when bumping the template pin (RB-15).
 ODOO_COMMAND_PROD = ("/usr/local/bin/odoo",)
 ODOO_COMMAND_TEST = ("odoo", "--workers=3", "--max-cron-threads=1")
+#: The staging egress gatekeeper of doodba template v10, by digest: the
+#: image publishes ``latest`` and pull-request tags, no versions, and a
+#: tag that moves would change every staging's egress at its next start.
+#: Moving it is a decision, like the template's version (RB-15).
+GATEKEEPER_IMAGE = (
+    "ghcr.io/tecnativa/egress-gatekeeper@sha256:"
+    "ade54ca95d21abaf858c77f5949f8dbbff946a2e9b621b5775aabc33bf0243a8"
+)
 
 # Path to the incubacloud_connect module.  Navigate from __file__ via
 # abspath (stays in auto/addons/) then realpath the result to resolve
@@ -434,9 +443,12 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         that any extension that changes which services an instance
         actually runs (e.g. SaaS plans that disable ``backup``) is
         honoured uniformly across deploy, rebuild and the health
-        probe.
+        probe. The stack as this run renders it: with the template it
+        is about to run.
         """
-        return self._inst().expected_services()
+        return self._inst().expected_services(
+            template_ref=self._copier_template()[1],
+        )
 
     def _odoo_command(self):
         """Return the ``command`` the override gives the odoo service.
@@ -484,6 +496,33 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 str(self._log_archive_days()),
             ]),
         )
+
+    def _gatekeeper_override(self):
+        """Return what the override adds to template v10's ``gatekeeper``.
+
+        **The image, by digest.** Upstream publishes ``latest`` and
+        pull-request tags only; see ``GATEKEEPER_IMAGE``.
+
+        **A restart policy.** The template gives the gatekeeper none,
+        and ``odoo`` runs inside its network namespace: after a host
+        reboot Docker brings ``odoo`` back (``unless-stopped``) into the
+        namespace of a container that is not running, which fails, and
+        the staging stays down until someone starts it by hand. The same
+        omission left ``odoo_net_setup`` behind at every maintenance
+        reboot (a customer's staging, 2026-10-08). ``unless-stopped``,
+        like odoo's. Nothing opens up meanwhile: the filter lives in the
+        namespace, and without the gatekeeper odoo has no network at all.
+
+        The healthcheck is the image's own (the sync loop runs, the
+        nftables table is there, the allowed set is not empty), which is
+        what ``odoo`` waits for (``condition: service_healthy``).
+
+        :return: the service fragment to merge into the override
+        """
+        return {
+            "image": GATEKEEPER_IMAGE,
+            "restart": "unless-stopped",
+        }
 
     def _net_setup_override(self):
         """Return what the override has to undo on ``odoo_net_setup``.
@@ -752,7 +791,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         # unconditionally — so the mail catcher fell out of the override
         # entirely (no limits, no rotation, and no way to reach its
         # labels from here).
-        allowed = inst.expected_services()
+        # The stack as this deploy renders it: the template it is about
+        # to run, not the one that rendered it last.
+        allowed = inst.expected_services(template_ref=self._copier_template()[1])
         field_map = {
             "odoo": ("odoo_memory_limit", "odoo_cpus"),
             "db": ("db_memory_limit", "db_cpus"),
@@ -793,6 +834,10 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                     "max-file": str(settings.container_log_max_file),
                 },
             }
+        # Where the Traefik labels live: on ``odoo``, except in a staging
+        # closed by template v10's gatekeeper, whose network ``odoo`` uses
+        # and which carries them.
+        router = "gatekeeper" if "gatekeeper" in allowed else "odoo"
         if "smtp" in allowed and inst.environment == "production":
             # Production's ``smtp`` is the real relay (docker-mailserver).
             #
@@ -829,14 +874,17 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             services["smtp"].setdefault("labels", {})["traefik.enable"] = (
                 "false"
             )
-            if "odoo" in allowed:
-                services["odoo"]["labels"].update(
+            if router in allowed:
+                services[router]["labels"].update(
                     self._staging_shared_middleware_labels(),
                 )
         if "odoo_net_setup" in allowed:
             services["odoo_net_setup"].update(self._net_setup_override())
+        if "gatekeeper" in allowed:
+            services["gatekeeper"].update(self._gatekeeper_override())
+        if router in allowed:
+            services[router]["labels"].update(self._login_router_labels())
         if "odoo" in allowed:
-            services["odoo"]["labels"].update(self._login_router_labels())
             services["odoo"]["command"] = self._odoo_command()
             services["odoo"]["volumes"] = [
                 f"./{LOGS_DIRNAME}:{ODOO_LOG_DIR}",
@@ -1606,6 +1654,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             {
                 "status": "ok",
                 "running": True,
+                "stack_template_ref": self._copier_template()[1] or False,
                 "compose_services": ",".join(services) if services else "odoo,db",
                 "last_rebuild_fingerprint": inst.rebuild_fingerprint,
                 # Config-drift anchor: this deploy just shipped exactly
