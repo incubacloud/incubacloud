@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.196] — 2026-10-22
+
+### Added
+
+- **The panel hears when the metrics gateway accepts new accounts.** Both
+  jobs that write the gateway's access-control list, the central's
+  deployment and the account sync, now call
+  `cloud.settings._metrics_accounts_shipped()` right after recording it.
+  Core has nothing to do there; it is the hook a layer that hands
+  accounts out uses to act at once instead of at its next
+  reconciliation (a new tenant's panel showed no dashboards for up to
+  half an hour, QA of 21-oct-2026).
+
 ## [1.0.195] — 2026-10-21
 
 ### Fixed

@@ -199,11 +199,15 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 "list; the account record was left untouched.",
             )
             return
-        self.env["cloud.settings"].sudo()._get_system().write({
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        settings.write({
             "metrics_accounts_deployed": "\n".join(
                 sorted(user for user, _password in accounts)
             ),
         })
+        # The accounts authenticate from now on: whoever hands them out
+        # hears it here, from both jobs that write the list.
+        settings._metrics_accounts_shipped()
 
     def _account_url_map(self, user):
         """Return the vmauth ``url_map`` for one account.

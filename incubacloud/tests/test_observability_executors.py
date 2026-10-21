@@ -10,7 +10,7 @@ without ``__init__`` so no SSH transport or job record is needed.
 """
 import asyncio
 import re
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import yaml
 
@@ -517,6 +517,49 @@ class TestTheWholeAccountListTravels(ObservabilityExecutorCase):
         extra = self._make(MetricsAclSyncExecutor).get_extra_vars()
         self.assertEqual(extra["ic_accounts"], [])
         self.assertEqual(extra["ic_account_names"], ["acct_test01"])
+
+
+class TestTheListInForceIsAnnounced(ObservabilityExecutorCase):
+    """Whoever hands accounts out hears when the gateway accepts them.
+
+    Until then a granted account sat unused: the SaaS layer only learned
+    of it at its next reconciliation, half an hour later, so a new
+    tenant's panel showed no dashboards in the meantime.
+    """
+
+    def _record(self, cls):
+        """Record the list *cls* would ship, watching the announcement.
+
+        :param cls: the executor class that records it.
+        :return: the patched ``_metrics_accounts_shipped``.
+        """
+        executor = self._make(cls)
+        executor._accounts_for_deployment()
+        with patch.object(
+            type(self.settings), "_metrics_accounts_shipped", autospec=True,
+        ) as shipped:
+            executor._record_shipped_accounts()
+        return shipped
+
+    def test_the_sync_announces_the_list(self):
+        """The account sync announces the list once it is recorded."""
+        shipped = self._record(MetricsAclSyncExecutor)
+        shipped.assert_called_once_with(self.settings)
+        self.assertEqual(self.settings.metrics_accounts_deployed, "acct_test01")
+
+    def test_the_deployment_announces_it_too(self):
+        """The full deployment writes the same list, so it announces too."""
+        shipped = self._record(ObservabilityCentralExecutor)
+        shipped.assert_called_once_with(self.settings)
+
+    def test_a_run_that_recorded_nothing_announces_nothing(self):
+        """No list recorded, nothing granted: nobody is told otherwise."""
+        executor = self._make(MetricsAclSyncExecutor)
+        with patch.object(
+            type(self.settings), "_metrics_accounts_shipped", autospec=True,
+        ) as shipped:
+            executor._record_shipped_accounts()
+        shipped.assert_not_called()
 
 
 class TestLogCollectorEndpoint(ObservabilityExecutorCase):
