@@ -470,6 +470,18 @@ class CloudSettings(models.Model):
         user, token = self._get_system()._metrics_auth()
         return [(user, token)] if (user and token) else []
 
+    def _metrics_accounts_shipped(self):
+        """React to a new access-control list being in force on the gateway.
+
+        Called by the central's deployment and by the account sync right
+        after they record ``metrics_accounts_deployed``, on the job's
+        durable cursor. Core's one account is handed out by that same
+        deployment, so core has nothing left to do here. The SaaS layer
+        overrides it to give the panels whose accounts were granted just
+        now their settings, rather than leaving them to its next
+        reconciliation.
+        """
+
     def _grafana_oidc(self, accounts):
         """Return the OIDC settings Grafana should authenticate with.
 
