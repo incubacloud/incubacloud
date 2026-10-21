@@ -67,7 +67,8 @@ class TestRebuildBootTestIsolation(BaseCase):
         staging rebuild in production waited forever (2026-10-03).
         """
         self.assertIn('docker network create "$boot_net"', self.block)
-        self.assertIn('--network "$boot_net"', self.block)
+        self.assertIn('pg_network="$boot_net"', self.block)
+        self.assertIn('--network "$pg_network"', self.block)
         self.assertNotIn("-p ", self.block)
         self.assertNotIn(".Gateway", self.block)
 
@@ -77,7 +78,24 @@ class TestRebuildBootTestIsolation(BaseCase):
             'docker network connect "$boot_net" "$odoo_container"',
             self.block,
         )
-        self.assertIn('-e "PGHOST=$pg_container"', self.block)
+        self.assertIn('pg_host="$pg_container"', self.block)
+        self.assertIn('-e "PGHOST=$pg_host"', self.block)
+
+    def test_under_the_gatekeeper_the_postgres_shares_its_namespace(self):
+        """Template v10: ``odoo`` runs in the gatekeeper's network namespace
+        and Docker refuses to connect it to any other network (the first
+        pull request preview under v10, QA of 21-oct-2026). The throwaway
+        Postgres joins that namespace and the boot container finds it on
+        the loopback; nothing is connected, and a gatekeeper that is not
+        running stops the test rather than booting against nothing."""
+        self.assertIn("grep -qx gatekeeper", self.block)
+        self.assertIn('pg_network="container:$gatekeeper"', self.block)
+        self.assertIn('pg_host="127.0.0.1"', self.block)
+        self.assertIn("the gatekeeper is not running", self.block)
+        self.assertIn('[ -n "$gatekeeper" ]', self.block)
+        self.assertIn(
+            '|| docker network connect "$boot_net" "$odoo_container"', self.block
+        )
 
     def test_the_wait_for_postgres_has_a_deadline(self):
         """Doodba's own wait loops forever; an unreachable DB hung the job."""
