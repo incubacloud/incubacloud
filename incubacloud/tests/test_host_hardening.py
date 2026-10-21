@@ -546,15 +546,15 @@ class TestHardeningPreflight(TransactionCase):
     # ── the allowlist judges the forward hook ─────────────────────────
     _FWD_ACCEPT4 = (
         "meta l4proto tcp ct state new ct status dnat"
-        " ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 accept"
+        " ct original proto-dst { 80, 443 } ip saddr @ic_cdn_v4 counter accept"
     )
     _FWD_ACCEPT6 = (
         "meta l4proto tcp ct state new ct status dnat"
-        " ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 accept"
+        " ct original proto-dst { 80, 443 } ip6 saddr @ic_cdn_v6 counter accept"
     )
     _FWD_DROP = (
         "meta l4proto tcp ct state new ct status dnat"
-        " ct original proto-dst { 80, 443 } drop"
+        " ct original proto-dst { 80, 443 } counter drop"
     )
 
     def _forward_chain(self, rendered):
@@ -573,6 +573,24 @@ class TestHardeningPreflight(TransactionCase):
         self.assertIn(self._FWD_ACCEPT4, forward)
         self.assertIn(self._FWD_ACCEPT6, forward)
         self.assertIn(self._FWD_DROP, forward)
+
+    def test_every_verdict_on_a_new_web_connection_is_counted(self):
+        """A panel that waits on new connections (QA run of 21-oct-2026)
+        is told apart by the counters ``nft list ruleset`` shows: the CDN
+        accepted or not, something dropped or not. QA keeps that listing
+        when a walk fails. The input chain counts what reaches its drop
+        policy, with no verdict of its own."""
+        for extra in (self._CDN, {"ic_http_conn_rate": 50}):
+            forward = self._forward_chain(self._render_ruleset(**extra))
+            verdicts = [l for l in forward if "ct status dnat" in l]
+            self.assertTrue(verdicts, extra)
+            for line in verdicts:
+                self.assertRegex(line, r" counter (accept|drop)$", line)
+        rendered = self._render_ruleset()
+        inp = rendered.index("chain input {")
+        fwd = rendered.index("chain forward {")
+        last = [l.strip() for l in self._active_lines(rendered[inp:fwd])][-2]
+        self.assertEqual(last, 'counter comment "input policy drop"')
 
     def test_the_drop_comes_after_both_accepts(self):
         """A chain is read top to bottom; a drop above an accept would

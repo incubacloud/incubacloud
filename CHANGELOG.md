@@ -6,9 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [1.0.195] — unreleased
+## [1.0.195] — 2026-10-21
 
 ### Changed
+
+- **The firewall counts its verdicts on new web connections.** On a
+  host behind the CDN, the forward chain's accept for each family of the
+  CDN's ranges and its drop for everyone else carry a counter, as do the
+  per-source cap's drops on a host reached directly; the input chain
+  counts what reaches its drop policy. `nft list ruleset` then says
+  whether a panel that waits on new connections had them dropped, or
+  never got them; QA keeps that listing when a walk fails. The counters
+  take effect on a host's next hardening.
 
 - **The continuous recovery card looks like the rest of the panel**
   (`incubacloud_pitr` 1.0.4). Its state is a panel pill that says `OK ·
