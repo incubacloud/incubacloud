@@ -25,6 +25,7 @@ from ...models._repo_requirements import (
     merge_pip_requirements,
     repo_key_for_source_label,
 )
+from ...models._odoo_versions import offered_versions, picker_facts
 from ...models.cloud_instance import ADDON_CHECK_SECONDS
 from ...models.cloud_settings import (
     CONTAINER_LOG_MAX_FILE_DEFAULT,
@@ -237,16 +238,20 @@ class CrudMixin:
 
     @http.route(['/cloud/get_odoo_versions'], type='jsonrpc', auth='user')
     def cloud_get_odoo_versions(self):
-        """Return the supported Odoo series for the version pickers.
+        """Return the offered Odoo series for the version pickers.
 
-        Single source of truth: the ``odoo_version`` Selection shared by
-        ``cloud.project`` / ``cloud.instance``. Serving it here keeps the
-        SPA pickers from hard-coding their own copy of the list.
+        Single source of truth: the series' cards (``_odoo_versions``),
+        the offered ones only, with what depends on the series picked,
+        the PostgreSQL versions first. The ``odoo_version`` Selection
+        holds every series with a card, so an instance keeps its value
+        when its series stops being offered; the pickers show what a new
+        one may choose. Serving it here keeps the SPA pickers from
+        hard-coding their own copy of the list.
         """
-        selection = (
-            request.env['cloud.instance']._fields['odoo_version'].selection
-        )
-        return {'odoo_versions': [code for code, _label in selection]}
+        return {
+            'odoo_versions': list(offered_versions()),
+            'facts': picker_facts(),
+        }
 
     @http.route(['/cloud/get_users'], type='jsonrpc', auth='user')
     def cloud_get_users(self, search='', **kw):

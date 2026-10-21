@@ -27,6 +27,7 @@ def _make_executor(environment='production', time='latest',
         import BackupDownloadNeutralizedExecutor
 
     inst = SimpleNamespace(
+        odoo_version="19.0",
         id=7,
         name='demo-inst',
         environment=environment,
@@ -51,12 +52,23 @@ def _find(cmds, label_substring):
     return next((c for c in cmds if label_substring in c[0]), None)
 
 
-def _argv(step):
-    """Return the script invocation of *step* as an argv list.
+def _env_and_argv(step):
+    """Return the script invocation of *step* as ``(env, argv)``.
 
-    ``['bash', '<remote path>', '<operation>', '<arg>', ...]``
+    ``run_script`` puts the script's environment (``NAME=value``) before
+    ``bash``; argv is ``['bash', '<remote path>', '<operation>', ...]``.
     """
-    return shlex.split(step[1])
+    argv = shlex.split(step[1])
+    env = {}
+    while argv and "=" in argv[0] and argv[0].split("=", 1)[0].isidentifier():
+        name, value = argv.pop(0).split("=", 1)
+        env[name] = value
+    return env, argv
+
+
+def _argv(step):
+    """Return the script invocation of *step* as an argv list."""
+    return _env_and_argv(step)[1]
 
 
 class NeutralizedCase(BaseCase):
@@ -70,6 +82,11 @@ class NeutralizedCase(BaseCase):
         # Every operation takes <dir> <job_id> before its own arguments.
         self.assertEqual(argv[3:5], [INSTANCE_DIR, str(JOB_ID)])
         self.assertEqual(argv[5:], args)
+
+    def assertToldTheTool(self, step, told=True):
+        """Assert *step* is, or is not, handed the series' database tool."""
+        env = _env_and_argv(step)[0]
+        self.assertEqual(env, {"IC_DB_TOOL": "click-odoo"} if told else {})
 
 
 class TestNeutralizedProd(NeutralizedCase):
@@ -94,21 +111,18 @@ class TestNeutralizedProd(NeutralizedCase):
         )
 
     def test_prod_restores_from_the_backup_store(self):
-        self.assertScriptCall(
-            _find(self.cmds, "Restore source dump from S3"),
-            "prepare-src-prod",
-            ["prod", "latest", HOST_TMP],
-        )
+        step = _find(self.cmds, "Restore source dump from S3")
+        self.assertScriptCall(step, "prepare-src-prod", ["prod", "latest", HOST_TMP])
+        # The store's restore runs no Odoo tool.
+        self.assertToldTheTool(step, told=False)
 
     def test_prod_does_not_dump_live(self):
         self.assertIsNone(_find(self.cmds, "Dump live database"))
 
     def test_neutralize_step_targets_the_throwaway_db(self):
-        self.assertScriptCall(
-            _find(self.cmds, "Restore and neutralize in temp DB"),
-            "restore-neutralize",
-            [NEUTRAL_DB],
-        )
+        step = _find(self.cmds, "Restore and neutralize in temp DB")
+        self.assertScriptCall(step, "restore-neutralize", [NEUTRAL_DB])
+        self.assertToldTheTool(step)
 
     def test_temp_db_name_isolated_per_job(self):
         argv = _argv(_find(self.cmds, "Restore and neutralize in temp DB"))
@@ -178,11 +192,9 @@ class TestNeutralizedProdWithFilestore(NeutralizedCase):
         ).get_commands()
 
     def test_redump_includes_the_filestore(self):
-        self.assertScriptCall(
-            _find(self.cmds, "Create neutralized backup (DB + filestore)"),
-            "redump-full",
-            [NEUTRAL_DB, f"{HOST_TMP}.zip"],
-        )
+        step = _find(self.cmds, "Create neutralized backup (DB + filestore)")
+        self.assertScriptCall(step, "redump-full", [NEUTRAL_DB, f"{HOST_TMP}.zip"])
+        self.assertToldTheTool(step)
 
     def test_no_sql_only_branch(self):
         self.assertIsNone(
@@ -200,11 +212,9 @@ class TestNeutralizedStaging(NeutralizedCase):
         ).get_commands()
 
     def test_non_prod_dumps_the_live_db(self):
-        self.assertScriptCall(
-            _find(self.cmds, "Dump live database"),
-            "prepare-src-live",
-            ["prod", HOST_TMP],
-        )
+        step = _find(self.cmds, "Dump live database")
+        self.assertScriptCall(step, "prepare-src-live", ["prod", HOST_TMP])
+        self.assertToldTheTool(step)
 
     def test_non_prod_skips_the_backup_store(self):
         self.assertIsNone(_find(self.cmds, "Restore source dump from S3"))

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "@odoo/hoot";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
+import {
+    pgDefaultFor,
+    pgVersionsFor,
+    seriesKey,
+} from "@incubacloud/utils/odoo_versions";
 
 /**
  * InstanceDetail pure-logic tests.
@@ -15,7 +20,10 @@ const ODOO_VERSIONS = [
     "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
     "14.0", "15.0", "16.0", "17.0", "18.0", "19.0",
 ];
-const PG_VERSIONS = ["14", "15", "16", "17", "18"];
+// The cards the backend serves today (``_odoo_versions.picker_facts``).
+const VERSION_FACTS = Object.fromEntries(
+    ODOO_VERSIONS.map((v) => [v, { postgres: ["14", "15", "16", "17", "18"], postgres_default: "17" }]),
+);
 
 // ── Helpers (mirrored from source) ──────────────────────────────────────────
 
@@ -221,15 +229,28 @@ describe("InstanceDetail — ODOO_VERSIONS constant", () => {
     });
 });
 
-describe("InstanceDetail — PG_VERSIONS constant", () => {
-    test("is an array of strings", () => {
-        for (const v of PG_VERSIONS) {
-            expect(typeof v).toBe("string");
-        }
+describe("InstanceDetail — PostgreSQL versions follow the series' card", () => {
+    test("a form's float version names the backend's series", () => {
+        expect(seriesKey(19)).toBe("19.0");
+        expect(seriesKey(19.0)).toBe("19.0");
+        expect(seriesKey("19.0")).toBe("19.0");
+        expect(seriesKey("")).toBe("");
     });
 
-    test("contains versions 14 through 18", () => {
-        expect(PG_VERSIONS).toEqual(["14", "15", "16", "17", "18"]);
+    test("the picker offers the series' range", () => {
+        expect(pgVersionsFor(VERSION_FACTS, 19)).toEqual(["14", "15", "16", "17", "18"]);
+        expect(pgDefaultFor(VERSION_FACTS, 19)).toBe("17");
+    });
+
+    test("a series with its own range gets it", () => {
+        const facts = { ...VERSION_FACTS, "20.0": { postgres: ["16", "17", "18"], postgres_default: "17" } };
+        expect(pgVersionsFor(facts, 20)).toEqual(["16", "17", "18"]);
+    });
+
+    test("before the cards arrive the picker is never empty", () => {
+        expect(pgVersionsFor({}, 19)).toEqual(["17"]);
+        expect(pgDefaultFor({}, 19)).toBe("17");
+        expect(pgVersionsFor(VERSION_FACTS, 6.1)).toEqual(["14", "15", "16", "17", "18"]);
     });
 });
 

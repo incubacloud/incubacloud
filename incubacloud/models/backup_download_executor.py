@@ -4,6 +4,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from ._odoo_versions import script_env
 from .abstract_executor import (
     AbstractSSHExecutor,
     handoff_archive_path,
@@ -122,6 +123,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                             "live-dump", d, dbname, archive,
                             "all" if mode == 'all' else "db",
                         ],
+                        env=script_env(inst.odoo_version),
                     ),
                     {"stop_on_failure": True},
                 ),

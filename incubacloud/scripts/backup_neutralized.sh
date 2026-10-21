@@ -67,8 +67,8 @@ case "$op" in
             "prepare-src-live <dir> <job_id> <dbname> <host_tmp>"
         dbname="$1"; host_tmp="$2"
         ic_log "dumping the live database $dbname"
-        docker compose exec -T odoo \
-            click-odoo-backupdb "$dbname" "$src_in_odoo"
+        ic_db_dump_args "$dbname" "$src_in_odoo" all
+        docker compose exec -T odoo "${IC_DB_ARGS[@]}"
         rm -rf "$host_tmp"
         mkdir -p "$host_tmp"
         ;;
@@ -78,9 +78,8 @@ case "$op" in
             "restore-neutralize <dir> <job_id> <neutral_db>"
         neutral_db="$1"
         ic_log "restoring into $neutral_db with neutralization"
-        docker compose exec -T odoo \
-            click-odoo-restoredb --neutralize --force \
-            "$neutral_db" "$src_in_odoo"
+        ic_db_load_args "$neutral_db" "$src_in_odoo" 1
+        docker compose exec -T odoo "${IC_DB_ARGS[@]}"
         ;;
 
     redump-full)
@@ -88,8 +87,8 @@ case "$op" in
             "redump-full <dir> <job_id> <neutral_db> <archive>"
         neutral_db="$1"; archive="$2"
         ic_log "dumping $neutral_db with its filestore"
-        docker compose exec -T odoo \
-            click-odoo-backupdb "$neutral_db" "${out_in_odoo}.zip"
+        ic_db_dump_args "$neutral_db" "${out_in_odoo}.zip" all
+        docker compose exec -T odoo "${IC_DB_ARGS[@]}"
         docker compose cp "odoo:${out_in_odoo}.zip" "$archive"
         docker compose exec -T odoo rm -f "${out_in_odoo}.zip"
         ;;

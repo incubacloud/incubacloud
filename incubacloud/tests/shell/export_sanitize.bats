@@ -228,3 +228,18 @@ run_export() {
     run bash "$SCRIPT" "~/projects/inst" "$STAGING" "$ARCHIVE"
     [ "$status" -eq 0 ]
 }
+
+@test "the restore step names the instance's series' load tool" {
+    run_export
+    grep -q "click-odoo-restoredb --neutralize --copy --force devel /tmp/backup.zip" \
+        "$OUT/DEVELOPMENT.md"
+    grep -q 'docker compose run --rm -v "$PWD/backup.zip:/tmp/backup.zip:ro" odoo' \
+        "$OUT/DEVELOPMENT.md"
+}
+
+@test "a series on odoo-db is told to load with odoo db" {
+    export IC_DB_TOOL=odoo-db
+    run_export
+    grep -q "odoo db load --neutralize --force devel /tmp/backup.zip" "$OUT/DEVELOPMENT.md"
+    ! grep -q "click-odoo-restoredb" "$OUT/DEVELOPMENT.md"
+}

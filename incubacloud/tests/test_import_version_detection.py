@@ -5,7 +5,7 @@ from odoo.tests.common import BaseCase, TransactionCase
 from odoo.addons.incubacloud.controllers._data_load import (
     _routes_github as rg,
 )
-from odoo.addons.incubacloud.models._odoo_versions import ODOO_VERSIONS
+from odoo.addons.incubacloud.models._odoo_versions import ODOO_VERSIONS, VERSIONS
 
 
 class TestImportVersionHelpers(BaseCase):
@@ -48,7 +48,12 @@ class TestOdooVersionSingleSource(TransactionCase):
     """The version selectors and importer share one source of truth."""
 
     def test_models_share_constant(self):
-        """Project and instance selections equal ``ODOO_VERSIONS``."""
+        """Project and instance selections hold every series with a card.
+
+        Offered or not: an instance keeps a valid value when its series
+        stops being offered. The pickers and the importer show the
+        offered ones (``ODOO_VERSIONS``).
+        """
         instance_versions = [
             code for code, _label
             in self.env['cloud.instance']._fields['odoo_version'].selection
@@ -57,5 +62,6 @@ class TestOdooVersionSingleSource(TransactionCase):
             code for code, _label
             in self.env['cloud.project']._fields['odoo_version'].selection
         ]
-        self.assertEqual(instance_versions, list(ODOO_VERSIONS))
-        self.assertEqual(project_versions, list(ODOO_VERSIONS))
+        self.assertEqual(instance_versions, list(VERSIONS))
+        self.assertEqual(project_versions, list(VERSIONS))
+        self.assertLessEqual(set(ODOO_VERSIONS), set(VERSIONS))

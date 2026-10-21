@@ -50,6 +50,7 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         inst = self._inst()
         if not inst:
             raise ValueError("rebuild_instance job has no instance_id")
+        inst._check_template_ref(self._copier_template()[1])
         self._preflight_tls_check()
         self._sys(f"Preparing rebuild for '{inst.name}'...")
         await self._upload_copier_files(transport)

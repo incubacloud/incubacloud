@@ -4,6 +4,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from ..restore_staging import is_staged_upload
+from ._odoo_versions import script_env
 from .abstract_executor import (
     AbstractSSHExecutor,
     handoff_archive_path,
@@ -351,6 +352,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 self.run_script(
                     "restore.sh",
                     ["restore-db", d, dbname, remote, neutralize],
+                    env=script_env(inst.odoo_version),
                 ),
                 {"stop_on_failure": True},
             ),

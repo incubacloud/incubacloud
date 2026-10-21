@@ -209,3 +209,36 @@ class TestScriptCleanup(BaseCase):
         self.executor.run_script(SHARED_LIB)
         self.transport.run.side_effect = OSError("connection lost")
         asyncio.run(self.executor._cleanup_scripts(self.transport))
+
+
+class TestScriptEnvironment(BaseCase):
+    """``env``: what a script's whole run shares, such as the series' tool."""
+
+    def setUp(self):
+        self.executor = _make_executor(job_id=7)
+        self.root = f"{SCRIPT_REMOTE_ROOT}-7"
+
+    def test_the_environment_precedes_the_command(self):
+        command = self.executor.run_script(
+            SHARED_LIB, ["live-dump"], env={"IC_DB_TOOL": "odoo-db"},
+        )
+        self.assertEqual(
+            command, f"IC_DB_TOOL=odoo-db bash {self.root}/{SHARED_LIB} live-dump",
+        )
+
+    def test_a_value_is_shell_quoted(self):
+        command = self.executor.run_script(SHARED_LIB, env={"IC_X": "a b; rm -rf /"})
+        self.assertEqual(
+            command, f"IC_X='a b; rm -rf /' bash {self.root}/{SHARED_LIB}",
+        )
+
+    def test_a_name_a_shell_would_not_take_is_refused(self):
+        for name in ("ic-db", "1X", "IC X", "IC_X=1"):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.executor.run_script(SHARED_LIB, env={name: "x"})
+
+    def test_no_environment_changes_nothing(self):
+        self.assertEqual(
+            self.executor.run_script(SHARED_LIB, env={}),
+            f"bash {self.root}/{SHARED_LIB}",
+        )

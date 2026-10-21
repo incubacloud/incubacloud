@@ -49,6 +49,7 @@ from . import (
     test_external_notify,
     test_cloud_security,
     test_odoo_version_normalization,
+    test_odoo_versions,
     test_import_version_detection,
     test_executor_features,
     test_executor_trusted_connection,

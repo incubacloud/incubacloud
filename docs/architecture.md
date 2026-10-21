@@ -343,6 +343,16 @@ The result on the host mirrors what a comparable hosting platform shows: `odoo.l
 
 Traefik writes one JSON line per request to `/var/log/traefik/access.log` on the host (mounted into the proxy at the same path). Full Setup installs its rotation (`scripts/proxy_access_log.sh`): daily, or past 100 MB — looked at every ten minutes by a timer of its own (`incubacloud-traefik-logrotate.timer`), because the distro's daily run alone would let a flooded host fill its disk between two runs — compressed, removed after 30 days by age so a busy host rotating several times a day still keeps the full month; the proxy is sent `USR1` to reopen the file, so no line is lost. It used to go to stdout, where Docker kept 30 MB in all and the path changed with every recreate of the container. The panel's "Recent requests" reads the file, together with the end of the previous one so the page is not empty right after the nightly rotation (falling back to `docker logs` on a host not set up since), the log collector ships it, and the host's web-login jail watches it.
 
+## Odoo series: one card each
+
+`models/_odoo_versions.py` is the one place an Odoo series is described, and nothing else in the panel decides on a version by itself. Each series has a card: whether it is `offered` (in the pickers and accepted by the importer), the PostgreSQL range and default (`postgres`), the tool that dumps and loads its database (`db_tool`) and the lowest doodba template able to render it (`template_min`). A series being prepared lands with `offered=False`, so the code that supports it ships before a customer can deploy it; a series that needs something new gets a field on the card, not an `if version` somewhere.
+
+What reads the card:
+
+- `cloud.instance` refuses a PostgreSQL outside the series' range when saved, and `/cloud/get_odoo_versions` hands the SPA the cards so the PostgreSQL picker offers only that range (`static/src/utils/odoo_versions.js`).
+- The deploy and the rebuild ask `cloud.instance._check_template_ref()` before uploading anything: a pin older than the series needs fails with the runbook's name (RB-15) instead of inside copier.
+- The operation scripts never name a database tool. The executor passes the series' tool in the script's environment (`run_script(..., env=script_env(inst.odoo_version))` → `IC_DB_TOOL`), and `scripts/lib/common.sh` turns an operation into that tool's argv (`ic_db_dump_args`, `ic_db_load_args`, in `IC_DB_ARGS`). `click-odoo` is click-odoo-contrib's `backupdb`/`restoredb`, every series up to 19; `odoo-db` is `odoo db dump`/`odoo db load`, Odoo 18 and later and the only one on 20, where click-odoo-contrib 1.24 refuses its database commands. Every dump and load of an instance — the live backup, the download, the neutralized copy, the restore, the export's instructions, the free hosts' backups in saas — goes through those two functions, so a third tool is one more case there and a value on a card.
+
 ## Automatic module updates
 
 On rebuild, `click-odoo-update` (from `click-odoo-contrib`, included in the doodba base image) detects which modules changed by comparing file checksums:
@@ -412,7 +422,7 @@ What this concentrates: whoever holds the panel's database and its `INCUBACLOUD_
 
 ### Neutralized copies
 
-A copy of a panel (development, QA, a neutralized download, a staging of a partner's panel) runs `odoo neutralize`, or `click-odoo-restoredb --neutralize`, before it is upgraded: each installed module's `data/neutralize.sql`, one statement per file, so one error aborts all of it, Odoo's own included. A column added after the copy was taken is cleared in a block of its own that skips it when missing. What core's file leaves the copy unable to do:
+A copy of a panel (development, QA, a neutralized download, a staging of a partner's panel) runs `odoo neutralize`, or the series' load tool with `--neutralize` (`ic_db_load_args`), before it is upgraded: each installed module's `data/neutralize.sql`, one statement per file, so one error aborts all of it, Odoo's own included. A column added after the copy was taken is cleared in a block of its own that skips it when missing. What core's file leaves the copy unable to do:
 
 - **decrypt or use a secret**: every encrypted column is cleared, and the hosts and instances are archived;
 - **reach out**: the users' webhooks are cleared, metrics are switched off (their URLs then go unread), and the jobs production had not finished are cancelled with the `cloud.job` mirroring each, so none runs in the copy;
