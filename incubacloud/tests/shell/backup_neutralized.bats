@@ -64,22 +64,36 @@ teardown() {
 @test "non-prod dumps the live database instead" {
     run bash "$SCRIPT" prepare-src-live "$DIR" 42 prod "$HOST_TMP"
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"docker compose exec -T odoo click-odoo-backupdb prod /tmp/bkneu-src-42.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose exec -T odoo click-odoo-backupdb --filestore prod /tmp/bkneu-src-42.zip"* ]]
     [[ "$(cat "$CALLS")" != *"dup restore"* ]]
     [ -d "$HOST_TMP" ]
 }
 
-@test "the neutralize step forces a neutralized restore" {
+@test "the neutralize step forces a neutralized restore, as a copy" {
     run bash "$SCRIPT" restore-neutralize "$DIR" 42 __ic_neutral_42
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"click-odoo-restoredb --neutralize --force __ic_neutral_42 /tmp/bkneu-src-42.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"click-odoo-restoredb --neutralize --copy --force __ic_neutral_42 /tmp/bkneu-src-42.zip"* ]]
 }
 
-@test "the filestore redump uses click-odoo-backupdb" {
+@test "the filestore redump uses the series' dump tool" {
     run bash "$SCRIPT" redump-full "$DIR" 42 __ic_neutral_42 /tmp/out.zip
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"click-odoo-backupdb __ic_neutral_42 /tmp/bkneu-out-42.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"click-odoo-backupdb --filestore __ic_neutral_42 /tmp/bkneu-out-42.zip"* ]]
     [[ "$(cat "$CALLS")" == *"docker compose cp odoo:/tmp/bkneu-out-42.zip /tmp/out.zip"* ]]
+}
+
+@test "every database step follows the tool the panel names" {
+    export IC_DB_TOOL=odoo-db
+    run bash "$SCRIPT" prepare-src-live "$DIR" 42 prod "$HOST_TMP"
+    [ "$status" -eq 0 ]
+    run bash "$SCRIPT" restore-neutralize "$DIR" 42 __ic_neutral_42
+    [ "$status" -eq 0 ]
+    run bash "$SCRIPT" redump-full "$DIR" 42 __ic_neutral_42 /tmp/out.zip
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"docker compose exec -T odoo odoo db dump prod /tmp/bkneu-src-42.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose exec -T odoo odoo db load --neutralize --force __ic_neutral_42 /tmp/bkneu-src-42.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose exec -T odoo odoo db dump __ic_neutral_42 /tmp/bkneu-out-42.zip"* ]]
+    [[ "$(cat "$CALLS")" != *"click-odoo"* ]]
 }
 
 @test "the SQL-only redump uses pg_dump and zips it" {

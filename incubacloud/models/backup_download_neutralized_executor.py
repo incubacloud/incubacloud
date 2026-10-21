@@ -4,6 +4,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from ._odoo_versions import script_env
 from .abstract_executor import AbstractSSHExecutor, validate_dup_time
 
 
@@ -95,6 +96,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                     "backup_neutralized.sh",
                     ["prepare-src-live", d, self.job.id,
                      source_dbname, host_tmp],
+                    env=script_env(inst.odoo_version),
                 ),
                 {"stop_on_failure": True},
             )
@@ -109,6 +111,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
             self.run_script(
                 "backup_neutralized.sh",
                 ["restore-neutralize", d, self.job.id, neutral_db],
+                env=script_env(inst.odoo_version),
             ),
             {"stop_on_failure": True},
         )
@@ -120,6 +123,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
                 self.run_script(
                     "backup_neutralized.sh",
                     ["redump-full", d, self.job.id, neutral_db, archive],
+                    env=script_env(inst.odoo_version),
                 ),
                 {"stop_on_failure": True},
             )

@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.197] — 2026-10-22
+
+### Changed
+
+- **Each Odoo series has a card, and the panel reads from it.**
+  `models/_odoo_versions.py` describes every series in one place: whether
+  it is offered, the PostgreSQL range and default, the tool that dumps
+  and loads its database, and the lowest doodba template able to render
+  it. The PostgreSQL picker offers the series' range and `cloud.instance`
+  refuses any other; the deploy and the rebuild refuse, before uploading
+  anything, a template pin older than the series needs; and the
+  operation scripts no longer name `click-odoo-backupdb` or
+  `click-odoo-restoredb`: the executor hands them the series' tool
+  (`IC_DB_TOOL`) and `scripts/lib/common.sh` builds that tool's argv
+  (`ic_db_dump_args`, `ic_db_load_args`), implementing `click-odoo` and
+  `odoo db`. The `odoo_version` field holds every series with a card,
+  while the pickers and the importer show the offered ones, so an
+  instance keeps a valid value when its series stops being offered.
+  The live backup of a non-production instance runs the same
+  script as the download's live dump. Nothing changes for the series
+  offered today, which keep click-odoo and PostgreSQL 14 to 18; the
+  table is the ground the next series stands on (plan Odoo 20, phase 2).
+
 ## [1.0.196] — 2026-10-22
 
 ### Added

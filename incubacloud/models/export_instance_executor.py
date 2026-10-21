@@ -3,6 +3,7 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 
+from ._odoo_versions import script_env
 from .abstract_executor import AbstractSSHExecutor
 
 _TMP_PREFIX = "/tmp/.incubacloud"
@@ -53,6 +54,7 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
         staging = f"{_TMP_PREFIX}-export-staging-{inst.name}"
         sanitize_command = self.run_script(
             "export_sanitize.sh", [d, staging, remote_tmp],
+            env=script_env(inst.odoo_version),
         )
         await self._upload_scripts(transport)
 

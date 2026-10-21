@@ -34,8 +34,11 @@ import {RefreshMixin} from "./instance_detail_refresh";
 import {AuditMixin} from "./instance_detail_audit";
 import {MailsMixin} from "./instance_detail_mails";
 import { confirmVia } from "../../utils/use_confirm";
-
-const PG_VERSIONS = ["14", "15", "16", "17", "18"];
+import {
+  fetchOdooVersionFacts,
+  pgDefaultFor,
+  pgVersionsFor,
+} from "../../utils/odoo_versions";
 
 // ── Pip requirements helpers ─────────────────────────────────────────────────
 
@@ -251,11 +254,13 @@ export class InstanceDetail extends JobsMixin(
   setup() {
     this.env = useEnv();
     this.orm = useService("orm");
-    this.pgVersions = PG_VERSIONS;
 
     this.state = useState({
       tab: "overview",
       loading: true,
+      // Each offered series' card (PostgreSQL range and default), from
+      // the backend: the picker never hard-codes a version.
+      versionFacts: {},
       saving: false,
       keeping: false,
       error: null,
@@ -515,9 +520,20 @@ export class InstanceDetail extends JobsMixin(
     this._savedForm = JSON.stringify(this.state.form);
   }
 
+  /**
+   * The PostgreSQL versions the form's Odoo series runs on.
+   *
+   * @returns {string[]}
+   */
+  get pgVersions() {
+    return pgVersionsFor(this.state.versionFacts, this.state.form?.odoo_version);
+  }
+
   async load() {
     this.state.loading = true;
     try {
+      // The series' cards come first: the form's defaults read them.
+      this.state.versionFacts = await fetchOdooVersionFacts();
       if (this.isCreate) {
         this.state.tab = "general";
         const [hostsResp, project, backends] = await Promise.all([
@@ -559,7 +575,7 @@ export class InstanceDetail extends JobsMixin(
           odoo_initial_lang: null,
           odoo_admin_password: "",
           odoo_proxy: "traefik",
-          postgres_version: "17",
+          postgres_version: pgDefaultFor(this.state.versionFacts, project?.odoo_version),
           postgres_username: "odoo",
           postgres_password: "",
           domains: [],
@@ -792,6 +808,12 @@ export class InstanceDetail extends JobsMixin(
 
   onVersionSelect(ev) {
     this.state.form.odoo_version = parseFloat(ev.target.value);
+    // A PostgreSQL the new series does not run on gives way to its default.
+    if (!this.pgVersions.includes(this.state.form.postgres_version)) {
+      this.state.form.postgres_version = pgDefaultFor(
+        this.state.versionFacts, this.state.form.odoo_version,
+      );
+    }
   }
 
   onPgSelect(ev) {

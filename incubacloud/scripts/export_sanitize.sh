@@ -132,8 +132,15 @@ load the instance's data:
 
 ```sh
 docker compose stop odoo
-docker compose run --rm -v "$PWD/backup.zip:/tmp/backup.zip:ro" odoo \
-    click-odoo-restoredb --force --neutralize devel /tmp/backup.zip
+MD
+# The load command is the instance's series' (IC_DB_TOOL): the developer
+# runs it in the image this export was made from.
+ic_db_load_args devel /tmp/backup.zip 1
+cat >> "$staging/DEVELOPMENT.md" <<MD
+docker compose run --rm -v "\$PWD/backup.zip:/tmp/backup.zip:ro" odoo \\
+    ${IC_DB_ARGS[*]}
+MD
+cat >> "$staging/DEVELOPMENT.md" <<'MD'
 docker compose start odoo
 ```
 

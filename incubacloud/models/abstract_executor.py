@@ -71,6 +71,8 @@ def is_transient_connection_error(exc):
     return False
 
 _TOKEN_RE = re.compile(r'https://[^@\s]*@(github\.com)', re.IGNORECASE)
+#: What ``run_script`` accepts as the name of an environment variable.
+_ENV_NAME_RE = re.compile(r'^[A-Z_][A-Z0-9_]*$')
 
 # Whitelist of patterns that mark a log line as an error. Lines matching
 # any of these get ``source='stderr'`` (rendered red as ``[err]``);
@@ -1219,7 +1221,7 @@ class AbstractExecutor(ABC):
             self._script_overlay_cache = self._addon_overlay("scripts", "*.sh")
         return self._script_overlay_cache
 
-    def run_script(self, name, args=()):
+    def run_script(self, name, args=(), env=None):
         """Return the shell command that runs the versioned script *name*.
 
         Queues this executor's whole ``scripts/`` overlay for upload (so
@@ -1232,12 +1234,18 @@ class AbstractExecutor(ABC):
 
         Passing values as *arguments* — never as text interpolated into
         the script — is what keeps remote execution injection-safe and
-        the script itself reviewable and lintable in git.
+        the script itself reviewable and lintable in git. *env* is for
+        what every operation of a script shares rather than one call
+        takes, such as the instance's database tool
+        (``cloud.instance._script_env``): it is set for the script's
+        process only, quoted the same way.
 
         :param str name: path of the script relative to ``scripts/``
         :param args: positional arguments passed to the script
+        :param env: ``{NAME: value}`` environment of the script's process
         :return: the command string to hand to ``transport.execute()``
         :raises FileNotFoundError: if no addon in the MRO ships *name*
+        :raises ValueError: for an environment name a shell would not take
         """
         if name not in self._script_overlay():
             raise FileNotFoundError(
@@ -1247,7 +1255,13 @@ class AbstractExecutor(ABC):
         self._scripts_requested = True
         command = f"bash {self._script_root()}/{name}"
         quoted = shlex.join(str(a) for a in args)
-        return f"{command} {quoted}" if quoted else command
+        if quoted:
+            command = f"{command} {quoted}"
+        for key, value in (env or {}).items():
+            if not _ENV_NAME_RE.match(key):
+                raise ValueError(f"not an environment variable name: {key!r}")
+            command = f"{key}={shlex.quote(str(value))} {command}"
+        return command
 
     async def _upload_scripts(self, transport):
         """Upload the queued ``scripts/`` overlay to this job's remote dir.

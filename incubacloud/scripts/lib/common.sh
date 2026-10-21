@@ -143,3 +143,81 @@ ic_compose_services() {
     rm -f "$err"
     return 1
 }
+
+# ── The instance's database tool ─────────────────────────────────────────
+#
+# What dumps and loads an instance's database inside its ``odoo``
+# container depends on the instance's Odoo series, and the panel knows
+# it (``models/_odoo_versions.py``): the executor names it in
+# ``IC_DB_TOOL``, and the two functions below turn an operation into the
+# argv of that tool, in ``IC_DB_ARGS``, so a script reads the same
+# whichever tool is in use:
+#
+#     ic_db_dump_args "$dbname" /host-tmp/out.zip all
+#     docker compose run --rm odoo "${IC_DB_ARGS[@]}"
+#
+# ``click-odoo`` (click-odoo-contrib, every series up to 19) and
+# ``odoo-db`` (``odoo db``, Odoo 18 and later, the only one on 20). Unset
+# means click-odoo, so a script run by hand behaves as it always did. A
+# series that needs a third tool is one more case here and a value in
+# its card, nothing else.
+
+# Print the tool in use, refusing one this library does not implement.
+ic_db_tool() {
+    local tool="${IC_DB_TOOL:-click-odoo}"
+    case "$tool" in
+        click-odoo|odoo-db) printf '%s\n' "$tool" ;;
+        *) ic_die "unknown database tool: $tool (expected click-odoo or odoo-db)" ;;
+    esac
+}
+
+# Fill IC_DB_ARGS with the argv that dumps <db> into <archive>.
+#   ic_db_dump_args <db> <archive> <all|db>
+# ``all`` carries the filestore, ``db`` the database alone. Both tools
+# write Odoo's own zip (dump.sql, filestore/, manifest.json) for ``all``;
+# for ``db`` click-odoo writes that zip without the filestore and odoo-db
+# a pg_dump custom-format file, which ``odoo db load`` reads back.
+ic_db_dump_args() {
+    local db="$1" archive="$2" scope="$3" tool
+    tool="$(ic_db_tool)" || exit 1
+    case "$scope" in
+        all|db) ;;
+        *) ic_die "ic_db_dump_args: unknown scope: $scope (expected all or db)" ;;
+    esac
+    case "$tool" in
+        click-odoo)
+            if [ "$scope" = all ]; then
+                IC_DB_ARGS=(click-odoo-backupdb --filestore "$db" "$archive")
+            else
+                IC_DB_ARGS=(click-odoo-backupdb --no-filestore "$db" "$archive")
+            fi
+            ;;
+        odoo-db)
+            if [ "$scope" = all ]; then
+                IC_DB_ARGS=(odoo db dump "$db" "$archive")
+            else
+                IC_DB_ARGS=(odoo db dump --format dump "$db" "$archive")
+            fi
+            ;;
+    esac
+}
+
+# Fill IC_DB_ARGS with the argv that loads <archive> into <db>, replacing
+# a database of that name, as a copy (a new database uuid, so the copy
+# never answers for the original) and neutralized when <neutralize> is 1.
+#   ic_db_load_args <db> <archive> <0|1>
+ic_db_load_args() {
+    local db="$1" archive="$2" neutralize="${3:-0}" tool
+    tool="$(ic_db_tool)" || exit 1
+    local flags=()
+    [ "$neutralize" = 1 ] && flags+=(--neutralize)
+    case "$tool" in
+        click-odoo)
+            IC_DB_ARGS=(click-odoo-restoredb "${flags[@]}" --copy --force "$db" "$archive")
+            ;;
+        odoo-db)
+            # ``odoo db load`` copies unless told --move.
+            IC_DB_ARGS=(odoo db load "${flags[@]}" --force "$db" "$archive")
+            ;;
+    esac
+}

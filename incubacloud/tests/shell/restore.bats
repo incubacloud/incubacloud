@@ -86,6 +86,13 @@ STUB
     [[ "$(cat "$CALLS")" == *"click-odoo-restoredb --neutralize --copy --force prod /mnt/restore.zip"* ]]
 }
 
+@test "restore-db loads with the series' tool the panel names" {
+    IC_DB_TOOL=odoo-db run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 1
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"docker compose run --rm -v $ZIP:/mnt/restore.zip:ro odoo odoo db load --neutralize --force prod /mnt/restore.zip"* ]]
+    [[ "$(cat "$CALLS")" != *"click-odoo"* ]]
+}
+
 @test "restore-db treats an explicit 0 as no neutralization" {
     run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 0
     [ "$status" -eq 0 ]

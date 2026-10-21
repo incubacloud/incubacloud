@@ -25,6 +25,19 @@ from odoo.tests.common import BaseCase, tagged
 # ---------------------------------------------------------------------------
 
 
+def _split_env(argv):
+    """Split the ``NAME=value`` words ``run_script`` puts before ``bash``.
+
+    :param list argv: a command as ``shlex.split`` returns it.
+    :return: ``(env dict, the argv without them)``
+    """
+    env = {}
+    while argv and "=" in argv[0] and argv[0].split("=", 1)[0].isidentifier():
+        name, value = argv.pop(0).split("=", 1)
+        env[name] = value
+    return env, argv
+
+
 def _run(coro):
     """Run a coroutine in a fresh event loop."""
     loop = asyncio.new_event_loop()
@@ -490,6 +503,7 @@ class TestBackupCreateAfterCommands(BaseCase):
         )
 
         inst = SimpleNamespace(
+            odoo_version="19.0",
             name="myinst",
             environment=environment,
             postgres_dbname="prod",
@@ -551,6 +565,7 @@ class TestBackupCreateGetCommands(BaseCase):
         )
 
         inst = SimpleNamespace(
+            odoo_version="19.0",
             name="myinst",
             environment=environment,
             postgres_dbname="prod",
@@ -559,74 +574,70 @@ class TestBackupCreateGetCommands(BaseCase):
         ex._inst = lambda: inst
         ex._inst_dir = lambda i: f"/home/{i.name}"
         ex.job = MagicMock()
+        ex.job.id = 77
         ex.job.payload = payload
+        ex._scripts_requested = False
+        ex._script_overlay_cache = None
         return ex
 
-    def _make_executor_with_payload(self, environment, payload):
-        return self._make_executor(environment=environment, payload=payload)
-
-    def test_non_prod_uses_run_rm_with_tmp_bind_mount(self):
-        cmds = self._make_executor(environment="staging").get_commands()
+    def _live_dump(self, ex):
+        """Return ``(env, argv)`` of the one step *ex* queues."""
+        cmds = ex.get_commands()
         self.assertEqual(len(cmds), 1)
         label, cmd, opts = cmds[0]
         self.assertEqual(label, "Create backup")
-        self.assertIn("docker compose run --rm", cmd)
-        self.assertIn("-v /tmp:/host-tmp", cmd)
-        self.assertIn("click-odoo-backupdb", cmd)
-        self.assertIn("prod", cmd)
-        self.assertIn("/host-tmp/.incubacloud-backup-myinst.zip", cmd)
-        # Old approach left behind: exec requires a running container,
-        # cp was redundant once the bind mount writes to host directly.
-        self.assertNotIn("docker compose exec", cmd)
-        self.assertNotIn("docker compose cp", cmd)
         # Stop the chain on failure so we don't try to download a ZIP
         # that was never created (the historical bug that surfaced
         # ``Could not find the file …`` on top of the real error).
         self.assertEqual(opts, {"stop_on_failure": True})
+        env, argv = _split_env(shlex.split(cmd))
+        self.assertEqual(argv[0], "bash")
+        self.assertTrue(argv[1].endswith("/backup_download.sh"), argv[1])
+        self.assertEqual(argv[2:5], ["live-dump", "/home/myinst", "prod"])
+        self.assertEqual(argv[5], "/tmp/.incubacloud-backup-myinst.zip")
+        return env, argv
+
+    def _make_executor_with_payload(self, environment, payload):
+        return self._make_executor(environment=environment, payload=payload)
+
+    def test_non_prod_runs_the_downloads_live_dump(self):
+        """The same script as the download's live dump, with the series'
+        tool named for it: ``run --rm`` out of Traefik, the ZIP landing
+        on the host through the /tmp bind mount, no exec and no cp."""
+        env, argv = self._live_dump(self._make_executor(environment="staging"))
+        self.assertEqual(env, {"IC_DB_TOOL": "click-odoo"})
+        self.assertEqual(argv[6], "all")
 
     def test_non_prod_default_payload_includes_filestore(self):
         # Backwards compatibility: no payload at all → default to a
-        # full backup (DB + filestore). Mirrors click-odoo-backupdb's
-        # own default and matches every legacy row in the DB.
+        # full backup (DB + filestore), which matches every legacy row.
         ex = self._make_executor(environment="staging")
-        ex.job = MagicMock()
         ex.job.payload = None
-        cmd = ex.get_commands()[0][1]
-        self.assertIn("--filestore", cmd)
-        self.assertNotIn("--no-filestore", cmd)
+        _env, argv = self._live_dump(ex)
+        self.assertEqual(argv[6], "all")
 
-    def test_non_prod_with_filestore_true_uses_filestore_flag(self):
-        ex = self._make_executor_with_payload(
-            "staging",
-            {"with_filestore": True},
-        )
-        cmd = ex.get_commands()[0][1]
-        self.assertIn("--filestore", cmd)
-        self.assertNotIn("--no-filestore", cmd)
+    def test_non_prod_with_filestore_true_dumps_all(self):
+        ex = self._make_executor_with_payload("staging", {"with_filestore": True})
+        _env, argv = self._live_dump(ex)
+        self.assertEqual(argv[6], "all")
 
-    def test_non_prod_with_filestore_false_uses_no_filestore_flag(self):
-        ex = self._make_executor_with_payload(
-            "staging",
-            {"with_filestore": False},
-        )
-        cmd = ex.get_commands()[0][1]
-        self.assertIn("--no-filestore", cmd)
-        # Sanity: the dbname still follows the flag.
-        self.assertIn("--no-filestore prod", cmd)
+    def test_non_prod_with_filestore_false_dumps_the_db_alone(self):
+        ex = self._make_executor_with_payload("staging", {"with_filestore": False})
+        _env, argv = self._live_dump(ex)
+        self.assertEqual(argv[6], "db")
 
     def test_non_prod_truthy_string_payload_collapses_to_filestore(self):
         # Defensive: any truthy JSON-RPC value collapses to True via
         # ``bool()`` at the executor boundary so the user can never
-        # smuggle an arbitrary string into the click-odoo-backupdb
-        # invocation.
+        # smuggle an arbitrary string into the dump's invocation.
         ex = self._make_executor_with_payload(
             "staging",
             {"with_filestore": "--malicious; rm -rf /"},
         )
-        cmd = ex.get_commands()[0][1]
-        self.assertIn("--filestore", cmd)
-        self.assertNotIn("rm -rf", cmd)
-        self.assertNotIn("--malicious", cmd)
+        _env, argv = self._live_dump(ex)
+        self.assertEqual(argv[6], "all")
+        self.assertNotIn("rm -rf", ex.get_commands()[0][1])
+        self.assertNotIn("--malicious", ex.get_commands()[0][1])
 
     def test_production_uses_backup_container_jobrunner(self):
         cmds = self._make_executor(environment="production").get_commands()
@@ -669,6 +680,7 @@ class TestRestoreInstanceVerifyBackupFile(BaseCase):
         )
 
         inst = SimpleNamespace(
+            odoo_version="19.0",
             id=42,
             name="myinst",
             postgres_username="odoo",
@@ -719,7 +731,7 @@ class TestBackupDownloadAfterCommands(BaseCase):
             BackupDownloadExecutor,
         )
 
-        inst = SimpleNamespace(name="dl-inst", postgres_dbname="prod")
+        inst = SimpleNamespace(odoo_version="19.0", name="dl-inst", postgres_dbname="prod")
         ex = object.__new__(BackupDownloadExecutor)
         ex._inst = lambda: inst
         ex._inst_dir = lambda i: f"/home/{i.name}"
@@ -771,6 +783,7 @@ class TestBackupDownloadGetCommands(BaseCase):
         )
 
         inst = SimpleNamespace(
+            odoo_version="19.0",
             name="dl-inst",
             environment=environment,
             postgres_dbname="prod",
@@ -786,8 +799,16 @@ class TestBackupDownloadGetCommands(BaseCase):
         return ex
 
     def _argv(self, step):
-        """Return the script invocation of *step* as an argv list."""
-        return shlex.split(step[1])
+        """Return the script invocation of *step* as an argv list.
+
+        The script's environment (``NAME=value`` before ``bash``) is
+        left out; :meth:`_env` reads it.
+        """
+        return _split_env(shlex.split(step[1]))[1]
+
+    def _env(self, step):
+        """Return the environment *step* runs its script with."""
+        return _split_env(shlex.split(step[1]))[0]
 
     def assertScriptCall(self, step, operation, args):
         argv = self._argv(step)
@@ -817,6 +838,14 @@ class TestBackupDownloadGetCommands(BaseCase):
         self.assertScriptCall(
             cmds[0], "live-dump", ["prod", self.ARCHIVE, "all"],
         )
+
+    def test_the_live_dump_is_told_the_series_tool(self):
+        """The dump runs inside the instance's image, whose tool the
+        series' card names; the store's restores run no Odoo tool."""
+        live = self._make_executor("staging", mode="all").get_commands()[0]
+        self.assertEqual(self._env(live), {"IC_DB_TOOL": "click-odoo"})
+        stored = self._make_executor("production", mode="dump").get_commands()[0]
+        self.assertEqual(self._env(stored), {})
 
     # ── production: restore from the backup store, then package ───────
 
@@ -871,6 +900,7 @@ class TestBackupDownloadBeforeExecute(BaseCase):
         )
 
         inst = SimpleNamespace(
+            odoo_version="19.0",
             id=1,
             name="dl-inst",
             environment=environment,

@@ -144,3 +144,64 @@ _repo_with_tracked_log() {
     [ "$status" -eq 0 ]
     [ ! -e "$TMP/plain/.git" ]
 }
+
+# ── The instance's database tool ─────────────────────────────────────────
+
+@test "the database tool is click-odoo unless the panel says otherwise" {
+    unset IC_DB_TOOL
+    run ic_db_tool
+    [ "$output" = "click-odoo" ]
+    IC_DB_TOOL=odoo-db run ic_db_tool
+    [ "$output" = "odoo-db" ]
+}
+
+@test "a tool the library does not implement stops the script" {
+    IC_DB_TOOL=pg_dump run ic_db_tool
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown database tool: pg_dump"* ]]
+}
+
+@test "click-odoo dumps with and without the filestore" {
+    unset IC_DB_TOOL
+    ic_db_dump_args prod /host-tmp/out.zip all
+    [ "${IC_DB_ARGS[*]}" = "click-odoo-backupdb --filestore prod /host-tmp/out.zip" ]
+    ic_db_dump_args prod /host-tmp/out.zip db
+    [ "${IC_DB_ARGS[*]}" = "click-odoo-backupdb --no-filestore prod /host-tmp/out.zip" ]
+}
+
+@test "odoo-db dumps the zip, or a pg_dump for the database alone" {
+    export IC_DB_TOOL=odoo-db
+    ic_db_dump_args prod /host-tmp/out.zip all
+    [ "${IC_DB_ARGS[*]}" = "odoo db dump prod /host-tmp/out.zip" ]
+    ic_db_dump_args prod /host-tmp/out.zip db
+    [ "${IC_DB_ARGS[*]}" = "odoo db dump --format dump prod /host-tmp/out.zip" ]
+}
+
+@test "a dump scope the library does not know stops the script" {
+    run ic_db_dump_args prod /host-tmp/out.zip filestore
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown scope: filestore"* ]]
+}
+
+@test "click-odoo loads as a copy, forced, neutralized on request" {
+    unset IC_DB_TOOL
+    ic_db_load_args prod /mnt/restore.zip 0
+    [ "${IC_DB_ARGS[*]}" = "click-odoo-restoredb --copy --force prod /mnt/restore.zip" ]
+    ic_db_load_args prod /mnt/restore.zip 1
+    [ "${IC_DB_ARGS[*]}" = "click-odoo-restoredb --neutralize --copy --force prod /mnt/restore.zip" ]
+}
+
+@test "odoo-db loads forced, as a copy by default, neutralized on request" {
+    export IC_DB_TOOL=odoo-db
+    ic_db_load_args prod /mnt/restore.zip
+    [ "${IC_DB_ARGS[*]}" = "odoo db load --force prod /mnt/restore.zip" ]
+    ic_db_load_args prod /mnt/restore.zip 1
+    [ "${IC_DB_ARGS[*]}" = "odoo db load --neutralize --force prod /mnt/restore.zip" ]
+}
+
+@test "the argv keeps a path with spaces as one word" {
+    unset IC_DB_TOOL
+    ic_db_dump_args prod "/host tmp/out.zip" all
+    [ "${#IC_DB_ARGS[@]}" -eq 4 ]
+    [ "${IC_DB_ARGS[3]}" = "/host tmp/out.zip" ]
+}

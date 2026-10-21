@@ -20,6 +20,11 @@ Features
 - **Auto-update modules** — on rebuild, `click-odoo-update` detects which
   modules changed via checksums and updates only those, instead of a
   full `-u all`. Checksums baseline is established on first deploy.
+- **One card per Odoo series** — `models/_odoo_versions.py` says, for each
+  series, whether it is offered, which PostgreSQL it runs on, which tool
+  dumps and loads its database (`click-odoo` or `odoo db`, through
+  `scripts/lib/common.sh`) and which doodba template it needs. Nothing
+  else decides on a version by itself.
 - **GitHub integration** — connect a GitHub App for automatic webhook-triggered
   rebuilds on push, or use a Personal Access Token for private repository
   access during deploys.

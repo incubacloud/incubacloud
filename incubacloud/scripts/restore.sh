@@ -66,16 +66,14 @@ case "$op" in
         ic_require_args 2 "$#" \
             "restore.sh restore-db <dir> <dbname> <remote_zip> [neutralize]"
         dbname="$1"; remote="$2"; neutralize="${3:-0}"
-        neutralize_flag=()
         if [ "$neutralize" = "1" ]; then
-            neutralize_flag=(--neutralize)
             ic_log "restoring $dbname from $remote (neutralized)"
         else
             ic_log "restoring $dbname from $remote"
         fi
+        ic_db_load_args "$dbname" /mnt/restore.zip "$neutralize"
         docker compose run --rm -v "$remote:/mnt/restore.zip:ro" \
-            odoo click-odoo-restoredb "${neutralize_flag[@]}" --copy --force \
-            "$dbname" /mnt/restore.zip
+            odoo "${IC_DB_ARGS[@]}"
         ;;
 
     set-base-url)

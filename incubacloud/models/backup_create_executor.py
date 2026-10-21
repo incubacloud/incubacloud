@@ -7,6 +7,7 @@ from pathlib import Path
 
 from odoo import fields
 
+from ._odoo_versions import script_env
 from .abstract_executor import AbstractSSHExecutor
 
 
@@ -52,34 +53,32 @@ class BackupCreateExecutor(AbstractSSHExecutor):
                 ),
             ]
 
-        # Non-production: click-odoo-backupdb in a transient ``run --rm``
-        # container with /tmp bind-mounted, so the ZIP lands directly on
-        # the host at ``remote_tmp`` and a separate ``docker compose cp``
-        # step is unnecessary. ``run --rm`` (as opposed to ``exec``) also
-        # works when the odoo service is stopped — e.g. after a failed
-        # restore left the instance in error state but the operator still
-        # wants to grab a backup of the current DB before iterating.
-        # ``with_filestore`` is forced through ``bool()`` because the
-        # value reaches a shell command via the ``--filestore`` /
-        # ``--no-filestore`` flag — never let an arbitrary string flow
-        # into the binary invocation.
+        # Non-production: the series' dump tool in a transient ``run
+        # --rm`` container with /tmp bind-mounted, so the ZIP lands
+        # directly on the host at ``remote_tmp`` and a separate ``docker
+        # compose cp`` step is unnecessary. ``run --rm`` (as opposed to
+        # ``exec``) also works when the odoo service is stopped — e.g.
+        # after a failed restore left the instance in error state but the
+        # operator still wants to grab a backup of the current DB before
+        # iterating. ``with_filestore`` is forced through ``bool()``
+        # because the value picks the dump's scope — never let an
+        # arbitrary string flow into the invocation. The same script as
+        # the download's live dump, so the two cannot drift.
         with_filestore = bool(
             (self.job.payload or {}).get('with_filestore', True)
         )
-        filestore_flag = '--filestore' if with_filestore else '--no-filestore'
         dbname = inst.postgres_dbname or 'prod'
-        remote_tmp = self._remote_tmp()
-        remote_filename = os.path.basename(remote_tmp)
         return [
             (
                 "Create backup",
-                f"cd {d} && docker compose run --rm"
-                # Out of Traefik, like every one-off container: it carries
-                # the service's labels and serves nothing.
-                f" -l traefik.enable=false"
-                f" -v /tmp:/host-tmp"
-                f" odoo click-odoo-backupdb"
-                f" {filestore_flag} {dbname} /host-tmp/{remote_filename}",
+                self.run_script(
+                    "backup_download.sh",
+                    [
+                        "live-dump", d, dbname, self._remote_tmp(),
+                        "all" if with_filestore else "db",
+                    ],
+                    env=script_env(inst.odoo_version),
+                ),
                 {"stop_on_failure": True},
             ),
         ]

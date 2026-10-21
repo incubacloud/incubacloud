@@ -19,6 +19,7 @@ from ..net.restore_source import (
     validate as validate_restore_url,
 )
 from ..restore_staging import purge_stale
+from . import _odoo_versions
 from ._odoo_versions import ODOO_VERSION_SELECTION
 from . import _config_snapshot_diff as _snapshot_diff
 from ._repo_requirements import _normalize_url, detect_addon_conflicts
@@ -1252,6 +1253,29 @@ class CloudInstance(models.Model):
         """
         return self.env["cloud.settings"].sudo()._get().copier_template_ref or ""
 
+    def _check_template_ref(self, ref):
+        """Refuse to render this instance with a template too old for its series.
+
+        Called by the deploy and the rebuild before anything is uploaded:
+        a series the pinned template cannot render would otherwise fail
+        inside copier, late and with copier's own words. The series' card
+        (``_odoo_versions``) says which template it needs.
+
+        :param ref: the pinned template, as ``_copier_template`` returns it.
+        :raises UserError: when the pin is older than the series needs.
+        """
+        self.ensure_one()
+        if _odoo_versions.template_ref_allows(self.odoo_version, ref):
+            return
+        raise UserError(_(
+            "Odoo %(version)s needs doodba template %(needed)s or newer; "
+            "the panel is pinned to %(pinned)s (Settings → Doodba template "
+            "version, runbook RB-15).",
+            version=self.odoo_version,
+            needed=_odoo_versions.card(self.odoo_version)["template_min"],
+            pinned=ref,
+        ))
+
     @staticmethod
     def _template_has_gatekeeper(ref):
         """Whether doodba template *ref* closes a staging's egress with a gatekeeper.
@@ -1631,8 +1655,8 @@ class CloudInstance(models.Model):
         from duplicity.
 
         ``with_filestore`` is forwarded as the ``backup_create``
-        payload and used by the non-prod executor branch to flip
-        ``click-odoo-backupdb --filestore`` / ``--no-filestore``.
+        payload and used by the non-prod executor branch to pick the
+        dump's scope (``all`` or ``db``, ``scripts/lib/common.sh``).
         Production ignores it (duplicity controls shape).
         """
         self.ensure_one()
@@ -3568,6 +3592,28 @@ class CloudInstance(models.Model):
                             value=v,
                         )
                     )
+
+    @api.constrains("odoo_version", "postgres_version")
+    def _check_postgres_version_for_series(self):
+        """A PostgreSQL the series does not run on is refused when saved.
+
+        The picker only offers the series' range
+        (``_odoo_versions.postgres_versions``), but the value also
+        arrives by RPC and by import; refused here, it never reaches
+        copier, which would fail inside the deploy.
+        """
+        for inst in self:
+            if not inst.odoo_version or not inst.postgres_version:
+                continue
+            allowed = _odoo_versions.postgres_versions(inst.odoo_version)
+            if inst.postgres_version not in allowed:
+                raise ValidationError(_(
+                    "Odoo %(version)s runs on PostgreSQL %(lowest)s to "
+                    "%(highest)s, not %(chosen)s.",
+                    version=inst.odoo_version,
+                    lowest=allowed[0], highest=allowed[-1],
+                    chosen=inst.postgres_version,
+                ))
 
     @api.constrains("host_id", "project_id", "name", "custom_remote_dir")
     def _check_remote_dir_unique_per_host(self):

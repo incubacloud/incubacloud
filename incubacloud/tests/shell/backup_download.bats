@@ -36,6 +36,20 @@ teardown() {
     [[ "$(cat "$CALLS")" == *"docker compose run --rm -l traefik.enable=false -v /tmp:/host-tmp odoo click-odoo-backupdb --no-filestore prod /host-tmp/out.zip"* ]]
 }
 
+@test "a live dump uses the series' tool the panel names" {
+    IC_DB_TOOL=odoo-db run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip all
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"docker compose run --rm -l traefik.enable=false -v /tmp:/host-tmp odoo odoo db dump prod /host-tmp/out.zip"* ]]
+    [[ "$(cat "$CALLS")" != *"click-odoo"* ]]
+}
+
+@test "a live dump of an unknown scope runs nothing" {
+    run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip filestore
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown scope: filestore"* ]]
+    [[ "$(cat "$CALLS")" != *"docker compose run"* ]]
+}
+
 @test "an 'all' live dump includes the filestore" {
     run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip all
     [ "$status" -eq 0 ]
