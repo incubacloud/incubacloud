@@ -38,8 +38,15 @@ INSTANCE_DIR = "~/projects/demo-inst"
 
 
 def _argv(step):
-    """Return a script step's invocation as an argv list."""
-    return shlex.split(step[1])
+    """Return a script step's invocation as an argv list.
+
+    The script's environment (``NAME=value`` words ``run_script`` puts
+    before ``bash``) is left out.
+    """
+    argv = shlex.split(step[1])
+    while argv and "=" in argv[0] and argv[0].split("=", 1)[0].isidentifier():
+        argv.pop(0)
+    return argv
 
 
 def _find(cmds, label):
@@ -56,6 +63,7 @@ def _make_restore_executor(payload, domain="staging.example.com",
     inst = SimpleNamespace(
         id=7,
         name="demo-inst",
+        odoo_version="19.0",
         domain=domain,
         postgres_dbname=dbname,
         postgres_username=pg_user,
@@ -80,6 +88,7 @@ def _make_download_executor(environment="production", time="latest",
     inst = SimpleNamespace(
         id=7,
         name="demo-inst",
+        odoo_version="19.0",
         environment=environment,
         postgres_dbname="prod",
     )

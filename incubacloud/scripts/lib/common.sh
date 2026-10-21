@@ -162,6 +162,11 @@ ic_compose_services() {
 # series that needs a third tool is one more case here and a value in
 # its card, nothing else.
 
+# The argv the two functions below build, read by the script that
+# called them ("${IC_DB_ARGS[@]}").
+# shellcheck disable=SC2034  # set here, read by the calling script
+IC_DB_ARGS=()
+
 # Print the tool in use, refusing one this library does not implement.
 ic_db_tool() {
     local tool="${IC_DB_TOOL:-click-odoo}"
@@ -177,8 +182,9 @@ ic_db_tool() {
 # write Odoo's own zip (dump.sql, filestore/, manifest.json) for ``all``;
 # for ``db`` click-odoo writes that zip without the filestore and odoo-db
 # a pg_dump custom-format file, which ``odoo db load`` reads back.
+# shellcheck disable=SC2034  # IC_DB_ARGS is read by the calling script
 ic_db_dump_args() {
-    local db="$1" archive="$2" scope="$3" tool
+    local database="$1" archive="$2" scope="$3" tool
     tool="$(ic_db_tool)" || exit 1
     case "$scope" in
         all|db) ;;
@@ -187,16 +193,16 @@ ic_db_dump_args() {
     case "$tool" in
         click-odoo)
             if [ "$scope" = all ]; then
-                IC_DB_ARGS=(click-odoo-backupdb --filestore "$db" "$archive")
+                IC_DB_ARGS=(click-odoo-backupdb --filestore "$database" "$archive")
             else
-                IC_DB_ARGS=(click-odoo-backupdb --no-filestore "$db" "$archive")
+                IC_DB_ARGS=(click-odoo-backupdb --no-filestore "$database" "$archive")
             fi
             ;;
         odoo-db)
             if [ "$scope" = all ]; then
-                IC_DB_ARGS=(odoo db dump "$db" "$archive")
+                IC_DB_ARGS=(odoo db dump "$database" "$archive")
             else
-                IC_DB_ARGS=(odoo db dump --format dump "$db" "$archive")
+                IC_DB_ARGS=(odoo db dump --format dump "$database" "$archive")
             fi
             ;;
     esac
@@ -206,18 +212,19 @@ ic_db_dump_args() {
 # a database of that name, as a copy (a new database uuid, so the copy
 # never answers for the original) and neutralized when <neutralize> is 1.
 #   ic_db_load_args <db> <archive> <0|1>
+# shellcheck disable=SC2034  # IC_DB_ARGS is read by the calling script
 ic_db_load_args() {
-    local db="$1" archive="$2" neutralize="${3:-0}" tool
+    local database="$1" archive="$2" neutralize="${3:-0}" tool
     tool="$(ic_db_tool)" || exit 1
     local flags=()
     [ "$neutralize" = 1 ] && flags+=(--neutralize)
     case "$tool" in
         click-odoo)
-            IC_DB_ARGS=(click-odoo-restoredb "${flags[@]}" --copy --force "$db" "$archive")
+            IC_DB_ARGS=(click-odoo-restoredb "${flags[@]}" --copy --force "$database" "$archive")
             ;;
         odoo-db)
             # ``odoo db load`` copies unless told --move.
-            IC_DB_ARGS=(odoo db load "${flags[@]}" --force "$db" "$archive")
+            IC_DB_ARGS=(odoo db load "${flags[@]}" --force "$database" "$archive")
             ;;
     esac
 }
