@@ -98,7 +98,7 @@ class TestTheTemplateFloor(BaseCase):
     def test_a_floor_is_compared_as_a_version(self):
         """Checked through a card of the shape a series on 20 will have."""
         card = versions._card(False, (16, 18, 17), "odoo-db", "v10.0.0")
-        with_floor = dict(versions.VERSIONS, **{"20.0": card})
+        with_floor = versions.VERSIONS | {"20.0": card}
         original = versions.VERSIONS
         try:
             versions.VERSIONS = with_floor
@@ -145,7 +145,7 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
         card = versions._card(True, (16, 18, 17), "click-odoo", None)
         original = versions.VERSIONS
         try:
-            versions.VERSIONS = dict(original, **{"19.0": card})
+            versions.VERSIONS = original | {"19.0": card}
             with self.assertRaises(ValidationError):
                 self.instance.postgres_version = "14"
         finally:
@@ -165,7 +165,7 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
         card = versions._card(True, (16, 18, 17), "odoo-db", "v10.0.0")
         original = versions.VERSIONS
         try:
-            versions.VERSIONS = dict(original, **{"19.0": card})
+            versions.VERSIONS = original | {"19.0": card}
             with self.assertRaises(UserError) as caught:
                 self.instance._check_template_ref("v9.7.0")
         finally:

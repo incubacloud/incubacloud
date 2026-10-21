@@ -39,6 +39,7 @@ def _make_download_executor(payload):
     inst = SimpleNamespace(
         id=7,
         name="demo-inst",
+        odoo_version="19.0",
         environment="production",
         postgres_dbname="prod",
     )
