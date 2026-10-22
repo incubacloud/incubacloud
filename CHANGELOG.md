@@ -53,6 +53,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   reading, and both follow one rule (`_pitr_base_due`); a copy that
   failed is tried again an hour later, not at every watch.
   `incubacloud_pitr` 1.0.5.
+- **A staging rendered before template v10 can be rebuilt under it.** Its
+  first rebuild finds the files rewritten by copier and the old stack
+  still running, with no gatekeeper, and the safe boot test refused to
+  start (firma1-staging, the canary of the v10 bump in production). The
+  test now starts the gatekeeper alone, and removes it again if the boot
+  fails, so the stack is left as it was found. The boot container runs
+  with `--no-deps`: without it Compose recreated any dependency whose
+  definition the template changed, restarting the live database in the
+  middle of the test.
 
 ## [1.0.196] — 2026-10-22
 

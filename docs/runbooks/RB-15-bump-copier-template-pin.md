@@ -102,3 +102,16 @@ A stack keeps the model it was rendered with until its next rebuild
 (`stack_template_ref`), so the probe and the deploy understand both;
 the host's `globalwhitelist` proxies stay until no old-model staging
 is left. Production's `prod.yaml` was identical in both versions.
+
+The canary in production (2026-10-22) found what QA had not tried:
+the **first rebuild of a staging rendered with the old template**. The
+safe boot test runs before the stack is restarted, so it met the new
+files with the old containers and no gatekeeper; it now starts the
+gatekeeper alone for the test (and removes it if the test fails). Its
+boot container also runs with `--no-deps`: otherwise Compose recreates
+any dependency whose definition the new template changed — the live
+`db`, in the middle of the test. While that gatekeeper runs beside the
+old `odoo` until the restart, Traefik sees both containers' routers, so
+the staging may answer 502 for those few minutes. In general, a bump
+must be canaried on a stack **rendered with the previous pin**, not
+only on a fresh deploy.

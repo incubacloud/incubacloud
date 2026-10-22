@@ -127,7 +127,38 @@ class TestRebuildBootTestIsolation(BaseCase):
         """``up`` would deploy the very image the boot test just rejected.
 
         It would also reconcile networks, so the restore could trip over
-        the same drift as the failure it is cleaning up after.
+        the same drift as the failure it is cleaning up after. The one
+        ``up`` the arm holds starts the gatekeeper alone, never ``odoo``.
         """
-        self.assertIn("docker compose start $running_before", self.block)
-        self.assertNotIn("docker compose up", self.block)
+        restore = self.block[
+            self.block.index("ic_boot_restore() {"):
+            self.block.index("trap ic_boot_restore EXIT")
+        ]
+        self.assertIn("docker compose start $running_before", restore)
+        self.assertNotIn("docker compose up", restore)
+        self.assertEqual(self.block.count("docker compose up"), 1)
+        self.assertIn(
+            "docker compose up -d --no-deps --wait --wait-timeout 120 gatekeeper",
+            self.block,
+        )
+
+    def test_a_staging_rendered_before_v10_gets_its_gatekeeper_for_the_test(self):
+        """Its first rebuild under v10 finds the files rewritten and no
+        gatekeeper running (firma1-staging, the canary of the v10 bump in
+        production, 2026-10-22). The test starts that service alone, and
+        the trap removes it when the test fails, leaving the old model."""
+        self.assertIn("gatekeeper_started=1", self.block)
+        self.assertIn("the gatekeeper did not start", self.block)
+        restore = self.block[
+            self.block.index("ic_boot_restore() {"):
+            self.block.index("trap ic_boot_restore EXIT")
+        ]
+        self.assertIn("ic_boot_rc=$?", restore)
+        self.assertIn('[ "$ic_boot_rc" -ne 0 ]', restore)
+        self.assertIn("docker compose rm -sf gatekeeper", restore)
+
+    def test_the_boot_run_leaves_its_dependencies_alone(self):
+        """Without ``--no-deps`` Compose recreates any dependency whose
+        definition the template changed: under v10, the live ``db``,
+        restarted in the middle of the test (lab of 22-oct-2026)."""
+        self.assertIn("docker compose run -d --no-deps", self.block)

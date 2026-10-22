@@ -35,7 +35,7 @@ class IncubaCloudConnectController(http.Controller):
         methods=['GET'],
     )
     def ic_login(self, t=None, **_kw):
-        """Magic-link login — compatible with Odoo v7.0 through v19.0.
+        """Magic-link login — compatible with Odoo v7.0 through v20.0.
 
         Validates the one-time token written by the IncubaCloud panel,
         then uses Odoo's own session API to authenticate the user and
