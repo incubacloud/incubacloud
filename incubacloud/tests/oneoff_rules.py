@@ -44,7 +44,7 @@ def library_labels(core_dir):
     :rtype: str
     """
     text = (Path(core_dir) / LIBRARY).read_text()
-    match = re.search(r"^IC_ONEOFF_LABELS=\((.*)\)$", text, re.M)
+    match = re.search(r"^IC_ONEOFF_LABELS=\((.*)\)$", text, re.MULTILINE)
     if not match:
         raise AssertionError(f"no IC_ONEOFF_LABELS in {LIBRARY}")
     return match.group(1).strip()
