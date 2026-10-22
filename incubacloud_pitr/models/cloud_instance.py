@@ -61,6 +61,9 @@ PITR_FIELDS = frozenset({
 })
 #: How long a switch that failed waits before the next try.
 _RETRY_AFTER = timedelta(days=1)
+#: How long a base copy that failed waits: the base copy cron's hour,
+#: not the watch's ten minutes.
+_BASE_RETRY_AFTER = timedelta(hours=1)
 
 
 def retention_days(retention):
@@ -522,9 +525,10 @@ class CloudInstance(models.Model):
         super()._after_stack_rendered()
         self._pitr_reconcile(after_rebuild=True)
 
-    def _pitr_failed_lately(self, code):
+    def _pitr_failed_lately(self, code, within=_RETRY_AFTER):
         """Whether a *code* job of this instance failed or was cancelled lately.
 
+        :param timedelta within: how far back "lately" reaches
         :rtype: bool
         """
         self.ensure_one()
@@ -532,8 +536,32 @@ class CloudInstance(models.Model):
             ("instance_id", "=", self.id),
             ("job_type_id.code", "=", code),
             ("state", "in", ("failed", "cancelled")),
-            ("create_date", ">=", fields.Datetime.now() - _RETRY_AFTER),
+            ("create_date", ">=", fields.Datetime.now() - within),
         ]))
+
+    def _pitr_base_due(self):
+        """Whether this instance's daily base copy is due now.
+
+        The one rule for the watch and the base copy cron. An archiving
+        instance (still wanted and applicable) is due with no copy yet,
+        with its last one older than 36 hours, or at its hour
+        (``_pitr_sync_hour``) with it older than 20 hours; not within an
+        hour of a copy that failed, so one that keeps failing is tried
+        hourly rather than at every watch.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        if self.pitr_state not in ("ok", "lagging", "failed") or not self._pitr_active():
+            return False
+        if self._pitr_failed_lately("pitr_base_backup", _BASE_RETRY_AFTER):
+            return False
+        now = fields.Datetime.now()
+        last = self.pitr_last_base_at
+        return not last or last < now - timedelta(hours=36) or (
+            self._pitr_sync_hour() == datetime.now(timezone.utc).hour
+            and last < now - timedelta(hours=20)
+        )
 
     def _pitr_others_busy(self):
         """Whether jobs of the instance besides the one running now are active.
@@ -901,8 +929,12 @@ class CloudInstance(models.Model):
     def _cron_pitr_watch(self):
         """Reconcile every instance concerned; read the archiving ones.
 
-        Every ten minutes. One instance that fails does not stop the
-        others: each runs in its own savepoint.
+        Every ten minutes. An archiving instance whose base copy is due
+        (``_pitr_base_due``) gets the copy instead of the reading: the
+        base copy cron runs in the same tick, after this one, and skips
+        an instance with a job of this module in flight, so the reading
+        queued here held every base copy back. One instance that fails
+        does not stop the others: each runs in its own savepoint.
 
         :return: how many instances got a job
         :rtype: int
@@ -919,8 +951,11 @@ class CloudInstance(models.Model):
                         code = inst._pitr_reconcile()
                     if not code and (inst.pitr_state or "off") != "off" \
                             and not inst._pitr_job_in_flight(PITR_JOBS):
-                        Job.enqueue(inst.host_id.id, inst.id, "pitr_status")
-                        code = "pitr_status"
+                        code = (
+                            "pitr_base_backup" if inst._pitr_base_due()
+                            else "pitr_status"
+                        )
+                        Job.enqueue(inst.host_id.id, inst.id, code)
                     if code:
                         queued += 1
             except Exception as exc:  # noqa: BLE001 — one must not stop all
@@ -933,24 +968,15 @@ class CloudInstance(models.Model):
     def _cron_pitr_base_backups(self):
         """Queue the daily base copy of the instances whose hour it is.
 
-        Hourly. Each instance has its hour (``_pitr_sync_hour``); one whose
-        last copy is older than 36 hours, or that has none, is caught up
-        at once.
+        Hourly, by the rule the watch also follows (``_pitr_base_due``);
+        the watch queues most copies, as it runs first in the tick both
+        share.
 
         :rtype: int
         """
-        now = fields.Datetime.now()
-        hour = datetime.now(timezone.utc).hour
         queued = 0
-        for inst in self._pitr_candidates().filtered(
-            lambda i: i.pitr_state in ("ok", "lagging", "failed")
-            and i._pitr_active(),
-        ):
-            last = inst.pitr_last_base_at
-            due = not last or (
-                inst._pitr_sync_hour() == hour and last < now - timedelta(hours=20)
-            ) or last < now - timedelta(hours=36)
-            if not due or inst._pitr_job_in_flight(PITR_JOBS):
+        for inst in self._pitr_candidates():
+            if not inst._pitr_base_due() or inst._pitr_job_in_flight(PITR_JOBS):
                 continue
             try:
                 with self.env.cr.savepoint():

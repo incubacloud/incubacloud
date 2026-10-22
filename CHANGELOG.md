@@ -41,6 +41,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   its database-only dump is `odoo db dump --no-filestore`, the same zip
   as click-odoo's, which the download expects.
 
+### Fixed
+
+- **Continuous recovery takes its daily base copy again.** The watch
+  (every ten minutes) and the base copy cron (hourly) run in the same
+  tick, the watch first; the status reading it queued counted as a job
+  of the module in flight, and the cron skipped every instance, so no
+  base copy was ever queued after the one switching on takes (production,
+  22 October: "Base copy missing" on the three archiving instances).
+  When a base copy is due the watch now queues it in place of the
+  reading, and both follow one rule (`_pitr_base_due`); a copy that
+  failed is tried again an hour later, not at every watch.
+  `incubacloud_pitr` 1.0.5.
+
 ## [1.0.196] — 2026-10-22
 
 ### Added
