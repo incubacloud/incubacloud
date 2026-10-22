@@ -365,23 +365,73 @@ STUB
     [[ "$calls" == *"compose start odoo db smtp gatekeeper"* ]]
 }
 
-@test "boot-test under the gatekeeper stops when the gatekeeper is not running" {
-    cat > "$TMP/bin/docker" <<'STUB'
+_first_gatekeeper_docker() {
+    # docker as a staging rendered before v10 answers it on its first
+    # rebuild under v10: the files declare a gatekeeper, none runs until
+    # ``compose up`` starts it. $1 is the boot container's exit code;
+    # $2, when ``fail``, makes the gatekeeper refuse to start.
+    cat > "$TMP/bin/docker" <<STUB
 #!/usr/bin/env bash
-echo "docker $*" >> "$CALLS"
-case "$*" in
+echo "docker \$*" >> "\$CALLS"
+case "\$*" in
+    "wait "*)                          echo ${1:-0} ;;
     *"compose config --services"*)     printf 'db\ngatekeeper\nsmtp\nodoo\n' ;;
-    *"compose ps -q gatekeeper"*)      : ;;
-    *"compose ps --services"*)         printf 'db\nsmtp\n' ;;
+    *"compose up "*"gatekeeper"*)      [ "${2:-}" = fail ] && exit 1
+                                       touch "$TMP/gk-up" ;;
+    *"compose ps -q gatekeeper"*)      [ -e "$TMP/gk-up" ] && echo gk456 ;;
+    *"compose ps --services"*)         printf 'odoo\ndb\nsmtp\n' ;;
 esac
+exit 0
 STUB
+    chmod +x "$TMP/bin/docker"
+}
+
+@test "boot-test starts the gatekeeper a staging rendered before v10 does not have yet" {
+    # firma1-staging, the canary of the v10 bump in production
+    # (2026-10-22): copier had rewritten its files, but the old odoo
+    # still ran without a gatekeeper and the test refused to boot.
+    _first_gatekeeper_docker 0
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    # That service alone: nothing else is recreated under the live stack.
+    [[ "$calls" == *"compose up -d --no-deps --wait --wait-timeout 120 gatekeeper"* ]]
+    [[ "$calls" == *"--network container:gk456"* ]]
+    [[ "$calls" == *"compose run -d --no-deps --name ic_boot_odoo_42"* ]]
+    # It passed: the gatekeeper stays for the restart that follows.
+    [[ "$calls" != *"compose rm -sf gatekeeper"* ]]
+    [[ "$calls" == *"compose start odoo db smtp"* ]]
+}
+
+@test "boot-test removes the gatekeeper it started when the boot fails" {
+    _first_gatekeeper_docker 1
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -ne 0 ]
-    [[ "$output" == *"the gatekeeper is not running"* ]]
+    calls="$(cat "$CALLS")"
+    # The stack is left as it was found: the old model, no gatekeeper.
+    [[ "$calls" == *"compose rm -sf gatekeeper"* ]]
+    [[ "$calls" == *"compose start odoo db smtp"* ]]
+}
+
+@test "boot-test stops when the gatekeeper it needs will not start" {
+    _first_gatekeeper_docker 0 fail
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"the gatekeeper did not start"* ]]
     calls="$(cat "$CALLS")"
     [[ "$calls" != *"postgres-autoconf"* ]]
+    [[ "$calls" == *"compose rm -sf gatekeeper"* ]]
     # Whatever was running is put back all the same.
-    [[ "$calls" == *"compose start db smtp"* ]]
+    [[ "$calls" == *"compose start odoo db smtp"* ]]
+}
+
+@test "boot-test never lets compose touch the services the boot depends on" {
+    # Without --no-deps Compose recreates any dependency whose definition
+    # the template changed: under v10, the live db, mid-test.
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    calls="$(cat "$CALLS")"
+    [[ "$calls" == *"compose run -d --no-deps --name ic_boot_odoo_42"* ]]
 }
 
 @test "boot-test without a gatekeeper keeps its own network, as before" {

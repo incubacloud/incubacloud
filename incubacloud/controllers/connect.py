@@ -24,7 +24,7 @@ _logger = logging.getLogger(__name__)
 # Flags a target user as an administrator of the tenant database: uid 2
 # (Odoo's built-in admin) or explicit membership of base.group_system /
 # base.group_erp_manager. The relation table and the ir_model_data rows
-# are stable across Odoo 7 → 19, so the same SQL works on every tenant
+# are stable across Odoo 7 → 20, so the same SQL works on every tenant
 # version we support. Over-flagging is harmless: it only raises the
 # required panel role to Manager.
 # It is kept on a single line because it is interpolated inside a

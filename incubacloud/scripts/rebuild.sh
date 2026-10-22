@@ -113,11 +113,17 @@ case "$op" in
             2>/dev/null | tr '\n' ' ')"
         # shellcheck disable=SC2317  # reached through the EXIT trap below
         ic_boot_restore() {
+            ic_boot_rc=$?
             docker rm -f "$odoo_container" 2>/dev/null || true
             docker rm -f "$pg_container" 2>/dev/null || true
             docker network rm "$boot_net" 2>/dev/null || true
             docker run --rm -v /tmp:/host_tmp alpine \
                 rm -rf "/host_tmp/ic_boot_${inst_id}" 2>/dev/null || true
+            if [ -n "${gatekeeper_started:-}" ] && [ "$ic_boot_rc" -ne 0 ]; then
+                # A first boot under the gatekeeper that failed leaves the
+                # stack as it found it: the old egress model, no gatekeeper.
+                docker compose rm -sf gatekeeper 2>/dev/null || true
+            fi
             if [ -n "${running_before// /}" ]; then
                 # Word splitting is the point: a space-separated service list.
                 # shellcheck disable=SC2086
@@ -177,11 +183,29 @@ case "$op" in
         # the boot container finds it on 127.0.0.1: the gatekeeper's
         # rules accept the loopback and the private ranges, so the
         # staging's egress stays filtered while the test runs.
+        #
+        # A staging rendered before v10 has no gatekeeper until its first
+        # rebuild under v10 — this one — brings the stack up: copier has
+        # already rewritten the files, but the old odoo, proxy_general
+        # and odoo_net_setup are still the ones running (firma1-staging,
+        # the canary of the v10 bump in production, 2026-10-22). The test
+        # starts that one service, alone, and the trap removes it if the
+        # test fails. Docker Compose will not let the boot container
+        # share the namespace of a one-off gatekeeper ("container
+        # missing"), so it has to be the service's own.
         docker rm -f "$odoo_container" "$pg_container" 2>/dev/null || true
         docker network rm "$boot_net" 2>/dev/null || true
         gatekeeper=""
+        gatekeeper_started=""
         if docker compose config --services 2>/dev/null | grep -qx gatekeeper; then
             gatekeeper="$(docker compose ps -q gatekeeper 2>/dev/null | head -n 1)"
+            if [ -z "$gatekeeper" ]; then
+                ic_log "no gatekeeper yet (first rebuild under template v10): starting it for the test"
+                gatekeeper_started=1
+                docker compose up -d --no-deps --wait --wait-timeout 120 gatekeeper \
+                    || ic_die "the gatekeeper did not start: nothing to boot the test in"
+                gatekeeper="$(docker compose ps -q gatekeeper 2>/dev/null | head -n 1)"
+            fi
             [ -n "$gatekeeper" ] \
                 || ic_die "the gatekeeper is not running: nothing to boot the test in"
         fi
@@ -214,13 +238,16 @@ case "$op" in
         # hung the job for good — so it is replaced by a bounded one; and
         # the unaccent hook, which would query before the network is
         # joined, is skipped: the clone already carries the extension.
+        # ``--no-deps``: the services it depends on are running, and
+        # without it Compose recreates any whose definition the template
+        # changed — under v10 the live ``db``, restarted mid-test.
         ic_boot_join() {
             [ -n "$gatekeeper" ] \
                 || docker network connect "$boot_net" "$odoo_container"
         }
         set +e
         # shellcheck disable=SC2016  # expanded by the container's bash
-        docker compose run -d --name "$odoo_container" \
+        docker compose run -d --no-deps --name "$odoo_container" \
             -e "PGHOST=$pg_host" -e PGPORT=5432 \
             -e WAIT_DB=false -e UNACCENT=false odoo \
             bash -c 'for _ in $(seq 120); do
