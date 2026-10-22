@@ -7,7 +7,7 @@ from operator import itemgetter
 
 from odoo import fields as odoo_fields
 
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import NOT_ONEOFF, AbstractSSHExecutor
 
 # Alert thresholds
 _MEM_WARN_PCT = 85.0      # memory % that triggers a warning once sustained
@@ -33,6 +33,22 @@ _ERROR_CONTEXT_TAIL = 14          # last lines kept: the exception itself
 _ERROR_CONTEXT_LINE_CHARS = 300   # per-line cap before anything is stored
 _ERROR_CONTEXT_MAX_LINES = 200    # accumulation guard for a log in a loop
 _ERROR_CONTEXT_SKIPPED = '… %d line(s) skipped …'
+
+#: One line per container of the stack's own — its service, its state,
+#: and the state again with a running container's healthcheck verdict in
+#: brackets, the three columns ``docker compose ps -a --format`` used to
+#: give — and an empty one for a one-off (see ``NOT_ONEOFF``). From
+#: compose 2.29 on, ``ps`` lists a one-off under its service's name: a
+#: running ``odoo shell`` passed for a stopped odoo, and its own failing
+#: healthcheck for an unhealthy one.
+_STATE_FORMAT = (
+    NOT_ONEOFF
+    + '{{index .Config.Labels "com.docker.compose.service"}}\t'
+    '{{.State.Status}}\t'
+    '{{.State.Status}}'
+    '{{if and .State.Running .State.Health}} ({{.State.Health.Status}}){{end}}'
+    '{{end}}'
+)
 
 # ── Odoo log archive watchdog ─────────────────────────────────────────
 # Odoo writes its log to ``logs/odoo.log`` on the host (see
@@ -400,14 +416,15 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             # 1. Container state. ``-a`` includes stopped containers so
             #    a present-but-exited service (a Sablier-slept tenant)
             #    can be told apart from a *missing* one (pruned or never
-            #    created) — the two demand opposite reactions. The
-            #    status text carries the healthcheck's verdict
-            #    ("Up 3 hours (unhealthy)"), which ``State`` does not.
+            #    created) — the two demand opposite reactions. The third
+            #    column carries the healthcheck's verdict
+            #    ("running (unhealthy)"). One-off containers print
+            #    nothing (``_STATE_FORMAT``).
             (
                 "container_state",
-                f"cd {d} && "
-                f"docker compose ps -a --format "
-                f"'{{{{.Service}}}}\t{{{{.State}}}}\t{{{{.Status}}}}' 2>&1",
+                f"cd {d} && {{ ids=$(docker compose ps -a -q) && "
+                f'{{ [ -z "$ids" ] || docker inspect -f '
+                f"{shlex.quote(_STATE_FORMAT)} $ids; }}; }} 2>&1",
             ),
             # 2. CPU / memory — single non-streaming snapshot (~1.5 s).
             # `docker stats --no-stream` already computes CPU% from two
@@ -484,10 +501,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 if not svc:
                     continue
                 state = parts[1].strip().lower()
-                # ``ps -a`` may list several containers for one service
-                # (stale one-off ``run`` leftovers next to the real
-                # one). A running container always wins: the service is
-                # up no matter how many corpses sit beside it.
+                # One-offs print an empty line and never get here, but a
+                # service may still have several containers of its own
+                # (scaled, or one being replaced). A running container
+                # always wins: the service is up no matter how many
+                # stopped ones sit beside it.
                 if self._service_states.get(svc) != 'running':
                     self._service_states[svc] = state
                 if (

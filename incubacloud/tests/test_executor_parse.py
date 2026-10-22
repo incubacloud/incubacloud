@@ -5,6 +5,7 @@ Tests use object.__new__() to bypass __init__ so no Odoo ORM is needed.
 All ORM/SSH interaction is excluded from parse_results() by design.
 """
 import unittest
+from types import SimpleNamespace
 
 from odoo.tests.common import BaseCase
 
@@ -202,6 +203,20 @@ class TestInstanceHealthParseResults(BaseCase):
         self.executor._inst_dir = MagicMock(return_value="~/foo/bar")
         cmds = dict(self.executor.get_commands())
         self.assertIn("docker compose ps -a", cmds["container_state"])
+
+    def test_container_state_command_leaves_one_offs_out(self):
+        """From compose 2.29 on ``ps -a`` lists a one-off under its
+        service's name: a running ``odoo shell`` passed for a stopped
+        odoo, its failing healthcheck for an unhealthy one. The listing
+        keeps the stack's own containers by their oneoff label."""
+        from odoo.addons.incubacloud.models.abstract_executor import NOT_ONEOFF
+        self.executor._skipped = False
+        inst = SimpleNamespace(last_health_check=False)
+        self.executor._inst = lambda: inst
+        self.executor._inst_dir = lambda _inst: "~/foo/bar"
+        cmd = dict(self.executor.get_commands())["container_state"]
+        self.assertIn(NOT_ONEOFF, cmd)
+        self.assertNotIn("--format", cmd)
 
     def test_error_lines_command_anchors_and_strips_ansi(self):
         """The shell command for the error_lines step must:

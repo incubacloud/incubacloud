@@ -62,6 +62,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   with `--no-deps`: without it Compose recreated any dependency whose
   definition the template changed, restarting the live database in the
   middle of the test.
+- **A one-off container no longer passes for its service.** A `docker
+  compose run` container inherits its service's labels. Sablier counted
+  it in a sleeping tenant's group and answered the customer with its
+  waiting page for as long as it ran: the settings push that follows a
+  new tenant's metrics sync, an `odoo shell` of a few seconds, met the
+  customer opening the panel for the first time and left it on "Oops!"
+  (QA, 22 October). The same group stopped a long one-off — a PITR
+  recovery, a module update — when its session expired or Sablier
+  restarted, and Traefik could route visitors to a container that serves
+  nothing. And from compose 2.29 on (the hosts run 5.x) `docker compose
+  ps --services --status running` names a one-off after its service, so
+  the scripts that asked whether `odoo` ran — to park a stack again,
+  drain a panel, restart the egress sidecar or put services back after
+  a boot test — took an `odoo shell` for the panel, and the health probe
+  took it for a running odoo, or an unhealthy one. Every one-off now
+  starts through `ic_compose_run` (scripts) or `COMPOSE_RUN` (executors),
+  labelled out of Traefik and Sablier; `ic_running_services` reads the
+  running services by the `com.docker.compose.oneoff` label, the only
+  thing every compose version agrees on; the health probe and the free
+  host's cold copies read the stack's own containers the same way. A
+  test in core, `incubacloud_pitr` and the SaaS manager fails on the raw
+  commands (`tests/oneoff_rules.py`).
 
 ## [1.0.196] — 2026-10-22
 

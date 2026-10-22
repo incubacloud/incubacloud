@@ -29,7 +29,8 @@ STUB
 echo "docker $*" >> "$CALLS"
 case "$*" in
     "wait "*)                     echo 0 ;;
-    *"compose ps --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*)    printf 'odoo\ndb\nsmtp\n' ;;
+    "inspect -f "*)    shift 3; printf '%s\n' "$@" ;;
 esac
 STUB
     chmod +x "$TMP/bin/docker"
@@ -163,7 +164,8 @@ YAML
 echo "docker $*" >> "$CALLS"
 case "$*" in
     "network create "*)        exit 1 ;;
-    *"compose ps --services"*) printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*) printf 'odoo\ndb\nsmtp\n' ;;
+    "inspect -f "*) shift 3; printf '%s\n' "$@" ;;
 esac
 STUB
     chmod +x "$TMP/bin/docker"
@@ -171,7 +173,7 @@ STUB
     [ "$status" -ne 0 ]
     calls="$(cat "$CALLS")"
     [[ "$calls" != *"click-odoo-update"* ]]
-    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
 }
 
 @test "boot-test removes the boot container and its network on the way out" {
@@ -191,8 +193,8 @@ STUB
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -eq 0 ]
     calls="$(cat "$CALLS")"
-    [[ "$calls" == *"compose ps --services --status running"* ]]
-    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"compose ps -q --status running"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
     # 'start', never 'up': up would re-evaluate the image and deploy the
     # very build the boot test just rejected, and would reconcile
     # networks, so the restore could trip over the same drift as the
@@ -209,7 +211,8 @@ STUB
 echo "docker $*" >> "$CALLS"
 case "$*" in
     *"compose cp"*)            exit 1 ;;
-    *"compose ps --services"*) printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*) printf 'odoo\ndb\nsmtp\n' ;;
+    "inspect -f "*) shift 3; printf '%s\n' "$@" ;;
 esac
 STUB
     chmod +x "$TMP/bin/docker"
@@ -217,7 +220,7 @@ STUB
     [ "$status" -ne 0 ]
     calls="$(cat "$CALLS")"
     [[ "$calls" != *"click-odoo-update"* ]]
-    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
     [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
 }
 
@@ -274,14 +277,15 @@ STUB
 echo "docker $*" >> "$CALLS"
 case "$*" in
     "wait "*)                  echo 3 ;;
-    *"compose ps --services"*) printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*) printf 'odoo\ndb\nsmtp\n' ;;
+    "inspect -f "*) shift 3; printf '%s\n' "$@" ;;
 esac
 STUB
     chmod +x "$TMP/bin/docker"
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -eq 3 ]
     calls="$(cat "$CALLS")"
-    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
     [[ "$calls" == *"network rm ic_boot_42"* ]]
 }
 
@@ -339,7 +343,8 @@ case "$*" in
     "wait "*)                          echo 0 ;;
     *"compose config --services"*)     printf 'db\ngatekeeper\nsmtp\nodoo\n' ;;
     *"compose ps -q gatekeeper"*)      echo gk123 ;;
-    *"compose ps --services"*)         printf 'odoo\ndb\nsmtp\ngatekeeper\n' ;;
+    *"compose ps -q --status running"*)         printf 'odoo\ndb\nsmtp\ngatekeeper\n' ;;
+    "inspect -f "*)         shift 3; printf '%s\n' "$@" ;;
 esac
 STUB
 }
@@ -362,7 +367,7 @@ STUB
     [[ "$calls" == *'click-odoo-update --database "$0"'* ]]
     # The clean-up is the same: the containers go, the services come back.
     [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
-    [[ "$calls" == *"compose start odoo db smtp gatekeeper"* ]]
+    [[ "$calls" == *"compose start db gatekeeper odoo smtp"* ]]
 }
 
 _first_gatekeeper_docker() {
@@ -379,7 +384,8 @@ case "\$*" in
     *"compose up "*"gatekeeper"*)      [ "${2:-}" = fail ] && exit 1
                                        touch "$TMP/gk-up" ;;
     *"compose ps -q gatekeeper"*)      [ -e "$TMP/gk-up" ] && echo gk456 ;;
-    *"compose ps --services"*)         printf 'odoo\ndb\nsmtp\n' ;;
+    *"compose ps -q --status running"*)         printf 'odoo\ndb\nsmtp\n' ;;
+    "inspect -f "*)         shift 3; printf '%s\n' "\$@" ;;
 esac
 exit 0
 STUB
@@ -397,10 +403,10 @@ STUB
     # That service alone: nothing else is recreated under the live stack.
     [[ "$calls" == *"compose up -d --no-deps --wait --wait-timeout 120 gatekeeper"* ]]
     [[ "$calls" == *"--network container:gk456"* ]]
-    [[ "$calls" == *"compose run -d --no-deps --name ic_boot_odoo_42"* ]]
+    [[ "$calls" == *"compose run --label traefik.enable=false --label sablier.enable=false -d --no-deps --name ic_boot_odoo_42"* ]]
     # It passed: the gatekeeper stays for the restart that follows.
     [[ "$calls" != *"compose rm -sf gatekeeper"* ]]
-    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
 }
 
 @test "boot-test removes the gatekeeper it started when the boot fails" {
@@ -410,7 +416,7 @@ STUB
     calls="$(cat "$CALLS")"
     # The stack is left as it was found: the old model, no gatekeeper.
     [[ "$calls" == *"compose rm -sf gatekeeper"* ]]
-    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
 }
 
 @test "boot-test stops when the gatekeeper it needs will not start" {
@@ -422,7 +428,7 @@ STUB
     [[ "$calls" != *"postgres-autoconf"* ]]
     [[ "$calls" == *"compose rm -sf gatekeeper"* ]]
     # Whatever was running is put back all the same.
-    [[ "$calls" == *"compose start odoo db smtp"* ]]
+    [[ "$calls" == *"compose start db odoo smtp"* ]]
 }
 
 @test "boot-test never lets compose touch the services the boot depends on" {
@@ -431,7 +437,7 @@ STUB
     run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
     [ "$status" -eq 0 ]
     calls="$(cat "$CALLS")"
-    [[ "$calls" == *"compose run -d --no-deps --name ic_boot_odoo_42"* ]]
+    [[ "$calls" == *"compose run --label traefik.enable=false --label sablier.enable=false -d --no-deps --name ic_boot_odoo_42"* ]]
 }
 
 @test "boot-test without a gatekeeper keeps its own network, as before" {

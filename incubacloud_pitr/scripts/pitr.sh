@@ -83,11 +83,11 @@ cluster_id() {
     db_psql "$1" -c "SELECT system_identifier FROM pg_control_system()"
 }
 
-# Whether a service of the stack is running now.
+# Whether a service of the stack is running now, one-off containers aside.
 running() {
     # The whole list is read: grep -q would stop at the first match and,
     # under pipefail, a docker still writing makes it "not running".
-    docker compose ps --status running --services 2>/dev/null | grep -x "$1" >/dev/null
+    ic_running_services 2>/dev/null | grep -x "$1" >/dev/null
 }
 
 # Wait until the database answers.
@@ -432,11 +432,11 @@ EOF
         # A script on the data directory, in a container of the db
         # service, as root, with $PGDATA set.
         #   $1     the script
-        #   $2...  docker compose run options (-e, -v)
+        #   $2...  ic_compose_run options (-e, -v)
         in_db() {
             local script="$1"
             shift
-            docker compose run --rm --no-deps -T -u root "$@" --entrypoint sh db -c "$script"
+            ic_compose_run --rm --no-deps -T -u root "$@" --entrypoint sh db -c "$script"
         }
         # Put the data from before the restore back.
         rollback() {
@@ -570,7 +570,8 @@ EOF
         # wal-fetch needs; the db service never holds them. Odoo is
         # stopped, so nothing of the instance's runs SQL meanwhile.
         docker rm -f "$recovery" >/dev/null 2>&1 || true
-        docker compose run -d --no-deps --name "$recovery" \
+        # shellcheck disable=SC2016  # expanded in the container
+        ic_compose_run -d --no-deps --name "$recovery" \
             -v "$dir/$ENVF:/run/pitr.env:ro" -e "IC_CLUSTER=$cluster" \
             --entrypoint sh db -c '
             while IFS="=" read -r k v; do
@@ -619,7 +620,7 @@ EOF
         in_db 'rm -rf "$PGDATA"/.pre-pitr-*'
         state=filestore
         fs=failed
-        if docker compose run --rm --no-deps -T --entrypoint sh "$AGENT" \
+        if ic_compose_run --rm --no-deps -T --entrypoint sh "$AGENT" \
                 /opt/walg/pitr_agent.sh fs-restore "$since"; then
             fs=restored
             state="done"

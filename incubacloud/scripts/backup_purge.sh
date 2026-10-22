@@ -75,7 +75,7 @@ ic_log "purging backup prefix via the instance's own backup container"
 
 set +e
 ic_purge_prefix_program \
-    | docker compose run --rm -T --entrypoint python3 backup -
+    | ic_compose_run --rm -T --entrypoint python3 backup -
 rc=$?
 set -e
 

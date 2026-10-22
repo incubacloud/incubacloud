@@ -56,7 +56,7 @@ case "$op" in
         ic_log "making $remote readable inside the odoo container"
         # ``--entrypoint=''`` skips doodba's addon-linking init so
         # ``id -u`` returns immediately.
-        odoo_uid="$(docker compose run --rm --entrypoint="" odoo id -u \
+        odoo_uid="$(ic_compose_run --rm --entrypoint="" odoo id -u \
             2>/dev/null | tr -d '\r\n')"
         [ -n "$odoo_uid" ] || ic_die "could not discover the odoo container UID"
         sudo chown "$odoo_uid":"$odoo_uid" "$remote"
@@ -72,7 +72,7 @@ case "$op" in
             ic_log "restoring $dbname from $remote"
         fi
         ic_db_load_args "$dbname" /mnt/restore.zip "$neutralize"
-        docker compose run --rm -v "$remote:/mnt/restore.zip:ro" \
+        ic_compose_run --rm -v "$remote:/mnt/restore.zip:ro" \
             odoo "${IC_DB_ARGS[@]}"
         ;;
 
@@ -124,7 +124,7 @@ END IF; END \$\$;"
             exit 0
         fi
         ic_log "ensuring incubacloud_connect is installed on $dbname"
-        docker compose run --rm odoo \
+        ic_compose_run --rm odoo \
             odoo -d "$dbname" -i incubacloud_connect --stop-after-init --no-http
         ;;
     *)

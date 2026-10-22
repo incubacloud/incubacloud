@@ -4,7 +4,7 @@
 # ``docker`` is stubbed on PATH so the script's own logic is what gets
 # exercised: argument handling, tilde expansion, the missing-directory
 # rules and the exact compose command each operation builds. The stub
-# answers the two read-only queries the script makes (the stack's
+# answers the read-only queries the script makes (the stack's
 # services, the running ones) from ``STUB_SERVICES`` / ``STUB_RUNNING``
 # without recording them, so ``DOCKER_CALLS`` holds what changes state.
 
@@ -20,7 +20,15 @@ setup() {
 #!/usr/bin/env bash
 case "$*" in
     "compose config --services") printf '%b' "${STUB_SERVICES:-}"; exit 0 ;;
-    "compose ps --status running --services") printf '%b' "${STUB_RUNNING:-}"; exit 0 ;;
+    "compose ps -q --status running") printf '%b' "${STUB_RUNNING:-}"; exit 0 ;;
+    "inspect -f "*)
+        # The ids are the service names; one ending in -run-1 is a
+        # one-off, which the real format prints as an empty line.
+        shift 3
+        for id in "$@"; do
+            case "$id" in *-run-1) echo ;; *) echo "$id" ;; esac
+        done
+        exit 0 ;;
 esac
 echo "docker $*" >> "$DOCKER_CALLS"
 STUB
@@ -151,6 +159,16 @@ docker compose restart odoo_net_setup" ]
     export STUB_RUNNING="db\n"
     run bash "$SCRIPT" "$HOME/project/inst" start odoo
     [ "$(cat "$DOCKER_CALLS")" = "docker compose start odoo" ]
+}
+
+@test "a one-off odoo is not odoo running: the sidecar is left alone" {
+    # ``compose ps --services --status running`` names a one-off after its
+    # service from compose 2.29 on; restarting the sidecar then would be
+    # for an odoo that does not run.
+    with_sidecar
+    export STUB_RUNNING="db\nodoo-run-1\n"
+    run bash "$SCRIPT" "$HOME/project/inst" up
+    [ "$(cat "$DOCKER_CALLS")" = "docker compose up -d" ]
 }
 
 @test "an operation that does not start odoo leaves the sidecar alone" {

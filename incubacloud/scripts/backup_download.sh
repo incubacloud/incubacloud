@@ -54,10 +54,9 @@ case "$op" in
         esac
         ic_log "dumping $dbname live ($scope)"
         ic_db_dump_args "$dbname" "/host-tmp/$(basename "$archive")" "$scope"
-        # Out of Traefik: a one-off container inherits the service's
-        # labels, and the proxy would send visitors to one that serves
-        # nothing while the dump runs.
-        docker compose run --rm -l traefik.enable=false -v /tmp:/host-tmp odoo \
+        # A one-off, so out of Traefik and Sablier (see ic_compose_run):
+        # visitors keep reaching the live odoo while the dump runs.
+        ic_compose_run --rm -v /tmp:/host-tmp odoo \
             "${IC_DB_ARGS[@]}"
         ;;
 

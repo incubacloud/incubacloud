@@ -61,7 +61,8 @@ _resume() {
 
 if ! _psql "SELECT 1" >/dev/null; then
     ic_log "instance database unreachable — running the update unguarded"
-    exec docker compose run --rm odoo click-odoo-update --database "$db"
+    ic_compose_run --rm odoo click-odoo-update --database "$db"
+    exit $?
 fi
 
 # A previous run may have died between pause and resume.
@@ -85,7 +86,7 @@ for _ in $(seq 1 "$tries"); do
     left="$(_psql "SELECT count(*) FROM ir_cron WHERE active" || echo 0)"
     if [ "${left:-0}" -eq 0 ]; then
         ic_log "no cron is running — updating"
-        docker compose run --rm odoo click-odoo-update --database "$db"
+        ic_compose_run --rm odoo click-odoo-update --database "$db"
         exit $?
     fi
     ic_log "$left cron(s) still executing — waiting ${interval}s"
