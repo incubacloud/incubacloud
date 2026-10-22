@@ -81,3 +81,9 @@ EOF
     run bash "$SCRIPT" nonsense "${TMP}/inst" prod odoo
     [ "$status" -ne 0 ]
 }
+
+@test "the update runs out of Traefik and Sablier" {
+    run bash "$SCRIPT" update "${TMP}/inst" prod odoo 3 1
+    [ "$status" -eq 0 ]
+    grep -q "compose run --label traefik.enable=false --label sablier.enable=false --rm odoo click-odoo-update" "${TMP}/calls"
+}

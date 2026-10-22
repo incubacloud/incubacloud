@@ -144,6 +144,56 @@ ic_compose_services() {
     return 1
 }
 
+# ── One-off containers ───────────────────────────────────────────────────
+#
+# A ``docker compose run`` container inherits its service's labels, and
+# what reads those labels takes it for the live service. Traefik routes
+# visitors to a container that serves nothing. Sablier counts it in a
+# sleeping tenant's group: while it lives, visitors get the waiting page
+# instead of their panel (QA, 2026-10-22: an ``odoo shell`` push of the
+# tenant's settings, in the very seconds the customer first opened the
+# panel), and an expired session or a Sablier restart stops it
+# mid-work. Sablier has no setting to leave one-offs out; it only reads
+# ``sablier.enable``.
+#
+# So every one-off a script starts goes through ic_compose_run, and every
+# "what is running" a script asks goes through ic_running_services. A
+# test (tests/test_oneoff_containers.py) fails on the raw commands.
+
+# The labels that keep a one-off out of Traefik and Sablier; the
+# executors' COMPOSE_RUN (models/abstract_executor.py) carries the same.
+IC_ONEOFF_LABELS=(--label traefik.enable=false --label sablier.enable=false)
+
+# ``docker compose run`` for the compose in the current directory, out of
+# Traefik and Sablier. Takes exactly the arguments ``docker compose run``
+# takes.
+ic_compose_run() {
+    docker compose run "${IC_ONEOFF_LABELS[@]}" "$@"
+}
+
+# Print the services of the compose in the current directory that are
+# running now, one per line, one-off containers left out. Returns 1 when
+# docker cannot list them, so a caller can tell "nothing runs" from
+# "could not read".
+#
+# ``docker compose ps --services --status running`` counts a one-off as
+# its service from compose 2.29 on (the hosts run 5.x), and so do
+# ``ps --format`` and ``ps -q --status running``; 2.20 did not. The
+# ``com.docker.compose.oneoff`` label is what every version agrees on.
+#
+# A container gone between the listing and the inspect (a one-off that
+# just ended) makes ``docker inspect`` fail for that id alone; it is not
+# running, so that is not a failed read.
+ic_running_services() {
+    local ids
+    ids="$(docker compose ps -q --status running)" || return 1
+    [ -n "$ids" ] || return 0
+    # Word splitting is the point: one container id per word.
+    # shellcheck disable=SC2086
+    { docker inspect -f '{{if ne (index .Config.Labels "com.docker.compose.oneoff") "True"}}{{index .Config.Labels "com.docker.compose.service"}}{{end}}' $ids 2>/dev/null || true; } \
+        | awk 'NF' | sort -u
+}
+
 # ── The instance's database tool ─────────────────────────────────────────
 #
 # What dumps and loads an instance's database inside its ``odoo``
@@ -154,7 +204,7 @@ ic_compose_services() {
 # whichever tool is in use:
 #
 #     ic_db_dump_args "$dbname" /host-tmp/out.zip all
-#     docker compose run --rm odoo "${IC_DB_ARGS[@]}"
+#     ic_compose_run --rm odoo "${IC_DB_ARGS[@]}"
 #
 # ``click-odoo`` (click-odoo-contrib, every series up to 19) and
 # ``odoo-db`` (``odoo db``, Odoo 18 and later, the only one on 20). Unset

@@ -52,6 +52,12 @@ if [ "$1" = "compose" ] && [ "$2" = "ps" ]; then
     fi
     exit 0
 fi
+if [ "$1" = "inspect" ]; then
+    # The ids ``compose ps -q`` printed are the service names themselves.
+    shift 3
+    printf '%s\n' "$@"
+    exit 0
+fi
 if [ "$1" = "compose" ] && [ "$2" = "run" ]; then
     touch "$RAN"
     # The last argument of ``compose run ... sh -c <program>`` is the
@@ -73,7 +79,7 @@ teardown() {
 @test "archive runs the backup service with compose run, not exec" {
     run bash "$SCRIPT" "$HOME/project/inst"
     [ "$status" -eq 0 ]
-    grep -q 'docker compose run --rm -T backup sh -c' "$DOCKER_CALLS"
+    grep -q 'docker compose run --label traefik.enable=false --label sablier.enable=false --rm -T backup sh -c' "$DOCKER_CALLS"
     ! grep -q 'compose exec' "$DOCKER_CALLS"
 }
 

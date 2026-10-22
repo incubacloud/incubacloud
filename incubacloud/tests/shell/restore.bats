@@ -39,7 +39,7 @@ teardown() {
 @test "verify-file discovers the odoo UID and hands the zip over to it" {
     run bash "$SCRIPT" verify-file "$DIR" "$ZIP"
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *'docker compose run --rm --entrypoint= odoo id -u'* ]]
+    [[ "$(cat "$CALLS")" == *'docker compose run --label traefik.enable=false --label sablier.enable=false --rm --entrypoint= odoo id -u'* ]]
     [[ "$(cat "$CALLS")" == *"sudo chown 1234:1234 $ZIP"* ]]
     [[ "$(cat "$CALLS")" == *"sudo chmod 600 $ZIP"* ]]
 }
@@ -71,7 +71,7 @@ STUB
 @test "restore-db mounts the zip read-only and copies over the DB" {
     run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP"
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"docker compose run --rm -v $ZIP:/mnt/restore.zip:ro odoo click-odoo-restoredb --copy --force prod /mnt/restore.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm -v $ZIP:/mnt/restore.zip:ro odoo click-odoo-restoredb --copy --force prod /mnt/restore.zip"* ]]
 }
 
 @test "restore-db does not neutralize unless asked" {
@@ -89,7 +89,7 @@ STUB
 @test "restore-db loads with the series' tool the panel names" {
     IC_DB_TOOL=odoo-db run bash "$SCRIPT" restore-db "$DIR" prod "$ZIP" 1
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"docker compose run --rm -v $ZIP:/mnt/restore.zip:ro odoo odoo db load --neutralize --force prod /mnt/restore.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm -v $ZIP:/mnt/restore.zip:ro odoo odoo db load --neutralize --force prod /mnt/restore.zip"* ]]
     [[ "$(cat "$CALLS")" != *"click-odoo"* ]]
 }
 
@@ -144,7 +144,7 @@ STUB
     run bash "$SCRIPT" ensure-connect "$DIR" odoo prod
     [ "$status" -eq 0 ]
     [[ "$(cat "$CALLS")" == *"psql -U odoo -d prod"* ]]
-    [[ "$(cat "$CALLS")" == *"docker compose run --rm odoo odoo -d prod -i incubacloud_connect --stop-after-init --no-http"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm odoo odoo -d prod -i incubacloud_connect --stop-after-init --no-http"* ]]
 }
 
 @test "ensure-connect boots no Odoo for a module already installed" {

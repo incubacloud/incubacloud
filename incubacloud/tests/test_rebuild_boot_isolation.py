@@ -121,7 +121,7 @@ class TestRebuildBootTestIsolation(BaseCase):
         needs putting back.
         """
         self.assertIn("trap ic_boot_restore EXIT", self.block)
-        self.assertIn("--status running", self.block)
+        self.assertIn("ic_running_services", self.block)
 
     def test_the_restore_starts_rather_than_ups_the_services(self):
         """``up`` would deploy the very image the boot test just rejected.
@@ -161,4 +161,4 @@ class TestRebuildBootTestIsolation(BaseCase):
         """Without ``--no-deps`` Compose recreates any dependency whose
         definition the template changed: under v10, the live ``db``,
         restarted in the middle of the test (lab of 22-oct-2026)."""
-        self.assertIn("docker compose run -d --no-deps", self.block)
+        self.assertIn("ic_compose_run -d --no-deps", self.block)

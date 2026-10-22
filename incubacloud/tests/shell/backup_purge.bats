@@ -61,7 +61,7 @@ _env_file() {
     # ``exec`` needs the stack up; a stopped instance must purge too.
     run bash "$PURGE" "$HOME/project/inst"
     [ "$status" -eq 0 ]
-    grep -q 'docker compose run --rm -T --entrypoint python3 backup -' \
+    grep -q 'docker compose run --label traefik.enable=false --label sablier.enable=false --rm -T --entrypoint python3 backup -' \
         "$DOCKER_CALLS"
     ! grep -q 'compose exec' "$DOCKER_CALLS"
 }

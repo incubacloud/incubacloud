@@ -29,7 +29,9 @@ setup() {
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
 case "$*" in
-    *"ps --status running --services"*) printf '%b' "${STUB_RUNNING:-db\nodoo\npitr\n}" ;;
+    *"compose ps -q --status running"*) printf '%b' "${STUB_RUNNING:-db\nodoo\npitr\n}" ;;
+    # ic_running_services: the ids above are the service names.
+    *"com.docker.compose.oneoff"*) shift 3; printf '%s\n' "$@" ;;
     *"test -x /opt/walg/archive"*) exit "${STUB_ARCHIVE_MOUNTED:-0}" ;;
     *"SHOW archive_mode"*) echo "${STUB_ARCHIVE_MODE:-on}" ;;
     *"FROM pg_settings WHERE name = 'archive_mode'"*) echo "${STUB_ARCHIVE_SOURCE:-configuration file}" ;;

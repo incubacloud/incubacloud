@@ -82,7 +82,7 @@ ic_log "taking the archive copy and pruning to it"
 
 # What was running before the step, to leave the instance as it was if
 # the archive fails. Empty and unknown are different answers.
-if running_before="$(docker compose ps --services --status running 2>/dev/null)"; then
+if running_before="$(ic_running_services 2>/dev/null)"; then
     known_before=1
 else
     known_before=0
@@ -100,7 +100,7 @@ stop_what_the_step_started() {
         ic_warn "could not read what was running before; leaving the stack as it is."
         return 0
     fi
-    if ! now="$(docker compose ps --services --status running 2>/dev/null)"; then
+    if ! now="$(ic_running_services 2>/dev/null)"; then
         ic_warn "could not read what is running now; leaving the stack as it is."
         return 0
     fi
@@ -116,7 +116,8 @@ stop_what_the_step_started() {
 }
 
 set +e
-docker compose run --rm -T backup sh -c '
+# shellcheck disable=SC2016  # expanded by the container's shell
+ic_compose_run --rm -T backup sh -c '
 set -eu
 # On a stopped instance ``run`` starts the database with this container,
 # and on a loaded host it may not answer yet when the dump starts: wait

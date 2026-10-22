@@ -33,13 +33,13 @@ teardown() {
 @test "a db-only live dump asks for no filestore" {
     run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip db
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"docker compose run --rm -l traefik.enable=false -v /tmp:/host-tmp odoo click-odoo-backupdb --no-filestore prod /host-tmp/out.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm -v /tmp:/host-tmp odoo click-odoo-backupdb --no-filestore prod /host-tmp/out.zip"* ]]
 }
 
 @test "a live dump uses the series' tool the panel names" {
     IC_DB_TOOL=odoo-db run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip all
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"docker compose run --rm -l traefik.enable=false -v /tmp:/host-tmp odoo odoo db dump prod /host-tmp/out.zip"* ]]
+    [[ "$(cat "$CALLS")" == *"docker compose run --label traefik.enable=false --label sablier.enable=false --rm -v /tmp:/host-tmp odoo odoo db dump prod /host-tmp/out.zip"* ]]
     [[ "$(cat "$CALLS")" != *"click-odoo"* ]]
 }
 
@@ -57,12 +57,13 @@ teardown() {
     [[ "$(cat "$CALLS")" != *"--no-filestore"* ]]
 }
 
-@test "a live dump's one-off container stays out of Traefik" {
-    # It inherits the service's labels; the proxy would send visitors to a
-    # container that serves nothing while the dump runs.
+@test "a live dump's one-off container stays out of Traefik and Sablier" {
+    # It inherits the service's labels: the proxy would send visitors to a
+    # container that serves nothing while the dump runs, and Sablier would
+    # hold a sleeping tenant's panel behind its waiting page.
     run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip all
     [ "$status" -eq 0 ]
-    [[ "$(cat "$CALLS")" == *"run --rm -l traefik.enable=false "* ]]
+    [[ "$(cat "$CALLS")" == *"run --label traefik.enable=false --label sablier.enable=false --rm "* ]]
 }
 
 @test "a live dump never touches the backup container" {

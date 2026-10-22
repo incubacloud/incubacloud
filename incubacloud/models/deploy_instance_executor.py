@@ -28,6 +28,7 @@ from ._repo_requirements import (
     resolve_github_client,
 )
 from .abstract_executor import (
+    COMPOSE_RUN,
     AbstractSSHExecutor,
     JobRefused,
     sql_escape_literal,
@@ -1515,7 +1516,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #     so it waits for the db to be healthy before running.
             (
                 "Initialize database",
-                f"cd {d} && docker compose run --rm odoo "
+                f"cd {d} && {COMPOSE_RUN} --rm odoo "
                 f"odoo --stop-after-init -i base,incubacloud_connect --load-language {lang}",
                 {"stop_on_failure": True},
             ),
@@ -1523,7 +1524,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             #     can detect which modules changed via click-odoo-update.
             (
                 "Initialize module checksums",
-                f"cd {d} && docker compose run --rm odoo"
+                f"cd {d} && {COMPOSE_RUN} --rm odoo"
                 f" click-odoo-update --only-compute-hashes"
                 f" --database {inst.postgres_dbname or 'prod'}",
             ),

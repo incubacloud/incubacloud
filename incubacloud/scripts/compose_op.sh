@@ -58,7 +58,7 @@ reinject_egress_route() {
     local services running
     services="$(docker compose config --services 2>/dev/null || true)"
     grep -qx odoo_net_setup <<<"$services" || return 0
-    running="$(docker compose ps --status running --services 2>/dev/null || true)"
+    running="$(ic_running_services 2>/dev/null || true)"
     grep -qx odoo <<<"$running" || return 0
     ic_log "restarting odoo_net_setup after odoo, so odoo's default route is the filtered one"
     docker compose restart odoo_net_setup
@@ -82,7 +82,7 @@ rejoin_gatekeeper() {
         [ "$svc" = "gatekeeper" ] && touched=1
     done
     [ "$touched" -eq 1 ] || return 0
-    running="$(docker compose ps --status running --services 2>/dev/null || true)"
+    running="$(ic_running_services 2>/dev/null || true)"
     grep -qx odoo <<<"$running" || return 0
     ic_log "restarting odoo after gatekeeper, so odoo runs in the network gatekeeper has now"
     docker compose restart odoo

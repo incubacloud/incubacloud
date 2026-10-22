@@ -109,8 +109,7 @@ case "$op" in
         # and it does not reconcile networks, so the restore cannot trip
         # over the same drift as the failure it is cleaning up after. On
         # services that never stopped it is a no-op.
-        running_before="$(docker compose ps --services --status running \
-            2>/dev/null | tr '\n' ' ')"
+        running_before="$(ic_running_services 2>/dev/null | tr '\n' ' ')"
         # shellcheck disable=SC2317  # reached through the EXIT trap below
         ic_boot_restore() {
             ic_boot_rc=$?
@@ -247,7 +246,7 @@ case "$op" in
         }
         set +e
         # shellcheck disable=SC2016  # expanded by the container's bash
-        docker compose run -d --no-deps --name "$odoo_container" \
+        ic_compose_run -d --no-deps --name "$odoo_container" \
             -e "PGHOST=$pg_host" -e PGPORT=5432 \
             -e WAIT_DB=false -e UNACCENT=false odoo \
             bash -c 'for _ in $(seq 120); do

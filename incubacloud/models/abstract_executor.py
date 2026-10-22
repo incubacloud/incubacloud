@@ -35,6 +35,51 @@ CONNECTION_RETRY_SECONDS = 30
 #: the exception class alone. Ours, so safe to match on.
 CONNECTION_RETRY_MARKER = "Transient connection error on attempt"
 
+#: ``docker compose run`` for an instance's stack, out of Traefik and
+#: Sablier. A one-off container inherits its service's labels: Traefik
+#: would route visitors to it and Sablier would count it in a sleeping
+#: tenant's group, holding the panel behind its waiting page and stopping
+#: the one-off when the session expires. The same labels as
+#: ``IC_ONEOFF_LABELS`` in ``scripts/lib/common.sh``, which the scripts
+#: use; a test keeps the two equal and every command on one of them.
+COMPOSE_RUN = (
+    "docker compose run"
+    " --label traefik.enable=false --label sablier.enable=false"
+)
+
+#: The opening of a ``docker inspect -f`` template that keeps what follows,
+#: up to its ``{{end}}``, for a container the stack itself created and
+#: drops it for a one-off. ``docker compose ps`` lists one-offs under their
+#: service's name — ``-a -q <service>`` on every compose version, the
+#: other listings from 2.29 on (the hosts run 5.x) — and the
+#: ``com.docker.compose.oneoff`` label is the only thing that tells them
+#: apart on every version.
+NOT_ONEOFF = (
+    '{{if ne (index .Config.Labels "com.docker.compose.oneoff") "True"}}'
+)
+
+
+def compose_own_container(service):
+    """Return a shell command printing *service*'s own container id.
+
+    ``docker compose ps -a -q <service>`` also prints the ids of the
+    service's one-off containers, running or left behind, and a caller
+    that takes its output for one id breaks on the second. This keeps the
+    container the stack created.
+
+    :param str service: a compose service name of the instance's stack,
+        run from the instance directory.
+    :returns: a command that prints one id, or nothing when the service
+        has no container, and fails when docker cannot list the stack.
+    :rtype: str
+    """
+    own_id = shlex.quote(NOT_ONEOFF + "{{.Id}}{{end}}")
+    return (
+        f"ids=$(docker compose ps -a -q {service}) && "
+        f'{{ [ -z "$ids" ] || docker inspect -f {own_id} $ids; }}'
+        f" | awk NF | head -n 1"
+    )
+
 # Errnos that mark a transient, retryable connection problem (host
 # momentarily unreachable / refused / reset / rebooting), as opposed to a
 # permanent misconfiguration.

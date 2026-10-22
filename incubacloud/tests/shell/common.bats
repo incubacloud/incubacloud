@@ -205,3 +205,95 @@ _repo_with_tracked_log() {
     [ "${#IC_DB_ARGS[@]}" -eq 4 ]
     [ "${IC_DB_ARGS[3]}" = "/host tmp/out.zip" ]
 }
+
+# ── One-off containers ───────────────────────────────────────────────────
+
+# A docker for the one-off helpers. ``compose ps -q --status running``
+# answers the ids in $STUB_IDS, or fails when STUB_PS_FAILS=1; ``inspect``
+# reads "<id> <service> <oneoff>" lines from $STUB_CONTAINERS and prints,
+# like the real format, the service of a container that is not a one-off
+# and an empty line for one that is; an id it does not know fails the
+# command after the others are printed, as docker does. ``compose run``
+# is recorded in $TMP/calls.
+_oneoff_docker() {
+    docker() {
+        case "$*" in
+            "compose ps -q --status running")
+                [ "${STUB_PS_FAILS:-0}" = 1 ] && return 1
+                printf '%s' "${STUB_IDS:-}"
+                return 0
+                ;;
+            "compose run "*)
+                printf '%s\n' "$*" >> "$TMP/calls"
+                return 0
+                ;;
+            "inspect "*)
+                local id line rc=0
+                shift 3
+                for id in "$@"; do
+                    line="$(grep "^$id " <<<"${STUB_CONTAINERS:-}")" || { rc=1; continue; }
+                    set -- $line
+                    [ "$3" = True ] && echo || echo "$2"
+                done
+                return "$rc"
+                ;;
+        esac
+        return 99
+    }
+}
+
+@test "ic_compose_run keeps the one-off out of Traefik and Sablier" {
+    _oneoff_docker
+    run ic_compose_run --rm -T odoo odoo shell
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TMP/calls")" = "compose run --label traefik.enable=false --label sablier.enable=false --rm -T odoo odoo shell" ]
+}
+
+@test "ic_compose_run passes an argument with spaces as one word" {
+    _oneoff_docker
+    docker() { printf '%s\n' "$@" > "$TMP/argv"; }
+    ic_compose_run --rm odoo sh -c "echo two words"
+    [ "$(tail -n 1 "$TMP/argv")" = "echo two words" ]
+}
+
+@test "ic_running_services leaves one-off containers out" {
+    _oneoff_docker
+    STUB_IDS=$'a1\nb2\nc3\n'
+    STUB_CONTAINERS=$'a1 db False\nb2 odoo True\nc3 smtp False'
+    run ic_running_services
+    [ "$status" -eq 0 ]
+    [ "$output" = $'db\nsmtp' ]
+}
+
+@test "ic_running_services names a service once, however many containers run it" {
+    _oneoff_docker
+    STUB_IDS=$'a1\nb2\n'
+    STUB_CONTAINERS=$'a1 odoo False\nb2 odoo False'
+    run ic_running_services
+    [ "$output" = "odoo" ]
+}
+
+@test "ic_running_services prints nothing when nothing runs" {
+    _oneoff_docker
+    STUB_IDS=""
+    run ic_running_services
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "ic_running_services fails when docker cannot list the stack" {
+    _oneoff_docker
+    STUB_PS_FAILS=1
+    run ic_running_services
+    [ "$status" -eq 1 ]
+}
+
+@test "a one-off that ends before the inspect is not a failed read" {
+    _oneoff_docker
+    STUB_IDS=$'a1\ngone\n'
+    STUB_CONTAINERS='a1 db False'
+    set -o pipefail
+    run ic_running_services
+    [ "$status" -eq 0 ]
+    [ "$output" = "db" ]
+}
