@@ -51,15 +51,22 @@ WRITE_CALLS = frozenset({
 #: runs ``on_success`` and ``on_failure``, ``_dispatch_abort`` ``on_abort``.
 HOOKS = frozenset({"on_success", "on_failure", "on_abort"})
 
-#: The two hooks that write with ``self.env`` and are not terminal, named
+#: The hooks that write with ``self.env`` and are not terminal, named
 #: one by one because each is an exception to the rule. ``on_blocked``
 #: writes the job's own transaction: a blocked job ends without an error,
 #: so that transaction commits, and ``cloud.job._block_on`` flushes it
 #: before ``execute`` clears the environment. ``on_unblocked`` runs in
 #: the transaction of whoever resolved the alert, before the job is
-#: queued again. Neither may call a ``HOOK_HELPERS`` method, which counts
-#: on a durable cursor.
-OWN_TRANSACTION_HOOKS = frozenset({"on_blocked", "on_unblocked"})
+#: queued again. ``on_cancelled_queued`` runs in the transaction of
+#: whoever cancelled a job that waited in its queue, and
+#: ``_merge_queued_payload`` in the one that queued the request it
+#: absorbs: neither job has run, so there is no job transaction to keep
+#: out of. None may call a ``HOOK_HELPERS`` method, which counts on a
+#: durable cursor.
+OWN_TRANSACTION_HOOKS = frozenset({
+    "on_blocked", "on_unblocked", "on_cancelled_queued",
+    "_merge_queued_payload",
+})
 
 #: Methods that write with ``self.env`` and are only ever called from a
 #: hook (or from another of them), so they write on the hook's durable
@@ -67,11 +74,11 @@ OWN_TRANSACTION_HOOKS = frozenset({"on_blocked", "on_unblocked"})
 HOOK_HELPERS = {
     "_record_shipped_accounts": "records the ACL a successful run shipped",
     "_sync_backup_records": "mirrors the listed backups after success",
-    "_enqueue_coalesced_rebuild_if_pending": "chains a rebuild once done",
     "_alert_on_purge_failure": "alerts on a failed teardown",
     "_stamp_core_commit": "stamps the core release a run shipped",
     "_stamp_tenant_module_commit": "stamps the tenant module a run shipped",
     "_record_rehome": "warns when a moved panel kept its old host admitted",
+    "_grade_reachability": "the health probe's verdict on whether Odoo is reached",
 }
 
 #: Calls named like a write that do not touch the database, keyed by

@@ -23,6 +23,7 @@ from odoo.addons.incubacloud.models.host_hardening_executor import (
 )
 
 from ._certs import make_pair
+from .test_cloud_job import _run_after_commit
 
 
 class TestCloudHostTraefikDefaults(TransactionCase):
@@ -1273,21 +1274,29 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
             jobs.mapped("job_type_id.code"), ["host_hardening", "full_setup"],
         )
 
-    def test_a_refused_chain_leaves_nothing_queued(self):
-        # ``state`` follows the queue job, so the busy job has to be
-        # queued for real, not created with a state.
+    def test_a_chain_asked_for_on_a_busy_host_waits_its_turn(self):
         busy = self.env["cloud.job"].sudo().browse(
             self.env["cloud.job"].sudo().enqueue(
                 self.host.id, False, "full_setup",
             )
         )
-        self.assertIn(busy.state, busy._active_states)
+        self.assertEqual(busy.state, "pending")
         data = self._call(
             "cloud_apply_host_hardening",
             host_id=self.host.id, chain_full_setup=True,
         )
-        self.assertFalse(data["ok"])
-        self.assertEqual(self._host_jobs(), busy)
+        self.assertTrue(data["ok"])
+        chain = self._host_jobs() - busy
+        self.assertEqual(
+            chain.mapped("job_type_id.code"), ["host_hardening", "full_setup"],
+        )
+        self.assertEqual(set(chain.mapped("state")), {"queued"})
+        # Only now: a test cursor cannot open under the route's mocked
+        # request, and the dispatcher's cursor must be one.
+        self.registry_enter_test_mode()
+        busy.queue_job_id.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
 
     def test_preflight_sees_a_hardening_already_queued(self):
         self._call("cloud_apply_host_hardening", host_id=self.host.id)

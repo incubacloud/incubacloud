@@ -386,19 +386,27 @@ class TestLabelMapFollowsTheInstanceSet(TransactionCase):
 
         That stampede is what fed the serialization race of 2026-08-13:
         the losing transactions were rolled back and re-run, and reported
-        failures for teardowns that had already finished. Collapsing is
-        safe because the playbook renders its label map when it runs, so
-        a job still waiting picks up the final state either way.
+        failures for teardowns that had already finished. The first
+        refresh is dispatched at once; the host's queue keeps the second
+        waiting behind it, and every further one collapses onto that
+        waiting job (the type is ``queue_collapse``), which is safe
+        because the playbook renders its label map when it runs.
         """
         first = self.host.refresh_observability_labels(reason="one")
         second = self.host.refresh_observability_labels(reason="two")
         third = self.host.refresh_observability_labels(reason="three")
+        fourth = self.host.refresh_observability_labels(reason="four")
         self.assertEqual(
-            len(self._queued()), 1,
+            len(self._queued()), 2,
             "each refresh queued its own install job",
         )
-        self.assertEqual(second, first)
-        self.assertEqual(third, first)
+        self.assertNotEqual(second, first)
+        self.assertEqual(third, second)
+        self.assertEqual(fourth, second)
+        self.assertEqual(
+            self.env["cloud.job"].browse([first, second]).mapped("state"),
+            ["pending", "queued"],
+        )
 
     def test_a_running_install_does_not_absorb_a_later_change(self):
         """A started job already rendered its map; a change after it needs

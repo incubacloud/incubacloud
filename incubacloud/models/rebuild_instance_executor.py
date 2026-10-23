@@ -18,8 +18,6 @@ Flow:
 """
 from datetime import datetime, timezone
 
-from odoo import fields
-
 from odoo.addons.queue_job.exception import RetryableJobError
 from .host_build_lock import HostBuildLockMixin
 
@@ -363,59 +361,51 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             f"✓ '{inst.name}' rebuilt and restarted"
             f" with updated configuration."
         )
-        self._enqueue_coalesced_rebuild_if_pending(inst)
         self._call_addon_hook(inst, "_after_stack_rendered")
 
-    def _enqueue_coalesced_rebuild_if_pending(self, inst):
-        """Fold queued pushes into a follow-up rebuild after a successful one.
+    #: The payload keys that describe one GitHub push.
+    _PUSH_KEYS = (
+        'push_repo', 'push_branch', 'push_sha', 'push_message', 'push_by',
+    )
 
-        Pending pushes accumulated by ``cloud.github.event`` while this
-        rebuild was running (or within the cooldown window) are
-        consumed here in the post-success cursor: their payloads ride
-        along on a new ``rebuild_instance`` job so every skipped push
-        remains visible end-to-end, and the unlink + new enqueue commit
-        atomically with the success write.
+    @classmethod
+    def _merge_queued_payload(cls, waiting_job, payload):
+        """A push merges into the rebuild of a push already waiting.
+
+        A rebuild asked for by a GitHub push (``trigger: webhook``) while
+        one of the same origin waits on the instance does not queue a
+        second one: the waiting job's list of pushes grows with the new
+        one, under ``coalesced_pushes``, and its head — the push_* fields
+        a job list shows — stays the first push. Pushes to different
+        repositories of the instance merge too, on purpose: a rebuild
+        pulls every repository's branch head when it runs, so one build
+        covers them all and every push stays visible in the job. A
+        rebuild someone asked for by hand, or one already dispatched, is
+        not merged into.
+
+        :param waiting_job: a ``queued`` rebuild of the instance
+        :param dict payload: the new request's payload
+        :return: whether the push was absorbed
+        :rtype: bool
         """
-        if not inst or not inst.host_id:
-            return
-        pending = inst.pending_push_ids.sorted('create_date')
-        if not pending:
-            return
-        coalesced = [p._to_payload() for p in pending]
-        head = coalesced[-1]
-        payload = {
-            'trigger': 'coalesced',
-            'push_repo': head['push_repo'],
-            'push_branch': head['push_branch'],
-            'push_sha': head['push_sha'],
-            'push_message': head['push_message'],
-            'push_by': head['push_by'],
-            'coalesced_pushes': coalesced,
-        }
-        try:
-            self.env['cloud.job'].enqueue(
-                inst.host_id.id, inst.id, 'rebuild_instance',
-                payload=payload,
-                # This runs from on_success, so THIS rebuild is still
-                # 'started' on the very same instance: the active-job
-                # guard would match it and refuse to queue the follow-up,
-                # leaving the coalesced pushes stranded forever.
-                bypass_running_check=True,
-            )
-            inst.write({'last_auto_rebuild': fields.Datetime.now()})
-            pending.unlink()
-            self._sys(
-                f"↻ Enqueued coalesced rebuild carrying"
-                f" {len(coalesced)} queued push(es)."
-            )
-        except Exception:
-            # Leave the pending rows intact so the operator can see what
-            # was queued; the next webhook or manual rebuild will pick
-            # them up.
-            self._sys(
-                "⚠ Failed to enqueue coalesced rebuild — pending pushes"
-                " preserved for the next attempt."
-            )
+        if payload.get('trigger') != 'webhook':
+            return False
+        waiting = dict(waiting_job.payload or {})
+        if waiting.get('trigger') not in ('webhook', 'coalesced'):
+            return False
+        push = {key: payload.get(key, '') for key in cls._PUSH_KEYS}
+        pushes = list(waiting.get('coalesced_pushes') or [])
+        if not pushes:
+            pushes.append({key: waiting.get(key, '') for key in cls._PUSH_KEYS})
+        pushes.append(push)
+        waiting.update(trigger='coalesced', coalesced_pushes=pushes)
+        # Under the queue's lock, but on this transaction's snapshot: if a
+        # dispatcher started the job after the snapshot was taken,
+        # PostgreSQL refuses this update (a serialization failure), the
+        # transaction rolls back and is retried (an HTTP request by Odoo,
+        # a queue job by queue_job), finding the job no longer waiting.
+        waiting_job.write({'payload': waiting})
+        return True
 
     async def on_abort(self, exc):
         """A rebuild that ended without an outcome leaves the record alone.

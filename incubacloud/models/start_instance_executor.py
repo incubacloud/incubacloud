@@ -1,4 +1,4 @@
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import COMPOSE_OP_EXIT_UNCHECKED, AbstractSSHExecutor
 
 
 class StartInstanceExecutor(AbstractSSHExecutor):
@@ -21,8 +21,20 @@ class StartInstanceExecutor(AbstractSSHExecutor):
                 self.run_script(
                     "compose_op.sh", [self._inst_dir(inst), "up"],
                 ),
+                {"continue_on": (COMPOSE_OP_EXIT_UNCHECKED,)},
             ),
         ]
+
+    def parse_results(self, results):
+        """Fail-closed like the base, except when only the check failed.
+
+        ``compose_op.sh`` exits ``COMPOSE_OP_EXIT_UNCHECKED`` when the
+        containers started but the steps that follow could not be
+        checked: the job succeeds, with a warning in its log.
+        """
+        return super().parse_results(
+            self._accept_unchecked_compose_op(results, "Start containers"),
+        )
 
     async def on_success(self, results):
         inst = self._inst()

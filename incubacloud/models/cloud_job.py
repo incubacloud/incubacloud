@@ -6,11 +6,12 @@ import json
 import logging
 import re
 import urllib.request
+import uuid
 from datetime import timedelta
 
 from psycopg2 import OperationalError
 
-from odoo import _, api, fields, models
+from odoo import SUPERUSER_ID, _, api, fields, models
 from odoo.exceptions import AccessError, UserError
 from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 from odoo.tools import config as odoo_config
@@ -21,6 +22,7 @@ from odoo.addons.queue_job.exception import JobError, RetryableJobError
 from ..github.http_utils import safe_urlopen
 from ..mail_layout import wrap_in_mail_layout
 from ..net.outbound import post_json
+from ._concurrency import read_committed_cursor
 from ._repo_requirements import create_pip_conflict_alert, detect_pip_conflicts
 from .encrypted_char import EncryptedChar
 from .abstract_executor import (
@@ -34,20 +36,69 @@ from .abstract_executor import (
     is_transient_connection_error,
 )
 from .registry import executor_registry
+from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
 
 
-# Namespace used for PostgreSQL transactional advisory locks on
-# ``cloud.job.enqueue``. The pair ``(namespace, instance_id)`` serialises
-# concurrent enqueue() calls targeting the same instance so two racing
-# requests cannot create parallel jobs. The lock is released on COMMIT
-# or ROLLBACK automatically — no cleanup possible if the process dies.
+# Namespace used for PostgreSQL transactional advisory locks on an
+# instance's job queue. The pair ``(namespace, instance_id)`` serialises
+# the callers that enqueue, dispatch or cancel on the same instance, so
+# two racing requests cannot both find it idle and start parallel jobs.
+# The lock is released on COMMIT or ROLLBACK automatically — no cleanup
+# possible if the process dies.
 _JOB_LOCK_NAMESPACE = 0x0C10D10B
 # Separate namespace for host-scoped jobs (no instance_id). A host.id and an
 # instance.id can collide numerically, so host locks must live in their own
 # namespace to avoid falsely serialising unrelated host/instance work.
 _HOST_JOB_LOCK_NAMESPACE = 0x0C10D10C
+
+#: How many entries may wait in one queue (an instance's, or a host's for
+#: host-level jobs). A chain is one entry. Follow-ups an executor queues
+#: from its own run, retries and pushes merged into a waiting rebuild
+#: neither count nor are refused.
+QUEUE_MAX_WAITING = 5
+
+_CHAIN_REF_RE = re.compile(r"^__chain_job_(\d+)__$")
+
+
+def _scope_label(scope):
+    """Name a queue for a log line: ``instance N`` or ``host N``."""
+    return f"instance {scope[0]}" if scope[0] else f"host {scope[1]}"
+
+
+def _dispatch_scope_fresh(registry, scope):
+    """Serve one queue on a cursor of its own, READ COMMITTED; never raises.
+
+    The dispatcher that every event registers for after its commit
+    (``cloud.job._schedule_dispatch``) and that the sweep runs per queue.
+    Odoo's cursors are REPEATABLE READ: the runner that ends a job reads
+    the snapshot it took when the job started, and sees nothing queued
+    during the run — a restart pressed while a rebuild ran. A fresh
+    cursor sees what every transaction committed. Whatever goes wrong
+    here is logged and stays here: the event that led to it (a job's
+    end, a cancellation, an alert closed) has already been recorded, and
+    the sweep comes by every two minutes.
+
+    It runs as the platform (``as_platform``): what it writes itself — a
+    waiting job cancelled because its instance is gone, with its note —
+    is the platform's doing. The jobs it starts run as their creators
+    (``cloud.job._dispatch_single``).
+
+    :param registry: the Odoo registry to open the cursor on
+    :param scope: ``(instance_id, host_id)`` as ``_scope_of_step`` gives it
+    :return: whether an entry was dispatched
+    :rtype: bool
+    """
+    try:
+        with read_committed_cursor(registry) as cr:
+            Job = as_platform(api.Environment(cr, SUPERUSER_ID, {})["cloud.job"])
+            return bool(Job._dispatch_next(*scope))
+    except Exception:  # the event this follows is recorded already
+        _logger.exception(
+            "cloud.job: could not serve the queue of %s", _scope_label(scope),
+        )
+        return False
 
 
 def _webhook_fields(payload):
@@ -82,14 +133,55 @@ class CloudJob(models.Model):
     _description = "Job executed remotely on a host"
 
     name = fields.Char(string="Job Name")
-    host_id = fields.Many2one("cloud.host", required=True, string="Cloud Host")
+    # Both indexed: every look at a queue filters on one of them.
+    host_id = fields.Many2one(
+        "cloud.host", required=True, string="Cloud Host", index=True,
+    )
     job_type_id = fields.Many2one(
         "cloud.job.type",
         required=True,
     )
+    # The job's own state, not a mirror of ``queue_job_id.state``: a job
+    # waits in its target's queue (``queued``) with no queue.job at all,
+    # and only once dispatched does it follow the queue.job's state,
+    # which ``queue_job_ext`` writes here on every transition the runner
+    # makes through the ORM (``enqueued`` is written by SQL and shows as
+    # ``pending``). Empty while the job waits for an alert
+    # (``blocked_alert_id``) before it was ever dispatched.
     state = fields.Selection(
-        related="queue_job_id.state",
-        store=True,
+        [
+            ("queued", "Queued"),
+            ("pending", "Pending"),
+            ("enqueued", "Enqueued"),
+            ("wait_dependencies", "Waiting on Dependencies"),
+            ("started", "Started"),
+            ("done", "Done"),
+            ("failed", "Failed"),
+            ("cancelled", "Cancelled"),
+        ],
+        string="State",
+        index=True,
+        copy=False,
+    )
+    queue_head = fields.Boolean(
+        string="Head of the Queue",
+        default=False,
+        copy=False,
+        help=(
+            "Dispatched before everything else waiting on the target:"
+            " a follow-up an executor queued from its own run, or the"
+            " retry of a failed job."
+        ),
+    )
+    queue_chain_key = fields.Char(
+        string="Chain Key",
+        index=True,
+        copy=False,
+        help=(
+            "Shared by the steps of one chain. A chain waits in the"
+            " queue as one entry and is dispatched whole, with its"
+            " queue.job dependencies, when its turn comes."
+        ),
     )
     date_done = fields.Datetime(
         related="queue_job_id.date_done",
@@ -129,6 +221,7 @@ class CloudJob(models.Model):
         "cloud.instance",
         string="Instance",
         ondelete="set null",
+        index=True,
     )
     blocked_alert_id = fields.Many2one(
         "cloud.alert",
@@ -157,29 +250,30 @@ class CloudJob(models.Model):
                 job.queue_job_id = None
 
     @api.model
-    def enqueue_chain(self, steps):
-        """Enqueue a chain of jobs that run sequentially.
+    def enqueue_chain(self, steps, bypass_running_check=False):
+        """Queue a chain of jobs that run one after the other.
 
-        Uses OCA queue_job's DelayableChain so each job waits for
-        the previous one to finish before starting.
+        The chain is one entry of the queue of every target it touches
+        (a staging built from production waits in production's queue
+        and in the staging's): it is dispatched whole, as a queue_job
+        ``DelayableChain`` whose steps wait on each other, once every one
+        of those targets is free and the chain is first in each queue.
+        Until then its steps are ``queued`` records sharing a
+        ``queue_chain_key``. Cancelling it while it waits cancels every
+        step.
 
         steps: list of dicts {host_id, instance_id, job_type_code, payload}
 
         Payload values matching ``__chain_job_N__`` (0-indexed) are
-        replaced with the cloud.job ID of step N, allowing later
-        steps to reference earlier ones.
+        replaced with the cloud.job ID of step N when the chain is
+        dispatched, allowing later steps to reference earlier ones.
+
+        ``bypass_running_check`` means what it does for ``enqueue``: the
+        chain belongs to the job that queues it and goes to the head of
+        its queues (a rebuild's follow-up chain of its addons).
 
         Returns: list of cloud.job IDs (in execution order)
         """
-        _REF_RE = re.compile(r"^__chain_job_(\d+)__$")
-
-        # Advisory lock on every instance touched by the chain. Two
-        # concurrent enqueue_chain()/enqueue() calls targeting the same
-        # instance serialise here; once we hold the lock we verify there
-        # is no active user job for that instance before creating new
-        # ones. Locks are released on COMMIT/ROLLBACK automatically.
-        seen_instance_ids = set()
-        seen_host_ids = set()
         hidden = self._get_hidden_job_types()
         for step in steps:
             # Same server-side role gate as ``enqueue`` — an arbitrary
@@ -188,107 +282,62 @@ class CloudJob(models.Model):
             self._check_job_type_allowed(
                 step["job_type_code"], step.get("instance_id"),
             )
-            inst_id = step.get("instance_id")
-            if inst_id and inst_id not in seen_instance_ids:
-                self.env.cr.execute(
-                    "SELECT pg_advisory_xact_lock(%s, %s)",
-                    (_JOB_LOCK_NAMESPACE, inst_id),
-                )
-                seen_instance_ids.add(inst_id)
-                running = self.search(
-                    [
-                        ("instance_id", "=", inst_id),
-                        ("state", "in", self._active_states),
-                        ("job_type_id.code", "not in", hidden),
-                    ],
-                    limit=1,
-                )
-                if running:
-                    raise UserError(
-                        _(
-                            "A job is already running for this instance: "
-                            "%(name)s. Wait for it to complete or cancel "
-                            "it first.",
-                            name=running.name,
-                        )
-                    )
-            elif not inst_id:
-                # Host-only step (provisioning, hardening, full setup…):
-                # serialise per host so two chains can't run concurrently
-                # on the same machine.
-                host_id = step.get("host_id")
-                if host_id and host_id not in seen_host_ids:
-                    self.env.cr.execute(
-                        "SELECT pg_advisory_xact_lock(%s, %s)",
-                        (_HOST_JOB_LOCK_NAMESPACE, host_id),
-                    )
-                    seen_host_ids.add(host_id)
-                    running = self.search(
-                        [
-                            ("host_id", "=", host_id),
-                            ("instance_id", "=", False),
-                            ("state", "in", self._active_states),
-                            ("job_type_id.code", "not in", hidden),
-                        ],
-                        limit=1,
-                    )
-                    if running:
-                        raise UserError(
-                            _(
-                                "A job is already running for this host: "
-                                "%(name)s. Wait for it to complete or cancel "
-                                "it first.",
-                                name=running.name,
-                            )
-                        )
-
-        # 1. Create all cloud.job records (without payloads that need resolving)
-        records = []
+        job_types = {}
         for step in steps:
+            code = step["job_type_code"]
+            if code in job_types:
+                continue
             job_type = self.env["cloud.job.type"].search(
-                [
-                    ("code", "=", step["job_type_code"]),
-                ],
-                limit=1,
+                [("code", "=", code)], limit=1,
             )
             if not job_type:
                 raise UserError(
-                    _("Job type '{code}' not found.").format(
-                        code=step["job_type_code"],
-                    )
+                    _("Job type '{code}' not found.").format(code=code)
                 )
-            job_record = self.create(
+            job_types[code] = job_type
+
+        scopes = {
+            self._scope_of_step(step.get("instance_id"), step["host_id"])
+            for step in steps
+        }
+        self._lock_scopes(scopes)
+        head = bool(bypass_running_check)
+        for scope in scopes:
+            # Each step is held to its type's rule in its own queue; the
+            # chain as a whole counts once towards the cap of each.
+            for step in steps:
+                if self._scope_of_step(
+                    step.get("instance_id"), step["host_id"],
+                ) != scope:
+                    continue
+                self._check_queue_exclusive(job_types[step["job_type_code"]], scope)
+            if not head:
+                self._check_queue_cap(scope)
+
+        # Create every step as a waiting record of one chain. The
+        # ``__chain_job_N__`` references stay in the payloads until the
+        # chain is dispatched (``_dispatch_chain``).
+        chain_key = uuid.uuid4().hex
+        records = self.browse()
+        for step in steps:
+            job_type = job_types[step["job_type_code"]]
+            records |= self.create(
                 {
                     "host_id": step["host_id"],
                     "job_type_id": job_type.id,
                     "name": _(job_type.name),
                     "instance_id": step.get("instance_id"),
                     "payload": step.get("payload"),
+                    "queue_chain_key": chain_key,
+                    "queue_head": head,
+                    "state": "queued",
                 }
             )
-            records.append(job_record)
 
-        # 2. Resolve __chain_job_N__ references in payloads
-        job_ids = [r.id for r in records]
-        for record in records:
-            payload = record.payload
-            if not payload:
-                continue
-            changed = False
-            for key, val in payload.items():
-                if isinstance(val, str):
-                    m = _REF_RE.match(val)
-                    if m:
-                        idx = int(m.group(1))
-                        payload[key] = job_ids[idx]
-                        changed = True
-            if changed:
-                record.write({"payload": payload})
-
-        # 2b. Create audit log entries for each step, skipping the
-        # cron-driven background types for the same reason as ``enqueue``:
-        # they are machine noise, not operator actions, and they dominate
-        # the table. ``hidden`` is the predicate computed above.
+        # Audit log entries for each step, skipping the cron-driven
+        # background types for the same reason as ``enqueue``: they are
+        # machine noise, not operator actions, and they dominate the
+        # table.
         for record in records:
             if record.job_type_id.code in hidden:
                 continue
@@ -303,24 +352,17 @@ class CloudJob(models.Model):
                 }
             )
 
-        # 3. Build delayable chain
-        nodes = []
-        for record in records:
-            node = record.delayable(max_retries=1).execute()
-            nodes.append(node)
-
-        delay_chain(*nodes).delay()
-
-        # 4. Store the generated queue_job UUIDs
-        for node, record in zip(nodes, records, strict=False):
-            if node._generated_job:
-                record.write(
-                    {
-                        "queue_job_uuid": node._generated_job.uuid,
-                    }
-                )
-
-        return [r.id for r in records]
+        # The fast path, as in ``enqueue``: every target quiet in this
+        # snapshot and in a fresh one, or the chain waits its turn.
+        if all(
+            self._scope_quiet(scope, records.ids)
+            and self._scope_quiet_fresh(scope, records.ids)
+            for scope in scopes
+        ):
+            self._dispatch_next(*next(iter(scopes)))
+        if records[:1].state == "queued":
+            self._schedule_dispatch(scopes)
+        return records.ids
 
     # ── Queue routing (tier → queue_job channel + priority) ──────────────
     #
@@ -354,73 +396,6 @@ class CloudJob(models.Model):
                 tier = "high"
         return self._TIER_TO_ROUTING.get(tier, self._TIER_TO_ROUTING["normal"])
 
-    def _guard_no_active_job(self, host_id, instance_id):
-        """Serialise against other jobs for the same target; raise if busy.
-
-        Takes an advisory lock *before* looking, so two concurrent callers
-        cannot both find the target idle: the second blocks until the first
-        commits, then sees the freshly-created job and raises. Postgres
-        releases the lock on COMMIT or ROLLBACK of this transaction.
-
-        Instance-scoped jobs serialise per instance, host-scoped jobs
-        (falsy ``instance_id``) per host, in separate lock namespaces so a
-        host id can never collide with an instance id. Hidden background
-        types (metrics, health probes) never block anything.
-
-        Every path that puts work on the queue must come through here.
-        ``retry_job`` and ``unblock_and_enqueue`` used to dispatch straight
-        to ``with_delay``, which let a retry race a deploy already running
-        on the same instance — two SSH sessions mutating one host.
-
-        :param int host_id: target host
-        :param int instance_id: target instance, or falsy for host-scoped
-        :raises UserError: when an active user job already holds the target
-        """
-        hidden = self._get_hidden_job_types()
-        if instance_id:
-            self.env.cr.execute(
-                "SELECT pg_advisory_xact_lock(%s, %s)",
-                (_JOB_LOCK_NAMESPACE, instance_id),
-            )
-            running = self.search(
-                [
-                    ("instance_id", "=", instance_id),
-                    ("state", "in", self._active_states),
-                    ("job_type_id.code", "not in", hidden),
-                ],
-                limit=1,
-            )
-            if running:
-                raise UserError(
-                    _(
-                        "A job is already running for this instance: %(name)s. "
-                        "Wait for it to complete or cancel it first.",
-                        name=running.name,
-                    )
-                )
-        elif host_id:
-            self.env.cr.execute(
-                "SELECT pg_advisory_xact_lock(%s, %s)",
-                (_HOST_JOB_LOCK_NAMESPACE, host_id),
-            )
-            running = self.search(
-                [
-                    ("host_id", "=", host_id),
-                    ("instance_id", "=", False),
-                    ("state", "in", self._active_states),
-                    ("job_type_id.code", "not in", hidden),
-                ],
-                limit=1,
-            )
-            if running:
-                raise UserError(
-                    _(
-                        "A job is already running for this host: %(name)s. "
-                        "Wait for it to complete or cancel it first.",
-                        name=running.name,
-                    )
-                )
-
     @api.model
     def enqueue(
         self,
@@ -434,26 +409,56 @@ class CloudJob(models.Model):
         Queue a job of given type for the given host/instance
         and return the job record ID.
 
-        ``bypass_running_check`` skips the active-job guard. The guard
-        exists to stop users triggering competing operations on the
-        same instance (deploy + rebuild). It must be bypassed when an
-        executor's ``on_success`` chains a follow-up internally — at
-        that moment the parent job is still ``started`` and would
-        otherwise block its own descendant. Internal use only;
-        anything user-driven goes through the guard unchanged.
+        Never refused because the target is busy: an instance runs one
+        job at a time (a host, one host-level job at a time), and a job
+        asked for while another runs waits in the target's queue as
+        ``queued``, first come first served, until the dispatcher
+        (``_dispatch_next``) starts it. Hidden background types (health
+        probes, metrics) neither wait nor occupy the target.
+
+        A free target starts the job at once — the one dispatch made in
+        the caller's transaction. Odoo's cursors are REPEATABLE READ, so
+        "free" has to hold twice: in this transaction's snapshot (which
+        alone sees what it created itself) and in a fresh READ COMMITTED
+        read (which alone sees what others committed since the snapshot
+        was taken). If either sees a job running or waiting, the job
+        stays ``queued`` and a dispatch is registered for after the
+        commit (``_schedule_dispatch``). The collapse below reads this
+        snapshot only (``_check_queue_admission`` says why): in the rare
+        race of two identical requests committing at once, a duplicate
+        is queued instead of merged.
+
+        What the type says about its queue is applied before the record
+        exists (``_check_queue_admission``): a collapsing type returns
+        the identical job already waiting, an exclusive type refuses a
+        second waiting one, and a queue holds at most
+        ``QUEUE_MAX_WAITING`` entries. A rebuild asked for by a GitHub
+        push merges into the rebuild of a push already waiting, whatever
+        its repository (``RebuildInstanceExecutor._merge_queued_payload``).
+        The type is the one the caller finally uses, so a layer that
+        routes a code to another type (the SaaS manager's tenant rebuild)
+        is judged by the routed one.
+
+        ``bypass_running_check`` means "I am part of the job running
+        now": an executor's ``on_success`` chaining a follow-up, when the
+        parent job is still ``started`` on the same target. The job goes
+        to the head of the queue, before everything else waiting, and
+        is dispatched as soon as the running job ends; it is not counted
+        against the cap. Internal use.
+
+        A ``delete_instance`` (and the types a layer adds through
+        ``_get_queue_clearing_job_types``) first cancels everything
+        waiting on the instance: what waited would have run on an
+        instance about to be removed. The delete then waits only for the
+        job running now. That clearing sees this snapshot only, as the
+        collapse does: a job another request committed between the
+        snapshot and the lock is not cancelled, and runs before the
+        delete — it was asked for first.
         """
         # Server-side role gate: the public entrypoint is reachable via
         # call_kw with only create-ACL, so enforce the per-type manager
         # requirement here, not only in the HTTP controllers.
         self._check_job_type_allowed(job_type_code, instance_id)
-        # Block if there is already an active *user* job for this target.
-        # Hidden system jobs (health checks, metrics, probes…) don't block.
-        # Instance-scoped jobs serialise per instance; host-scoped jobs
-        # (instance_id falsy) serialise per host. The two scopes are
-        # independent — an instance deploy does not block a host probe and
-        # vice versa.
-        if not bypass_running_check:
-            self._guard_no_active_job(host_id, instance_id)
         job_type_id = self.env["cloud.job.type"].search(
             [
                 ("code", "=", job_type_code),
@@ -466,17 +471,45 @@ class CloudJob(models.Model):
                     job_type_name=job_type_code
                 )
             )
+        hidden = job_type_code in self._get_hidden_job_types()
+        head = bool(bypass_running_check)
+        scope = self._scope_of_step(instance_id, host_id)
+        if not hidden:
+            # Instance-scoped jobs serialise per instance; host-scoped
+            # jobs (instance_id falsy) serialise per host. The two scopes
+            # are independent — an instance deploy does not block a host
+            # probe and vice versa.
+            self._lock_scopes({scope})
+            if instance_id and job_type_code in self._get_queue_clearing_job_types():
+                # Blocking locks on the chains' other queues are fine
+                # here: PostgreSQL detects a deadlock and Odoo retries
+                # the request. What waits is what this snapshot sees
+                # (see the docstring).
+                self._cancel_queued(
+                    self._queued_on(scope),
+                    _("Cancelled: the instance was asked to be deleted."),
+                )
+            existing = self._check_queue_admission(
+                job_type_id, scope, payload, head=head,
+            )
+            if existing:
+                return existing.id
         vals = {
             "host_id": host_id,
             "job_type_id": job_type_id.id,
             "name": _(job_type_id.name),
+            "queue_head": head,
         }
+        if not hidden:
+            vals["state"] = "queued"
         if instance_id:
             vals["instance_id"] = instance_id
         if payload:
             vals["payload"] = payload
         job_record = self.create(vals)
-        # Check pip_dependencies for conflict markers before queuing.
+        # Check pip_dependencies for conflict markers before queuing. A
+        # job left waiting for an alert is neither queued nor running:
+        # no state, as a job blocked after its run ends ``done``.
         _pip_blocked_types = ("deploy_instance", "rebuild_instance")
         if instance_id and job_type_code in _pip_blocked_types:
             inst = self.env["cloud.instance"].browse(instance_id)
@@ -487,7 +520,9 @@ class CloudJob(models.Model):
                     conflicts,
                     instance_id=instance_id,
                 )
-                job_record.write({"blocked_alert_id": alert.id})
+                job_record.with_context(ic_skip_state_hook=True).write(
+                    {"blocked_alert_id": alert.id, "state": False},
+                )
                 return job_record.id
             # No conflicts — dismiss any stale active pip_conflict alerts
             self.env["cloud.alert"].search(
@@ -507,7 +542,9 @@ class CloudJob(models.Model):
                 limit=1,
             )
             if addon_alert:
-                job_record.write({"blocked_alert_id": addon_alert.id})
+                job_record.with_context(ic_skip_state_hook=True).write(
+                    {"blocked_alert_id": addon_alert.id, "state": False},
+                )
                 return job_record.id
         # Background job types (host_metrics, instance_health, docker_prune)
         # are enqueued by cron for every host and every instance on every
@@ -516,7 +553,7 @@ class CloudJob(models.Model):
         # predicate that keeps them out of the job drawer keeps them out of
         # the audit trail — they are cron-only (see cloud.host.cron_*), so
         # no user-initiated action is lost here.
-        if job_type_code not in self._get_hidden_job_types():
+        if not hidden:
             self.env["cloud.audit.log"].sudo().create(
                 {
                     "action": job_type_id.name,
@@ -525,32 +562,16 @@ class CloudJob(models.Model):
                     "job_id": job_record.id,
                 }
             )
-        # max_retries=1 by default: allow one automatic retry for transient
-        # DB errors, then fail permanently. The execution guard prevents
-        # double SSH runs. Executors that opt into connection retries
-        # (``_retry_on_connection_loss``) get a higher cap so a momentarily
-        # unreachable host is retried instead of failing on the first blip —
-        # only transient connection errors consume those retries; any other
-        # exception still fails permanently via JobError on the first try.
-        executor_cls = executor_registry.get(job_type_id.code)
-        max_retries = 1
-        if executor_cls and getattr(
-            executor_cls,
-            "_retry_on_connection_loss",
-            False,
+        if hidden:
+            # Outside the queue: it runs beside whatever the target does.
+            self._dispatch_single(job_record)
+            return job_record.id
+        if self._scope_quiet(scope, job_record.ids) and self._scope_quiet_fresh(
+            scope, job_record.ids,
         ):
-            max_retries = executor_cls._connection_retry_attempts
-        channel, priority = self._resolve_channel_priority(
-            job_type_id,
-            instance_id,
-        )
-        delayed = job_record.with_delay(
-            max_retries=max_retries,
-            channel=channel,
-            priority=priority,
-            description=job_type_id.name,
-        ).execute()
-        job_record.write({"queue_job_uuid": delayed.uuid})
+            self._dispatch_next(*scope)
+        if job_record.state == "queued":
+            self._schedule_dispatch({scope})
         return job_record.id
 
     def execute(self):
@@ -885,7 +906,10 @@ class CloudJob(models.Model):
         jobs = self.search(domain, order="id desc", limit=limit, offset=offset)
         return {"jobs": jobs._format(), "total": total}
 
-    _active_states = ["pending", "enqueued", "wait_dependencies", "started"]
+    # Dispatched to queue_job and not ended.
+    _running_states = ["pending", "enqueued", "wait_dependencies", "started"]
+    # What occupies a target: waiting in its queue, or running on it.
+    _active_states = ["queued", "pending", "enqueued", "wait_dependencies", "started"]
     _terminal_states = ["done", "failed", "cancelled"]
     # Job types hidden from the drawer (automated background tasks).
     # These are still visible in the history page under the "Admin" category.
@@ -1015,6 +1039,908 @@ class CloudJob(models.Model):
                 return super()._get_hidden_job_types() + ['my_background_job']
         """
         return self._hidden_job_types.copy()
+
+    # ── Queue engine ──────────────────────────────────────────────────────
+    #
+    # One job at a time per instance, and per host for host-level jobs.
+    # ``enqueue`` and ``enqueue_chain`` always create their records: a
+    # target with a visible job running keeps the new ones ``queued``,
+    # and the dispatcher starts the next one when the running job ends,
+    # in order of creation — what the running job queued for itself
+    # first. A queue holds while a failure of a holding type is open.
+    # Everything that reads or changes a queue takes its advisory lock
+    # first (``_lock_scopes``).
+    #
+    # Where the dispatcher runs: on a fresh READ COMMITTED cursor after
+    # the transaction of the event commits (``_schedule_dispatch`` →
+    # ``_dispatch_scope_fresh``), because a REPEATABLE READ transaction
+    # — the runner's above all — does not see what was queued since its
+    # snapshot. The one dispatch in the caller's own transaction is the
+    # fast path of ``enqueue`` for the job it just created, and only when
+    # its snapshot and a fresh read both find the target quiet. The
+    # sweep cron (``_cron_dispatch_queued``) covers a dispatch that was
+    # lost, with the same fresh dispatcher per queue.
+
+    @api.model
+    def _schedule_dispatch(self, scopes):
+        """Serve *scopes* on fresh cursors once this transaction commits.
+
+        Registered on ``cr.postcommit``, so a transaction that rolls back
+        serves nothing — what it would have served it never recorded.
+        Deduplicated per queue within the transaction: a chain of three
+        steps ending on one instance registers one dispatch.
+
+        :param scopes: iterable of ``(instance_id, host_id)``
+        """
+        cr = self.env.cr
+        pending = cr.postcommit.data.setdefault("cloud_job_dispatch", set())
+        registry = self.env.registry
+        for scope in scopes:
+            if scope in pending:
+                continue
+            pending.add(scope)
+            cr.postcommit.add(
+                lambda scope=scope: _dispatch_scope_fresh(registry, scope),
+            )
+
+    @contextlib.contextmanager
+    def _fresh_env(self):
+        """Yield an environment reading what every transaction committed.
+
+        A READ COMMITTED cursor of its own (in registry test mode, one
+        riding on the test's transaction), as the superuser: it only
+        reads, and no record rule should hide a job from a check. This
+        transaction's writes are flushed first, so a cursor sharing them
+        (the test's) sees them too.
+        """
+        self.env.flush_all()
+        with read_committed_cursor(self.env.registry) as cr:
+            yield api.Environment(cr, SUPERUSER_ID, {})
+
+    @api.model
+    def _scope_quiet(self, scope, except_ids=()):
+        """Whether nothing runs on a queue's target and nothing else waits.
+
+        :param scope: the queue
+        :param except_ids: ids of waiting jobs to leave out (the job the
+            caller just created)
+        :rtype: bool
+        """
+        if self._scope_busy(*scope):
+            return False
+        waiting = self._queued_on(scope).filtered(lambda j: j.id not in except_ids)
+        return not waiting
+
+    @api.model
+    def _scope_quiet_fresh(self, scope, except_ids=()):
+        """``_scope_quiet`` as a fresh READ COMMITTED cursor sees it.
+
+        The second half of ``enqueue``'s fast path: what another
+        transaction committed after this one took its snapshot.
+        """
+        with self._fresh_env() as env:
+            return env["cloud.job"]._scope_quiet(scope, except_ids)
+
+    @api.model
+    def _fresh_search_count(self, domain):
+        """``search_count`` of *domain* as a fresh READ COMMITTED cursor sees it.
+
+        For the refusals that must hold against what another transaction
+        committed after this one's snapshot: the exclusive rule and the
+        one retry per failure.
+
+        :param list domain: a ``cloud.job`` domain
+        :rtype: int
+        """
+        with self._fresh_env() as env:
+            return env["cloud.job"].search_count(domain)
+
+    @api.model
+    def _get_queue_clearing_job_types(self):
+        """Job types whose enqueue cancels everything waiting on the instance.
+
+        What waited would have run on an instance about to be removed.
+        Override in child modules and call super() to extend (the SaaS
+        manager adds its tenant delete).
+
+        :return: job type codes
+        :rtype: set
+        """
+        return {"delete_instance"}
+
+    @api.model
+    def _queue_holding_alert_codes(self):
+        """Alert codes whose open alert on a failed job holds its queue.
+
+        ``job_failed``, or the critical conflict alert that
+        ``_create_job_failed_alert`` leaves in its place.
+
+        :rtype: set
+        """
+        return {"job_failed"} | self._get_actionable_alert_codes()
+
+    @staticmethod
+    def _scope_of_step(instance_id, host_id):
+        """Return the queue a job on *instance_id*/*host_id* waits in.
+
+        :return: ``(instance_id, None)`` for an instance job,
+            ``(None, host_id)`` for a host-level one
+        """
+        if instance_id:
+            return (int(instance_id), None)
+        return (None, int(host_id))
+
+    def _scope_of(self):
+        """Return the queue this job waits in (see ``_scope_of_step``)."""
+        self.ensure_one()
+        return self._scope_of_step(self.instance_id.id, self.host_id.id)
+
+    @api.model
+    def _scope_domain(self, instance_id, host_id):
+        """Return the domain of the jobs that belong to one queue."""
+        if instance_id:
+            return [("instance_id", "=", instance_id)]
+        return [("host_id", "=", host_id), ("instance_id", "=", False)]
+
+    @api.model
+    def _lock_scopes(self, scopes):
+        """Take the advisory lock of every queue in *scopes*, in a fixed order.
+
+        Whoever enqueues, dispatches or cancels on a queue holds its lock
+        until the transaction ends, so two of them cannot both find the
+        target idle and start parallel jobs. The fixed order keeps two
+        chains that touch the same two instances from deadlocking.
+
+        :param scopes: iterable of ``(instance_id, host_id)`` pairs
+        """
+        for instance_id, host_id in sorted(
+            scopes, key=lambda s: (s[0] or 0, s[1] or 0),
+        ):
+            if instance_id:
+                self.env.cr.execute(
+                    "SELECT pg_advisory_xact_lock(%s, %s)",
+                    (_JOB_LOCK_NAMESPACE, instance_id),
+                )
+            else:
+                self.env.cr.execute(
+                    "SELECT pg_advisory_xact_lock(%s, %s)",
+                    (_HOST_JOB_LOCK_NAMESPACE, host_id),
+                )
+
+    @api.model
+    def _try_lock_scope(self, scope):
+        """Take a queue's lock if nobody holds it.
+
+        Used for the other queues of a chain while this one's lock is
+        held: waiting for them could deadlock with their own dispatch,
+        which will look at the chain itself.
+
+        :return: whether the lock was taken
+        :rtype: bool
+        """
+        instance_id, host_id = scope
+        namespace, key = (
+            (_JOB_LOCK_NAMESPACE, instance_id) if instance_id
+            else (_HOST_JOB_LOCK_NAMESPACE, host_id)
+        )
+        self.env.cr.execute(
+            "SELECT pg_try_advisory_xact_lock(%s, %s)", (namespace, key),
+        )
+        return bool(self.env.cr.fetchone()[0])
+
+    @api.model
+    def _scope_busy(self, instance_id, host_id):
+        """Whether a visible job runs on the queue's target now.
+
+        Dispatched and not ended: ``pending`` to ``started``. A job
+        ``cancelled`` while it ran counts until its executor stops:
+        ``cancel_job`` writes the flag while the queue.job is still
+        ``started``, and the next job must not start beside a run that is
+        still winding down (a move's rollback jobs beside the step they
+        cancelled). A chain counts on every target it touches until its
+        last step ends: the running step of a staging's clone may be the
+        download on production while the staging waits for its restore.
+        Hidden background types never count.
+
+        :rtype: bool
+        """
+        Job = self.sudo()
+        hidden = tuple(self._get_hidden_job_types()) or ("",)
+        Job.flush_model([
+            "state", "queue_chain_key", "instance_id", "host_id",
+            "queue_job_uuid", "job_type_id",
+        ])
+        self.env["queue.job"].sudo().flush_model(["state", "uuid"])
+        running = tuple(self._running_states)
+        if instance_id:
+            scope_sql, params = "{j}.instance_id = %s", [instance_id]
+        else:
+            scope_sql, params = (
+                "{j}.host_id = %s AND {j}.instance_id IS NULL", [host_id],
+            )
+        # ``running`` names a job dispatched and not ended, or one a
+        # person cancelled whose queue.job still runs.
+        running_sql = (
+            "({j}.state IN %s OR ({j}.state = 'cancelled' AND EXISTS ("
+            " SELECT 1 FROM queue_job q"
+            " WHERE q.uuid = {j}.queue_job_uuid AND q.state IN %s)))"
+        )
+        self.env.cr.execute(
+            "SELECT 1 FROM cloud_job j"
+            " JOIN cloud_job_type t ON t.id = j.job_type_id"
+            f" WHERE {scope_sql.format(j='j')} AND t.code NOT IN %s"
+            f" AND {running_sql.format(j='j')} LIMIT 1",
+            (*params, hidden, running, running),
+        )
+        if self.env.cr.fetchone():
+            return True
+        self.env.cr.execute(
+            "SELECT 1 FROM cloud_job r"
+            " JOIN cloud_job s ON s.queue_chain_key = r.queue_chain_key"
+            f" WHERE r.queue_chain_key IS NOT NULL AND {running_sql.format(j='r')}"
+            f" AND {scope_sql.format(j='s')} LIMIT 1",
+            (running, running, *params),
+        )
+        return bool(self.env.cr.fetchone())
+
+    @api.model
+    def _queue_held_by(self, instance_id, host_id):
+        """Return the alert holding one queue, or an empty recordset.
+
+        A queue is held while a job of a type with ``failure_holds_queue``
+        failed on its target and the alert of that failure — the
+        ``job_failed``, or the critical conflict alert raised instead —
+        is still active: nothing behind it is dispatched until the
+        failure is retried successfully or the alert is dismissed. The
+        job stays ``failed`` meanwhile (a failed job cannot be cancelled),
+        so nothing but the alert releases the queue.
+        """
+        return self._queue_holding_alerts(instance_id, host_id)[:1]
+
+    @api.model
+    def _queue_holding_alerts(self, instance_id, host_id):
+        """Return every alert holding one queue, newest first.
+
+        See ``_queue_held_by``; several failures of holding types can be
+        open on one target, and the retry of any of them may pass.
+        """
+        domain = [
+            ("state", "=", "active"),
+            ("code", "in", list(self._queue_holding_alert_codes())),
+            ("job_id", "!=", False),
+            ("job_id.state", "=", "failed"),
+            ("job_id.job_type_id.failure_holds_queue", "=", True),
+        ]
+        if instance_id:
+            domain.append(("instance_id", "=", instance_id))
+        else:
+            domain += [("host_id", "=", host_id), ("instance_id", "=", False)]
+        return self.env["cloud.alert"].sudo().search(domain, order="id desc")
+
+    @api.model
+    def _queued_on(self, scope):
+        """Return the jobs waiting in one queue, blocked ones excluded."""
+        instance_id, host_id = scope
+        return self.sudo().search(
+            self._scope_domain(instance_id, host_id) + [
+                ("state", "=", "queued"),
+                ("blocked_alert_id", "=", False),
+            ],
+        )
+
+    @api.model
+    def _chain_steps(self, chain_key):
+        """Return the steps of one chain, in execution order."""
+        return self.sudo().search(
+            [("queue_chain_key", "=", chain_key)], order="id asc",
+        )
+
+    @api.model
+    def _queue_entries(self, scope):
+        """Return what waits in one queue, in dispatch order.
+
+        Each entry is a recordset: a lone job, or every step of a chain
+        (the ones on other targets included). Heads first, then by
+        creation. A job unblocked after its alert keeps the place its
+        creation gives it: it was asked for before what was queued while
+        it waited.
+
+        :rtype: list of ``cloud.job`` recordsets
+        """
+        entries, seen = [], set()
+        for job in self._queued_on(scope).sorted(
+            key=lambda j: (not j.queue_head, j.create_date, j.id),
+        ):
+            key = job.queue_chain_key
+            if not key:
+                entries.append(job)
+            elif key not in seen:
+                seen.add(key)
+                entries.append(self._chain_steps(key))
+        return entries
+
+    def _queue_position(self):
+        """Return how many entries are dispatched before this waiting job.
+
+        :rtype: int
+        """
+        self.ensure_one()
+        key = self.queue_chain_key
+        for position, entry in enumerate(self._queue_entries(self._scope_of())):
+            first = entry[:1]
+            if (key and first.queue_chain_key == key) or (
+                not key and first.id == self.id
+            ):
+                return position
+        return 0
+
+    @api.model
+    def _queue_scopes_of(self, jobs):
+        """Return the queues *jobs* wait in, their chains' other steps included.
+
+        :rtype: set of ``(instance_id, host_id)``
+        """
+        jobs = jobs.sudo()
+        keys = {key for key in jobs.mapped("queue_chain_key") if key}
+        if keys:
+            jobs |= self.sudo().search([("queue_chain_key", "in", list(keys))])
+        return {job._scope_of() for job in jobs}
+
+    @api.model
+    def _queue_identity(self, payload):
+        """Return what tells one waiting job's load from another's.
+
+        Two jobs of a collapsing type with the same identity are one.
+        Core compares the payload alone; a layer that keeps part of the
+        load apart (the SaaS manager moves credentials to
+        ``secret_payload`` when the job is created) overrides this to
+        split *payload* the same way, so two pushes with the same payload
+        and different secrets stay two jobs.
+
+        :param dict payload: what the caller passed to ``enqueue``
+        :return: ``(payload, secret_payload)`` as the stored job holds them
+        """
+        return json.loads(json.dumps(payload or {})), False
+
+    @api.model
+    def _check_queue_admission(self, job_type, scope, payload, head=False):
+        """Apply the type's queue rules before a job of it is created.
+
+        In this order: a collapsing type returns the identical job
+        already waiting; a rebuild asked for by a push merges into the
+        waiting rebuild of a push (the executor's
+        ``_merge_queued_payload``); an exclusive type refuses a second
+        waiting one; and the queue refuses its sixth entry — not to a
+        head (*head*), which is part of the job running.
+
+        Only jobs waiting on their own are collapsed into or merged
+        with: a chain is dispatched whole and its steps are not
+        anybody's twin.
+
+        The exclusive rule and the cap count what this transaction's
+        snapshot sees and what a fresh READ COMMITTED read sees, for the
+        reason ``enqueue`` gives. Collapse and merge read the snapshot
+        alone, on purpose: they write on the waiting job they find, and
+        under REPEATABLE READ an UPDATE of a row committed after the
+        snapshot matches no row and says nothing — the request would
+        return a job its write never reached. So in the rare race of two
+        identical requests committing at once, the second queues a
+        duplicate instead of becoming the first.
+
+        :param job_type: the ``cloud.job.type`` record
+        :param scope: the queue, as ``_scope_of_step`` returns it
+        :param dict payload: what the caller passed
+        :param bool head: whether the job goes to the head of the queue
+        :return: the waiting job the request became, or ``None`` when a
+            new one is to be created
+        :raises UserError: refused by the exclusive rule or the cap
+        """
+        waiting = self._queued_on(scope).filtered(
+            lambda j: j.job_type_id == job_type and not j.queue_chain_key,
+        ).sorted("id")
+        if job_type.queue_collapse:
+            new_payload, new_secret = self._queue_identity(payload)
+            for job in waiting:
+                if (job.payload or {}) == new_payload and (
+                    job.secret_payload or False
+                ) == new_secret:
+                    return job
+        executor_cls = executor_registry.get(job_type.code)
+        merge = getattr(executor_cls, "_merge_queued_payload", None)
+        if merge:
+            for job in waiting:
+                if merge(job, payload or {}):
+                    return job
+        self._check_queue_exclusive(job_type, scope)
+        if not head:
+            self._check_queue_cap(scope)
+        return None
+
+    @api.model
+    def _check_queue_exclusive(self, job_type, scope):
+        """Refuse a second waiting job of an exclusive type on one queue.
+
+        What waits is what this snapshot and a fresh read see together
+        (see ``_check_queue_admission``).
+
+        :raises UserError: when one already waits, whatever its payload
+        """
+        if not job_type.queue_exclusive:
+            return
+        domain = self._scope_domain(*scope) + [
+            ("state", "=", "queued"),
+            ("blocked_alert_id", "=", False),
+            ("job_type_id", "=", job_type.id),
+        ]
+        if self.sudo().search_count(domain) or self._fresh_search_count(domain):
+            if scope[0]:
+                message = _(
+                    "A %(type)s is already queued for this instance; "
+                    "cancel it first.",
+                    type=_(job_type.name),
+                )
+            else:
+                message = _(
+                    "A %(type)s is already queued for this host; "
+                    "cancel it first.",
+                    type=_(job_type.name),
+                )
+            raise UserError(message)
+
+    @api.model
+    def _waiting_entry_keys(self, scope):
+        """Return what tells apart the entries waiting in *scope*, heads left out.
+
+        :return: a chain's key or a lone job's id per entry
+        :rtype: set
+        """
+        return {
+            job.queue_chain_key or job.id
+            for job in self._queued_on(scope)
+            if not job.queue_head
+        }
+
+    @api.model
+    def _check_queue_cap(self, scope):
+        """Refuse the entry that would take a queue past ``QUEUE_MAX_WAITING``.
+
+        Heads (follow-ups and retries) are not counted. The entries are
+        those of this snapshot and of a fresh read together, for the
+        reason ``enqueue`` gives.
+
+        :raises UserError: when the queue is full
+        """
+        keys = self._waiting_entry_keys(scope)
+        with self._fresh_env() as env:
+            keys |= env["cloud.job"]._waiting_entry_keys(scope)
+        if len(keys) >= QUEUE_MAX_WAITING:
+            if scope[0]:
+                message = _(
+                    "The instance has %(count)d jobs waiting in its queue.",
+                    count=QUEUE_MAX_WAITING,
+                )
+            else:
+                message = _(
+                    "The host has %(count)d jobs waiting in its queue.",
+                    count=QUEUE_MAX_WAITING,
+                )
+            raise UserError(message)
+
+    @api.model
+    def _dispatch_next(self, instance_id=None, host_id=None):
+        """Start the next entry waiting in one queue, if its target is free.
+
+        The one place a waiting job is started. Run on a fresh cursor
+        after the transaction of each event commits (``_schedule_dispatch``:
+        a visible job of the target ended, a waiting one was cancelled,
+        unblocked or retried, the alert holding the queue was dismissed),
+        by the sweep cron, and in ``enqueue``'s own transaction for the
+        job it just created on a quiet target. Nothing starts while a
+        visible job runs; while the queue is held (``_queue_held_by``)
+        only the retry of a failure that holds it, or a delete of the
+        instance (``_get_queue_clearing_job_types``: it waits for the
+        running job alone), passes.
+
+        An entry whose instance is gone, or archived when its type is not
+        meant for archived instances (``_runs_on_archived``), is cancelled
+        with a note and the next one is looked at; a lone job goes where its
+        instance is now, so a move between queueing and dispatch is
+        followed (the steps of a chain keep the hosts they were given:
+        a move's steps name both hosts on purpose). A chain that waits
+        in other queues too starts only when it is first in all of them
+        and every target is free; until then this queue waits for it.
+
+        :param int instance_id: the instance whose queue to serve, or
+        :param int host_id: the host whose host-level queue to serve
+        :return: the entry dispatched, or an empty recordset
+        """
+        Job = self.sudo()
+        scope = (instance_id or None, host_id or None)
+        Job._lock_scopes({scope})
+        if Job._scope_busy(*scope):
+            return self.browse()
+        holding = Job._queue_holding_alerts(*scope).mapped("job_id")
+        clearing = self._get_queue_clearing_job_types()
+        for entry in Job._queue_entries(scope):
+            first = entry[:1]
+            if holding and not (
+                (first.retry_of_id and first.retry_of_id in holding)
+                or first.job_type_id.code in clearing
+            ):
+                continue
+            verdict = Job._entry_verdict(entry, scope)
+            if verdict == "cancelled":
+                continue
+            if verdict == "wait":
+                return self.browse()
+            Job._dispatch_entry(entry)
+            return entry
+        return self.browse()
+
+    @api.model
+    def _entry_verdict(self, entry, scope):
+        """Say what to do with *entry*, first in *scope*'s queue.
+
+        :return: ``"start"``, ``"wait"`` (another target of the chain is
+            not ready, or its lock is held) or ``"cancelled"`` (its
+            instance is gone, or archived for a type that needs it live;
+            the entry was cancelled here)
+        """
+        # The other queues of a chain are only tried for, never waited
+        # on: their own dispatcher may hold them and look at this chain
+        # in turn. One not free leaves the entry for the next pass.
+        others = self._queue_scopes_of(entry) - {scope}
+        if any(not self._try_lock_scope(other) for other in others):
+            return "wait"
+        gone = any(
+            (job.job_type_id.apply_to == "instance" and not job.instance_id)
+            or (
+                job.instance_id and not job.instance_id.active
+                and not self._runs_on_archived(job)
+            )
+            for job in entry
+        )
+        if gone:
+            self._cancel_queued(
+                entry, _("Cancelled: the instance is no longer there."),
+                skip_scope=scope, lock=False,
+            )
+            return "cancelled"
+        if len(entry) == 1 and not entry.queue_chain_key:
+            inst = entry.instance_id
+            if inst and inst.host_id and entry.host_id != inst.host_id:
+                entry.host_id = inst.host_id
+            return "start"
+        chain_key = entry[:1].queue_chain_key
+        for other in others:
+            if self._scope_busy(*other) or self._queue_held_by(*other):
+                return "wait"
+            ahead = self._queue_entries(other)
+            if not ahead or ahead[0][:1].queue_chain_key != chain_key:
+                return "wait"
+        return "start"
+
+    @api.model
+    def _runs_on_archived(self, job):
+        """Whether *job*'s type is meant for archived instances.
+
+        Such a job is not cancelled because its instance is archived —
+        only once the instance no longer exists. Declared by the
+        executor (``AbstractExecutor._runs_on_archived_instance``).
+
+        :param job: a ``cloud.job`` record
+        :rtype: bool
+        """
+        executor_cls = executor_registry.get(job.job_type_id.code)
+        return bool(getattr(executor_cls, "_runs_on_archived_instance", False))
+
+    @api.model
+    def _dispatch_entry(self, entry):
+        """Create the queue.job(s) of a waiting entry and mark it dispatched."""
+        if len(entry) == 1 and not entry.queue_chain_key:
+            self._dispatch_single(entry)
+        else:
+            self._dispatch_chain(entry)
+
+    @api.model
+    def _dispatch_single(self, job):
+        """Hand one job to queue_job and record its uuid and state.
+
+        max_retries=1 by default: allow one automatic retry for transient
+        DB errors, then fail permanently. The execution guard prevents
+        double SSH runs. Executors that opt into connection retries
+        (``_retry_on_connection_loss``) get a higher cap so a momentarily
+        unreachable host is retried instead of failing on the first blip —
+        only transient connection errors consume those retries; any other
+        exception still fails permanently via JobError on the first try.
+
+        The job runs as its creator, with superuser rights: queue_job
+        keeps the env of the recordset it was handed (user and ``su``),
+        and the dispatcher runs as the platform on a cursor of its own,
+        possibly hours after the job was asked for. Whether the creator
+        may run the type was checked when they asked
+        (``_check_job_type_allowed`` in ``enqueue`` and its siblings);
+        the creator stays the author of what the run writes. The sudo
+        comes after ``with_user``, which drops it.
+        """
+        job = job.with_user(job.create_uid).sudo()
+        job_type = job.job_type_id
+        executor_cls = executor_registry.get(job_type.code)
+        max_retries = 1
+        if executor_cls and getattr(
+            executor_cls,
+            "_retry_on_connection_loss",
+            False,
+        ):
+            max_retries = executor_cls._connection_retry_attempts
+        channel, priority = self._resolve_channel_priority(
+            job_type,
+            job.instance_id.id if job.instance_id else False,
+        )
+        delayed = job.with_delay(
+            max_retries=max_retries,
+            channel=channel,
+            priority=priority,
+            description=job_type.name,
+        ).execute()
+        job.with_context(ic_skip_state_hook=True).write(
+            {"queue_job_uuid": delayed.uuid, "state": "pending"},
+        )
+        self._broadcast_job_update(job.id)
+
+    @api.model
+    def _dispatch_chain(self, records):
+        """Hand a chain to queue_job as a ``DelayableChain``.
+
+        The ``__chain_job_N__`` references are resolved now, each step
+        waits on the previous one, and the first step is the one pending.
+        Every step runs as the chain's creator with superuser rights, for
+        the reason ``_dispatch_single`` gives: the role was checked when
+        the chain was asked for, and it may run hours later.
+        """
+        self._resolve_chain_refs(records)
+        # As the chain's creator, for the reason ``_dispatch_single`` gives.
+        records = records.with_user(records[:1].create_uid).sudo()
+        nodes = [record.delayable(max_retries=1).execute() for record in records]
+        delay_chain(*nodes).delay()
+        for position, (node, record) in enumerate(zip(nodes, records, strict=False)):
+            vals = {"state": "pending" if position == 0 else "wait_dependencies"}
+            if node._generated_job:
+                vals["queue_job_uuid"] = node._generated_job.uuid
+            record.with_context(ic_skip_state_hook=True).write(vals)
+            self._broadcast_job_update(record.id)
+
+    @api.model
+    def _resolve_chain_refs(self, records):
+        """Replace ``__chain_job_N__`` in *records*' payloads with step N's id."""
+        job_ids = records.ids
+        for record in records:
+            payload = record.payload
+            if not payload:
+                continue
+            changed = False
+            for key, val in payload.items():
+                if isinstance(val, str):
+                    m = _CHAIN_REF_RE.match(val)
+                    if m:
+                        payload[key] = job_ids[int(m.group(1))]
+                        changed = True
+            if changed:
+                record.write({"payload": payload})
+
+    @api.model
+    def _cancel_queued(self, jobs, note, skip_scope=None, lock=True):
+        """Cancel *jobs* while they wait, their chains whole, and move on.
+
+        Immediate: no executor runs and nothing reaches a host. Each job
+        gets *note* in its log, its executor's ``on_cancelled_queued``
+        hook, which puts back what was written when the job was asked
+        for (a deploy's instance in 'deploying', a move's markers), and
+        then ``_after_job_terminal("cancelled")`` for the layers. The
+        queues they waited in are served after this transaction commits
+        (``_schedule_dispatch``), except *skip_scope*, whose dispatcher
+        is the caller.
+
+        :param jobs: ``cloud.job`` records; those not ``queued`` any more
+            are left alone
+        :param str note: why, as the job's last system message
+        :param skip_scope: a queue not to dispatch
+        :param bool lock: take the queues' locks (blocking); False when
+            the caller holds them already (the dispatcher)
+        :return: the jobs cancelled
+        """
+        jobs = jobs.sudo()
+        keys = {key for key in jobs.mapped("queue_chain_key") if key}
+        if keys:
+            jobs |= self.sudo().search([("queue_chain_key", "in", list(keys))])
+        scopes = {job._scope_of() for job in jobs}
+        if lock:
+            self._lock_scopes(scopes)
+        # Read again under the lock. On the dispatcher's READ COMMITTED
+        # cursor that sees a job another dispatch started meanwhile; in a
+        # REPEATABLE READ request it still sees the snapshot, and what
+        # protects a job started since is the write below: PostgreSQL
+        # refuses to update a row another transaction changed after the
+        # snapshot (a serialization failure), and Odoo retries the
+        # request, which then finds the job running.
+        jobs.invalidate_recordset(["state"])
+        jobs = jobs.filtered(lambda j: j.state == "queued")
+        if not jobs:
+            return jobs
+        jobs.with_context(ic_skip_state_hook=True).write({"state": "cancelled"})
+        for job in jobs:
+            self.env["cloud.job.log.chunk"].sudo().create({
+                "job_id": job.id,
+                "content": note,
+                "source": "system",
+            })
+            job._run_cancelled_queued_hook()
+            job._run_after_terminal("cancelled")
+            self._broadcast_job_update(job.id, state="cancelled")
+        self._schedule_dispatch(scopes - {skip_scope})
+        return jobs
+
+    def _run_cancelled_queued_hook(self):
+        """Give the executor its ``on_cancelled_queued``; never raises.
+
+        The cancellation stands whatever the hook does: one that raises
+        has its own writes rolled back and is reported in the job's log.
+        """
+        self.ensure_one()
+        executor_cls = executor_registry.get(self.job_type_id.code)
+        if not executor_cls:
+            return
+        try:
+            with self.env.cr.savepoint():
+                executor_cls(
+                    job_record=self, host_record=self.host_id,
+                ).on_cancelled_queued()
+        except Exception as exc:  # the cancellation stands
+            _logger.warning(
+                "Job %s: on_cancelled_queued raised.", self.id, exc_info=True,
+            )
+            self.env["cloud.job.log.chunk"].sudo().create({
+                "job_id": self.id,
+                "content": _("⚠ Could not undo what the job had prepared: %s", exc),
+                "source": "system",
+            })
+
+    def write(self, vals):
+        """Act on a state transition written through the ORM.
+
+        ``_on_state_changed`` runs for every terminal state written here
+        — a job cancelled while it waited, one that ended blocked — but
+        not for what the dispatcher and the queue_job mirror write with
+        ``ic_skip_state_hook``: they call it themselves once the whole
+        transition, alerts included, is recorded. A job linked to a
+        queue.job without a state of its own takes the queue.job's
+        (``_adopt_queue_job_state``).
+        """
+        res = super().write(vals)
+        if "queue_job_uuid" in vals and "state" not in vals:
+            self._adopt_queue_job_state()
+        if "state" in vals and not self.env.context.get("ic_skip_state_hook"):
+            self._on_state_changed(vals["state"])
+        return res
+
+    def _adopt_queue_job_state(self):
+        """Give a job linked to a queue.job that queue.job's state.
+
+        The dispatcher writes the uuid and the state together; a link
+        made on its own — a job created already linked, a link repaired
+        by hand — leaves the mirror to catch up here, so ``state`` is
+        never empty on a dispatched job.
+        """
+        for job in self.sudo():
+            if job.queue_job_id and job.queue_job_id.state != job.state:
+                job.with_context(ic_skip_state_hook=True).write(
+                    {"state": job.queue_job_id.state},
+                )
+
+    def _on_state_changed(self, new_state):
+        """The one place a job's end is acted on.
+
+        For a terminal state: ``_after_job_terminal`` (what a layer hooks
+        into), then a dispatch of every queue the job waited in is
+        registered for after this transaction commits. A ``cancelled``
+        written on a job whose queue.job still runs is the cooperative
+        stop flag of ``cancel_job``, not an end: the end arrives through
+        ``queue_job_ext`` when the executor stops, and is acted on then.
+
+        :param str new_state: the state just written
+        """
+        if new_state not in self._terminal_states:
+            return
+        hidden = self._get_hidden_job_types()
+        scopes = set()
+        for job in self.sudo():
+            queue_job = job.queue_job_id
+            if queue_job and queue_job.state in self._running_states:
+                continue
+            job._run_after_terminal(new_state)
+            if job.job_type_id.code in hidden:
+                continue
+            scopes |= self._queue_scopes_of(job)
+        self._schedule_dispatch(scopes)
+
+    def _run_after_terminal(self, new_state):
+        """Give the layers their ``_after_job_terminal``; never raises.
+
+        In a savepoint, logged: a hook of a layer never decides whether a
+        state transition happens. Raised through the runner's ``store()``,
+        it would turn a job that succeeded into a failure, with its alert
+        and its mail.
+
+        :param str new_state: ``done``, ``failed`` or ``cancelled``
+        """
+        for job in self:
+            try:
+                with self.env.cr.savepoint():
+                    job._after_job_terminal(new_state)
+            except Exception:  # the transition stands
+                _logger.exception(
+                    "cloud.job %s: _after_job_terminal(%s) raised",
+                    job.id, new_state,
+                )
+
+    def _after_job_terminal(self, new_state):
+        """Called once *self* reached a terminal state, before the queue moves.
+
+        Core does nothing. A layer overrides it to react to how a job
+        ended (the SaaS manager reverts a tenant whose deploy failed or
+        was cancelled before it started); call super(). Runs in the
+        transaction that recorded the end: the runner's for a job that
+        ran, the request's for one cancelled while it waited (blocked
+        twins dropped by ``unblock_and_enqueue`` included), the
+        dispatcher's for one whose instance was gone when its turn came,
+        and, for a step of a chain that never ran because the step before
+        it failed or was cancelled (``cancelled``), the transaction that
+        recorded that end (``queue_job_ext._end_chain_after``).
+        Always in a savepoint (``_run_after_terminal``): a hook of a layer
+        never decides whether the transition happens — one that raises
+        is logged and the state stands.
+
+        :param str new_state: ``done``, ``failed`` or ``cancelled``
+        """
+
+    @api.model
+    def _on_holding_alert_closed(self, alerts):
+        """Serve the queues that *alerts*' closing may have released.
+
+        Called by ``cloud.alert.write`` for every alert dismissed. Only
+        the codes that hold a queue, on a job, matter; the dispatcher
+        itself decides whether the queue is free now.
+        """
+        codes = self._queue_holding_alert_codes()
+        scopes = set()
+        for alert in alerts.sudo():
+            if alert.code in codes and alert.job_id:
+                scopes.add(alert.job_id._scope_of())
+        self._schedule_dispatch(scopes)
+
+    @api.model
+    def _cron_dispatch_queued(self):
+        """Sweep: serve every queue that waits with nothing running.
+
+        Covers a dispatch that was lost — a transaction that rolled back
+        after the running job ended, an instance freed by a path nobody
+        hooked. Each queue is served by the fresh dispatcher on a cursor
+        of its own (``_dispatch_scope_fresh``), so one that fails does
+        not stop the rest.
+
+        :return: how many entries were dispatched
+        :rtype: int
+        """
+        waiting = self.sudo().search([
+            ("state", "=", "queued"), ("blocked_alert_id", "=", False),
+        ])
+        scopes = {job._scope_of() for job in waiting}
+        registry = self.env.registry
+        self.env.flush_all()
+        return sum(
+            _dispatch_scope_fresh(registry, scope)
+            for scope in sorted(scopes, key=lambda s: (s[0] or 0, s[1] or 0))
+        )
 
     #: Warn at 45 running minutes: the dedicated runner kills jobs at
     #: ``limit_time_real`` = 60, so the alert fires while there is still
@@ -1466,6 +2392,28 @@ class CloudJob(models.Model):
             else set()
         )
 
+        # What a waiting job's queue looks like: how many entries go
+        # before it, and the alert holding the queue, if any (the job
+        # then needs the operator as much as a blocked one does).
+        entries_by_scope, held_by_scope = {}, {}
+        positions, held = {}, {}
+        for job in self.filtered(
+            lambda j: j.state == "queued" and not j.blocked_alert_id,
+        ):
+            scope = job._scope_of()
+            if scope not in entries_by_scope:
+                entries_by_scope[scope] = self._queue_entries(scope)
+                held_by_scope[scope] = self._queue_held_by(*scope)
+            key = job.queue_chain_key
+            for position, entry in enumerate(entries_by_scope[scope]):
+                first = entry[:1]
+                if (key and first.queue_chain_key == key) or (
+                    not key and first.id == job.id
+                ):
+                    positions[job.id] = position
+                    break
+            held[job.id] = held_by_scope[scope]
+
         return [
             {
                 "id": job.id,
@@ -1477,7 +2425,14 @@ class CloudJob(models.Model):
                 "instance_id": job.instance_id.id if job.instance_id else None,
                 "state": "blocked" if job.blocked_alert_id else job.state,
                 "requires_action": (
-                    bool(job.blocked_alert_id) or job.id in action_job_ids
+                    bool(job.blocked_alert_id)
+                    or job.id in action_job_ids
+                    or bool(held.get(job.id))
+                ),
+                "queue_position": positions.get(job.id),
+                "queue_held": bool(held.get(job.id)),
+                "queue_held_alert_id": (
+                    held[job.id].id if held.get(job.id) else None
                 ),
                 "create_date": job.create_date,
                 "last_system_message": job._get_last_system_message(),
@@ -1665,22 +2620,35 @@ class CloudJob(models.Model):
     def cancel_job(self):
         """Cancel an active job.
 
-        ``state`` is a stored related on ``queue_job_id.state`` with no
-        inverse, so writing it directly never reaches the queue.job — the
-        runner would pick a queued job up and clobber the cancellation.
-        A job that has not started yet is therefore cancelled through the
-        queue.job so the runner skips it entirely (``button_cancelled``)
-        and the terminal state syncs back cleanly as ``cancelled``. A
-        started job cannot be force-cancelled by queue_job (its runner is
-        mid-flight), so we set ``state`` cancelled as a cooperative stop
-        flag the executor polls on a separate cursor (``_check_cancel``).
+        A job waiting in its queue (``queued``) is cancelled on the spot,
+        its chain with it: no executor runs, nothing reaches a host, and
+        whoever may ask for a job of its type may take it out
+        (``_check_job_type_allowed``). A job that waits for an alert is
+        not running and not queued: cancelling it only stops resolving
+        the alert from dispatching it.
 
-        A job that waits for an alert is not running and is not queued:
-        cancelling it only stops resolving the alert from dispatching it.
+        A dispatched job that has not started yet is cancelled through
+        the queue.job so the runner skips it entirely
+        (``button_cancelled``) and the terminal state is mirrored back
+        as ``cancelled``: writing ``state`` here alone would be clobbered
+        when the runner picked it up. A started job cannot be
+        force-cancelled by queue_job (its runner is mid-flight), so we
+        set ``state`` cancelled as a cooperative stop flag the executor
+        polls on a separate cursor (``_check_cancel``).
         """
         self.ensure_one()
         if self.blocked_alert_id:
             self.write({"state": "cancelled", "blocked_alert_id": False})
+            return
+        if self.state == "queued":
+            self._check_job_type_allowed(
+                self.job_type_id.code,
+                self.instance_id.id if self.instance_id else None,
+            )
+            self._cancel_queued(
+                self,
+                _("Cancelled in the queue by %(user)s.", user=self.env.user.name),
+            )
             return
         if self.state not in self._active_states:
             raise UserError(_("Only active jobs can be cancelled."))
@@ -1708,15 +2676,21 @@ class CloudJob(models.Model):
             self.job_type_id.code,
             self.instance_id.id if self.instance_id else None,
         )
-        # Same guard as ``enqueue``: a retry is a user-initiated job like
-        # any other, and firing one while a deploy is already running on
-        # the target means two SSH sessions mutating the same host. This
-        # job is ``failed``, so it never blocks its own retry.
-        self._guard_no_active_job(
-            self.host_id.id,
-            self.instance_id.id if self.instance_id else False,
-        )
-        # Create a fresh job as a retry — keeps the original's logs intact.
+        scope = self._scope_of()
+        self._lock_scopes({scope})
+        # In this snapshot or committed since: two clicks at once.
+        retries = [
+            ("retry_of_id", "=", self.id), ("state", "in", self._active_states),
+        ]
+        if self.sudo().search_count(retries) or self._fresh_search_count(retries):
+            raise UserError(
+                _("A retry of this job is already waiting in the queue."),
+            )
+        # Create a fresh job as a retry — keeps the original's logs
+        # intact. It goes to the head of the queue and, when this
+        # failure holds the queue, past the hold: the retry is what
+        # releases it. One retry per failed job at a time: a second one
+        # while the first waits or runs is refused.
         new_job = self.create(
             {
                 "name": self.name,
@@ -1725,19 +2699,11 @@ class CloudJob(models.Model):
                 "instance_id": self.instance_id.id if self.instance_id else False,
                 "payload": self.payload,
                 "retry_of_id": self.id,
+                "queue_head": True,
+                "state": "queued",
             }
         )
-        channel, priority = self._resolve_channel_priority(
-            new_job.job_type_id,
-            new_job.instance_id.id if new_job.instance_id else False,
-        )
-        delayed = new_job.with_delay(
-            max_retries=1,
-            channel=channel,
-            priority=priority,
-            description=new_job.job_type_id.name,
-        ).execute()
-        new_job.write({"queue_job_uuid": delayed.uuid})
+        self._schedule_dispatch({scope})
         return new_job.id
 
     @api.model
@@ -1817,11 +2783,14 @@ class CloudJob(models.Model):
         repository save that leaves no conflict, and by a new deploy of
         an instance whose deploy was waiting.
 
-        Guarded like ``enqueue``: the job has been sitting blocked, possibly
-        for a long time, and the operator may well have started something
-        else on the same target meanwhile. A blocked job is never active —
-        it was not dispatched, or its run ended blocked — so it cannot
-        block itself.
+        Queued like ``enqueue``: the job has been sitting blocked,
+        possibly for a long time, and the operator may well have started
+        something else on the same target meanwhile — once this
+        transaction commits it starts if the target is free and waits
+        its turn otherwise, in the place its creation gives it
+        (``_queue_entries``). A blocked job is never active — it was not
+        dispatched, or its run ended blocked — so it cannot wait for
+        itself.
 
         The job goes where its instance is now, and the other jobs of the
         same type waiting on the same instance are cancelled: this one
@@ -1834,16 +2803,14 @@ class CloudJob(models.Model):
         # orphan stack there while the record names the new one.
         if inst and not inst.deployed and inst.host_id != self.host_id:
             self.host_id = inst.host_id
-        # Same role gate as ``enqueue``: dispatching runs under the
-        # unblocking user's env.
+        # Same role gate as ``enqueue``: the unblocking user is the one
+        # who sets the job going.
         self._check_job_type_allowed(
             self.job_type_id.code,
             inst.id if inst else None,
         )
-        self._guard_no_active_job(
-            self.host_id.id,
-            inst.id if inst else False,
-        )
+        scope = self._scope_of()
+        self._lock_scopes({scope})
         if inst:
             twins = self.search([
                 ("id", "!=", self.id),
@@ -1851,24 +2818,21 @@ class CloudJob(models.Model):
                 ("job_type_id", "=", self.job_type_id.id),
                 ("blocked_alert_id", "!=", False),
             ])
-            # Resolving an alert dispatched one of them; the guard above
-            # refused the rest, which then waited for good.
-            twins.write({"state": "cancelled", "blocked_alert_id": False})
+            # Resolving an alert dispatches one of them; the rest would
+            # wait for good. Without the state hook: the queue is served
+            # once this job is in it, below; the layers hear of the end.
+            twins.with_context(ic_skip_state_hook=True).write(
+                {"state": "cancelled", "blocked_alert_id": False},
+            )
+            twins._run_after_terminal("cancelled")
         self.blocked_alert_id = False
         executor_cls = executor_registry.get(self.job_type_id.code)
         if executor_cls:
             executor_cls(job_record=self, host_record=self.host_id).on_unblocked()
-        channel, priority = self._resolve_channel_priority(
-            self.job_type_id,
-            self.instance_id.id if self.instance_id else False,
+        self.with_context(ic_skip_state_hook=True).write(
+            {"state": "queued", "queue_head": False},
         )
-        delayed = self.with_delay(
-            max_retries=1,
-            channel=channel,
-            priority=priority,
-            description=self.job_type_id.name,
-        ).execute()
-        self.write({"queue_job_uuid": delayed.uuid})
+        self._schedule_dispatch({scope})
 
     # ── Multi-user notifications ───────────────────────────────────────────
 
@@ -1878,16 +2842,19 @@ class CloudJob(models.Model):
 
         Runs on the caller's cursor (HTTP / cron / orm.call) — the
         ``pg_notify`` emitted by ``_bus_send`` fires at that cursor's
-        commit. We deliberately do NOT hook ``write`` / ``_write``: the
-        ``state`` field is a stored related on ``queue_job_id.state`` and
-        its updates arrive via ``_write`` from whatever cursor queue_job
-        is using (sometimes a fresh cursor in failure paths, sometimes
-        the SSH executor's cursor), which is exactly the scenario the
-        memory note warns about. State transitions are already
-        broadcast explicitly from ``queue_job_ext.write`` (terminal) and
-        ``abstract_executor._publish_bus`` (while running).
+        commit. State transitions are broadcast where they are recorded:
+        ``queue_job_ext.write`` (terminal), the dispatcher (a waiting job
+        started or cancelled) and ``abstract_executor._publish_bus``
+        (while running).
         """
         records = super().create(vals_list)
+        linked = self.browse([
+            record.id
+            for record, vals in zip(records, vals_list, strict=True)
+            if vals.get("queue_job_uuid") and not vals.get("state")
+        ])
+        if linked:
+            linked._adopt_queue_job_state()
         for record in records:
             self._broadcast_job_update(record.id)
         return records
@@ -1963,9 +2930,7 @@ class CloudJob(models.Model):
         # (queue_job_ext passes the terminal state it just wrote);
         # create/chunk-flush broadcasts omit it and the client ignores
         # them. Passing it explicitly instead of reading ``job.state``
-        # here matters twice: no ORM read on the hot chunk-flush path,
-        # and no premature materialisation of the stored related state
-        # at create() time (the queue.job may not exist yet).
+        # here keeps an ORM read off the hot chunk-flush path.
         #
         # ``host_id`` / ``instance_id`` / ``project_id`` name the job's
         # target so a watcher can drop an event that does not concern it

@@ -5,7 +5,6 @@ Tests use object.__new__() to bypass __init__ so no Odoo ORM is needed.
 All ORM/SSH interaction is excluded from parse_results() by design.
 """
 import unittest
-from types import SimpleNamespace
 
 from odoo.tests.common import BaseCase
 
@@ -36,6 +35,18 @@ class TestInstanceHealthParseResults(BaseCase):
             "http_health":       {"stdout": http},
             "error_lines":       {"stdout": error_lines},
         }
+
+    def _instance(self):
+        """A strict stand-in for the probed instance, never probed before.
+
+        Production-like: no gatekeeper, so ``get_commands`` adds no
+        reading of odoo's network.
+        """
+        from odoo.addons.incubacloud.models.cloud_instance import CloudInstance
+        inst = MagicMock(spec=CloudInstance)
+        inst.last_health_check = False
+        inst.expected_services.return_value = ["odoo", "db"]
+        return inst
 
     def test_returns_empty_list_always(self):
         """parse_results never hard-fails — always returns []."""
@@ -198,7 +209,7 @@ class TestInstanceHealthParseResults(BaseCase):
         """``-a`` is what tells a slept container apart from a pruned
         one — without it both present as 'no line for the service'."""
         self.executor._skipped = False
-        inst = MagicMock(last_health_check=False)
+        inst = self._instance()
         self.executor._inst = MagicMock(return_value=inst)
         self.executor._inst_dir = MagicMock(return_value="~/foo/bar")
         cmds = dict(self.executor.get_commands())
@@ -211,7 +222,7 @@ class TestInstanceHealthParseResults(BaseCase):
         keeps the stack's own containers by their oneoff label."""
         from odoo.addons.incubacloud.models.abstract_executor import NOT_ONEOFF
         self.executor._skipped = False
-        inst = SimpleNamespace(last_health_check=False)
+        inst = self._instance()
         self.executor._inst = lambda: inst
         self.executor._inst_dir = lambda _inst: "~/foo/bar"
         cmd = dict(self.executor.get_commands())["container_state"]
@@ -232,7 +243,7 @@ class TestInstanceHealthParseResults(BaseCase):
            stored in the alert payload render as plain text.
         """
         self.executor._skipped = False
-        inst = MagicMock(last_health_check=False)
+        inst = self._instance()
         self.executor._inst = MagicMock(return_value=inst)
         self.executor._inst_dir = MagicMock(return_value="~/foo/bar")
         cmds = dict(self.executor.get_commands())
@@ -342,11 +353,11 @@ class TestInstanceHealthBlockingJobs(BaseCase):
 class TestDefaultParseResultsFailClosed(BaseCase):
     """The base AbstractExecutor.parse_results must fail-closed.
 
-    The lifecycle executors (start/stop/restart/delete_*) deliberately do
-    not override parse_results, so the base default is what decides their
-    success. It must flag any non-zero exit as an error; otherwise a failed
-    ``docker compose up -d`` would report the job done and leave the
-    instance state falsely 'ok'.
+    The lifecycle executors (start/stop/restart/delete_*) leave their
+    success to the base default (start and restart only take compose_op's
+    "ran, not checked" exit out first). It must flag any non-zero exit as
+    an error; otherwise a failed ``docker compose up -d`` would report the
+    job done and leave the instance state falsely 'ok'.
     """
 
     def setUp(self):

@@ -96,6 +96,17 @@ case "$op" in
         boot_net="ic_boot_${inst_id}"
         odoo_container="ic_boot_odoo_${inst_id}"
 
+        # Whether the test needs the gatekeeper (below) is read from the
+        # compose, and a compose that cannot be read says nothing about
+        # it. Taken for a stack without one, it put the throwaway PG on a
+        # network the boot container, inside the gatekeeper's namespace,
+        # could not join, and the test failed with nothing to say why
+        # (QA, the pull request preview walk 6f6, 2026-10-22). So the
+        # rebuild stops instead, and here, before it has copied anything.
+        if ! services="$(ic_compose_services)"; then
+            ic_die "could not read the compose to know whether the boot test needs the gatekeeper; stopping rather than assume there is none"
+        fi
+
         # Whatever this test disturbs has to come back up, so the restore
         # runs from a trap rather than from the tail of the block: with
         # ``set -e`` any unexpected failure in between (a cp that breaks,
@@ -196,7 +207,7 @@ case "$op" in
         docker network rm "$boot_net" 2>/dev/null || true
         gatekeeper=""
         gatekeeper_started=""
-        if docker compose config --services 2>/dev/null | grep -qx gatekeeper; then
+        if printf '%s\n' "$services" | grep -qx gatekeeper; then
             gatekeeper="$(docker compose ps -q gatekeeper 2>/dev/null | head -n 1)"
             if [ -z "$gatekeeper" ]; then
                 ic_log "no gatekeeper yet (first rebuild under template v10): starting it for the test"

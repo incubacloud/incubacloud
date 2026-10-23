@@ -1179,6 +1179,18 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if inst and inst.state == "draft":
             inst._transition("deploying")
 
+    def on_cancelled_queued(self):
+        """A deploy cancelled while it waited leaves the instance in 'draft'.
+
+        ``deploy`` and ``clone_to_staging`` put the instance in
+        'deploying' before queueing; cancelled in the queue, nothing
+        will take it out, and it could be neither deployed again nor
+        deleted. Same move as ``on_blocked``.
+        """
+        inst = self._inst()
+        if inst and inst.state == "deploying":
+            inst._transition("draft")
+
     async def on_abort(self, exc):
         """A run that ended before its steps failed like one whose steps did.
 

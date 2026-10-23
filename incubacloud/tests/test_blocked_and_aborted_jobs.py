@@ -40,6 +40,7 @@ from ..models.cloud_instance import ADDON_CHECK_SECONDS
 from ..models.deploy_instance_executor import DeployInstanceExecutor
 from ..models.move_cutover_executor import MoveCutoverExecutor
 from ..models.rebuild_instance_executor import RebuildInstanceExecutor
+from .test_cloud_job import _run_after_commit
 
 _CONFLICTS = [
     {"addon": "web_sheet_full_width", "repos": ["odoo-addons", "web"]},
@@ -302,6 +303,7 @@ class TestWaitingDeploy(_DeployJobCase):
         ), patch(_DETECT_ON_SAVE, autospec=True, return_value=[]) as detect:
             job_id = self.inst.deploy()
         self.assertEqual(job_id, self.job.id)
+        _run_after_commit(self.env)
         delay.assert_called_once()
         self.assertEqual(self.alert.state, "dismissed")
         # Within the time a person waiting on the request can be given.
@@ -365,6 +367,7 @@ class TestWaitingDeploy(_DeployJobCase):
         ):
             job_id = self.inst.deploy()
         self.assertEqual(job_id, self.job.id)
+        _run_after_commit(self.env)
         delay.assert_called_once()
         self.assertFalse(self.job.blocked_alert_id)
         self.assertEqual(self.inst.state, "deploying")
@@ -375,6 +378,7 @@ class TestWaitingDeploy(_DeployJobCase):
         with patch(_DETECT_ON_SAVE, autospec=True, return_value=[]):
             self.assertEqual(self.inst._check_addon_conflicts(), [])
         self.assertEqual(self.alert.state, "dismissed")
+        _run_after_commit(self.env)
         delay.assert_called_once()
         self.assertEqual(self.inst.state, "deploying")
 

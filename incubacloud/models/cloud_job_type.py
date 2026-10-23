@@ -68,3 +68,34 @@ class CloudJobType(models.Model):
             " 'normal' to 'high' at enqueue time."
         ),
     )
+    # How a job of this type behaves in its target's queue
+    # (``cloud.job``: one job at a time per instance, and per host for
+    # host-level jobs; the rest wait their turn). Set in the data files
+    # of the module that declares the type.
+    queue_collapse = fields.Boolean(
+        string="Collapse While Waiting",
+        default=False,
+        help=(
+            "Asked for again while one of this type waits in the queue"
+            " with the same payload for the same target, no second job"
+            " is created: the waiting one is returned."
+        ),
+    )
+    queue_exclusive = fields.Boolean(
+        string="One Waiting at Most",
+        default=False,
+        help=(
+            "Only one job of this type may wait in a target's queue,"
+            " whatever its payload; a second request is refused until"
+            " the waiting one is cancelled."
+        ),
+    )
+    failure_holds_queue = fields.Boolean(
+        string="Failure Holds the Queue",
+        default=False,
+        help=(
+            "When a job of this type fails, its target's queue waits"
+            " until the failure is retried successfully or its alert"
+            " is dismissed; nothing behind it starts meanwhile."
+        ),
+    )

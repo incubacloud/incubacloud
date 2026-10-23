@@ -435,6 +435,22 @@ class TestReconciling(_PitrCase):
         self.assertEqual(self._watch(), ([["rebuild_instance", "pitr_enable"]], []))
         self.assertEqual(self.inst.pitr_state, "enabling")
 
+    def test_a_lone_switch_goes_to_the_head_only_for_the_rebuild_that_asks(self):
+        """What a rebuild queues from ``_after_stack_rendered`` follows it;
+        the watch's job waits its turn in the instance's queue."""
+        with patch.object(self.Job, "enqueue", autospec=True, return_value=3) as enqueue:
+            self.inst._pitr_enqueue(["pitr_enable"])
+        self.assertFalse(enqueue.call_args.kwargs["bypass_running_check"])
+        with patch.object(self.Job, "enqueue", autospec=True, return_value=3) as enqueue:
+            self.inst._pitr_enqueue(["pitr_enable"], head=True)
+        self.assertTrue(enqueue.call_args.kwargs["bypass_running_check"])
+        self.inst.pitr_enabled = True
+        with patch.object(type(self.inst), "_pitr_renders", autospec=True, return_value=True), \
+                patch.object(self.Job, "enqueue", autospec=True, return_value=3) as enqueue:
+            self.inst._after_stack_rendered()
+        self.assertEqual(enqueue.call_args.args[3], "pitr_enable")
+        self.assertTrue(enqueue.call_args.kwargs["bypass_running_check"])
+
     def test_a_switch_that_failed_waits_a_day_both_ways(self):
         """Neither a rebuild nor a restart of the database every ten minutes."""
         self.inst.pitr_enabled = True

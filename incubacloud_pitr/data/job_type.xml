@@ -8,6 +8,7 @@
             <field name="apply_to">instance</field>
             <field name="description">Installs wal-g for the instance, turns database archiving on (one restart of the database) and takes the first base copy.</field>
             <field name="priority_tier">normal</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="pitr_disable" model="cloud.job.type">
@@ -16,6 +17,7 @@
             <field name="apply_to">instance</field>
             <field name="description">Turns database archiving off (one restart of the database) and stops the filestore copy. The archive stays in the bucket until the instance is deleted.</field>
             <field name="priority_tier">normal</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="pitr_base_backup" model="cloud.job.type">
@@ -24,6 +26,7 @@
             <field name="apply_to">instance</field>
             <field name="description">Takes the daily base copy of the database and removes from the archive what is older than the backup window.</field>
             <field name="priority_tier">low</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="pitr_status" model="cloud.job.type">
@@ -32,6 +35,7 @@
             <field name="apply_to">instance</field>
             <field name="description">Reads how far the database's archiving is behind. Changes nothing.</field>
             <field name="priority_tier">low</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="pitr_restore" model="cloud.job.type">
@@ -40,6 +44,8 @@
             <field name="apply_to">instance</field>
             <field name="description">Restores the instance's database to a chosen minute of its window, and its filestore with it. Odoo is stopped meanwhile.</field>
             <field name="priority_tier">high</field>
+            <field name="queue_exclusive">True</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
     </data>

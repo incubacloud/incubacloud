@@ -57,6 +57,9 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
     """Empty an archived instance's prefix, then remove its record."""
 
     _job_type = "purge_archived_backups"
+    # Its instance is archived by definition: the queue must not cancel
+    # it for that (``AbstractExecutor._runs_on_archived_instance``).
+    _runs_on_archived_instance = True
 
     def _inst(self):
         # ``active_test=False``: the whole point is that this instance is

@@ -1,0 +1,1168 @@
+"""The job queue per instance (``cloud.job``, 1.0.198).
+
+An instance runs one visible job at a time; what is asked for meanwhile
+waits in its queue and starts when the running job ends, first come first
+served, with what the running job queued for itself first. A host
+serialises its host-level jobs the same way. The spec's cases that live
+in core are here: order, heads, collapse, exclusive types, the cap, a
+held queue and its release, deletes, archived and moved instances, the
+sweep, cancelling while waiting, chains as one entry, hidden types and
+the mirror of queue_job's transitions.
+
+Jobs are put in a state with ``create``/``write`` of ``state``: it is the
+job's own field now. A running job ends through ``_end``: on its
+queue.job when the dispatcher gave it one, so the end arrives the way
+the runner's does (the mirror of ``queue_job_ext``), and on the job
+itself when the test created it running by hand. What waits is served
+once the event's transaction commits; a test runs that with
+``_run_after_commit``, once after what it queued — so the dispatch the
+queueing registered is spent — and once after the event under test.
+"""
+from datetime import timedelta
+from unittest.mock import patch
+
+from odoo import fields
+from odoo.exceptions import AccessError, UserError
+from odoo.tests.common import TransactionCase, new_test_user
+
+from ..controllers._data_load._helpers import _job_response
+from ..models.abstract_executor import (
+    CANCELLED_WHILE_RUNNING,
+    AbstractExecutor,
+)
+from ..models.cloud_job import QUEUE_MAX_WAITING
+from ..models.instance_health_executor import InstanceHealthExecutor
+from ..models.move_cutover_executor import MoveCutoverExecutor
+from ..models.registry import executor_registry
+from .test_cloud_job import _run_after_commit
+
+
+class _QueueCase(TransactionCase):
+    """A host, a project and a staging instance on it, deployed."""
+
+    def setUp(self):
+        super().setUp()
+        # The dispatcher and the fast path read through cursors of their
+        # own: in test mode they ride on this transaction, outside it they
+        # would be real connections that see nothing of the test and wait
+        # for its locks.
+        self.registry_enter_test_mode()
+        self.host = self.env["cloud.host"].create({
+            "name": "queue-host",
+            "ip_address": "10.0.0.81",
+            "user": "ubuntu",
+            "wildcard_domain": "queue.example.com",
+            "status": "compatible",
+            "traefik_deployed": True,
+        })
+        self.project = self.env["cloud.project"].create({"name": "Queue"})
+        self.inst = self._instance("queue-inst")
+        self.Job = self.env["cloud.job"]
+
+    def _instance(self, name, environment="staging", state="deployed"):
+        """Another instance of the project on the host, in *state*."""
+        return self.env["cloud.instance"].create({
+            "name": name,
+            "project_id": self.project.id,
+            "host_id": self.host.id,
+            "environment": environment,
+            "state": state,
+        })
+
+    def _type(self, code):
+        """The job type *code* of the data files."""
+        job_type = self.env["cloud.job.type"].search([("code", "=", code)], limit=1)
+        self.assertTrue(job_type, code)
+        return job_type
+
+    def _job(self, code, state="started", inst=None, host=None, **vals):
+        """A job of *code* on *inst* (or the host, with ``inst=False``), in *state*."""
+        if inst is None:
+            inst = self.inst
+        return self.Job.create({
+            "name": code,
+            "host_id": (host or self.host).id,
+            "instance_id": inst.id if inst else False,
+            "job_type_id": self._type(code).id,
+            "state": state,
+        } | vals)
+
+    def _enqueue(self, code, inst=None, **kwargs):
+        """``enqueue`` *code* on *inst* and return the record."""
+        if inst is None:
+            inst = self.inst
+        job_id = self.Job.enqueue(
+            self.host.id, inst.id if inst else False, code, **kwargs,
+        )
+        return self.Job.browse(job_id)
+
+    def _note(self, job):
+        """The last system message of *job*'s log."""
+        return job._get_last_system_message()
+
+    def _end(self, job, state="done"):
+        """End *job* as the runner would: through its queue.job if it has one."""
+        if job.queue_job_id:
+            job.queue_job_id.write({"state": state})
+        else:
+            job.write({"state": state})
+
+    def _failed_with_alert(self, code, inst=None):
+        """A failed job of *code* with its ``job_failed`` alert raised."""
+        job = self._job(code, state="failed", inst=inst)
+        self.Job._create_job_failed_alert(job, exc_message="boom")
+        alert = self.env["cloud.alert"].search([
+            ("job_id", "=", job.id), ("code", "=", "job_failed"),
+            ("state", "=", "active"),
+        ])
+        self.assertTrue(alert)
+        return job, alert
+
+
+class TestDispatch(_QueueCase):
+    """Free targets start at once; busy ones queue, in order."""
+
+    def test_a_free_instance_starts_the_job_at_once(self):
+        job = self._enqueue("rebuild_instance")
+        self.assertEqual(job.state, "pending")
+        self.assertTrue(job.queue_job_uuid)
+        self.assertEqual(_job_response(self.env, job.id)["state"], "pending")
+
+    def test_a_busy_instance_queues_the_job(self):
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        self.assertFalse(restart.queue_job_uuid)
+        self.assertEqual(restart._format()[0]["queue_position"], 0)
+        self.assertEqual(_job_response(self.env, restart.id)["state"], "queued")
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+        self.assertTrue(restart.queue_job_uuid)
+
+    def test_the_queue_is_served_in_order_of_creation(self):
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        backup = self._enqueue("backup_create")
+        self.assertEqual(backup._format()[0]["queue_position"], 1)
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+        self.assertEqual(backup.state, "queued")
+        self.assertEqual(backup._format()[0]["queue_position"], 0)
+        self._end(restart)
+        _run_after_commit(self.env)
+        self.assertEqual(backup.state, "pending")
+
+    def test_a_follow_up_of_the_running_job_goes_first(self):
+        """``bypass_running_check``: part of the job running now."""
+        deploy = self._job("deploy_instance")
+        rebuild = self._enqueue("rebuild_instance")
+        follow = self._enqueue("restart_instance", bypass_running_check=True)
+        self.assertEqual(follow.state, "queued")
+        self.assertTrue(follow.queue_head)
+        self.assertEqual(follow._format()[0]["queue_position"], 0)
+        self.assertEqual(rebuild._format()[0]["queue_position"], 1)
+        deploy.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(follow.state, "pending")
+        self.assertEqual(rebuild.state, "queued")
+
+    def test_heads_go_by_creation_among_themselves(self):
+        deploy = self._job("deploy_instance")
+        first = self._enqueue("restart_instance", bypass_running_check=True)
+        second = self._enqueue("backup_create", bypass_running_check=True)
+        deploy.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(first.state, "pending")
+        self.assertEqual(second.state, "queued")
+
+    def test_queued_counts_as_active(self):
+        self.assertIn("queued", self.Job._active_states)
+        self.assertNotIn("queued", self.Job._running_states)
+        for state in ("done", "failed", "cancelled"):
+            self.assertNotIn(state, self.Job._active_states)
+
+    def test_a_hidden_type_never_waits_nor_occupies(self):
+        self._job("rebuild_instance")
+        probe = self._enqueue("instance_health")
+        self.assertEqual(probe.state, "pending")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        # Only the probe runs: nothing holds the restart back.
+        self.assertEqual(
+            self.Job.search([
+                ("instance_id", "=", self.inst.id), ("state", "=", "started"),
+            ]).mapped("job_type_id.code"), ["rebuild_instance"],
+        )
+
+    def test_host_jobs_queue_per_host_apart_from_instance_jobs(self):
+        hardening = self._job("host_hardening", inst=False)
+        setup = self._enqueue("full_setup", inst=False)
+        self.assertEqual(setup.state, "queued")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "pending")
+        hardening.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(setup.state, "pending")
+
+    def test_the_mirror_follows_the_queue_job_and_moves_the_queue_on(self):
+        """queue_job writes ``started`` and ``done``; the queue follows."""
+        rebuild = self._enqueue("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        rebuild.queue_job_id.write({"state": "started"})
+        self.assertEqual(rebuild.state, "started")
+        self.assertEqual(restart.state, "queued")
+        rebuild.queue_job_id.write({"state": "done"})
+        self.assertEqual(rebuild.state, "done")
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_cooperative_cancel_moves_nothing_until_the_job_stops(self):
+        rebuild = self._enqueue("rebuild_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        restart = self._enqueue("restart_instance")
+        rebuild.cancel_job()
+        self.assertEqual(rebuild.state, "cancelled")
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "queued", "the executor still runs")
+        # The flag is read from the row by the mirror, as from another
+        # transaction in production.
+        self.env.flush_all()
+        rebuild.queue_job_id.write({
+            "state": "done", "result": CANCELLED_WHILE_RUNNING,
+        })
+        self.assertEqual(rebuild.state, "cancelled")
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_job_cancelled_while_it_runs_still_occupies_the_target(self):
+        """The flag is written while the executor winds down: nothing
+        enqueued meanwhile, and no sweep, starts beside it."""
+        rebuild = self._enqueue("rebuild_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        rebuild.cancel_job()
+        self.env.flush_all()
+        self.assertTrue(self.Job._scope_busy(self.inst.id, None))
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        follow = self._enqueue("backup_create", bypass_running_check=True)
+        self.assertEqual(follow.state, "queued")
+        self.assertEqual(self.Job._cron_dispatch_queued(), 0)
+        self.assertEqual(restart.state, "queued")
+        rebuild.queue_job_id.write({
+            "state": "done", "result": CANCELLED_WHILE_RUNNING,
+        })
+        _run_after_commit(self.env)
+        self.assertEqual(follow.state, "pending")
+        self.assertEqual(restart.state, "queued")
+
+
+class TestAdmission(_QueueCase):
+    """What the type says: collapse, exclusive, the cap."""
+
+    def test_an_identical_waiting_job_is_returned_instead_of_a_second(self):
+        self._job("deploy_instance")
+        first = self._enqueue("rebuild_instance")
+        second = self._enqueue("rebuild_instance")
+        self.assertEqual(first, second)
+
+    def test_a_running_job_is_not_collapsed_into(self):
+        running = self._job("restart_instance")
+        queued = self._enqueue("restart_instance")
+        self.assertNotEqual(running, queued)
+        self.assertEqual(queued.state, "queued")
+
+    def test_a_different_payload_is_another_job(self):
+        self._job("deploy_instance")
+        first = self._enqueue("backup_create", payload={"with_filestore": True})
+        second = self._enqueue("backup_create", payload={"with_filestore": False})
+        self.assertNotEqual(first, second)
+
+    def test_a_different_secret_is_another_job(self):
+        """The identity a layer gives the load (secret apart) is compared.
+
+        Plays the SaaS manager: ``_queue_identity`` splits the secret off
+        the payload the way its ``create`` stores it.
+        """
+        self._job("deploy_instance")
+        Job = type(self.Job)
+
+        def split(payload):
+            """Return ``(secret, payload without it)``, as the layer stores them."""
+            payload = dict(payload or {})
+            return payload.pop("secret", None) or False, payload
+
+        with patch.object(
+            Job, "_queue_identity", autospec=True,
+            side_effect=lambda self, payload: tuple(reversed(split(payload))),
+        ):
+            first = self._enqueue("restart_instance", payload={"a": 1, "secret": "x"})
+            first.write({"payload": {"a": 1}, "secret_payload": "x"})
+            second = self._enqueue("restart_instance", payload={"a": 1, "secret": "y"})
+            second.write({"payload": {"a": 1}, "secret_payload": "y"})
+            third = self._enqueue("restart_instance", payload={"a": 1, "secret": "x"})
+        self.assertNotEqual(first, second)
+        self.assertEqual(first, third)
+
+    def test_a_second_waiting_exclusive_job_is_refused(self):
+        self._job("deploy_instance")
+        self._enqueue("restore_instance", payload={"backup": "a"})
+        with self.assertRaisesRegex(UserError, "already queued"):
+            self._enqueue("restore_instance", payload={"backup": "b"})
+
+    def test_an_exclusive_job_only_a_fresh_read_sees_refuses_a_second(self):
+        """Committed by another request after this one's snapshot."""
+        self._job("deploy_instance")
+        with patch.object(
+            type(self.Job), "_fresh_search_count", autospec=True,
+            return_value=1,
+        ) as fresh, self.assertRaisesRegex(UserError, "already queued"):
+            self._enqueue("restore_instance", payload={"backup": "b"})
+        fresh.assert_called_once()
+
+    def test_the_sixth_entry_is_refused_but_a_head_enters(self):
+        self._job("deploy_instance")
+        for n in range(QUEUE_MAX_WAITING):
+            self._enqueue("backup_create", payload={"n": n})
+        with self.assertRaisesRegex(UserError, "waiting in its queue"):
+            self._enqueue("backup_create", payload={"n": 99})
+        follow = self._enqueue("restart_instance", bypass_running_check=True)
+        self.assertEqual(follow.state, "queued")
+
+    def test_a_chain_counts_once_towards_the_cap(self):
+        self._job("deploy_instance")
+        for n in range(QUEUE_MAX_WAITING - 1):
+            self._enqueue("backup_create", payload={"n": n})
+        self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": self.inst.id,
+             "job_type_code": "backup_create"},
+            {"host_id": self.host.id, "instance_id": self.inst.id,
+             "job_type_code": "backup_list"},
+        ])
+        with self.assertRaisesRegex(UserError, "waiting in its queue"):
+            self._enqueue("restart_instance")
+
+
+class TestHold(_QueueCase):
+    """A failure of a holding type holds the queue until its alert closes."""
+
+    def test_a_failed_deploy_holds_the_queue(self):
+        _deploy, alert = self._failed_with_alert("deploy_instance")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        row = restart._format()[0]
+        self.assertTrue(row["queue_held"])
+        self.assertTrue(row["requires_action"])
+        self.assertEqual(row["queue_held_alert_id"], alert.id)
+        self.assertFalse(self.Job._cron_dispatch_queued())
+        self.assertEqual(restart.state, "queued")
+
+    def test_dismissing_the_alert_releases_the_queue(self):
+        _deploy, alert = self._failed_with_alert("deploy_instance")
+        restart = self._enqueue("restart_instance")
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "queued", "held")
+        alert.write({"state": "dismissed", "resolution": "manual"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_failure_of_a_non_holding_type_holds_nothing(self):
+        self._failed_with_alert("backup_create")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "pending")
+
+    def test_the_failed_job_cannot_be_cancelled_to_release_it(self):
+        deploy, _alert = self._failed_with_alert("deploy_instance")
+        restart = self._enqueue("restart_instance")
+        with self.assertRaises(UserError):
+            deploy.cancel_job()
+        self.assertTrue(self.Job._queue_held_by(self.inst.id, None))
+        self.assertEqual(restart.state, "queued")
+
+    def test_the_retry_passes_the_hold_and_its_success_releases_it(self):
+        deploy, alert = self._failed_with_alert("deploy_instance")
+        restart = self._enqueue("restart_instance")
+        retry = self.Job.browse(deploy.retry_job())
+        self.assertTrue(retry.queue_head)
+        self.assertEqual(retry.state, "queued")
+        _run_after_commit(self.env)
+        self.assertEqual(retry.state, "pending")
+        self.assertEqual(restart.state, "queued")
+        with self.assertRaisesRegex(UserError, "already waiting"):
+            deploy.retry_job()
+        retry.queue_job_id.write({"state": "done"})
+        self.assertEqual(alert.state, "dismissed")
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_retry_only_a_fresh_read_sees_refuses_a_second(self):
+        """Two clicks at once: the first retry committed after the
+        second request's snapshot."""
+        deploy, _alert = self._failed_with_alert("deploy_instance")
+        with patch.object(
+            type(self.Job), "_fresh_search_count", autospec=True,
+            return_value=1,
+        ) as fresh, self.assertRaisesRegex(UserError, "already waiting"):
+            deploy.retry_job()
+        fresh.assert_called_once()
+        self.assertFalse(self.Job.search([("retry_of_id", "=", deploy.id)]))
+
+    def test_a_retry_while_another_job_runs_waits_at_the_head(self):
+        deploy, _alert = self._failed_with_alert("deploy_instance")
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        retry = self.Job.browse(deploy.retry_job())
+        self.assertEqual(retry.state, "queued")
+        with self.assertRaisesRegex(UserError, "already waiting"):
+            deploy.retry_job()
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(retry.state, "pending")
+        self.assertEqual(restart.state, "queued")
+
+    def test_a_critical_conflict_alert_holds_like_the_failure_would(self):
+        """``_create_job_failed_alert`` raises nothing for a job that
+        failed on a critical conflict of its own; that alert holds."""
+        deploy = self._job("deploy_instance", state="failed")
+        self.env["cloud.alert"].sudo().raise_alert(
+            "addon_conflict", "two repositories define web_x",
+            level="critical", instance=self.inst, job=deploy,
+        )
+        self.assertFalse(self.Job._create_job_failed_alert(deploy, "boom"))
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        self.assertTrue(self.Job._queue_held_by(self.inst.id, None))
+
+    def test_a_delete_passes_the_hold(self):
+        """The delete waits for the running job alone (spec §8)."""
+        self._failed_with_alert("deploy_instance")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "queued")
+        delete = self._enqueue("delete_instance")
+        self.assertEqual(restart.state, "cancelled")
+        self.assertEqual(delete.state, "pending")
+
+    def test_a_delete_behind_a_running_job_passes_the_hold_when_it_ends(self):
+        self._failed_with_alert("deploy_instance")
+        running = self._job("backup_create")
+        delete = self._enqueue("delete_instance")
+        self.assertEqual(delete.state, "queued")
+        running.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(delete.state, "pending")
+
+    def test_only_the_retry_of_the_holding_failure_passes(self):
+        """A retry of some other failed job waits like everything else."""
+        deploy, alert = self._failed_with_alert("deploy_instance")
+        backup, _other = self._failed_with_alert("backup_create")
+        backup_retry = self.Job.browse(backup.retry_job())
+        self.assertTrue(backup_retry.queue_head)
+        self.assertEqual(backup_retry.state, "queued")
+        deploy_retry = self.Job.browse(deploy.retry_job())
+        _run_after_commit(self.env)
+        self.assertEqual(deploy_retry.state, "pending")
+        self.assertEqual(backup_retry.state, "queued")
+        self._end(deploy_retry)
+        self.assertEqual(alert.state, "dismissed")
+        _run_after_commit(self.env)
+        self.assertEqual(backup_retry.state, "pending")
+
+    def test_a_host_level_failure_holds_the_host_not_its_instances(self):
+        job_type = self._type("host_hardening")
+        job_type.failure_holds_queue = True
+        self._failed_with_alert("host_hardening", inst=False)
+        setup = self._enqueue("full_setup", inst=False)
+        self.assertEqual(setup.state, "queued")
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "pending")
+
+
+class TestCancellation(_QueueCase):
+    """Cancelled while it waits: at once, with a note, with the undo hook."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # Optional modules may add NOT NULL columns to res_partner without
+        # SQL defaults, which ``new_test_user`` trips on. Same workaround
+        # as ``TestEnqueueJobTypeGate``.
+        cls.env.cr.execute("""
+            SELECT column_name, data_type
+              FROM information_schema.columns
+             WHERE table_name = 'res_partner'
+               AND is_nullable = 'NO'
+               AND column_default IS NULL
+               AND column_name NOT IN ('id', 'name', 'company_type',
+                                       'type', 'lang', 'active',
+                                       'create_uid', 'write_uid',
+                                       'create_date', 'write_date')
+        """)
+        for col, dtype in cls.env.cr.fetchall():
+            default = "''" if 'char' in dtype or 'text' in dtype else "'no'"
+            cls.env.cr.execute(
+                f'ALTER TABLE res_partner '
+                f'ALTER COLUMN "{col}" SET DEFAULT {default}'
+            )
+
+    def test_a_queued_job_is_cancelled_at_once_with_a_note(self):
+        self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        restart.cancel_job()
+        self.assertEqual(restart.state, "cancelled")
+        self.assertIn("Cancelled in the queue by", self._note(restart))
+
+    def test_whoever_may_ask_for_the_type_may_cancel_it_nobody_else(self):
+        self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        viewer = new_test_user(
+            self.env, login="queue-viewer",
+            groups="base.group_user,incubacloud.group_cloud_user",
+        )
+        with self.assertRaises(AccessError):
+            restart.with_user(viewer).cancel_job()
+        self.assertEqual(restart.state, "queued")
+        consultant = new_test_user(
+            self.env, login="queue-consultant",
+            groups="base.group_user,incubacloud.group_cloud_consultant",
+        )
+        self.project.member_ids = [(4, consultant.id)]
+        restart.with_user(consultant).cancel_job()
+        self.assertEqual(restart.state, "cancelled")
+
+    def test_cancelling_the_waiting_job_serves_the_next(self):
+        """A chain first in the staging's queue waits for production; once
+        it is cancelled, what waited behind it on the staging starts."""
+        prod = self._instance("queue-prod", environment="production")
+        self._job("backup_create", inst=prod)
+        staging = self._instance("queue-staging")
+        chain = self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": prod.id,
+             "job_type_code": "backup_download"},
+            {"host_id": self.host.id, "instance_id": staging.id,
+             "job_type_code": "restore_instance"},
+        ]))
+        restart = self._enqueue("restart_instance", inst=staging)
+        _run_after_commit(self.env)
+        self.assertEqual(set(chain.mapped("state")), {"queued"})
+        self.assertEqual(restart.state, "queued", "behind the chain")
+        chain[0].cancel_job()
+        _run_after_commit(self.env)
+        self.assertEqual(set(chain.mapped("state")), {"cancelled"})
+        self.assertEqual(restart.state, "pending")
+
+    def test_the_executor_hook_runs_when_a_queued_job_is_cancelled(self):
+        self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        executor_cls = executor_registry.get("restart_instance")
+        with patch.object(
+            executor_cls, "on_cancelled_queued", autospec=True,
+        ) as hook:
+            restart.cancel_job()
+        hook.assert_called_once()
+        self.assertEqual(hook.call_args.args[0].job, restart)
+
+    def test_a_deploy_cancelled_in_the_queue_puts_the_instance_in_draft(self):
+        draft = self._instance("queue-draft", state="draft")
+        self._job("backup_create", inst=draft)
+        draft._transition("deploying")
+        deploy = self._enqueue("deploy_instance", inst=draft)
+        self.assertEqual(deploy.state, "queued")
+        deploy.cancel_job()
+        self.assertEqual(draft.state, "draft")
+        self.assertTrue(draft.exists())
+
+    def test_a_delete_clears_the_queue_and_waits_for_the_running_job(self):
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        backup = self._enqueue("backup_create")
+        delete = self._enqueue("delete_instance")
+        self.assertEqual(restart.state, "cancelled")
+        self.assertEqual(backup.state, "cancelled")
+        self.assertIn("asked to be deleted", self._note(restart))
+        self.assertEqual(delete.state, "queued")
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(delete.state, "pending")
+
+    def test_an_archived_instance_cancels_its_waiting_job_at_dispatch(self):
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        self.inst.active = False
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "cancelled")
+        self.assertIn("no longer there", self._note(restart))
+
+    def test_a_job_asked_for_on_an_archived_instance_is_cancelled(self):
+        """The fast path too: a restart has nothing left to act on."""
+        self.inst.active = False
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart.state, "cancelled")
+        self.assertIn("no longer there", self._note(restart))
+
+    def test_the_purge_of_an_archived_instance_starts_at_once(self):
+        """Its instance is archived by definition: not a reason to cancel."""
+        self.inst.active = False
+        purge = self._enqueue("purge_archived_backups")
+        self.assertEqual(purge.state, "pending")
+        self.assertTrue(purge.queue_job_uuid)
+
+    def test_the_purge_of_an_archived_instance_is_served_from_the_queue(self):
+        running = self._job("backup_create")
+        self.inst.active = False
+        purge = self._enqueue("purge_archived_backups")
+        _run_after_commit(self.env)
+        self.assertEqual(purge.state, "queued")
+        running.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(purge.state, "pending")
+        self.assertTrue(purge.queue_job_uuid)
+
+    def test_unlinking_the_instance_cancels_what_waited(self):
+        draft = self._instance("queue-gone", state="draft")
+        self._job("backup_create", inst=draft)
+        waiting = self._enqueue("grant_restore_upload_key", inst=draft)
+        self.assertEqual(waiting.state, "queued")
+        draft.unlink()
+        self.assertEqual(waiting.state, "cancelled")
+        self.assertIn("no longer there", self._note(waiting))
+
+    def test_a_waiting_job_starts_on_the_host_the_instance_moved_to(self):
+        other = self.env["cloud.host"].create({
+            "name": "queue-host-2",
+            "ip_address": "10.0.0.82",
+            "user": "ubuntu",
+            "wildcard_domain": "queue2.example.com",
+        })
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        self.inst.host_id = other
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+        self.assertEqual(restart.host_id, other)
+
+
+class TestSweep(_QueueCase):
+
+    def test_the_sweep_serves_a_queue_nothing_dispatched(self):
+        lost = self._job("restart_instance", state="queued")
+        self.assertEqual(self.Job._cron_dispatch_queued(), 1)
+        # Served through a cursor of its own.
+        self.env.invalidate_all()
+        self.assertEqual(lost.state, "pending")
+
+    def test_the_sweep_leaves_a_busy_queue_alone(self):
+        self._job("rebuild_instance")
+        waiting = self._job("restart_instance", state="queued")
+        self.assertEqual(self.Job._cron_dispatch_queued(), 0)
+        self.assertEqual(waiting.state, "queued")
+
+
+class TestChains(_QueueCase):
+    """A chain is one entry, dispatched whole, cancelled whole."""
+
+    def _chain(self, codes, inst=None):
+        """``enqueue_chain`` *codes* on *inst* (the staging) and return the steps."""
+        steps = [
+            {"host_id": self.host.id, "instance_id": (inst or self.inst).id,
+             "job_type_code": code}
+            for code in codes
+        ]
+        return self.Job.browse(self.Job.enqueue_chain(steps))
+
+    def test_a_chain_waits_as_one_entry_and_is_dispatched_whole(self):
+        rebuild = self._job("rebuild_instance")
+        chain = self._chain(["backup_create", "backup_list"])
+        self.assertEqual(set(chain.mapped("state")), {"queued"})
+        self.assertEqual(len(set(chain.mapped("queue_chain_key"))), 1)
+        restart = self._enqueue("restart_instance")
+        self.assertEqual(restart._format()[0]["queue_position"], 1)
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
+        self.assertTrue(all(chain.mapped("queue_job_uuid")))
+        self.assertEqual(restart.state, "queued")
+        # The first step's end moves nothing: the chain still runs.
+        self._end(chain[0])
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "queued")
+        self._end(chain[1])
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_free_instance_dispatches_the_chain_at_once(self):
+        chain = self._chain(["backup_create", "backup_list"])
+        self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
+        self.assertEqual(
+            chain[0].queue_job_id.graph_uuid, chain[1].queue_job_id.graph_uuid,
+        )
+
+    def test_chain_references_are_resolved_at_dispatch(self):
+        running = self._job("rebuild_instance")
+        chain = self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": self.inst.id,
+             "job_type_code": "backup_download",
+             "payload": {"time": "latest"}},
+            {"host_id": self.host.id, "instance_id": self.inst.id,
+             "job_type_code": "restore_instance",
+             "payload": {"source_job_id": "__chain_job_0__"}},
+        ]))
+        self.assertEqual(chain[1].payload["source_job_id"], "__chain_job_0__")
+        running.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(chain[1].payload["source_job_id"], chain[0].id)
+
+    def test_cancelling_one_step_cancels_the_chain(self):
+        self._job("rebuild_instance")
+        chain = self._chain(["backup_create", "backup_download", "restore_instance"])
+        chain[1].cancel_job()
+        self.assertEqual(set(chain.mapped("state")), {"cancelled"})
+
+    def test_a_dispatched_chain_cancelled_before_it_started_frees_the_queue(self):
+        """``cancel_job`` on the pending head: queue_job cancels the next
+        steps' queue.jobs with SQL, which nothing mirrors; the mirror of
+        the head's end ends their cloud jobs too, tells the layers, and
+        the queue moves on."""
+        chain = self._chain(["backup_create", "backup_list"])
+        self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
+        restart = self._enqueue("restart_instance")
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "queued")
+        with patch.object(
+            type(self.Job), "_after_job_terminal", autospec=True,
+        ) as hook:
+            chain[0].cancel_job()
+        self.assertEqual(set(chain.mapped("state")), {"cancelled"})
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+        self.assertEqual(
+            sorted((c.args[0].id, c.args[1]) for c in hook.call_args_list),
+            [(chain[0].id, "cancelled"), (chain[1].id, "cancelled")],
+        )
+
+    def test_a_step_after_one_that_failed_ends_cancelled_not_failed(self):
+        """Only the step that failed is a failure. The next one never ran:
+        it ends cancelled, says why in its log, and offers no retry that
+        would run it out of its chain."""
+        chain = self._chain(["backup_create", "backup_list"])
+        first, second = chain
+        first.queue_job_id.write({"state": "started"})
+        with patch.object(
+            type(self.Job), "_after_job_terminal", autospec=True,
+        ) as hook:
+            first.queue_job_id.write({"state": "failed", "exc_message": "boom"})
+        self.assertEqual(first.state, "failed")
+        self.assertEqual(second.state, "cancelled")
+        self.assertEqual(second.queue_job_id.state, "cancelled")
+        self.assertEqual(
+            sorted((c.args[0].id, c.args[1]) for c in hook.call_args_list),
+            [(first.id, "failed"), (second.id, "cancelled")],
+        )
+        self.assertEqual(
+            self._note(second), f"Not run: step #{first.id} ended failed.",
+        )
+        with self.assertRaisesRegex(UserError, "Only failed jobs"):
+            second.retry_job()
+
+    def test_a_probe_that_fails_leaves_a_chain_on_its_instance_alone(self):
+        """A hidden job runs beside the chain, outside it: its end is not
+        the end of steps that happen to have higher ids."""
+        probe = self._enqueue("instance_health")
+        chain = self._chain(["backup_create", "backup_list"])
+        self.assertLess(probe.id, chain[0].id)
+        self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
+        probe.queue_job_id.write({"state": "failed", "exc_message": "boom"})
+        self.assertEqual(probe.state, "failed")
+        self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
+        self.assertEqual(chain[1].queue_job_id.state, "wait_dependencies")
+
+    def test_a_chain_across_instances_waits_in_every_queue(self):
+        prod = self._instance("queue-prod", environment="production")
+        prod_backup = self._job("backup_create", inst=prod)
+        staging = self._instance("queue-staging", state="draft")
+        chain = self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": staging.id,
+             "job_type_code": "deploy_instance"},
+            {"host_id": self.host.id, "instance_id": prod.id,
+             "job_type_code": "backup_download"},
+            {"host_id": self.host.id, "instance_id": staging.id,
+             "job_type_code": "restore_instance"},
+        ]))
+        self.assertEqual(set(chain.mapped("state")), {"queued"})
+        # The staging is free, but the chain waits for production; a
+        # restart asked for on the staging waits behind the chain.
+        restart = self._enqueue("restart_instance", inst=staging)
+        self.assertEqual(restart.state, "queued")
+        self.assertEqual(restart._format()[0]["queue_position"], 1)
+        self.assertEqual(self.Job._cron_dispatch_queued(), 0)
+        prod_backup.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(
+            chain.mapped("state"),
+            ["pending", "wait_dependencies", "wait_dependencies"],
+        )
+        self.assertEqual(restart.state, "queued")
+        # Both instances are occupied by the chain until its last step
+        # ends: the staging while its download runs on production, and
+        # production while the restore runs on the staging.
+        self._end(chain[0])
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "queued")
+        self.assertTrue(self.Job._scope_busy(prod.id, None))
+        self._end(chain[1])
+        _run_after_commit(self.env)
+        self.assertTrue(self.Job._scope_busy(prod.id, None))
+        self.assertTrue(self.Job._scope_busy(staging.id, None))
+        self._end(chain[2])
+        _run_after_commit(self.env)
+        self.assertFalse(self.Job._scope_busy(prod.id, None))
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_chain_to_the_head_goes_before_what_waits(self):
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        chain = self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": self.inst.id,
+             "job_type_code": "backup_create"},
+            {"host_id": self.host.id, "instance_id": self.inst.id,
+             "job_type_code": "backup_list"},
+        ], bypass_running_check=True))
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(chain[0].state, "pending")
+        self.assertEqual(restart.state, "queued")
+
+
+class TestMoves(_QueueCase):
+    """A move's chain in the queue, its cancellation and its rollback."""
+
+    def setUp(self):
+        super().setUp()
+        self.target = self.env["cloud.host"].create({
+            "name": "queue-target",
+            "ip_address": "10.0.0.83",
+            "user": "ubuntu",
+            "wildcard_domain": "target.example.com",
+            "status": "compatible",
+            "traefik_deployed": True,
+        })
+
+    def test_a_move_cancelled_in_the_queue_leaves_no_marker(self):
+        self._job("rebuild_instance")
+        self.inst.move_to_host(self.target)
+        chain = self.inst._get_move_chain_jobs()
+        self.assertEqual(set(chain.mapped("state")), {"queued"})
+        self.assertTrue(self.inst.move_origin_host_id)
+        with patch.object(
+            type(self.inst), "_on_move_rolled_back", autospec=True,
+        ) as undone:
+            chain[0].cancel_job()
+        self.assertEqual(set(chain.mapped("state")), {"cancelled"})
+        self.assertFalse(self.inst.move_origin_host_id)
+        self.assertFalse(self.inst.move_target_host_id)
+        self.assertFalse(self.inst.move_chain_job_ids)
+        undone.assert_called_once()
+        self.assertEqual(undone.call_args.kwargs["target_host"], self.target)
+        # Nothing for the stuck-move watchdog to recover.
+        self.env["cloud.instance"].cron_recover_stuck_moves()
+        self.assertFalse(self.env["cloud.alert"].search([
+            ("instance_id", "=", self.inst.id), ("code", "=", "move_stuck"),
+        ]))
+
+    def test_rolling_back_a_move_still_waiting_undoes_it_without_jobs(self):
+        self._job("rebuild_instance")
+        self.inst.move_to_host(self.target)
+        result = self.inst.rollback_move()
+        self.assertEqual(result, {"ok": True, "job_id": None})
+        self.assertFalse(self.inst.move_origin_host_id)
+        self.assertFalse(self.inst.move_rollback_in_progress)
+
+    def test_the_cutover_hook_leaves_a_rollback_in_progress_alone(self):
+        self.inst.write({
+            "move_origin_host_id": self.host.id,
+            "move_target_host_id": self.target.id,
+            "move_rollback_in_progress": True,
+        })
+        cutover = self._job("move_cutover", state="queued", host=self.target)
+        self.inst.move_chain_job_ids = str(cutover.id)
+        MoveCutoverExecutor(cutover, self.target).on_cancelled_queued()
+        self.assertEqual(self.inst.move_origin_host_id, self.host)
+
+    def test_the_rollback_jobs_go_to_the_head_and_wait_for_the_stopped_step(self):
+        """Rolling back a move with a step running: the step is cancelled
+        cooperatively, and start_instance then move_rollback_cleanup wait
+        for it to stop, in that order, before anything a user queued."""
+        step = self._enqueue("backup_download")
+        step.queue_job_id.write({"state": "started"})
+        self.inst.write({
+            "move_origin_host_id": self.host.id,
+            "move_target_host_id": self.target.id,
+            "move_chain_job_ids": str(step.id),
+        })
+        user_restart = self._enqueue("restart_instance")
+        result = self.inst.rollback_move()
+        self.assertTrue(result["ok"])
+        cleanup = self.Job.browse(result["job_id"])
+        start = self.Job.search([
+            ("instance_id", "=", self.inst.id),
+            ("job_type_id.code", "=", "start_instance"),
+        ])
+        self.assertEqual(step.state, "cancelled")
+        self.assertEqual((start.state, cleanup.state), ("queued", "queued"))
+        self.assertTrue(start.queue_head and cleanup.queue_head)
+        self.assertEqual(self.Job._cron_dispatch_queued(), 0, "the step still runs")
+        # The executor stops on the flag and queue_job stores the end.
+        self.env.flush_all()
+        step.queue_job_id.write({
+            "state": "done", "result": CANCELLED_WHILE_RUNNING,
+        })
+        _run_after_commit(self.env)
+        self.assertEqual(start.state, "pending")
+        self.assertEqual(cleanup.state, "queued")
+        self.assertEqual(user_restart.state, "queued")
+        self._end(start)
+        _run_after_commit(self.env)
+        self.assertEqual(cleanup.state, "pending")
+
+
+class TestReaders(_QueueCase):
+    """Who counts a waiting job as occupation, and who does not."""
+
+    def test_the_health_probe_ignores_a_waiting_rebuild(self):
+        probe = self._job("instance_health", state="started")
+        executor = InstanceHealthExecutor(probe, self.host)
+        self._job("rebuild_instance", state="queued")
+        self.assertFalse(executor._is_blocked_by_active_job())
+        self._job("rebuild_instance", state="started")
+        self.assertTrue(executor._is_blocked_by_active_job())
+
+    def test_blocked_jobs_are_neither_waiting_nor_occupying(self):
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            "pip_conflict", "conflict", instance=self.inst,
+        )
+        blocked = self._job("deploy_instance", state=False, blocked_alert_id=alert.id)
+        self.assertEqual(blocked._format()[0]["state"], "blocked")
+        self.assertFalse(self.Job._scope_busy(self.inst.id, None))
+        self.assertEqual(self.Job._queue_entries((self.inst.id, None)), [])
+
+    def test_unblocking_queues_the_job_when_the_instance_is_busy(self):
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            "addon_conflict", "conflict", instance=self.inst,
+        )
+        blocked = self._job("rebuild_instance", state=False, blocked_alert_id=alert.id)
+        running = self._job("backup_create")
+        blocked.unblock_and_enqueue()
+        self.assertEqual(blocked.state, "queued")
+        self.assertFalse(blocked.blocked_alert_id)
+        running.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(blocked.state, "pending")
+
+    def test_the_upload_key_revocation_waits_its_turn(self):
+        self._job("rebuild_instance")
+        grant = self.env["cloud.restore.upload.grant"].create({
+            "host_id": self.host.id,
+            "instance_id": self.inst.id,
+            "token": "queue-token",
+            "public_key": "ssh-ed25519 AAAA queue",
+            "expires_at": fields.Datetime.now() + timedelta(hours=1),
+            "state": "granted",
+        })
+        job = self.Job.browse(grant._revoke())
+        self.assertEqual(job.state, "queued")
+        self.assertFalse(job.queue_head)
+
+    def test_the_merge_hook_defaults_to_nothing(self):
+        waiting = self._job("restart_instance", state="queued")
+        self.assertFalse(AbstractExecutor._merge_queued_payload(waiting, {"a": 1}))
+
+
+class TestDispatchAfterCommit(_QueueCase):
+    """The queues move on fresh cursors once the event's transaction commits.
+
+    The runner's transaction reads the snapshot it took when the job
+    started, so it never dispatches what was queued meanwhile; and nothing
+    the dispatcher or a layer's hook does decides how the job ended.
+    """
+
+    _LOGGER = "odoo.addons.incubacloud.models.cloud_job"
+
+    def test_a_job_the_runner_ends_done_dispatches_the_next(self):
+        rebuild = self._enqueue("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "queued")
+        rebuild.queue_job_id.write({"state": "done"})
+        self.assertEqual(restart.state, "queued", "not before the commit")
+        _run_after_commit(self.env)
+        self.assertEqual(rebuild.state, "done")
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_job_the_runner_ends_failed_dispatches_the_next(self):
+        backup = self._enqueue("backup_create")
+        restart = self._enqueue("restart_instance")
+        backup.queue_job_id.write({"state": "started"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "queued")
+        backup.queue_job_id.write({"state": "failed", "exc_message": "boom"})
+        self.assertEqual(restart.state, "queued", "not before the commit")
+        _run_after_commit(self.env)
+        self.assertEqual(backup.state, "failed")
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_holding_failure_ended_by_the_runner_holds_the_queue(self):
+        deploy = self._enqueue("deploy_instance")
+        restart = self._enqueue("restart_instance")
+        deploy.queue_job_id.write({"state": "started"})
+        deploy.queue_job_id.write({"state": "failed", "exc_message": "boom"})
+        _run_after_commit(self.env)
+        self.assertEqual(deploy.state, "failed")
+        self.assertEqual(restart.state, "queued")
+        self.assertEqual(self.Job._queue_held_by(self.inst.id, None).job_id, deploy)
+
+    def test_a_dispatcher_that_raises_leaves_the_end_as_it_was(self):
+        rebuild = self._enqueue("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        with (
+            patch.object(
+                type(self.Job), "_dispatch_next", autospec=True,
+                side_effect=RuntimeError("dispatcher"),
+            ) as dispatch,
+            self.assertLogs(self._LOGGER, "ERROR") as logs,
+        ):
+            rebuild.queue_job_id.write({"state": "done"})
+            dispatch.assert_not_called()
+            _run_after_commit(self.env)
+        dispatch.assert_called_once()
+        self.assertEqual(rebuild.state, "done")
+        self.assertEqual(rebuild.queue_job_id.state, "done")
+        self.assertEqual(restart.state, "queued")
+        self.assertIn(
+            f"could not serve the queue of instance {self.inst.id}",
+            "\n".join(logs.output),
+        )
+        # The sweep comes by.
+        self.assertEqual(self.Job._cron_dispatch_queued(), 1)
+        self.env.invalidate_all()
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_layer_hook_that_raises_does_not_fail_a_job_that_succeeded(self):
+        rebuild = self._enqueue("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        with (
+            patch.object(
+                type(self.Job), "_after_job_terminal", autospec=True,
+                side_effect=RuntimeError("layer"),
+            ) as hook,
+            self.assertLogs(self._LOGGER, "ERROR") as logs,
+        ):
+            rebuild.queue_job_id.write({"state": "done"})
+        hook.assert_called_once_with(rebuild, "done")
+        self.assertIn("_after_job_terminal(done) raised", "\n".join(logs.output))
+        self.assertEqual(rebuild.state, "done")
+        self.assertEqual(rebuild.queue_job_id.state, "done")
+        self.assertFalse(self.env["cloud.alert"].search([
+            ("job_id", "=", rebuild.id), ("code", "=", "job_failed"),
+        ]))
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+
+    def test_a_target_busy_for_a_fresh_read_keeps_the_new_job_waiting(self):
+        """This snapshot sees the instance free, a READ COMMITTED read
+        sees it busy (a start committed after the snapshot was taken)."""
+        with patch.object(
+            type(self.Job), "_scope_quiet_fresh", autospec=True,
+            return_value=False,
+        ) as fresh:
+            restart = self._enqueue("restart_instance")
+        fresh.assert_called_once()
+        self.assertEqual(restart.state, "queued")
+        self.assertFalse(restart.queue_job_uuid)
+        # The dispatch registered for after the commit serves it.
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+
+    def test_the_cap_counts_what_only_a_fresh_read_sees(self):
+        self._job("deploy_instance")
+        test_cr = self.env.cr
+
+        def entries(job_model, scope):
+            """None in this snapshot; a full queue for a fresh cursor."""
+            if job_model.env.cr is test_cr:
+                return set()
+            return set(range(QUEUE_MAX_WAITING))
+
+        with patch.object(
+            type(self.Job), "_waiting_entry_keys", autospec=True,
+            side_effect=entries,
+        ):
+            with self.assertRaisesRegex(UserError, "waiting in its queue"):
+                self._enqueue("backup_create")
+
+    def test_cancelling_in_the_queue_tells_the_layers_after_the_undo(self):
+        self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        executor_cls = executor_registry.get("restart_instance")
+        calls = []
+        with (
+            patch.object(
+                executor_cls, "on_cancelled_queued", autospec=True,
+                side_effect=lambda executor: calls.append("undo"),
+            ),
+            patch.object(
+                type(self.Job), "_after_job_terminal", autospec=True,
+                side_effect=lambda job, state: calls.append(state),
+            ) as hook,
+        ):
+            restart.cancel_job()
+        hook.assert_called_once_with(restart, "cancelled")
+        self.assertEqual(calls, ["undo", "cancelled"])
+
+    def test_unblocking_tells_the_layers_of_the_twins_it_cancels(self):
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            "addon_conflict", "conflict", instance=self.inst,
+        )
+        blocked = self._job("rebuild_instance", state=False, blocked_alert_id=alert.id)
+        twin = self._job("rebuild_instance", state=False, blocked_alert_id=alert.id)
+        with patch.object(
+            type(self.Job), "_after_job_terminal", autospec=True,
+        ) as hook:
+            blocked.unblock_and_enqueue()
+        self.assertEqual(twin.state, "cancelled")
+        hook.assert_called_once_with(twin, "cancelled")
+
+    def test_a_queue_the_sweep_cannot_serve_does_not_stop_the_others(self):
+        other = self._instance("queue-other")
+        broken = self._job("restart_instance", state="queued")
+        served = self._job("restart_instance", state="queued", inst=other)
+        Job = type(self.Job)
+        dispatch = Job._dispatch_next
+        broken_id = self.inst.id
+
+        def fail_on_one(job_model, instance_id=None, host_id=None):
+            """Raise for the first instance's queue; serve the others."""
+            if instance_id == broken_id:
+                raise RuntimeError("this queue is broken")
+            return dispatch(job_model, instance_id, host_id)
+
+        with (
+            patch.object(
+                Job, "_dispatch_next", autospec=True, side_effect=fail_on_one,
+            ),
+            self.assertLogs(self._LOGGER, "ERROR") as logs,
+        ):
+            self.assertEqual(self.Job._cron_dispatch_queued(), 1)
+        self.env.invalidate_all()
+        self.assertEqual(broken.state, "queued")
+        self.assertEqual(served.state, "pending")
+        self.assertIn(
+            f"could not serve the queue of instance {broken_id}",
+            "\n".join(logs.output),
+        )

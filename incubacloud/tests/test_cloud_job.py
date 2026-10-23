@@ -18,6 +18,21 @@ from odoo.exceptions import UserError
 from odoo.addons.incubacloud.models.cloud_job import _webhook_fields
 
 
+def _run_after_commit(env):
+    """Run what *env*'s transaction left for after its commit.
+
+    The job queues are served there (``cloud.job._schedule_dispatch``),
+    on a cursor of their own; a test's transaction never commits, so the
+    test runs it. The writes are flushed first, as a commit would, and
+    the cache is dropped after. The test must be in registry test mode
+    (``registry_enter_test_mode``): outside it that cursor is a real
+    connection, which sees nothing of the test and waits for its locks.
+    """
+    env.flush_all()
+    env.cr.postcommit.run()
+    env.invalidate_all()
+
+
 def _ensure_job_type(env, code, apply_to='instance'):
     """Return existing job type or create a minimal one for test isolation."""
     jt = env['cloud.job.type'].search([('code', '=', code)], limit=1)
@@ -402,14 +417,7 @@ class TestEnqueueJobTypeGate(TransactionCase):
             'job_type_id': job_type.id,
             'name': 'Create Backup',
         })
-        # ``state`` is a stored related — flush before raw SQL so the ORM
-        # does not overwrite the forced value afterwards.
-        job.flush_recordset(['state'])
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = 'failed' WHERE id = %s",
-            (job.id,),
-        )
-        job.invalidate_recordset(['state'])
+        job.write({'state': 'failed'})
         with self.assertRaises(self.AccessError):
             job.with_user(self.consultant).retry_job()
         # The developer (the role that may ask for backups) can retry it.
@@ -580,7 +588,7 @@ class TestCloudJobLoadHistoryCategory(TransactionCase):
 
 
 class TestCloudJobDataRacePrevention(TransactionCase):
-    """Test that enqueue blocks when a job is already running."""
+    """The states that make a target busy, as every reader counts them."""
 
     def setUp(self):
         super().setUp()
@@ -628,22 +636,22 @@ class TestCloudJobDataRacePrevention(TransactionCase):
         ], limit=1)
         self.assertFalse(running)
 
-    def test_delete_blocked_by_active_states(self):
-        """The delete endpoint uses the same active states for blocking."""
-        # Verify the states used in cloud_delete_instance match _active_states
-        active = self.env['cloud.job']._active_states
-        delete_states = ('started', 'pending', 'enqueued')
-        for s in delete_states:
-            self.assertIn(s, active,
-                f"Delete check state '{s}' must be in _active_states")
+    def test_queued_is_active_but_not_running(self):
+        """A job waiting in its queue occupies the target without running."""
+        Job = self.env['cloud.job']
+        self.assertIn('queued', Job._active_states)
+        self.assertNotIn('queued', Job._running_states)
+        for state in Job._running_states:
+            self.assertIn(state, Job._active_states)
 
 
 class TestEnqueueBypassRunningCheck(TransactionCase):
-    """``bypass_running_check=True`` lets executors enqueue follow-up
-    jobs from inside their own ``on_success`` — when the parent
-    cloud.job is still ``started`` and would otherwise block its own
-    descendant. The flag must not weaken the user-facing guard, only
-    skip it for the explicit internal call."""
+    """``bypass_running_check=True`` means "part of the job running now".
+
+    An executor enqueueing a follow-up from its own ``on_success`` — when
+    the parent cloud.job is still ``started`` — puts it at the head of
+    the instance's queue, before anything a user queued meanwhile; a
+    plain enqueue waits its turn behind them."""
 
     def setUp(self):
         super().setUp()
@@ -662,45 +670,53 @@ class TestEnqueueBypassRunningCheck(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
         })
+        self.registry_enter_test_mode()
         self.parent_jt = _ensure_job_type(self.env, 'test_parent_jt')
         self.follow_jt = _ensure_job_type(self.env, 'test_follow_jt')
         # Mimic an executor mid-on_success: parent job already started.
-        # ``state`` is a stored-related from queue.job; the related
-        # compute overwrites the create value, so we set the column
-        # directly the same way ``TestChainFailurePropagation`` does.
         self.parent = self.env['cloud.job'].create({
             'host_id': self.host.id,
             'job_type_id': self.parent_jt.id,
             'instance_id': self.instance.id,
             'name': 'Parent',
+            'state': 'started',
         })
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = 'started' WHERE id = %s",
-            (self.parent.id,),
-        )
-        self.env['cloud.job'].invalidate_model(['state'])
 
-    def test_default_blocks_when_parent_running(self):
-        with self.assertRaises(UserError):
-            self.env['cloud.job'].enqueue(
-                self.host.id, self.instance.id, 'test_follow_jt',
-            )
-
-    def test_bypass_allows_enqueue_during_parent_run(self):
+    def test_default_waits_behind_the_parent(self):
         new_id = self.env['cloud.job'].enqueue(
             self.host.id, self.instance.id, 'test_follow_jt',
+        )
+        new_job = self.env['cloud.job'].browse(new_id)
+        self.assertEqual(new_job.state, 'queued')
+        self.assertFalse(new_job.queue_head)
+        self.assertFalse(new_job.queue_job_uuid)
+
+    def test_bypass_goes_to_the_head_and_starts_when_the_parent_ends(self):
+        user_id = self.env['cloud.job'].enqueue(
+            self.host.id, self.instance.id, 'test_follow_jt',
+        )
+        new_id = self.env['cloud.job'].enqueue(
+            self.host.id, self.instance.id, 'test_follow_jt',
+            payload={'follow': True},
             bypass_running_check=True,
         )
         new_job = self.env['cloud.job'].browse(new_id)
         self.assertTrue(new_job.exists())
         self.assertEqual(new_job.job_type_id, self.follow_jt)
+        self.assertEqual(new_job.state, 'queued')
+        self.assertTrue(new_job.queue_head)
+        self.parent.write({'state': 'done'})
+        _run_after_commit(self.env)
+        self.assertEqual(new_job.state, 'pending')
+        self.assertEqual(self.env['cloud.job'].browse(user_id).state, 'queued')
 
 
 class TestHostScopedRacePrevention(TransactionCase):
     """Host-only jobs (no instance_id) must serialise per host the same
-    way instance jobs serialise per instance. Regression: the guard used
-    to run only when ``instance_id`` was set, so clicking "Verify host"
-    while a setup/probe was already running launched a parallel job."""
+    way instance jobs serialise per instance: one runs, the next waits
+    in the host's queue. Regression: the serialisation used to apply
+    only when ``instance_id`` was set, so clicking "Verify host" while a
+    setup/probe was already running launched a parallel job."""
 
     def setUp(self):
         super().setUp()
@@ -719,6 +735,7 @@ class TestHostScopedRacePrevention(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
         })
+        self.registry_enter_test_mode()
         self.host_jt = _ensure_job_type(self.env, 'test_host_jt', apply_to='host')
         self.host_jt2 = _ensure_job_type(self.env, 'test_host_jt2', apply_to='host')
         self.inst_jt = _ensure_job_type(self.env, 'test_inst_jt')
@@ -728,20 +745,8 @@ class TestHostScopedRacePrevention(TransactionCase):
         )
 
     def _start(self, job):
-        """Force ``job`` into the ``started`` state (stored-related column).
-
-        ``state`` is a stored related field (``queue_job_id.state``). Flush
-        the compute left pending by ``create`` first; otherwise the
-        ``invalidate_model`` below flushes it and overwrites our raw value
-        with NULL (the job has no ``queue_job_id``, so the related recompute
-        resolves to ``False``). On Odoo 18 that clobbered the state and the
-        running-job guard found nothing.
-        """
-        job.flush_recordset(['state'])
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = 'started' WHERE id = %s", (job.id,),
-        )
-        self.env['cloud.job'].invalidate_model(['state'])
+        """Put ``job`` in the ``started`` state."""
+        job.write({'state': 'started'})
 
     def _make(self, job_type, instance=False):
         """Create a cloud.job for the host (optionally instance-scoped)."""
@@ -752,54 +757,58 @@ class TestHostScopedRacePrevention(TransactionCase):
             'name': job_type.code,
         })
 
-    def test_active_host_job_blocks_second_host_job(self):
-        """An active host-only job blocks a new host-only enqueue."""
-        self._start(self._make(self.host_jt))
-        with self.assertRaises(UserError):
-            self.env['cloud.job'].enqueue(
-                self.host.id, False, 'test_host_jt2',
-            )
+    def _enqueued(self, instance, code):
+        """Enqueue *code* on the host (or *instance*); return the job."""
+        job_id = self.env['cloud.job'].enqueue(
+            self.host.id, instance and instance.id, code,
+        )
+        return self.env['cloud.job'].browse(job_id)
+
+    def test_active_host_job_queues_second_host_job(self):
+        """A second host-only job waits in the host's queue."""
+        running = self._make(self.host_jt)
+        self._start(running)
+        second = self._enqueued(False, 'test_host_jt2')
+        self.assertEqual(second.state, 'queued')
+        _run_after_commit(self.env)
+        self.assertEqual(second.state, 'queued')
+        running.write({'state': 'done'})
+        _run_after_commit(self.env)
+        self.assertEqual(second.state, 'pending')
 
     def test_no_active_host_job_allows_enqueue(self):
-        """With no active host job, the host enqueue succeeds."""
-        new_id = self.env['cloud.job'].enqueue(
-            self.host.id, False, 'test_host_jt',
-        )
-        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+        """With no active host job, the host job starts at once."""
+        self.assertEqual(self._enqueued(False, 'test_host_jt').state, 'pending')
 
     def test_host_job_does_not_block_instance_job(self):
-        """An active host-only job does not block an instance enqueue."""
+        """An active host-only job does not hold an instance job back."""
         self._start(self._make(self.host_jt))
-        new_id = self.env['cloud.job'].enqueue(
-            self.host.id, self.instance.id, 'test_inst_jt',
+        self.assertEqual(
+            self._enqueued(self.instance, 'test_inst_jt').state, 'pending',
         )
-        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
 
     def test_instance_job_does_not_block_host_job(self):
-        """An active instance job does not block a host-only enqueue."""
+        """An active instance job does not hold a host-only job back."""
         self._start(self._make(self.inst_jt, instance=self.instance))
-        new_id = self.env['cloud.job'].enqueue(
-            self.host.id, False, 'test_host_jt',
-        )
-        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+        self.assertEqual(self._enqueued(False, 'test_host_jt').state, 'pending')
 
     def test_hidden_host_job_does_not_block(self):
-        """A hidden background host job (host_metrics) must not block."""
+        """A hidden background host job (host_metrics) occupies nothing."""
         self._start(self._make(self.hidden_jt))
-        new_id = self.env['cloud.job'].enqueue(
-            self.host.id, False, 'test_host_jt',
-        )
-        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+        self.assertEqual(self._enqueued(False, 'test_host_jt').state, 'pending')
 
 
 class TestRetryAndUnblockRespectTheGuard(TransactionCase):
-    """``retry_job`` and ``unblock_and_enqueue`` used to bypass the guard.
+    """``retry_job`` and ``unblock_and_enqueue`` go through the queue.
 
-    Both dispatched straight to ``with_delay`` without taking the advisory
-    lock or checking for an active job, so a retry (or a pip-conflict
-    resolution) fired while a deploy was already running on the target —
-    two SSH sessions mutating the same instance at once. ``enqueue`` was
-    the only guarded door, and neither of these came through it.
+    Both used to dispatch straight to ``with_delay`` without taking the
+    advisory lock or looking for an active job, so a retry (or a
+    pip-conflict resolution) fired while a deploy was already running on
+    the target — two SSH sessions mutating the same instance at once.
+    They wait their turn now like anything ``enqueue`` creates: the
+    retry at the head of the queue, the unblocked job in the place its
+    creation gives it — it was asked for before what was queued while it
+    waited for its alert.
     """
 
     def setUp(self):
@@ -817,58 +826,66 @@ class TestRetryAndUnblockRespectTheGuard(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
         })
+        self.registry_enter_test_mode()
         self.jt = _ensure_job_type(self.env, 'test_guard_jt')
 
     def _job(self, state):
-        """Create an instance job forced into ``state``.
-
-        Raw SQL after an explicit flush: ``state`` is a stored related on
-        ``queue_job_id.state`` and would otherwise be recomputed to NULL.
-        """
-        job = self.env['cloud.job'].create({
+        """Create an instance job in ``state``."""
+        return self.env['cloud.job'].create({
             'host_id': self.host.id,
             'instance_id': self.instance.id,
             'job_type_id': self.jt.id,
             'name': 'guard job',
+            'state': state,
         })
-        job.flush_recordset(['state'])
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = %s WHERE id = %s", (state, job.id),
-        )
-        self.env['cloud.job'].invalidate_model(['state'])
-        return job
 
-    def test_retry_is_blocked_while_another_job_runs(self):
+    def test_retry_waits_at_the_head_while_another_job_runs(self):
         failed = self._job('failed')
-        self._job('started')
-        with self.assertRaises(UserError):
-            failed.retry_job()
+        running = self._job('started')
+        retry = self.env['cloud.job'].browse(failed.retry_job())
+        self.assertEqual(retry.state, 'queued')
+        self.assertTrue(retry.queue_head)
+        self.assertFalse(retry.queue_job_uuid)
+        _run_after_commit(self.env)
+        self.assertEqual(retry.state, 'queued')
+        running.write({'state': 'done'})
+        _run_after_commit(self.env)
+        self.assertEqual(retry.state, 'pending')
+        self.assertTrue(retry.queue_job_uuid)
 
     def test_retry_works_when_the_target_is_idle(self):
-        """The guard must not block the ordinary retry path."""
+        """The ordinary retry path starts once its transaction commits."""
         failed = self._job('failed')
-        new_id = failed.retry_job()  # noqa: FURB184
-        self.assertTrue(self.env['cloud.job'].browse(new_id).exists())
+        retry = self.env['cloud.job'].browse(failed.retry_job())
+        _run_after_commit(self.env)
+        self.assertEqual(retry.state, 'pending')
 
     def test_a_failed_job_does_not_block_its_own_retry(self):
         """``failed`` is not an active state — retrying must not self-lock."""
         failed = self._job('failed')
         self.assertTrue(failed.retry_job())
 
-    def test_unblock_is_blocked_while_another_job_runs(self):
+    def test_unblock_waits_while_another_job_runs(self):
         blocked = self._job(False)
-        self._job('started')
-        with self.assertRaises(UserError):
-            blocked.unblock_and_enqueue()
+        running = self._job('started')
+        blocked.unblock_and_enqueue()
+        self.assertEqual(blocked.state, 'queued')
+        self.assertFalse(blocked.queue_job_uuid)
+        _run_after_commit(self.env)
+        self.assertEqual(blocked.state, 'queued')
+        running.write({'state': 'done'})
+        _run_after_commit(self.env)
+        self.assertEqual(blocked.state, 'pending')
 
     def test_unblock_works_when_the_target_is_idle(self):
         blocked = self._job(False)
         blocked.unblock_and_enqueue()
+        _run_after_commit(self.env)
         self.assertTrue(blocked.queue_job_uuid)
 
 
 class TestChainFailurePropagation(TransactionCase):
-    """When a job fails, chained jobs in wait_dependencies are failed too."""
+    """When a job fails, the steps of its chain still waiting are cancelled."""
 
     def setUp(self):
         super().setUp()
@@ -884,125 +901,13 @@ class TestChainFailurePropagation(TransactionCase):
         })
         self.jt = _ensure_job_type(self.env, 'test_chain_jt')
 
-    def _job(self, state='pending'):
-        return self.env['cloud.job'].create({
-            'host_id': self.host.id,
-            'instance_id': self.instance.id,
-            'job_type_id': self.jt.id,
-            'name': 'Chain job',
-            'state': state,
-        })
-
     def _db_state(self, job):
-        """Read state directly from DB (bypasses the stored-related cache)."""
+        """Read the state from the row: the steps are ended with SQL."""
         self.env.cr.execute(
             "SELECT state FROM cloud_job WHERE id = %s", (job.id,)
         )
         row = self.env.cr.fetchone()
         return row[0] if row else None
-
-    def test_wait_dependencies_job_failed_when_predecessor_fails(self):
-        """Simulate queue_job_ext write propagation via direct SQL path."""
-        job1 = self._job(state='started')
-        job2 = self._job(state='wait_dependencies')
-
-        # Simulate what queue_job_ext.write does when job1 fails
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = 'failed'"
-            " WHERE instance_id = %s"
-            "   AND state = 'wait_dependencies'"
-            "   AND id != %s",
-            (self.instance.id, job1.id),
-        )
-        self.assertEqual(self._db_state(job2), 'failed')
-
-    def test_done_jobs_not_affected(self):
-        """Only wait_dependencies jobs are affected, not done ones."""
-        job1 = self._job(state='started')
-        job2 = self._job(state='done')
-
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = 'failed'"
-            " WHERE instance_id = %s"
-            "   AND state = 'wait_dependencies'"
-            "   AND id != %s",
-            (self.instance.id, job1.id),
-        )
-        self.assertEqual(self._db_state(job2), 'done')
-
-    def test_wait_dependencies_queue_job_cancelled_too(self):
-        """Cancelling cloud_job in wait_dependencies also cancels their
-        underlying queue_job records — the first UPDATE (cloud_job →
-        failed) does not propagate to queue_job, leaving orphan workers
-        that the second UPDATE now cleans up."""
-        job1 = self._job(state='started')
-        job2 = self._job(state='wait_dependencies')
-
-        # Create queue_job records linked to both cloud_jobs.
-        self.env.cr.execute("""
-            INSERT INTO queue_job (uuid, name, state, model_name, method_name,
-                                   channel, retry, identity_key)
-            VALUES
-            ('uuid-1', 'Job 1', 'failed', 'cloud.job', 'execute',
-             'root.incubacloud', 0, 'key1')
-            RETURNING id
-        """)
-        qid1 = self.env.cr.fetchone()[0]
-        self.env.cr.execute("""
-            INSERT INTO queue_job (uuid, name, state, model_name, method_name,
-                                   channel, retry, identity_key)
-            VALUES
-            ('uuid-2', 'Job 2', 'wait_dependencies', 'cloud.job', 'execute',
-             'root.incubacloud', 0, 'key2')
-            RETURNING id
-        """)
-        qid2 = self.env.cr.fetchone()[0]
-
-        self.env.cr.execute(
-            "UPDATE cloud_job SET queue_job_id = %s WHERE id = %s",
-            (qid1, job1.id),
-        )
-        self.env.cr.execute(
-            "UPDATE cloud_job SET queue_job_id = %s WHERE id = %s",
-            (qid2, job2.id),
-        )
-
-        # Simulate the full queue_job_ext failure-propagation path.
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = 'failed',"
-            " write_date = (now() at time zone 'UTC')"
-            " WHERE instance_id = %s"
-            "   AND state = 'wait_dependencies'"
-            "   AND id != %s",
-            (self.instance.id, job1.id),
-        )
-        self.assertEqual(self._db_state(job2), 'failed')
-        # Second UPDATE: cancel orphan queue_job records.
-        self.env.cr.execute(
-            "UPDATE queue_job q SET state = 'cancelled',"
-            " date_cancelled = (now() at time zone 'UTC')"
-            " FROM cloud_job c"
-            " WHERE c.queue_job_id = q.id"
-            "   AND c.instance_id = %s"
-            "   AND c.state = 'failed'"
-            "   AND c.id != %s"
-            "   AND q.state = 'wait_dependencies'",
-            (self.instance.id, job1.id),
-        )
-        # Verify queue_job for job2 was cancelled.
-        self.env.cr.execute(
-            "SELECT state FROM queue_job WHERE uuid = 'uuid-2'"
-        )
-        self.assertEqual(
-            self.env.cr.fetchone()[0], 'cancelled',
-        )
-        # queue_job for job1 was already failed — not touched.
-        self.env.cr.execute(
-            "SELECT state FROM queue_job WHERE uuid = 'uuid-1'"
-        )
-        self.assertEqual(
-            self.env.cr.fetchone()[0], 'failed',
-        )
 
     def _chained_job(self, instance, state, graph_uuid, uuid):
         """Create a cloud.job on *instance* backed by a queue.job in a graph.
@@ -1059,7 +964,8 @@ class TestChainFailurePropagation(TransactionCase):
 
         deploy.queue_job_id.write({'state': 'failed'})
 
-        self.assertEqual(self._db_state(download), 'failed')
+        # Only the step that failed is a failure: the download never ran.
+        self.assertEqual(self._db_state(download), 'cancelled')
         self.assertEqual(self._db_queue_state(download), 'cancelled')
         self.assertEqual(self._db_state(unrelated), 'wait_dependencies')
         self.assertEqual(

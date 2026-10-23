@@ -26,7 +26,6 @@ from . import cloud_metric_rule
 from . import cloud_host
 from . import cloud_host_whitelist
 from . import cloud_instance
-from . import cloud_instance_pending_push
 from . import cloud_instance_access_log
 from . import cloud_instance_metrics
 from . import cloud_host_metrics

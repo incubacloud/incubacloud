@@ -2028,19 +2028,6 @@ class CrudMixin:
             'auto_update': inst.auto_update,
             'autopurge_exempt': inst.autopurge_exempt,
             'autopurge_days_left': inst._autopurge_days_left(),
-            'pending_pushes': [
-                {
-                    'id': p.id,
-                    'push_repo': p.push_repo or '',
-                    'push_branch': p.push_branch or '',
-                    'push_sha': p.push_sha or '',
-                    'push_message': p.push_message or '',
-                    'push_by': p.push_by or '',
-                    'skip_reason': p.skip_reason or '',
-                    'queued_at': p.create_date,
-                }
-                for p in inst.pending_push_ids
-            ],
             'tags': [
                 {'id': t.id, 'name': t.name, 'color': t.color}
                 for t in inst.tag_ids

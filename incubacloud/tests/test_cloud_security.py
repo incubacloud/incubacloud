@@ -598,47 +598,6 @@ class TestSec009AclLockdown(CloudSecurityBase):
         self.assertEqual(rows, self.whitelist)
 
 
-class TestSec009PendingPushRules(CloudSecurityBase):
-    """SEC-009: cloud.instance.pending.push keeps its ACL (the panel is
-    read by project members) but is now scoped by a record rule — a
-    stakeholder sees pending pushes only for their own instances, PM+ all."""
-
-    def setUp(self):
-        super().setUp()
-        self.stakeholder = self._create_user('pp_stakeholder', 'group_cloud_user')
-        self.pm = self._create_user('pp_pm', 'group_cloud_project_manager')
-        self.project_member = self._create_project(
-            'PP Member', members=[self.stakeholder],
-        )
-        self.project_other = self._create_project('PP Other')
-        self.inst_member = self._create_instance(self.project_member)
-        self.inst_other = self._create_instance(
-            self.project_other, name='inst-other',
-        )
-        self.push_member = self.env['cloud.instance.pending.push'].create({
-            'instance_id': self.inst_member.id,
-            'skip_reason': 'cooldown',
-            'push_by': 'member-pusher',
-        })
-        self.push_other = self.env['cloud.instance.pending.push'].create({
-            'instance_id': self.inst_other.id,
-            'skip_reason': 'cooldown',
-            'push_by': 'other-pusher',
-        })
-
-    def test_stakeholder_sees_only_own_pending_push(self):
-        rows = self.env['cloud.instance.pending.push'].with_user(
-            self.stakeholder
-        ).search([('id', 'in', (self.push_member | self.push_other).ids)])
-        self.assertEqual(rows, self.push_member)
-
-    def test_pm_sees_all_pending_pushes(self):
-        rows = self.env['cloud.instance.pending.push'].with_user(
-            self.pm
-        ).search([('id', 'in', (self.push_member | self.push_other).ids)])
-        self.assertEqual(len(rows), 2)
-
-
 class TestSec009FieldGroups(CloudSecurityBase):
     """SEC-009: the SSH endpoint (ip/port/user) is field-gated to Developer
     at the ORM layer — the same gate as the host credential, and the role

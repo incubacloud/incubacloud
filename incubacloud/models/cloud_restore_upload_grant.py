@@ -217,12 +217,14 @@ class CloudRestoreUploadGrant(models.Model):
         for grant in self:
             if grant.state != "granted":
                 continue
+            # An ordinary job of the instance's queue: the key stops
+            # being accepted at its expiry anyway, so the revocation can
+            # wait its turn behind whatever runs.
             jobs.append(self.env["cloud.job"].enqueue(
                 grant.host_id.id,
                 grant.instance_id.id,
                 "revoke_restore_upload_key",
                 payload={"grant_id": grant.id},
-                bypass_running_check=True,
             ))
             grant.state = reason
         return jobs

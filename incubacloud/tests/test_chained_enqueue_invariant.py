@@ -1,15 +1,19 @@
-"""Structural guard: a job chained from a callback must bypass the guard.
+"""Structural guard: a job chained from a callback is part of the job.
 
-This bug has now been written three times, in three different files, by
-three different pieces of work — and every time it was invisible: the
-``UserError`` is raised, caught by the caller's own ``except``, logged as
-a warning, and the feature simply never happens. Nothing goes red.
+This was written three times, in three different files, by three
+different pieces of work — and every time it was invisible. While
+``cloud.job.enqueue`` refused a job on a busy target, the ``UserError``
+was caught by the caller's own ``except``, logged as a warning, and the
+feature simply never happened. Now that a job on a busy target waits in
+the target's queue, the follow-up would wait behind everything a user
+queued meanwhile — a restart before the push of values the deploy owed —
+and nothing goes red either.
 
-The mechanism is always identical. ``cloud.job.enqueue`` refuses to queue
-a job while another *visible* job is active on the same target. When an
-executor chains a follow-up from ``on_success``, the parent job is still
-``started`` on that very target, so the guard matches the parent itself
-and blocks its own descendant.
+The mechanism is always identical. When an executor chains a follow-up
+from ``on_success``, the parent job is still ``started`` on that very
+target. ``bypass_running_check`` says the follow-up is part of the job
+running now: it goes to the head of the queue and starts when the parent
+ends.
 
 A behavioural test would have to be written once per call site, which is
 exactly what did not happen. So this one is structural: it reads the
@@ -97,7 +101,7 @@ def _offending_enqueues(path):
 class TestChainedEnqueueInvariant(BaseCase):
 
     def test_no_callback_enqueues_without_bypassing_the_guard(self):
-        """Every chained enqueue must opt out of the active-job guard."""
+        """Every chained enqueue must say it is part of the running job."""
         violations = []
         for path in sorted(_MODELS_DIR.glob("*.py")):
             for method, lineno in _offending_enqueues(path):
@@ -105,8 +109,9 @@ class TestChainedEnqueueInvariant(BaseCase):
         self.assertFalse(
             violations,
             "these enqueue() calls run while the parent job is still "
-            "'started' on the same target, so the active-job guard will "
-            "reject them and the chained job will never run:\n  "
+            "'started' on the same target, so the chained job would wait "
+            "behind everything queued meanwhile instead of following "
+            "its parent:\n  "
             + "\n  ".join(violations),
         )
 

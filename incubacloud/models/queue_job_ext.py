@@ -1,13 +1,15 @@
 import logging
 
-from odoo import fields, models
+from odoo import _, fields, models
 
 from .abstract_executor import BLOCKED_BY_ALERT, CANCELLED_WHILE_RUNNING
 
 _logger = logging.getLogger(__name__)
 
-# Terminal states that should sync cloud.job.state and notify the frontend.
+# Terminal states that notify the frontend and move the target's queue on.
 _TERMINAL = frozenset(("done", "failed", "cancelled"))
+# Every state the runner writes through the ORM, mirrored on cloud.job.
+_MIRRORED = _TERMINAL | frozenset(("pending", "started", "wait_dependencies"))
 
 
 class QueueJob(models.Model):
@@ -20,11 +22,9 @@ class QueueJob(models.Model):
       delivered after that same commit.
 
     * Failure  — _runjob opens a fresh cursor (new_cr), writes
-      state='failed', and raises.  The main cursor is rolled back and
-      flush_all() is never called on new_cr, so the stored related field
-      cloud.job.state would stay stale.  We fix both problems here:
-      explicit SQL UPDATE + bus send, all within new_cr so pg_notify fires
-      when new_cr commits at the end of the `with` block.
+      state='failed', and raises.  The main cursor is rolled back; the
+      mirror and the bus send happen within new_cr, which flushes and
+      commits at the end of the `with` block, so pg_notify fires then.
     """
 
     _inherit = "queue.job"
@@ -32,12 +32,12 @@ class QueueJob(models.Model):
     def unlink(self):
         """Delete queue jobs without erasing the history of their cloud jobs.
 
-        ``cloud.job.state`` and ``cloud.job.date_done`` are stored related
-        fields on ``queue_job_id``. Deleting the queue job makes the ORM
-        recompute them through a link that no longer exists, so they are
-        written back empty. The autovacuum deletes queue jobs after 30
-        days, while cloud jobs are kept for the instance timeline for 180:
-        every job in that window lost its outcome and its end date.
+        ``cloud.job.date_done`` is a stored related field on
+        ``queue_job_id`` (``state`` was one too). Deleting the queue job
+        makes the ORM recompute it through a link that no longer exists,
+        so it is written back empty. The autovacuum deletes queue jobs
+        after 30 days, while cloud jobs are kept for the instance
+        timeline for 180: every job in that window lost its end date.
 
         The link is cut first, with SQL, so no cloud job depends on the
         records being deleted and nothing is recomputed. The stored values
@@ -150,7 +150,7 @@ class QueueJob(models.Model):
                 })
         result = super().write(vals)
         new_state = vals.get("state")
-        if new_state not in _TERMINAL:
+        if new_state not in _MIRRORED:
             return result
 
         for qjob in self:
@@ -163,107 +163,38 @@ class QueueJob(models.Model):
 
             cjob = cloud_jobs
 
-            # Explicitly write cloud_job.state via SQL so it is visible
-            # to the frontend even when flush_all() is never called
-            # (failure path).
-            # write_date travels with the state so consumers that
-            # window on "when did it reach a terminal state" (the
-            # daily digest) see the transition — a raw UPDATE would
-            # otherwise leave write_date at the last ORM write.
-            self.env.cr.execute(
-                "UPDATE cloud_job SET state = %s,"
-                " write_date = (now() at time zone 'UTC')"
-                " WHERE id = %s",
-                (new_state, cjob.id),
+            # The cloud job's own ``state`` follows the queue.job's on
+            # every transition the runner makes through the ORM:
+            # ``started`` and ``done`` in the job's transaction, which
+            # commits right after; ``failed`` and a postponed
+            # ``pending`` on the runner's cursor of their own, which
+            # commit when it closes (a commit flushes). ``enqueued`` is
+            # written by SQL and never arrives here: a dispatched job
+            # shows ``pending`` until it starts. Written as the platform
+            # — the operator who cancels a queued job has no write on
+            # queue jobs — and without the state hook: the end is acted
+            # on below, once its alerts are recorded.
+            cjob.sudo().with_context(ic_skip_state_hook=True).write(
+                {"state": new_state},
             )
-            # The raw UPDATE bypasses the ORM, so the cached value of
-            # cloud.job.state from earlier reads in this transaction
-            # stays stale. Drop it so _broadcast_job_update, any
-            # compute field, and future refactors see the fresh value.
-            self.env['cloud.job'].invalidate_model(['state'])
+            # To the row now: ``_check_cancel`` and the stop detection
+            # above read it with SQL, from other transactions and from
+            # this one.
+            cjob.flush_recordset(["state"])
             _logger.info(
                 "[queue_job_ext] uuid=%s state=%s -> cloud.job id=%s updated",
                 qjob.uuid, new_state, cjob.id,
             )
+            if new_state not in _TERMINAL:
+                continue
 
-            # When a job fails, cancel chained jobs stuck in
-            # wait_dependencies for the same instance. A job cancelled
-            # while it ran ends its chain the same way: what waits on it
-            # would otherwise wait forever, holding the instance's slot.
-            ends_chain = new_state == "failed" or self.env.context.get(
-                "ic_cancelled_while_running"
-            )
-            if ends_chain and cjob.instance_id:
-                self.env.cr.execute(
-                    "UPDATE cloud_job SET state = %s,"
-                    " write_date = (now() at time zone 'UTC')"
-                    " WHERE instance_id = %s"
-                    "   AND state = 'wait_dependencies'"
-                    "   AND id != %s",
-                    (new_state, cjob.instance_id.id, cjob.id),
-                )
-                if self.env.cr.rowcount:
-                    self.env['cloud.job'].invalidate_model(['state'])
-                    _logger.info(
-                        "[queue_job_ext] cancelled %d chained"
-                        " jobs for instance %s",
-                        self.env.cr.rowcount,
-                        cjob.instance_id.id,
-                    )
-                # Also cancel the underlying queue_job records still stuck
-                # in wait_dependencies: the cloud_job cancellation above
-                # does not propagate to queue_job, leaving orphan workers.
-                self.env.cr.execute(
-                    "UPDATE queue_job q SET state = 'cancelled',"
-                    " date_cancelled = (now() at time zone 'UTC')"
-                    " FROM cloud_job c"
-                    " WHERE c.queue_job_id = q.id"
-                    "   AND c.instance_id = %s"
-                    "   AND c.state = %s"
-                    "   AND c.id != %s"
-                    "   AND q.state = 'wait_dependencies'",
-                    (cjob.instance_id.id, new_state, cjob.id),
-                )
-                if self.env.cr.rowcount:
-                    _logger.info(
-                        "[queue_job_ext] cancelled %d orphan"
-                        " queue_job records for instance %s",
-                        self.env.cr.rowcount,
-                        cjob.instance_id.id,
-                    )
-
-            # A chain can cross instances: a staging built from
-            # production downloads the backup on *production*, which the
-            # instance match above misses — that download waited forever
-            # and held production's job slot. Every chain is linear, so
-            # whatever still waits in the failed job's graph waits on it.
-            if ends_chain and qjob.graph_uuid:
-                self.env.cr.execute(
-                    "UPDATE cloud_job c SET state = %s,"
-                    " write_date = (now() at time zone 'UTC')"
-                    " FROM queue_job q"
-                    " WHERE c.queue_job_id = q.id"
-                    "   AND q.graph_uuid = %s"
-                    "   AND q.state = 'wait_dependencies'"
-                    "   AND c.id != %s",
-                    (new_state, qjob.graph_uuid, cjob.id),
-                )
-                if self.env.cr.rowcount:
-                    self.env['cloud.job'].invalidate_model(['state'])
-                self.env.cr.execute(
-                    "UPDATE queue_job SET state = 'cancelled',"
-                    " date_cancelled = (now() at time zone 'UTC')"
-                    " WHERE graph_uuid = %s"
-                    "   AND state = 'wait_dependencies'",
-                    (qjob.graph_uuid,),
-                )
-                if self.env.cr.rowcount:
-                    _logger.info(
-                        "[queue_job_ext] cancelled %d chained"
-                        " queue_job records in graph %s",
-                        self.env.cr.rowcount,
-                        qjob.graph_uuid,
-                    )
+            # A job that failed or was cancelled — stopped while it ran,
+            # or cancelled dispatched before it started (``cancel_job`` →
+            # ``button_cancelled``, whose own cancel of the next steps is
+            # SQL nothing mirrors) — ends its chain: what waits on it
+            # would otherwise wait forever, holding its targets' slots.
+            if new_state in ("failed", "cancelled") and qjob.graph_uuid:
+                self._end_chain_after(cjob, qjob)
 
             # Broadcast job update to all active internal users so every
             # user watching the cloud UI gets real-time notifications.
@@ -311,8 +242,85 @@ class QueueJob(models.Model):
             elif new_state == 'done':
                 CJob._dismiss_job_failed_alerts(cjob)
                 self._seal_autopurge_clock(cjob)
+            # The end is acted on last, with its alerts recorded: a
+            # failure that holds the queue has its alert, and a retry
+            # that succeeded has dismissed it, before the next entry of
+            # the target's queue is looked at — once this transaction
+            # commits, on a cursor of its own. Nothing raised there, or
+            # by a layer's hook, reaches the runner's ``store()``.
+            cjob._on_state_changed(new_state)
 
         return result
+
+    def _end_chain_after(self, cjob, qjob):
+        """Cancel the steps of *qjob*'s chain still waiting after *cjob*.
+
+        A chain is one queue_job graph, its steps created and chained in
+        the order of their ids (``cloud.job._dispatch_chain``): what waits
+        on the ended job is what comes after it in its graph — a waiting
+        step cancelled by hand ends the steps after it, not those before,
+        and a job outside the chain on the same instance (a probe) ends
+        nothing of it. Those steps never ran: they end ``cancelled``
+        whether the job before them failed or was cancelled — only the
+        job that failed is a failure, with its alert, and a step left
+        ``failed`` would offer a retry that runs it out of its chain (a
+        move's teardown of the source, after a failed cutover). Their
+        queue.jobs are cancelled too, or a worker would still pick them
+        up.
+
+        Each step gets a note in its log, the layers hear of it
+        (``_after_job_terminal("cancelled")``, never raising), and the
+        queues the steps occupied are served once this transaction
+        commits. Not their executor's ``on_cancelled_queued``: that undoes
+        what was written when the chain was asked for, which after a
+        partial run is what recovering from it needs (a move's markers,
+        which ``rollback_move`` reads).
+
+        :param cjob: the ``cloud.job`` that just failed or was cancelled
+        :param qjob: its ``queue.job``, in a graph
+        """
+        self.env.cr.execute(
+            "UPDATE cloud_job c SET state = 'cancelled',"
+            " write_date = (now() at time zone 'UTC')"
+            " FROM queue_job q"
+            " WHERE c.queue_job_id = q.id"
+            "   AND q.graph_uuid = %s"
+            "   AND c.state = 'wait_dependencies'"
+            "   AND c.id > %s"
+            " RETURNING c.id",
+            (qjob.graph_uuid, cjob.id),
+        )
+        Job = self.env['cloud.job'].sudo()
+        steps = Job.browse([row[0] for row in self.env.cr.fetchall()])
+        self.env.cr.execute(
+            "UPDATE queue_job q SET state = 'cancelled',"
+            " date_cancelled = (now() at time zone 'UTC')"
+            " FROM cloud_job c"
+            " WHERE c.queue_job_id = q.id"
+            "   AND q.graph_uuid = %s"
+            "   AND q.state = 'wait_dependencies'"
+            "   AND c.id > %s",
+            (qjob.graph_uuid, cjob.id),
+        )
+        if self.env.cr.rowcount:
+            self.invalidate_model(['state', 'date_cancelled'])
+        if not steps:
+            return
+        Job.invalidate_model(['state'])
+        _logger.info(
+            "[queue_job_ext] cancelled %d chained jobs after cloud.job %s",
+            len(steps), cjob.id,
+        )
+        if cjob.state == 'failed':
+            note = _("Not run: step #%(step)s ended failed.", step=cjob.id)
+        else:
+            note = _("Not run: step #%(step)s ended cancelled.", step=cjob.id)
+        self.env['cloud.job.log.chunk'].sudo().create([
+            {"job_id": step.id, "content": note, "source": "system"}
+            for step in steps
+        ])
+        steps._run_after_terminal('cancelled')
+        Job._schedule_dispatch(Job._queue_scopes_of(steps))
 
     def _seal_autopurge_clock(self, cjob):
         """Count a finished job as somebody having used the instance.

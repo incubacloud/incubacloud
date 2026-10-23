@@ -591,6 +591,9 @@ class CloudAlert(models.Model):
                 "resolution": vals.get("resolution") or "auto",
                 "resolved_at": fields.Datetime.now(),
             })
+            # A failure that held its target's job queue is closed: what
+            # waited behind it may start now.
+            self.env["cloud.job"]._on_holding_alert_closed(closing)
         # Only broadcast on state transitions — field-level edits
         # (message tweaks, metadata) do not change the overview badge.
         if "state" in vals:

@@ -619,17 +619,23 @@ class CloudInstance(models.Model):
             self._pitr_ensure_key()
             self.sudo().pitr_state = "enabling"
             if rendered:
-                self._pitr_enqueue(["pitr_enable"])
+                self._pitr_enqueue(["pitr_enable"], head=after_rebuild)
             else:
-                self._pitr_enqueue([self._pitr_rebuild_job_type(), "pitr_enable"])
+                self._pitr_enqueue(
+                    [self._pitr_rebuild_job_type(), "pitr_enable"],
+                    head=after_rebuild,
+                )
             return "pitr_enable"
         if not self._pitr_active() and state != "off":
             if self._pitr_failed_lately("pitr_disable"):
                 return None
             if after_rebuild:
-                self._pitr_enqueue(["pitr_disable"])
+                self._pitr_enqueue(["pitr_disable"], head=after_rebuild)
             else:
-                self._pitr_enqueue(["pitr_disable", self._pitr_rebuild_job_type()])
+                self._pitr_enqueue(
+                    ["pitr_disable", self._pitr_rebuild_job_type()],
+                    head=after_rebuild,
+                )
             return "pitr_disable"
         if (self.pitr_state or "off") == "enabling":
             self.sudo().pitr_state = "off"
@@ -674,25 +680,28 @@ class CloudInstance(models.Model):
             ("state", "in", Job._active_states),
         ]))
 
-    def _pitr_enqueue(self, codes):
+    def _pitr_enqueue(self, codes, head=False):
         """Queue *codes* as one chain on this instance's host.
 
-        A lone job is queued past the active-job guard: it follows the
-        job that called for it, which is still running.
+        With *head*, the job or chain goes to the head of the instance's
+        queue and starts when the job that called for it ends: what a
+        rebuild queues from ``_after_stack_rendered`` belongs to that
+        rebuild. Without it (the watch's), it waits its turn.
 
         :param list codes: job type codes, in order
+        :param bool head: whether it goes before what already waits
         :return: the first job's id
         """
         Job = self.env["cloud.job"].sudo()
         if len(codes) == 1:
             return Job.enqueue(
-                self.host_id.id, self.id, codes[0], bypass_running_check=True,
+                self.host_id.id, self.id, codes[0], bypass_running_check=head,
             )
         return Job.enqueue_chain([
             {"host_id": self.host_id.id, "instance_id": self.id,
              "job_type_code": code}
             for code in codes
-        ])[0]
+        ], bypass_running_check=head)[0]
 
     def action_pitr_enable(self, objective=None):
         """Switch continuous recovery on: rebuild, then start archiving.

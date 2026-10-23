@@ -2,6 +2,12 @@
 <odoo>
     <data>
 
+        <!-- Queue attributes (see cloud.job.type): ``queue_collapse``
+             returns the identical job already waiting instead of a
+             second one, ``queue_exclusive`` lets one wait at most and
+             ``failure_holds_queue`` holds the target's queue after a
+             failure until it is retried or its alert dismissed. -->
+
         <record id="host_probe" model="cloud.job.type">
             <field name="name">Host Probe</field>
             <field name="code">host_probe</field>
@@ -23,6 +29,8 @@
             <field name="code">deploy_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Deploys a doodba instance via copier on the target host.</field>
+            <field name="queue_collapse">True</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="full_setup" model="cloud.job.type">
@@ -56,6 +64,7 @@
             <field name="code">start_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Starts a stopped doodba instance (docker compose up -d).</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="stop_instance" model="cloud.job.type">
@@ -63,6 +72,7 @@
             <field name="code">stop_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Stops a running doodba instance (docker compose stop).</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="restart_instance" model="cloud.job.type">
@@ -70,6 +80,7 @@
             <field name="code">restart_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Restarts a doodba instance (docker compose restart).</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="rebuild_instance" model="cloud.job.type">
@@ -77,6 +88,8 @@
             <field name="code">rebuild_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Rebuilds the Odoo Docker image without cache (docker compose build --pull --no-cache odoo).</field>
+            <field name="queue_collapse">True</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="delete_project" model="cloud.job.type">
@@ -91,6 +104,8 @@
             <field name="code">delete_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Stops and removes a doodba instance from the host.</field>
+            <field name="queue_exclusive">True</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="purge_archived_backups" model="cloud.job.type">
@@ -105,6 +120,8 @@
             <field name="code">restore_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Restores a doodba instance database from a .zip backup file.</field>
+            <field name="queue_exclusive">True</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="grant_restore_upload_key" model="cloud.job.type">
@@ -133,6 +150,7 @@
             <field name="code">move_cutover</field>
             <field name="apply_to">instance</field>
             <field name="description">Verifies the destination instance is healthy and cuts the instance over to the new host (flips host_id, re-points DNS).</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="move_cleanup_source" model="cloud.job.type">
@@ -140,6 +158,7 @@
             <field name="code">move_cleanup_source</field>
             <field name="apply_to">instance</field>
             <field name="description">Removes the old host copy after a successful move, without archiving the instance record.</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="move_rollback_cleanup" model="cloud.job.type">
@@ -147,6 +166,7 @@
             <field name="code">move_rollback_cleanup</field>
             <field name="apply_to">instance</field>
             <field name="description">Cleans up the half-built destination after a rolled-back move (docker compose down -v + rm -rf, non-fatal).</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="export_instance" model="cloud.job.type">
@@ -154,6 +174,7 @@
             <field name="code">export_instance</field>
             <field name="apply_to">instance</field>
             <field name="description">Packages the instance's Doodba project as a development copy — configuration, repositories and dependencies, without env files, keys, tokens or logs — and makes it available for download.</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="setup_whitelist" model="cloud.job.type">
@@ -181,6 +202,7 @@
                  an operator could forget. The job itself stays — it is
                  what the cron queues. -->
             <field name="show_as_action">False</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="deploy_metrics_central" model="cloud.job.type">
@@ -201,6 +223,7 @@
                  host. -->
             <field name="show_as_action">False</field>
             <field name="description">Rewrites the gateway's access-control list on an already-deployed central and provisions the Grafana organisations of any new accounts. Granting an account is a sub-second reload of the proxy — it never touches the compose file, so it cannot recreate VictoriaMetrics, Loki or Grafana.</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="host_hardening" model="cloud.job.type">
@@ -230,6 +253,7 @@
             <field name="code">backup_list</field>
             <field name="apply_to">instance</field>
             <field name="description">Lists available backups via duplicity collection-status.</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="backup_create" model="cloud.job.type">
@@ -237,6 +261,7 @@
             <field name="code">backup_create</field>
             <field name="apply_to">instance</field>
             <field name="description">Creates a manual backup (duplicity for production, click-odoo-backupdb for others).</field>
+            <field name="queue_collapse">True</field>
         </record>
 
         <record id="backup_download" model="cloud.job.type">
@@ -258,6 +283,8 @@
             <field name="code">backup_restore</field>
             <field name="apply_to">instance</field>
             <field name="description">Restores a production instance from a duplicity backup (destructive operation).</field>
+            <field name="queue_exclusive">True</field>
+            <field name="failure_holds_queue">True</field>
         </record>
 
         <record id="instance_health" model="cloud.job.type">
