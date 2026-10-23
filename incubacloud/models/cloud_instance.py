@@ -120,18 +120,6 @@ class CloudInstance(models.Model):
         string="Last Auto-Rebuild",
         readonly=True,
     )
-    pending_push_ids = fields.One2many(
-        "cloud.instance.pending.push",
-        "instance_id",
-        string="Pending Pushes",
-        help="Pushes that arrived while a rebuild was running or within "
-        "the auto-rebuild cooldown. They are merged into the next "
-        "rebuild job triggered on completion of the current one.",
-    )
-    pending_push_count = fields.Integer(
-        string="Pending Push Count",
-        compute="_compute_pending_push_count",
-    )
     auto_update = fields.Boolean(
         string="Auto-Update Modules on Rebuild",
         default=True,
@@ -427,12 +415,6 @@ class CloudInstance(models.Model):
         ) or "instances"
         return f"~/{project_folder}/{self.name}"
 
-    @api.depends("pending_push_ids")
-    def _compute_pending_push_count(self):
-        """Count of pushes queued for the next coalesced rebuild."""
-        for inst in self:
-            inst.pending_push_count = len(inst.pending_push_ids)
-
     @api.depends("domain_ids.hostname", "domain_ids.sequence")
     def _compute_domain(self):
         # Sort explicitly by (sequence, id) instead of relying on
@@ -557,11 +539,15 @@ class CloudInstance(models.Model):
         readonly=True,
         help=(
             "Consecutive instance_health cycles where the container was "
-            "running but Odoo did not answer on 8069. The critical "
+            "running but visitors could not reach Odoo: it did not answer "
+            "on 8069 or, under a gatekeeper, it was outside the network "
+            "of the gatekeeper running now. The critical "
             "instance_unresponsive alert waits for the same hysteresis "
             "depth as CPU and memory: a container that is up but not "
             "listening yet is what every boot looks like from outside, "
-            "so a single failed probe is not an incident."
+            "and a restart caught midway leaves odoo behind its "
+            "gatekeeper for seconds, so a single failed probe is not an "
+            "incident."
         ),
     )
 
@@ -2264,16 +2250,23 @@ class CloudInstance(models.Model):
         result = self._do_rollback_move()
         if result is False:
             return {"ok": False, "error": _("Nothing to roll back.")}
+        if result is None:
+            # The chain was still waiting in the queue: cancelling it
+            # undid the move, nothing on any host to recover.
+            return {"ok": True, "job_id": None}
         return {"ok": True, "job_id": result}
 
     def _do_rollback_move(self):
         """Core stuck-move recovery, WITHOUT the ACL check.
 
         Cancels every active move-chain job (cooperatively for started
-        ones, via queue_job for queued ones), then enqueues cleanup
-        (target) and start (source) in parallel. Returns the
-        ``move_rollback_cleanup`` job id (the head of the recovery),
-        or ``False`` when there is nothing to recover.
+        ones, via queue_job for dispatched ones, on the spot for a chain
+        still waiting in the queue), then enqueues cleanup (target) and
+        start (source). Returns the ``move_rollback_cleanup`` job id
+        (the head of the recovery), ``False`` when there is nothing to
+        recover, or ``None`` when cancelling a chain that had not started
+        undid the move by itself (``MoveCutoverExecutor.on_cancelled_queued``
+        cleared the markers): nothing on any host needs recovering.
 
         Shared by ``rollback_move`` (gated on ACL) and the unattended
         ``cron_recover_stuck_moves`` watchdog (runs via sudo).
@@ -2285,6 +2278,8 @@ class CloudInstance(models.Model):
         if self.host_id != origin:
             return False
         self._cancel_move_chain()
+        if not self.move_origin_host_id:
+            return None
         return self._enqueue_rollback_jobs()
 
     # ── Private helpers for rollback ───────────────────────────────────
@@ -2318,10 +2313,9 @@ class CloudInstance(models.Model):
         ``wait_dependencies``, reducing the number of jobs that need
         individual cancellation.
 
-        Active-state detection uses SQL because ``state`` is a stored
-        related of ``queue_job_id.state`` and the ORM cache may serve
-        the computed value instead of the raw DB column (relevant when
-        tests force-persist a state without a queue.job).
+        Which steps are still active is read from the column once, up
+        front; a step that an earlier one's cancellation already took
+        with it refuses (``UserError``), which is ignored.
         """
         chain_jobs = self._get_move_chain_jobs()
         if not chain_jobs:
@@ -2342,16 +2336,17 @@ class CloudInstance(models.Model):
 
         Runs cleanup on the TARGET host (idempotent: docker compose
         down -v + rm -rf) and start on the SOURCE host, both with
-        ``bypass_running_check`` so the stale active chain does not
-        block them. The cleanup executor clears the move markers on
-        success; until then ``move_rollback_in_progress`` is True.
+        ``bypass_running_check``: they go to the head of the instance's
+        queue, before whatever else waits, and start once the cancelled
+        step has stopped — the start first, then the cleanup. The
+        cleanup executor clears the move markers on success; until then
+        ``move_rollback_in_progress`` is True.
 
         Returns the ``move_rollback_cleanup`` job id.
         """
         target = self.move_target_host_id
         origin = self.move_origin_host_id
         self.move_rollback_in_progress = True
-        # Start source in parallel — independent of cleanup.
         self.env["cloud.job"].enqueue(
             origin.id,
             self.id,
@@ -3694,6 +3689,17 @@ class CloudInstance(models.Model):
                     "project_id": inst.project_id.id if inst.project_id else False,
                     "details": inst.name,
                 }
+            )
+        # What still waited in the queues of these instances would have
+        # run on records that are about to go: cancelled now, with their
+        # executors' undo, rather than found gone at dispatch.
+        Job = self.env["cloud.job"]
+        waiting = Job.sudo().search([
+            ("instance_id", "in", self.ids), ("state", "=", "queued"),
+        ])
+        if waiting:
+            Job._cancel_queued(
+                waiting, _("Cancelled: the instance is no longer there."),
             )
         instance_ids = self.ids
         result = super().unlink()

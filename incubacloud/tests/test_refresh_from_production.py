@@ -29,6 +29,7 @@ from unittest.mock import patch
 from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import BaseCase, TransactionCase
 
+from .test_cloud_job import _run_after_commit
 from .test_cloud_security import CloudSecurityBase
 
 INSTANCE_DIR = "~/projects/demo-inst"
@@ -319,9 +320,10 @@ class TestRefreshFromProduction(TransactionCase):
         with self.assertRaises(UserError):
             self.staging.refresh_from_production(foreign.id)
 
-    def test_a_running_job_blocks_the_refresh(self):
-        # Inherited from enqueue_chain's per-instance advisory lock: a
-        # smoke test, since cloud.job owns the behaviour.
+    def test_a_running_job_makes_the_refresh_wait(self):
+        # Inherited from the staging's job queue: a smoke test, since
+        # cloud.job owns the behaviour.
+        self.registry_enter_test_mode()
         job_type = self.env["cloud.job.type"].search(
             [("code", "=", "deploy_instance")], limit=1,
         )
@@ -330,16 +332,14 @@ class TestRefreshFromProduction(TransactionCase):
             "instance_id": self.staging.id,
             "job_type_id": job_type.id,
             "name": "Blocking job",
+            "state": "started",
         })
-        # ``state`` is a stored related on queue.job, so writing it
-        # through the ORM on a job with no queue.job is a no-op.
-        self.env.cr.execute(
-            "UPDATE cloud_job SET state = %s WHERE id = %s",
-            ("started", job.id),
-        )
-        self.env["cloud.job"].invalidate_model(["state"])
-        with self.assertRaises(UserError):
-            self.staging.refresh_from_production(self.prod.id)
+        result = self.staging.refresh_from_production(self.prod.id)
+        chain = self.env["cloud.job"].browse(result["job_ids"])
+        self.assertEqual(set(chain.mapped("state")), {"queued"})
+        job.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
 
 
 # ── clone_to_staging now neutralizes ─────────────────────────────────────────

@@ -244,7 +244,7 @@ class TestPreviewFailureIsVisible(_PreviewBase):
                 'pr_number': kwargs['pr_number'],
                 'pr_repo': kwargs['pr_repo'],
             })
-            raise UserError("A job is already running.")
+            raise UserError("No room on this host.")
 
         client, patches = self._github_patches()
         with patch.object(

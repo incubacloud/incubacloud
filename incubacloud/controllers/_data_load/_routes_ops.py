@@ -164,7 +164,9 @@ class OpsMixin:
         if not job.exists():
             return {"ok": False, "error": _("Job not found")}
         state = "blocked" if job.blocked_alert_id else job.state
-        if state in ("pending", "enqueued", "started", "wait_dependencies"):
+        # Waiting in the instance's queue is waiting, like a dispatched
+        # job that has not started: the tab keeps polling, no error.
+        if state in ("queued", "pending", "enqueued", "started", "wait_dependencies"):
             return {"ok": True, "state": state, "result": None}
         if state == "done":
             inst_id = job.instance_id.id if job.instance_id else None
@@ -413,22 +415,9 @@ class OpsMixin:
         if not inst.exists():
             return {"ok": False, "error": _("Instance not found")}
         self._sec()._check_can_delete_instance(inst)
-        running_job = request.env["cloud.job"].search(
-            [
-                ("instance_id", "=", inst.id),
-                ("state", "in", ("started", "pending", "enqueued")),
-            ],
-            limit=1,
-        )
-        if running_job:
-            return {
-                "ok": False,
-                "error": _(
-                    "Cannot delete: a job is running (%s). "
-                    "Wait for it to complete or cancel it first."
-                )
-                % running_job.name,
-            }
+        # No refusal for jobs on the instance: what waits in its queue
+        # is cancelled by the unlink, and a record a job owns right now
+        # ('deploying', 'deleting') is refused by the unlink itself.
         inst.unlink()
         return {"ok": True}
 

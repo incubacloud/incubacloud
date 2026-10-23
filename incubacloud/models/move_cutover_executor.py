@@ -86,6 +86,28 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
             "roll back this move."
         )
 
+    def on_cancelled_queued(self):
+        """A move cancelled while its chain waited is a move that never was.
+
+        ``move_to_host`` sets the markers (origin, target, chain) before
+        queueing; the chain cancelled whole in the queue, nothing on any
+        host changed, so the markers go and whoever inherits the record
+        (the SaaS tenant) is told the move was undone. The markers of a
+        move whose rollback is under way are the rollback's to clear.
+        """
+        inst = self._inst()
+        if not inst or not inst.move_origin_host_id or inst.move_rollback_in_progress:
+            return
+        if str(self.job.id) not in (inst.move_chain_job_ids or "").split(","):
+            return
+        target = inst.move_target_host_id
+        inst.write({
+            "move_origin_host_id": False,
+            "move_target_host_id": False,
+            "move_chain_job_ids": False,
+        })
+        inst._on_move_rolled_back(target_host=target)
+
 
 class MoveCleanupSourceExecutor(DeleteInstanceExecutor):
     """Remove the old host copy after a successful move.

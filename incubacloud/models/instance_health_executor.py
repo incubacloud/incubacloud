@@ -149,6 +149,22 @@ _LOG_LINE_RE = re.compile(
     r'(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s'
 )
 
+#: A route in ``/proc/net/route``: its interface, then its destination
+#: in hexadecimal. The header line starts with ``Iface``, which says the
+#: file was read at all.
+_ROUTE4_RE = re.compile(r'^(\S+)\t[0-9A-Fa-f]{8}\t', re.MULTILINE)
+_ROUTE4_HEADER_RE = re.compile(r'^Iface\t', re.MULTILINE)
+#: A route in ``/proc/net/ipv6_route``: its destination, eight more
+#: hexadecimal fields, then its device.
+_ROUTE6_RE = re.compile(
+    r'^([0-9a-f]{32})(?: [0-9a-f]+){8} +(\S+)[ \t]*$', re.MULTILINE,
+)
+#: IPv6 destinations every interface that is up has, in any namespace:
+#: link-local (fe80::/10) and multicast (ff00::/8).
+_ROUTE6_LINK_ONLY = ('fe8', 'fe9', 'fea', 'feb', 'ff')
+#: The exit status the ``gatekeeper_network`` command appends.
+_ROUTES_RC_RE = re.compile(r'^rc=(\d+)$', re.MULTILINE)
+
 
 class InstanceHealthExecutor(AbstractSSHExecutor):
     """Checks the health of a deployed doodba instance.
@@ -164,6 +180,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
        the last check and dedupe them into fingerprint groups. The
        alert payload carries the groups so the operator does not need
        to SSH into the host to see *which* errors fired.
+    5. Under a gatekeeper (template v10) — is ``odoo`` in the network
+       of the gatekeeper running now, that is, has it a route through an
+       interface other than its loopback? Graded with the HTTP check,
+       which runs inside odoo's network and cannot tell.
 
     Skipped entirely when an intrusive job (deploy / rebuild / restore /
     full setup) is in flight on the same instance: those jobs are the
@@ -203,6 +223,10 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     _verdict = None
     _alerted = False
 
+    # What ``parse_results`` read of the network odoo runs in under a
+    # gatekeeper (see ``_parse_gatekeeper_network``); None when not read.
+    _gatekeeper_network = None
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _inst(self):
@@ -217,10 +241,12 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             return False
         Job = self.env['cloud.job']
         codes = set(self._blocking_job_types) | Job._get_health_blocking_job_types()
+        # Running, not waiting: a rebuild queued behind another job has
+        # touched nothing yet, and must not silence the instance's health.
         return bool(Job.search_count([
             ('id', '!=', self.job.id),
             ('instance_id', '=', inst.id),
-            ('state', 'in', Job._active_states),
+            ('state', 'in', Job._running_states),
             ('job_type_id.code', 'in', list(codes)),
         ]))
 
@@ -477,7 +503,35 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
                 "log_health",
                 self._log_health_command(d),
             ),
-        ]
+        ] + (
+            # 6. Which network odoo runs in, for a stack whose network
+            #    is the gatekeeper's. No other stack reads it.
+            [("gatekeeper_network", self._gatekeeper_network_command(d))]
+            if 'gatekeeper' in inst.expected_services() else []
+        )
+
+    def _gatekeeper_network_command(self, d):
+        """Return the command that reads the routes ``odoo`` has.
+
+        Odoo's own ``/proc/net/route`` and, where IPv6 is on,
+        ``/proc/net/ipv6_route``: procfs is mounted in every container
+        and readable by any user, and the files show the namespace of the
+        process reading them, which ``docker compose exec`` puts in
+        odoo's. The exec gets 30 seconds. An ``rc=`` line follows with its
+        exit status, so the step itself ends with 0 and a stopped odoo
+        leaves no failed step in the log.
+
+        :param str d: remote instance directory
+        :return: the shell command
+        """
+        read = (
+            "cat /proc/net/route && "
+            "{ cat /proc/net/ipv6_route 2>/dev/null || true; }"
+        )
+        return (
+            f"cd {d} && {{ timeout 30 docker compose exec -T odoo "
+            f'sh -c {shlex.quote(read)}; echo "rc=$?"; }}'
+        )
 
     def parse_results(self, results):
         # Skipped pass: nothing to parse, on_success just stamps the timestamp.
@@ -544,7 +598,51 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             results.get("log_health", {}).get("stdout", ""),
         )
 
+        # 6. Whether odoo runs in the gatekeeper's network of now.
+        self._gatekeeper_network = self._parse_gatekeeper_network(
+            results.get("gatekeeper_network"),
+        )
+
         return []  # never hard-fail the job — report via status/alerts
+
+    def _parse_gatekeeper_network(self, step):
+        """Tell whether ``odoo`` is in the network of the gatekeeper of now.
+
+        The gatekeeper owns the network namespace odoo runs in and gets
+        a new one every time it starts — restarted, recreated, started
+        again by an ``up`` — while a running odoo stays in the one it
+        joined (Docker 29, Compose 5). Its own curl, which is where the
+        HTTP check asks, still answers there, while Traefik reaches the
+        gatekeeper's new namespace and every visitor gets a 502. That
+        namespace loses Docker's interfaces and every route through
+        them, but not the rest: a bridge the gatekeeper made, the tunnels
+        the kernel adds to each new namespace, and the IPv6 link-local
+        and multicast routes of those that are up. So odoo is in the
+        right network when it has another route through an interface
+        other than ``lo``.
+
+        :param dict step: the ``gatekeeper_network`` result, or None when
+            the stack has no gatekeeper
+        :return: ``'joined'``; ``'detached'``; ``'gatekeeper_down'`` when
+            the gatekeeper is not running, which nothing reaches odoo
+            without; ``'unchecked'`` when odoo's routes could not be
+            read; or None when there is nothing to grade (no gatekeeper,
+            or odoo not running: ``instance_down`` speaks for that)
+        :rtype: str or None
+        """
+        if step is None or not self._container_running:
+            return None
+        if self._service_states.get('gatekeeper') != 'running':
+            return 'gatekeeper_down'
+        out = step.get('stdout') or ''
+        read = _ROUTES_RC_RE.findall(out)[-1:] == ['0']
+        if not read or not _ROUTE4_HEADER_RE.search(out):
+            return 'unchecked'
+        routed = set(_ROUTE4_RE.findall(out)) | {
+            device for destination, device in _ROUTE6_RE.findall(out)
+            if not destination.startswith(_ROUTE6_LINK_ONLY)
+        }
+        return 'joined' if routed - {'lo'} else 'detached'
 
     # ── Log archive health ────────────────────────────────────────────────
 
@@ -909,32 +1007,7 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         issues = []
 
-        # HTTP health — with hysteresis, exactly like CPU and memory
-        # below. A container that is up but not yet listening is what
-        # every single boot looks like from out here (curl exits 7 or
-        # 56), and Free tenants boot several times a day: Sablier wakes
-        # them, and a core release rebuilds them. Alerting on the first
-        # failed probe made "Odoo is starting" indistinguishable from
-        # "Odoo is down", at critical severity.
-        if not self._http_ok:
-            new_http_streak = inst.http_fail_streak + 1
-            inst.write({'http_fail_streak': new_http_streak})
-            issues.append('unresponsive')
-            if new_http_streak >= _STREAK_REQUIRED:
-                self._inst_alert(
-                    'instance_unresponsive',
-                    f"Odoo HTTP health check failed on '{inst.name}' "
-                    f"for {new_http_streak} consecutive checks "
-                    f"(port 8069 not responding).",
-                    level='critical',
-                )
-            self._sys(
-                f"✗ HTTP health check failed — Odoo not responding "
-                f"(streak {new_http_streak}/{_STREAK_REQUIRED})."
-            )
-        else:
-            inst.write({'http_fail_streak': 0})
-            self._resolve_inst_alert('instance_unresponsive')
+        self._grade_reachability(inst, issues)
 
         # Memory — with hysteresis
         mem_over = self._mem_current >= _MEM_WARN_PCT
@@ -1007,9 +1080,98 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
             inst.write({'status': 'warning'})
         else:
             inst.write({'status': 'ok'})
+            # The only line a passing cycle keeps, so a reading it could
+            # not make is said here.
+            unchecked = (
+                " · gatekeeper network not checked"
+                if self._gatekeeper_network == 'unchecked' else ""
+            )
             self._pass(
                 f"✓ '{inst.name}' healthy — "
                 f"CPU {self._cpu_current:.0f}% · Mem {self._mem_current:.0f}%"
+                f"{unchecked}"
+            )
+
+    def _grade_reachability(self, inst, issues):
+        """Grade whether visitors reach Odoo; append to *issues* while not.
+
+        Two readings say they do not: Odoo failing its HTTP check, and —
+        under a gatekeeper — odoo outside the network of the gatekeeper
+        running now, or that gatekeeper not running, which that check
+        cannot see because it runs inside odoo's network (see
+        ``_parse_gatekeeper_network``). Either one counts towards
+        ``http_fail_streak``, and the second probe in a row raises
+        ``instance_unresponsive``, critical. When odoo's network could not
+        be read and the HTTP check passed, nothing is known either way:
+        the streak and the alert stay as the last probe left them, and so
+        does the verdict.
+
+        :param inst: the ``cloud.instance`` probed
+        :param list issues: the probe's issues
+        """
+        network = self._gatekeeper_network
+        if network == 'unchecked':
+            self._sys(
+                "⚠ Not checked: whether odoo runs in the network of the "
+                "gatekeeper running now (its routes could not be read)."
+            )
+            if self._http_ok:
+                if inst.http_fail_streak:
+                    issues.append('unresponsive')
+                return
+        cut_off = network in ('detached', 'gatekeeper_down')
+        if self._http_ok and not cut_off:
+            inst.write({'http_fail_streak': 0})
+            self._resolve_inst_alert('instance_unresponsive')
+            return
+        # With hysteresis, exactly like CPU and memory. A container that
+        # is up but not yet listening is what every single boot looks
+        # like from out here (curl exits 7 or 56), and Free tenants boot
+        # several times a day: Sablier wakes them, and a core release
+        # rebuilds them. Alerting on the first failed probe made "Odoo
+        # is starting" indistinguishable from "Odoo is down", at critical
+        # severity. A restart caught midway, likewise, leaves odoo outside
+        # its gatekeeper's network for a few seconds.
+        streak = inst.http_fail_streak + 1
+        inst.write({'http_fail_streak': streak})
+        issues.append('unresponsive')
+        progress = f"(streak {streak}/{_STREAK_REQUIRED})."
+        if network == 'gatekeeper_down':
+            message = self.env._(
+                "Odoo on '%(name)s' cannot be reached: its gatekeeper is not "
+                "running (%(count)s consecutive checks). Restart the "
+                "instance.",
+                name=inst.name, count=streak,
+            )
+            line = (
+                f"✗ The gatekeeper is not running — nothing reaches odoo "
+                f"{progress}"
+            )
+        elif cut_off:
+            message = self.env._(
+                "Odoo on '%(name)s' is not in the network of its current "
+                "gatekeeper, so nothing reaches it and its visitors get an "
+                "error page (%(count)s consecutive checks). Restart the "
+                "instance.",
+                name=inst.name, count=streak,
+            )
+            line = (
+                "✗ Odoo is not in the network of the gatekeeper running "
+                f"now — nothing reaches it {progress}"
+            )
+        else:
+            message = (
+                f"Odoo HTTP health check failed on '{inst.name}' "
+                f"for {streak} consecutive checks "
+                f"(port 8069 not responding)."
+            )
+            line = (
+                f"✗ HTTP health check failed — Odoo not responding {progress}"
+            )
+        self._sys(line)
+        if streak >= _STREAK_REQUIRED:
+            self._inst_alert(
+                'instance_unresponsive', message, level='critical',
             )
 
     def _check_other_services(self, inst, issues):

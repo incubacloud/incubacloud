@@ -29,6 +29,7 @@ STUB
 echo "docker $*" >> "$CALLS"
 case "$*" in
     "wait "*)                     echo 0 ;;
+    *"compose config --services"*)    printf 'odoo\ndb\nsmtp\n' ;;
     *"compose ps -q --status running"*)    printf 'odoo\ndb\nsmtp\n' ;;
     "inspect -f "*)    shift 3; printf '%s\n' "$@" ;;
 esac
@@ -335,13 +336,19 @@ STUB
 
 _gatekeeper_docker() {
     # docker as a v10 staging answers it: the gatekeeper is a service, and
-    # its container is up.
+    # its container is up. The first ``STUB_CONFIG_FAILS`` reads of the
+    # services fail.
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "$CALLS"
 case "$*" in
     "wait "*)                          echo 0 ;;
-    *"compose config --services"*)     printf 'db\ngatekeeper\nsmtp\nodoo\n' ;;
+    *"compose config --services"*)
+        if [ "$(grep -c 'compose config --services' "$CALLS")" -le "${STUB_CONFIG_FAILS:-0}" ]; then
+            echo "stub: cannot read the compose" >&2
+            exit 1
+        fi
+        printf 'db\ngatekeeper\nsmtp\nodoo\n' ;;
     *"compose ps -q gatekeeper"*)      echo gk123 ;;
     *"compose ps -q --status running"*)         printf 'odoo\ndb\nsmtp\ngatekeeper\n' ;;
     "inspect -f "*)         shift 3; printf '%s\n' "$@" ;;
@@ -368,6 +375,42 @@ STUB
     # The clean-up is the same: the containers go, the services come back.
     [[ "$calls" == *"rm -f ic_boot_pg_42"* ]]
     [[ "$calls" == *"compose start db gatekeeper odoo smtp"* ]]
+}
+
+@test "boot-test retries a failed compose read and still finds the gatekeeper" {
+    _gatekeeper_docker
+    export STUB_CONFIG_FAILS=1
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"retrying once"* ]]
+    calls="$(cat "$CALLS")"
+    [ "$(grep -c 'compose config --services' "$CALLS")" -eq 2 ]
+    # Read before the database is copied, so a failed read costs no copy.
+    [ "$(grep -n -m 1 'compose config --services' "$CALLS" | cut -d: -f1)" \
+        -lt "$(grep -n -m 1 'pg_basebackup' "$CALLS" | cut -d: -f1)" ]
+    [[ "$calls" == *"--network container:gk123"* ]]
+    [[ "$calls" != *"network create ic_boot_42"* ]]
+}
+
+@test "boot-test stops when it cannot read the compose, never booting as if there were no gatekeeper" {
+    # QA, walk 6f6: the read failed, the test took the staging for one
+    # without a gatekeeper, put the throwaway PG on a network the boot
+    # container could not join, and failed with nothing to say why.
+    _gatekeeper_docker
+    export STUB_CONFIG_FAILS=99
+    run bash "$SCRIPT" boot-test "$DIR" 42 myproj odoo 17 prod
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"stub: cannot read the compose"* ]]
+    [[ "$output" == *"could not read the compose to know whether the boot test needs the gatekeeper"* ]]
+    calls="$(cat "$CALLS")"
+    # It stops before copying the database, so there is nothing to put
+    # back, and it never takes the gatekeeper for one it started.
+    [[ "$calls" != *"pg_basebackup"* ]]
+    [[ "$calls" != *"network create ic_boot_42"* ]]
+    [[ "$calls" != *"postgres-autoconf"* ]]
+    [[ "$calls" != *"click-odoo-update"* ]]
+    [[ "$calls" != *"compose up"* ]]
+    [[ "$calls" != *"rm -sf gatekeeper"* ]]
 }
 
 _first_gatekeeper_docker() {

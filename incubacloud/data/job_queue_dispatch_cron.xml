@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- The sweep of the job queues: every instance or host whose
+             queue waits with nothing running and nothing holding it is
+             served. The dispatcher runs when a job ends; this covers a
+             dispatch that was lost. -->
+        <record id="cron_job_queue_dispatch" model="ir.cron">
+            <field name="name">Job Queue Sweep</field>
+            <field name="model_id" ref="model_cloud_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_dispatch_queued()</field>
+            <field name="interval_number">2</field>
+            <field name="interval_type">minutes</field>
+        </record>
+
+    </data>
+</odoo>

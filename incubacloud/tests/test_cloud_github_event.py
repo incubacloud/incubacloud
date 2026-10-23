@@ -272,55 +272,33 @@ class TestProcessPushEventGuards(_GitHubEventBase):
             ev._process_push_event()
         self.assertEqual(calls, [])
 
-    def test_cooldown_active_no_enqueue(self):
+    def test_a_recent_rebuild_does_not_defer_the_push(self):
+        """No cooldown: a push right after a rebuild queues its own."""
         self.instance.write({'last_auto_rebuild': fields.Datetime.now()})
         calls, mock = self._enqueue_calls()
         with mock:
             ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
             ev._process_push_event()
-        self.assertEqual(calls, [])
+        self.assertEqual(len(calls), 1)
         self.assertTrue(ev.processed)
 
-    def test_cooldown_expired_allows_enqueue(self):
-        past = fields.Datetime.now() - timedelta(minutes=5)
-        self.instance.write({'last_auto_rebuild': past})
-        calls, mock = self._enqueue_calls()
-        with mock:
-            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
-            ev._process_push_event()
-        self.assertEqual(len(calls), 1)
-
-    def test_active_job_running_no_enqueue(self):
+    def test_a_running_rebuild_does_not_defer_the_push(self):
+        """The push is enqueued; the instance's queue makes it wait."""
         rebuild_jt = _ensure_job_type(self.env, 'rebuild_instance')
-        job = self.env['cloud.job'].create({
+        self.env['cloud.job'].create({
             'host_id': self.host.id,
             'instance_id': self.instance.id,
             'job_type_id': rebuild_jt.id,
             'name': 'Active Rebuild',
+            'state': 'started',
         })
-        self._force_job_state(job, 'started')
         calls, mock = self._enqueue_calls()
         with mock:
             ev = self._push_event(
                 _push_payload(self.REPO_URL, self.BRANCH))
             ev._process_push_event()
-        self.assertEqual(calls, [])
-
-    def test_active_pending_job_no_enqueue(self):
-        rebuild_jt = _ensure_job_type(self.env, 'rebuild_instance')
-        job = self.env['cloud.job'].create({
-            'host_id': self.host.id,
-            'instance_id': self.instance.id,
-            'job_type_id': rebuild_jt.id,
-            'name': 'Pending Rebuild',
-        })
-        self._force_job_state(job, 'pending')
-        calls, mock = self._enqueue_calls()
-        with mock:
-            ev = self._push_event(
-                _push_payload(self.REPO_URL, self.BRANCH))
-            ev._process_push_event()
-        self.assertEqual(calls, [])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]['payload'].get('trigger'), 'webhook')
 
     def test_done_job_does_not_block(self):
         rebuild_jt = _ensure_job_type(self.env, 'rebuild_instance')
@@ -342,7 +320,7 @@ class TestProcessPushEventGuards(_GitHubEventBase):
     # A subclass may decline a rebuild by returning a falsy job type from
     # ``_rebuild_job_type`` (the SaaS manager does this for warm-pool
     # instances condemned to recycling). The handler must skip the
-    # instance entirely — no enqueue and no pending-push record.
+    # instance entirely — no enqueue.
 
     def test_falsy_job_type_skips_enqueue(self):
         Event = type(self.env['cloud.github.event'])
@@ -351,7 +329,6 @@ class TestProcessPushEventGuards(_GitHubEventBase):
             ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
             ev._process_push_event()
         self.assertEqual(calls, [])
-        self.assertEqual(len(self.instance.pending_push_ids), 0)
 
     def test_resolved_job_type_is_enqueued_verbatim(self):
         # Whatever truthy code the resolver returns is the code enqueued.
@@ -365,50 +342,9 @@ class TestProcessPushEventGuards(_GitHubEventBase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]['job_type_code'], 'warm_rebuild_instance')
 
-    # ── Pending push queue (defer-instead-of-drop) ─────────────────────────
-    #
-    # When a push cannot trigger an immediate rebuild (cooldown active or a
-    # rebuild already running) we now persist it into
-    # ``cloud.instance.pending.push`` instead of silently dropping it. The
-    # ``rebuild_instance_executor.on_success`` hook later coalesces every
-    # queued push into a single follow-up rebuild — see
-    # test_pending_push_coalesce.
-
-    def test_cooldown_path_records_pending_push(self):
-        self.instance.write({'last_auto_rebuild': fields.Datetime.now()})
-        calls, mock = self._enqueue_calls()
-        with mock:
-            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
-            ev._process_push_event()
-        # No new rebuild fired …
-        self.assertEqual(calls, [])
-        # … but the push is queued for the next coalesced rebuild.
-        pending = self.instance.pending_push_ids
-        self.assertEqual(len(pending), 1)
-        self.assertEqual(pending.skip_reason, 'cooldown')
-        self.assertEqual(pending.push_branch, self.BRANCH)
-        # The body of the payload (sha, message, pusher) is preserved so the
-        # UI can render the queued item without a second webhook lookup.
-        self.assertTrue(pending.push_sha)
-        self.assertEqual(pending.push_by, 'dev')
-
-    def test_active_job_path_records_pending_push(self):
-        rebuild_jt = _ensure_job_type(self.env, 'rebuild_instance')
-        job = self.env['cloud.job'].create({
-            'host_id': self.host.id,
-            'instance_id': self.instance.id,
-            'job_type_id': rebuild_jt.id,
-            'name': 'Active Rebuild',
-        })
-        self._force_job_state(job, 'started')
-        calls, mock = self._enqueue_calls()
-        with mock:
-            ev = self._push_event(_push_payload(self.REPO_URL, self.BRANCH))
-            ev._process_push_event()
-        self.assertEqual(calls, [])
-        pending = self.instance.pending_push_ids
-        self.assertEqual(len(pending), 1)
-        self.assertEqual(pending.skip_reason, 'active_job')
+    # A push that arrives while a rebuild runs or waits is merged into the
+    # waiting rebuild, or queued behind the running one, by ``enqueue``
+    # itself — see test_rebuild_push_merge.
 
 
 class TestProcessPushEventHappyPath(_GitHubEventBase):

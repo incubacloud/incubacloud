@@ -1,4 +1,8 @@
-from .abstract_executor import AbstractSSHExecutor, validate_dup_time
+from .abstract_executor import (
+    COMPOSE_OP_EXIT_UNCHECKED,
+    AbstractSSHExecutor,
+    validate_dup_time,
+)
 
 
 class BackupRestoreExecutor(AbstractSSHExecutor):
@@ -79,10 +83,14 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
             (
                 "Start instance",
                 self.run_script("compose_op.sh", [d, "up"]),
+                {"continue_on": (COMPOSE_OP_EXIT_UNCHECKED,)},
             ),
         ]
 
     def parse_results(self, results):
+        # The database is restored and the stack up when only the check
+        # after ``up`` failed: a warning, not a failed restore.
+        results = self._accept_unchecked_compose_op(results, "Start instance")
         return [
             f"'{label}' exited with status {data.get('exit_status')}"
             for label, data in results.items()

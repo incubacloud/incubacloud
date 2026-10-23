@@ -32,6 +32,17 @@ class TestQueueJobExtInvalidatesCache(TransactionCase):
             'wildcard_domain': 'qj.example.com',
         })
         self.jt = self._job_type('qj_test')
+        # The queue.job first, in a non-terminal state: the cloud job
+        # linked to it takes its state, and the write below transitions
+        # it to 'done' through the ext hook.
+        self.qjob = self.env['queue.job'].sudo().create({
+            'uuid': 'test-uuid-1',
+            'name': 'qj-test',
+            'state': 'pending',
+            'method_name': 'noop',
+            'model_name': 'cloud.job',
+            'func_string': 'noop()',
+        })
         self.cjob = self.env['cloud.job'].sudo().create({
             'host_id': self.host.id,
             'job_type_id': self.jt.id,
@@ -42,26 +53,12 @@ class TestQueueJobExtInvalidatesCache(TransactionCase):
     def test_terminal_state_transition_invalidates_cache(self):
         """After queue.job.write({'state': 'done'}), a later read of
         cloud.job.state in the same transaction returns the fresh
-        value. Regression guard for the raw UPDATE bypass."""
-        # Seed the queue.job with a non-terminal state so our write
-        # transitions it to 'done' and triggers the ext hook.
-        qjob = self.env['queue.job'].sudo().create({
-            'uuid': 'test-uuid-1',
-            'name': 'qj-test',
-            'state': 'pending',
-            'method_name': 'noop',
-            'model_name': 'cloud.job',
-            'func_string': 'noop()',
-        })
-        # Prime the ORM cache with the stale value.
+        value: the mirror writes the cloud job's own ``state``."""
+        # Prime the ORM cache with the value before the transition.
         self.assertEqual(self.cjob.state, 'pending')
 
-        # queue_job_ext.write runs: does raw UPDATE on cloud_job,
-        # then invalidate_model(['state']).
-        qjob.write({'state': 'done'})
+        self.qjob.write({'state': 'done'})
 
-        # If invalidate_model is missing, the cache would still
-        # return 'pending'. With the fix it yields 'done'.
         self.assertEqual(self.cjob.state, 'done')
 
 

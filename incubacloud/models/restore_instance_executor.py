@@ -6,6 +6,7 @@ from pathlib import Path
 from ..restore_staging import is_staged_upload
 from ._odoo_versions import script_env
 from .abstract_executor import (
+    COMPOSE_OP_EXIT_UNCHECKED,
     AbstractSSHExecutor,
     handoff_archive_path,
     sql_escape_literal,
@@ -409,6 +410,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             (
                 "Start Odoo service",
                 self.run_script("compose_op.sh", [d, start_op, "odoo"]),
+                {"continue_on": (COMPOSE_OP_EXIT_UNCHECKED,)},
             ),
             # Left inline: a lone ``rm -f`` is not worth a versioned
             # script, and unquoted the remote shell expands any ``~``.
@@ -420,6 +422,9 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         return cmds
 
     def parse_results(self, results):
+        # Odoo is up on the restored database when only the check after
+        # its start failed: a warning, not a failed restore.
+        results = self._accept_unchecked_compose_op(results, "Start Odoo service")
         errors = []
         for label, data in results.items():
             if label in ("Remove remote backup file",

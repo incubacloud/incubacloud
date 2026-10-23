@@ -458,6 +458,20 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "A %(type)s is already queued for this host; cancel it first."
+msgstr ""
+"Ya hay un trabajo «%(type)s» en cola para este host; cancélelo primero."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "A %(type)s is already queued for this instance; cancel it first."
+msgstr ""
+"Ya hay un trabajo «%(type)s» en cola para esta instancia; cancélelo primero."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_host.py:0
 msgid ""
 "A certificate and its private key go together: supply both, or neither."
@@ -502,26 +516,6 @@ msgstr "Ya hay un trabajo de hardening en ejecución para este host."
 
 #. module: incubacloud
 #. odoo-python
-#: code:addons/incubacloud/models/cloud_job.py:0
-msgid ""
-"A job is already running for this host: %(name)s. Wait for it to complete or"
-" cancel it first."
-msgstr ""
-"Ya hay un trabajo en ejecución para este host: %(name)s. Espere a que "
-"termine o cancélelo primero."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/models/cloud_job.py:0
-msgid ""
-"A job is already running for this instance: %(name)s. Wait for it to "
-"complete or cancel it first."
-msgstr ""
-"Ya hay una tarea en ejecución para esta instancia: %(name)s. Espera a que "
-"termine o cancélala primero."
-
-#. module: incubacloud
-#. odoo-python
 #: code:addons/incubacloud/models/cloud_settings.py:0
 msgid "A log search must sweep at least 1 day."
 msgstr "Una búsqueda de logs debe recorrer al menos 1 día."
@@ -562,6 +556,12 @@ msgstr "La ventana de una política debe ser de al menos un segundo."
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_instance_one_production_per_project
 msgid "A project can only have one production instance."
 msgstr "Un proyecto solo puede tener una instancia de producción."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "A retry of this job is already waiting in the queue."
+msgstr "Ya hay un reintento de este trabajo esperando en la cola."
 
 #. module: incubacloud
 #. odoo-python
@@ -669,11 +669,6 @@ msgstr "Las acciones afectan a todo el servidor."
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_alert__state__active
 msgid "Active"
 msgstr "Activo"
-
-#. module: incubacloud
-#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_pending_push__skip_reason__active_job
-msgid "Active Job"
-msgstr "Trabajo activo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -1214,6 +1209,17 @@ msgid "Ask for an upload key first."
 msgstr "Pide primero una clave de subida."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_type__queue_collapse
+msgid ""
+"Asked for again while one of this type waits in the queue with the same "
+"payload for the same target, no second job is created: the waiting one is "
+"returned."
+msgstr ""
+"Si se vuelve a pedir mientras uno de este tipo espera en la cola con la "
+"misma carga para el mismo destino, no se crea un segundo trabajo: se "
+"devuelve el que espera."
+
+#. module: incubacloud
 #. odoo-javascript
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
@@ -1652,7 +1658,6 @@ msgstr "Token del bot obtenido de @BotFather. Se almacena cifrado."
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.xml:0
 #: code:addons/incubacloud/static/src/components/repo_editor/repo_editor.xml:0
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_branch
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__branch
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project_repo__branch
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_repo_mixin__branch
@@ -1868,8 +1873,28 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__cancelled
 msgid "Cancelled"
 msgstr "Cancelado"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Cancelled in the queue by %(user)s."
+msgstr "Cancelado en cola por %(user)s."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Cancelled: the instance is no longer there."
+msgstr "Cancelado: la instancia ya no está."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Cancelled: the instance was asked to be deleted."
+msgstr "Cancelado: se pidió borrar la instancia."
 
 #. module: incubacloud
 #. odoo-python
@@ -1909,16 +1934,6 @@ msgid ""
 msgstr ""
 "No se puede eliminar el host '%s': todavía tiene %d instancia(s). Elimina "
 "antes todas las instancias."
-
-#. module: incubacloud
-#. odoo-python
-#: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
-msgid ""
-"Cannot delete: a job is running (%s). Wait for it to complete or cancel it "
-"first."
-msgstr ""
-"No se puede eliminar: hay un trabajo en marcha (%s). Espera a que termine o "
-"cancélalo antes."
 
 #. module: incubacloud
 #. odoo-python
@@ -2022,6 +2037,11 @@ msgstr "Resolvedor de certificados"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_backup__kind__chain
 msgid "Chain"
 msgstr "Cadena"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__queue_chain_key
+msgid "Chain Key"
+msgstr "Clave de la cadena"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__chain_start
@@ -2370,6 +2390,11 @@ msgid "Code"
 msgstr "Código"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__queue_collapse
+msgid "Collapse While Waiting"
+msgstr "Colapsar mientras espera"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_collect_host_metrics_ir_actions_server
 msgid "Collect Host Metrics"
 msgstr "Recopilar métricas del host"
@@ -2456,11 +2481,6 @@ msgid ""
 msgstr ""
 "Lista separada por comas de módulos que se instalan desde este repositorio. "
 "Déjala vacía para incluir todos los addons (*)."
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_message
-msgid "Commit Message"
-msgstr "Mensaje del commit"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__comparator
@@ -2699,18 +2719,22 @@ msgstr ""
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__http_fail_streak
 msgid ""
-"Consecutive instance_health cycles where the container was running but Odoo "
-"did not answer on 8069. The critical instance_unresponsive alert waits for "
-"the same hysteresis depth as CPU and memory: a container that is up but not "
-"listening yet is what every boot looks like from outside, so a single failed"
-" probe is not an incident."
+"Consecutive instance_health cycles where the container was running but "
+"visitors could not reach Odoo: it did not answer on 8069 or, under a "
+"gatekeeper, it was outside the network of the gatekeeper running now. The "
+"critical instance_unresponsive alert waits for the same hysteresis depth as "
+"CPU and memory: a container that is up but not listening yet is what every "
+"boot looks like from outside, and a restart caught midway leaves odoo behind"
+" its gatekeeper for seconds, so a single failed probe is not an incident."
 msgstr ""
 "Ciclos consecutivos de instance_health en los que el contenedor estaba en "
-"marcha pero Odoo no respondió en el 8069. La alerta crítica "
-"instance_unresponsive espera la misma histéresis que la CPU y la memoria: un"
-" contenedor levantado que todavía no escucha es el aspecto que tiene "
-"cualquier arranque visto desde fuera, así que un único sondeo fallido no es "
-"una incidencia."
+"marcha pero los visitantes no llegaban a Odoo: no respondió en el 8069 o, "
+"tras un gatekeeper, estaba fuera de la red del gatekeeper en marcha. La "
+"alerta crítica instance_unresponsive espera la misma histéresis que la CPU y"
+" la memoria: un contenedor levantado que todavía no escucha es el aspecto "
+"que tiene cualquier arranque visto desde fuera, y un reinicio a medio hacer "
+"deja a odoo unos segundos fuera de la red de su gatekeeper, así que un único"
+" sondeo fallido no es una incidencia."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__cpu_over_threshold_streak
@@ -2822,11 +2846,6 @@ msgstr ""
 #: code:addons/incubacloud/controllers/github_setup.py:0
 msgid "Continue to GitHub"
 msgstr "Continuar a GitHub"
-
-#. module: incubacloud
-#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance_pending_push__skip_reason__cooldown
-msgid "Cooldown"
-msgstr "Enfriamiento"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__copier_template_url
@@ -3124,7 +3143,6 @@ msgstr "Crea tu primer proyecto para comenzar a gestionar instancias de Odoo."
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__create_uid
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__create_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__create_uid
@@ -3157,7 +3175,6 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__create_date
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__create_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__create_date
@@ -3868,6 +3885,16 @@ msgid "Dismisses this alert for all users"
 msgstr "Descarta esta alerta para todos los usuarios"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__queue_head
+msgid ""
+"Dispatched before everything else waiting on the target: a follow-up an "
+"executor queued from its own run, or the retry of a failed job."
+msgstr ""
+"Se despacha antes que todo lo demás que espera en el destino: un seguimiento"
+" que un ejecutor encoló desde su propia ejecución, o el reintento de un "
+"trabajo fallido."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_suspicion__display_name
@@ -3885,7 +3912,6 @@ msgstr "Descarta esta alerta para todos los usuarios"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__display_name
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__display_name
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__display_name
@@ -3961,6 +3987,7 @@ msgstr "Dominios"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__done
 msgid "Done"
 msgstr "Hecho"
 
@@ -3968,6 +3995,11 @@ msgstr "Hecho"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__doodba_project_name
 msgid "Doodba Project Name"
 msgstr "Nombre de proyecto Doodba"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__stack_template_ref
+msgid "Doodba Template of the Stack"
+msgstr "Plantilla Doodba de la pila"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4177,6 +4209,11 @@ msgstr ""
 "endpoint S3."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__enqueued
+msgid "Enqueued"
+msgstr "Encolado"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/import_odoojs_modal/import_odoojs_modal.js:0
 msgid "Enter the repository URL first"
@@ -4225,11 +4262,6 @@ msgstr ""
 "la alerta. 1 la levanta con la primera muestra: correcto para una expresión "
 "que ya mide sobre una ventana, incorrecto para una lectura instantánea, en "
 "la que un único pico avisaría a alguien."
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__event_id
-msgid "Event"
-msgstr "Evento"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__event_type
@@ -4382,6 +4414,7 @@ msgstr "Webhook externo"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__failed
 msgid "Failed"
 msgstr "Fallido"
 
@@ -4739,6 +4772,11 @@ msgstr "Error al iniciar verificación del host."
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Failed to trust SSH host key."
 msgstr "Falló al confiar en la clave SSH del host."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__failure_holds_queue
+msgid "Failure Holds the Queue"
+msgstr "Un fallo retiene la cola"
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__res_users__cloud_notification_level__failures_warnings
@@ -5146,15 +5184,15 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__copier_template_ref
 msgid ""
 "Git tag/branch/commit to pin the template to (copier --vcs-ref), e.g. "
-"'v9.6.1'. Empty means the template's default branch: deploys then track "
+"'v10.0.8'. Empty means the template's default branch: deploys then track "
 "upstream automatically and an upstream change can alter the next deploy "
 "without warning. The effective ref is recorded in the job log."
 msgstr ""
-"Etiqueta/rama/commit de git al que fijar la plantilla (copier --vcs-ref), p."
-" ej. 'v9.6.1'. Vacío significa la rama por defecto de la plantilla: los "
-"despliegues siguen entonces el upstream automáticamente y un cambio upstream"
-" puede alterar el siguiente despliegue sin aviso. La referencia efectiva se "
-"registra en el log del job."
+"Etiqueta, rama o commit de Git al que fijar la plantilla (copier --vcs-ref),"
+" p. ej. 'v10.0.8'. Vacío significa la rama por defecto de la plantilla: los "
+"despliegues siguen entonces la rama original automáticamente y un cambio en "
+"ella puede alterar el siguiente despliegue sin aviso. La referencia efectiva"
+" queda registrada en el log del trabajo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5553,6 +5591,11 @@ msgid "Head branch of the PR."
 msgstr "Rama HEAD del PR."
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__queue_head
+msgid "Head of the Queue"
+msgstr "Cabeza de la cola"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__client_ip_header
 msgid ""
 "Header a proxy in front of this host states the visitor's address in, e.g. "
@@ -5902,7 +5945,6 @@ msgstr "Racha de fallos HTTP"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__id
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__id
@@ -6240,7 +6282,6 @@ msgstr "Instalados"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_audit_log__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__instance_id
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__instance_id
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_whitelist__instance_id
@@ -6700,6 +6741,11 @@ msgid "Job Payload"
 msgstr "Carga de tarea"
 
 #. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_job_queue_dispatch_ir_actions_server
+msgid "Job Queue Sweep"
+msgstr "Barrido de la cola de trabajos"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Job Retention"
@@ -6944,7 +6990,6 @@ msgstr "Última actividad en el panel el"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__write_uid
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__write_uid
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__write_uid
@@ -6978,7 +7023,6 @@ msgstr "Última actualización por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_backup__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_domain__write_date
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_session__write_date
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_tag__write_date
@@ -8413,6 +8457,18 @@ msgid "Not now"
 msgstr "Ahora no"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/queue_job_ext.py:0
+msgid "Not run: step #%(step)s ended cancelled."
+msgstr "No se ejecutó: el paso #%(step)s se canceló."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/queue_job_ext.py:0
+msgid "Not run: step #%(step)s ended failed."
+msgstr "No se ejecutó: el paso #%(step)s terminó con error."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Not set"
@@ -8589,6 +8645,34 @@ msgid "Odoo"
 msgstr "Odoo"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/models/cloud_project.py:0
+msgid "Odoo %(version)s is not offered yet."
+msgstr "Odoo %(version)s todavía no se ofrece."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Odoo %(version)s needs doodba template %(needed)s or newer; the panel is "
+"pinned to %(pinned)s (Settings → Doodba template version, runbook RB-15)."
+msgstr ""
+"Odoo %(version)s necesita la plantilla doodba %(needed)s o posterior; el "
+"panel está fijado a %(pinned)s (Ajustes → Versión de la plantilla Doodba, "
+"runbook RB-15)."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+msgid ""
+"Odoo %(version)s runs on PostgreSQL %(lowest)s to %(highest)s, not "
+"%(chosen)s."
+msgstr ""
+"Odoo %(version)s funciona con PostgreSQL de %(lowest)s a %(highest)s, no con"
+" %(chosen)s."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__odoo_cpus
 msgid "Odoo CPUs"
 msgstr "CPUs Odoo"
@@ -8640,6 +8724,28 @@ msgstr "Contenedor Odoo no encontrado o no en ejecución"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__odoo_log_archive_days
 msgid "Odoo log archive (days)"
 msgstr "Archivo de logs de Odoo (días)"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/instance_health_executor.py:0
+msgid ""
+"Odoo on '%(name)s' cannot be reached: its gatekeeper is not running "
+"(%(count)s consecutive checks). Restart the instance."
+msgstr ""
+"No se puede llegar a Odoo en '%(name)s': su gatekeeper no está en marcha "
+"(%(count)s comprobaciones seguidas). Reinicie la instancia."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/instance_health_executor.py:0
+msgid ""
+"Odoo on '%(name)s' is not in the network of its current gatekeeper, so "
+"nothing reaches it and its visitors get an error page (%(count)s consecutive"
+" checks). Restart the instance."
+msgstr ""
+"Odoo en '%(name)s' no está en la red de su gatekeeper actual, así que nada "
+"le llega y sus visitantes reciben una página de error (%(count)s "
+"comprobaciones seguidas). Reinicie la instancia."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -8706,6 +8812,11 @@ msgstr ""
 "Un rango CIDR por línea, por ejemplo 198.51.100.0/24 o 2001:db8::/32. Una "
 "entrada que no sea un rango se rechaza al guardar, en vez de descartarse en "
 "silencio."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__queue_exclusive
+msgid "One Waiting at Most"
+msgstr "Uno en espera como máximo"
 
 #. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_alert_policy_code_uniq
@@ -8775,6 +8886,16 @@ msgstr "Solo se permite una configuración de aplicación GitHub por sistema."
 #: code:addons/incubacloud/models/cloud_settings.py:0
 msgid "Only one IncubaCloud settings record is allowed."
 msgstr "Solo se permite un registro de ajustes de IncubaCloud."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_type__queue_exclusive
+msgid ""
+"Only one job of this type may wait in a target's queue, whatever its "
+"payload; a second request is refused until the waiting one is cancelled."
+msgstr ""
+"Solo un trabajo de este tipo puede esperar en la cola de un destino, sea "
+"cual sea su carga; una segunda petición se rechaza hasta que se cancele el "
+"que espera."
 
 #. module: incubacloud
 #. odoo-python
@@ -9150,23 +9271,9 @@ msgstr "Truncado de la carga útil (días)"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__pending
 msgid "Pending"
 msgstr "Pendiente"
-
-#. module: incubacloud
-#: model:ir.model,name:incubacloud.model_cloud_instance_pending_push
-msgid "Pending Push Awaiting Coalesced Rebuild"
-msgstr "Push pendiente esperando reconstrucción agrupada"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pending_push_count
-msgid "Pending Push Count"
-msgstr "Número de pushes pendientes"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pending_push_ids
-msgid "Pending Pushes"
-msgstr "Pushes pendientes"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__alert_threshold_pct
@@ -9644,22 +9751,6 @@ msgid "Purge old logs now"
 msgstr "Purgar logs antiguos ahora"
 
 #. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_by
-msgid "Pusher"
-msgstr "Autor del push"
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_instance__pending_push_ids
-msgid ""
-"Pushes that arrived while a rebuild was running or within the auto-rebuild "
-"cooldown. They are merged into the next rebuild job triggered on completion "
-"of the current one."
-msgstr ""
-"Pushes que llegaron mientras se ejecutaba una reconstrucción o dentro del "
-"enfriamiento de reconstrucción automática. Se agrupan en el siguiente "
-"trabajo de reconstrucción que se lanza al terminar el actual."
-
-#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pip_dependencies
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__pip_dependencies
 msgid "Python Dependencies"
@@ -9707,6 +9798,7 @@ msgstr "UUID de tarea en cola"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__queued
 msgid "Queued"
 msgstr "En cola"
 
@@ -10243,11 +10335,6 @@ msgstr "Repositorios"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__repo_ids
 msgid "Repositories"
 msgstr "Repositorios"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_repo
-msgid "Repository"
-msgstr "Repositorio"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_repo__url
@@ -11274,6 +11361,17 @@ msgid "Settings"
 msgstr "Configuración"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__queue_chain_key
+msgid ""
+"Shared by the steps of one chain. A chain waits in the queue as one entry "
+"and is dispatched whole, with its queue.job dependencies, when its turn "
+"comes."
+msgstr ""
+"Compartida por los pasos de una cadena. Una cadena espera en la cola como "
+"una sola entrada y se despacha entera, con sus dependencias de queue.job, "
+"cuando llega su turno."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host_terminal_route__auth_token
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route__auth_token
 #: model:ir.model.fields,help:incubacloud.field_cloud_terminal_route_mixin__auth_token
@@ -11290,11 +11388,6 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Shell"
 msgstr "Terminal"
-
-#. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__push_sha
-msgid "Short SHA"
-msgstr "SHA corto"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11399,11 +11492,6 @@ msgid "Skip"
 msgstr "Omitir"
 
 #. module: incubacloud
-#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance_pending_push__skip_reason
-msgid "Skip Reason"
-msgstr "Motivo de omisión"
-
-#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__quota_gb
 msgid ""
 "Soft cap used for alert calculations. Set to 0 to disable quota tracking "
@@ -11428,12 +11516,6 @@ msgstr "Instancia origen"
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid "Source instance not found."
 msgstr "Instancia origen no encontrada."
-
-#. module: incubacloud
-#: model:ir.model.fields,help:incubacloud.field_cloud_instance_pending_push__event_id
-msgid "Source webhook event; cleared if the row is purged later."
-msgstr ""
-"Evento de webhook de origen; se limpia si la fila se purga más adelante."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11508,6 +11590,11 @@ msgstr "Iniciar"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Start instance"
 msgstr "Iniciar instancia"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__started
+msgid "Started"
+msgstr "Iniciado"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11944,6 +12031,18 @@ msgstr ""
 "                        no se selecciona un backend específico a nivel de proyecto o instancia."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__stack_template_ref
+msgid ""
+"The doodba template version this instance's stack was last rendered with "
+"(copier's --vcs-ref). Empty for a stack rendered before the panel recorded "
+"it: those predate the egress gatekeeper of template v10."
+msgstr ""
+"La versión de la plantilla doodba con la que se renderizó por última vez la "
+"pila de esta instancia (el --vcs-ref de copier). Vacío para una pila "
+"renderizada antes de que el panel lo registrara: esas son anteriores al "
+"guardián de salida de la plantilla v10."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid ""
@@ -11991,6 +12090,18 @@ msgstr ""
 "A partir de entonces el cortafuegos del host solo acepta SSH, HTTP y HTTPS: "
 "un servicio instalado directamente en este servidor, fuera de Docker, deja "
 "de ser accesible desde fuera."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "The host has %(count)d jobs waiting in its queue."
+msgstr "El host tiene %(count)d trabajos en cola."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "The instance has %(count)d jobs waiting in its queue."
+msgstr "La instancia tiene %(count)d trabajos en cola."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__purge_cutoff_at
@@ -13398,6 +13509,11 @@ msgid "Waiting for the alert to be resolved: %s"
 msgstr "Esperando a que se resuelva la alerta: %s"
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__wait_dependencies
+msgid "Waiting on Dependencies"
+msgstr "Esperando dependencias"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/alert_history/alert_history.xml:0
 #: code:addons/incubacloud/static/src/components/project_card/project_card.js:0
@@ -13560,6 +13676,17 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid "What to receive"
 msgstr "Qué recibir"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job_type__failure_holds_queue
+msgid ""
+"When a job of this type fails, its target's queue waits until the failure is"
+" retried successfully or its alert is dismissed; nothing behind it starts "
+"meanwhile."
+msgstr ""
+"Cuando un trabajo de este tipo falla, la cola de su destino espera hasta que"
+" el fallo se reintente con éxito o se descarte su alerta; mientras tanto no "
+"arranca nada de lo que hay detrás."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -13901,14 +14028,6 @@ msgstr "Dominio comodín"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Wildcard domain is required"
 msgstr "El dominio wildcard es obligatorio"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid ""
-"Will be folded into the rebuild triggered when the current one finishes."
-msgstr ""
-"Se integrará en la reconstrucción que se lance cuando termine la actual."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert_policy__confirm_window
@@ -14736,18 +14855,6 @@ msgstr "psql -U odoo -d <dbname>"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "push(es) queued for next rebuild"
-msgstr "push(es) en cola para la próxima reconstrucción"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
-msgid "queued"
-msgstr "en cola"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "rebuild on push to unfrozen repos"
 msgstr "reconstruir al hacer push a repos no congelados"
 
@@ -15069,3 +15176,9 @@ msgstr "↻ Verificar instalación"
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "↻ Re-detect installation"
 msgstr "↻ Re-detectar instalación"
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "⚠ Could not undo what the job had prepared: %s"
+msgstr "⚠ No se pudo deshacer lo que el trabajo había preparado: %s"

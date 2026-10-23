@@ -12,8 +12,6 @@ from .res_users_ext import as_platform
 
 _logger = logging.getLogger(__name__)
 
-_AUTO_REBUILD_COOLDOWN = timedelta(seconds=60)
-
 # Alert raised when the GitHub App installation is removed or suspended.
 # Module-level so the webhook handler and any future health check dedup
 # on the same code.
@@ -306,26 +304,6 @@ class CloudGitHubEvent(models.Model):
         }
         return json.dumps(stub, separators=(',', ':'))
 
-    def _record_pending_push(self, instance, push_info, reason):
-        """Queue a push that could not trigger an immediate rebuild.
-
-        The resulting ``cloud.instance.pending.push`` rows are surfaced in
-        the instance card and consumed by the next successful rebuild's
-        ``on_success`` hook, which folds them into a coalesced follow-up
-        job so that every push remains traceable end-to-end.
-        """
-        self.ensure_one()
-        self.env['cloud.instance.pending.push'].sudo().create({
-            'instance_id': instance.id,
-            'event_id': self.id,
-            'push_repo': push_info.get('push_repo') or '',
-            'push_branch': push_info.get('push_branch') or '',
-            'push_sha': push_info.get('push_sha') or '',
-            'push_message': push_info.get('push_message') or '',
-            'push_by': push_info.get('push_by') or '',
-            'skip_reason': reason,
-        })
-
     def _rebuild_job_type(self, inst):
         """Job code used by webhook-driven auto-rebuild.
 
@@ -355,15 +333,6 @@ class CloudGitHubEvent(models.Model):
         :return: ``True`` to go ahead, falsy to skip it silently
         """
         return True
-
-    def _rebuild_blocking_codes(self):
-        """Job codes whose active presence defers a new auto-rebuild.
-
-        Default covers the core deploy / rebuild jobs. Overridden by
-        the SaaS manager to also include the tenant-flavoured variants
-        so a push can never race a tenant-rebuild already in flight.
-        """
-        return ('deploy_instance', 'rebuild_instance')
 
     def _dispatch(self, payload):
         """Route a freshly-persisted webhook event to its handler.
@@ -507,33 +476,15 @@ class CloudGitHubEvent(models.Model):
                 continue
             # A subclass may decline to auto-rebuild a given instance by
             # returning a falsy job type (e.g. the SaaS manager skips a
-            # warm-pool instance already condemned to recycling). Resolve
-            # it before the cooldown/active-job bookkeeping so we never
-            # record a pending push for an instance we will never rebuild.
+            # warm-pool instance already condemned to recycling).
             job_type = self._rebuild_job_type(inst)
             if not job_type:
                 continue
-            if (inst.last_auto_rebuild
-                    and (now - inst.last_auto_rebuild) < _AUTO_REBUILD_COOLDOWN):
-                self._record_pending_push(inst, push_info, 'cooldown')
-                _logger.info(
-                    "Auto-rebuild deferred for %s (cooldown) — push %s queued",
-                    inst.name, head_sha,
-                )
-                continue
-            # Skip if there's already a running/pending job for this instance
-            active_job = self.env['cloud.job'].search([
-                ('instance_id', '=', inst.id),
-                ('job_type_id.code', 'in', self._rebuild_blocking_codes()),
-                ('state', 'in', ('pending', 'started')),
-            ], limit=1)
-            if active_job:
-                self._record_pending_push(inst, push_info, 'active_job')
-                _logger.info(
-                    "Auto-rebuild deferred for %s (job %d already %s) — push %s queued",
-                    inst.name, active_job.id, active_job.state, head_sha,
-                )
-                continue
+            # A push always queues its rebuild. One that arrives while a
+            # rebuild runs waits in the instance's queue; one that
+            # arrives while a push's rebuild waits merges into it
+            # (``RebuildInstanceExecutor._merge_queued_payload``), so
+            # no commit is built twice and none is dropped.
             try:
                 self.env['cloud.job'].enqueue(
                     inst.host_id.id, inst.id, job_type,

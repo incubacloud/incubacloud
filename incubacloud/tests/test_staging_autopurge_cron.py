@@ -331,7 +331,7 @@ class TestDeletionGoesThroughTheOrdinaryPath(_LadderCase):
         self.staging.sudo()._transition("deployed")
         with patch.object(
             type(self.env["cloud.job"]), "enqueue",
-            side_effect=UserError("another job is running"),
+            side_effect=UserError("a delete is already queued"),
         ):
             self.Instance._cron_autopurge_stagings()
         self.assertFalse(self.env["cloud.audit.log"].sudo().search([
@@ -350,12 +350,13 @@ class TestDeletionGoesThroughTheOrdinaryPath(_LadderCase):
         self.assertIn(str(_WINDOW), entry.details)
 
     def test_a_blocked_deletion_raises_stuck_and_keeps_the_instance(self):
-        """A job already running is normal; tomorrow's tick retries."""
+        """A refused enqueue (a delete already waiting, say) is normal;
+        tomorrow's tick retries."""
         self._expire_to_the_brink()
         self.staging.sudo()._transition("deployed")
         with patch.object(
             type(self.env["cloud.job"]), "enqueue",
-            side_effect=UserError("another job is running"),
+            side_effect=UserError("a delete is already queued"),
         ):
             tally = self.Instance._cron_autopurge_stagings()
         self.assertEqual(tally["deleted"], 0)

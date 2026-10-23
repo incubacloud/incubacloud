@@ -6,6 +6,154 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.198] — 2026-10-23
+
+### Changed
+
+- **An instance runs one job at a time; the rest wait in its queue.**
+  `cloud.job.enqueue` and `enqueue_chain` no longer refuse a job
+  because the target is busy ("A job is already running…"): the job is
+  created `queued` and the dispatcher starts it when the running one
+  ends, first come first served, with what the running job queued for
+  itself (`bypass_running_check`, now "I am part of the job running")
+  first. A host serialises its host-level jobs the same way. A chain is
+  one entry, dispatched whole with its queue.job dependencies when every
+  instance it touches is free and it is first in each of their queues;
+  cancelled while it waits, every step goes. `cloud.job.state` is the
+  job's own field (it mirrored `queue_job_id.state`), with `queued`;
+  `queue_job_ext` mirrors every transition the runner writes through
+  the ORM. The 29 production jobs left with an empty state when their
+  queue.job was deleted end `cancelled` with a note. A payment seven
+  seconds after a sign-up's value push no longer loses its plan (QA,
+  22-oct-2026); the move of 15-oct-2026 was the same refusal.
+- **What a job type does in the queue is the type's to say.**
+  `cloud.job.type` gains `queue_collapse` (asked for again while an
+  identical one waits, the waiting one is returned — payload and secret
+  alike), `queue_exclusive` (one waiting at most: restores, deletes) and
+  `failure_holds_queue` (a failure of a deploy, rebuild, restore, delete
+  or move step holds the target's queue until it is retried successfully
+  or its alert — the `job_failed`, or the critical conflict alert raised
+  instead — is dismissed; the retry goes to the head, one per failure).
+  A queue holds five entries; a sixth is refused. `install_observability`
+  collapses through the type instead of a search of its own.
+- **A GitHub push merges into the rebuild already waiting.** The pushes
+  that arrived during a rebuild were kept apart
+  (`cloud.instance.pending.push`, with the one-minute cooldown) and
+  folded into a rebuild when the running one ended. A push now always
+  queues its rebuild: with a push's rebuild waiting, the push joins its
+  list (`coalesced_pushes`, head unchanged); with one running and none
+  waiting, a new one waits. The model, its card and its cooldown go;
+  the migration drops the table.
+- **Cancelled before it started, a job leaves nothing behind.** A job or
+  chain cancelled while it waits — by whoever may ask for it, by a
+  delete, by its instance being archived or deleted — is cancelled on
+  the spot, with a note (a type meant for archived instances, the purge
+  of an archived instance's backups, is cancelled only once its instance
+  no longer exists: `_runs_on_archived_instance` on the executor), and
+  its executor's `on_cancelled_queued` puts
+  back what was written when it was asked for: a deploy's instance to
+  'draft', a move's markers cleared and the tenant told. A
+  `delete_instance` cancels everything waiting on the instance first and
+  waits only for the job running; `/cloud/delete_instance` no longer
+  refuses while jobs are active. A waiting job's instance moved to
+  another host starts on the new one. The endpoints that enqueue return
+  `state` with the job id. The rollback jobs of a move go to the head of
+  the queue and start once the cancelled step has stopped; the
+  revocation of an upload key waits its turn like any other job.
+- **Readers of a busy instance.** `_active_states` includes `queued`:
+  the host endpoint guard, the PITR checks, the move watchdog, the
+  docker prune's per-instance check and the hardening preflight
+  (`has_active_job`) count a waiting job; the health probe does not (a
+  job that has not started silences nothing), and the backups tab shows
+  a queued listing as waiting. A sweep every two minutes (`cron_job_queue_dispatch`) serves
+  any queue a lost dispatch left waiting.
+- **The queue moves after the commit, on a cursor of its own.** The
+  runner that ends a job reads the snapshot it took when the job
+  started, and would not have seen what was queued during the run: the
+  end of a job, a cancellation, a dismissed holding alert, an unblock or
+  a retry now register a dispatch of each queue concerned for after
+  their transaction commits, run on a fresh READ COMMITTED cursor that
+  logs whatever goes wrong instead of raising it. A failing dispatcher,
+  or a layer's `_after_job_terminal` that raises (now run in a savepoint,
+  and also for jobs cancelled while they waited), no longer turns a job
+  that succeeded into a failure. `enqueue` starts its own job at once
+  only when the instance is free both in its snapshot and in a fresh
+  read, so two requests at the same moment no longer start two jobs; the
+  five-entry cap, the one-waiting rule of exclusive types and the one
+  retry per failure count both too. A dispatched chain cancelled before
+  it started ends its next steps with it (queue_job cancels their
+  queue.jobs with SQL nothing mirrored, and they held the instance for
+  good). The steps after one that failed or was cancelled end
+  `cancelled`, with a note, not `failed`: only the step that failed is
+  a failure, and a step that never ran offers no retry (after a failed
+  move cutover, a retry of the source's cleanup would have torn down the
+  running instance). Only the chain's own graph is ended: a probe that
+  fails beside a chain no longer ends its steps. `cloud.job.instance_id`
+  and `host_id` are indexed.
+
+### Fixed
+
+- **A compose that cannot be read no longer passes for a stack without
+  the gatekeeper.** In the pull request preview walk 6f6 (QA,
+  22-oct-2026) `docker compose config --services` failed once on the
+  host: the rebuild's safe boot test took the staging for one without a
+  gatekeeper, put the throwaway PostgreSQL on a network the boot
+  container could not join, and failed with nothing to say why.
+  `compose_op.sh` would have skipped in silence the same way, restarting
+  the egress sidecar after odoo, and took a failed `docker compose ps`
+  for an odoo not running. Both scripts now read the compose through
+  `ic_compose_services`, which retries once and logs docker's own error.
+  The boot test reads it before copying the database and stops there,
+  saying it could not tell whether it needs the gatekeeper: a rebuild
+  that cannot check its boot fails. When `compose_op.sh` cannot read
+  what a step after the operation needs (the compose, what runs, odoo's
+  routes, the latter in 30 seconds at most), the operation has still
+  run, so the script names the step it could not check and what may be
+  wrong (odoo's unfiltered route, or odoo left with no network at all)
+  and exits 24 (`COMPOSE_OP_EXIT_UNCHECKED`); a stack whose compose,
+  read then, shows no gatekeeper has nothing to check for it. The start,
+  restart, restore and backup restore jobs take 24 for their step done:
+  they succeed, with a warning in the job log, and everything a success
+  brings runs as usual. What may be left wrong is the health probe's: an
+  unfiltered route through `odoo_net_setup`'s healthcheck
+  (`instance_egress_filter_lost`), an odoo outside its gatekeeper's
+  network through the check below.
+- **An odoo left outside its gatekeeper's network is put back, and the
+  health probe sees it.** Under template v10 odoo runs in the
+  gatekeeper's network namespace, and the gatekeeper gets a new one
+  every time it starts: restarted alone, recreated, or started again by
+  an `up`, it leaves a running odoo in the old namespace, while Traefik,
+  which reaches odoo through the gatekeeper, gives every visitor a 502
+  (checked on Docker 29, Compose 5). That namespace loses Docker's
+  interface and every route through it, but keeps the rest: a bridge the
+  gatekeeper made, the tunnels the kernel adds to each new namespace,
+  the IPv6 link-local and multicast routes of those that are up. So odoo
+  is taken to be in the right network when it has a route, IPv4 or IPv6,
+  other than those, through an interface other than `lo`. After an `up`,
+  `start` or `restart`, `compose_op.sh` reads odoo's routes and restarts
+  odoo when it has none, whatever the operation named; before, only a
+  start or restart naming the gatekeeper did, and an `up` never. A
+  restart of the whole stack is a `stop` and a `start`: `docker compose
+  restart` restarted odoo and the gatekeeper at once and left odoo
+  exited, unable to join a gatekeeper not running yet (5 of 5 on Docker
+  29), or running in the old namespace. `start` goes in dependency order
+  and now waits for what odoo depends on to be healthy (`db`, and the
+  gatekeeper on a v10 staging): if one stays unhealthy, the restart
+  fails with odoo stopped. A stop that fails still gets its start and
+  the steps after it, and the restart then ends with the stop's status.
+  The probe saw none of it: its HTTP check runs inside odoo's network,
+  where Odoo answers, and the gatekeeper stays healthy. For a stack with
+  a gatekeeper it now reads the same routes: odoo without one, or with
+  its gatekeeper not running, counts as Odoo not answering,
+  `instance_unresponsive`, critical, on the second probe in a row (a
+  restart caught midway lags for seconds), with the cause and "Restart
+  the instance". The probe repairs nothing. Routes it could not read are
+  logged as not checked and change nothing: the streak and the alert
+  stay as the last probe left them. Stacks without a gatekeeper do not
+  read them.
+
+---
+
 ## [1.0.197] — 2026-10-22
 
 ### Changed

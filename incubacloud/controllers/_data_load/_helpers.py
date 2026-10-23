@@ -392,7 +392,10 @@ def log_archive_download_command(inst_dir, name, max_bytes=64 * 1024 * 1024):
 def _job_response(env, job_id):
     """Return a consistent dict for a deploy/rebuild job response.
 
-    If the job is blocked by a pip-conflict alert, the response
+    ``state`` says whether the job started (``pending``, or whatever
+    its queue.job reached) or waits in the instance's queue
+    (``queued``) behind the job running now, so the frontend can say
+    which. If the job is blocked by a pip-conflict alert, the response
     includes ``blocked=True`` plus the conflict details so the
     frontend can show a clear notification instead of opening the
     log page.
@@ -400,9 +403,10 @@ def _job_response(env, job_id):
     job = env['cloud.job'].browse(job_id)
     alert = job.blocked_alert_id
     if not alert:
-        return {'job_id': job_id}
+        return {'job_id': job_id, 'state': job.state}
     return {
         'job_id': job_id,
+        'state': 'blocked',
         'blocked': True,
         'alert_id': alert.id,
         'alert_code': alert.code or '',

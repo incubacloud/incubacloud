@@ -656,80 +656,13 @@
                                         </div>
                                     </div>
                                 </t>
-                                <t
-                  t-elif="!timelineJobs.length and !(state.inst.pending_pushes and state.inst.pending_pushes.length)"
-                >
+                                <t t-elif="!timelineJobs.length">
                                     <div
                     class="ic-ov-activity-empty"
                   >No activity yet.</div>
                                 </t>
                                 <t t-else="">
                                     <div class="rl-tl">
-                                        <t
-                      t-if="state.inst.pending_pushes and state.inst.pending_pushes.length"
-                    >
-                                            <div class="rl-tl-item rl-tl-item--static">
-                                                <div class="rl-tl-rail">
-                                                    <span class="rl-tl-dot queued" />
-                                                    <span class="rl-tl-line" />
-                                                </div>
-                                                <div class="rl-tl-content">
-                                                    <div class="rl-tl-pending">
-                                                        <div class="rl-tl-head">
-                                                            <span class="rl-tl-icon"><t
-                                  t-out="env.icon('refresh', 14)"
-                                /></span>
-                                                            <span class="rl-tl-name">
-                                                                <t
-                                  t-esc="state.inst.pending_pushes.length"
-                                /> push(es) queued for next rebuild
-                                                            </span>
-                                                            <span
-                                class="rl-tl-state queued"
-                              >queued</span>
-                                                        </div>
-                                                        <t
-                              t-foreach="state.inst.pending_pushes"
-                              t-as="pp"
-                              t-key="pp.id"
-                            >
-                                                            <div class="rl-pp">
-                                                                <i
-                                  class="fa fa-github"
-                                />
-                                                                <span
-                                  class="rl-sha"
-                                  t-esc="pp.push_sha"
-                                />
-                                                                <t
-                                  t-if="pp.push_branch"
-                                >
-                                                                    <span
-                                    class="ic-tl-pp-branch"
-                                  >@<t t-esc="pp.push_branch" /></span>
-                                                                </t>
-                                                                <span
-                                  class="ic-tl-pp-msg"
-                                  t-esc="pp.push_message"
-                                />
-                                                                <t t-if="pp.push_by">
-                                                                    <span
-                                    class="ic-tl-pp-by"
-                                  >by <t t-esc="pp.push_by" /></span>
-                                                                </t>
-                                                                <span
-                                  t-att-class="'ic-tl-pp-reason reason-' + pp.skip_reason"
-                                  t-esc="pp.skip_reason"
-                                />
-                                                            </div>
-                                                        </t>
-                                                        <div class="ic-tl-footer-hint">
-                                                            Will be folded into the rebuild triggered when the current one finishes.
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </t>
                                         <t
                       t-foreach="timelineJobs"
                       t-as="job"

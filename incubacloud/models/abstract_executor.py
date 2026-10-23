@@ -80,6 +80,19 @@ def compose_own_container(service):
         f" | awk NF | head -n 1"
     )
 
+#: ``scripts/compose_op.sh`` ran the operation it was asked for, but could
+#: not read what the steps that follow it need — the compose, what runs,
+#: odoo's routes — to check them: the egress sidecar restarted after
+#: odoo, odoo restarted into the gatekeeper's network. The step did its
+#: work, so an executor running the script to start containers takes this
+#: for success, with a warning (the step's ``continue_on`` and
+#: :meth:`AbstractExecutor._accept_unchecked_compose_op`). The health
+#: probe catches what may be left wrong: an unfiltered route through
+#: ``odoo_net_setup``'s healthcheck (``instance_egress_filter_lost``), an
+#: odoo outside its gatekeeper's network, or with its gatekeeper stopped,
+#: through the routes odoo has (``instance_unresponsive``).
+COMPOSE_OP_EXIT_UNCHECKED = 24
+
 # Errnos that mark a transient, retryable connection problem (host
 # momentarily unreachable / refused / reset / rebooting), as opposed to a
 # permanent misconfiguration.
@@ -314,6 +327,14 @@ class AbstractExecutor(ABC):
     # side in the meantime.
     _retry_on_connection_loss = False
     _connection_retry_attempts = 10
+
+    # Whether the job is meant for an archived instance. The queue cancels
+    # a waiting job whose instance was archived meanwhile
+    # (``cloud.job._entry_verdict``): a deploy or a restart has nothing
+    # left to act on. A job that exists for archived instances — emptying
+    # the backup chain they keep — sets this, and is cancelled only once
+    # its instance no longer exists.
+    _runs_on_archived_instance = False
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -1437,6 +1458,32 @@ class AbstractExecutor(ABC):
             if data.get('exit_status', 1) != 0
         ]
 
+    def _accept_unchecked_compose_op(self, results, label):
+        """Return *results* without step *label* if it ran but could not check.
+
+        For a ``parse_results`` whose step *label* runs ``compose_op.sh``
+        with ``COMPOSE_OP_EXIT_UNCHECKED`` as its ``continue_on``: that
+        exit means the containers did what they were asked, so the step
+        is left out of what counts as failed, and the job log says what
+        was not checked. The script's own warnings, just above in the
+        log, say which step.
+
+        :param dict results: ``{label: {'stdout': str, 'exit_status': int}}``
+        :param str label: the label of the step that runs ``compose_op.sh``
+        :return: *results*, without *label* when it exited
+            ``COMPOSE_OP_EXIT_UNCHECKED``
+        :rtype: dict
+        """
+        step = results.get(label) or {}
+        if step.get('exit_status') != COMPOSE_OP_EXIT_UNCHECKED:
+            return results
+        self._sys(
+            f"⚠ '{label}' did its work, but the network steps that follow"
+            " it could not be checked: the warnings above say why, and"
+            " what may be wrong until the instance is restarted."
+        )
+        return {key: data for key, data in results.items() if key != label}
+
     async def on_success(self, results):
         """Called when parse_results returns an empty list."""
 
@@ -1488,6 +1535,37 @@ class AbstractExecutor(ABC):
         Runs in the transaction of whoever resolved the alert, the
         counterpart of ``on_blocked``.
         """
+
+    def on_cancelled_queued(self):
+        """Called when the job is cancelled while it waited in its queue.
+
+        Nothing ran and nothing reached the host, but whoever asked for
+        the job may have written ahead of it — an instance put in
+        'deploying', a staging created, a move's markers set — and the
+        executor that would have reverted that on failure never runs.
+        An override leaves those as they were before the job was asked
+        for. Runs in the transaction of whoever cancels: the user's
+        request, a delete's enqueue, the dispatcher that found the
+        instance gone. Writes with ``self.env``; the cancellation stands
+        if it raises.
+        """
+
+    @classmethod
+    def _merge_queued_payload(cls, waiting_job, payload):
+        """Fold a new request into *waiting_job* instead of queueing another.
+
+        Asked by ``cloud.job.enqueue`` for every job of this type that
+        waits on the same target, oldest first, before a new one is
+        created. An override that absorbs *payload* writes it into
+        *waiting_job* and returns True; the request then becomes that
+        job. Core absorbs nothing. Runs in the enqueuing transaction.
+
+        :param waiting_job: a ``queued`` ``cloud.job`` of this type
+        :param dict payload: what the caller passed to ``enqueue``
+        :return: whether the request was absorbed
+        :rtype: bool
+        """
+        return False
 
 
 # Backward-compat alias — kept so existing executor imports don't break.
