@@ -37,6 +37,7 @@ import {MailsMixin} from "./instance_detail_mails";
 import { confirmVia } from "../../utils/use_confirm";
 import {
   fetchOdooVersionFacts,
+  newestSeries,
   pgDefaultFor,
   pgVersionsFor,
 } from "../../utils/odoo_versions";
@@ -484,7 +485,7 @@ export class InstanceDetail extends JobsMixin(
       name: inst.name || "",
       environment: inst.environment || "staging",
       host_id: inst.host_id || null,
-      odoo_version: inst.odoo_version || 19.0,
+      odoo_version: inst.odoo_version || newestSeries(this.state.versionFacts),
       odoo_initial_lang: inst.odoo_initial_lang || null,
       odoo_admin_password: "",
       odoo_proxy: inst.odoo_proxy || "traefik",
@@ -572,7 +573,8 @@ export class InstanceDetail extends JobsMixin(
           environment: this.props.environment
             || (project?.has_production ? "staging" : "production"),
           host_id: null,
-          odoo_version: parseFloat(project?.odoo_version) || 19.0,
+          odoo_version: parseFloat(project?.odoo_version)
+            || newestSeries(this.state.versionFacts),
           odoo_initial_lang: null,
           odoo_admin_password: "",
           odoo_proxy: "traefik",

@@ -91,10 +91,11 @@ class CloudProject(models.Model):
         string='License',
         default='BSL-1.0',
     )
+    # A new project gets the newest series this panel offers.
     odoo_version = fields.Selection(
         selection=ODOO_VERSION_SELECTION,
         string='Odoo Version',
-        default='19.0',
+        default=_odoo_versions.new_record_default,
         required=True,
     )
 
@@ -165,10 +166,17 @@ class CloudProject(models.Model):
         The pickers only show offered series, but the value also arrives
         by RPC and by import; see ``_odoo_versions.may_choose``.
         """
+        pin = _odoo_versions.pinned_template_ref(self.env)
         for project in self:
             if project.odoo_version and not _odoo_versions.may_choose(
-                project.odoo_version, self.env.user,
+                project.odoo_version, self.env.user, pin,
             ):
+                # Offered, but not by this panel: its pin is too old.
+                if _odoo_versions.card(project.odoo_version)["offered"]:
+                    raise ValidationError(_(
+                        "Odoo %(version)s is not offered on this panel.",
+                        version=project.odoo_version,
+                    ))
                 raise ValidationError(_(
                     "Odoo %(version)s is not offered yet.",
                     version=project.odoo_version,
@@ -224,6 +232,9 @@ class CloudProject(models.Model):
         return {'project_id': self.id}
 
     def write(self, vals):
+        # A form sends the series back on every save: unchanged, it is
+        # not a choice for ``_check_series_may_be_chosen`` to judge.
+        vals = _odoo_versions.without_unchanged_series(self, vals)
         changed, old_snap = self._audit_snapshot(vals)
         result = super().write(vals)
         self._audit_log_changes(changed, old_snap)

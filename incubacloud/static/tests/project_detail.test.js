@@ -456,19 +456,19 @@ describe("ProjectDetail — ODOO_VERSIONS constant", () => {
     // The component defines ODOO_VERSIONS
     const ODOO_VERSIONS = [
         "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
-        "14.0", "15.0", "16.0", "17.0", "18.0", "19.0",
+        "14.0", "15.0", "16.0", "17.0", "18.0", "19.0", "20.0",
     ];
 
     test("starts with 7.0", () => {
         expect(ODOO_VERSIONS[0]).toBe("7.0");
     });
 
-    test("ends with 19.0", () => {
-        expect(ODOO_VERSIONS[ODOO_VERSIONS.length - 1]).toBe("19.0");
+    test("ends with 20.0", () => {
+        expect(ODOO_VERSIONS[ODOO_VERSIONS.length - 1]).toBe("20.0");
     });
 
-    test("contains 13 versions", () => {
-        expect(ODOO_VERSIONS.length).toBe(13);
+    test("contains 14 versions", () => {
+        expect(ODOO_VERSIONS.length).toBe(14);
     });
 });
 

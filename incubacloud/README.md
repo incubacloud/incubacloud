@@ -24,7 +24,8 @@ Features
   series, whether it is offered, which PostgreSQL it runs on, which tool
   dumps and loads its database (`click-odoo` or `odoo db`, through
   `scripts/lib/common.sh`) and which doodba template it needs. Nothing
-  else decides on a version by itself.
+  else decides on a version by itself. The panel deploys Odoo 7.0 to
+  20.0; 20.0 runs on PostgreSQL 16 to 18, the rest on 14 to 18.
 - **GitHub integration** — connect a GitHub App for automatic webhook-triggered
   rebuilds on push, or use a Personal Access Token for private repository
   access during deploys.
@@ -96,7 +97,9 @@ Requirements
 - Odoo 19.0
 - `queue_job` (OCA)
 - Python: `asyncssh`, `cryptography`, `PyJWT`, `PyYAML`, `boto3`
-- Docker image: `ghcr.io/tecnativa/doodba` (includes `click-odoo-contrib`)
+- Docker image: `ghcr.io/tecnativa/doodba` (includes `click-odoo-contrib`;
+  on Odoo 20 its database commands refuse to run, so the panel dumps and
+  loads with `odoo db` there)
 
 Extending with Custom Actions
 -----------------------------

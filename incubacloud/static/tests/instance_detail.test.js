@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@odoo/hoot";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 import {
+    newestSeries,
     pgDefaultFor,
     pgVersionsFor,
     seriesKey,
@@ -18,11 +19,15 @@ import {
 
 const ODOO_VERSIONS = [
     "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
-    "14.0", "15.0", "16.0", "17.0", "18.0", "19.0",
+    "14.0", "15.0", "16.0", "17.0", "18.0", "19.0", "20.0",
 ];
-// The cards the backend serves today (``_odoo_versions.picker_facts``).
+// The cards the backend serves today (``_odoo_versions.picker_facts``):
+// 20.0 runs on PostgreSQL 16 to 18, the rest on 14 to 18.
 const VERSION_FACTS = Object.fromEntries(
-    ODOO_VERSIONS.map((v) => [v, { postgres: ["14", "15", "16", "17", "18"], postgres_default: "17" }]),
+    ODOO_VERSIONS.map((v) => [v, {
+        postgres: v === "20.0" ? ["16", "17", "18"] : ["14", "15", "16", "17", "18"],
+        postgres_default: "17",
+    }]),
 );
 
 // ── Helpers (mirrored from source) ──────────────────────────────────────────
@@ -217,13 +222,13 @@ describe("InstanceDetail — ODOO_VERSIONS constant", () => {
         expect(ODOO_VERSIONS).toInclude("19.0");
     });
 
-    test("starts at 7.0 and ends at 19.0", () => {
+    test("starts at 7.0 and ends at 20.0", () => {
         expect(ODOO_VERSIONS[0]).toBe("7.0");
-        expect(ODOO_VERSIONS[ODOO_VERSIONS.length - 1]).toBe("19.0");
+        expect(ODOO_VERSIONS[ODOO_VERSIONS.length - 1]).toBe("20.0");
     });
 
-    test("has 13 entries", () => {
-        expect(ODOO_VERSIONS.length).toBe(13);
+    test("has 14 entries", () => {
+        expect(ODOO_VERSIONS.length).toBe(14);
     });
 });
 
@@ -241,14 +246,29 @@ describe("InstanceDetail — PostgreSQL versions follow the series' card", () =>
     });
 
     test("a series with its own range gets it", () => {
-        const facts = { ...VERSION_FACTS, "20.0": { postgres: ["16", "17", "18"], postgres_default: "17" } };
-        expect(pgVersionsFor(facts, 20)).toEqual(["16", "17", "18"]);
+        expect(pgVersionsFor(VERSION_FACTS, 20)).toEqual(["16", "17", "18"]);
     });
 
     test("before the cards arrive the picker is never empty", () => {
         expect(pgVersionsFor({}, 19)).toEqual(["17"]);
         expect(pgDefaultFor({}, 19)).toBe("17");
         expect(pgVersionsFor(VERSION_FACTS, 6.1)).toEqual(["14", "15", "16", "17", "18"]);
+    });
+});
+
+describe("InstanceDetail — a new form's series is the newest offered", () => {
+    test("the last series the backend serves", () => {
+        expect(newestSeries(VERSION_FACTS)).toBe(20);
+    });
+
+    test("a panel whose pin stops below 20.0 serves up to 19.0", () => {
+        const { "20.0": _twenty, ...upTo19 } = VERSION_FACTS;
+        expect(newestSeries(upTo19)).toBe(19);
+    });
+
+    test("none before the cards arrive", () => {
+        expect(newestSeries({})).toBe(undefined);
+        expect(newestSeries(undefined)).toBe(undefined);
     });
 });
 

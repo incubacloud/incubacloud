@@ -8900,6 +8900,13 @@ msgstr "Odoo"
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 #: code:addons/incubacloud/models/cloud_project.py:0
+msgid "Odoo %(version)s is not offered on this panel."
+msgstr "Odoo %(version)s no se ofrece en este panel."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_instance.py:0
+#: code:addons/incubacloud/models/cloud_project.py:0
 msgid "Odoo %(version)s is not offered yet."
 msgstr "Odoo %(version)s todavía no se ofrece."
 

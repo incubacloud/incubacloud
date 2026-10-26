@@ -23,7 +23,8 @@ If you need a forensic copy with original credentials and crons, **download exac
 3. Choose **Exact** or **Neutralized**.
 4. The job starts and shows a progress bar.
 5. When ready, click the download link. You get a standard ZIP
-   (`dump.sql + filestore/`) — restorable on any Odoo of the same version.
+   (`dump.sql + filestore/`), the same on every Odoo version from 7.0 to 20.0 —
+   restorable on any Odoo of the same version.
 
 ## Restore in place
 

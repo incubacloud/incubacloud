@@ -34,7 +34,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/get_config` | none | Feature flags, permissions and global settings for the SPA. |
 | `/cloud/get_dashboard` | record rules | Counts (hosts, projects, instances), active alerts, recent jobs. |
 | `/cloud/get_langs` | none | Available Odoo language codes and names. |
-| `/cloud/get_odoo_versions` | none | Supported Odoo versions (7.0 – 19.0). |
+| `/cloud/get_odoo_versions` | none | Offered Odoo versions (7.0 – 20.0) the panel's template pin can render, with each one's PostgreSQL range; the last is a new project's default. |
 | `/cloud/global_search` | record rules | Cross-entity search (projects, instances, hosts). |
 | `/cloud/get_users` | project manager | Internal users (for member pickers). |
 | `/cloud/get_tags` | none | All tags with id, name, color. |

@@ -28,7 +28,9 @@ from the backup ZIP you download from Odoo.sh. Each step is straightforward.
    project structure: submodules, branches, Odoo version (from the project's
    `requirements.txt` or pinned image).
 4. Click **Import**. The project shows up with the detected branches and
-   version pre-filled, and with a production instance ready to deploy.
+   version pre-filled, and with a production instance ready to deploy. Versions
+   7.0 to 20.0 are recognized; a project on another one, or whose version
+   cannot be read, is imported on the newest version the panel offers.
 
 !!! warning "Private repos need credentials"
     Connect the platform's GitHub App, or store a personal access token, in
