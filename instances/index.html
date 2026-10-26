@@ -1240,6 +1240,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#one-action-at-a-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      One action at a time
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ending-an-instance" class="md-nav__link">
     <span class="md-ellipsis">
       Ending an instance
@@ -1402,6 +1411,33 @@ either one.</p>
 </span></code></pre></div>
 <p>A rebuild updates the image and modules without downtime (production) or
 restarts the container (staging).</p>
+<h2 id="one-action-at-a-time">One action at a time<a class="headerlink" href="#one-action-at-a-time" title="Permanent link">&para;</a></h2>
+<p>An instance runs <strong>one action at a time</strong> — deploy, rebuild, restart, backup,
+restore and the rest. Press a button while another action is running and the
+new one is not refused: it <strong>waits in the instance's queue</strong> and starts by
+itself when the one ahead of it ends, in the order they were asked for.</p>
+<ul>
+<li>The panel tells you which: <em>Started: Rebuild Instance</em>, or <em>Queued behind
+  Deploy Instance</em>.</li>
+<li><strong>Recent activity</strong> lists a waiting action as <em>Queued · N ahead</em>: how many
+  actions start before it.</li>
+<li>Changed your mind? A waiting action has not started yet, so <strong>Cancel</strong> takes
+  it out of the queue at once and nothing happens on the server.</li>
+<li>Asking twice for the same thing while it waits — two restarts, the same
+  backup — does not queue it twice. A queue holds five actions at most.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">After a failure, the queue waits for you</p>
+<p>When a deploy, rebuild, restore or delete fails, what is queued behind it
+does not start: a restart after a broken deploy would only fail again. The
+waiting actions show <strong>Action required</strong>, which leads to the failure's
+alert. <strong>Retry</strong> the failed action — once it succeeds the queue moves on —
+or <strong>dismiss</strong> the alert in <strong>Alerts</strong> to let the queue go on as it is.</p>
+</div>
+<p>Deleting an instance does not wait for the actions queued on it: they are
+cancelled, and the deletion starts as soon as the action running now ends.</p>
+<p>Every action has a log. Click it in <strong>Recent activity</strong> (or in <strong>View all
+activity</strong>) to open its log in a new tab; a button never opens one by itself.</p>
 <h2 id="ending-an-instance">Ending an instance<a class="headerlink" href="#ending-an-instance" title="Permanent link">&para;</a></h2>
 <p>Both endings remove the containers, the database and the files from the host.
 They differ in what happens to the <strong>backups</strong>.</p>

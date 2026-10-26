@@ -1520,7 +1520,9 @@ Set the DNS first.</p>
 <p>If you skip the domain, the platform generates a subdomain under its base domain
 for testing (on the hosted SaaS: <code>&lt;name&gt;.&lt;your-subdomain&gt;.incubacloud.io</code>).</p>
 <h2 id="7-hit-deploy">7. Hit Deploy<a class="headerlink" href="#7-hit-deploy" title="Permanent link">&para;</a></h2>
-<p>A job starts. The job log opens automatically. You'll see the steps in order:</p>
+<p>A job starts, and the panel says so: <em>Started: Deploy Instance</em>. It shows up
+under <strong>Recent activity</strong> on the instance; click it to open the job log in a
+new tab and follow it live. You'll see the steps in order:</p>
 <ol>
 <li>Build image (1–3 min depending on dependencies).</li>
 <li><strong>Boot test</strong> (production only) — clone the database to <code>__ic_boot_test</code>,
@@ -1531,6 +1533,15 @@ for testing (on the hosted SaaS: <code>&lt;name&gt;.&lt;your-subdomain&gt;.incub
 <li>Cleanup.</li>
 </ol>
 <p>When the job ends in green, your instance is up.</p>
+<div class="admonition note">
+<p class="admonition-title">Another action already running?</p>
+<p>An instance runs one action at a time. If something else is running on it,
+the deploy is not refused: it waits its turn — the panel says <em>Queued behind
+…</em>, and Recent activity lists it as <em>Queued · N ahead</em> — and starts by
+itself. You can cancel it while it waits. If the action ahead of it fails,
+the queue waits until you retry that action or dismiss its alert. See
+<a href="../../instances/#one-action-at-a-time">One action at a time</a>.</p>
+</div>
 <h2 id="verify-it-worked">Verify it worked<a class="headerlink" href="#verify-it-worked" title="Permanent link">&para;</a></h2>
 <ul class="task-list">
 <li class="task-list-item"><label class="task-list-control"><input type="checkbox" disabled checked/><span class="task-list-indicator"></span></label> The job shows <code>Done</code> in green.</li>
