@@ -553,6 +553,56 @@ class TestTelegramSend(TransactionCase):
         req = mock_open.call_args[0][0]
         self.assertIn("/bot", req.full_url)
 
+    @patch("odoo.addons.incubacloud.models.cloud_job.safe_urlopen")
+    def test_names_are_text_not_markdown(self, mock_open):
+        """A link forged into a name is no link, and ``_`` or ``*`` break nothing.
+
+        Outside an entity ``_ * ` [`` are escaped with a backslash. The
+        job's name is bold, where Telegram knows no escape: a ``*`` in it
+        closes the bold and opens it again around an escaped one.
+        """
+        self.job.name = "fix_db *now* [click](https://evil.example)"
+        self.host.name = "tg_host [x](https://evil.example)"
+        self.env["cloud.job"]._send_telegram(self.user, self.job, "failed", False)
+        text = json.loads(mock_open.call_args[0][0].data)["text"]
+        self.assertIn(
+            "*fix_db *\\**now*\\** [click](https://evil.example)* failed", text,
+        )
+        self.assertIn("Host: tg\\_host \\[x](https://evil.example)", text)
+
+    @patch("odoo.addons.incubacloud.models.cloud_alert.safe_urlopen")
+    def test_an_alerts_message_is_text_not_markdown(self, mock_open):
+        """The alert's message and names are escaped the same way."""
+        alert = self.env["cloud.alert"].sudo().create({
+            "code": "disk_critical",
+            "level": "critical",
+            "message": "disk_full on *tg* [x](https://evil.example)",
+            "host_id": self.host.id,
+        })
+        self.host.name = "tg_host"
+        alert._send_alert_telegram(self.user)
+        text = json.loads(mock_open.call_args[0][0].data)["text"]
+        self.assertIn(
+            "*Alert:* disk\\_full on \\*tg\\* \\[x](https://evil.example)", text,
+        )
+        self.assertIn("Host: tg\\_host", text)
+
+    @patch("odoo.addons.incubacloud.models.cloud_alert.safe_urlopen")
+    def test_a_resolution_without_its_failed_job_still_links_the_run(
+        self, mock_open,
+    ):
+        """An alert whose failed job was purged still says who resolved it."""
+        alert = self.env["cloud.alert"].sudo().create({
+            "code": "job_failed",
+            "level": "warning",
+            "message": "failed",
+            "host_id": self.host.id,
+            "resolved_by_job_id": self.job.id,
+        })
+        alert._send_alert_telegram(self.user, resolved=True)
+        text = json.loads(mock_open.call_args[0][0].data)["text"]
+        self.assertIn(f"/cloud/log/{self.job.id}", text)
+
 
 @tagged("post_install", "-at_install")
 class TestWebhookSend(TransactionCase):

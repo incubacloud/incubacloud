@@ -37,7 +37,7 @@ from .abstract_executor import (
     is_transient_connection_error,
 )
 from .registry import executor_registry
-from .res_users_ext import as_platform
+from .res_users_ext import as_platform, telegram_markdown
 
 _logger = logging.getLogger(__name__)
 
@@ -304,7 +304,9 @@ class CloudJob(models.Model):
         chain belongs to the job that queues it and goes to the head of
         its queues (a rebuild's follow-up chain of its addons). As there,
         it is refused to a caller without superuser rights, and so is a
-        step whose target they cannot read (``_check_target_access``).
+        step whose target they cannot read (``_check_target_access``), or
+        one of an instance on a host that is not its own nor its move's
+        (``_check_step_host``).
 
         Returns: list of cloud.job IDs (in execution order)
         """
@@ -321,6 +323,7 @@ class CloudJob(models.Model):
         )
         for step in steps:
             self._check_target_access(step.get("instance_id"), step["host_id"])
+            self._check_step_host(step.get("instance_id"), step["host_id"])
         job_types = {}
         for step in steps:
             code = step["job_type_code"]
@@ -2352,6 +2355,35 @@ class CloudJob(models.Model):
         target.check_access("read")
 
     @api.model
+    def _check_step_host(self, instance_id, host_id):
+        """Refuse a step of a chain on a host that is not its instance's.
+
+        A lone job goes where its instance is when its turn comes
+        (``_entry_verdict``), but the steps of a chain keep the hosts
+        they name: a clone, a refresh and a move address more than one.
+        ``cloud.host`` has no record rule, so ``_check_target_access``
+        reads only the instance, and a caller without superuser rights
+        could have their instance deployed on any host. A step of an
+        instance runs on its host or, while it moves, on the move's
+        origin or destination, set before the move's chain is queued
+        (``move_to_host``).
+
+        :param instance_id: the step's instance, or nothing for a
+            host-level step
+        :param host_id: the step's host
+        :raises AccessError: when the host is none of those
+        """
+        if self.env.su or not instance_id:
+            return
+        inst = self.env["cloud.instance"].browse(int(instance_id))
+        hosts = inst.host_id | inst.move_origin_host_id | inst.move_target_host_id
+        if int(host_id or 0) not in hosts.ids:
+            raise AccessError(_(
+                "A step of a chain runs on its instance's host, or on a "
+                "host its instance is moving between.",
+            ))
+
+    @api.model
     def _check_queue_control_vals(self, vals_list):
         """Refuse the queue's fields to a direct create or write without su.
 
@@ -3490,7 +3522,9 @@ class CloudJob(models.Model):
 
         Uses the Bot API ``sendMessage`` endpoint. Failure is logged
         but never propagated — a bad token or connectivity blip must
-        not abort the notification pipeline for other users.
+        not abort the notification pipeline for other users. What is
+        interpolated is text, never Markdown (``telegram_markdown``):
+        whoever may write the job writes its name.
         """
         base_url = (
             self.env["ir.config_parameter"]
@@ -3503,12 +3537,12 @@ class CloudJob(models.Model):
         emoji = "\U0001f534" if state == "failed" else "\U0001f7e2"
         severity_tag = " \u26a0\ufe0f SEVERE" if severe else ""
         lines = [
-            f"{emoji} *{job.name}* {state}{severity_tag}",
-            f"Host: {job.host_id.name}",
+            f"{emoji} {telegram_markdown(job.name, bold=True)} {state}{severity_tag}",
+            f"Host: {telegram_markdown(job.host_id.name)}",
         ]
         if job.instance_id:
-            lines.append(f"Instance: {job.instance_id.name}")
-        lines.append(f"Logs: {base_url}/cloud/log/{job.id}")
+            lines.append(f"Instance: {telegram_markdown(job.instance_id.name)}")
+        lines.append(f"Logs: {telegram_markdown(base_url)}/cloud/log/{job.id}")
         text = "\n".join(lines)
         url = f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}/sendMessage"
         payload = json.dumps(

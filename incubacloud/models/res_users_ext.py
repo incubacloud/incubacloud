@@ -48,6 +48,31 @@ def as_platform(records):
     return records.with_user(bot).sudo()
 
 
+def telegram_markdown(value, bold=False):
+    """Return *value* as text in a Telegram message sent as ``Markdown``.
+
+    The notifications of jobs and alerts go to the Bot API with
+    ``parse_mode: Markdown`` (the legacy one), and they carry names and
+    messages that whoever may write the record wrote: ``[x](url)`` in an
+    alert's message, or in the name of the job that resolved it, was a
+    live link in everyone's chat, and a lone ``_`` or
+    ``*`` made Telegram refuse the whole message. Outside an entity the
+    four characters that open one (``_ * ` [``) are escaped with a
+    backslash. Inside one Telegram reads everything as it is up to the
+    character that closes it and knows no escape, so in bold only ``*``
+    matters: the bold is closed before it and opened again after it.
+
+    :param value: the text, or nothing
+    :param bool bold: whether to return it as a bold entity
+    :return: Markdown that shows *value* as it is
+    :rtype: str
+    """
+    text = str(value or '')
+    if bold:
+        return '*' + text.replace('*', '*\\**') + '*'
+    return ''.join('\\' + char if char in '_*`[' else char for char in text)
+
+
 class ResUsers(models.Model):
     _inherit = 'res.users'
 

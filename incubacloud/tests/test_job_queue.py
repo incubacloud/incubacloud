@@ -946,6 +946,70 @@ class TestAnotherProjectsQueue(_QueueCase):
 
 
 @tagged("-at_install", "post_install")
+class TestTheHostOfAChainsStep(_QueueCase):
+    """A step of a chain runs where its instance is, or where it moves.
+
+    The dispatcher puts a lone job on its instance's host, but the steps
+    of a chain keep the hosts they name, and ``cloud.host`` has no record
+    rule: ``enqueue_chain`` holds them to the instance's host and its
+    move's (``_check_step_host``).
+    """
+
+    def setUp(self):
+        """Another host, ready to receive a move, and a consultant of the project."""
+        super().setUp()
+        self.other = self.env["cloud.host"].create({
+            "name": "queue-other-host",
+            "ip_address": "10.0.0.82",
+            "user": "ubuntu",
+            "wildcard_domain": "other.queue.example.com",
+            "status": "compatible",
+            "traefik_deployed": True,
+        })
+        self.consultant = self._consultant("queue-step-host")
+
+    def _count(self):
+        """How many jobs the instance has."""
+        return self.Job.search_count([("instance_id", "=", self.inst.id)])
+
+    def _deploy_on(self, host):
+        """Ask, as the consultant, for a chain that deploys the instance on *host*.
+
+        :return: the ids ``enqueue_chain`` returns
+        """
+        return self.Job.with_user(self.consultant).enqueue_chain([{
+            "host_id": host.id, "instance_id": self.inst.id,
+            "job_type_code": "deploy_instance",
+        }])
+
+    def test_a_consultants_instance_is_not_deployed_on_another_host(self):
+        """Refused before anything is created."""
+        before = self._count()
+        with self.assertRaises(AccessError):
+            self._deploy_on(self.other)
+        self.assertEqual(self._count(), before)
+        self.assertFalse(self.Job.search([("host_id", "=", self.other.id)]))
+
+    def test_on_its_instances_host_the_chain_is_queued(self):
+        """The host the instance is on is its own."""
+        job = self.Job.browse(self._deploy_on(self.host))
+        self.assertEqual(job.host_id, self.host)
+        self.assertEqual(job.create_uid, self.consultant)
+
+    def test_a_move_without_superuser_rights_names_both_hosts(self):
+        """Its origin and destination are set before its chain is queued."""
+        manager = new_test_user(
+            self.env, login="queue-step-mover",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        self.project.member_ids = [(4, manager.id)]
+        self.inst.with_user(manager).move_to_host(self.other)
+        steps = self.Job.search([("instance_id", "=", self.inst.id)])
+        self.assertEqual(steps.host_id, self.host | self.other)
+        self.assertEqual(steps.create_uid, manager)
+
+
+@tagged("-at_install", "post_install")
 class TestTheSourceOfARestore(_QueueCase):
     """A restore reads the job it takes its data from as its creator may.
 
