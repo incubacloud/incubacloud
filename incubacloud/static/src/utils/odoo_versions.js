@@ -32,7 +32,7 @@ function fetchVersionInfo() {
 /**
  * Fetch the supported Odoo versions from the backend.
  *
- * @returns {Promise<string[]>} ordered version strings, e.g. ["7.0", …, "19.0"]
+ * @returns {Promise<string[]>} ordered version strings, e.g. ["7.0", …, "20.0"]
  */
 export function fetchOdooVersions() {
     return fetchVersionInfo().then((info) => info.odoo_versions);
@@ -45,6 +45,23 @@ export function fetchOdooVersions() {
  */
 export function fetchOdooVersionFacts() {
     return fetchVersionInfo().then((info) => info.facts);
+}
+
+/**
+ * The series a new project, or an instance outside one, gets: the newest
+ * this panel offers.
+ *
+ * The facts hold the offered series oldest first, only those the panel's
+ * pinned template can render (``/cloud/get_odoo_versions``), so the last
+ * one is the backend's default (``_odoo_versions.default_version``).
+ *
+ * @param {Object} facts as ``fetchOdooVersionFacts`` resolves them
+ * @returns {number|undefined} the series as a form holds it (``20`` for
+ *     ``"20.0"``), or undefined when the facts are not in
+ */
+export function newestSeries(facts) {
+    const series = Object.keys(facts || {});
+    return series.length ? parseFloat(series[series.length - 1]) : undefined;
 }
 
 /**

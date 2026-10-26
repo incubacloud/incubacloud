@@ -304,10 +304,12 @@ class CloudInstance(models.Model):
 
     # ── Copier template parameters ──────────────────────────────────────────
 
+    # A new instance takes its project's series (``create``); one without
+    # a project, the newest series this panel offers.
     odoo_version = fields.Selection(
         selection=ODOO_VERSION_SELECTION,
         string="Odoo Version",
-        default="19.0",
+        default=_odoo_versions.new_record_default,
     )
     stack_template_ref = fields.Char(
         string="Doodba Template of the Stack",
@@ -1110,6 +1112,9 @@ class CloudInstance(models.Model):
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        # A form sends the series back on every save: unchanged, it is
+        # not a choice for ``_check_series_may_be_chosen`` to judge.
+        vals = _odoo_versions.without_unchanged_series(self, vals)
         changed, old_snap = self._audit_snapshot(vals)
         result = super().write(vals)
         # Auto-generate domain when a host is assigned to an instance
@@ -1195,7 +1200,8 @@ class CloudInstance(models.Model):
             return []
         entries = self.whitelist_ids
         if not entries and self._template_has_gatekeeper(
-            self._pinned_template_ref() if template_ref is None else template_ref
+            _odoo_versions.pinned_template_ref(self.env)
+            if template_ref is None else template_ref
         ):
             entries = self.host_id.whitelist_ids
         seen = []
@@ -1231,13 +1237,6 @@ class CloudInstance(models.Model):
             )
             if svc and svc in allowed
         ]
-
-    def _pinned_template_ref(self):
-        """The doodba template a deploy renders with now (``copier --vcs-ref``).
-
-        :rtype: str
-        """
-        return self.env["cloud.settings"].sudo()._get().copier_template_ref or ""
 
     def _check_template_ref(self, ref):
         """Refuse to render this instance with a template too old for its series.
@@ -3616,10 +3615,17 @@ class CloudInstance(models.Model):
         The pickers only show offered series, but the value also arrives
         by RPC; see ``_odoo_versions.may_choose``.
         """
+        pin = _odoo_versions.pinned_template_ref(self.env)
         for inst in self:
             if inst.odoo_version and not _odoo_versions.may_choose(
-                inst.odoo_version, self.env.user,
+                inst.odoo_version, self.env.user, pin,
             ):
+                # Offered, but not by this panel: its pin is too old.
+                if _odoo_versions.card(inst.odoo_version)["offered"]:
+                    raise ValidationError(_(
+                        "Odoo %(version)s is not offered on this panel.",
+                        version=inst.odoo_version,
+                    ))
                 raise ValidationError(_(
                     "Odoo %(version)s is not offered yet.",
                     version=inst.odoo_version,
@@ -3883,6 +3889,12 @@ class CloudInstance(models.Model):
             project_id = vals.get("project_id")
             if project_id:
                 project = self.env["cloud.project"].browse(project_id)
+                # An instance runs its project's series unless it names
+                # one: the field's default is the newest series offered,
+                # and an instance imported from a host into a project of
+                # another series would render that one at its next rebuild.
+                if not vals.get("odoo_version") and project.odoo_version:
+                    vals["odoo_version"] = project.odoo_version
                 # Copy project dependencies to instance if not set
                 if "pip_dependencies" not in vals and project.pip_dependencies:
                     vals["pip_dependencies"] = project.pip_dependencies

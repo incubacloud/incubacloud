@@ -1,7 +1,7 @@
 # Deploy your first instance
 
 This guide walks you through deploying your first Odoo instance:
-picking a host, an Odoo version, the modules, and watching the deployment
+picking a host, a Postgres version, the modules, and watching the deployment
 log in real time.
 
 !!! info "Prerequisites"
@@ -26,13 +26,19 @@ Select one of your registered hosts. The platform checks capacity automatically
 and prevents over-provisioning. If your hosts are all full, [order a new one](../hosts/hire.md)
 or [connect another](../hosts/connect.md).
 
-## 4. Pick an Odoo version
+## 4. Odoo and Postgres versions
 
-Versions 7.0 to 19.0 are supported. The version influences which modules are available
-and which Postgres major version we use.
+The instance runs its project's Odoo version, which you pick in the project's form
+(**Odoo Version**, when you create the project or later under its **General** tab):
+versions 7.0 to 20.0 are supported, and a new project starts on the newest one your
+panel offers (20.0) unless you pick another. The deployment form does not ask for it:
+a new instance takes its project's, and keeps it if the project changes later. The
+version influences which modules are available and which Postgres major versions you
+can pick under the form's **Database** tab: 14 to 18 for Odoo 7.0 to 19.0, 16 to 18
+for Odoo 20.0, with 17 by default.
 
-If your project has a connected repo with `.copier-answers.yml`, we pre-fill the version
-from there. You can still override.
+If your project has a connected repo with `.copier-answers.yml`, we pre-fill the
+project's version from there; you can still pick another in the project's form.
 
 ## 5. Pick modules
 

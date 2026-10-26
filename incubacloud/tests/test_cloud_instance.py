@@ -5,6 +5,8 @@ Tier 2 — ORM integration tests for cloud.instance.
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase
 
+from ._template import pin_template
+
 
 class TestCloudInstancePasswords(TransactionCase):
     def setUp(self):
@@ -286,9 +288,25 @@ class TestCloudInstanceOdooVersion(TransactionCase):
         }
         return self.env["cloud.instance"].create(base | kw)
 
-    def test_default_version_is_19(self):
-        inst = self._create_instance()
-        self.assertEqual(inst.odoo_version, "19.0")
+    def test_default_version_is_the_newest_offered(self):
+        """Without a project, the newest the panel's pin renders: v10.0.8,
+        production's, 20.0."""
+        pin_template(self.env, "v10.0.8")
+        inst = self.env["cloud.instance"].create(
+            {"name": "test-ver", "environment": "staging"},
+        )
+        self.assertEqual(inst.odoo_version, "20.0")
+
+    def test_without_a_series_it_takes_its_project_s(self):
+        """Not the default: an instance created by code or imported from a
+        host into a project of another series runs the project's."""
+        pin_template(self.env, "v10.0.8")
+        self.project.odoo_version = "18.0"
+        self.assertEqual(self._create_instance().odoo_version, "18.0")
+        self.assertEqual(
+            self._create_instance(name="named", odoo_version="16.0").odoo_version,
+            "16.0",
+        )
 
     def test_explicit_version_preserved(self):
         inst = self._create_instance(odoo_version="16.0")

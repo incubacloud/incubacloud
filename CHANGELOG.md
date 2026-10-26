@@ -179,6 +179,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   stored in English now that the type's name is translated (the
   reader's language would split the audit's filter and mix languages in
   mails and alerts).
+- **Odoo 20.0 is offered, and a new project starts on it.** Its card
+  says `offered`: the pickers show it, the importer recognizes it and
+  anyone may choose it, on PostgreSQL 16 to 18, with `odoo db` and
+  doodba template v10.0.3 or newer. A new project gets the newest
+  series offered (`default_version`), not a fixed 19.0, and a new
+  instance its project's unless it names one, whoever creates it (an
+  import from a host into an existing project took the default). A
+  panel offers only what its template pin can render: below v10.0.3 its
+  pickers, its default and `may_choose` stop at 19.0 (anyone else who
+  sends 20.0 reads "not offered on this panel"), while an administrator
+  may still pick 20.0 and its deploy refuses with RB-15. Existing projects
+  and instances keep their series, and a save that sends back the
+  series a record holds is no choice: after a rollback of the pin
+  below v10.0.3, anyone who could save a 20.0 project or instance
+  still can.
+- **A template pin too old for 20.0 is raised on upgrade.** A panel
+  whose stored `copier_template_ref` is a version tag below v10.0.3 (a
+  panel installed with a core older than 1.0.195, 21-oct-2026, holds
+  v9.6.1, unless someone changed it) moves to v10.0.8, with a log line
+  naming both; an empty pin, a branch or a commit stays. Both tags are
+  written in the migration, which reads neither the card nor the
+  field's default. Nothing is rendered then: each stack takes template
+  v10 at its next deploy or rebuild, as after a bump by hand (RB-15),
+  and a staging with an allowlist closes its egress with the gatekeeper
+  from then on. A staging whose own allowlist is empty takes its host's
+  list under v10, so it shows "unapplied changes" until its next
+  deploy: true, since that deploy changes its compose.
 
 ### Removed
 

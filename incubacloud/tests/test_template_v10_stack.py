@@ -27,9 +27,12 @@ class TestTheStackFollowsItsTemplate(TransactionCase):
             "name": "gk-host", "ip_address": "192.0.2.91", "user": "ubuntu",
             "wildcard_domain": "gk.example.com",
         })
+        # Named: the router keys below carry it, and a new instance's
+        # default follows the database's pin.
         self.staging = self.env["cloud.instance"].create({
             "name": "gkstag", "project_id": project.id,
             "environment": "staging", "host_id": self.host.id,
+            "odoo_version": "19.0",
         })
         self.env["cloud.instance.whitelist"].create({
             "instance_id": self.staging.id, "hostname": "api.example.com",

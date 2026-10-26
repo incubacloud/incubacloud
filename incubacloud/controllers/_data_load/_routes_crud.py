@@ -25,7 +25,11 @@ from ...models._repo_requirements import (
     merge_pip_requirements,
     repo_key_for_source_label,
 )
-from ...models._odoo_versions import offered_versions, picker_facts
+from ...models._odoo_versions import (
+    offered_versions,
+    picker_facts,
+    pinned_template_ref,
+)
 from ...models.cloud_instance import ADDON_CHECK_SECONDS
 from ...models.cloud_settings import (
     CONTAINER_LOG_MAX_FILE_DEFAULT,
@@ -233,7 +237,9 @@ class CrudMixin:
             )
             payload['project_defaults'] = {
                 'pip_dependencies': defaults.get('pip_dependencies', ''),
-                'odoo_version': defaults.get('odoo_version', '19.0'),
+                # The field's default: the newest series this panel's
+                # pin renders (``_odoo_versions.new_record_default``).
+                'odoo_version': defaults.get('odoo_version', ''),
             }
         return payload
 
@@ -247,11 +253,14 @@ class CrudMixin:
         holds every series with a card, so an instance keeps its value
         when its series stops being offered; the pickers show what a new
         one may choose. Serving it here keeps the SPA pickers from
-        hard-coding their own copy of the list.
+        hard-coding their own copy of the list. Only the series this
+        panel's pinned template can render: the newest of them is a new
+        project's default, and the pickers fall back to it.
         """
+        pin = pinned_template_ref(request.env)
         return {
-            'odoo_versions': list(offered_versions()),
-            'facts': picker_facts(),
+            'odoo_versions': list(offered_versions(pin)),
+            'facts': picker_facts(pin),
         }
 
     @http.route(['/cloud/get_users'], type='jsonrpc', auth='user')
@@ -1186,7 +1195,7 @@ class CrudMixin:
                 {'id': t.id, 'name': t.name, 'color': t.color}
                 for t in all_tags
             ],
-            'odoo_version': project.odoo_version or '19.0',
+            'odoo_version': project.odoo_version,
             'odoo_commit_sha': project.odoo_commit_sha or '',
             'odoo_initial_lang': (
                 project.odoo_initial_lang.id if project.odoo_initial_lang else None
@@ -2228,7 +2237,7 @@ class CrudMixin:
             'project': {
                 'id': project.id,
                 'name': project.name,
-                'odoo_version': project.odoo_version or '19.0',
+                'odoo_version': project.odoo_version,
             },
             'instances': instances,
             'hosts': [{

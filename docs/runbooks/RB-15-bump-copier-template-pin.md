@@ -74,6 +74,24 @@ in the job log (`running copier into … @ vX.Y.Z`).
 - **Problems:** set the previous tag back in Settings. Instances built
   with the bad tag can be rebuilt after the revert; `copier-deploy`
   always renders from scratch with `--overwrite`.
+- **A series' floor:** a pin older than a series' `template_min`
+  (`_odoo_versions.py`; v10.0.3 for 20.0) takes that series off the
+  panel: its pickers drop it, a new project no longer defaults to it
+  and only an administrator may still choose it. Its deploys and
+  rebuilds refuse before copier runs, naming this runbook. Rolling
+  back below v10.0.3 does all of that to 20.0, and a new project goes
+  back to 19.0; the projects and instances already on 20.0 keep it, and
+  saving them still works.
+- **Panels installed before a default moved:** the setting is per
+  panel, and a new default does not reach one installed before it.
+  Core 1.0.198's migration raises a stored version tag below v10.0.3
+  to v10.0.8 (both written in the migration), with a log line naming
+  both; an empty pin, a branch or a commit is left as it is. The raise renders
+  nothing by itself: each stack takes v10 at its next deploy or
+  rebuild, as after a bump by hand, and a staging with an allowlist
+  then closes its egress with the gatekeeper. A staging whose own list
+  is empty takes its host's list under v10, which shows as unapplied
+  changes until its next rebuild.
 
 Rebuilding an existing healthy instance is **not** required after a
 bump: the pin only affects the next `copier copy` run for each
