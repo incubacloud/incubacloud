@@ -1,6 +1,7 @@
 import { Component, useState, useSubEnv, onWillStart, onMounted, onWillUnmount } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { announceJob } from "../../utils/job_queue";
 import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { CoreRatesTab } from "../core_rates_tab/core_rates_tab";
 import { RlSelect } from "../rl_select/rl_select";
@@ -353,7 +354,7 @@ export class Settings extends Component {
                 host_id: hostId,
             });
             if (res?.ok) {
-                this.env.toast?.success(_t("Deployment queued."));
+                await announceJob(this.env.toast, res.job_id);
             } else {
                 this.env.toast?.error(res?.error || _t("Could not queue it."));
             }

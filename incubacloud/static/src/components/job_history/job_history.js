@@ -1,11 +1,10 @@
 import { Component, useState } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
-import { _t } from "@web/core/l10n/translation";
 import { parseUTC } from "../../utils/dates";
+import { ACTIVE_STATES, jobStateText, stateLabel } from "../../utils/job_queue";
 import { SearchSelect } from "../search_select/search_select";
 
-const ALL_STATES = ["pending", "enqueued", "wait_dependencies", "started", "done", "failed", "cancelled"];
-const ACTIVE_STATES = ["pending", "enqueued", "wait_dependencies", "started"];
+const ALL_STATES = [...ACTIVE_STATES, "done", "failed", "cancelled"];
 
 export class JobHistory extends Component {
     static template = "incubacloud.JobHistory";
@@ -241,34 +240,43 @@ export class JobHistory extends Component {
         });
     }
 
-    stateName(state) {
-        return {
-            pending: _t("Pending"), enqueued: _t("Queued"),
-            wait_dependencies: _t("Waiting"), started: _t("Running"),
-            done: _t("Done"), failed: _t("Failed"), cancelled: _t("Cancelled"),
-        }[state] || state;
+    /**
+     * Label of a state, for the filter and the Gantt bars
+     * (``job_queue.stateLabel``).
+     *
+     * @param {string} state
+     * @returns {string}
+     */
+    stateLabel(state) {
+        return stateLabel(state);
     }
 
-    stateLabel(state) {
-        return {
-            pending: _t("Pending"), enqueued: _t("Queued"), wait_dependencies: _t("Waiting"),
-            started: _t("Running"), done: _t("Done"), failed: _t("Failed"), cancelled: _t("Cancelled"),
-        }[state] || state;
+    /**
+     * Text of a job's state in the table, as the lists' pill says it
+     * (``job_queue.jobStateText``).
+     *
+     * @param {{state: string, queue_position?: number}} job
+     * @returns {string}
+     */
+    rowStateText(job) {
+        return jobStateText(job);
     }
 
     /**
      * View-only mapping of a raw job ``state`` to the Relay state-class used by
      * the timeline dot (``rl-tl-dot``) and the bare status pill (``rl-pill``):
-     * ``done`` / ``failed`` / ``queued`` (amber, pending-like) / ``running``.
+     * ``done`` / ``failed`` / ``queued`` (amber, pending-like) / ``running``,
+     * and ``waiting`` (amber, still) for a job waiting in its queue.
      * No business logic — purely picks the CSS modifier for the chosen state.
      * @param {string} state raw cloud.job state
-     * @returns {string} one of "done" | "failed" | "queued" | "running"
+     * @returns {string} one of "done" | "failed" | "queued" | "running" | "waiting"
      */
     ganttDotClass(state) {
         return {
             done: "done",
             failed: "failed",
             cancelled: "failed",
+            queued: "waiting",
             started: "running",
             pending: "queued",
             enqueued: "queued",

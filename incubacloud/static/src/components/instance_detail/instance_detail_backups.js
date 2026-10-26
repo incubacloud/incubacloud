@@ -2,6 +2,7 @@
 
 import {rpc} from "@web/core/network/rpc";
 import {_t} from "@web/core/l10n/translation";
+import {announceJob} from "../../utils/job_queue";
 import {parseUTC} from "../../utils/dates";
 
 /**
@@ -291,6 +292,7 @@ export const BackupsMixin = (Base) =>
           return;
         }
         this.state.downloadModal = null;
+        await announceJob(this.env.toast, res.job_id);
         // The download is an enqueued job whose final ZIP lands as
         // an ir.attachment on cloud.job — surface it on Overview so
         // the user sees the job and grabs the file from there.
@@ -330,7 +332,6 @@ export const BackupsMixin = (Base) =>
       const data = await this._enqueueJob(
         () => rpc("/cloud/restore_backup", {instance_id: this.props.instance_id, time}),
         {
-          openLog: true,
           goToOverview: true,
           errorLabel: _t("Restore failed"),
         }

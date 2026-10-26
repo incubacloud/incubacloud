@@ -102,7 +102,9 @@ class CloudController(Controller):
         trigger = payload.get("trigger") or ""
         context = {
             "job_id": job_id,
-            "job_name": job.name or "",
+            # In the reader's language, as the job lists say it; the
+            # download's file name keeps the stored English one.
+            "job_name": job.job_type_id.name or job.name or "",
             "job_host": job.host_id.name or "",
             "job_instance": job.instance_id.name or "",
             "job_project": job.instance_id.project_id.name or "",

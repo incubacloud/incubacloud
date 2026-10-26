@@ -29,6 +29,35 @@ deploy → running → rebuild → running → ... → archive or delete
 A rebuild updates the image and modules without downtime (production) or
 restarts the container (staging).
 
+## One action at a time
+
+An instance runs **one action at a time** — deploy, rebuild, restart, backup,
+restore and the rest. Press a button while another action is running and the
+new one is not refused: it **waits in the instance's queue** and starts by
+itself when the one ahead of it ends, in the order they were asked for.
+
+- The panel tells you which: *Started: Rebuild Instance*, or *Queued behind
+  Deploy Instance*.
+- **Recent activity** lists a waiting action as *Queued · N ahead*: how many
+  actions start before it.
+- Changed your mind? A waiting action has not started yet, so **Cancel** takes
+  it out of the queue at once and nothing happens on the server.
+- Asking twice for the same thing while it waits — two restarts, the same
+  backup — does not queue it twice. A queue holds five actions at most.
+
+!!! warning "After a failure, the queue waits for you"
+    When a deploy, rebuild, restore or delete fails, what is queued behind it
+    does not start: a restart after a broken deploy would only fail again. The
+    waiting actions show **Action required**, which leads to the failure's
+    alert. **Retry** the failed action — once it succeeds the queue moves on —
+    or **dismiss** the alert in **Alerts** to let the queue go on as it is.
+
+Deleting an instance does not wait for the actions queued on it: they are
+cancelled, and the deletion starts as soon as the action running now ends.
+
+Every action has a log. Click it in **Recent activity** (or in **View all
+activity**) to open its log in a new tab; a button never opens one by itself.
+
 ## Ending an instance
 
 Both endings remove the containers, the database and the files from the host.

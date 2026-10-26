@@ -10,8 +10,13 @@ class CloudJobType(models.Model):
         'Job type code must be unique.',
     )
 
+    # Translated, like ``description`` and ``action_confirm``: the panel
+    # shows them to people (job lists, "Queued behind <type>", the
+    # confirmation before an action). Code never compares them — ``code``
+    # is the identity.
     name = fields.Char(
-        string="Name"
+        string="Name",
+        translate=True,
     )
     code = fields.Char(
         string="Code",
@@ -25,7 +30,8 @@ class CloudJobType(models.Model):
         required=True,
     )
     description = fields.Text(
-        string="Description"
+        string="Description",
+        translate=True,
     )
     show_as_action = fields.Boolean(
         string="Show as Action Button",
@@ -47,6 +53,7 @@ class CloudJobType(models.Model):
     )
     action_confirm = fields.Text(
         string="Confirmation Notice",
+        translate=True,
         help=(
             "Warning to confirm before the action runs. Leave empty for"
             " actions that need no confirmation. Set it on anything"

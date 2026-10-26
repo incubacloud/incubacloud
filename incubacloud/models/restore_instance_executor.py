@@ -59,11 +59,23 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
 
     def _source_job(self):
         """Return the chained job referenced by ``source_job_id``, or an
-        empty recordset when the payload carries none."""
+        empty recordset when the payload carries none.
+
+        Read in the job's environment: a job asked for without superuser
+        rights runs without them (``cloud.job._dispatch_single``), and
+        takes its data only from a job its creator may read — the record
+        rules of ``cloud.job`` decide, as they do in the panel. ``exists``
+        alone would not: it ignores them.
+
+        :raises AccessError: when the source is a job the creator cannot
+            read
+        """
         source_job_id = (self.job.payload or {}).get('source_job_id')
         if not source_job_id:
             return self.job.browse()
-        return self.job.browse(int(source_job_id)).exists()
+        source = self.job.browse(int(source_job_id)).exists()
+        source.check_access('read')
+        return source
 
     def _remote_path(self):
         """Path of the archive on this job's host.
@@ -185,6 +197,9 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             source_job_id = payload.get('source_job_id')
             if not source_job_id:
                 raise ValueError("Missing source_job_id in payload")
+            # The attachment is read with ``sudo``: the job it hangs off
+            # is read first, as the job's creator may (``_source_job``).
+            self._source_job()
             att = self.env['ir.attachment'].sudo().search([
                 ('res_model', '=', 'cloud.job'),
                 ('res_id', '=', int(source_job_id)),
@@ -268,10 +283,12 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             # job's own transaction a failure took them back, and even on
             # success the runner's final ``clear()`` drops whatever was
             # never flushed — measured, it dropped the revocation's link
-            # to its queue job.
+            # to its queue job. Queued with ``sudo``, as every head of a
+            # queue is: a restore asked for without superuser rights runs
+            # without them (``_check_internal_queue_flags``).
             with self._durable_env() as env:
                 grant.with_env(env)._mark_used()
-                env['cloud.job'].enqueue(
+                env['cloud.job'].sudo().enqueue(
                     grant.host_id.id, grant.instance_id.id,
                     'revoke_restore_upload_key',
                     payload={'grant_id': grant.id, 'keep_directory': True},

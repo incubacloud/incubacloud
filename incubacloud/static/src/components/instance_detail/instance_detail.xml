@@ -688,11 +688,12 @@
                                             <t t-else="">
                                                 <div
                           class="rl-tl-item"
+                          t-att-data-job-id="job.id"
                           t-on-click="() => this.openJobLog(job)"
                         >
                                                 <div class="rl-tl-rail">
                                                     <span
-                              t-att-class="'rl-tl-dot ' + (jobStateClass(job.state) === 'jst-done' ? 'done' : jobStateClass(job.state) === 'jst-failed' ? 'failed' : (isActiveJob(job.state) ? 'running' : (job.state === 'pending' ? 'queued' : '')))"
+                              t-att-class="'rl-tl-dot ' + (jobStateClass(job.state) === 'jst-done' ? 'done' : jobStateClass(job.state) === 'jst-failed' ? 'failed' : job.state === 'queued' ? 'waiting' : (isActiveJob(job.state) ? 'running' : (job.state === 'pending' ? 'queued' : '')))"
                             />
                                                     <span class="rl-tl-line" />
                                                 </div>
@@ -706,8 +707,8 @@
                                 t-esc="job.name"
                               />
                                                         <span
-                                t-att-class="'rl-tl-state ' + (jobStateClass(job.state) === 'jst-done' ? 'done' : jobStateClass(job.state) === 'jst-failed' ? 'failed' : 'queued')"
-                                t-esc="job.state"
+                                t-att-class="'rl-tl-state ' + (jobStateClass(job.state) === 'jst-done' ? 'done' : jobStateClass(job.state) === 'jst-failed' ? 'failed' : job.state === 'queued' ? 'waiting' : 'queued')"
+                                t-esc="jobStateText(job)"
                               />
                                                         <t t-if="job.requires_action">
                                                             <span
@@ -794,7 +795,7 @@
                                                                 </button>
                                                             </t>
                                                             <t
-                                  t-if="job.state === 'blocked'"
+                                  t-if="waitsOnAlert(job)"
                                 >
                                                                 <button
                                     class="rl-tl-abtn"
@@ -1082,6 +1083,9 @@
                             <t t-else="">
                                 <p class="ic-restore-rsync-hint">
                                     Run this on your computer. It writes the key with private permissions, sends the backup, and removes the key afterwards. Valid until <strong t-esc="state.restoreDialog.grant.expires_at"/> UTC — copy it now, it is not shown again.
+                                </p>
+                                <p t-if="state.restoreDialog.keyQueued" class="ic-restore-rsync-hint">
+                                    The job that installs the key is waiting in this instance's queue: the command works once it has started.
                                 </p>
                                 <div class="ic-restore-rsync-wrap">
                                     <div class="ic-restore-rsync-cmd">

@@ -64,6 +64,25 @@ _WARNING_LINE = (
     "2026-08-16 17:50:04,000 7 WARNING prod odoo.addons.base: "
     "something unrelated"
 )
+#: Odoo's website visitor insert losing its race, as alert 3195 kept it
+#: (22-oct-2026): the query on the header line, as a bytes repr whose
+#: newlines are escaped, and the failure on the line under it.
+_VISITOR_RACE_HEADER = (
+    "2026-10-22 04:16:22,948 37 ERROR prod odoo.sql_db: bad query: "
+    'b"\\n                WITH visitor AS (\\n                    \\n'
+    "            INSERT INTO website_visitor (\\n                partner_id, "
+    "access_token, last_connection_datetime, visit_count, lang_id, "
+    "website_id, timezone, write_uid, create_uid, write_date, create_date, "
+    "country_id)\\n            VALUES (NULL, 'c48d4582e93cfd6e00d10ce7b8053885')\""
+)
+_SERIALIZATION_FAILURE = (
+    "ERROR: could not serialize access due to concurrent update"
+)
+#: The same failure on a table of the instance's own.
+_ORDER_RACE_HEADER = (
+    "2026-10-22 04:17:00,000 37 ERROR prod odoo.sql_db: bad query: "
+    'b"UPDATE sale_order SET state = \'sale\' WHERE id IN (7)"'
+)
 
 _TEMPLATE = (
     pathlib.Path(__file__).resolve().parent.parent
@@ -231,10 +250,63 @@ class TestErrorLogContext(TransactionCase):
         self.assertFalse([f for f in fingerprints if "expected.logger" in f])
 
     def test_core_expects_every_record(self):
-        """Core knows of no record that is not an incident."""
+        """An ordinary record is an incident: core knows only of Odoo's
+        own races."""
         self.assertFalse(
             self._executor()._error_block_is_expected(_HEADER, _TRACEBACK),
         )
+
+    def test_the_website_visitor_race_is_not_an_incident(self):
+        """Two requests of one new visitor at once (bots, mostly) race on
+        its ``website_visitor`` row: Odoo's own race, nothing anyone
+        running the instance can fix (alert 3195, four nights in thirty)."""
+        alert = self._alert_after_cycle(
+            "\n".join([_VISITOR_RACE_HEADER, _SERIALIZATION_FAILURE]),
+        )
+        self.assertFalse(alert)
+
+    def test_a_serialization_failure_on_another_table_still_alerts(self):
+        """Only the visitor's insert is known: the same failure on any
+        other table is the instance's own."""
+        alert = self._alert_after_cycle(
+            "\n".join([_ORDER_RACE_HEADER, _SERIALIZATION_FAILURE]),
+        )
+        self.assertEqual(len(alert), 1)
+        self.assertIn("sale_order", alert.payload[0]["samples"][0])
+
+    def test_the_visitor_insert_failing_otherwise_is_kept(self):
+        """The header alone is not enough: the visitor's insert failing
+        for another reason is no known race."""
+        groups = self._groups("\n".join([
+            _VISITOR_RACE_HEADER,
+            "ERROR: value too long for type character varying(32)",
+        ]))
+        self.assertEqual(len(groups), 1)
+
+    def _alert_after_cycle(self, raw):
+        """Run one health cycle whose log grep returns *raw*.
+
+        :param str raw: the ERROR records and the lines under them
+        :return: the instance's active ``instance_error_logs`` alert,
+            empty when the cycle raised none
+        :rtype: ``cloud.alert`` recordset
+        """
+        executor = self._executor()
+        results = {
+            "container_state": {"stdout": "\n".join(
+                f"{svc}\trunning" for svc in self.instance.expected_services()
+            )},
+            "cpu_mem_snapshot": {"stdout": "0.0\t0.0"},
+            "http_health": {"stdout": "exit:0"},
+            "error_lines": {"stdout": raw},
+        }
+        executor.parse_results(results)
+        asyncio.run(executor.on_success(results))
+        return self.env["cloud.alert"].search([
+            ("instance_id", "=", self.instance.id),
+            ("code", "=", "instance_error_logs"),
+            ("state", "=", "active"),
+        ])
 
     def test_alert_payload_ships_the_context(self):
         executor = self._executor()

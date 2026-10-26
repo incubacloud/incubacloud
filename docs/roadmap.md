@@ -10,6 +10,7 @@ This document describes the planned direction for IncubaCloud Core. It is a livi
 - Light theme and the Relay UI redesign; server-side pagination for long lists
 - Cross-host instance move with automatic recovery of interrupted moves
 - Transient host-connection retry before alerting; host-scoped job serialization
+- **A job queue per instance and per host** — an action asked for while another runs waits its turn instead of being refused, shows its place in the job list and can be cancelled while it waits; a failed deploy, rebuild, restore, delete or move step holds the queue until it is retried or its alert dismissed
 - PR preview environments and coalesced webhook auto-rebuilds
 - Login with GitHub — sign in to the platform with a GitHub account, alongside the existing GitHub App integration
 - Staging autopurge — a staging nobody has used for 90 days is deleted, after two warnings and with a one-click Keep

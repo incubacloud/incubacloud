@@ -1,6 +1,7 @@
 /** @odoo-module **/
 
 import {_t} from "@web/core/l10n/translation";
+import {ACTIVE_STATES, announceJob, cancelPrompt, jobStateText} from "../../utils/job_queue";
 
 /**
  * Job timeline: icons, state classes, cancel/retry and paging.
@@ -16,7 +17,30 @@ import {_t} from "@web/core/l10n/translation";
 export const JobsMixin = (Base) =>
   class extends Base {
     isActiveJob(state) {
-      return ["pending", "enqueued", "started", "wait_dependencies"].includes(state);
+      return ACTIVE_STATES.includes(state);
+    }
+
+    /**
+     * Text of a job's state pill (``job_queue.jobStateText``).
+     *
+     * @param {{state: string, queue_position?: number}} job
+     * @returns {string}
+     */
+    jobStateText(job) {
+      return jobStateText(job);
+    }
+
+    /**
+     * Whether a job waits on an alert someone has to act on: blocked on
+     * one, or queued behind a failure that holds the instance's queue
+     * (``queue_held``) until it is retried or its alert dismissed. Both
+     * get the Resolve button, which opens the alerts.
+     *
+     * @param {{state: string, queue_held?: boolean}} job
+     * @returns {boolean}
+     */
+    waitsOnAlert(job) {
+      return job.state === "blocked" || Boolean(job.queue_held);
     }
 
     jobIcon(code) {
@@ -42,6 +66,7 @@ export const JobsMixin = (Base) =>
           started: "jst-running",
           pending: "jst-pending",
           enqueued: "jst-pending",
+          queued: "jst-queued",
           blocked: "jst-blocked",
         }[state] || "jst-pending"
       );
@@ -55,7 +80,7 @@ export const JobsMixin = (Base) =>
       ev.stopPropagation();
       const ok = await this._confirm({
         title: _t("Cancel job"),
-        message: _t('Cancel "%s"? This cannot be undone.').replace("%s", job.name),
+        message: cancelPrompt(job),
         confirmLabel: _t("Cancel job"),
         isDanger: true,
       });
@@ -73,7 +98,7 @@ export const JobsMixin = (Base) =>
       ev.stopPropagation();
       try {
         const newJobId = await this.orm.call("cloud.job", "retry_job", [job.id]);
-        if (newJobId) window.open(`/cloud/log/${newJobId}`, "_blank");
+        if (newJobId) await announceJob(this.env.toast, newJobId);
       } catch (e) {
         this.env.toast?.error(_t("Retry failed: ") + (e.data?.message || e.message));
       }

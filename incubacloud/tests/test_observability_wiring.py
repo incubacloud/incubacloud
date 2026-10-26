@@ -26,7 +26,7 @@ import yaml
 from odoo import fields
 from odoo.tests.common import BaseCase, TransactionCase
 
-from ..models.cloud_instance_metrics import _ODOO_SERVICE
+from ..models.cloud_instance_metrics import _ODOO_SERVICE, _ONE_OFF_NAMES
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _DASHBOARDS = _ROOT / "ansible" / "files" / "dashboards"
@@ -243,14 +243,16 @@ class TestDashboardsMatchTheSpa(BaseCase):
         the legend for the whole range. Keyed by compose service, the
         legend reads odoo/db/smtp; the one-offs are not charted at all
         rather than added to ``odoo``, where a shell session would look
-        like the server's own memory."""
+        like the server's own memory. The rebuild's boot test is one too,
+        under a name of its own (``ic_boot_odoo_<id>``). The panels leave
+        out exactly what the liveness cron does (``_ONE_OFF_NAMES``)."""
         instance = json.loads(
             (_DASHBOARDS / "incubacloud-instance.json").read_text()
         )
         for panel in instance["panels"]:
             for target in panel["targets"]:
                 self.assertIn(
-                    'name!~".+-run-[0-9a-f]{12}"', target["expr"],
+                    f'name!~"{_ONE_OFF_NAMES}"', target["expr"],
                     panel["title"],
                 )
                 self.assertIn(

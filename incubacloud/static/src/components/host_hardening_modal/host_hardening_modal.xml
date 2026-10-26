@@ -105,7 +105,11 @@
                         <t t-if="state.preflight.has_active_job">
                             <div class="rl-sevban warning">
                                 <span class="rl-si2"><t t-out="env.icon('clock', 18)"/></span>
-                                <div>
+                                <div t-if="state.preflight.active_job_queued">
+                                    <strong>A hardening job is already waiting in this host's queue.</strong>
+                                    It starts once the job running on the host ends.
+                                </div>
+                                <div t-else="">
                                     <strong>A hardening job is already running for this host.</strong>
                                     Wait for it to finish.
                                 </div>

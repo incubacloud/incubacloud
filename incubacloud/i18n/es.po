@@ -37,6 +37,12 @@ msgstr ""
 "                    directorio de la instancia,"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "\"%s\" has not started yet. Cancel it and take it out of the queue?"
+msgstr "\"%s\" aún no ha empezado. ¿Cancelarlo y quitarlo de la cola?"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid "%(count)d instance(s) point at it directly: %(names)s."
@@ -150,12 +156,6 @@ msgstr "%s en %s falló"
 #: code:addons/incubacloud/static/src/app/app.js:0
 msgid "%s on %s failed: %s"
 msgstr "%s en %s falló: %s"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
-msgid "%s queued."
-msgstr "%s en cola."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -513,6 +513,22 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 msgid "A hardening job is already running for this host."
 msgstr "Ya hay un trabajo de hardening en ejecución para este host."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "A hardening job is already waiting in this host's queue."
+msgstr "Ya hay un trabajo de hardening esperando en la cola de este host."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"A job is queued, retried or cancelled through the panel's actions; these "
+"fields cannot be set directly: %(fields)s."
+msgstr ""
+"Un trabajo se pone en cola, se reintenta o se cancela con las acciones del "
+"panel; estos campos no se pueden establecer directamente: %(fields)s."
 
 #. module: incubacloud
 #. odoo-python
@@ -1089,6 +1105,19 @@ msgid "Applied to this host"
 msgstr "Aplicado a este anfitrión"
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.host_hardening
+msgid ""
+"Applies the in-host security recipe (non-root operator user, hardened sshd "
+"on a rotated port, nftables allowlist, fail2ban, sysctl, unattended-"
+"upgrades, docker daemon, journald, auditd) and disables root SSH only after "
+"proving the new login works."
+msgstr ""
+"Aplica en el host la receta de seguridad (usuario operador sin root, sshd "
+"endurecido en un puerto rotado, lista de permitidos de nftables, fail2ban, "
+"sysctl, unattended-upgrades, demonio de Docker, journald, auditd) y "
+"desactiva el SSH de root solo tras comprobar que el nuevo acceso funciona."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
@@ -1207,6 +1236,11 @@ msgstr "¿Seguro que quiere eliminar \"%s\"? Esta acción no se puede deshacer."
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_restore.js:0
 msgid "Ask for an upload key first."
 msgstr "Pide primero una clave de subida."
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_job__asked_as_superuser
+msgid "Asked With Superuser Rights"
+msgstr "Pedido con derechos de superusuario"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job_type__queue_collapse
@@ -1634,6 +1668,12 @@ msgid "Behind the shipped templates"
 msgstr "Por detrás de las plantillas distribuidas"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Blocked"
+msgstr "Bloqueado"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job__blocked_alert_id
 msgid "Blocking Alert"
 msgstr "Alerta bloqueante"
@@ -1841,13 +1881,13 @@ msgstr "Cancelar"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_jobs.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 msgid "Cancel \"%s\"? This cannot be undone."
 msgstr "¿Cancelar \"%s\"? Esto no se puede deshacer."
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_jobs.js:0
 msgid "Cancel failed: "
 msgstr "Error al cancelar: "
@@ -1872,7 +1912,7 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__cancelled
 msgid "Cancelled"
 msgstr "Cancelado"
@@ -2006,6 +2046,11 @@ msgstr ""
 "el final de un log. 0 usa el valor por defecto."
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.capture_secret_key
+msgid "Capture Encryption Key"
+msgstr "Capturar clave de cifrado"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_capture_secret_keys_ir_actions_server
 msgid "Capture instance encryption keys"
 msgstr "Capturar las claves de cifrado de las instancias"
@@ -2104,6 +2149,11 @@ msgid "Check Production Instances Without Backup"
 msgstr "Verificar instancias de producción sin backup"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.verify_restore_upload
+msgid "Check Uploaded Archive"
+msgstr "Comprobar archivo subido"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Check host"
@@ -2142,6 +2192,15 @@ msgid "Checking compatibility…"
 msgstr "Comprobando compatibilidad…"
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.instance_health
+msgid ""
+"Checks container state, HTTP health, CPU/memory peaks and error log count "
+"for a deployed instance."
+msgstr ""
+"Comprueba el estado de los contenedores, la salud HTTP, los picos de CPU y "
+"memoria y el número de errores en el log de una instancia desplegada."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/app_header/app_header.xml:0
 msgid ""
@@ -2170,6 +2229,15 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/project_detail/project_detail.xml:0
 msgid "Choose which version spec to keep for each package:"
 msgstr "Elige qué versión mantener para cada paquete:"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.move_rollback_cleanup
+msgid ""
+"Cleans up the half-built destination after a rolled-back move (docker "
+"compose down -v + rm -rf, non-fatal)."
+msgstr ""
+"Limpia el destino a medio construir tras revertir una migración (docker "
+"compose down -v + rm -rf; si falla, no detiene nada)."
 
 #. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cleanup_backup_attachments_ir_actions_server
@@ -2412,6 +2480,12 @@ msgid "Collecting. Charts are hidden until a Grafana URL is set."
 msgstr ""
 "Recogiendo. Las gráficas están ocultas hasta que se indique una URL de "
 "Grafana."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.host_metrics
+msgid "Collects CPU cores, total RAM and disk health from the host."
+msgstr ""
+"Recoge del host los núcleos de CPU, la RAM total y el estado del disco."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host_tag__color
@@ -3035,6 +3109,7 @@ msgstr "Crear aplicación en GitHub →"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: model:cloud.job.type,name:incubacloud.backup_create
 msgid "Create Backup"
 msgstr "Crear backup"
 
@@ -3192,6 +3267,24 @@ msgstr "Creado por"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_terminal_route__create_date
 msgid "Created on"
 msgstr "Creado el"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.backup_create
+msgid ""
+"Creates a manual backup (duplicity for production, click-odoo-backupdb for "
+"others)."
+msgstr ""
+"Crea un backup manual (duplicity en producción, click-odoo-backupdb en el "
+"resto)."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.setup_whitelist
+msgid ""
+"Creates or updates ~/globalwhitelist/docker-compose.yaml and brings "
+"whitelist proxy services up."
+msgstr ""
+"Crea o actualiza ~/globalwhitelist/docker-compose.yaml y levanta los "
+"servicios proxy de la lista blanca."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3494,6 +3587,11 @@ msgid "Delete \""
 msgstr "Eliminar \""
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.purge_archived_backups
+msgid "Delete Archived Copy"
+msgstr "Eliminar copia archivada"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Delete Backup Backend"
@@ -3502,14 +3600,21 @@ msgstr "Eliminar backend de backup"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
+#: model:cloud.job.type,name:incubacloud.delete_host
 msgid "Delete Host"
-msgstr "Eliminar Host"
+msgstr "Eliminar host"
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
+#: model:cloud.job.type,name:incubacloud.delete_instance
 msgid "Delete Instance"
 msgstr "Eliminar instancia"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.delete_project
+msgid "Delete Project"
+msgstr "Eliminar proyecto"
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_settings__staging_autopurge_days
@@ -3658,6 +3763,16 @@ msgid "Deploy"
 msgstr "Desplegar"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.deploy_instance
+msgid "Deploy Instance"
+msgstr "Desplegar instancia"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.deploy_metrics_central
+msgid "Deploy Metrics Central"
+msgstr "Desplegar el central de métricas"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Deploy blocked"
@@ -3689,10 +3804,20 @@ msgid "Deploying…"
 msgstr "Desplegando…"
 
 #. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/settings/settings.js:0
-msgid "Deployment queued."
-msgstr "Despliegue encolado."
+#: model:cloud.job.type,description:incubacloud.deploy_instance
+msgid "Deploys a doodba instance via copier on the target host."
+msgstr "Despliega una instancia doodba con copier en el host de destino."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.deploy_metrics_central
+msgid ""
+"Deploys the central metrics stack (VictoriaMetrics + Grafana with "
+"provisioned dashboards) on the target host. Run it against the panel host to"
+" co-locate, or against a dedicated VPS to move it."
+msgstr ""
+"Despliega la pila central de métricas (VictoriaMetrics + Grafana con paneles"
+" aprovisionados) en el host de destino. Ejecútelo en el host del panel para "
+"tenerlo todo junto, o en un VPS dedicado para llevar allí la pila."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -3942,6 +4067,11 @@ msgid "Display Order"
 msgstr "Orden de visualización"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.docker_prune
+msgid "Docker Prune"
+msgstr "Limpiar Docker"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_docker_prune_ir_actions_server
 msgid "Docker Prune — All Hosts"
 msgstr "Docker Prune — Todos los hosts"
@@ -3986,7 +4116,7 @@ msgstr "Dominios"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__done
 msgid "Done"
 msgstr "Hecho"
@@ -4024,6 +4154,16 @@ msgid "Download"
 msgstr "Descargar"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.backup_download
+msgid "Download Backup"
+msgstr "Descargar backup"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.backup_download_neutralized
+msgid "Download Neutralized Backup"
+msgstr "Descargar backup neutralizado"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Download a database dump"
@@ -4040,6 +4180,22 @@ msgstr "Tope de descarga (MB)"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_backups.js:0
 msgid "Download failed."
 msgstr "Descarga fallida."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.backup_download_neutralized
+msgid ""
+"Downloads a neutralized copy of a backup (crons off, mail servers archived, "
+"credentials scrubbed, database.is_neutralized=true). Safe for "
+"testing/troubleshooting."
+msgstr ""
+"Descarga una copia neutralizada de un backup (crons desactivados, servidores"
+" de correo archivados, credenciales borradas, database.is_neutralized=true)."
+" Segura para pruebas y diagnóstico."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.backup_download
+msgid "Downloads a specific backup from duplicity as a ZIP file."
+msgstr "Descarga de duplicity un backup concreto como archivo ZIP."
 
 #. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__state__draft
@@ -4108,6 +4264,15 @@ msgstr "Correo electrónico"
 #: model:ir.model.fields,field_description:incubacloud.field_res_users__cloud_email_enabled
 msgid "Email Notifications Enabled"
 msgstr "Notificaciones por correo activadas"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.purge_archived_backups
+msgid ""
+"Empties an archived instance's backup prefix from a throwaway container, "
+"then removes the record. Nothing is redeployed."
+msgstr ""
+"Vacía el prefijo de backups de una instancia archivada desde un contenedor "
+"desechable y después elimina la ficha. No se vuelve a desplegar nada."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -4390,6 +4555,11 @@ msgid "Export"
 msgstr "Exportar"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.export_instance
+msgid "Export for Development"
+msgstr "Exportar para desarrollo"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Export instance"
@@ -4413,7 +4583,7 @@ msgstr "Webhook externo"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__failed
 msgid "Failed"
 msgstr "Fallido"
@@ -5059,6 +5229,13 @@ msgstr ""
 "producción."
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.full_setup
+msgid "Full host setup: checks OS/disk, installs all tools, deploys Traefik."
+msgstr ""
+"Configuración completa del host: comprueba el sistema operativo y el disco, "
+"instala todas las herramientas y despliega Traefik."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__pr_repo
 msgid "Full repository name (owner/repo) of the PR."
 msgstr "Nombre completo del repositorio (owner/repo) del PR."
@@ -5436,6 +5613,11 @@ msgstr ""
 "cambio en todo lo que habla con Grafana."
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.grant_restore_upload_key
+msgid "Grant Restore Upload Key"
+msgstr "Conceder clave de subida para restaurar"
+
+#. module: incubacloud
 #: model:ir.model.constraint,message:incubacloud.constraint_cloud_restore_upload_grant_token_uniq
 msgid "Grant token must be unique."
 msgstr "El identificador de la concesión debe ser único."
@@ -5489,6 +5671,11 @@ msgstr ""
 "de firma."
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.host_hardening
+msgid "Harden Host"
+msgstr "Aplicar hardening al host"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__hardened
 msgid "Hardened"
 msgstr "Endurecido"
@@ -5503,15 +5690,6 @@ msgstr "Endurecido el"
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 msgid "Hardening + Full Setup"
 msgstr "Hardening + configuración completa"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
-msgid ""
-"Hardening + Full Setup chain queued. Watch the jobs panel for live progress."
-msgstr ""
-"Cadena de hardening + configuración completa encolada. Siga el progreso en "
-"el panel de trabajos."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5547,12 +5725,6 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 msgid "Hardening only"
 msgstr "Solo hardening"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.js:0
-msgid "Hardening queued. Watch the jobs panel for live progress."
-msgstr "Hardening encolado. Siga el progreso en el panel de trabajos."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__rebuild_fingerprint
@@ -5690,6 +5862,16 @@ msgstr "Auto-asignación de hosts"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_metric_rule__host_label
 msgid "Host Label"
 msgstr "Etiqueta de host"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.host_metrics
+msgid "Host Metrics"
+msgstr "Métricas del host"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.host_probe
+msgid "Host Probe"
+msgstr "Verificar host"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6210,6 +6392,11 @@ msgid "Initial Language"
 msgstr "Idioma inicial"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.install_observability
+msgid "Install Observability"
+msgstr "Instalar observabilidad"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__metrics_agents_state__failed
 msgid "Install failed"
 msgstr "Instalación fallida"
@@ -6272,6 +6459,29 @@ msgstr ""
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_host__metrics_agents_state__installed
 msgid "Installed"
 msgstr "Instalados"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.grant_restore_upload_key
+msgid ""
+"Installs a one-use SSH key on the host, restricted to writing one directory,"
+" so a backup archive can be uploaded without anybody being given access to "
+"the machine."
+msgstr ""
+"Instala en el host una clave SSH de un solo uso, limitada a escribir en un "
+"directorio, para subir un archivo de backup sin dar a nadie acceso a la "
+"máquina."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.install_observability
+msgid ""
+"Installs the metrics agents (node_exporter, cAdvisor, vmagent) on the host "
+"and labels every container with its instance/project so the panel can "
+"attribute metrics. Push-only: no inbound port is opened."
+msgstr ""
+"Instala en el host los agentes de métricas (node_exporter, cAdvisor, "
+"vmagent) y etiqueta cada contenedor con su instancia y su proyecto para que "
+"el panel pueda atribuir las métricas. Solo envía datos: no abre ningún "
+"puerto de entrada."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -6358,6 +6568,7 @@ msgid "Instance Egress Whitelist Entry"
 msgstr "Entrada de lista blanca de salida de la instancia"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.instance_health
 #: model:ir.actions.server,name:incubacloud.cron_instance_health_ir_actions_server
 msgid "Instance Health Check"
 msgstr "Verificación de salud de instancia"
@@ -6678,6 +6889,12 @@ msgid "Is Primary"
 msgstr "Es primario"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "It is a step of a chain: the rest of its chain is cancelled with it."
+msgstr "Es un paso de una cadena: con él se cancela el resto de su cadena."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_backends.py:0
 msgid ""
@@ -6686,6 +6903,12 @@ msgid ""
 msgstr ""
 "Es el backend predeterminado global, heredado por todas las instancias que "
 "no tienen una asignación propia."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
+msgid "It starts once the job running on the host ends."
+msgstr "Empezará cuando termine el trabajo que se ejecuta en el host."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7159,6 +7382,11 @@ msgid "Link to the backup"
 msgstr "Enlace a la salva"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.backup_list
+msgid "List Backups"
+msgstr "Listar backups"
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/terminal.py:0
 msgid "List all databases"
@@ -7192,6 +7420,11 @@ msgstr "Lista de conflictos de dependencias pip: [{name, existing, incoming}]"
 #: code:addons/incubacloud/controllers/host_terminal.py:0
 msgid "List running containers"
 msgstr "Listar contenedores en ejecución"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.backup_list
+msgid "Lists available backups via duplicity collection-status."
+msgstr "Lista los backups disponibles con duplicity collection-status."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -7695,12 +7928,6 @@ msgstr "Migrando desde"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_move.js:0
-msgid "Migration started."
-msgstr "Migración iniciada."
-
-#. module: incubacloud
-#. odoo-javascript
 #: code:addons/incubacloud/static/src/utils/archive_copy.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__archive_copy_state__missing
 msgid "Missing"
@@ -7750,9 +7977,24 @@ msgid "Move Chain Job IDs"
 msgstr "IDs de trabajos de la cadena de movimiento"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.move_cleanup_source
+msgid "Move Cleanup (source)"
+msgstr "Migración: limpiar el origen"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.move_cutover
+msgid "Move Cutover"
+msgstr "Migración: pasar al destino"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_origin_host_id
 msgid "Move Origin Host"
 msgstr "Host de origen de la migración"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.move_rollback_cleanup
+msgid "Move Rollback Cleanup"
+msgstr "Migración: limpiar tras revertir"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__move_rollback_in_progress
@@ -8858,6 +9100,14 @@ msgid "Only Accept Traffic From Trusted Proxies"
 msgstr "Aceptar tráfico solo de los proxies de confianza"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid "Only a job that waits for an alert can be unblocked."
+msgstr ""
+"Solo se puede desbloquear un trabajo que espera a que se resuelva una "
+"alerta."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Only accept traffic from the proxies applied above"
@@ -8914,6 +9164,16 @@ msgstr "Solo se pueden clonar instancias de producción."
 #: code:addons/incubacloud/controllers/_data_load/_routes_crud.py:0
 msgid "Only staging instances expire."
 msgstr "Solo caducan las instancias de staging."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"Only the platform may put a job at the head of its queue or past a queue "
+"held by a failure."
+msgstr ""
+"Solo la plataforma puede poner un trabajo a la cabeza de su cola o hacerlo "
+"pasar por una cola retenida por un fallo."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_backup_backend__managed_reservation_id
@@ -9176,6 +9436,17 @@ msgid "PR Repository"
 msgstr "Repositorio del PR"
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.export_instance
+msgid ""
+"Packages the instance's Doodba project as a development copy — "
+"configuration, repositories and dependencies, without env files, keys, "
+"tokens or logs — and makes it available for download."
+msgstr ""
+"Empaqueta el proyecto Doodba de la instancia como copia de desarrollo "
+"(configuración, repositorios y dependencias, sin archivos env, claves, "
+"tokens ni logs) y la deja lista para descargar."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Panel Password"
@@ -9270,7 +9541,7 @@ msgstr "Truncado de la carga útil (días)"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__pending
 msgid "Pending"
 msgstr "Pendiente"
@@ -9543,6 +9814,11 @@ msgid "Private key is required for the initial setup."
 msgstr "La clave privada es requerida para la configuración inicial."
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.host_probe
+msgid "Probes the host to check its status and availability."
+msgstr "Sondea el host para comprobar su estado y su disponibilidad."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_github_event__processed
 msgid "Processed"
 msgstr "Procesado"
@@ -9560,6 +9836,13 @@ msgstr "Error de procesamiento"
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_instance__environment__production
 msgid "Production"
 msgstr "Producción"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_refresh.js:0
+msgid "Production has no backup destination: the refresh takes a live dump."
+msgstr ""
+"Producción no tiene destino de backup: el refresco usa un volcado en vivo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9751,6 +10034,11 @@ msgid "Purge old logs now"
 msgstr "Purgar logs antiguos ahora"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.push_trusted_proxies
+msgid "Push Trusted Proxy Settings"
+msgstr "Enviar ajustes de proxies de confianza"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__pip_dependencies
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_project__pip_dependencies
 msgid "Python Dependencies"
@@ -9797,10 +10085,22 @@ msgstr "UUID de tarea en cola"
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_job__state__queued
 msgid "Queued"
 msgstr "En cola"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Queued behind %s"
+msgstr "En cola detrás de %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Queued · %s ahead"
+msgstr "En cola · %s por delante"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9890,6 +10190,17 @@ msgid "Re-runs are non-disruptive."
 msgstr "Repetirlo no interrumpe nada."
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.push_trusted_proxies
+msgid ""
+"Re-ships the Traefik configuration that says which proxies in front of this "
+"host may be believed, and restarts the proxy so the static setting takes "
+"effect."
+msgstr ""
+"Vuelve a enviar la configuración de Traefik que indica en qué proxies "
+"situados delante de este host se puede confiar, y reinicia el proxy para que"
+" el ajuste estático surta efecto."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Re-trust Key"
@@ -9915,6 +10226,11 @@ msgid ""
 msgstr ""
 "Llega al host con «Push Trusted Proxy Settings» o «Configuración completa». "
 "Vacíe el certificado para quitar ambos."
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.read_last_login
+msgid "Read Last Login"
+msgstr "Leer último inicio de sesión"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -9956,6 +10272,27 @@ msgid "Reading…"
 msgstr "Leyendo…"
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.capture_secret_key
+msgid ""
+"Reads the encryption key an instance holds on its host, so the panel keeps a"
+" copy and a move or a new host never loses it. Changes nothing on the host."
+msgstr ""
+"Lee la clave de cifrado que una instancia guarda en su host, para que el "
+"panel conserve una copia y una migración o un host nuevo nunca la pierdan. "
+"No cambia nada en el host."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.read_last_login
+msgid ""
+"Reads the most recent login from a staging instance's own database, so the "
+"staging autopurge can tell a used environment from a forgotten one. Takes no"
+" action and changes nothing inside the instance."
+msgstr ""
+"Lee el último inicio de sesión en la propia base de datos de una instancia "
+"staging, para que la autopurga distinga un entorno en uso de uno olvidado. "
+"No actúa ni cambia nada dentro de la instancia."
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__client_ip_header
 msgid "Real Client IP Header"
 msgstr "Cabecera con la IP real del cliente"
@@ -9982,6 +10319,11 @@ msgid "Rebuild Fingerprint"
 msgstr "Huella de reconstrucción"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.rebuild_instance
+msgid "Rebuild Instance"
+msgstr "Reconstruir instancia"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Rebuild failed"
@@ -9992,6 +10334,15 @@ msgstr "Error al reconstruir"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Rebuilding…"
 msgstr "Reconstruyendo…"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.rebuild_instance
+msgid ""
+"Rebuilds the Odoo Docker image without cache (docker compose build --pull "
+"--no-cache odoo)."
+msgstr ""
+"Reconstruye la imagen Docker de Odoo sin caché (docker compose build --pull "
+"--no-cache odoo)."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10054,6 +10405,15 @@ msgstr "Peticiones recientes"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.js:0
 msgid "Recipient email is invalid"
 msgstr "El email del destinatario no es válido"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.docker_prune
+msgid ""
+"Reclaims disk space by removing unused Docker containers, images, networks "
+"and build cache (docker system prune -af)."
+msgstr ""
+"Libera espacio en disco eliminando los contenedores, imágenes, redes y caché"
+" de compilación de Docker que no se usan (docker system prune -af)."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10151,21 +10511,6 @@ msgstr "Actualizar el estado de las instancias desde las métricas"
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Refresh now"
 msgstr "Actualizar ahora"
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_refresh.js:0
-msgid ""
-"Refresh started with a live dump: production has no backup destination."
-msgstr ""
-"Refresco iniciado con un volcado en vivo: producción no tiene destino de "
-"backup."
-
-#. module: incubacloud
-#. odoo-javascript
-#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_refresh.js:0
-msgid "Refresh started."
-msgstr "Refresco iniciado."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10286,6 +10631,33 @@ msgid "Remove repository"
 msgstr "Eliminar repositorio"
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.revoke_restore_upload_key
+msgid ""
+"Removes a one-use upload key from the host, and its directory unless a "
+"restore is about to read it."
+msgstr ""
+"Elimina del host una clave de subida de un solo uso, y su directorio salvo "
+"que una restauración vaya a leerlo."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.move_cleanup_source
+msgid ""
+"Removes the old host copy after a successful move, without archiving the "
+"instance record."
+msgstr ""
+"Elimina la copia del host anterior tras una migración correcta, sin archivar"
+" la ficha de la instancia."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.delete_project
+msgid ""
+"Removes the project directory from the host after verifying no containers "
+"remain under it."
+msgstr ""
+"Elimina del host el directorio del proyecto tras comprobar que no queda "
+"ningún contenedor dentro."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
 msgid "Removing..."
@@ -10320,6 +10692,15 @@ msgstr "Reportar en éxito"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Reporting"
 msgstr "Reportando"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.verify_restore_upload
+msgid ""
+"Reports the name, size and SHA-256 of what arrived through an upload key, "
+"computed on the host, so it can be confirmed before it is restored."
+msgstr ""
+"Informa del nombre, el tamaño y el SHA-256 de lo que llegó por una clave de "
+"subida, calculados en el host, para confirmarlo antes de restaurarlo."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10531,6 +10912,11 @@ msgid "Restart"
 msgstr "Reiniciar"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.restart_instance
+msgid "Restart Instance"
+msgstr "Reiniciar instancia"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Restart instance"
@@ -10543,6 +10929,11 @@ msgid "Restarting Docker may briefly interrupt"
 msgstr "Reiniciar Docker puede interrumpir brevemente"
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.restart_instance
+msgid "Restarts a doodba instance (docker compose restart)."
+msgstr "Reinicia una instancia doodba (docker compose restart)."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Restore"
@@ -10551,12 +10942,14 @@ msgstr "Restaurar"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: model:cloud.job.type,name:incubacloud.backup_restore
 msgid "Restore Backup"
 msgstr "Restaurar backup"
 
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+#: model:cloud.job.type,name:incubacloud.restore_instance
 msgid "Restore Database"
 msgstr "Restaurar base de datos"
 
@@ -10571,6 +10964,22 @@ msgstr "Restaurar base de datos"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_backups.js:0
 msgid "Restore failed"
 msgstr "Falló la restauración"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.restore_instance
+msgid "Restores a doodba instance database from a .zip backup file."
+msgstr ""
+"Restaura la base de datos de una instancia doodba desde un archivo de backup"
+" .zip."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.backup_restore
+msgid ""
+"Restores a production instance from a duplicity backup (destructive "
+"operation)."
+msgstr ""
+"Restaura una instancia de producción desde un backup de duplicity (operación"
+" destructiva)."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10624,6 +11033,7 @@ msgstr "Reintentar"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_jobs.js:0
 msgid "Retry failed: "
 msgstr "Error al reintentar: "
@@ -10652,6 +11062,11 @@ msgid "Reviving…"
 msgstr "Reviviendo…"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.revoke_restore_upload_key
+msgid "Revoke Restore Upload Key"
+msgstr "Revocar clave de subida para restaurar"
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_restore_upload_grant_gc_ir_actions_server
 msgid "Revoke expired restore upload keys"
 msgstr "Revocar las claves de subida de restauración caducadas"
@@ -10671,6 +11086,20 @@ msgstr "Huella de la clave revocada"
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Revoked key"
 msgstr "Clave revocada"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.sync_metrics_accounts
+msgid ""
+"Rewrites the gateway's access-control list on an already-deployed central "
+"and provisions the Grafana organisations of any new accounts. Granting an "
+"account is a sub-second reload of the proxy — it never touches the compose "
+"file, so it cannot recreate VictoriaMetrics, Loki or Grafana."
+msgstr ""
+"Reescribe la lista de control de acceso de la pasarela en un central ya "
+"desplegado y aprovisiona las organizaciones de Grafana de las cuentas "
+"nuevas. Dar acceso a una cuenta es una recarga del proxy de menos de un "
+"segundo: nunca toca el archivo compose, así que no puede recrear "
+"VictoriaMetrics, Loki ni Grafana."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -10759,7 +11188,7 @@ msgstr ""
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.js:0
-#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__running
 msgid "Running"
 msgstr "En ejecución"
@@ -11361,6 +11790,16 @@ msgid "Settings"
 msgstr "Configuración"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.full_setup
+msgid "Setup Host"
+msgstr "Configurar host"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.setup_whitelist
+msgid "Setup Whitelist"
+msgstr "Configurar lista blanca"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_job__queue_chain_key
 msgid ""
 "Shared by the steps of one chain. A chain waits in the queue as one entry "
@@ -11586,6 +12025,11 @@ msgid "Start"
 msgstr "Iniciar"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.start_instance
+msgid "Start Instance"
+msgstr "Iniciar instancia"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Start instance"
@@ -11598,9 +12042,26 @@ msgstr "Iniciado"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Started: %s"
+msgstr "Iniciado: %s"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
+msgid "Starting"
+msgstr "Iniciando"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Starting…"
 msgstr "Iniciando…"
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.start_instance
+msgid "Starts a stopped doodba instance (docker compose up -d)."
+msgstr "Inicia una instancia doodba detenida (docker compose up -d)."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -11650,6 +12111,11 @@ msgid "Stop"
 msgstr "Detener"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.stop_instance
+msgid "Stop Instance"
+msgstr "Detener instancia"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Stop instance"
@@ -11669,6 +12135,24 @@ msgid "Stopped On Purpose"
 msgstr "Detenida a propósito"
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.delete_host
+msgid ""
+"Stops Traefik, removes the traefik directory and archives the host record."
+msgstr ""
+"Detiene Traefik, elimina el directorio de traefik y archiva la ficha del "
+"host."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.stop_instance
+msgid "Stops a running doodba instance (docker compose stop)."
+msgstr "Detiene una instancia doodba en ejecución (docker compose stop)."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.delete_instance
+msgid "Stops and removes a doodba instance from the host."
+msgstr "Detiene una instancia doodba y la elimina del host."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 msgid "Storage"
@@ -11685,6 +12169,11 @@ msgstr "Almacenado"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Subject"
 msgstr "Asunto"
+
+#. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.sync_metrics_accounts
+msgid "Sync Metrics Accounts"
+msgstr "Sincronizar cuentas de métricas"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12118,6 +12607,25 @@ msgstr ""
 " mismo prefijo— sigue borrando la cadena vieja y nada más. Se sella una sola"
 " vez y nunca se refresca: usar «ahora» en un reintento echaría por tierra el"
 " propósito."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_job__asked_as_superuser
+msgid ""
+"The job runs as the user who created it, with superuser rights only when it "
+"was asked for with them."
+msgstr ""
+"El trabajo se ejecuta como el usuario que lo creó, con derechos de "
+"superusuario solo cuando se pidió con ellos."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
+msgid ""
+"The job that installs the key is waiting in this instance's queue: the "
+"command works once it has started."
+msgstr ""
+"El trabajo que instala la clave está esperando en la cola de esta instancia:"
+" el comando funcionará cuando haya empezado."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_alert__resolved_by_job_id
@@ -12899,6 +13407,17 @@ msgstr ""
 "para enviarla."
 
 #. module: incubacloud
+#: model:cloud.job.type,action_confirm:incubacloud.push_trusted_proxies
+msgid ""
+"Traefik will restart on this host. The panel and every instance it serves "
+"will be unreachable for a few seconds, and this page may report a lost "
+"connection while it comes back."
+msgstr ""
+"Traefik se reiniciará en este host. El panel y todas las instancias que "
+"sirve no estarán accesibles durante unos segundos, y esta página puede "
+"indicar que se perdió la conexión mientras vuelve."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid ""
@@ -13402,6 +13921,15 @@ msgstr ""
 "exactamente cuando la serie no existe."
 
 #. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.move_cutover
+msgid ""
+"Verifies the destination instance is healthy and cuts the instance over to "
+"the new host (flips host_id, re-points DNS)."
+msgstr ""
+"Comprueba que la instancia de destino está sana y pasa la instancia al nuevo"
+" host (cambia host_id y redirige el DNS)."
+
+#. module: incubacloud
 #: model:ir.actions.server,name:incubacloud.cron_cloud_verify_archived_copies_ir_actions_server
 msgid "Verify archived instance copies"
 msgstr "Verificar las copias de instancias archivadas"
@@ -13498,7 +14026,7 @@ msgstr "Espere a que termine."
 
 #. module: incubacloud
 #. odoo-javascript
-#: code:addons/incubacloud/static/src/components/job_history/job_history.js:0
+#: code:addons/incubacloud/static/src/utils/job_queue.js:0
 msgid "Waiting"
 msgstr "Esperando"
 

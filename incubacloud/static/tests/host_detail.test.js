@@ -1,4 +1,6 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { rpc } from "@web/core/network/rpc";
 import { HostDetail } from "@incubacloud/components/host_detail/host_detail";
 
 /**
@@ -265,8 +267,12 @@ describe("HostDetail — timeAgo helper", () => {
 
 describe("HostDetail — isActiveJob helper", () => {
     function isActiveJob(state) {
-        return ["pending", "enqueued", "started", "wait_dependencies"].includes(state);
+        return HostDetail.prototype.isActiveJob(state);
     }
+
+    test("queued is active: it waits in the host's queue", () => {
+        expect(isActiveJob("queued")).toBe(true);
+    });
 
     test("pending is active", () => {
         expect(isActiveJob("pending")).toBe(true);
@@ -341,16 +347,12 @@ describe("HostDetail — jobIcon helper", () => {
 
 describe("HostDetail — jobStateClass helper", () => {
     function jobStateClass(state) {
-        return {
-            done: "jst-done",
-            failed: "jst-failed",
-            cancelled: "jst-cancelled",
-            started: "jst-running",
-            pending: "jst-pending",
-            enqueued: "jst-pending",
-            blocked: "jst-blocked",
-        }[state] || "jst-pending";
+        return HostDetail.prototype.jobStateClass(state);
     }
+
+    test("queued maps to jst-queued", () => {
+        expect(jobStateClass("queued")).toBe("jst-queued");
+    });
 
     test("done maps to jst-done", () => {
         expect(jobStateClass("done")).toBe("jst-done");
@@ -596,6 +598,18 @@ describe("HostDetail — method existence", () => {
 });
 
 describe("HostDetail — hostAction", () => {
+    // The notice reads the job's state back from the server: here, a job
+    // that started.
+    beforeEach(() => {
+        allowTranslations();
+        patchWithCleanup(rpc, {
+            _rpc: (url, params) => Promise.resolve({
+                ok: true, job_id: params.job_id, state: "pending",
+                job_type: "Push Trusted Proxy Settings", queued_behind: false,
+            }),
+        });
+    });
+
     /**
      * Build the minimum `this` the method touches.
      *
@@ -643,7 +657,7 @@ describe("HostDetail — hostAction", () => {
         await h.hostAction({ code: "push_trusted_proxies", name: "Push Trusted Proxy Settings" });
         expect(h.calls.enqueue).toHaveLength(1);
         expect(h.calls.enqueue[0][2]).toEqual([7, false, "push_trusted_proxies"]);
-        expect(h.calls.success).toHaveLength(1);
+        expect(h.calls.success.map(String)).toEqual(["Started: Push Trusted Proxy Settings"]);
         expect(h.calls.error).toHaveLength(0);
     });
 

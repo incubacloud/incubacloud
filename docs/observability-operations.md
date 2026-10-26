@@ -413,7 +413,14 @@ thing collecting.
 decide whether an instance is up. Metrics own the flag while their
 readings are fresh (`cloud.instance.metrics_last_seen`); the SSH probe
 keeps doing what metrics cannot — HTTP probing, error-log scraping — and
-takes the flag back by itself the moment the readings go stale. Without
+takes the flag back by itself the moment the readings go stale. One
+exception: when the probe finds `odoo` running and answering its HTTP
+check while the flag reads False, it writes True even though metrics own
+it — direct evidence, fresher than any scrape. It does not hold the flag
+there: the cron's next reading writes whatever that reading says, so a
+lasting blind spot in the metrics (a host clock minutes off, say) shows
+as the flag flipping between the two. A stopped or not-yet-answering
+odoo is still the metrics' to report while they are fresh. Without
 that arbitration the two wrote on their own schedules and the state
 flapped whenever they briefly disagreed.
 
@@ -467,7 +474,12 @@ check. Its error-log scraping now has a better source in the access logs.
   service. Per-instance HTTP arrives with the blackbox probes of v2.
 - **`running` comes from cAdvisor**, not from HTTP traffic. An idle but
   healthy instance must keep reading as running; sourcing it from traffic
-  would eventually feed the 14-day auto-suspend with false idleness.
+  would eventually feed the 14-day auto-suspend with false idleness. It
+  is read from the freshest series of the `odoo` service (`min by`): a
+  recreated container leaves the old one's series reported for minutes.
+  The one-offs of compose (`<project>-odoo-run-<hash>`) and the rebuild's
+  boot test (`ic_boot_odoo_<id>`) carry the service's label too, and are
+  left out by name, as the instance dashboard leaves them out.
 
 ## What each panel is allowed to show, and why
 

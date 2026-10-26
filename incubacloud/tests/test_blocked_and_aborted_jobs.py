@@ -24,7 +24,7 @@ import pathlib
 from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import AccessError, UserError
-from odoo.tests.common import TransactionCase, tagged
+from odoo.tests.common import TransactionCase, new_test_user, tagged
 
 from odoo.addons.queue_job.exception import JobError, RetryableJobError
 
@@ -214,6 +214,38 @@ class TestPreflightBlocks(_DeployJobCase):
         # completed" was shown for a deploy that waited.
         self.assertEqual(told.call_args.kwargs["state"], "blocked")
         self.assertEqual(earlier.state, "active")
+
+
+@tagged("post_install", "-at_install")
+class TestAConsultantsDeployWaits(_DeployJobCase):
+    """The same wait, in the rights a consultant's deploy runs with.
+
+    A job asked for without superuser rights runs without them
+    (``cloud.job._dispatch_single``): blocking it, linking its alert and
+    writing its log must not need them. ``post_install``: the consultant
+    needs a partner, and a module installed later may add a column to it.
+    """
+
+    def test_a_consultants_deploy_waits_on_its_conflict_alert(self):
+        """Blocked, linked and logged as the consultant, the instance in 'draft'."""
+        consultant = new_test_user(
+            self.env, login="blocked-consultant",
+            groups="base.group_user,incubacloud.group_cloud_consultant",
+        )
+        self.inst.project_id.member_ids = [(4, consultant.id)]
+        self.job = self.job.with_user(consultant)
+        self.assertFalse(self.job.env.su)
+        with self.assertNoLogs("odoo.addons.incubacloud", level="ERROR"):
+            result = self._execute(_CONFLICTS)
+        self.assertEqual(result, BLOCKED_BY_ALERT)
+        alert = self._conflict_alert()
+        self.assertEqual(len(alert), 1)
+        self.assertEqual(self.job.sudo().blocked_alert_id, alert)
+        self.assertEqual(self.inst.state, "draft")
+        self.assertIn(
+            "Waiting for the alert to be resolved",
+            self.job.sudo()._get_last_system_message(),
+        )
 
 
 class TestAStepOfAChain(_DeployJobCase):

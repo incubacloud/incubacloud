@@ -310,7 +310,11 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
         self.assertEqual(self.env.cr.fetchone(), ("true",))
 
     def test_a_neutralized_copy_reaches_nothing_outside(self):
-        """No webhook, no metrics, no job of production's, no open console."""
+        """No webhook, no metrics, no job of production's, no open console.
+
+        A job of production's is one dispatched and not finished, or one
+        waiting in its target's queue.
+        """
         host = self.env["cloud.host"].create({
             "name": "neutralize-outside",
             "ip_address": "192.0.2.11",
@@ -341,6 +345,24 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
                 "queue_job_uuid": qjob.uuid,
                 "queue_job_id": qjob.id,
             })
+        # Waiting in the host's queue, with no queue.job yet; and waiting
+        # for an alert, with no state at all.
+        waiting = self.env["cloud.job"].sudo().create({
+            "host_id": host.id,
+            "job_type_id": job_type.id,
+            "name": "Job queued",
+            "state": "queued",
+        })
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            "pip_conflict", "conflict", host=host,
+        )
+        blocked = self.env["cloud.job"].sudo().create({
+            "host_id": host.id,
+            "job_type_id": job_type.id,
+            "name": "Job blocked",
+            "state": False,
+            "blocked_alert_id": alert.id,
+        })
         console = self.env["cloud.host.session"].sudo().create({
             "host_id": host.id,
             "user_id": self.env.user.id,
@@ -365,6 +387,15 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
             ("Job started", "cancelled", "cancelled"),
             # What production finished stays as it ended.
             ("Job done", "done", "done"),
+        ])
+        cr.execute(
+            "SELECT name, state FROM cloud_job WHERE id IN %s ORDER BY id",
+            ((waiting.id, blocked.id),),
+        )
+        self.assertEqual(cr.fetchall(), [
+            ("Job queued", "cancelled"),
+            # Only resolving its alert would start it.
+            ("Job blocked", None),
         ])
         cr.execute(
             "SELECT state, closed_at IS NOT NULL FROM cloud_host_session"

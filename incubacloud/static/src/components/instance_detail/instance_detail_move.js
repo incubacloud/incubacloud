@@ -2,6 +2,7 @@
 
 import {rpc} from "@web/core/network/rpc";
 import {_t} from "@web/core/l10n/translation";
+import {announceJob} from "../../utils/job_queue";
 
 /**
  * Move-to-host: target picker, cutover and rollback.
@@ -211,7 +212,8 @@ export const MoveMixin = (Base) =>
           this.env.toast?.error(r.error || _t("Move failed"));
           return;
         }
-        this.env.toast?.success(_t("Migration started."));
+        // The move is a chain that waits its turn like any other job.
+        await announceJob(this.env.toast, r.job_id);
         this.closeMovePicker();
         this._silentRefresh();
       } catch (e) {
@@ -250,7 +252,14 @@ export const MoveMixin = (Base) =>
           this.env.toast?.error(r.error || _t("Roll back failed"));
           return;
         }
-        this.env.toast?.success(_t("Move rolled back."));
+        if (r.job_id) {
+          // The recovery jobs go first in the queue and start once the
+          // cancelled step has stopped.
+          await announceJob(this.env.toast, r.job_id);
+        } else {
+          // The move had not started: cancelling it undid it.
+          this.env.toast?.success(_t("Move rolled back."));
+        }
         this._silentRefresh();
       } catch (e) {
         this.env.toast?.error(e.data?.message || e.message || _t("Roll back failed"));

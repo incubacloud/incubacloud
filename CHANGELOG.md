@@ -16,8 +16,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   created `queued` and the dispatcher starts it when the running one
   ends, first come first served, with what the running job queued for
   itself (`bypass_running_check`, now "I am part of the job running")
-  first. A host serialises its host-level jobs the same way. A chain is
-  one entry, dispatched whole with its queue.job dependencies when every
+  first. Only the platform may ask for that head of the queue: both
+  methods are reachable through `call_kw`, and a caller without
+  superuser rights who passes `bypass_running_check`, or `move_rollback`
+  in a payload, is refused (`_check_internal_queue_flags`); a move's
+  rollback, a restore's follow-ups and the PITR restore that follows
+  itself queue theirs with `sudo`. Such a caller is refused, too, a
+  target they cannot read — an instance of a project they are not in —
+  before its queue is looked at (`_check_target_access`), since
+  collapsing into a waiting job, merging a push into a waiting rebuild
+  and the queue's refusals read the queue with `sudo`. Nor may such a
+  caller create a job, or write what the dispatcher and the executor
+  read — the state, the head, the chain, the retry, the blocking alert,
+  the queue.job, the type, the payload and its secret, the instance and
+  the host, the rights it runs with and when it ended — with
+  `create` or `write` (`AccessError`, `_check_queue_control_vals`): a
+  job is queued, retried, unblocked and cancelled only through
+  `enqueue`, `enqueue_chain`, `retry_job`, `unblock_and_enqueue` and
+  `cancel_job`, with their checks, which write those fields with `sudo`
+  once the caller's own access to the job is checked (the caller stays
+  its creator), and only a job waiting for an alert can be unblocked.
+  A host serialises its host-level jobs the same way. A chain is one
+  entry, dispatched whole with its queue.job dependencies when every
   instance it touches is free and it is first in each of their queues;
   cancelled while it waits, every step goes. `cloud.job.state` is the
   job's own field (it mirrored `queue_job_id.state`), with `queued`;
@@ -50,49 +70,153 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the spot, with a note (a type meant for archived instances, the purge
   of an archived instance's backups, is cancelled only once its instance
   no longer exists: `_runs_on_archived_instance` on the executor), and
-  its executor's `on_cancelled_queued` puts
-  back what was written when it was asked for: a deploy's instance to
-  'draft', a move's markers cleared and the tenant told. A
-  `delete_instance` cancels everything waiting on the instance first and
-  waits only for the job running; `/cloud/delete_instance` no longer
-  refuses while jobs are active. A waiting job's instance moved to
-  another host starts on the new one. The endpoints that enqueue return
-  `state` with the job id. The rollback jobs of a move go to the head of
-  the queue and start once the cancelled step has stopped; the
-  revocation of an upload key waits its turn like any other job.
+  its executor's `on_cancelled_queued` puts back what was written when
+  it was asked for: a deploy's instance to 'draft', a move's markers
+  cleared and the tenant told. A `delete_instance` cancels everything
+  waiting on the instance first and waits only for the job running;
+  `/cloud/delete_instance` no longer refuses while jobs are active. A
+  waiting job's instance moved to another host starts on the new one.
+  The deploy and rebuild endpoints return the job's `state` with its id
+  (`_job_response`); the others that enqueue return the id alone. The
+  rollback jobs of a move go to the head of the queue and start once the
+  cancelled step has stopped; a revocation of an upload key asked for
+  outside a restore (the daily sweep) waits its turn like any other job.
 - **Readers of a busy instance.** `_active_states` includes `queued`:
-  the host endpoint guard, the PITR checks, the move watchdog, the
-  docker prune's per-instance check and the hardening preflight
-  (`has_active_job`) count a waiting job; the health probe does not (a
-  job that has not started silences nothing), and the backups tab shows
-  a queued listing as waiting. A sweep every two minutes (`cron_job_queue_dispatch`) serves
-  any queue a lost dispatch left waiting.
+  the host endpoint guard, the PITR checks, the docker prune's
+  per-instance check and the hardening preflight (`has_active_job`)
+  count a waiting job; the health probe does not (a job that has not
+  started silences nothing), and the backups tab shows a queued listing
+  as waiting. The move watchdog counts only a waiting step of the move
+  or of its rollback (below). A sweep every two minutes
+  (`cron_job_queue_dispatch`) serves any queue a lost dispatch left
+  waiting.
 - **The queue moves after the commit, on a cursor of its own.** The
   runner that ends a job reads the snapshot it took when the job
   started, and would not have seen what was queued during the run: the
   end of a job, a cancellation, a dismissed holding alert, an unblock or
   a retry now register a dispatch of each queue concerned for after
   their transaction commits, run on a fresh READ COMMITTED cursor that
-  logs whatever goes wrong instead of raising it. A failing dispatcher,
+  logs whatever goes wrong instead of raising it. The jobs it starts run
+  as their creator, with superuser rights only when they were asked for
+  with them (`asked_as_superuser`, from the caller's environment; for a
+  job waiting for an alert, from whoever sets it going), as until
+  1.0.197, when `enqueue` handed queue_job the caller's own environment:
+  a consultant's job runs under their record rules, and what the
+  platform's code asks for with `sudo` (an executor's follow-ups, the
+  website's flows, a cron that elevates) runs as the superuser. A failing dispatcher,
   or a layer's `_after_job_terminal` that raises (now run in a savepoint,
   and also for jobs cancelled while they waited), no longer turns a job
   that succeeded into a failure. `enqueue` starts its own job at once
   only when the instance is free both in its snapshot and in a fresh
   read, so two requests at the same moment no longer start two jobs; the
   five-entry cap, the one-waiting rule of exclusive types and the one
-  retry per failure count both too. A dispatched chain cancelled before
-  it started ends its next steps with it (queue_job cancels their
-  queue.jobs with SQL nothing mirrored, and they held the instance for
-  good). The steps after one that failed or was cancelled end
-  `cancelled`, with a note, not `failed`: only the step that failed is
-  a failure, and a step that never ran offers no retry (after a failed
-  move cutover, a retry of the source's cleanup would have torn down the
-  running instance). Only the chain's own graph is ended: a probe that
-  fails beside a chain no longer ends its steps. `cloud.job.instance_id`
-  and `host_id` are indexed.
+  retry per failure count both too — the fresh read only adding the jobs
+  the snapshot does not see at all, so a delete that cancels what waits
+  is not refused by what it has just cancelled. The rollback of a move
+  passes a queue held by the failed step it recovers from, as the
+  failure's retry and a delete do; the alert stays open. And the
+  stuck-move watchdog no longer waits for a job asked for after the
+  failure, which waited behind that hold for good: only a job running,
+  or a waiting step of the move or of its rollback, means the move is
+  still going on. A dispatched chain cancelled before it started ends
+  its next steps with it (queue_job cancels their queue.jobs with SQL
+  nothing mirrored, and they held the instance for good). The steps
+  after one that failed or was cancelled end `cancelled`, with a note,
+  not `failed`: only the step that failed is a failure, and a step that
+  never ran offers no retry (after a failed move cutover, a retry of the
+  source's cleanup would have torn down the running instance). Only the
+  chain's own graph is ended: a probe that fails beside a chain no
+  longer ends its steps. `cloud.job.instance_id` and `host_id` are
+  indexed.
+- **A neutralized copy empties the queues.** It cancels what waits in
+  them too, not only what production had dispatched.
+- **Continuous recovery says why it refuses a switch:** whether its job
+  runs or only waits in the queue.
+- **The panel shows the queue.** The job lists of an instance and of a
+  host, and the job history, show a waiting job as "Queued · N ahead",
+  with a class of its own (an amber dot that does not pulse: nothing
+  runs yet), and name every other state in the reader's language as the
+  history did ("Running" where the lists showed `started`). The two
+  lists count a waiting job as active and offer to cancel it, saying it
+  has not started and only leaves the queue, and for a step of a chain
+  that the rest of its chain goes with it; a refusal by role, and a
+  failed retry on a host, are shown. A job waiting behind a failure
+  that holds the queue reads "Action required", which opens the alerts,
+  as a blocked job's does, and on an instance its Resolve button does
+  too; what passes the hold (a retry, a delete, a move's rollback) does
+  not. The history's "Queued" was queue_job's `enqueued`, a job a runner
+  is about to start: it reads "Starting" now. Every button that
+  enqueues says what became of its job — "Started: <type>", "Queued
+  behind <type running>", or "Queued" — where some said "queued" for a
+  job that started ("Migration started." for a move that waited), or
+  nothing at all (the host's check and Full Setup, its whitelist, the
+  clone, the download of a backup, the SSH restore's upload key, whose
+  dialog now says the key works once its job has started); reviving and
+  deleting an archived instance keep their own words. None opens a tab
+  any more: the deploy, the rebuild, the restores, a retry and the check
+  of an upload opened the job's log in a new one, which for a job
+  waiting its turn showed nothing; the log opens from the lists.
+  `_job_response` adds `job_type` and `queued_behind` (the visible name
+  of the type running on the target), `/cloud/get_job_state` answers
+  the same for the buttons whose request answers the id alone, and the
+  conflict resolutions answer the id of the job they put back in its
+  queue. The hardening dialog tells a hardening waiting in the host's
+  queue from one running. The history's rows carry `queue_position`,
+  the lists' `in_chain`; every row of the lists and of the history
+  carries its job's id (`data-job-id`).
+- **Job types speak Spanish.** `cloud.job.type`'s `name`,
+  `description` and `action_confirm` are translated (the columns become
+  jsonb on update, the English texts kept as `en_US`), with core's and
+  `incubacloud_pitr`'s in Spanish: the lists, the history, the job's log
+  page, the job that resolved an alert and "Queued behind <type>" read
+  "Reconstruir instancia" for a Spanish user, and the confirmation
+  before pushing the trusted proxy settings is no longer English inside
+  a Spanish dialog. Nothing compares them; `code` is the identity. A
+  job's name, its audit action and its queue.job's description stay
+  stored in English now that the type's name is translated (the
+  reader's language would split the audit's filter and mix languages in
+  mails and alerts).
+
+### Removed
+
+- **The hourly cron of continuous recovery's base copies.** Since
+  `incubacloud_pitr` 1.0.5 the watch (every ten minutes) queues the
+  daily base copy when it is due (`_pitr_base_due`), in place of the
+  reading; the hourly *Continuous recovery: daily base copies* cron
+  followed the same rule and always found the copy already queued
+  (production, 22–25 October: every copy queued at a watch's tick). A
+  copy that failed is still tried again an hour later, now at the first
+  watch after that hour. The upgrade deletes the cron.
+  `incubacloud_pitr` 1.0.6.
 
 ### Fixed
 
+- **A job can no longer be run again through `call_kw`.**
+  `cloud.job.execute`, which queue_job calls by name, was public: anyone
+  who could read a job ran it again, outside its queue and without the
+  role gate of `enqueue`. It is private (`@api.private`), as are
+  `unblock_and_enqueue` (it would have queued a job past the alert it
+  waits for, still open), `cron_cleanup_backup_attachments` and
+  `get_audit_log` (served by `/cloud/get_audit_log`).
+- **A restore takes its data only from a job its creator may read.**
+  `restore_instance` in `from_host` or `from_job` mode looked its source
+  job up with `exists()`, which ignores record rules, and read a
+  `from_job` archive with `sudo` whatever job it named: the source is
+  now read in the job's environment first (`_source_job`), and one the
+  creator cannot read fails the restore with an `AccessError`.
+- **Cancelling a job needs write access to it, in every state.** A job
+  waiting in its queue, or dispatched and not started, was cancelled by
+  anyone who could read it and ask for its type. The SaaS manager's
+  restart of a failed provisioning checks it too, and stops a job
+  dispatched and not started through its queue job, as `cancel_job`
+  does: marked `cancelled` alone, the runner would have started it.
+- **A job's name is text in its mail.** The job notification put the
+  job's name, which whoever may write the job writes, and the host's and
+  instance's names into the mail's HTML as they were, so a link forged
+  into one was live in the mail of everyone who follows the project; they
+  are escaped, as the alerts' mail does, and the subject keeps the name
+  on one line. A job's end (`date_done`, which the health probe reads)
+  can no longer be written outside the queue's own code either.
 - **A compose that cannot be read no longer passes for a stack without
   the gatekeeper.** In the pull request preview walk 6f6 (QA,
   22-oct-2026) `docker compose config --services` failed once on the
@@ -151,6 +275,85 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   logged as not checked and change nothing: the streak and the alert
   stay as the last probe left them. Stacks without a gatekeeper do not
   read them.
+- **The metrics read an instance's odoo by its freshest series.** On
+  22-oct-2026 (QA) a production showed "Stopped", without its Connect
+  button, for four minutes after a backup, every container up and its
+  status ok. The metrics cron, which owns `running` while its readings
+  are fresh, read how long since the instance's `odoo` container was
+  seen by the oldest of its series (`max by`), and a recreated
+  container leaves the old one's series reported, ageing, for minutes
+  beside the new one's. It now reads the freshest (`min by`), leaving
+  out by name the containers that run odoo without being the
+  instance's own and would otherwise pass for an odoo that is stopped:
+  the one-offs of `docker compose run odoo …`
+  (`<project>-odoo-run-<hash>`) and the rebuild's boot test
+  (`ic_boot_odoo_<id>`). The instance dashboard's CPU and memory panels
+  leave out the same two, the boot test included now. Which hosts
+  still report is read by the freshest series too: by the oldest, a
+  host went quiet whenever a container on it had just been removed.
+  The health probe, which leaves `running` to the metrics while they
+  are fresh, now writes it True when it sees odoo running and answering
+  its HTTP check, if it was False. It does not hold it there: the
+  metrics cron's next reading writes what that reading says. A stopped
+  or not yet answering odoo is still the metrics' to report while they
+  own the flag.
+- **A new website visitor's race no longer reads as an error of the
+  instance.** Two requests of one new visitor at once (bots, mostly)
+  race on its `website_visitor` row, and Odoo logs the loser's insert as
+  a `bad query` that could not serialize: Odoo's own race, which nobody
+  running the instance can act on (alert 3195, four nights out of thirty
+  on the platform's production). The health probe leaves that record
+  out (`_error_block_is_expected`); a serialization failure on any other
+  table is still an error. A layer that overrides the hook asks super
+  first.
+- **The health probe no longer reports what a job that stops the
+  database leaves in the log.** A rebuild, a restore or switching
+  continuous recovery cuts every connection Odoo holds, and Odoo logs
+  each one as an ERROR: the job runner retrying, the cron worker
+  exiting, the server refused while `db` shuts down. The probe skipped
+  its pass while the job ran, but the first pass after it read from the
+  previous check, less five minutes of clock-skew grace, and raised
+  `instance_error_logs` on those lines (alerts 3193, 3194, 3202 and
+  3203, October 2026). Its error window, and the fallback's `--since`,
+  now open no earlier than one minute after the `date_done` of the last
+  such job that ended done; a failed one moves nothing. New hook
+  `cloud.job._get_health_blocking_host_job_types()` (none in core): host
+  jobs that stop the instances of their host. While one runs, the
+  probes of those instances skip their pass, and its end moves their
+  window too. The SaaS layer lists the free hosts' daily backup (alert
+  3201). A pass skipped for such a host job alone leaves the streaks and
+  the alerts as they were: the job changes nothing in the instance, and
+  an open `instance_unresponsive` it closed was raised again, with a new
+  notice, 10 to 15 minutes later; a job of the instance's own resets
+  them as before. `cloud.job.job_type_id` is indexed: the probe of every
+  instance filters on it twice a cycle.
+
+- **A backup no longer recreates the services of a running stack.** The
+  live dump (`backup_download.sh live-dump`: non-production backups and
+  downloads, a staging's copy of production, a move's dump of its
+  source, the free hosts' daily backup) and the archive taken before a
+  delete (`backup_archive.sh`) start their one-off with `--no-deps` when
+  the instance's database runs. Without it Compose recreates every
+  dependency whose definition changed since the stack started: on
+  22-oct-2026 the free host backup recreated firma1-staging's live `db`
+  under its workers and started a `gatekeeper` its running `odoo` was
+  not on (template v10, job 352272). A stopped database is still started
+  with what it depends on, as before (a move's source asleep under
+  Sablier, a stopped instance's backup); the archive also goes without
+  `--no-deps` when what runs could not be read, so a failed read cannot
+  block the delete. With `--no-deps` the live dump replaces doodba's
+  wait for Postgres, which has no deadline, with one of 60 seconds
+  (`WAIT_DB=false`, `UNACCENT=false`, as in the rebuild's boot test): a
+  database that runs but does not answer fails the dump with "the
+  running database did not answer within 60s" instead of holding it
+  until the SSH timeout. A stack whose compose declares a `gatekeeper`
+  that is not running (files rewritten by template v10, not rebuilt) is
+  refused before the dump with its own message rather than docker's.
+  `live-dump` takes an optional `running`, which the free host backup
+  passes: a stopped database is then refused with a clear error and exit
+  code 25 instead of started; the free host backup fails that instance's
+  step on it like on any other exit, for now. `ic_compose_run` is
+  unchanged: most of its callers need what the service depends on.
 
 ---
 

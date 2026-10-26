@@ -61,8 +61,8 @@ PITR_FIELDS = frozenset({
 })
 #: How long a switch that failed waits before the next try.
 _RETRY_AFTER = timedelta(days=1)
-#: How long a base copy that failed waits: the base copy cron's hour,
-#: not the watch's ten minutes.
+#: How long a base copy that failed waits: an hour, not the watch's ten
+#: minutes.
 _BASE_RETRY_AFTER = timedelta(hours=1)
 
 
@@ -542,12 +542,12 @@ class CloudInstance(models.Model):
     def _pitr_base_due(self):
         """Whether this instance's daily base copy is due now.
 
-        The one rule for the watch and the base copy cron. An archiving
-        instance (still wanted and applicable) is due with no copy yet,
-        with its last one older than 36 hours, or at its hour
-        (``_pitr_sync_hour``) with it older than 20 hours; not within an
-        hour of a copy that failed, so one that keeps failing is tried
-        hourly rather than at every watch.
+        The rule the watch queues the copy by. An archiving instance
+        (still wanted and applicable) is due with no copy yet, with its
+        last one older than 36 hours, or at its hour (``_pitr_sync_hour``)
+        with it older than 20 hours; not within an hour of a copy that
+        failed, so one that keeps failing is tried hourly rather than at
+        every watch.
 
         :rtype: bool
         """
@@ -670,15 +670,41 @@ class CloudInstance(models.Model):
             or "rebuild_instance"
         )
 
-    def _pitr_job_in_flight(self, codes=PITR_STACK_JOBS):
-        """Whether one of *codes* is queued or running for this instance."""
+    def _pitr_jobs_in_flight(self, codes=PITR_STACK_JOBS):
+        """The jobs of *codes* queued or running for this instance.
+
+        :rtype: ``cloud.job`` recordset
+        """
         self.ensure_one()
         Job = self.env["cloud.job"].sudo()
-        return bool(Job.search_count([
+        return Job.search([
             ("instance_id", "=", self.id),
             ("job_type_id.code", "in", list(codes)),
             ("state", "in", Job._active_states),
-        ]))
+        ])
+
+    def _pitr_job_in_flight(self, codes=PITR_STACK_JOBS):
+        """Whether one of *codes* is queued or running for this instance."""
+        return bool(self._pitr_jobs_in_flight(codes))
+
+    def _pitr_refuse_busy(self):
+        """Refuse a switch or a restore while one of the stack's jobs is active.
+
+        Saying which: a job that only waits in the instance's queue has
+        not started yet.
+
+        :raise UserError: when a job of ``PITR_STACK_JOBS`` is queued or
+            running
+        """
+        jobs = self._pitr_jobs_in_flight()
+        if not jobs:
+            return
+        if all(job.state == "queued" for job in jobs):
+            raise UserError(_(
+                "A continuous recovery job is already waiting in this "
+                "instance's queue.",
+            ))
+        raise UserError(_("A continuous recovery job is already running."))
 
     def _pitr_enqueue(self, codes, head=False):
         """Queue *codes* as one chain on this instance's host.
@@ -722,8 +748,7 @@ class CloudInstance(models.Model):
                 "Continuous recovery needs a production instance with an "
                 "S3 backup backend.",
             ))
-        if self._pitr_job_in_flight():
-            raise UserError(_("A continuous recovery job is already running."))
+        self._pitr_refuse_busy()
         if objective and str(objective) not in dict(OBJECTIVES):
             raise UserError(_("Unknown recovery objective: %s", objective))
         self._pitr_ensure_key()
@@ -757,8 +782,7 @@ class CloudInstance(models.Model):
         self.ensure_one()
         self._pitr_check_manager()
         self._pitr_refuse_external()
-        if self._pitr_job_in_flight():
-            raise UserError(_("A continuous recovery job is already running."))
+        self._pitr_refuse_busy()
         self.sudo().write({"pitr_enabled": False})
         return self._pitr_enqueue(["pitr_disable", self._pitr_rebuild_job_type()])
 
@@ -774,8 +798,7 @@ class CloudInstance(models.Model):
         if objective == self.pitr_objective:
             return False
         self._pitr_refuse_external()
-        if self._pitr_job_in_flight():
-            raise UserError(_("A continuous recovery job is already running."))
+        self._pitr_refuse_busy()
         self.sudo().pitr_objective = objective
         if (self.pitr_state or "off") == "off":
             return False
@@ -819,8 +842,7 @@ class CloudInstance(models.Model):
                 "%(when)s is outside the window this instance can be "
                 "restored to.", when=when,
             ))
-        if self._pitr_job_in_flight():
-            raise UserError(_("A continuous recovery job is already running."))
+        self._pitr_refuse_busy()
         steps = []
         if "backup" in self.expected_services():
             steps.append({
@@ -939,10 +961,10 @@ class CloudInstance(models.Model):
         """Reconcile every instance concerned; read the archiving ones.
 
         Every ten minutes. An archiving instance whose base copy is due
-        (``_pitr_base_due``) gets the copy instead of the reading: the
-        base copy cron runs in the same tick, after this one, and skips
-        an instance with a job of this module in flight, so the reading
-        queued here held every base copy back. One instance that fails
+        (``_pitr_base_due``) gets the copy instead of the reading: this
+        is the only place the daily copy is queued, and a reading queued
+        here would hold it back, as no instance gets a second job of
+        this module while one is in flight. One instance that fails
         does not stop the others: each runs in its own savepoint.
 
         :return: how many instances got a job
@@ -970,31 +992,5 @@ class CloudInstance(models.Model):
             except Exception as exc:  # noqa: BLE001 — one must not stop all
                 _logger.warning(
                     "Continuous recovery watch skipped %s: %s", inst.name, exc,
-                )
-        return queued
-
-    @api.model
-    def _cron_pitr_base_backups(self):
-        """Queue the daily base copy of the instances whose hour it is.
-
-        Hourly, by the rule the watch also follows (``_pitr_base_due``);
-        the watch queues most copies, as it runs first in the tick both
-        share.
-
-        :rtype: int
-        """
-        queued = 0
-        for inst in self._pitr_candidates():
-            if not inst._pitr_base_due() or inst._pitr_job_in_flight(PITR_JOBS):
-                continue
-            try:
-                with self.env.cr.savepoint():
-                    self.env["cloud.job"].sudo().enqueue(
-                        inst.host_id.id, inst.id, "pitr_base_backup",
-                    )
-                queued += 1
-            except Exception as exc:  # noqa: BLE001
-                _logger.warning(
-                    "Could not queue the base copy of %s: %s", inst.name, exc,
                 )
         return queued

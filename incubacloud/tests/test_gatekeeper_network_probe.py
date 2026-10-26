@@ -16,6 +16,7 @@ second probe in a row.
 """
 import asyncio
 
+from odoo import fields
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.instance_health_executor import (
@@ -320,3 +321,22 @@ class TestGatekeeperNetworkProbe(TransactionCase):
         self.assertIsNone(executor._gatekeeper_network)
         self.assertEqual(self.staging.http_fail_streak, 0)
         self.assertFalse(self._alert())
+
+    def test_a_left_behind_odoo_that_answers_is_running(self):
+        """``running`` is about the container; reachability is graded apart.
+
+        With the metrics owning the flag and reading False, an odoo whose
+        own curl answers is written running even outside its gatekeeper's
+        network, and is graded unreachable all the same.
+        """
+        self.env["cloud.settings"].sudo()._get_system().write({
+            "metrics_enabled": True,
+        })
+        self.staging.write({
+            "running": False, "metrics_last_seen": fields.Datetime.now(),
+        })
+        self.assertTrue(self.staging._liveness_covered_by_metrics())
+        executor = self._probe(_LEFT_BEHIND)
+        self.assertEqual(executor._gatekeeper_network, "detached")
+        self.assertTrue(self.staging.running)
+        self._assert_unreachable(streak=1, alerted=False)

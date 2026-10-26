@@ -9,6 +9,7 @@ import urllib.request
 import uuid
 from datetime import timedelta
 
+from markupsafe import escape
 from psycopg2 import OperationalError
 
 from odoo import SUPERUSER_ID, _, api, fields, models
@@ -58,6 +59,19 @@ _HOST_JOB_LOCK_NAMESPACE = 0x0C10D10C
 #: from its own run, retries and pushes merged into a waiting rebuild
 #: neither count nor are refused.
 QUEUE_MAX_WAITING = 5
+
+#: What the dispatcher and the executor read to decide what a job runs,
+#: where, when, with what and with which rights, and when it ended (the
+#: health probe opens its error window after ``date_done``). Only code
+#: with superuser rights writes them (``_check_queue_control_vals``): the
+#: queue's own entrypoints, after their checks. The name, the result and
+#: the log only describe the job.
+_QUEUE_CONTROL_FIELDS = frozenset({
+    "state", "queue_head", "queue_chain_key", "retry_of_id",
+    "blocked_alert_id", "queue_job_uuid", "queue_job_id", "job_type_id",
+    "payload", "secret_payload", "instance_id", "host_id",
+    "asked_as_superuser", "date_done",
+})
 
 _CHAIN_REF_RE = re.compile(r"^__chain_job_(\d+)__$")
 
@@ -137,9 +151,13 @@ class CloudJob(models.Model):
     host_id = fields.Many2one(
         "cloud.host", required=True, string="Cloud Host", index=True,
     )
+    # Indexed: the health probe of every instance filters on it twice a
+    # cycle (the jobs that block it, and the last one that cut its error
+    # window), and among a host's jobs the type is what narrows them.
     job_type_id = fields.Many2one(
         "cloud.job.type",
         required=True,
+        index=True,
     )
     # The job's own state, not a mirror of ``queue_job_id.state``: a job
     # waits in its target's queue (``queued``) with no queue.job at all,
@@ -237,6 +255,20 @@ class CloudJob(models.Model):
         index=True,
         help="When set, this job is a retry of the referenced failed job.",
     )
+    # Whether whoever asked for the job held superuser rights: the job
+    # runs as its creator, with them only if so (``_dispatch_single``).
+    # Set by the queue's entrypoints from the caller's environment
+    # (``_create_queued``, ``unblock_and_enqueue``); a job created
+    # directly, which only the superuser may do, was asked for with them.
+    asked_as_superuser = fields.Boolean(
+        string="Asked With Superuser Rights",
+        default=lambda self: self.env.su,
+        copy=False,
+        help=(
+            "The job runs as the user who created it, with superuser"
+            " rights only when it was asked for with them."
+        ),
+    )
 
     @api.depends("queue_job_uuid")
     def _compute_queue_job_id(self):
@@ -270,7 +302,9 @@ class CloudJob(models.Model):
 
         ``bypass_running_check`` means what it does for ``enqueue``: the
         chain belongs to the job that queues it and goes to the head of
-        its queues (a rebuild's follow-up chain of its addons).
+        its queues (a rebuild's follow-up chain of its addons). As there,
+        it is refused to a caller without superuser rights, and so is a
+        step whose target they cannot read (``_check_target_access``).
 
         Returns: list of cloud.job IDs (in execution order)
         """
@@ -282,6 +316,11 @@ class CloudJob(models.Model):
             self._check_job_type_allowed(
                 step["job_type_code"], step.get("instance_id"),
             )
+        self._check_internal_queue_flags(
+            bypass_running_check, [step.get("payload") for step in steps],
+        )
+        for step in steps:
+            self._check_target_access(step.get("instance_id"), step["host_id"])
         job_types = {}
         for step in steps:
             code = step["job_type_code"]
@@ -321,11 +360,12 @@ class CloudJob(models.Model):
         records = self.browse()
         for step in steps:
             job_type = job_types[step["job_type_code"]]
-            records |= self.create(
+            records |= self._create_queued(
                 {
                     "host_id": step["host_id"],
                     "job_type_id": job_type.id,
-                    "name": _(job_type.name),
+                    # Stored in English, as ``enqueue`` says why.
+                    "name": job_type.with_context(lang="en_US").name,
                     "instance_id": step.get("instance_id"),
                     "payload": step.get("payload"),
                     "queue_chain_key": chain_key,
@@ -343,7 +383,7 @@ class CloudJob(models.Model):
                 continue
             self.env["cloud.audit.log"].sudo().create(
                 {
-                    "action": record.job_type_id.name,
+                    "action": record.job_type_id.with_context(lang="en_US").name,
                     "instance_id": record.instance_id.id
                     if record.instance_id
                     else False,
@@ -444,7 +484,11 @@ class CloudJob(models.Model):
         parent job is still ``started`` on the same target. The job goes
         to the head of the queue, before everything else waiting, and
         is dispatched as soon as the running job ends; it is not counted
-        against the cap. Internal use.
+        against the cap. Internal use: a caller without superuser rights
+        is refused it, as it is ``move_rollback`` in the payload
+        (``_check_internal_queue_flags``). Such a caller is refused, too,
+        a target they cannot read, before its queue is looked at
+        (``_check_target_access``).
 
         A ``delete_instance`` (and the types a layer adds through
         ``_get_queue_clearing_job_types``) first cancels everything
@@ -459,6 +503,8 @@ class CloudJob(models.Model):
         # call_kw with only create-ACL, so enforce the per-type manager
         # requirement here, not only in the HTTP controllers.
         self._check_job_type_allowed(job_type_code, instance_id)
+        self._check_internal_queue_flags(bypass_running_check, [payload])
+        self._check_target_access(instance_id, host_id)
         job_type_id = self.env["cloud.job.type"].search(
             [
                 ("code", "=", job_type_code),
@@ -494,10 +540,15 @@ class CloudJob(models.Model):
             )
             if existing:
                 return existing.id
+        # The name and the audit action are stored in English whoever
+        # asks: one row per language would split the audit's filter of
+        # actions in two, and the mails and alerts that name the job are
+        # written in English. A reader sees the type's name in their own
+        # language (``_format``).
         vals = {
             "host_id": host_id,
             "job_type_id": job_type_id.id,
-            "name": _(job_type_id.name),
+            "name": job_type_id.with_context(lang="en_US").name,
             "queue_head": head,
         }
         if not hidden:
@@ -506,10 +557,11 @@ class CloudJob(models.Model):
             vals["instance_id"] = instance_id
         if payload:
             vals["payload"] = payload
-        job_record = self.create(vals)
+        job_record = self._create_queued(vals)
         # Check pip_dependencies for conflict markers before queuing. A
         # job left waiting for an alert is neither queued nor running:
-        # no state, as a job blocked after its run ends ``done``.
+        # no state, as a job blocked after its run ends ``done``. Written
+        # with ``sudo``, as the job was created: the queue's fields.
         _pip_blocked_types = ("deploy_instance", "rebuild_instance")
         if instance_id and job_type_code in _pip_blocked_types:
             inst = self.env["cloud.instance"].browse(instance_id)
@@ -520,7 +572,7 @@ class CloudJob(models.Model):
                     conflicts,
                     instance_id=instance_id,
                 )
-                job_record.with_context(ic_skip_state_hook=True).write(
+                job_record.sudo().with_context(ic_skip_state_hook=True).write(
                     {"blocked_alert_id": alert.id, "state": False},
                 )
                 return job_record.id
@@ -542,7 +594,7 @@ class CloudJob(models.Model):
                 limit=1,
             )
             if addon_alert:
-                job_record.with_context(ic_skip_state_hook=True).write(
+                job_record.sudo().with_context(ic_skip_state_hook=True).write(
                     {"blocked_alert_id": addon_alert.id, "state": False},
                 )
                 return job_record.id
@@ -556,7 +608,7 @@ class CloudJob(models.Model):
         if not hidden:
             self.env["cloud.audit.log"].sudo().create(
                 {
-                    "action": job_type_id.name,
+                    "action": job_type_id.with_context(lang="en_US").name,
                     "instance_id": instance_id or False,
                     "host_id": host_id,
                     "job_id": job_record.id,
@@ -574,6 +626,10 @@ class CloudJob(models.Model):
             self._schedule_dispatch({scope})
         return job_record.id
 
+    # Private: queue_job calls it by name, nobody else may. Through
+    # ``call_kw`` anyone who reads a job would run it again, outside its
+    # queue and past every check of ``enqueue``.
+    @api.private
     def execute(self):
         # queue_job will re-enqueue jobs that were in "started" state when Odoo
         # restarted; those will run from the beginning, which is the desired
@@ -749,13 +805,15 @@ class CloudJob(models.Model):
         alert already says (16-oct-2026). Everything is written in the
         job's own transaction, which commits when queue_job stores the
         job done; ``execute`` clears the environment afterwards, so it is
-        flushed here.
+        flushed here. The alert is linked with ``sudo``: it is one of the
+        queue's fields, and a job asked for without superuser rights runs
+        without them (``_dispatch_single``).
 
         :param executor: the executor that refused to start
         :param alert: the ``cloud.alert`` the job waits for
         :return: ``BLOCKED_BY_ALERT``, what queue_job stores as the result
         """
-        self.write({"blocked_alert_id": alert.id})
+        self.sudo().write({"blocked_alert_id": alert.id})
         executor.on_blocked(alert)
         executor._sys(_("Waiting for the alert to be resolved: %s", alert.message))
         executor._flush_logs()
@@ -1030,6 +1088,22 @@ class CloudJob(models.Model):
         """
         return set()
 
+    def _get_health_blocking_host_job_types(self):
+        """Host job types that skip the health pass of the host's instances.
+
+        A job of the host itself, with no instance, can stop or restart
+        the databases of every instance on it — a backup that copies them,
+        say — and the probe of each one would read the connections it cut
+        as errors. While one of these runs, the probes of the instances of
+        its host skip their pass, and once it has ended their log window
+        opens after its end, as for the instance's own jobs
+        (``_get_health_blocking_job_types``).
+
+        :return: job type codes; none in core
+        :rtype: set
+        """
+        return set()
+
     def _get_hidden_job_types(self):
         """Return job type codes that should not appear in the UI job drawer.
 
@@ -1116,24 +1190,45 @@ class CloudJob(models.Model):
         """``_scope_quiet`` as a fresh READ COMMITTED cursor sees it.
 
         The second half of ``enqueue``'s fast path: what another
-        transaction committed after this one took its snapshot.
+        transaction committed after this one took its snapshot. It still
+        sees waiting what this transaction has just cancelled: a delete
+        that cleared the queue starts after its commit, from the
+        dispatch registered then, rather than at once.
         """
         with self._fresh_env() as env:
             return env["cloud.job"]._scope_quiet(scope, except_ids)
 
     @api.model
-    def _fresh_search_count(self, domain):
-        """``search_count`` of *domain* as a fresh READ COMMITTED cursor sees it.
-
-        For the refusals that must hold against what another transaction
-        committed after this one's snapshot: the exclusive rule and the
-        one retry per failure.
+    def _fresh_rows(self, domain, fnames=()):
+        """``search_read`` of *domain* as a fresh READ COMMITTED cursor sees it.
 
         :param list domain: a ``cloud.job`` domain
-        :rtype: int
+        :param fnames: fields to read besides ``id``
+        :rtype: list of dict
         """
         with self._fresh_env() as env:
-            return env["cloud.job"].search_count(domain)
+            return env["cloud.job"].search_read(domain, ["id", *fnames])
+
+    @api.model
+    def _fresh_only(self, domain, fnames=()):
+        """The jobs matching *domain* that only a fresh read sees.
+
+        For the refusals that must hold against what another transaction
+        committed after this one's snapshot: the cap, the exclusive rule
+        and the one retry per failure. A job this snapshot sees at all is
+        this snapshot's to judge — its writes are the newest, and the
+        fresh read still sees waiting what this transaction has just
+        cancelled (a delete clearing the queue). So a fresh row counts
+        only when its id does not exist for this transaction: one
+        another transaction inserted after the snapshot.
+
+        :param list domain: a ``cloud.job`` domain
+        :param fnames: fields to read besides ``id``
+        :rtype: list of dict, as ``_fresh_rows`` gives them
+        """
+        rows = self._fresh_rows(domain, fnames)
+        seen = set(self.sudo().browse([row["id"] for row in rows]).exists().ids)
+        return [row for row in rows if row["id"] not in seen]
 
     @api.model
     def _get_queue_clearing_job_types(self):
@@ -1294,6 +1389,18 @@ class CloudJob(models.Model):
         failure is retried successfully or the alert is dismissed. The
         job stays ``failed`` meanwhile (a failed job cannot be cancelled),
         so nothing but the alert releases the queue.
+
+        Three kinds of job pass a held queue (``_passes_hold``): the
+        retry of a failure that holds it, which is what releases it; a
+        delete of the instance (``_get_queue_clearing_job_types``); and
+        the rollback of a move, which is the recovery — a move step that
+        fails after the source was stopped leaves the customer's
+        production down until it runs. The rollback's jobs say so as a
+        retry does, on the record: ``move_rollback`` in their payload
+        (``cloud.instance._enqueue_rollback_jobs``; only the platform may
+        ask for it, ``_check_internal_queue_flags``), honoured while their
+        instance's rollback is in progress. None of them closes the
+        alert: an operator dismisses it, or a retry that succeeds does.
         """
         return self._queue_holding_alerts(instance_id, host_id)[:1]
 
@@ -1318,15 +1425,42 @@ class CloudJob(models.Model):
         return self.env["cloud.alert"].sudo().search(domain, order="id desc")
 
     @api.model
+    def _passes_hold(self, first, holding_jobs):
+        """Whether the entry led by *first* is dispatched past a held queue.
+
+        The three kinds of job ``_queue_held_by`` lists: the retry of a
+        failure that holds the queue, a delete of the instance
+        (``_get_queue_clearing_job_types``) and the rollback of a move
+        while it is in progress.
+
+        :param first: the first step of the entry, a ``cloud.job`` record
+        :param holding_jobs: the failed jobs whose alerts hold the queue
+            (``_queue_holding_alerts(...).mapped("job_id")``)
+        :rtype: bool
+        """
+        return bool(
+            (first.retry_of_id and first.retry_of_id in holding_jobs)
+            or first.job_type_id.code in self._get_queue_clearing_job_types()
+            or ((first.payload or {}).get("move_rollback")
+                and first.instance_id.move_rollback_in_progress)
+        )
+
+    @api.model
+    def _waiting_domain(self, scope):
+        """Return the domain of the jobs waiting in one queue, blocked ones excluded.
+
+        :param scope: the queue, as ``_scope_of_step`` returns it
+        :rtype: list
+        """
+        return self._scope_domain(*scope) + [
+            ("state", "=", "queued"),
+            ("blocked_alert_id", "=", False),
+        ]
+
+    @api.model
     def _queued_on(self, scope):
         """Return the jobs waiting in one queue, blocked ones excluded."""
-        instance_id, host_id = scope
-        return self.sudo().search(
-            self._scope_domain(instance_id, host_id) + [
-                ("state", "=", "queued"),
-                ("blocked_alert_id", "=", False),
-            ],
-        )
+        return self.sudo().search(self._waiting_domain(scope))
 
     @api.model
     def _chain_steps(self, chain_key):
@@ -1359,20 +1493,33 @@ class CloudJob(models.Model):
                 entries.append(self._chain_steps(key))
         return entries
 
-    def _queue_position(self):
-        """Return how many entries are dispatched before this waiting job.
+    def _queue_places(self):
+        """Find where each waiting job of *self* stands in its queue.
 
-        :rtype: int
+        Each queue is read once (``_queue_entries``), however many of
+        its jobs *self* holds. A blocked job waits outside the queue and
+        is left out, as is any job not ``queued``.
+
+        :return: ``{job id: (scope, position, entry)}``: the queue, how
+            many entries are dispatched before the job's, and that entry
+        :rtype: dict
         """
-        self.ensure_one()
-        key = self.queue_chain_key
-        for position, entry in enumerate(self._queue_entries(self._scope_of())):
-            first = entry[:1]
-            if (key and first.queue_chain_key == key) or (
-                not key and first.id == self.id
-            ):
-                return position
-        return 0
+        entries_by_scope, places = {}, {}
+        for job in self.filtered(
+            lambda j: j.state == "queued" and not j.blocked_alert_id,
+        ):
+            scope = job._scope_of()
+            if scope not in entries_by_scope:
+                entries_by_scope[scope] = self._queue_entries(scope)
+            key = job.queue_chain_key
+            for position, entry in enumerate(entries_by_scope[scope]):
+                first = entry[:1]
+                if (key and first.queue_chain_key == key) or (
+                    not key and first.id == job.id
+                ):
+                    places[job.id] = (scope, position, entry)
+                    break
+        return places
 
     @api.model
     def _queue_scopes_of(self, jobs):
@@ -1418,8 +1565,9 @@ class CloudJob(models.Model):
         anybody's twin.
 
         The exclusive rule and the cap count what this transaction's
-        snapshot sees and what a fresh READ COMMITTED read sees, for the
-        reason ``enqueue`` gives. Collapse and merge read the snapshot
+        snapshot sees and the jobs only a fresh READ COMMITTED read sees
+        (``_fresh_only``), for the reason ``enqueue`` gives. Collapse and
+        merge read the snapshot
         alone, on purpose: they write on the waiting job they find, and
         under REPEATABLE READ an UPDATE of a row committed after the
         snapshot matches no row and says nothing — the request would
@@ -1460,30 +1608,28 @@ class CloudJob(models.Model):
     def _check_queue_exclusive(self, job_type, scope):
         """Refuse a second waiting job of an exclusive type on one queue.
 
-        What waits is what this snapshot and a fresh read see together
-        (see ``_check_queue_admission``).
+        What waits is what this snapshot sees, and what only a fresh read
+        sees (see ``_check_queue_admission``).
 
         :raises UserError: when one already waits, whatever its payload
         """
         if not job_type.queue_exclusive:
             return
-        domain = self._scope_domain(*scope) + [
-            ("state", "=", "queued"),
-            ("blocked_alert_id", "=", False),
+        domain = self._waiting_domain(scope) + [
             ("job_type_id", "=", job_type.id),
         ]
-        if self.sudo().search_count(domain) or self._fresh_search_count(domain):
+        if self.sudo().search_count(domain) or self._fresh_only(domain):
             if scope[0]:
                 message = _(
                     "A %(type)s is already queued for this instance; "
                     "cancel it first.",
-                    type=_(job_type.name),
+                    type=job_type.name,
                 )
             else:
                 message = _(
                     "A %(type)s is already queued for this host; "
                     "cancel it first.",
-                    type=_(job_type.name),
+                    type=job_type.name,
                 )
             raise UserError(message)
 
@@ -1505,14 +1651,19 @@ class CloudJob(models.Model):
         """Refuse the entry that would take a queue past ``QUEUE_MAX_WAITING``.
 
         Heads (follow-ups and retries) are not counted. The entries are
-        those of this snapshot and of a fresh read together, for the
-        reason ``enqueue`` gives.
+        those of this snapshot and those only a fresh read sees
+        (``_fresh_only``), for the reason ``enqueue`` gives.
 
         :raises UserError: when the queue is full
         """
         keys = self._waiting_entry_keys(scope)
-        with self._fresh_env() as env:
-            keys |= env["cloud.job"]._waiting_entry_keys(scope)
+        keys |= {
+            row["queue_chain_key"] or row["id"]
+            for row in self._fresh_only(
+                self._waiting_domain(scope) + [("queue_head", "=", False)],
+                ["queue_chain_key"],
+            )
+        }
         if len(keys) >= QUEUE_MAX_WAITING:
             if scope[0]:
                 message = _(
@@ -1537,9 +1688,10 @@ class CloudJob(models.Model):
         by the sweep cron, and in ``enqueue``'s own transaction for the
         job it just created on a quiet target. Nothing starts while a
         visible job runs; while the queue is held (``_queue_held_by``)
-        only the retry of a failure that holds it, or a delete of the
+        only the retry of a failure that holds it, a delete of the
         instance (``_get_queue_clearing_job_types``: it waits for the
-        running job alone), passes.
+        running job alone) or the rollback of a move passes (see
+        ``_queue_held_by``).
 
         An entry whose instance is gone, or archived when its type is not
         meant for archived instances (``_runs_on_archived``), is cancelled
@@ -1560,13 +1712,8 @@ class CloudJob(models.Model):
         if Job._scope_busy(*scope):
             return self.browse()
         holding = Job._queue_holding_alerts(*scope).mapped("job_id")
-        clearing = self._get_queue_clearing_job_types()
         for entry in Job._queue_entries(scope):
-            first = entry[:1]
-            if holding and not (
-                (first.retry_of_id and first.retry_of_id in holding)
-                or first.job_type_id.code in clearing
-            ):
+            if holding and not Job._passes_hold(entry[:1], holding):
                 continue
             verdict = Job._entry_verdict(entry, scope)
             if verdict == "cancelled":
@@ -1654,16 +1801,32 @@ class CloudJob(models.Model):
         only transient connection errors consume those retries; any other
         exception still fails permanently via JobError on the first try.
 
-        The job runs as its creator, with superuser rights: queue_job
-        keeps the env of the recordset it was handed (user and ``su``),
-        and the dispatcher runs as the platform on a cursor of its own,
-        possibly hours after the job was asked for. Whether the creator
-        may run the type was checked when they asked
-        (``_check_job_type_allowed`` in ``enqueue`` and its siblings);
-        the creator stays the author of what the run writes. The sudo
-        comes after ``with_user``, which drops it.
+        The job runs as its creator, with superuser rights only when it
+        was asked for with them (``asked_as_superuser``), as until
+        1.0.197, when ``enqueue`` handed queue_job the caller's own
+        environment. queue_job keeps the env of the recordset it is
+        handed (user and ``su``), and the dispatcher runs as the platform
+        on a cursor of its own, possibly hours after the job was asked
+        for: the creator and that flag are what is left of who asked. So
+        a consultant's job runs under their record rules, and what it
+        reads through its payload — the job a restore takes its data
+        from, say — it reads as they could; what the platform's code
+        asked for with ``sudo`` (an executor's follow-ups, the website's
+        flows, a cron that elevates) runs as the superuser. Whether the
+        creator may run the type was checked when they asked
+        (``_check_job_type_allowed`` in ``enqueue`` and its siblings),
+        the only way a job reaches the queue: ``create`` and ``write``
+        refuse the queue's fields to anyone without superuser rights
+        (``_check_queue_control_vals``). The creator stays the author of
+        what the run writes. The dispatcher's own writes, the uuid and
+        the state, are the platform's: made with ``sudo`` on the job as
+        the dispatcher holds it.
         """
-        job = job.with_user(job.create_uid).sudo()
+        job = job.sudo()
+        runner = job.with_user(job.create_uid)
+        if job.asked_as_superuser:
+            # After ``with_user``, which drops it.
+            runner = runner.sudo()
         job_type = job.job_type_id
         executor_cls = executor_registry.get(job_type.code)
         max_retries = 1
@@ -1677,11 +1840,13 @@ class CloudJob(models.Model):
             job_type,
             job.instance_id.id if job.instance_id else False,
         )
-        delayed = job.with_delay(
+        delayed = runner.with_delay(
             max_retries=max_retries,
             channel=channel,
             priority=priority,
-            description=job_type.name,
+            # The stored English name, as ``enqueue`` says why: the
+            # dispatcher's language is nobody's in particular.
+            description=job.name,
         ).execute()
         job.with_context(ic_skip_state_hook=True).write(
             {"queue_job_uuid": delayed.uuid, "state": "pending"},
@@ -1694,14 +1859,20 @@ class CloudJob(models.Model):
 
         The ``__chain_job_N__`` references are resolved now, each step
         waits on the previous one, and the first step is the one pending.
-        Every step runs as the chain's creator with superuser rights, for
-        the reason ``_dispatch_single`` gives: the role was checked when
-        the chain was asked for, and it may run hours later.
+        Every step runs as the chain's creator, with superuser rights only
+        when the chain was asked for with them, for the reason
+        ``_dispatch_single`` gives; the dispatcher's own writes are the
+        platform's.
         """
+        records = records.sudo()
         self._resolve_chain_refs(records)
-        # As the chain's creator, for the reason ``_dispatch_single`` gives.
-        records = records.with_user(records[:1].create_uid).sudo()
-        nodes = [record.delayable(max_retries=1).execute() for record in records]
+        nodes = []
+        for record in records:
+            runner = record.with_user(record.create_uid)
+            if record.asked_as_superuser:
+                # After ``with_user``, which drops it.
+                runner = runner.sudo()
+            nodes.append(runner.delayable(max_retries=1).execute())
         delay_chain(*nodes).delay()
         for position, (node, record) in enumerate(zip(nodes, records, strict=False)):
             vals = {"state": "pending" if position == 0 else "wait_dependencies"}
@@ -1814,8 +1985,10 @@ class CloudJob(models.Model):
         ``ic_skip_state_hook``: they call it themselves once the whole
         transition, alerts included, is recorded. A job linked to a
         queue.job without a state of its own takes the queue.job's
-        (``_adopt_queue_job_state``).
+        (``_adopt_queue_job_state``). The queue's fields are refused to a
+        caller without superuser rights (``_check_queue_control_vals``).
         """
+        self._check_queue_control_vals([vals])
         res = super().write(vals)
         if "queue_job_uuid" in vals and "state" not in vals:
             self._adopt_queue_job_state()
@@ -2118,6 +2291,128 @@ class CloudJob(models.Model):
             if instance.exists():
                 sec._check_can_delete_instance(instance)
 
+    @api.model
+    def _check_internal_queue_flags(self, bypass_running_check, payloads):
+        """Refuse what only the platform may ask of a queue, to anyone else.
+
+        ``bypass_running_check`` puts a job at the head of its queue, and
+        ``move_rollback`` in a payload lets it pass a held queue
+        (``_passes_hold``). ``enqueue`` and ``enqueue_chain`` are reachable
+        through ``call_kw``, and every legitimate caller is server code
+        that asks with ``.sudo()``: ``cloud.instance._enqueue_rollback_jobs``,
+        or an executor chaining a follow-up — its job runs with superuser
+        rights only when it was asked for with them (``_dispatch_single``),
+        as a cron runs as its bot without. Refused rather than
+        ignored, so a caller that forgot ``sudo`` fails where it is tested
+        instead of queuing a follow-up at the tail, or a recovery behind
+        the failure it recovers from.
+
+        :param bool bypass_running_check: what the caller asked for
+        :param payloads: the payload of the job, or of each step of a chain
+        :raises AccessError: when a caller without superuser rights asks
+            for either
+        """
+        if self.env.su:
+            return
+        if bypass_running_check or any(
+            isinstance(payload, dict) and payload.get("move_rollback")
+            for payload in payloads
+        ):
+            raise AccessError(_(
+                "Only the platform may put a job at the head of its queue "
+                "or past a queue held by a failure.",
+            ))
+
+    @api.model
+    def _check_target_access(self, instance_id, host_id):
+        """Refuse a target the caller cannot read, before its queue is read.
+
+        ``enqueue`` and ``enqueue_chain`` look at the target's queue with
+        ``sudo`` — a waiting job to collapse the request into, a waiting
+        rebuild to merge a push into, the exclusive rule, the cap — and
+        ``_create_queued`` checks the record rules only on the new rows,
+        after all of it. Asked by someone outside the instance's project,
+        that would answer with another project's job, write their payload
+        into its rebuild and tell what waits there. So a caller without
+        superuser rights must read the target first, in their own
+        environment: the instance of an instance job, the host of a
+        host-level one.
+
+        :param instance_id: the instance, or nothing for a host-level job
+        :param host_id: the host
+        :raises AccessError: when the caller may not read the target, as
+            its record rule says
+        """
+        if self.env.su:
+            return
+        if instance_id:
+            target = self.env["cloud.instance"].browse(int(instance_id))
+        else:
+            target = self.env["cloud.host"].browse(int(host_id))
+        target.check_access("read")
+
+    @api.model
+    def _check_queue_control_vals(self, vals_list):
+        """Refuse the queue's fields to a direct create or write without su.
+
+        Consultants may create and write ``cloud.job`` (the ACL), and the
+        sweep dispatches every ``queued`` row as its creator, with
+        superuser rights when it was asked for with them
+        (``asked_as_superuser``), trusting that it was asked for through
+        ``enqueue`` and its checks. A ``create`` or ``write`` through
+        ``call_kw`` would skip them all — the role gate, the internal
+        flags, the queue's rules — and could queue again a job that
+        ended, change what a waiting one runs, or give it superuser
+        rights. So the fields that decide it (``_QUEUE_CONTROL_FIELDS``)
+        are written only with superuser rights: the queue's entrypoints
+        (``enqueue``, ``enqueue_chain``, ``retry_job``,
+        ``unblock_and_enqueue``, ``cancel_job``) do so after their own
+        checks.
+
+        :param vals_list: the values of each job created, or of the write
+        :raises AccessError: when a caller without superuser rights sets
+            any of them
+        """
+        if self.env.su:
+            return
+        names = sorted(_QUEUE_CONTROL_FIELDS.intersection(set().union(*vals_list)))
+        if names:
+            raise AccessError(_(
+                "A job is queued, retried or cancelled through the panel's "
+                "actions; these fields cannot be set directly: %(fields)s.",
+                fields=", ".join(names),
+            ))
+
+    @api.model
+    def _create_queued(self, vals_list):
+        """Create jobs with the queue's fields, as the caller may create jobs.
+
+        For the queue's entrypoints, once their own checks passed: the
+        records are created with ``sudo``, which ``create`` requires for
+        the queue's fields (``_check_queue_control_vals``) and which keeps
+        the caller's uid — they stay the job's creator, as whom
+        ``_dispatch_single`` runs it, with superuser rights only if the
+        caller held them: ``asked_as_superuser`` is this environment's,
+        set here whatever *vals_list* says, as the ``sudo`` below would
+        say yes for everyone. The caller's right to create them is
+        checked as the ORM checks it: the access rights before, the record
+        rules on the new rows after — a consultant still creates jobs only
+        on the instances of their projects.
+
+        :param vals_list: a dict, or a list of them, as ``create`` takes
+        :return: the new jobs, in the caller's environment
+        :raises AccessError: when the caller may not create them
+        """
+        if isinstance(vals_list, dict):
+            vals_list = [vals_list]
+        vals_list = [
+            vals | {"asked_as_superuser": self.env.su} for vals in vals_list
+        ]
+        self.browse().check_access("create")
+        records = self.sudo().create(vals_list).with_env(self.env)
+        records.check_access("create")
+        return records
+
     # Alert codes that block (re-)enqueueing a job until the operator
     # resolves them (see the pre-check in ``enqueue`` and
     # ``blocked_alert_id``). Only these warrant an "Action required"
@@ -2393,31 +2688,24 @@ class CloudJob(models.Model):
         )
 
         # What a waiting job's queue looks like: how many entries go
-        # before it, and the alert holding the queue, if any (the job
-        # then needs the operator as much as a blocked one does).
-        entries_by_scope, held_by_scope = {}, {}
-        positions, held = {}, {}
-        for job in self.filtered(
-            lambda j: j.state == "queued" and not j.blocked_alert_id,
-        ):
-            scope = job._scope_of()
-            if scope not in entries_by_scope:
-                entries_by_scope[scope] = self._queue_entries(scope)
-                held_by_scope[scope] = self._queue_held_by(*scope)
-            key = job.queue_chain_key
-            for position, entry in enumerate(entries_by_scope[scope]):
-                first = entry[:1]
-                if (key and first.queue_chain_key == key) or (
-                    not key and first.id == job.id
-                ):
-                    positions[job.id] = position
-                    break
-            held[job.id] = held_by_scope[scope]
+        # before it, and the alert holding the queue, if the job does
+        # not pass the hold (it then needs the operator as much as a
+        # blocked one does; what passes — a retry, a delete, a move's
+        # rollback — does not).
+        places = self._queue_places()
+        holding_by_scope, held = {}, {}
+        for job_id, (scope, _position, entry) in places.items():
+            if scope not in holding_by_scope:
+                holding_by_scope[scope] = self._queue_holding_alerts(*scope)
+            alerts = holding_by_scope[scope]
+            if alerts and not self._passes_hold(entry[:1], alerts.mapped("job_id")):
+                held[job_id] = alerts[:1]
 
         return [
             {
                 "id": job.id,
-                "name": job.name,
+                # In the reader's language; the stored name is English.
+                "name": job.job_type_id.name or job.name,
                 "host": job.host_id.name,
                 "host_id": job.host_id.id if job.host_id else None,
                 "job_type": job.job_type_id.name,
@@ -2429,7 +2717,9 @@ class CloudJob(models.Model):
                     or job.id in action_job_ids
                     or bool(held.get(job.id))
                 ),
-                "queue_position": positions.get(job.id),
+                "queue_position": places[job.id][1] if job.id in places else None,
+                # A step of a chain: cancelling it takes the rest with it.
+                "in_chain": bool(job.queue_chain_key),
                 "queue_held": bool(held.get(job.id)),
                 "queue_held_alert_id": (
                     held[job.id].id if held.get(job.id) else None
@@ -2579,6 +2869,7 @@ class CloudJob(models.Model):
 
     def _format_history(self):
         now = fields.Datetime.now()
+        places = self._queue_places()
         result = []
         for job in self:
             start = job.create_date
@@ -2594,7 +2885,8 @@ class CloudJob(models.Model):
             result.append(
                 {
                     "id": job.id,
-                    "name": job.name,
+                    # In the reader's language, as in ``_format``.
+                    "name": job.job_type_id.name or job.name,
                     "host": job.host_id.name,
                     "host_id": job.host_id.id,
                     "instance_name": (
@@ -2605,6 +2897,11 @@ class CloudJob(models.Model):
                     "instance_id": (job.instance_id.id if job.instance_id else None),
                     "job_type": job.job_type_id.name,
                     "state": job.state,
+                    # How many entries go before a waiting job, as in
+                    # ``_format``: the history says it as the lists do.
+                    "queue_position": (
+                        places[job.id][1] if job.id in places else None
+                    ),
                     "create_date": job.create_date,
                     "write_date": job.write_date,
                     "duration_s": max(0, duration_s),
@@ -2635,16 +2932,22 @@ class CloudJob(models.Model):
         force-cancelled by queue_job (its runner is mid-flight), so we
         set ``state`` cancelled as a cooperative stop flag the executor
         polls on a separate cursor (``_check_cancel``).
+
+        Every way needs the caller's write access to the job. What is
+        written on the job itself is written with ``sudo``: ``state`` is
+        one of the queue's fields (``_check_queue_control_vals``).
         """
         self.ensure_one()
         if self.blocked_alert_id:
-            self.write({"state": "cancelled", "blocked_alert_id": False})
+            self.check_access("write")
+            self.sudo().write({"state": "cancelled", "blocked_alert_id": False})
             return
         if self.state == "queued":
             self._check_job_type_allowed(
                 self.job_type_id.code,
                 self.instance_id.id if self.instance_id else None,
             )
+            self.check_access("write")
             self._cancel_queued(
                 self,
                 _("Cancelled in the queue by %(user)s.", user=self.env.user.name),
@@ -2652,8 +2955,9 @@ class CloudJob(models.Model):
             return
         if self.state not in self._active_states:
             raise UserError(_("Only active jobs can be cancelled."))
+        self.check_access("write")
         if self.state == "started" or not self.queue_job_id:
-            self.write({"state": "cancelled"})
+            self.sudo().write({"state": "cancelled"})
         else:
             self.queue_job_id.button_cancelled()
 
@@ -2678,11 +2982,12 @@ class CloudJob(models.Model):
         )
         scope = self._scope_of()
         self._lock_scopes({scope})
-        # In this snapshot or committed since: two clicks at once.
+        # In this snapshot, or committed since by another request: two
+        # clicks at once (``_fresh_only``).
         retries = [
             ("retry_of_id", "=", self.id), ("state", "in", self._active_states),
         ]
-        if self.sudo().search_count(retries) or self._fresh_search_count(retries):
+        if self.sudo().search_count(retries) or self._fresh_only(retries):
             raise UserError(
                 _("A retry of this job is already waiting in the queue."),
             )
@@ -2691,7 +2996,7 @@ class CloudJob(models.Model):
         # failure holds the queue, past the hold: the retry is what
         # releases it. One retry per failed job at a time: a second one
         # while the first waits or runs is refused.
-        new_job = self.create(
+        new_job = self._create_queued(
             {
                 "name": self.name,
                 "host_id": self.host_id.id,
@@ -2706,6 +3011,9 @@ class CloudJob(models.Model):
         self._schedule_dispatch({scope})
         return new_job.id
 
+    # Private: the cron's housekeeping, which deletes backup rows as the
+    # superuser; nothing calls it through ``call_kw``.
+    @api.private
     @api.model
     def cron_cleanup_backup_attachments(self):
         """Delete expired backup artefacts (>2h old).
@@ -2776,6 +3084,10 @@ class CloudJob(models.Model):
             )
             orphan.unlink()
 
+    # Private: the resolve endpoints and the panel's own code call it once
+    # the conflict is gone; through ``call_kw`` it would queue a job past
+    # the alert it waits for, still open.
+    @api.private
     def unblock_and_enqueue(self):
         """Dispatch a job that waited for an alert, now that it is resolved.
 
@@ -2795,20 +3107,33 @@ class CloudJob(models.Model):
         The job goes where its instance is now, and the other jobs of the
         same type waiting on the same instance are cancelled: this one
         does what they would have.
+
+        What it writes are the queue's fields, written with ``sudo``
+        (``_check_queue_control_vals``) once the caller passed the role
+        gate and holds write access to the job. A caller without
+        superuser rights may only unblock a job that waits for an alert:
+        any other would be queued again after it ended. The job still
+        runs as its creator, now with superuser rights only if the caller
+        who sets it going holds them (``asked_as_superuser``): resolved by
+        a consultant, the rebuild a GitHub push asked for runs without.
         """
         self.ensure_one()
         inst = self.instance_id
-        # An instance that is not deployed can change host while its
-        # deploy waits; the job would deploy on the old one and leave an
-        # orphan stack there while the record names the new one.
-        if inst and not inst.deployed and inst.host_id != self.host_id:
-            self.host_id = inst.host_id
         # Same role gate as ``enqueue``: the unblocking user is the one
         # who sets the job going.
         self._check_job_type_allowed(
             self.job_type_id.code,
             inst.id if inst else None,
         )
+        self.check_access("write")
+        if not self.env.su and not self.blocked_alert_id:
+            raise UserError(_("Only a job that waits for an alert can be unblocked."))
+        job = self.sudo()
+        # An instance that is not deployed can change host while its
+        # deploy waits; the job would deploy on the old one and leave an
+        # orphan stack there while the record names the new one.
+        if inst and not inst.deployed and inst.host_id != self.host_id:
+            job.host_id = inst.host_id
         scope = self._scope_of()
         self._lock_scopes({scope})
         if inst:
@@ -2821,17 +3146,21 @@ class CloudJob(models.Model):
             # Resolving an alert dispatches one of them; the rest would
             # wait for good. Without the state hook: the queue is served
             # once this job is in it, below; the layers hear of the end.
-            twins.with_context(ic_skip_state_hook=True).write(
+            # Jobs of the same instance as this one, which the caller may
+            # write: with ``sudo``, for the same reason.
+            twins.sudo().with_context(ic_skip_state_hook=True).write(
                 {"state": "cancelled", "blocked_alert_id": False},
             )
             twins._run_after_terminal("cancelled")
-        self.blocked_alert_id = False
+        job.blocked_alert_id = False
         executor_cls = executor_registry.get(self.job_type_id.code)
         if executor_cls:
             executor_cls(job_record=self, host_record=self.host_id).on_unblocked()
-        self.with_context(ic_skip_state_hook=True).write(
-            {"state": "queued", "queue_head": False},
-        )
+        job.with_context(ic_skip_state_hook=True).write({
+            "state": "queued",
+            "queue_head": False,
+            "asked_as_superuser": self.env.su,
+        })
         self._schedule_dispatch({scope})
 
     # ── Multi-user notifications ───────────────────────────────────────────
@@ -2846,7 +3175,12 @@ class CloudJob(models.Model):
         ``queue_job_ext.write`` (terminal), the dispatcher (a waiting job
         started or cancelled) and ``abstract_executor._publish_bus``
         (while running).
+
+        The queue's fields are refused to a caller without superuser
+        rights (``_check_queue_control_vals``): a job is created through
+        ``enqueue`` and its siblings (``_create_queued``).
         """
+        self._check_queue_control_vals(vals_list)
         records = super().create(vals_list)
         linked = self.browse([
             record.id
@@ -3022,7 +3356,10 @@ class CloudJob(models.Model):
             if not email:
                 continue
             state_label = "completed" if state == "done" else state
-            subject = f"[IncubaCloud] Job '{job.name}' {state_label}"
+            # Text, on one line: whoever may write the job writes its
+            # name, and a line break would end the mail's header there.
+            name = " ".join((job.name or "").split())
+            subject = f"[IncubaCloud] Job '{name}' {state_label}"
             body = wrap_in_mail_layout(
                 self.env, self._build_email_body(job, state),
             )
@@ -3057,8 +3394,12 @@ class CloudJob(models.Model):
 
     @api.model
     def _build_email_body(self, job, state):
+        # Everything interpolated is text, never markup, as in the alerts'
+        # mail (``cloud.alert._build_alert_email_body``): whoever may write
+        # the job writes its name, and a link forged into it must not be
+        # live in the mail of everyone who follows the project.
         instance_line = (
-            f"<tr><td><b>Instance</b></td><td>{job.instance_id.name}</td></tr>"
+            f"<tr><td><b>Instance</b></td><td>{escape(job.instance_id.name)}</td></tr>"
             if job.instance_id
             else ""
         )
@@ -3066,8 +3407,8 @@ class CloudJob(models.Model):
         state_label = "completed" if state == "done" else state
         return (
             f"<table>"
-            f"<tr><td><b>Job</b></td><td>{job.name}</td></tr>"
-            f"<tr><td><b>Host</b></td><td>{job.host_id.name}</td></tr>"
+            f"<tr><td><b>Job</b></td><td>{escape(job.name or '')}</td></tr>"
+            f"<tr><td><b>Host</b></td><td>{escape(job.host_id.name)}</td></tr>"
             f"{instance_line}"
             f"<tr><td><b>Status</b></td><td>{state_label}</td></tr>"
             f"</table>"
@@ -3233,6 +3574,9 @@ class CloudJob(models.Model):
 
     # ── Audit trail ───────────────────────────────────────────────────────
 
+    # Private: ``/cloud/get_audit_log`` serves it; nothing calls it
+    # through ``call_kw``.
+    @api.private
     @api.model
     def get_audit_log(
         self,

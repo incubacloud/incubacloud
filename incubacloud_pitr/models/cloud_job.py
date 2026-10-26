@@ -1,7 +1,7 @@
 """Where continuous recovery's job types sit among the panel's jobs."""
 from odoo import api, models
 
-#: Background jobs: run by the crons, kept out of the job drawer.
+#: Background jobs: queued by the watch, kept out of the job drawer.
 _HIDDEN = ["pitr_status", "pitr_base_backup"]
 
 
@@ -14,7 +14,7 @@ class CloudJob(models.Model):
 
     @api.model
     def _get_job_type_min_group(self):
-        """Managers switch it, restore with it; the crons run the rest."""
+        """Managers switch it, restore with it; the watch queues the rest."""
         return super()._get_job_type_min_group() | {
             "pitr_enable": "group_cloud_manager",
             "pitr_disable": "group_cloud_manager",
