@@ -17,6 +17,9 @@ permissions: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # queue_job as production runs it (19.0.2.1.6), the commit repos.yaml
+  # pins: the head of OCA's 19.0 moves under a release otherwise.
+  OCA_QUEUE_REF: da2664795eb525698f93dfdd63f6ba5c4c9fccba
 
 jobs:
   lint:
@@ -189,7 +192,10 @@ jobs:
 
       - name: Fetch OCA dependencies
         run: |
-          git clone --depth 1 --branch 19.0 https://github.com/OCA/queue.git /opt/odoo/addons-oca/queue
+          git init -q /opt/odoo/addons-oca/queue
+          git -C /opt/odoo/addons-oca/queue fetch -q --depth 1 \
+            https://github.com/OCA/queue.git "$OCA_QUEUE_REF"
+          git -C /opt/odoo/addons-oca/queue checkout -q FETCH_HEAD
           ln -s /opt/odoo/addons-oca/queue/queue_job /opt/odoo/addons/queue_job
 
       - name: Install addons
@@ -271,7 +277,10 @@ jobs:
 
       - name: Fetch OCA dependencies
         run: |
-          git clone --depth 1 --branch 19.0 https://github.com/OCA/queue.git /opt/odoo/addons-oca/queue
+          git init -q /opt/odoo/addons-oca/queue
+          git -C /opt/odoo/addons-oca/queue fetch -q --depth 1 \
+            https://github.com/OCA/queue.git "$OCA_QUEUE_REF"
+          git -C /opt/odoo/addons-oca/queue checkout -q FETCH_HEAD
           ln -s /opt/odoo/addons-oca/queue/queue_job /opt/odoo/addons/queue_job
 
       - name: Install addons at the BASE revision
