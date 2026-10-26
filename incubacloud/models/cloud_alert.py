@@ -17,7 +17,7 @@ from odoo.tools import config as odoo_config
 from ..github.http_utils import safe_urlopen
 from ..mail_layout import wrap_in_mail_layout
 from ..net.outbound import post_json
-from .res_users_ext import as_platform
+from .res_users_ext import as_platform, telegram_markdown
 
 _logger = logging.getLogger(__name__)
 
@@ -856,34 +856,46 @@ class CloudAlert(models.Model):
         )
 
     def _send_alert_telegram(self, user, resolved=False):
-        """POST an alert (or resolution) notification to Telegram."""
+        """POST an alert (or resolution) notification to Telegram.
+
+        What is interpolated is text, never Markdown
+        (``telegram_markdown``): an alert's message quotes what came
+        from outside, and whoever may write a job writes its name.
+        """
         if resolved:
             emoji, label = "✅", "Resolved"
         else:
             emoji = "\U0001f534" if self.level == "critical" else "\U0001f7e1"
             label = "Alert"
         lines = [
-            f"{emoji} *{label}:* {self.message}",
+            f"{emoji} *{label}:* {telegram_markdown(self.message)}",
         ]
         if resolved and self.resolved_by_job_id:
-            lines.append(f"Resolved by: {self.resolved_by_job_id.name}")
-        if self.instance_id:
-            lines.append(f"Instance: {self.instance_id.name}")
-        if self.host_id:
-            lines.append(f"Host: {self.host_id.name}")
-        if self.job_id:
-            base_url = (
-                self.env["ir.config_parameter"]
-                .sudo()
-                .get_param(
-                    "web.base.url",
-                    "",
-                )
+            lines.append(
+                f"Resolved by: {telegram_markdown(self.resolved_by_job_id.name)}"
             )
-            lines.append(f"Logs: {base_url}/cloud/log/{self.job_id.id}")
+        if self.instance_id:
+            lines.append(f"Instance: {telegram_markdown(self.instance_id.name)}")
+        if self.host_id:
+            lines.append(f"Host: {telegram_markdown(self.host_id.name)}")
+        # Read for either link: an alert whose failed job was purged still
+        # names the run that resolved it.
+        base_url = (
+            self.env["ir.config_parameter"]
+            .sudo()
+            .get_param(
+                "web.base.url",
+                "",
+            )
+        )
+        if self.job_id:
+            lines.append(
+                f"Logs: {telegram_markdown(base_url)}/cloud/log/{self.job_id.id}"
+            )
         if resolved and self.resolved_by_job_id:
             lines.append(
-                f"Resolving run: {base_url}/cloud/log/{self.resolved_by_job_id.id}"
+                f"Resolving run: {telegram_markdown(base_url)}"
+                f"/cloud/log/{self.resolved_by_job_id.id}"
             )
         text = "\n".join(lines)
         url = f"https://api.telegram.org/bot{user.cloud_telegram_bot_token}/sendMessage"

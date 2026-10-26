@@ -98,12 +98,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   their transaction commits, run on a fresh READ COMMITTED cursor that
   logs whatever goes wrong instead of raising it. The jobs it starts run
   as their creator, with superuser rights only when they were asked for
-  with them (`asked_as_superuser`, from the caller's environment; for a
-  job waiting for an alert, from whoever sets it going), as until
-  1.0.197, when `enqueue` handed queue_job the caller's own environment:
-  a consultant's job runs under their record rules, and what the
-  platform's code asks for with `sudo` (an executor's follow-ups, the
-  website's flows, a cron that elevates) runs as the superuser. A failing dispatcher,
+  with them (`asked_as_superuser`, from the caller's environment), as
+  until 1.0.197, when `enqueue` handed queue_job the caller's own
+  environment: a consultant's job runs under their record rules, and
+  what the platform's code asks for with `sudo` (an executor's
+  follow-ups, the website's flows, a cron that elevates) runs as the
+  superuser. A job waiting for an alert runs as its creator too, with
+  the rights (superuser or not) of whoever sets it going, where until
+  1.0.197 it ran as them. The upgrade adds the column, true for every
+  existing job, without rewriting the table. A failing dispatcher,
   or a layer's `_after_job_terminal` that raises (now run in a savepoint,
   and also for jobs cancelled while they waited), no longer turns a job
   that succeeded into a failure. `enqueue` starts its own job at once
@@ -198,6 +201,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `unblock_and_enqueue` (it would have queued a job past the alert it
   waits for, still open), `cron_cleanup_backup_attachments` and
   `get_audit_log` (served by `/cloud/get_audit_log`).
+- **A step of a chain runs where its instance is.** A caller without
+  superuser rights could name any host in a step of `enqueue_chain`
+  through `call_kw`, and have their staging deployed on a server that is
+  not its own: the dispatcher puts a lone job on its instance's host,
+  but a chain's steps keep the hosts they name, and `cloud.host` has no
+  record rule. A step of an instance must now name its host or, while it
+  moves, the move's origin or destination (`AccessError`,
+  `_check_step_host`); a clone, a refresh, a restore, a revival and a
+  move name no other.
 - **A restore takes its data only from a job its creator may read.**
   `restore_instance` in `from_host` or `from_job` mode looked its source
   job up with `exists()`, which ignores record rules, and read a
@@ -217,6 +229,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   are escaped, as the alerts' mail does, and the subject keeps the name
   on one line. A job's end (`date_done`, which the health probe reads)
   can no longer be written outside the queue's own code either.
+- **A name is text in Telegram, too.** The job and alert notifications
+  sent to Telegram as `Markdown` put the names of the job, the host and
+  the instance, and the alert's message, in it as they were: a link
+  forged into one was live in the chat, and a lone `_` or `*` made
+  Telegram refuse the message. They are escaped (`telegram_markdown`).
+  The resolution of an alert whose failed job was purged is sent again:
+  the link to the run that resolved it read a base URL never set.
 - **A compose that cannot be read no longer passes for a stack without
   the gatekeeper.** In the pull request preview walk 6f6 (QA,
   22-oct-2026) `docker compose config --services` failed once on the

@@ -108,7 +108,8 @@ class TestAlertResolution(TransactionCase):
         self.assertIn(succeeded.name, mails.body_html)
         resolved = [t for t in self._telegram_texts(urlopen) if "*Resolved:*" in t]
         self.assertEqual(len(resolved), 1)
-        self.assertIn(f"Resolved by: {succeeded.name}", resolved[0])
+        # Markdown: the name's underscore is escaped (``telegram_markdown``).
+        self.assertIn("Resolved by: Job rebuild\\_instance", resolved[0])
 
     def test_a_dismissal_by_hand_is_told_apart(self):
         alert = self.env["cloud.alert"].sudo().create({

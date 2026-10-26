@@ -614,6 +614,16 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_job.py:0
+msgid ""
+"A step of a chain runs on its instance's host, or on a host its instance is "
+"moving between."
+msgstr ""
+"Un paso de una cadena se ejecuta en el host de su instancia, o en uno de los"
+" hosts entre los que se está migrando su instancia."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/controllers/_data_load/_routes_github.py:0
 msgid ""
 "A submodule branch could not be verified within the safety budget and was "
