@@ -389,21 +389,59 @@ def log_archive_download_command(inst_dir, name, max_bytes=64 * 1024 * 1024):
     )
 
 
+def _queued_behind(env, job):
+    """Name what a waiting job waits behind, for the panel's notice.
+
+    The type of the visible job dispatched on the same target — the
+    instance, or the host for a host-level job — and not ended yet:
+    the one started, when a chain has several steps there. Its visible
+    name, never its code: ``cloud.job.type.name`` is translated, and is
+    read in the language of *env* (``sudo`` keeps it). Read as the
+    superuser: the job on the same target is one the caller may see,
+    and only its type's name leaves here.
+
+    :param env: the request's environment
+    :param job: the ``cloud.job`` record that waits
+    :return: the name, or ``False`` when nothing visible runs there (the
+        queue is held by a failure, or the job ahead has just ended)
+    """
+    Job = env['cloud.job'].sudo()
+    running = Job.search(
+        Job._scope_domain(*job._scope_of()) + [
+            ('state', 'in', Job._running_states),
+            ('job_type_id.code', 'not in', Job._get_hidden_job_types()),
+        ],
+        order='id asc',
+    )
+    if not running:
+        return False
+    ahead = running.filtered(lambda j: j.state == 'started')[:1] or running[:1]
+    return ahead.job_type_id.name
+
+
 def _job_response(env, job_id):
-    """Return a consistent dict for a deploy/rebuild job response.
+    """Return a consistent dict for the response of an endpoint that enqueues.
 
     ``state`` says whether the job started (``pending``, or whatever
-    its queue.job reached) or waits in the instance's queue
-    (``queued``) behind the job running now, so the frontend can say
-    which. If the job is blocked by a pip-conflict alert, the response
-    includes ``blocked=True`` plus the conflict details so the
-    frontend can show a clear notification instead of opening the
-    log page.
+    its queue.job reached) or waits in its target's queue (``queued``),
+    so the frontend can say which: ``job_type`` names the job's type, in
+    the language of *env*, and ``queued_behind`` what it waits behind
+    (``_queued_behind``; ``False`` for a job that started, or when
+    nothing visible runs). If the job is blocked by a pip-conflict
+    alert, the response includes ``blocked=True`` plus the conflict
+    details so the frontend can show a clear notification instead.
     """
     job = env['cloud.job'].browse(job_id)
     alert = job.blocked_alert_id
     if not alert:
-        return {'job_id': job_id, 'state': job.state}
+        return {
+            'job_id': job_id,
+            'state': job.state,
+            'job_type': job.job_type_id.name,
+            'queued_behind': (
+                _queued_behind(env, job) if job.state == 'queued' else False
+            ),
+        }
     return {
         'job_id': job_id,
         'state': 'blocked',

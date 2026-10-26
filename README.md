@@ -40,7 +40,7 @@
 - Clone production to staging with database and filestore copy
 - Rebuild fingerprinting for smart cache invalidation
 - Pluggable action system for custom job types
-- Data race prevention: blocks concurrent operations on the same instance
+- One operation at a time per instance (and per host): what is asked for meanwhile waits in a queue, shows its place and can be cancelled while it waits
 
 ### GitHub integration
 
@@ -123,7 +123,7 @@ IncubaCloud acts as the **control plane**, not the runtime. All heavy lifting ha
 | `cloud.host` | VPS server — IP, SSH credentials, Traefik config, live metrics |
 | `cloud.project` | Groups instances; holds default repos and team members |
 | `cloud.instance` | One Odoo deployment — version, DB config, SMTP, domains, backup backend |
-| `cloud.job` | Async remote execution record linked to `queue.job` |
+| `cloud.job` | Async remote execution record; waits in its instance's (or host's) queue until it is handed to a `queue.job` |
 | `cloud.job.type` | Job type definition with pluggable action support |
 | `cloud.job.log.chunk` | Individual log line (stdout / stderr / system) |
 | `cloud.backup.backend` | S3-compatible backup target — encrypted credentials |

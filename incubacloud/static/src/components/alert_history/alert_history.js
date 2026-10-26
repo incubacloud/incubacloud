@@ -3,6 +3,7 @@
 import { Component, useState, useEnv } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { announceJob } from "../../utils/job_queue";
 import { parseUTC } from "../../utils/dates";
 import { IcModal } from "../ic_modal/ic_modal";
 import { IcPager } from "../ic_pager/ic_pager";
@@ -171,10 +172,12 @@ export class AlertHistory extends Component {
     async confirmResolve() {
         const { alert, choices } = this.state.resolveModal;
         this.state.resolveModal = null;
-        await rpc("/cloud/resolve_pip_conflict", {
+        const res = await rpc("/cloud/resolve_pip_conflict", {
             alert_id: alert.id,
             resolutions: choices,
         });
+        // The job that waited on the alert goes back to its queue.
+        await announceJob(this.env.toast, res?.job_id);
         await this.loadAlerts();
     }
 
@@ -204,10 +207,11 @@ export class AlertHistory extends Component {
     async confirmResolveAddon() {
         const { alert, choices } = this.state.addonConflictModal;
         this.state.addonConflictModal = null;
-        await rpc("/cloud/resolve_addon_conflict", {
+        const res = await rpc("/cloud/resolve_addon_conflict", {
             alert_id: alert.id,
             resolutions: choices,
         });
+        await announceJob(this.env.toast, res?.job_id);
         await this.loadAlerts();
     }
 

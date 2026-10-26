@@ -48,8 +48,10 @@ function formatDate(dateStr) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// The shipped job-state helpers, not copies of them: a copy kept
+// passing when the instance's queue added ``queued``.
 function isActiveJob(state) {
-    return ["pending", "enqueued", "started", "wait_dependencies"].includes(state);
+    return InstanceDetail.prototype.isActiveJob(state);
 }
 
 function jobIcon(code) {
@@ -67,11 +69,7 @@ function jobIcon(code) {
 }
 
 function jobStateClass(state) {
-    return {
-        done: "jst-done", failed: "jst-failed", cancelled: "jst-cancelled",
-        started: "jst-running", pending: "jst-pending", enqueued: "jst-pending",
-        blocked: "jst-blocked",
-    }[state] || "jst-pending";
+    return InstanceDetail.prototype.jobStateClass(state);
 }
 
 function envLabel(env) {
@@ -302,6 +300,10 @@ describe("InstanceDetail — formatDate", () => {
 });
 
 describe("InstanceDetail — isActiveJob", () => {
+    test("queued is active: it waits in the instance's queue", () => {
+        expect(isActiveJob("queued")).toBe(true);
+    });
+
     test("pending is active", () => {
         expect(isActiveJob("pending")).toBe(true);
     });
@@ -401,6 +403,10 @@ describe("InstanceDetail — jobStateClass mapping", () => {
 
     test("blocked maps to jst-blocked", () => {
         expect(jobStateClass("blocked")).toBe("jst-blocked");
+    });
+
+    test("queued maps to jst-queued", () => {
+        expect(jobStateClass("queued")).toBe("jst-queued");
     });
 
     test("unknown state falls back to jst-pending", () => {

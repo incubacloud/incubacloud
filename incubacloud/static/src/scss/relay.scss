@@ -169,6 +169,10 @@
   // pulse: nothing is in progress, it is resting.
   .rl-pill.asleep { color:var(--rl-muted); }
   .rl-pill.asleep .rl-d { background:var(--rl-amber); box-shadow:0 0 0 3px var(--rl-amber-soft); }
+  // A job waiting in its instance's queue: the same still amber, since
+  // nothing runs yet, with the text of the states in progress.
+  .rl-pill.waiting { color:var(--rl-amber-text); }
+  .rl-pill.waiting .rl-d { background:var(--rl-amber); box-shadow:0 0 0 3px var(--rl-amber-soft); }
   .rl-pill.crashed, .rl-pill.failed, .rl-pill.error, .rl-pill.deleted { color:var(--rl-red-text); }
   .rl-pill.crashed .rl-d, .rl-pill.failed .rl-d, .rl-pill.error .rl-d, .rl-pill.deleted .rl-d {
     background:var(--rl-red); box-shadow:0 0 0 3px var(--rl-red-soft); }
@@ -274,6 +278,9 @@
   .rl-tl-dot.done { background:var(--rl-green); }
   .rl-tl-dot.failed { background:var(--rl-red); }
   .rl-tl-dot.queued, .rl-tl-dot.running { background:var(--rl-amber); animation:rl-pulse 1.2s infinite; }
+  // Waiting in its instance's queue: amber like what runs, but still —
+  // nothing is in progress yet.
+  .rl-tl-dot.waiting { background:var(--rl-amber); }
   .rl-tl-line { flex:1; width:2px; background:var(--rl-line); margin-block:4px; margin-inline:0; }
   .rl-tl-item:last-child .rl-tl-line { display:none; }
   .rl-tl-content { flex:1; padding-block-end:18px; min-inline-size:0; }
@@ -284,6 +291,7 @@
   .rl-tl-state.done { color:var(--rl-green); background:var(--rl-green-soft); }
   .rl-tl-state.failed { color:var(--rl-red-text); background:var(--rl-red-soft); }
   .rl-tl-state.queued, .rl-tl-state.running, .rl-tl-state.started { color:var(--rl-amber-text); background:var(--rl-amber-soft); }
+  .rl-tl-state.waiting { color:var(--rl-amber-text); background:transparent; box-shadow:inset 0 0 0 1px var(--rl-amber-soft); }
   .rl-tl-loghint { margin-inline-start:auto; font-family:var(--rl-fm); font-size:10.5px; color:var(--rl-faint); display:flex; align-items:center; gap:5px; cursor:pointer;
     &:hover { color:var(--rl-fg2); } }
   .rl-tl-trigger { font-family:var(--rl-fm); font-size:11px; color:var(--rl-muted); margin-block-start:5px; display:flex; align-items:center; gap:6px;
@@ -298,9 +306,6 @@
   .rl-tl-abtn { font-family:var(--rl-fb); font-size:11px; font-weight:600; padding-block:4px; padding-inline:9px; border-radius:6px;
     border:1px solid var(--rl-line2); background:transparent; color:var(--rl-fg2); display:inline-flex; align-items:center; gap:5px; cursor:pointer;
     &:hover { background:var(--rl-surf2); } .rl-svg, svg { width:11px; height:11px; } }
-  .rl-tl-pending { background:var(--rl-amber-soft); border:1px solid rgba(239,165,62,.25); border-radius:8px; padding-block:11px; padding-inline:13px;
-    .rl-pp { font-family:var(--rl-fm); font-size:11px; color:var(--rl-fg2); margin-block-start:6px; display:flex; gap:7px; align-items:center;
-      .rl-sha { color:var(--rl-amber); } } }
 
   // ── Tables / mono / logs ─────────────────────────────────────────────────
   .rl-table { width:100%; border-collapse:collapse; font-size:13px;

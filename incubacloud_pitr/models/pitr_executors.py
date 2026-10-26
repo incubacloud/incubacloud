@@ -673,7 +673,9 @@ class PitrRestoreExecutor(_PitrExecutor):
         inst = self._inst()
         inst._pitr_record_restore(result)
         inst.sudo().write({"pitr_state": "ok", "status": "ok", "running": True})
-        self.env["cloud.job"].enqueue(
+        # With ``sudo``, as every head of a queue is: a restore asked for
+        # without superuser rights runs without them.
+        self.env["cloud.job"].sudo().enqueue(
             inst.host_id.id, inst.id, "pitr_base_backup",
             payload={"full": True}, bypass_running_check=True,
         )
@@ -703,7 +705,9 @@ class PitrRestoreExecutor(_PitrExecutor):
             )
         payload |= {"follow": self._followed(), "round": rounds, "missed": missed}
         inst = self._inst()
-        self.env["cloud.job"].enqueue(
+        # With ``sudo``: a restore asked for without superuser rights runs
+        # without them, and follows itself for hours.
+        self.env["cloud.job"].sudo().enqueue(
             inst.host_id.id, inst.id, "pitr_restore",
             payload=payload, bypass_running_check=True,
         )

@@ -184,7 +184,7 @@ export class PitrPanel extends Component {
         try {
             const call = () => rpc(route, { instance_id: this.props.instanceId, ...params });
             const data = this.props.enqueue
-                ? await this.props.enqueue(call, { openLog: true, errorLabel: label })
+                ? await this.props.enqueue(call, { errorLabel: label })
                 : await call();
             await this.load();
             return data;

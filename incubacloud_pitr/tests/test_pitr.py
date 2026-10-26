@@ -10,7 +10,7 @@ records.
 """
 import asyncio
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -371,6 +371,22 @@ class TestTheActions(_PitrCase):
             with self.assertRaises(UserError):
                 action()
 
+    def test_a_job_that_only_waits_is_not_said_to_run(self):
+        """Refused either way, saying which: queued has not started."""
+        job_type = self.env["cloud.job.type"].search(
+            [("code", "=", "pitr_enable")], limit=1,
+        )
+        job = self.env["cloud.job"].create({
+            "name": "pitr_enable", "host_id": self.host.id,
+            "instance_id": self.inst.id, "job_type_id": job_type.id,
+            "state": "queued",
+        })
+        with self.assertRaisesRegex(UserError, "waiting in this instance's queue"):
+            self.inst.action_pitr_enable()
+        job.state = "started"
+        with self.assertRaisesRegex(UserError, "already running"):
+            self.inst.action_pitr_enable()
+
     def test_switching_off_stops_archiving_then_rebuilds(self):
         self.inst.write({"pitr_enabled": True, "pitr_state": "ok"})
         codes, _steps = self._chain(self.inst.action_pitr_disable)
@@ -475,31 +491,6 @@ class TestReconciling(_PitrCase):
         self.inst.pitr_last_base_at = fields.Datetime.now() - timedelta(hours=40)
         self.assertEqual(self._watch(), ([], ["pitr_base_backup"]))
 
-    def test_the_watch_and_the_base_copy_cron_in_one_tick_queue_the_copy(self):
-        """Both run in one tick, the watch first. The reading it queued
-        used to hold the copy back for good: the cron skips an instance
-        with a job of this module in flight (production, October 2026)."""
-        self.inst.write({
-            "pitr_enabled": True, "pitr_state": "ok",
-            "pitr_last_base_at": fields.Datetime.now() - timedelta(hours=40),
-        })
-        JobType = self.env["cloud.job.type"]
-
-        def enqueue(jobs, host_id, instance_id, code, *args, **kwargs):
-            """Store the job as queued, as ``enqueue`` does."""
-            job = jobs.create({
-                "name": code, "host_id": host_id, "instance_id": instance_id,
-                "job_type_id": JobType.search([("code", "=", code)], limit=1).id,
-            })
-            job.state = "pending"
-            return job.id
-
-        with patch.object(self.Job, "enqueue", autospec=True, side_effect=enqueue):
-            self.env["cloud.instance"]._cron_pitr_watch()
-            self.env["cloud.instance"]._cron_pitr_base_backups()
-        queued = self.env["cloud.job"].search([("instance_id", "=", self.inst.id)])
-        self.assertEqual([j.job_type_id.code for j in queued], ["pitr_base_backup"])
-
     def test_a_base_copy_that_failed_is_tried_again_an_hour_later(self):
         """Not at every watch."""
         self.inst.write({
@@ -510,9 +501,6 @@ class TestReconciling(_PitrCase):
             ex.PitrBaseBackupExecutor, "pitr_base_backup", state="failed",
         ).job
         self.assertEqual(self._watch(), ([], ["pitr_status"]))
-        with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
-            self.env["cloud.instance"]._cron_pitr_base_backups()
-        enqueue.assert_not_called()
         self.env.cr.execute(
             "UPDATE cloud_job SET create_date = %s WHERE id = %s",
             (fields.Datetime.now() - timedelta(minutes=61), failed.id),
@@ -529,6 +517,9 @@ class TestReconciling(_PitrCase):
         self.assertEqual(self._watch(), ([], []))
 
     def test_an_external_stack_is_only_watched(self):
+        """Never switched; read, and its base copy queued when due: with the
+        hourly cron gone, the watch is the only way to one (the panel's own
+        instance runs such a stack)."""
         self.inst.write({
             "pitr_enabled": True, "pitr_stack_external": True, "pitr_state": "off",
             "pitr_last_base_at": fields.Datetime.now() - timedelta(hours=1),
@@ -536,6 +527,8 @@ class TestReconciling(_PitrCase):
         self.assertEqual(self._watch(), ([], []))
         self.inst.pitr_state = "ok"
         self.assertEqual(self._watch(), ([], ["pitr_status"]))
+        self.inst.pitr_last_base_at = fields.Datetime.now() - timedelta(hours=40)
+        self.assertEqual(self._watch(), ([], ["pitr_base_backup"]))
 
     def test_a_rebuild_that_shipped_the_pieces_is_followed_by_the_switch_alone(self):
         self.inst.pitr_enabled = True
@@ -566,17 +559,31 @@ class TestReconciling(_PitrCase):
         self.inst.write({"pitr_enabled": True, "move_origin_host_id": self.host.id})
         self.assertEqual(self._rebuilt(), ([], []))
 
-    def test_a_base_copy_missed_for_36_hours_is_caught_up(self):
+    def test_the_daily_copy_is_queued_at_its_hour(self):
+        """By the watch, the only one that queues it: at the instance's
+        hour once the last copy is 20 hours old, not at another hour,
+        not with a fresher copy."""
         self.inst.write({
             "pitr_enabled": True, "pitr_state": "ok",
-            "pitr_last_base_at": fields.Datetime.now() - timedelta(hours=40),
+            "pitr_last_base_at": fields.Datetime.now() - timedelta(hours=22),
         })
-        with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
-            self.env["cloud.instance"]._cron_pitr_base_backups()
-        self.assertIn(
-            (self.host.id, self.inst.id, "pitr_base_backup"),
-            [c.args[1:4] for c in enqueue.call_args_list],
-        )
+
+        def hour_in(offset):
+            """Patch the instance's hour to *offset* hours from now, UTC."""
+            return patch.object(
+                type(self.inst), "_pitr_sync_hour", autospec=True,
+                side_effect=lambda _inst: (
+                    datetime.now(timezone.utc).hour + offset
+                ) % 24,
+            )
+
+        with hour_in(0):
+            self.assertEqual(self._watch(), ([], ["pitr_base_backup"]))
+        with hour_in(12):
+            self.assertEqual(self._watch(), ([], ["pitr_status"]))
+        self.inst.pitr_last_base_at = fields.Datetime.now() - timedelta(hours=2)
+        with hour_in(0):
+            self.assertEqual(self._watch(), ([], ["pitr_status"]))
 
 
 class TestSwitchingOnAndBaseCopies(_PitrCase):

@@ -83,6 +83,23 @@ teardown() {
     ! grep -q 'compose exec' "$DOCKER_CALLS"
 }
 
+@test "a running database is left alone: the archive starts no dependency" {
+    # Without --no-deps Compose recreates any dependency whose definition
+    # changed since the stack started, the live db included.
+    printf 'odoo\ndb\n' > "$PS_BEFORE"
+    run bash "$SCRIPT" "$HOME/project/inst"
+    [ "$status" -eq 0 ]
+    grep -q -- '--rm -T --no-deps backup sh -c' "$DOCKER_CALLS"
+}
+
+@test "a stopped database is still started for the archive" {
+    # A suspended instance archives as well as a running one.
+    run bash "$SCRIPT" "$HOME/project/inst"
+    [ "$status" -eq 0 ]
+    grep -q -- '--rm -T backup sh -c' "$DOCKER_CALLS"
+    ! grep -q -- '--no-deps' "$DOCKER_CALLS"
+}
+
 @test "the container goes through the image's own entrypoint" {
     # The entrypoint installs the postgres client matching DB_VERSION;
     # skipping it left no psql, and every archive in production failed
@@ -131,6 +148,9 @@ teardown() {
     [ "$status" -eq 22 ]
     ! grep -q 'compose stop' "$DOCKER_CALLS"
     [[ "$output" == *"leaving the stack as it is"* ]]
+    # Nor is --no-deps guessed: on a stopped database it would fail the
+    # archive, and with it the delete that follows.
+    ! grep -q -- '--no-deps' "$DOCKER_CALLS"
 }
 
 @test "a successful archive stops nothing: the teardown follows" {

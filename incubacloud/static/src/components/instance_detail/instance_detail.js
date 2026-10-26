@@ -15,6 +15,7 @@ import {useSafePoll} from "../../utils/use_safe_poll";
 import {useVisibilityRefresh} from "../../utils/use_visibility_refresh";
 import {useDebouncedBus, refreshesOn} from "../../utils/use_debounced_bus";
 import {useNavGuard} from "../../utils/use_nav_guard";
+import {announceJob} from "../../utils/job_queue";
 import {useFormValidation} from "../../utils/use_form_validation";
 import {required, instanceName, portRange, when} from "../../utils/validators";
 import {PasswordInput} from "../password_input/password_input";
@@ -1286,11 +1287,14 @@ export class InstanceDetail extends JobsMixin(
   /**
    * Central method to enqueue a job and immediately refresh the UI.
    *
+   * Says what became of the job — started, or queued and behind what
+   * (``announceJob``) — and opens nothing: the job's log opens from the
+   * job list, where a queued job waits with its place in line.
+   *
    * @param {Function} fn  - async function that enqueues the job and
-   *                          returns {ok, job_id, blocked?, error?} or
-   *                          a plain job_id (from orm.call).
+   *                          returns {ok, job_id, state?, blocked?, error?}
+   *                          or a plain job_id (from orm.call).
    * @param {Object} [opts]
-   * @param {boolean} [opts.openLog=false]      - open /cloud/log/<id> on success
    * @param {boolean} [opts.goToOverview=false] - jump to the Overview tab on success
    * @param {string}  [opts.errorLabel]         - fallback toast message
    * @returns {Object|null} the response data, or null on error
@@ -1298,7 +1302,6 @@ export class InstanceDetail extends JobsMixin(
   async _enqueueJob(
     fn,
     {
-      openLog = false,
       goToOverview = false,
       errorLabel,
       loadingKey = "actionLoading",
@@ -1322,8 +1325,8 @@ export class InstanceDetail extends JobsMixin(
           conflicts: data.conflicts || [],
         };
       } else {
-        if (openLog && jobId) {
-          window.open(`/cloud/log/${jobId}`, "_blank");
+        if (jobId) {
+          await announceJob(this.env.toast, data?.state ? data : jobId);
         }
         if (goToOverview) {
           this.setTab("overview");
@@ -1345,14 +1348,14 @@ export class InstanceDetail extends JobsMixin(
   async deployInstance() {
     await this._enqueueJob(
       () => rpc("/cloud/deploy_instance", {instance_id: this.props.instance_id}),
-      {openLog: true, errorLabel: _t("Deploy failed")}
+      {errorLabel: _t("Deploy failed")}
     );
   }
 
   async rebuildInstance() {
     await this._enqueueJob(
       () => rpc("/cloud/rebuild_instance", {instance_id: this.props.instance_id}),
-      {openLog: true, errorLabel: _t("Rebuild failed")}
+      {errorLabel: _t("Rebuild failed")}
     );
   }
 
@@ -1477,6 +1480,12 @@ export class InstanceDetail extends JobsMixin(
         if (!this._safePoll.alive) return;
         if (job && ["done", "failed"].includes(job.state)) {
           this._navigateAfterDelete();
+          return;
+        }
+        // Cancelled — in the queue, or by its own executor: the instance
+        // stays, so the page does too.
+        if (job?.state === "cancelled") {
+          this._silentRefresh();
           return;
         }
         this._safePoll.schedule(poll, 3000);

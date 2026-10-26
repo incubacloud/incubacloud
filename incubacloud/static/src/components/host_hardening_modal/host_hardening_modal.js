@@ -14,6 +14,7 @@
 import { Component, useState, onWillStart } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
+import { announceJob } from "../../utils/job_queue";
 
 export class HostHardeningModal extends Component {
     static template = "incubacloud.HostHardeningModal";
@@ -136,16 +137,9 @@ export class HostHardeningModal extends Component {
                 chain_full_setup: chainFullSetup,
             });
             if (res?.ok) {
-                const msg = chainFullSetup
-                    ? _t(
-                        "Hardening + Full Setup chain queued. "
-                        + "Watch the jobs panel for live progress."
-                    )
-                    : _t(
-                        "Hardening queued. Watch the jobs panel for "
-                        + "live progress."
-                    );
-                this.env.toast?.success(msg);
+                // The hardening, first of the chain when Full Setup
+                // follows: started, or queued behind the host's job.
+                await announceJob(this.env.toast, res.job_ids?.[0]);
                 this.props.onApplied?.(res.job_ids || []);
                 this.props.onClose();
             } else {

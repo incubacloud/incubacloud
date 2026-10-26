@@ -294,6 +294,25 @@ class TestJobEmailNotificationFilters(TransactionCase):
         self.env['cloud.job']._notify_by_email(job, 'failed')
         self.assertGreater(self._sub_mail_count(), before)
 
+    def test_the_jobs_name_is_text_in_the_mail(self):
+        """Whoever may write a job writes its name: a link in it is not
+        live in the mail, and a line break does not end the subject."""
+        job = self._job('host_probe')
+        job.name = (
+            'Probe <a href="https://evil.example/">sign in</a>\n'
+            'Bcc: someone@evil.example'
+        )
+        self.env['cloud.job']._notify_by_email(job, 'failed')
+        mail = self.env['mail.mail'].sudo().search([
+            ('subject', 'like', '[IncubaCloud] Job%'),
+            ('email_to', '=', 'ops@example.com'),
+        ], order='id desc', limit=1)
+        self.assertTrue(mail)
+        self.assertNotIn('<a href="https://evil.example/"', mail.body_html)
+        self.assertIn('&lt;a href=', mail.body_html)
+        self.assertNotIn('\n', mail.subject)
+        self.assertIn('Probe <a href=', mail.subject)
+
 
 class TestJobRequiresActionFlag(TransactionCase):
     """``_format`` flags a job as requiring action only for blocking

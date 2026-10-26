@@ -1,4 +1,5 @@
-import { describe, expect, test } from "@odoo/hoot";
+import { beforeEach, describe, expect, test } from "@odoo/hoot";
+import { allowTranslations } from "@web/../tests/web_test_helpers";
 import { JobHistory } from "@incubacloud/components/job_history/job_history";
 
 /**
@@ -7,15 +8,10 @@ import { JobHistory } from "@incubacloud/components/job_history/job_history";
  * We test the pure helper functions and filter/state logic.
  */
 
-const ALL_STATES = [
-    "pending",
-    "enqueued",
-    "wait_dependencies",
-    "started",
-    "done",
-    "failed",
-    "cancelled",
-];
+// The shipped list, not a copy of it.
+const ALL_STATES = Object.getOwnPropertyDescriptor(
+    JobHistory.prototype, "allStateKeys",
+).get.call({});
 
 describe("JobHistory — formatDuration helper", () => {
     function formatDuration(s) {
@@ -86,29 +82,27 @@ describe("JobHistory — formatDate helper", () => {
     });
 });
 
-describe("JobHistory — stateName / stateLabel helper", () => {
+describe("JobHistory — stateLabel helper", () => {
+    // The labels are translated strings: read without a loaded catalogue
+    // they throw, as they would before the web client loaded its own.
+    beforeEach(() => allowTranslations());
+
     function stateName(state) {
-        return (
-            {
-                pending: "Pending",
-                enqueued: "Queued",
-                wait_dependencies: "Waiting",
-                started: "Running",
-                done: "Done",
-                failed: "Failed",
-                cancelled: "Cancelled",
-            }[state] || state
-        );
+        return String(JobHistory.prototype.stateLabel(state));
     }
 
     test("maps all known states", () => {
+        // ``queued`` is the instance's queue; queue_job's ``enqueued`` is
+        // a job a runner is about to start.
+        expect(stateName("queued")).toBe("Queued");
         expect(stateName("pending")).toBe("Pending");
-        expect(stateName("enqueued")).toBe("Queued");
+        expect(stateName("enqueued")).toBe("Starting");
         expect(stateName("wait_dependencies")).toBe("Waiting");
         expect(stateName("started")).toBe("Running");
         expect(stateName("done")).toBe("Done");
         expect(stateName("failed")).toBe("Failed");
         expect(stateName("cancelled")).toBe("Cancelled");
+        expect(stateName("blocked")).toBe("Blocked");
     });
 
     test("unknown state returns raw value", () => {
@@ -297,8 +291,9 @@ describe("JobHistory — class structure", () => {
 });
 
 describe("JobHistory — allStateKeys getter", () => {
-    test("returns all 7 states", () => {
-        expect(ALL_STATES.length).toBe(7);
+    test("returns all 8 states", () => {
+        expect(ALL_STATES.length).toBe(8);
+        expect(ALL_STATES).toInclude("queued");
         expect(ALL_STATES).toInclude("pending");
         expect(ALL_STATES).toInclude("done");
         expect(ALL_STATES).toInclude("failed");

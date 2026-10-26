@@ -9,6 +9,7 @@ import { IcConfirmDialog } from "../ic_confirm_dialog/ic_confirm_dialog";
 import { RlSelect } from "../rl_select/rl_select";
 import { IcPager } from "../ic_pager/ic_pager";
 import { parseUTC } from "../../utils/dates";
+import { ACTIVE_STATES, announceJob, cancelPrompt, jobStateText } from "../../utils/job_queue";
 import { useVisibilityRefresh } from "../../utils/use_visibility_refresh";
 import { useDebouncedBus, refreshesOn } from "../../utils/use_debounced_bus";
 import { useNavGuard } from "../../utils/use_nav_guard";
@@ -449,7 +450,10 @@ export class HostDetail extends Component {
 
     async runCheck() {
         try {
-            await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, 'host_probe']);
+            const jobId = await this.orm.call(
+                'cloud.job', 'enqueue', [this.props.host_id, false, 'host_probe'],
+            );
+            await announceJob(this.env.toast, jobId);
         } catch (e) {
             this.env.toast?.error(e.data?.message || e.message || _t("Failed to start host check."));
         }
@@ -486,7 +490,10 @@ export class HostDetail extends Component {
 
     async runFullSetup() {
         try {
-            await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, 'full_setup']);
+            const jobId = await this.orm.call(
+                'cloud.job', 'enqueue', [this.props.host_id, false, 'full_setup'],
+            );
+            await announceJob(this.env.toast, jobId);
         } catch (e) {
             this.env.toast?.error(e.data?.message || e.message || _t("Failed to start full setup."));
         }
@@ -527,8 +534,9 @@ export class HostDetail extends Component {
      * only thing the panel used to show was a new row down in Recent
      * Activity, 300 ms later via the bus — invisible to whoever is
      * looking at the button they just pressed, which is how a working
-     * action came to look like a dead one. Hence the toast, and the
-     * in-flight guard so a second press cannot double-queue.
+     * action came to look like a dead one. Hence the notice — started,
+     * or queued behind the host's running job (``announceJob``) — and
+     * the in-flight guard so a second press cannot double-queue.
      *
      * @param {{code: string, name: string, action_confirm?: string}} action
      *   The action as served in ``host.custom_actions``.
@@ -549,13 +557,15 @@ export class HostDetail extends Component {
         }
         this.state.actionBusy = action.code;
         try {
-            await this.orm.call('cloud.job', 'enqueue', [this.props.host_id, false, action.code]);
-            this.env.toast?.success(_t("%s queued.", action.name));
+            const jobId = await this.orm.call(
+                'cloud.job', 'enqueue', [this.props.host_id, false, action.code],
+            );
             // Don't wait for the bus event for the row to show up: on a
             // job that restarts this host's proxy the bus connection is
             // the next casualty, and instance_detail already refreshes
             // eagerly here for the same reason.
             this._silentRefresh();
+            await announceJob(this.env.toast, jobId);
         } catch (e) {
             this.env.toast?.error(e.data?.message || e.message || _t("Failed to enqueue host action."));
         } finally {
@@ -749,7 +759,8 @@ export class HostDetail extends Component {
         if (!this.props.host_id) return;
         await this.save();
         try {
-            await rpc("/cloud/setup_whitelist", { host_id: this.props.host_id });
+            const res = await rpc("/cloud/setup_whitelist", { host_id: this.props.host_id });
+            await announceJob(this.env.toast, res?.job_id);
         } catch (e) {
             this.env.toast?.error(e.data?.message || e.message || _t("Failed to enqueue whitelist job."));
         }
@@ -779,6 +790,9 @@ export class HostDetail extends Component {
             if (result.error) {
                 this.env.toast?.error(result.error);
             } else {
+                // A deployed host is torn down by a job; one where
+                // nothing was deployed is gone already and answers none.
+                await announceJob(this.env.toast, result.job_id);
                 this.env.navigate("hosts");
             }
         } catch (e) {
@@ -922,7 +936,17 @@ export class HostDetail extends Component {
     }
 
     isActiveJob(state) {
-        return ["pending", "enqueued", "started", "wait_dependencies"].includes(state);
+        return ACTIVE_STATES.includes(state);
+    }
+
+    /**
+     * Text of a job's state pill (``job_queue.jobStateText``).
+     *
+     * @param {{state: string, queue_position?: number}} job
+     * @returns {string}
+     */
+    jobStateText(job) {
+        return jobStateText(job);
     }
 
     jobIcon(code) {
@@ -941,7 +965,7 @@ export class HostDetail extends Component {
         return {
             done: "jst-done", failed: "jst-failed", cancelled: "jst-cancelled",
             started: "jst-running", pending: "jst-pending", enqueued: "jst-pending",
-            blocked: "jst-blocked",
+            queued: "jst-queued", blocked: "jst-blocked",
         }[state] || "jst-pending";
     }
 
@@ -953,20 +977,28 @@ export class HostDetail extends Component {
         ev.stopPropagation();
         const ok = await this._confirm({
             title: _t("Cancel job"),
-            message: _t("Cancel \"%s\"? This cannot be undone.").replace('%s', job.name),
+            message: cancelPrompt(job),
             confirmLabel: _t("Cancel job"),
             isDanger: true,
         });
         if (ok) {
-            await this.orm.call("cloud.job", "cancel_job", [job.id]);
+            try {
+                await this.orm.call("cloud.job", "cancel_job", [job.id]);
+            } catch (e) {
+                this.env.toast?.error(_t("Cancel failed: ") + (e.data?.message || e.message));
+            }
             this._loadJobs();
         }
     }
 
     async retryJob(ev, job) {
         ev.stopPropagation();
-        const newJobId = await this.orm.call("cloud.job", "retry_job", [job.id]);
-        if (newJobId) window.open(`/cloud/log/${newJobId}`, "_blank");
+        try {
+            const newJobId = await this.orm.call("cloud.job", "retry_job", [job.id]);
+            if (newJobId) await announceJob(this.env.toast, newJobId);
+        } catch (e) {
+            this.env.toast?.error(_t("Retry failed: ") + (e.data?.message || e.message));
+        }
         this._loadJobs();
     }
 

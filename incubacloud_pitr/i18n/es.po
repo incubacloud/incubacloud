@@ -72,6 +72,14 @@ msgid "A continuous recovery job is already running."
 msgstr "Ya hay un trabajo de recuperación continua en curso."
 
 #. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid "A continuous recovery job is already waiting in this instance's queue."
+msgstr ""
+"Ya hay un trabajo de recuperación continua esperando en la cola de esta "
+"instancia."
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_failed_count
 msgid "Archive Failures"
 msgstr "Fallos de archivado"
@@ -146,6 +154,16 @@ msgid "Continuous Recovery"
 msgstr "Recuperación continua"
 
 #. module: incubacloud_pitr
+#: model:cloud.job.type,name:incubacloud_pitr.pitr_base_backup
+msgid "Continuous Recovery Base Copy"
+msgstr "Copia base de recuperación continua"
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,name:incubacloud_pitr.pitr_status
+msgid "Continuous Recovery Watch"
+msgstr "Vigilancia de recuperación continua"
+
+#. module: incubacloud_pitr
 #. odoo-javascript
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "Continuous recovery"
@@ -159,11 +177,6 @@ msgid ""
 msgstr ""
 "La recuperación continua necesita una instancia de producción con un backend"
 " de backups S3."
-
-#. module: incubacloud_pitr
-#: model:ir.actions.server,name:incubacloud_pitr.cron_pitr_base_backups_ir_actions_server
-msgid "Continuous recovery: daily base copies"
-msgstr "Recuperación continua: copias base diarias"
 
 #. module: incubacloud_pitr
 #: model:ir.actions.server,name:incubacloud_pitr.cron_pitr_watch_ir_actions_server
@@ -232,6 +245,15 @@ msgstr "Fallando"
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_job__id
 msgid "ID"
 msgstr "ID"
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,description:incubacloud_pitr.pitr_enable
+msgid ""
+"Installs wal-g for the instance, turns database archiving on (one restart of"
+" the database) and takes the first base copy."
+msgstr ""
+"Instala wal-g para la instancia, activa el archivado de la base de datos (un"
+" reinicio de la base de datos) y toma la primera copia base."
 
 #. module: incubacloud_pitr
 #. odoo-python
@@ -330,6 +352,12 @@ msgid "Previous Clusters"
 msgstr "Clústeres anteriores"
 
 #. module: incubacloud_pitr
+#: model:cloud.job.type,description:incubacloud_pitr.pitr_status
+msgid "Reads how far the database's archiving is behind. Changes nothing."
+msgstr ""
+"Lee cuánto va retrasado el archivado de la base de datos. No cambia nada."
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_oldest_base_at
 msgid "Recoverable From"
 msgstr "Recuperable desde"
@@ -373,6 +401,11 @@ msgid "Restore failed"
 msgstr "La restauración falló"
 
 #. module: incubacloud_pitr
+#: model:cloud.job.type,name:incubacloud_pitr.pitr_restore
+msgid "Restore to a Moment"
+msgstr "Restaurar a un momento"
+
+#. module: incubacloud_pitr
 #. odoo-javascript
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "Restore to a moment"
@@ -385,6 +418,15 @@ msgid "Restore to a moment…"
 msgstr "Restaurar a un momento…"
 
 #. module: incubacloud_pitr
+#: model:cloud.job.type,description:incubacloud_pitr.pitr_restore
+msgid ""
+"Restores the instance's database to a chosen minute of its window, and its "
+"filestore with it. Odoo is stopped meanwhile."
+msgstr ""
+"Restaura la base de datos de la instancia a un minuto elegido de su ventana,"
+" y su filestore con ella. Odoo se detiene mientras tanto."
+
+#. module: incubacloud_pitr
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_timelines
 msgid "Restores to a Moment"
 msgstr "Restauraciones a un momento"
@@ -393,6 +435,16 @@ msgstr "Restauraciones a un momento"
 #: model:ir.model.fields,field_description:incubacloud_pitr.field_cloud_instance__pitr_stack_external
 msgid "Stack Configured Outside the Panel"
 msgstr "Pila configurada fuera del panel"
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,name:incubacloud_pitr.pitr_disable
+msgid "Switch Continuous Recovery Off"
+msgstr "Desactivar recuperación continua"
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,name:incubacloud_pitr.pitr_enable
+msgid "Switch Continuous Recovery On"
+msgstr "Activar recuperación continua"
 
 #. module: incubacloud_pitr
 #. odoo-python
@@ -437,6 +489,15 @@ msgstr "Activándose…"
 #: model:ir.model.fields,help:incubacloud_pitr.field_cloud_instance__pitr_cluster_id
 msgid "System identifier of the PostgreSQL cluster being archived."
 msgstr "Identificador de sistema del clúster de PostgreSQL que se archiva."
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,description:incubacloud_pitr.pitr_base_backup
+msgid ""
+"Takes the daily base copy of the database and removes from the archive what "
+"is older than the backup window."
+msgstr ""
+"Toma la copia base diaria de la base de datos y elimina del archivo lo que "
+"es más antiguo que la ventana de backups."
 
 #. module: incubacloud_pitr
 #. odoo-javascript
@@ -496,6 +557,17 @@ msgstr ""
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid "Times in your local time"
 msgstr "Horas en su hora local"
+
+#. module: incubacloud_pitr
+#: model:cloud.job.type,description:incubacloud_pitr.pitr_disable
+msgid ""
+"Turns database archiving off (one restart of the database) and stops the "
+"filestore copy. The archive stays in the bucket until the instance is "
+"deleted."
+msgstr ""
+"Desactiva el archivado de la base de datos (un reinicio de la base de datos)"
+" y detiene la copia del filestore. El archivo se queda en el bucket hasta "
+"que se elimine la instancia."
 
 #. module: incubacloud_pitr
 #. odoo-javascript

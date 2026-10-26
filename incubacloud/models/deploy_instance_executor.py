@@ -1644,6 +1644,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         Left blocked on a closed alert, a rebuild queued by an earlier
         push showed "Action required" for ever, its Resolve led to an
         empty Alerts page, and it could not be cancelled.
+
+        Written with ``sudo``: they are the queue's fields, and a deploy
+        asked for without superuser rights runs without them.
         """
         inst = self._inst()
         if not inst:
@@ -1654,7 +1657,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
                 ("blocked_alert_id", "!=", False),
                 ("blocked_alert_id.state", "!=", "active"),
                 ("id", "!=", self.job.id),
-            ]).write({"state": "cancelled", "blocked_alert_id": False})
+            ]).sudo().write({"state": "cancelled", "blocked_alert_id": False})
 
     async def on_success(self, results):
         self._sys("✓ Instance deployed successfully.")

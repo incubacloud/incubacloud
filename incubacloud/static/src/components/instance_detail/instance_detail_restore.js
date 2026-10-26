@@ -1,6 +1,7 @@
 /** @odoo-module **/
 
 import {_t} from "@web/core/l10n/translation";
+import {announceJob} from "../../utils/job_queue";
 
 /**
  * Restore from an uploaded dump (upload or rsync).
@@ -27,11 +28,13 @@ export const RestoreUploadMixin = (Base) =>
         copied: false,
         error: null,
         // SSH mode: the grant the panel opened, the private key it
-        // handed us (held in memory only, never sent anywhere), and
-        // what the host reports having received.
+        // handed us (held in memory only, never sent anywhere), whether
+        // the job installing it still waits in the queue, and what the
+        // host reports having received.
         granting: false,
         grant: null,
         privateKey: "",
+        keyQueued: false,
         received: null,
         url: "",
         // Non-production only: production always takes a safety
@@ -88,6 +91,10 @@ export const RestoreUploadMixin = (Base) =>
         );
         d.grant = grant;
         d.privateKey = grant.private_key;
+        // The key is installed by a job, which may wait behind another
+        // on the instance: the dialog says so until then.
+        const answer = await announceJob(this.env.toast, grant.job_id);
+        d.keyQueued = answer?.state === "queued";
       } catch (e) {
         d.error = e.data?.message || e.message || _t("Could not prepare the upload.");
       } finally {
@@ -111,7 +118,7 @@ export const RestoreUploadMixin = (Base) =>
           "cloud.instance", "verify_restore_upload",
           [[this.props.instance_id], d.grant.grant_id]
         );
-        if (jobId) window.open(`/cloud/log/${jobId}`, "_blank");
+        if (jobId) await announceJob(this.env.toast, jobId);
         const [grant] = await this.orm.call(
           "cloud.restore.upload.grant", "read",
           [[d.grant.grant_id], ["received_filename", "received_bytes", "received_sha256"]]
@@ -245,7 +252,7 @@ export const RestoreUploadMixin = (Base) =>
             return;
           }
           const result = await this._uploadInChunks(d);
-          if (result.job_id) window.open(`/cloud/log/${result.job_id}`, "_blank");
+          if (result.job_id) await announceJob(this.env.toast, result.job_id);
         } else if (d.mode === "ssh") {
           if (!d.grant) {
             d.error = _t("Ask for an upload key first.");
@@ -265,7 +272,7 @@ export const RestoreUploadMixin = (Base) =>
               backup_before_restore: d.backupBeforeRestore,
             },
           ]);
-          if (jobId) window.open(`/cloud/log/${jobId}`, "_blank");
+          if (jobId) await announceJob(this.env.toast, jobId);
         } else {
           if (!d.url) {
             d.error = _t("Paste the link to your backup first.");
@@ -276,7 +283,7 @@ export const RestoreUploadMixin = (Base) =>
             "cloud.instance", "restore_from_url",
             [[this.props.instance_id], d.url, d.backupBeforeRestore]
           );
-          if (jobId) window.open(`/cloud/log/${jobId}`, "_blank");
+          if (jobId) await announceJob(this.env.toast, jobId);
         }
         this.state.restoreDialog = null;
       } catch (e) {

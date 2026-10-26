@@ -13,6 +13,6 @@
         <field name="code">pitr_base_missing</field>
         <field name="confirm_after">2</field>
         <field name="confirm_window">1800</field>
-        <field name="note">Read every ten minutes; the hourly cron catches up first.</field>
+        <field name="note">Read every ten minutes; the watch queues the missing copy first.</field>
     </record>
 </odoo>

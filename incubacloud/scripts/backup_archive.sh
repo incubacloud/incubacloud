@@ -28,6 +28,12 @@
 # When the archive fails the instance stays, so it is left as it was
 # found: whatever the step started is stopped again. Only when what was
 # running before could be read: guessing could stop a live instance.
+# A database that already runs is left alone (``--no-deps``): Compose
+# would otherwise recreate every dependency whose definition changed
+# since the stack started, the live ``db`` included (see the live dump
+# in backup_download.sh). When what was running could not be read, the
+# ``run`` goes without it, on purpose: on a stopped database it would
+# fail, and this step comes before a delete, which it would block.
 #
 # Exit codes are the contract with the executor, which classifies the
 # failure from the code alone — never by matching duplicity's wording,
@@ -115,9 +121,14 @@ stop_what_the_step_started() {
     fi
 }
 
+deps=()
+if [ "$known_before" = 1 ] && printf '%s\n' "$running_before" | grep -qx db; then
+    deps=(--no-deps)
+fi
+
 set +e
 # shellcheck disable=SC2016  # expanded by the container's shell
-ic_compose_run --rm -T backup sh -c '
+ic_compose_run --rm -T "${deps[@]}" backup sh -c '
 set -eu
 # On a stopped instance ``run`` starts the database with this container,
 # and on a loaded host it may not answer yet when the dump starts: wait

@@ -2342,21 +2342,32 @@ class CloudInstance(models.Model):
         cleanup executor clears the move markers on success; until then
         ``move_rollback_in_progress`` is True.
 
+        Both are marked ``move_rollback``: a held queue lets them pass
+        (``cloud.job._queue_held_by``), since the failure that holds it
+        is usually the very step this rolls back. Both that mark and the
+        head of the queue are the platform's to ask for
+        (``cloud.job._check_internal_queue_flags``): they are queued with
+        ``sudo``, whoever rolls back — ``rollback_move`` checks the
+        person's role first, the watchdog is a cron.
+
         Returns the ``move_rollback_cleanup`` job id.
         """
         target = self.move_target_host_id
         origin = self.move_origin_host_id
         self.move_rollback_in_progress = True
-        self.env["cloud.job"].enqueue(
+        Job = self.env["cloud.job"].sudo()
+        Job.enqueue(
             origin.id,
             self.id,
             "start_instance",
+            payload={"move_rollback": True},
             bypass_running_check=True,
         )
-        return self.env["cloud.job"].enqueue(
+        return Job.enqueue(
             target.id,
             self.id,
             "move_rollback_cleanup",
+            payload={"move_rollback": True},
             bypass_running_check=True,
         )
 
@@ -3398,8 +3409,13 @@ class CloudInstance(models.Model):
           raise a warning ``move_rollback_failed`` alert so an operator
           can manually reclaim the target later.
 
-        Instances with active jobs are left alone (move or rollback in
-        progress).
+        Instances where the move or its rollback is still going on are
+        left alone: a job runs, or one of theirs waits its turn — a step
+        of the move's chain, or a job of the rollback (``move_rollback``
+        in its payload), so a rollback waiting is not asked for twice.
+        Any other job waiting does not count: one asked for after the
+        failure waits behind the hold it left, and would keep the source
+        stopped for as long.
         """
         Job = self.env["cloud.job"]
         hidden = Job._get_hidden_job_types()
@@ -3407,12 +3423,17 @@ class CloudInstance(models.Model):
         Alert = self.env["cloud.alert"].sudo()
         stuck = self.search([("move_origin_host_id", "!=", False)])
         for inst in stuck:
-            in_flight = Job.search_count(
+            chain = inst._get_move_chain_jobs()
+            in_flight = Job.search(
                 [
                     ("instance_id", "=", inst.id),
                     ("state", "in", active_states),
                     ("job_type_id.code", "not in", hidden),
                 ]
+            ).filtered(
+                lambda job, chain=chain: job.state != "queued"
+                or job in chain
+                or (job.payload or {}).get("move_rollback")
             )
             if in_flight:
                 continue

@@ -46,13 +46,17 @@ UPDATE cloud_instance SET active = false;
 UPDATE res_users SET cloud_webhook_url = NULL;
 UPDATE cloud_settings SET metrics_enabled = false;
 -- Production's queue travels with the copy, and what has not finished
--- would run there: cancelled, with the cloud.job that mirrors it.
+-- would run there: cancelled, with the cloud.job that mirrors it. So is
+-- what waits in an instance's queue (``queued``, no queue.job yet), which
+-- the copy's dispatcher would start. A job waiting for an alert has no
+-- state and is left as it is: only resolving that alert would start it.
 WITH live AS (
     UPDATE queue_job SET state = 'cancelled'
      WHERE state IN ('wait_dependencies', 'pending', 'enqueued', 'started')
     RETURNING id
 )
-UPDATE cloud_job SET state = 'cancelled' WHERE queue_job_id IN (SELECT id FROM live);
+UPDATE cloud_job SET state = 'cancelled'
+ WHERE queue_job_id IN (SELECT id FROM live) OR state = 'queued';
 
 -- 4. Delete ephemeral session data; a console open in production is not
 -- open in the copy (the host's console is younger than some copies).

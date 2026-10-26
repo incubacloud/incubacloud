@@ -126,6 +126,7 @@
     }
 
     // State-coloured active chips
+    &.jh-chip-queued.active,
     &.jh-chip-pending.active,
     &.jh-chip-enqueued.active,
     &.jh-chip-wait_dependencies.active { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning; }
@@ -312,6 +313,8 @@ $gantt-row-h: 44px;
     &.jh-gantt-state-pending,
     &.jh-gantt-state-enqueued,
     &.jh-gantt-state-wait_dependencies { background: $state-warning; }
+    // Waiting in its instance's queue: the time it waits, not a run.
+    &.jh-gantt-state-queued { background: $state-warning; opacity: 0.45; }
     &.jh-gantt-state-started {
         background: $state-warning;
         box-shadow: 0 0 6px rgba(var(--rl-amber-rgb), 0.4);

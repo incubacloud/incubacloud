@@ -43,9 +43,22 @@ _LIVENESS_HANDOVER_SECONDS = 900
 #: not — that is exactly what a sleeping tenant looks like.
 _ODOO_SERVICE = "odoo"
 
+#: The names of containers that run a service of the stack without being
+#: the stack's own: the one-offs of ``docker compose run``
+#: (``<project>-odoo-run-<hash>``), a restore's for one, and the
+#: rebuild's boot test, a ``run`` of ``odoo`` under a name of its own
+#: (``ic_boot_odoo_<id>``, scripts/rebuild.sh) that boots the new image
+#: while the instance's odoo may be stopped. Matched whole, as PromQL
+#: anchors a regex. The CPU and memory panels of
+#: ``ansible/files/dashboards/incubacloud-instance.json`` leave out the
+#: same names, which ``test_observability_wiring`` holds them to.
+_ONE_OFF_NAMES = ".+-run-[0-9a-f]{12}|ic_boot_odoo_[0-9]+"
+
 #: Which instances the backend reports on at all, by any container of
 #: theirs. Not a liveness answer: it says whose telemetry reaches us,
-#: and therefore whose ``running`` may be written at all.
+#: and therefore whose ``running`` may be written at all. One-off
+#: containers count, the boot test's too: whatever they run, they are
+#: the instance's.
 _COVERAGE_EXPRESSION = (
     "max by (instance_id) (time() - container_last_seen{"
     'instance_id!=""})'
@@ -54,18 +67,30 @@ _COVERAGE_EXPRESSION = (
 #: How long since each instance's ``odoo`` container was reported. The
 #: service label is there because the agents are started with
 #: ``com.docker.compose.service`` whitelisted (see host_observability).
+#: ``min``, the freshest of its series: a service has several once its
+#: container is recreated, the old one's staying reported, ageing, for
+#: minutes beside the new one's. ``max`` read the old one, and an odoo
+#: back for minutes read as unseen — on 22-oct-2026 (QA) a production
+#: that answered showed "Stopped" for four minutes after a backup.
+#: Containers that run odoo without being the instance's own (see
+#: ``_ONE_OFF_NAMES``) carry the service's label too, and with ``min``
+#: one would pass for an odoo that is stopped. They are left out by name.
 _ODOO_EXPRESSION = (
-    "max by (instance_id) (time() - container_last_seen{"
+    "min by (instance_id) (time() - container_last_seen{"
     'instance_id!="", '
-    f'container_label_com_docker_compose_service="{_ODOO_SERVICE}"'
+    f'container_label_com_docker_compose_service="{_ODOO_SERVICE}", '
+    f'name!~"{_ONE_OFF_NAMES}"'
     "})"
 )
 
 #: Which hosts the backend hears from, through any container at all —
 #: the agents' own included, so a host whose every instance is stopped
-#: still answers. It only says whose silence means something.
+#: still answers. It only says whose silence means something. ``min``
+#: for the same reason as above: a host is heard while anything on it
+#: is, and read by its oldest series it went quiet whenever a container
+#: on it had just been removed. One-offs and boot tests count here too.
 _HOST_COVERAGE_EXPRESSION = (
-    "max by (host_id) (time() - container_last_seen)"
+    "min by (host_id) (time() - container_last_seen)"
 )
 
 
@@ -110,6 +135,11 @@ class CloudInstance(models.Model):
         cheap; the SSH probe remains the fallback and takes over by
         itself the moment the readings go stale, so there is no window
         where nobody decides.
+
+        One exception, in the probe: an ``odoo`` it sees running and
+        answering is written running whoever owns the flag. That is
+        direct evidence, fresher than any scrape; a stopped one is
+        still left to the metrics while they are fresh.
         """
         self.ensure_one()
         settings = self.env["cloud.settings"].sudo()._get_system()

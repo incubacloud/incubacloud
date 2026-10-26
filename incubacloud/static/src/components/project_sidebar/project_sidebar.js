@@ -2,6 +2,7 @@ import { Component, useState, onWillStart, onWillUpdateProps, useEnv } from "@od
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { _t } from "@web/core/l10n/translation";
+import { announceJob } from "../../utils/job_queue";
 import { tagStyle, tagDotStyle } from "../tag_selector/tag_selector";
 import { IcModal } from "../ic_modal/ic_modal";
 
@@ -259,6 +260,9 @@ export class ProjectSidebar extends Component {
                 return;
             }
             this.ui.cloneModal = null;
+            // The clone is a chain that waits for production if a job
+            // runs there: say whether it started.
+            await announceJob(this.env.toast, res.job_id);
             // Force-refresh the store so the new staging instance is
             // visible to the destination route before navigating.
             await this.store.load(this.props.projectId);

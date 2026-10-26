@@ -60,6 +60,15 @@ _LOG_MAX_BYTES = 512 * 1024 * 1024  # a live log this big ⇒ nothing rotates it
 _LOG_ARCHIVE_TAIL = 5000            # lines read back from the newest archive
 _LOG_LIVE_TAIL = 20000              # lines read back from the live file
 _LOG_SINCE_GRACE_MIN = 5            # clock-skew margin on the cutoff
+# A job that stops the database on purpose leaves in the log the
+# connections it cut, up to its very end: in alerts 3193, 3194, 3201,
+# 3202 and 3203 (October 2026) the last of them was logged half a minute
+# to a minute before the job's ``date_done``. The window never opens
+# before that end plus this margin (``_stop_jobs_tail_end``), which
+# absorbs a container clock running ahead of ours and the workers the
+# job killed reconnecting as it ends. An error logged within it after
+# such a job is not read.
+_STOP_JOB_TAIL_MIN = 1
 
 #: Odoo's own line prefix: date, time with fractional seconds, pid.
 #: Used both to tell the probe's window apart and to spot Odoo output
@@ -148,6 +157,17 @@ _LOG_LINE_RE = re.compile(
     r'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[.,]\d+\s+\d+\s+'
     r'(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s'
 )
+# Odoo's website writes a new visitor's ``website_visitor`` row with an
+# upsert on its first request. Two requests of one new visitor at once
+# (bots, mostly) race on it, and ``odoo.sql_db`` logs the loser's query
+# as a ``bad query`` that could not serialize: Odoo's own race, which
+# nobody running the instance can act on (alert 3195, four nights out
+# of thirty on the platform's production, October 2026). The query is
+# on the header line, as a bytes repr, and the failure on the line under
+# it; both must match, so a serialization failure on any other table
+# stays an incident.
+_VISITOR_RACE_HEADER = ('odoo.sql_db: bad query:', 'INSERT INTO website_visitor')
+_SERIALIZATION_FAILURE = 'could not serialize access due to concurrent update'
 
 #: A route in ``/proc/net/route``: its interface, then its destination
 #: in hexadecimal. The header line starts with ``Iface``, which says the
@@ -186,9 +206,12 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
        which runs inside odoo's network and cannot tell.
 
     Skipped entirely when an intrusive job (deploy / rebuild / restore /
-    full setup) is in flight on the same instance: those jobs are the
-    only ones that legitimately drive resource usage and log noise
-    above the thresholds, so probing during them is pure noise.
+    full setup) is in flight on the same instance, or a host job that
+    stops the instances of its host is in flight there: those jobs are
+    the only ones that legitimately drive resource usage and log noise
+    above the thresholds, so probing during them is pure noise. Once
+    one of them has ended, the error window opens after its end
+    (``_stop_jobs_tail_end``).
 
     State writes on ``cloud.instance``:
     - Container down  → ``running=False``, ``status='error'``
@@ -227,6 +250,11 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
     # gatekeeper (see ``_parse_gatekeeper_network``); None when not read.
     _gatekeeper_network = None
 
+    # Whether the pass was skipped for a host job alone (see
+    # ``_is_blocked_by_active_job``): the skip then leaves the streaks
+    # and the alerts as they were.
+    _skipped_for_host_job = False
+
     # ── Helpers ────────────────────────────────────────────────────────────
 
     def _inst(self):
@@ -234,21 +262,90 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
     def _is_blocked_by_active_job(self):
         """True iff another active job on the same instance would make
-        the resource snapshot meaningless (deploy/rebuild/etc.).
+        the resource snapshot meaningless (deploy/rebuild/etc.), or a
+        host job on its host that stops it (``_stopping_jobs_domain``).
+
+        Notes in ``_skipped_for_host_job`` whether only a host job blocks
+        it: such a job (the backup of a whole host, say) stops the
+        instance for a while and changes nothing in it, so what the
+        streaks measured and the alerts say still stands. A job of the
+        instance's own replaces it.
         """
         inst = self._inst()
         if not inst:
             return False
         Job = self.env['cloud.job']
-        codes = set(self._blocking_job_types) | Job._get_health_blocking_job_types()
         # Running, not waiting: a rebuild queued behind another job has
         # touched nothing yet, and must not silence the instance's health.
-        return bool(Job.search_count([
-            ('id', '!=', self.job.id),
-            ('instance_id', '=', inst.id),
+        running = [
             ('state', 'in', Job._running_states),
+            *self._stopping_jobs_domain(),
+        ]
+        if not Job.search_count(running):
+            return False
+        self._skipped_for_host_job = not Job.search_count(
+            [*running, ('instance_id', '=', inst.id)],
+        )
+        return True
+
+    def _stopping_jobs_domain(self):
+        """Return the domain of the jobs that stop this instance on purpose.
+
+        Its own jobs of the probe's list (``_blocking_job_types``) or of
+        an addon's (``cloud.job._get_health_blocking_job_types``), and
+        the host jobs of its host that an addon lists
+        (``cloud.job._get_health_blocking_host_job_types``) — a backup
+        that copies every instance of the host, say. This probe's own
+        job is left out.
+
+        :return: a ``cloud.job`` domain, in any state
+        :rtype: list
+        """
+        inst = self._inst()
+        Job = self.env['cloud.job']
+        codes = set(self._blocking_job_types) | Job._get_health_blocking_job_types()
+        domain = [
+            ('instance_id', '=', inst.id),
             ('job_type_id.code', 'in', list(codes)),
-        ]))
+        ]
+        host_codes = Job._get_health_blocking_host_job_types()
+        if host_codes:
+            domain = [
+                '|', '&', *domain,
+                '&', '&',
+                ('host_id', '=', inst.host_id.id),
+                ('instance_id', '=', False),
+                ('job_type_id.code', 'in', list(host_codes)),
+            ]
+        return [('id', '!=', self.job.id), *domain]
+
+    def _stop_jobs_tail_end(self, after):
+        """Return when the log stops holding the tail of a stopping job.
+
+        A job that stops the instance's database on purpose
+        (``_stopping_jobs_domain``) cuts every connection Odoo holds, and
+        Odoo logs each one as an ERROR: the job runner retrying, the cron
+        worker exiting, the server refused while ``db`` shuts down. The
+        probe skips its pass while the job runs, but the first one after
+        it read from the previous check, less the clock-skew grace, and
+        found them all (alerts 3193, 3194, 3202 and 3203 after a rebuild,
+        3201 during the backup of the instance's host; October 2026).
+        Only a job that ended ``done`` has a ``date_done``; a failed one
+        moves nothing, and has an alert of its own.
+
+        :param datetime after: where the window would start otherwise
+        :return: the ``date_done`` of the last such job plus
+            ``_STOP_JOB_TAIL_MIN``, when that is later than *after*;
+            None otherwise
+        :rtype: datetime or None
+        """
+        tail = timedelta(minutes=_STOP_JOB_TAIL_MIN)
+        last = self.env['cloud.job'].search(
+            [('date_done', '>', after - tail), *self._stopping_jobs_domain()],
+            order='date_done desc',
+            limit=1,
+        )
+        return last.date_done + tail if last else None
 
     def _odoo_stop_is_expected(self):
         """Whether a stopped-but-present ``odoo`` container is normal.
@@ -434,9 +531,17 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         # minutes of grace absorb the skew between it and ours; the
         # cost of overlapping is a repeated alert (they are upserted by
         # code), the cost of undershooting would be a missed error.
-        cutoff = (
-            window_start - timedelta(minutes=_LOG_SINCE_GRACE_MIN)
-        ).strftime('%Y-%m-%d %H:%M:%S')
+        cutoff_at = window_start - timedelta(minutes=_LOG_SINCE_GRACE_MIN)
+        # Neither reaches back into a job that stopped the database on
+        # purpose: up to its end the log holds the connections it cut.
+        tail_end = self._stop_jobs_tail_end(cutoff_at)
+        if tail_end:
+            cutoff_at = tail_end
+            if tail_end > window_start:
+                since = tail_end.replace(tzinfo=tz.utc).strftime(
+                    '%Y-%m-%dT%H:%M:%SZ',
+                )
+        cutoff = cutoff_at.strftime('%Y-%m-%d %H:%M:%S')
 
         return [
             # 1. Container state. ``-a`` includes stopped containers so
@@ -854,14 +959,18 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         are grouped, ranked and capped: one left out does not count and
         frees its group's place for an incident. One record at a time,
         because a group mixes records — every job queue_job fails logs
-        the same header. Core knows of none; a layer that knows the
-        instance better overrides it.
+        the same header. Core knows only of Odoo's own races, which
+        nobody running the instance can act on: the website visitor's
+        insert (``_VISITOR_RACE_HEADER``). A layer that knows the
+        instance better extends it, asking super first.
 
         :param str header: the ERROR line
         :param list context: the lines logged under it, uncompacted
         :rtype: bool
         """
-        return False
+        return all(marker in header for marker in _VISITOR_RACE_HEADER) and any(
+            _SERIALIZATION_FAILURE in line for line in context
+        )
 
     # ── Outcome ───────────────────────────────────────────────────────────
 
@@ -879,16 +988,19 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         if getattr(self, '_skipped', False):
             # Reset streaks too: a fresh deploy/rebuild typically wipes
             # the previous baseline, so resuming from streak=1 next
-            # cycle would be misleading.
-            inst.write({
-                'cpu_over_threshold_streak': 0,
-                'mem_over_threshold_streak': 0,
-                'http_fail_streak': 0,
-            })
-            self._resolve_inst_alert('instance_unresponsive')
+            # cycle would be misleading. A host job alone wipes nothing:
+            # an Odoo that did not answer before it still has to answer
+            # after it, and its alert stays open until it does.
+            if not self._skipped_for_host_job:
+                inst.write({
+                    'cpu_over_threshold_streak': 0,
+                    'mem_over_threshold_streak': 0,
+                    'http_fail_streak': 0,
+                })
+                self._resolve_inst_alert('instance_unresponsive')
             self._pass(
-                "Skipped — an intrusive job (deploy / rebuild / restore) "
-                "is currently running on this instance. "
+                "Skipped — an intrusive job (deploy / rebuild / restore, "
+                "or one on its host that stops it) is currently running. "
                 "Resource and log readings would be meaningless."
             )
             return
@@ -912,7 +1024,8 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
         # agreeing most of the time and flapping whenever they briefly
         # did not. Metrics win while their readings are fresh; this probe
         # keeps doing everything else (HTTP, log scraping) and takes the
-        # flag back by itself the moment they go stale.
+        # flag back by itself the moment they go stale. One exception
+        # below: an odoo seen running and answering is running.
         owns_running = not inst._liveness_covered_by_metrics()
 
         if not self._container_running:
@@ -1002,7 +1115,14 @@ class InstanceHealthExecutor(AbstractSSHExecutor):
 
         # Container is up — resolve down alert if it existed
         self._resolve_inst_alert('instance_down')
-        if owns_running:
+        # Odoo running and answering is direct evidence, fresher than
+        # any scrape, so it is written even while the metrics own the
+        # flag: their reading can lag it, and on 22-oct-2026 (QA) a
+        # production that answered read "Stopped", without its Connect
+        # button, for four minutes after a backup. Not answering yet is
+        # how every boot looks, so that alone stays theirs to call, and
+        # so does a stopped odoo (above).
+        if owns_running or (self._http_ok and not inst.running):
             inst.write({'running': True})
 
         issues = []

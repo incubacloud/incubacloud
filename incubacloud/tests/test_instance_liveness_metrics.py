@@ -11,6 +11,7 @@ say nothing about: a false "running" is just as wrong and far quieter,
 because everything downstream simply never fires. See
 ``TestWhichContainerDecides``.
 """
+import re
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -19,6 +20,12 @@ from odoo import fields
 from odoo.tests.common import TransactionCase
 
 _MODULE = "odoo.addons.incubacloud.models.cloud_metric_rule"
+
+#: The outer aggregation of a liveness query, and the label it groups by.
+_AGGREGATION_RE = re.compile(r"^(min|max) by \((\w+)\)")
+#: A query's exclusion of containers by name — the ``name`` label, not
+#: one whose name ends in it — and its regex.
+_NAME_EXCLUDED_RE = re.compile(r'[{,]\s*name!~"([^"]+)"')
 
 
 def _samples(*pairs):
@@ -42,6 +49,40 @@ def _host_samples(*pairs):
             "result": [
                 {"metric": {"host_id": str(hid)}, "value": [0, str(age)]}
                 for hid, age in pairs
+            ],
+        },
+    }
+
+
+def _aggregated(query, series):
+    """Answer *query* over raw *series* the way the backend would.
+
+    Only the outer ``min by`` or ``max by`` is evaluated, and the
+    query's exclusion of containers by name if it has one: which age
+    the backend keeps when one instance or host has several series is
+    what the tests calling this are about. Like PromQL, the exclusion
+    is anchored at both ends.
+
+    :param str query: the PromQL the cron sent
+    :param list series: ``(label value, seconds since seen)``, or the
+        same plus the container's name, one per raw series
+    :return: a PromQL payload with one sample per label value
+    :rtype: dict
+    """
+    operator, label = _AGGREGATION_RE.match(query).groups()
+    pick = min if operator == "min" else max
+    excluded = _NAME_EXCLUDED_RE.search(query)
+    ages = {}
+    for key, age, *name in series:
+        if excluded and re.fullmatch(excluded.group(1), "".join(name)):
+            continue
+        ages[key] = pick(age, ages.get(key, age))
+    return {
+        "status": "success",
+        "data": {
+            "result": [
+                {"metric": {label: str(key)}, "value": [0, str(age)]}
+                for key, age in ages.items()
             ],
         },
     }
@@ -404,4 +445,163 @@ class TestParkedStacks(InstanceLivenessCase):
 
     def test_a_host_gone_quiet_says_nothing(self):
         self._run_parked(_host_samples((self.host.id, 9999)))
+        self.assertTrue(self.inst.running)
+
+
+class TestSeveralSeriesOfOneSubject(InstanceLivenessCase):
+    """A recreated container leaves its old series behind for a while.
+
+    The old container's series stays reported for minutes, ageing, next
+    to the new one's: one service, two series. Read by its oldest, an
+    odoo that had just come back read as unseen — on 22-oct-2026 (QA) a
+    production that answered showed "Stopped", without its Connect
+    button, for four minutes after a backup. And a host read by its
+    oldest series went quiet whenever any container on it had just gone.
+    Containers that run odoo without being the instance's own — the
+    one-offs of compose and the rebuild's boot test — are left out.
+    """
+
+    def setUp(self):
+        """The instance under test, on a host of its own."""
+        super().setUp()
+        self.host = self.env["cloud.host"].create({
+            "name": "HSeries", "ip_address": "10.0.0.52", "user": "root",
+            "wildcard_domain": "hseries.example.com",
+        })
+        self.inst.write({"host_id": self.host.id})
+
+    def _run_series(self, odoo, containers=None, hosts=()):
+        """Run the cron against a backend holding these raw series.
+
+        :param list odoo: ``(instance id, age)`` per ``odoo`` series
+        :param list containers: ``(instance id, age)`` per series of any
+            container of an instance; the ``odoo`` ones when omitted
+        :param hosts: ``(host id, age)`` per series of any container
+        """
+        self.env.flush_all()
+
+        def answer(url, params=None, **kwargs):
+            """Answer one query of the cron from the raw series above.
+
+            :param str url: the backend's query endpoint
+            :param dict params: carries the PromQL as ``query``
+            :return: the backend's response to it
+            :rtype: requests.Response
+            """
+            query = params["query"]
+            if "compose_service" in query:
+                series = odoo
+            elif "by (host_id)" in query:
+                series = hosts
+            else:
+                series = odoo if containers is None else containers
+            resp = MagicMock(spec=requests.Response)
+            resp.json.return_value = _aggregated(query, series)
+            resp.raise_for_status.return_value = None
+            return resp
+
+        with patch(f"{_MODULE}.requests.get", autospec=True,
+                   side_effect=answer):
+            self.env["cloud.instance"]._cron_refresh_running_from_metrics()
+        self.inst.invalidate_recordset()
+
+    def test_the_freshest_odoo_series_decides(self):
+        """The old container's series, 600 s old, beside the new one's."""
+        self.inst.write({"running": False})
+        self._run_series(odoo=[(self.inst.id, 600), (self.inst.id, 10)])
+        self.assertTrue(
+            self.inst.running,
+            "an odoo seen 10 s ago read as unseen because of its old series",
+        )
+
+    def test_odoo_series_all_stale_is_not_running(self):
+        """The freshest decides, so a stop still reads as one."""
+        self.inst.write({"running": True})
+        self._run_series(odoo=[(self.inst.id, 600), (self.inst.id, 400)])
+        self.assertFalse(self.inst.running)
+
+    def test_a_one_off_odoo_does_not_pass_for_the_service(self):
+        """``docker compose run odoo …`` while the service's own container
+        is stopped — a restore, say — reports a fresh series under the
+        ``odoo`` service, named ``<project>-odoo-run-<hash>``. It is still
+        the instance's telemetry: covered, and stamped."""
+        self.inst.write({"running": True})
+        self._run_series(odoo=[
+            (self.inst.id, 600, "p1-odoo-1"),
+            (self.inst.id, 5, "p1-odoo-run-0123456789ab"),
+        ])
+        self.assertFalse(
+            self.inst.running, "a one-off odoo passed for the instance's own",
+        )
+        self.assertTrue(self.inst.metrics_last_seen)
+
+    def test_the_rebuild_boot_test_does_not_pass_for_the_service(self):
+        """The rebuild boots the new image as ``ic_boot_odoo_<id>``, a
+        ``docker compose run`` of ``odoo`` under a name of its own, while
+        the instance's odoo may be stopped — a Free tenant asleep."""
+        self.inst.write({"running": True})
+        self._run_series(odoo=[
+            (self.inst.id, 600, "p1-odoo-1"),
+            (self.inst.id, 5, "ic_boot_odoo_42"),
+        ])
+        self.assertFalse(
+            self.inst.running, "the boot test passed for the instance's odoo",
+        )
+
+    def test_a_one_off_is_heard_from_its_host(self):
+        """Whether anything is heard is not about which container."""
+        other = self.env["cloud.instance"].create({
+            "name": "i2", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+        })
+        self.inst.write({
+            "running": True, "metrics_last_seen": fields.Datetime.now(),
+        })
+        self._run_series(
+            odoo=[(other.id, 10)],
+            hosts=[
+                (self.host.id, 600),
+                (self.host.id, 5, "p2-odoo-run-0123456789ab"),
+            ],
+        )
+        self.assertFalse(self.inst.running)
+
+    def test_a_host_is_heard_through_its_freshest_series(self):
+        """A container gone minutes ago does not silence its whole host."""
+        other = self.env["cloud.instance"].create({
+            "name": "i2", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+        })
+        self.inst.write({
+            "running": True, "metrics_last_seen": fields.Datetime.now(),
+        })
+        self._run_series(
+            odoo=[(other.id, 10)],
+            hosts=[(self.host.id, 600), (self.host.id, 10)],
+        )
+        self.assertFalse(
+            self.inst.running,
+            "a parked stack read as running because its host had one "
+            "stale series",
+        )
+
+    def test_a_host_with_every_series_stale_has_gone_quiet(self):
+        """The fleet still reports, through another host."""
+        elsewhere = self.env["cloud.host"].create({
+            "name": "HElsewhere", "ip_address": "10.0.0.53", "user": "root",
+            "wildcard_domain": "helsewhere.example.com",
+        })
+        other = self.env["cloud.instance"].create({
+            "name": "i2", "project_id": self.project.id,
+            "environment": "staging", "host_id": elsewhere.id,
+        })
+        self.inst.write({
+            "running": True, "metrics_last_seen": fields.Datetime.now(),
+        })
+        self._run_series(
+            odoo=[(other.id, 10)],
+            hosts=[
+                (self.host.id, 600), (self.host.id, 400), (elsewhere.id, 10),
+            ],
+        )
         self.assertTrue(self.inst.running)

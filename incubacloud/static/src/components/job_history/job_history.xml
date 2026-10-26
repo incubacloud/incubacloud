@@ -191,7 +191,7 @@
                             <div class="jh-gantt-track">
                                 <div t-att-class="'jh-gantt-bar jh-gantt-state-' + job.state"
                                      t-att-style="'left:' + job.ganttLeft.toFixed(2) + '%;width:' + job.ganttWidth.toFixed(2) + '%'"
-                                     t-att-title="stateName(job.state) + ' · ' + formatDuration(job.duration_s)"
+                                     t-att-title="stateLabel(job.state) + ' · ' + formatDuration(job.duration_s)"
                                      t-on-click="() => this.openLog(job)"/>
                             </div>
                         </div>
@@ -257,11 +257,12 @@
                         <t t-foreach="state.jobs" t-as="job" t-key="job.id">
                             <tr class="click"
                                 title="Click to view log"
+                                t-att-data-job-id="job.id"
                                 t-on-click="() => this.openLog(job)">
                                 <td>
                                     <span t-att-class="'rl-pill rl-pill--bare ' + ganttDotClass(job.state)">
                                         <span class="rl-d"/>
-                                        <t t-esc="stateName(job.state)"/>
+                                        <t t-esc="rowStateText(job)"/>
                                     </span>
                                 </td>
                                 <td class="jh-col-name">

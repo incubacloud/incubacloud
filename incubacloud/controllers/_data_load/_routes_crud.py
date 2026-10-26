@@ -41,6 +41,7 @@ from ._helpers import (
     _TAG_MODEL_BY_SCOPE,
     _capped_search,
     _has_encrypted,
+    _job_response,
 )
 
 _logger = logging.getLogger(__name__)
@@ -417,7 +418,8 @@ class CrudMixin:
             'recent_jobs': [
                 {
                     'id': j.id,
-                    'name': j.name,
+                    # In the reader's language, as ``cloud.job._format``.
+                    'name': j.job_type_id.name or j.name,
                     'host': j.host_id.name,
                     'state': j.state,
                     'create_date': j.create_date,
@@ -531,7 +533,8 @@ class CrudMixin:
         return {
             'ok': True,
             'id': job.id,
-            'name': job.name,
+            # In the reader's language, as ``cloud.job._format`` gives it.
+            'name': job.job_type_id.name or job.name,
             # A job that waits for an alert is stored done; it did nothing.
             'state': 'blocked' if job_sudo.blocked_alert_id else job.state,
             'target_name': job_sudo.instance_id.name or job_sudo.host_id.name or '',
@@ -539,6 +542,35 @@ class CrudMixin:
             'instance_id': job_sudo.instance_id.id or False,
             'error': error,
         }
+
+    @http.route(['/cloud/get_job_state'], type='jsonrpc', auth='user')
+    def cloud_get_job_state(self, job_id):
+        """Say whether a job the panel just asked for started or waits.
+
+        The answer of the endpoints that enqueue (``_job_response``), for
+        the buttons that enqueue through the ORM (``cloud.job.enqueue``,
+        a retry) or through an endpoint that answers with the id alone:
+        the panel's notice reads ``state``, ``job_type`` and
+        ``queued_behind`` from it. Asked once the request that queued
+        the job has committed, so a job the queue started at once reads
+        as started. Returns ``{'ok': False}`` for a job the caller
+        cannot read.
+
+        :param int job_id: the ``cloud.job`` to look at
+        :return: ``{'ok': True, **_job_response(...)}`` or ``{'ok': False}``
+        """
+        try:
+            job_id = int(job_id)
+        except (TypeError, ValueError):
+            return {'ok': False}
+        job = request.env['cloud.job'].browse(job_id)
+        try:
+            if not job.exists():
+                return {'ok': False}
+            job.check_access('read')
+        except AccessError:
+            return {'ok': False}
+        return {'ok': True, **_job_response(request.env, job.id)}
 
     @http.route(['/cloud/dismiss_all_alerts'], type='jsonrpc', auth='user')
     def cloud_dismiss_all_alerts(self, level_filter=None):
@@ -597,7 +629,11 @@ class CrudMixin:
                 'resolution': a.resolution or False,
                 'resolved_at': a.resolved_at,
                 'resolved_by_job_id': a.resolved_by_job_id.id or False,
-                'resolved_by_job_name': a.resolved_by_job_id.name or False,
+                # In the reader's language, as the job lists say it.
+                'resolved_by_job_name': (
+                    a.resolved_by_job_id.job_type_id.name
+                    or a.resolved_by_job_id.name or False
+                ),
                 'conflict_data': a.conflict_data or [],
                 'payload': a.payload or None,
                 'instance_id': a.instance_id.id or False,
@@ -616,7 +652,9 @@ class CrudMixin:
 
         alert_id: int
         resolutions: {package_name_lowercase: chosen_spec_string}
-        Returns {'ok': bool, 'error'?: str}
+        Returns {'ok': bool, 'error'?: str, 'job_id'?: int|False}: the
+        job that waited on the alert and is back in its queue, if any,
+        so the panel can say whether it started.
         """
         # Consultant+ only: resolving a conflict mutates
         # ``pip_dependencies`` of the parent (same blast radius as
@@ -677,13 +715,15 @@ class CrudMixin:
         alert.write({'state': 'dismissed', 'resolution': 'manual'})
 
         # Unblock the linked job only if all conflicts are now resolved
+        job_id = False
         if not detect_pip_conflicts(new_text):
             blocked_job = request.env['cloud.job'].search(
                 [('blocked_alert_id', '=', alert.id)], limit=1,
             )
             if blocked_job:
                 blocked_job.unblock_and_enqueue()
-        return {'ok': True}
+                job_id = blocked_job.id
+        return {'ok': True, 'job_id': job_id}
 
     @http.route(['/cloud/resolve_addon_conflict'], type='jsonrpc', auth='user')
     def cloud_resolve_addon_conflict(self, alert_id, resolutions):
@@ -693,7 +733,8 @@ class CrudMixin:
         resolutions: {addon_name: winner_repo_alias}
             For each conflicting addon, the user picks which repo keeps it.
             The addon is added to the excludes of all other repos involved.
-        Returns {'ok': bool, 'error'?: str}
+        Returns {'ok': bool, 'error'?: str, 'job_id'?: int|False}: the
+        job that waited on the alert and is back in its queue, if any.
         """
         # Consultant+ only: same blast radius as editing ``repo.excludes``
         # directly. Per-record scoping enforced via the alert's
@@ -731,7 +772,7 @@ class CrudMixin:
         )
         if blocked_job:
             blocked_job.unblock_and_enqueue()
-        return {'ok': True}
+        return {'ok': True, 'job_id': blocked_job.id or False}
 
     @http.route(['/cloud/get_secret'], type='jsonrpc', auth='user')
     def cloud_get_secret(self, model, record_id, field):
@@ -965,8 +1006,10 @@ class CrudMixin:
         Read-only. The instance counts drive the dialog's warnings and the
         typed confirmation a host running production asks for;
         ``full_setup_done`` and ``connecting_user`` decide whether it
-        offers hardening and Full Setup as one chain, and
-        ``has_known_hosts_key`` whether the host can be reached at all.
+        offers hardening and Full Setup as one chain,
+        ``has_known_hosts_key`` whether the host can be reached at all, and
+        ``has_active_job`` that a hardening is already asked for —
+        ``active_job_queued`` when it only waits in the host's queue.
 
         :param int host_id: the ``cloud.host`` to harden
         :returns: ``{'ok': True, ...}`` with the figures, or
@@ -990,7 +1033,7 @@ class CrudMixin:
             ('environment', '=', 'production'),
         ])
         Job = request.env['cloud.job'].sudo()
-        active_hardening = Job.search_count([
+        active_hardening = Job.search([
             ('host_id', '=', host.id),
             ('job_type_id.code', '=', 'host_hardening'),
             ('state', 'in', Job._active_states),
@@ -1007,6 +1050,11 @@ class CrudMixin:
             'has_known_hosts_key': _has_encrypted(host, 'known_hosts_key'),
             'connecting_user': host.user or '',
             'has_active_job': bool(active_hardening),
+            # Every one of them still waiting in the host's queue: the
+            # dialog says it waits, not that it runs.
+            'active_job_queued': bool(active_hardening) and all(
+                job.state == 'queued' for job in active_hardening
+            ),
         }
 
     @http.route(

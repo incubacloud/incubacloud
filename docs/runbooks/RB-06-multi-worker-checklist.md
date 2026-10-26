@@ -96,9 +96,12 @@ db$ SELECT name, capacity FROM queue_job_channel;
 ```
 
 Default `root` capacity is 1. Under multi-worker, raise it
-deliberately — but understand that two simultaneous deploys to the
-same `cloud.instance` is not safe (data race already prevented at
-the executor level, see deploy executor `_check_no_active_job`).
+deliberately. Two jobs on the same `cloud.instance` (or two host-level
+jobs on the same host) never run at once whatever the capacity: the
+second waits `queued` in the target's queue and is dispatched when the
+first ends, serialised by an advisory lock per queue (see "The job
+queue" in [architecture.md](../architecture.md#the-job-queue)).
+Capacity only decides how many targets run a job at the same time.
 
 ### 6. Re-run the test suite under threading
 

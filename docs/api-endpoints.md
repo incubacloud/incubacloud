@@ -87,8 +87,8 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/clone_to_staging` | clone to staging | Clone production instance to a staging (DB + config). |
 | `/cloud/move_instance` | manage hosts | Move an instance to another host (chained jobs: deploy → quiesce → fresh backup → restore → cutover → cleanup). |
 | `/cloud/rollback_move` | manage hosts | Recover a move that failed before cutover (restarts the source). |
-| `/cloud/resolve_pip_conflict` | consultant | Apply the chosen resolution for a Python dependency conflict. |
-| `/cloud/resolve_addon_conflict` | consultant | Apply the chosen resolution for an addon conflict. |
+| `/cloud/resolve_pip_conflict` | consultant | Apply the chosen resolution for a Python dependency conflict. Answers `{ok, job_id}`: the job that waited on the alert and is back in its queue, or `false`. |
+| `/cloud/resolve_addon_conflict` | consultant | Apply the chosen resolution for an addon conflict. Answers `{ok, job_id}` like the pip one. |
 | `/cloud/compare_sync` | consultant | Diff instance config vs. what is deployed on the host. |
 | `/cloud/apply_sync` | consultant | Apply the config diff to the host. |
 | `/cloud/fetch_container_logs` | view logs | Tail container logs for the log viewer page. |
@@ -100,7 +100,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/instance_mail` | view logs | One captured message, decoded, with its attachments listed but not carried. Rate-limited. |
 | `/cloud/instance_mailbox_clear` | view logs | Empty a staging's captured mailbox. Rate-limited; audited. |
 
-Deploy/rebuild endpoints include data-race prevention: if a job is already running for the instance, the response is an error (or a `{blocked: true, alert_id, alert_code, conflicts}` envelope when a blocking pip-conflict alert exists).
+An instance runs one job at a time; a job asked for while another runs waits in the instance's queue instead of being refused. The deploy and rebuild endpoints answer `{job_id, state, job_type, queued_behind}`: `state` is `queued` when the job waits and the state its queue job reached when it started (`pending` at first); `job_type` is the visible name of its type; `queued_behind` is the visible name of the type of the job running on the instance, or `false` when the job started or nothing visible runs (a queue held by a failure). A job that waits on a conflict alert answers `{job_id, state: "blocked", blocked: true, alert_id, alert_code, message, conflicts}` instead. A busy instance never makes them answer an error; what the job's type allows still can (a second restore or delete waiting, a sixth job in the queue): `{ok: false, error}`.
 
 ## Backups
 
@@ -168,10 +168,11 @@ The caller must be in `group_cloud_developer`, the pair must be whitelisted, **a
 | Path | Gate | Description |
 |---|---|---|
 | `/cloud/get_job_brief` | read access | Minimal job state + last system message (used after bus events). |
+| `/cloud/get_job_state` | read access | What became of a job just asked for: `{ok, job_id, state, job_type, queued_behind}`, the same answer as the deploy and rebuild endpoints (or their `blocked` envelope), the type names in the caller's language; `{ok: false}` for a job the caller cannot read. Read by the buttons that enqueue through the ORM or through an endpoint that answers with the id alone. |
 | `/cloud/get_audit_log` | record rules | Paginated, filterable audit log (`instance_id` or `host_id`, `q`, `action_filter`, `date_from/to`, `offset`, `limit`). |
 | `/cloud/purge_audit_logs` | manager | Purge audit rows older than the retention window. |
 
-There are **no** dedicated `/cloud/*` routes for job history, log chunks or cancel/retry. The SPA calls `cloud.job` model methods through the standard ORM RPC instead: `load_history` (paginated history), `get_host_jobs`, `enqueue(host_id, instance_id, job_type_code)` (host-level actions such as `host_probe` and `full_setup`; role-gated server-side) and `cancel_job`. The job log terminal page consumes chunks over WebSocket with an HTTP polling fallback (see [Static pages](#static-pages-and-public-http-endpoints)).
+There are **no** dedicated `/cloud/*` routes for job history, log chunks or cancel/retry. The SPA calls `cloud.job` model methods through the standard ORM RPC instead: `load_history` (paginated history), `get_host_jobs`, `enqueue(host_id, instance_id, job_type_code)` (host-level actions such as `host_probe` and `full_setup`; role-gated server-side), `retry_job` and `cancel_job` (a job waiting in its queue is cancelled at once, by whoever may ask for a job of its type). The job log terminal page consumes chunks over WebSocket with an HTTP polling fallback (see [Static pages](#static-pages-and-public-http-endpoints)).
 
 ## Notification preferences
 

@@ -2,6 +2,7 @@
 
 import {rpc} from "@web/core/network/rpc";
 import {_t} from "@web/core/l10n/translation";
+import {announceJob} from "../../utils/job_queue";
 
 /**
  * Refresh from production: pick a source, a data source and whether to
@@ -200,11 +201,14 @@ export const RefreshMixin = (Base) =>
           dlg.error = r.error || _t("Refresh failed");
           return;
         }
-        this.env.toast?.success(
-          r.source === "live" && dlg.source === "backup"
-            ? _t("Refresh started with a live dump: production has no backup destination.")
-            : _t("Refresh started.")
-        );
+        // A chain (a copy on production, a restore here) that waits its
+        // turn like any other job: say whether it started.
+        await announceJob(this.env.toast, r.job_ids?.[0]);
+        if (r.source === "live" && dlg.source === "backup") {
+          this.env.toast?.info(
+            _t("Production has no backup destination: the refresh takes a live dump.")
+          );
+        }
         this.closeRefreshDialog();
         this._silentRefresh();
       } catch (e) {

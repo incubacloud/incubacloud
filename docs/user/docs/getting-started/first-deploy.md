@@ -65,7 +65,9 @@ for testing (on the hosted SaaS: `<name>.<your-subdomain>.incubacloud.io`).
 
 ## 7. Hit Deploy
 
-A job starts. The job log opens automatically. You'll see the steps in order:
+A job starts, and the panel says so: *Started: Deploy Instance*. It shows up
+under **Recent activity** on the instance; click it to open the job log in a
+new tab and follow it live. You'll see the steps in order:
 
 1. Build image (1–3 min depending on dependencies).
 2. **Boot test** (production only) — clone the database to `__ic_boot_test`,
@@ -76,6 +78,14 @@ A job starts. The job log opens automatically. You'll see the steps in order:
 5. Cleanup.
 
 When the job ends in green, your instance is up.
+
+!!! note "Another action already running?"
+    An instance runs one action at a time. If something else is running on it,
+    the deploy is not refused: it waits its turn — the panel says *Queued behind
+    …*, and Recent activity lists it as *Queued · N ahead* — and starts by
+    itself. You can cancel it while it waits. If the action ahead of it fails,
+    the queue waits until you retry that action or dismiss its alert. See
+    [One action at a time](../instances/index.md#one-action-at-a-time).
 
 ## Verify it worked
 

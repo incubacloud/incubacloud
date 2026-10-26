@@ -8,7 +8,7 @@ import unittest
 
 from odoo.tests.common import BaseCase
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def _make_executor(executor_class):
@@ -26,6 +26,12 @@ class TestInstanceHealthParseResults(BaseCase):
     def setUp(self):
         from odoo.addons.incubacloud.models.instance_health_executor import InstanceHealthExecutor
         self.executor = _make_executor(InstanceHealthExecutor)
+        # ``get_commands`` asks the ORM when the last job that stopped
+        # the database ended; there is no ORM here, and no such job.
+        self.startPatcher(patch.object(
+            InstanceHealthExecutor, "_stop_jobs_tail_end",
+            autospec=True, return_value=None,
+        ))
 
     def _results(self, *, container_state="", cpu_mem="0.0\t0.0",
                  http="exit:0", error_lines=""):
@@ -302,18 +308,22 @@ class TestInstanceHealthBlockingJobs(BaseCase):
     """
 
     def setUp(self):
+        from odoo.api import Environment
+        from odoo.addons.incubacloud.models.cloud_job import CloudJob
         from odoo.addons.incubacloud.models.instance_health_executor import InstanceHealthExecutor
         self.executor = _make_executor(InstanceHealthExecutor)
         # Mock job + instance + env
-        self.executor.job = MagicMock()
+        self.executor.job = MagicMock(spec=CloudJob)
         self.executor.job.id = 42
         self.executor.job.instance_id.id = 7
-        self.JobModel = MagicMock()
+        self.JobModel = MagicMock(spec=CloudJob)
         self.JobModel._active_states = ['pending', 'enqueued', 'started']
         # What addons add to the probe's own list (none here).
         self.JobModel._get_health_blocking_job_types.return_value = set()
+        # Nor host jobs that stop the instance.
+        self.JobModel._get_health_blocking_host_job_types.return_value = set()
         # __getitem__ on env yields the model
-        self.executor.env = MagicMock()
+        self.executor.env = MagicMock(spec=Environment)
         self.executor.env.__getitem__.return_value = self.JobModel
 
     def test_blocked_when_intrusive_job_active(self):
