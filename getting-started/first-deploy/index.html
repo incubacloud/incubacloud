@@ -662,9 +662,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-pick-an-odoo-version" class="md-nav__link">
+  <a href="#4-odoo-and-postgres-versions" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Pick an Odoo version
+      4. Odoo and Postgres versions
     </span>
   </a>
   
@@ -1379,9 +1379,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-pick-an-odoo-version" class="md-nav__link">
+  <a href="#4-odoo-and-postgres-versions" class="md-nav__link">
     <span class="md-ellipsis">
-      4. Pick an Odoo version
+      4. Odoo and Postgres versions
     </span>
   </a>
   
@@ -1466,7 +1466,7 @@
 
 <h1 id="deploy-your-first-instance">Deploy your first instance<a class="headerlink" href="#deploy-your-first-instance" title="Permanent link">&para;</a></h1>
 <p>This guide walks you through deploying your first Odoo instance:
-picking a host, an Odoo version, the modules, and watching the deployment
+picking a host, a Postgres version, the modules, and watching the deployment
 log in real time.</p>
 <div class="admonition info">
 <p class="admonition-title">Prerequisites</p>
@@ -1489,11 +1489,17 @@ re-deploys, so it's worth getting comfortable with each field.</p>
 <p>Select one of your registered hosts. The platform checks capacity automatically
 and prevents over-provisioning. If your hosts are all full, <a href="../../hosts/hire/">order a new one</a>
 or <a href="../../hosts/connect/">connect another</a>.</p>
-<h2 id="4-pick-an-odoo-version">4. Pick an Odoo version<a class="headerlink" href="#4-pick-an-odoo-version" title="Permanent link">&para;</a></h2>
-<p>Versions 7.0 to 19.0 are supported. The version influences which modules are available
-and which Postgres major version we use.</p>
-<p>If your project has a connected repo with <code>.copier-answers.yml</code>, we pre-fill the version
-from there. You can still override.</p>
+<h2 id="4-odoo-and-postgres-versions">4. Odoo and Postgres versions<a class="headerlink" href="#4-odoo-and-postgres-versions" title="Permanent link">&para;</a></h2>
+<p>The instance runs its project's Odoo version, which you pick in the project's form
+(<strong>Odoo Version</strong>, when you create the project or later under its <strong>General</strong> tab):
+versions 7.0 to 20.0 are supported, and a new project starts on the newest one your
+panel offers (20.0) unless you pick another. The deployment form does not ask for it:
+a new instance takes its project's, and keeps it if the project changes later. The
+version influences which modules are available and which Postgres major versions you
+can pick under the form's <strong>Database</strong> tab: 14 to 18 for Odoo 7.0 to 19.0, 16 to 18
+for Odoo 20.0, with 17 by default.</p>
+<p>If your project has a connected repo with <code>.copier-answers.yml</code>, we pre-fill the
+project's version from there; you can still pick another in the project's form.</p>
 <h2 id="5-pick-modules">5. Pick modules<a class="headerlink" href="#5-pick-modules" title="Permanent link">&para;</a></h2>
 <p>Either:</p>
 <ul>
