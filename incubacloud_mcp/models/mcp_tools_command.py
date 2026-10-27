@@ -285,29 +285,43 @@ class McpToolsCommand(models.AbstractModel):
                     kept[name].append(chunk)
                     sizes[name] += len(chunk)
 
+        started = []
+
         async def _run():
-            """Connect, run the command, read both streams; return its exit status."""
+            """Connect, run the command, read both streams; return its exit status.
+
+            The process is awaited until its channel closes: its output is
+            read by the two drains alone.
+            """
             async with asyncssh.connect(**connect_kw) as conn:
                 process = await conn.create_process(
                     command, encoding="utf-8", errors="replace"
                 )
+                started.append(process)
                 await asyncio.wait_for(
                     asyncio.gather(
                         _drain("stdout", process.stdout),
                         _drain("stderr", process.stderr),
-                        process.wait(),
+                        process.wait_closed(),
                     ),
                     timeout=_SSH_TIMEOUT,
                 )
                 return process.exit_status
 
-        # A timeout is an OSError too: it is caught first. Anything else
-        # answers {'ok': False}: the command may have run, and its audit
-        # row, already committed, says so.
+        # A timeout is an OSError too: it is caught first — before the
+        # command started, the server could not be reached in time (the
+        # connection's or the login's own timeout). Anything else answers
+        # {'ok': False}: the command may have run, and its audit row,
+        # already committed, says so.
         try:
             exit_code = run_async(_run())
             timed_out = exit_code in _TIMED_OUT
         except asyncio.TimeoutError:
+            if not started:
+                return {
+                    "ok": False,
+                    "error": self.env._("Could not connect to the server in time."),
+                }
             exit_code, timed_out = None, True
         except Exception as exc:  # noqa: BLE001 - shown through safe_error_response
             return safe_error_response(
