@@ -2,6 +2,7 @@
 
 import threading
 import time
+import uuid
 from contextlib import closing
 from datetime import timedelta
 
@@ -143,11 +144,11 @@ class TestApprovalRace(TransactionCase):
         """Return the approval *approval_id* in the transaction of *cr*."""
         return self._approvals(cr).browse(approval_id)
 
-    def _remove(self, approval_id):
-        """Delete the committed approval *approval_id*."""
+    def _remove(self, digest):
+        """Delete the committed approvals of the fingerprint *digest*."""
         with self._cursor() as cr:
             cr.execute(
-                "DELETE FROM incubacloud_mcp_approval WHERE id = %s", (approval_id,)
+                "DELETE FROM incubacloud_mcp_approval WHERE args_hash = %s", (digest,)
             )
             cr.commit()
 
@@ -174,14 +175,17 @@ class TestApprovalRace(TransactionCase):
         Under Odoo's isolation it fails to serialise, and Odoo retries the
         request; the retry finds the approval used.
         """
+        # A name of its own, removed whatever happens, registered before
+        # anything is committed.
+        digest = f"race-{uuid.uuid4().hex}"
+        self.addCleanup(self._remove, digest)
         with self._cursor() as cr:
             approval, _token = self._approvals(cr)._open(
-                "delete_project", "race", "Race.", "text"
+                "delete_project", digest, "Race.", "text"
             )
             approval._decide(True)
             cr.commit()
             approval_id = approval.id
-        self.addCleanup(self._remove, approval_id)
         outcome = {}
 
         def second():
