@@ -34,15 +34,16 @@ Then run `/mcp` in Claude Code and choose *incubacloud* to sign in.
    then **Add custom connector**.
 2. Name it, for example *IncubaCloud*, paste the panel's MCP address and
    choose **Continue**.
-3. Keep the sign-in settings Claude detects, choose **Add**, and sign in.
+3. Keep the sign-in settings Claude detects, choose **Continue**, then
+   **Add**, and sign in.
 
 To use it in a conversation, choose **+** at the bottom left of the chat,
 then **Connectors**, and switch it on.
 
-On a Team or Enterprise plan, an owner adds the connector once, in
-**Organization settings**, **Connectors** (**Add**, **Custom**, **Web**);
-then each member finds it in **Customize**, **Connectors**, and chooses
-**Connect**.
+On a Team or Enterprise plan, an Owner or Primary Owner adds the connector
+once, in **Organization settings**, **Connectors** (**Add**, **Custom**,
+**Web**); then each member finds it in **Customize**, **Connectors**, and
+chooses **Connect**.
 
 !!! note "The panel must be reachable from the internet"
     Claude connects from Anthropic's servers, not from your computer. A
@@ -107,7 +108,7 @@ keys only*, and every command it shows carries the key.
 | Client | How it sends the key |
 |---|---|
 | Claude Code | `claude mcp add … --header "Authorization: Bearer <API_KEY>"` |
-| Claude and Claude Desktop | When adding the connector, choose **No sign in**; under **Request headers**, add `Authorization` with the value `Bearer <API_KEY>`. On an individual plan only: a connector an owner adds in Organization settings is shared by every member, and so would your key be. |
+| Claude and Claude Desktop | When adding the connector, in the sign-in settings choose **No sign in** and, under **Request headers**, add `Authorization` with the value `Bearer <API_KEY>`; then choose **Continue** and **Add**. **Request headers** is in beta in Claude and not every account has it: if you do not see it, use Claude Code or another client. On an individual plan only: a connector an Owner or Primary Owner adds in Organization settings is shared by every member, and so would your key be. |
 | Cursor | `~/.cursor/mcp.json` with `"headers": {"Authorization": "Bearer ${env:INCUBACLOUD_API_KEY}"}`: Cursor reads the key from the environment. There is no one-click link: it would carry the key. |
 | VS Code | `code --add-mcp` with `"headers": {"Authorization": "Bearer <API_KEY>"}` |
 | Codex | `bearer_token_env_var = "INCUBACLOUD_API_KEY"` in `config.toml`: Codex reads the key from the environment. |
