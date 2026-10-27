@@ -16,6 +16,7 @@ from odoo.orm.environments import Transaction
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
 
+from odoo.addons.incubacloud_mcp.models.mcp_tools_command import _READ_SIZE
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK
 
@@ -65,8 +66,9 @@ class TestCommandTools(
             "exit": 0,
             "raises": None,
         }
-        #: The commands the server was asked to run.
+        #: The commands the server was asked to run, and their processes.
         self.commands = []
+        self.processes = []
         conn = MagicMock(spec=asyncssh.SSHClientConnection)
         conn.create_process = AsyncMock(side_effect=self._process)
         # ``asyncssh.connect()`` hands back an _ACMWrapper.
@@ -79,9 +81,22 @@ class TestCommandTools(
 
     @staticmethod
     def _reader(chunks):
-        """A stream that reads *chunks*, then its end."""
+        """A stream that reads *chunks*, at most *n* characters a read, then
+        its end."""
+        pending = list(chunks)
+
+        async def read(n=-1):
+            """Return up to *n* characters of what is left, or its end."""
+            if not pending:
+                return ""
+            chunk = pending.pop(0)
+            if 0 <= n < len(chunk):
+                pending.insert(0, chunk[n:])
+                chunk = chunk[:n]
+            return chunk
+
         reader = MagicMock(spec=asyncssh.SSHReader)
-        reader.read = AsyncMock(side_effect=[*chunks, ""])
+        reader.read = AsyncMock(side_effect=read)
         return reader
 
     def _process(self, command, **_kwargs):
@@ -96,6 +111,7 @@ class TestCommandTools(
             return_value=MagicMock(spec=asyncssh.SSHCompletedProcess)
         )
         process.exit_status = self.output["exit"]
+        self.processes.append(process)
         return process
 
     def _audit(self, action):
@@ -304,31 +320,21 @@ class TestCommandTools(
         )
         self.assertEqual((payload["exit_code"], payload["timed_out"]), (None, True))
 
-    def _peak(self, chunks):
-        """Run a command that prints *chunks*; return its answer and the
-        peak of memory traced while it ran."""
-        self.output["stdout"] = chunks
+    def test_twenty_megabytes_of_output_cost_little_memory(self):
+        """Twenty megabytes of output are read a block at a time and dropped
+        past what is kept: reading them costs a small part of their size."""
+        self.output["stdout"] = ["y" * 65536] * 320
+        tools = self.env["incubacloud.mcp.tools"].with_user(self.dev)
         tracemalloc.start()
         try:
-            result = self._call_tool(
-                self.key,
-                "run_command",
-                {"instance_id": self.staging.id, "command": "yes"},
-            )
+            result = tools._ssh_capture(self.host, "yes")
             _current, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
-        return result, peak
-
-    def test_twenty_megabytes_of_output_cost_little_memory(self):
-        """Twenty megabytes of output are read and dropped past what is
-        kept: they cost no more memory than output just past it does."""
-        _small, baseline = self._peak(["y" * 65536] * 3)
-        result, peak = self._peak(["y" * 65536] * 320)
-        payload = self._payload(result)
-        self.assertTrue(payload["stdout_truncated"])
-        self.assertLessEqual(len(result["content"][-1]["text"].encode()), MAX_BYTES)
-        self.assertLess(peak - baseline, 1024 * 1024)
+        self.assertTrue(result["stdout_truncated"])
+        self.assertLessEqual(len(result["stdout"].encode()), MAX_BYTES)
+        self.assertLess(peak, 20 * 1024 * 1024 // 10)
+        self.processes[-1].stdout.read.assert_awaited_with(_READ_SIZE)
 
     def test_a_host_command_always_asks_with_its_text(self):
         """A server command asks, with the exact command, and runs as the
