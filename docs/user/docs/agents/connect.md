@@ -23,7 +23,7 @@ How your agent signs in depends on the panel:
 Run, with your panel's address:
 
 ```bash
-claude mcp add --transport http incubacloud 'https://<your panel>/mcp'
+claude mcp add --transport http --scope user incubacloud 'https://<your panel>/mcp'
 ```
 
 Then run `/mcp` in Claude Code and choose *incubacloud* to sign in.
@@ -107,7 +107,7 @@ keys only*, and every command it shows carries the key.
 
 | Client | How it sends the key |
 |---|---|
-| Claude Code | `claude mcp add … --header "Authorization: Bearer <API_KEY>"` |
+| Claude Code | `claude mcp add --transport http --scope user incubacloud 'https://<your panel>/mcp' --header "Authorization: Bearer <API_KEY>"` |
 | Claude and Claude Desktop | When adding the connector, in the sign-in settings choose **No sign in** and, under **Request headers**, add `Authorization` with the value `Bearer <API_KEY>`; then choose **Continue** and **Add**. **Request headers** is in beta in Claude and not every account has it: if you do not see it, use Claude Code or another client. On an individual plan only: a connector an Owner or Primary Owner adds in Organization settings is shared by every member, and so would your key be. |
 | Cursor | `~/.cursor/mcp.json` with `"headers": {"Authorization": "Bearer ${env:INCUBACLOUD_API_KEY}"}`: Cursor reads the key from the environment. There is no one-click link: it would carry the key. |
 | VS Code | `code --add-mcp` with `"headers": {"Authorization": "Bearer <API_KEY>"}` |

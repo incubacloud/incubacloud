@@ -30,7 +30,9 @@ describe("Connect an agent — what it shows", () => {
             api_keys: false,
         });
         expect(view.url).toBe(URL);
-        expect(view.claudeCode).toBe(`claude mcp add --transport http incubacloud '${URL}'`);
+        expect(view.claudeCode).toBe(
+            `claude mcp add --transport http --scope user incubacloud '${URL}'`
+        );
         expect(view.needsApiKey).toBe(false);
         expect(view.apiKeysRefused).toBe(false);
     });
