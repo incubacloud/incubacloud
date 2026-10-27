@@ -14,5 +14,6 @@ from . import mcp_tools_operate
 from . import mcp_tools_manager
 from . import mcp_tools_settings
 from . import mcp_secrets
+from . import mcp_approval
 from . import mcp_confirm
 from . import mcp_server
