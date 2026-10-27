@@ -180,6 +180,26 @@ class TestSecretParts(BaseCase):
         self.assertLess(time.perf_counter() - started, 1)
 
 
+class TestBigSecrets(BaseCase):
+    """A secret of hundreds of kilobytes costs little to mask."""
+
+    def test_a_512_kb_secret_builds_quickly_and_is_still_masked(self):
+        """A 512 KB secret, beside a short one, builds its scrubber within a
+        second; both are masked, the big one in base64 too."""
+        rng = random.Random(9)
+        big = "".join(
+            rng.choices(string.ascii_letters + string.digits + " ", k=512 * 1024)
+        )
+        started = time.perf_counter()
+        scrubber = Scrubber(secret_parts(big) | {"other-secret-1234"})
+        self.assertLess(time.perf_counter() - started, 1)
+        encoded = base64.b64encode(big.encode()).decode()
+        self.assertEqual(
+            scrubber.text(f"a {big} b other-secret-1234 c {encoded}"),
+            f"a {MASK} b {MASK} c {MASK}",
+        )
+
+
 class TestScrubberReuse(BaseCase):
     """The same secrets compile their pattern once per process, and only the
     last sixteen sets stay compiled."""
