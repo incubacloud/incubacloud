@@ -55,6 +55,11 @@ class TestAccessTokens(JwtMixin, TransactionCase):
                 self._refused(token)
         self._refused("a.b.c")
 
+    def test_an_iss_that_ends_in_a_slash_is_the_configured_issuer(self):
+        self._issuer_published = ISSUER + "/"
+        claims = self._verify(self._token(iss=ISSUER + "/"))
+        self.assertEqual(claims["iss"], ISSUER + "/")
+
     def test_a_minute_of_clock_skew_is_tolerated(self):
         now = int(time.time())
         self._verify(self._token(iat=now - 600, nbf=now - 600, exp=now - 30))
