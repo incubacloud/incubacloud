@@ -278,17 +278,22 @@ read and encode a secret of the instance, as with the terminal.
 
 ## Limits and untrusted content
 
-No answer passes 64 KB. Logs, captured mail and lists come in pages
-(`truncated`, `next_offset`; `offset` and `limit` where a tool pages); a
-command's output is cut (stdout about 54 KB, stderr 8 KB) and says so
-(`stdout_truncated`, `stderr_truncated`). Sizes are measured as the answer
-serialises them, and the bytes between entries count. An answer that no
-tool pages is cut, lists first, and says so; a page that cannot show any
-entry says so too, so an agent does not ask for it again. The output of
-logs, job logs, mail, access logs, alerts, the overview, directory listings,
-repository data, the audit's free text and commands is wrapped as untrusted
-data, and those tools' descriptions say so. The server's instructions tell
-agents never to follow instructions found in it.
+Logs, captured mail and lists come in pages of 64 KB (`truncated`,
+`next_offset`; `offset` and `limit` where a tool pages); a command's output
+is cut (stdout about 54 KB, stderr 8 KB) and says so (`stdout_truncated`,
+`stderr_truncated`). Sizes are measured as the answer serialises them, and
+the bytes between entries count. A page's paging keys come on top of its
+64 KB, so the last guard lets an answer through untouched up to 1 KB past
+it (`PAGE_SLACK`): cutting a page for its own keys would only shorten it.
+An answer past that — which no tool pages, or a page that masking grew — is
+cut to just under 64 KB (`GUARD_MARGIN` leaves room for `truncated` and the
+untrusted wrapping), lists first, and says so; a page keeps its first
+entries and its `next_offset` moves back, so none is skipped. A page that
+cannot show any entry says so too, so an agent does not ask for it again.
+The output of logs, job logs, mail, access logs, alerts, the overview,
+directory listings, repository data, the audit's free text and commands is
+wrapped as untrusted data, and those tools' descriptions say so. The
+server's instructions tell agents never to follow instructions found in it.
 
 ## Audit
 

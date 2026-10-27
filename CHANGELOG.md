@@ -25,9 +25,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   agent's credential, ten minutes, once; it protects from the model's
   mistakes and from injected instructions, not from a malicious client.
   Secrets never go in or out: keys named like an encrypted field are refused
-  and dropped, and every known secret is masked in what agents read. No
-  answer passes 64 KB; logs, mail and command output come in pages, marked as
-  untrusted data. `run_command` and `run_host_command` run one command with
+  and dropped, and every known secret is masked in what agents read. Answers
+  keep to 64 KB (and 1 KB more for a page's paging keys): logs, mail and
+  lists come in pages and a command's output is cut, marked as untrusted
+  data. `run_command` and `run_host_command` run one command with
   the terminals' controls, a minute at most (`timeout` inside the container;
   what it leaves in the background is not stopped). `download_backup` hands
   out a single-use link for 15 minutes. Audit rows and jobs say which agent
