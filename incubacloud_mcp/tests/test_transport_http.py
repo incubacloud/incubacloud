@@ -4,7 +4,7 @@ import json
 from unittest.mock import patch
 
 from odoo.tests import tagged
-from odoo.tests.common import HttpCase
+from odoo.tests.common import BaseCase, HttpCase
 
 from odoo.addons.incubacloud_mcp.controllers import mcp as mcp_controller
 from odoo.addons.incubacloud_mcp.models.cloud_settings import RESOURCE_PARAM
@@ -20,6 +20,21 @@ from .common import (
 
 CONTROLLER_LOGGER = "odoo.addons.incubacloud_mcp.controllers.mcp"
 WELL_KNOWN_LOGGER = "odoo.addons.incubacloud_mcp.controllers.well_known"
+
+
+class TestTheRoute(BaseCase):
+    """How ``/mcp`` is declared: what the HTTP tests cannot tell apart."""
+
+    def test_the_route_ignores_the_session_and_reads_a_bounded_body(self):
+        """No cookie authentication, no session saved, no CSRF token (the
+        bearer is the credential), a read/write cursor, a capped body."""
+        routing = mcp_controller.McpController.mcp.original_routing
+        self.assertEqual(routing["auth"], "none")
+        self.assertIs(routing["save_session"], False)
+        self.assertIs(routing["csrf"], False)
+        self.assertIs(routing["readonly"], False)
+        self.assertEqual(routing["type"], "http")
+        self.assertEqual(routing["max_content_length"], 256 * 1024)
 
 
 @tagged("post_install", "-at_install")
