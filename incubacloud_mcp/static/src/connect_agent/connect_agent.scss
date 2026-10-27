@@ -59,6 +59,12 @@
         align-items: center;
     }
 
+    .ic-mcp-copied {
+        align-self: center;
+        font-size: 12px;
+        color: var(--rl-muted);
+    }
+
     .ic-mcp-url {
         font-family: var(--rl-fm);
         font-size: 13px;
