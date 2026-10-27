@@ -1,0 +1,330 @@
+"""tools/list and tools/call: role, arguments, transaction, audit, output."""
+
+from unittest.mock import patch
+
+from odoo import http
+from odoo.exceptions import AccessError
+from odoo.http import request
+from odoo.tests import tagged
+from odoo.tests.common import HttpCase, TransactionCase
+
+from odoo.addons.incubacloud_mcp.protocol.redact import MASK
+from odoo.addons.incubacloud_mcp.protocol.tool_spec import (
+    ToolSpec,
+    obj,
+    record_id,
+    string,
+)
+
+from .common import McpHttpMixin, McpUsersMixin
+
+HOST_PASSWORD = "probe-host-pass-123"
+SAFE_ERROR_LOGGER = "odoo.addons.incubacloud.controllers._safe_error"
+
+
+class _CallProbes(http.Controller):
+    """Routes with known behaviour (test only)."""
+
+    @http.route("/cloud/mcp_test/echo", type="jsonrpc", auth="user")
+    def mcp_test_echo(self, text=""):
+        """Say who ran it."""
+        return {
+            "ok": True,
+            "text": text,
+            "uid": request.env.uid,
+            "su": request.env.su,
+            "lang": request.env.lang,
+        }
+
+    @http.route("/cloud/mcp_test/refuse", type="jsonrpc", auth="user")
+    def mcp_test_refuse(self, name="", vals=None):
+        """Write, then answer the panel's refusal shape."""
+        request.env["cloud.tag"].create({"name": name})
+        return {"ok": False, "error": "Refused on purpose"}
+
+    @http.route("/cloud/mcp_test/write_then_deny", type="jsonrpc", auth="user")
+    def mcp_test_write_then_deny(self, name=""):
+        """Write, then raise."""
+        request.env["cloud.tag"].create({"name": name})
+        raise AccessError("Denied on purpose")
+
+    @http.route("/cloud/mcp_test/crash", type="jsonrpc", auth="user")
+    def mcp_test_crash(self):
+        """Fail with internal detail."""
+        raise RuntimeError("internal detail /srv/very/private/path")
+
+    @http.route("/cloud/mcp_test/leak", type="jsonrpc", auth="user")
+    def mcp_test_leak(self, host_id):
+        """Answer a secret, by key and inside text."""
+        host = request.env["cloud.host"].sudo().browse(host_id)
+        return {
+            "ok": True,
+            "password": host.password,
+            "has_password": True,
+            "log": f"connecting with {host.password}",
+        }
+
+
+PROBES = [
+    ToolSpec(
+        "probe_echo",
+        "Echo.",
+        "group_cloud_user",
+        obj({"text": string("Text.")}),
+        route="/cloud/mcp_test/echo",
+        read_only=True,
+    ),
+    ToolSpec(
+        "probe_refuse",
+        "Refuse.",
+        "group_cloud_user",
+        obj(
+            {
+                "name": string("Tag."),
+                "vals": {"type": "object", "additionalProperties": True},
+            },
+            required=("name",),
+        ),
+        route="/cloud/mcp_test/refuse",
+    ),
+    ToolSpec(
+        "probe_deny",
+        "Deny.",
+        "group_cloud_user",
+        obj({"name": string("Tag.")}, required=("name",)),
+        route="/cloud/mcp_test/write_then_deny",
+    ),
+    ToolSpec(
+        "probe_crash",
+        "Crash.",
+        "group_cloud_user",
+        obj(),
+        route="/cloud/mcp_test/crash",
+    ),
+    ToolSpec(
+        "probe_leak",
+        "Leak.",
+        "group_cloud_user",
+        obj({"host_id": record_id("Host.")}),
+        route="/cloud/mcp_test/leak",
+        read_only=True,
+    ),
+    ToolSpec(
+        "probe_manager",
+        "Manager only.",
+        "group_cloud_manager",
+        obj(),
+        route="/cloud/mcp_test/echo",
+        read_only=True,
+    ),
+]
+
+
+@tagged("post_install", "-at_install")
+class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
+    """The two tool methods over HTTP, with probe tools of known behaviour.
+
+    ``post_install``: its users need a partner, and a module installed
+    later may add a column to it.
+    """
+
+    def setUp(self):
+        """Serve the probes as the catalog; a developer with an API key."""
+        super().setUp()
+        self.env.registry.clear_cache("routing")
+        patcher = patch.object(
+            type(self.env["incubacloud.mcp.catalog"]),
+            "_tool_specs",
+            autospec=True,
+            return_value=PROBES,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._resource_here()
+        self.user = self._cloud_user("mcp-call-dev")
+        self.key = self._api_key(self.user, name="call-key")
+
+    def _tag(self, name):
+        """The tag *name*, if it exists."""
+        return self.env["cloud.tag"].search([("name", "=", name)])
+
+    def test_the_list_follows_the_role_in_a_stable_order(self):
+        """The list holds the role's tools, by name, the same every time."""
+        first = self._modern("tools/list", credential=self.key).json()["result"]
+        second = self._modern("tools/list", credential=self.key).json()["result"]
+        names = [tool["name"] for tool in first["tools"]]
+        self.assertEqual(names, sorted(names))
+        self.assertIn("probe_echo", names)
+        self.assertNotIn("probe_manager", names)
+        self.assertEqual(first["tools"], second["tools"])
+        self.assertEqual((first["ttlMs"], first["cacheScope"]), (300000, "private"))
+        self.assertEqual(first["resultType"], "complete")
+
+    def test_a_tool_runs_as_the_user_never_as_superuser(self):
+        """The route runs as the credential's user, in the user's language."""
+        payload = self._payload(self._call_tool(self.key, "probe_echo", {"text": "hi"}))
+        self.assertEqual((payload["uid"], payload["su"]), (self.user.id, False))
+        self.assertEqual(payload["lang"], self.user.lang)
+
+    def test_an_unknown_argument_or_tool_is_refused(self):
+        """An unknown argument is a tool error; an unknown tool, -32602."""
+        result = self._call_tool(self.key, "probe_echo", {"txt": "hi"})
+        self.assertTrue(result["isError"])
+        self.assertIn("txt", result["content"][0]["text"])
+        response = self._modern(
+            "tools/call", {"name": "no_such_tool", "arguments": {}}, self.key
+        )
+        self.assertEqual(
+            (response.status_code, response.json()["error"]["code"]), (400, -32602)
+        )
+
+    def test_arguments_that_are_not_an_object_are_refused(self):
+        """``arguments`` that is not an object is -32602."""
+        response = self._modern(
+            "tools/call", {"name": "probe_echo", "arguments": ["hi"]}, self.key
+        )
+        self.assertEqual(
+            (response.status_code, response.json()["error"]["code"]), (400, -32602)
+        )
+
+    def test_a_tool_above_the_role_answers_the_role_check(self):
+        """A tool above the user's role answers what the role check says."""
+        result = self._call_tool(self.key, "probe_manager")
+        self.assertTrue(result["isError"])
+        self.assertIn("group_cloud_manager", result["content"][0]["text"])
+
+    def test_a_refusal_keeps_what_the_route_wrote_like_the_panel(self):
+        """An ``{'ok': False}`` answer keeps what the route wrote, as in the panel."""
+        result = self._call_tool(self.key, "probe_refuse", {"name": "mcp-kept"})
+        self.assertTrue(result["isError"])
+        self.assertIn("Refused on purpose", result["content"][0]["text"])
+        self.assertTrue(self._tag("mcp-kept"))
+
+    def test_an_exception_rolls_back_what_the_route_wrote(self):
+        """An exception rolls back what the route wrote before it."""
+        result = self._call_tool(self.key, "probe_deny", {"name": "mcp-rolled-back"})
+        self.assertTrue(result["isError"])
+        self.assertIn("Denied on purpose", result["content"][0]["text"])
+        self.assertFalse(self._tag("mcp-rolled-back"))
+
+    def test_an_unexpected_error_hides_its_detail(self):
+        """An unexpected error says a reference, not its internal detail."""
+        with self.assertLogs(SAFE_ERROR_LOGGER, level="ERROR"):
+            text = self._call_tool(self.key, "probe_crash")["content"][0]["text"]
+        self.assertIn("(ref: ", text)
+        self.assertNotIn("/srv/very/private/path", text)
+
+    def test_secrets_leave_neither_by_key_nor_inside_text(self):
+        """A secret is dropped by its key and masked inside any text."""
+        host = self.env["cloud.host"].create(
+            {
+                "name": "probe-host",
+                "ip_address": "10.0.0.83",
+                "user": "ubuntu",
+                "wildcard_domain": "probe.example.com",
+                "login_type": "password",
+                "password": HOST_PASSWORD,
+            }
+        )
+        payload = self._payload(
+            self._call_tool(self.key, "probe_leak", {"host_id": host.id})
+        )
+        self.assertNotIn("password", payload)
+        self.assertTrue(payload["has_password"])
+        self.assertEqual(payload["log"], f"connecting with {MASK}")
+
+    def test_a_secret_argument_is_refused_before_anything_runs(self):
+        """An argument named like a secret stops the call before the route."""
+        result = self._call_tool(
+            self.key,
+            "probe_refuse",
+            {"name": "mcp-never", "vals": {"db": {"postgres_password": "x"}}},
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn("Secrets are changed in the panel.", result["content"][0]["text"])
+        self.assertFalse(self._tag("mcp-never"))
+
+    def test_a_call_that_may_change_something_is_audited_with_the_agent(self):
+        """A call that may write is audited with the user and the agent; a
+        read-only one is not."""
+        self._call_tool(self.key, "probe_refuse", {"name": "mcp-audited"})
+        row = self.env["cloud.audit.log"].search(
+            [("action", "=", "Agent: probe_refuse")], limit=1
+        )
+        self.assertEqual(row.user_id, self.user)
+        self.assertEqual(row.via_client, "API key call-key (test-agent)")
+        self.assertIn("refused: Refused on purpose", row.details)
+        self._call_tool(self.key, "probe_echo", {"text": "x"})
+        self.assertFalse(
+            self.env["cloud.audit.log"].search([("action", "=", "Agent: probe_echo")])
+        )
+
+    def test_an_earlier_client_initializes_and_calls_a_tool(self):
+        """A 2025-06-18 client lists and calls tools in its session."""
+        response = self._post(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "older-agent", "version": "1"},
+                },
+            },
+            self.key,
+        )
+        headers = {
+            "Mcp-Session-Id": response.headers["Mcp-Session-Id"],
+            "MCP-Protocol-Version": "2025-06-18",
+        }
+        listing = self._post(
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            self.key,
+            headers,
+        ).json()["result"]
+        self.assertNotIn("ttlMs", listing)
+        self.assertIn("probe_echo", [tool["name"] for tool in listing["tools"]])
+        call = self._post(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "probe_echo", "arguments": {"text": "hi"}},
+            },
+            self.key,
+            headers,
+        )
+        result = call.json()["result"]
+        self.assertNotIn("resultType", result)
+        self.assertEqual(self._payload(result)["text"], "hi")
+
+    def test_over_the_limit_the_call_is_refused(self):
+        """Over the per-user limit, the call is refused with a tool error."""
+        with patch.object(
+            type(self.env["incubacloud.mcp.server"]),
+            "_over_user_limit",
+            autospec=True,
+            return_value=True,
+        ):
+            result = self._call_tool(self.key, "probe_echo", {"text": "x"})
+        self.assertTrue(result["isError"])
+        self.assertIn("too many calls", result["content"][0]["text"])
+
+
+@tagged("post_install", "-at_install")
+class TestUserLimit(McpUsersMixin, TransactionCase):
+    """The per-user limit of tool calls, all the user's agents together.
+
+    ``post_install``: it creates a user.
+    """
+
+    def test_the_global_limit_counts_each_call(self):
+        """With a cap of two, the third call in the minute is over it."""
+        self.registry_enter_test_mode()
+        self.env["cloud.settings"]._get_system().rate_limit_mcp_user_per_min = 2
+        server = self.env["incubacloud.mcp.server"].with_context(force_rate_limit=True)
+        user = self._cloud_user("mcp-limit-dev")
+        self.assertFalse(server._over_user_limit(user.id))
+        self.assertFalse(server._over_user_limit(user.id))
+        self.assertTrue(server._over_user_limit(user.id))
