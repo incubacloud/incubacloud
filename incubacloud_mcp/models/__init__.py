@@ -8,6 +8,7 @@ from . import mcp_auth
 from . import mcp_catalog
 from . import mcp_dispatch
 from . import mcp_tools
+from . import mcp_tools_read
 from . import mcp_secrets
 from . import mcp_confirm
 from . import mcp_server

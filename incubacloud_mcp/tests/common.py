@@ -16,6 +16,7 @@ from odoo.tests.common import new_test_user
 from odoo.addons.incubacloud_mcp.controllers import _issuer_metadata, _jwks_cache
 from odoo.addons.incubacloud_mcp.models.cloud_settings import RESOURCE_PARAM
 from odoo.addons.incubacloud_mcp.protocol.canonical import canonical_resource
+from odoo.addons.incubacloud_mcp.protocol.redact import secret_variants
 from odoo.addons.incubacloud_mcp.protocol.versions import MODERN
 
 ISSUER = "https://idp.example.test"
@@ -227,3 +228,68 @@ class McpHttpMixin:
         if text.startswith("<untrusted_data>\n"):
             text = text[len("<untrusted_data>\n") : -len("\n</untrusted_data>")]
         return json.loads(text)
+
+
+HOST_PASSWORD = "mcp-host-pass-4821"
+PG_PASSWORD = "mcp-pg-pass-9137"
+ADMIN_PASSWORD = "mcp-admin-pass-5520"
+S3_SECRET = "mcp-s3-secret-7713"
+SECRETS = (HOST_PASSWORD, PG_PASSWORD, ADMIN_PASSWORD, S3_SECRET)
+
+
+class PanelFixtureMixin:
+    """A server, a project and its two instances, with their secrets set."""
+
+    def _panel_fixture(self):
+        """Create the records; members of the project are added by each test."""
+        self.host = self.env["cloud.host"].create(
+            {
+                "name": "mcp-host",
+                "ip_address": "10.0.0.90",
+                "user": "root",
+                "wildcard_domain": "mcp.example.com",
+                "login_type": "password",
+                "password": HOST_PASSWORD,
+            }
+        )
+        self.project = self.env["cloud.project"].create(
+            {"name": "MCP Acme", "remote_folder": "mcpacme"}
+        )
+        self.production = self.env["cloud.instance"].create(
+            {
+                "name": "mcp-acme-prod",
+                "project_id": self.project.id,
+                "host_id": self.host.id,
+                "environment": "production",
+                "postgres_password": PG_PASSWORD,
+                "odoo_admin_password": ADMIN_PASSWORD,
+            }
+        )
+        self.staging = self.env["cloud.instance"].create(
+            {
+                "name": "mcp-acme-staging",
+                "project_id": self.project.id,
+                "host_id": self.host.id,
+                "environment": "staging",
+            }
+        )
+        self.backend = (
+            self.env["cloud.backup.backend"]
+            .sudo()
+            .create(
+                {
+                    "name": "mcp-s3",
+                    "backend_type": "s3",
+                    "s3_bucket": "mcp-bucket",
+                    "s3_access_key_id": "AKIAMCPTEST",
+                    "s3_secret_access_key": S3_SECRET,
+                    "s3_endpoint_url": "https://s3.example.test",
+                }
+            )
+        )
+
+    def _assert_no_secret(self, text):
+        """Fail if a fixture secret appears in *text*: plain, URL-encoded or base64."""
+        for secret in SECRETS:
+            for form in secret_variants(secret):
+                self.assertNotIn(form, text)
