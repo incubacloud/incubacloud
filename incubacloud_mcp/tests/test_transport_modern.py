@@ -50,6 +50,15 @@ class TestModernProtocol(McpUsersMixin, McpHttpMixin, HttpCase):
                 )
                 self.assertEqual(response.json()["id"], request_id)
 
+    def test_an_id_that_is_not_a_string_or_an_integer_is_refused(self):
+        """Null, an object, a list, a boolean or a fraction is no id: -32600."""
+        for request_id in (None, {"a": 1}, [1], True, 1.5):
+            with self.subTest(request_id=request_id):
+                response = self._modern(
+                    "server/discover", credential=self.key, request_id=request_id
+                )
+                self._error(response, 400, -32600)
+
     def test_a_notification_is_202_without_body(self):
         """A message without an id is accepted with 202 and an empty body."""
         response = self._post(

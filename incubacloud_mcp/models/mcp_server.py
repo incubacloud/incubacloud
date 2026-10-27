@@ -121,6 +121,13 @@ class McpServer(models.AbstractModel):
         if "id" not in message:
             return Reply(202)
         request_id = message["id"]
+        # A string or an integer; MCP's ids are never null, and a bool is
+        # an int in Python but not in JSON.
+        if isinstance(request_id, bool) or not isinstance(request_id, (str, int)):
+            error = McpError(
+                400, INVALID_REQUEST, "Invalid Request: id is a string or an integer"
+            )
+            return Reply(400, error.to_body(None))
         try:
             ctx = self._call_context(message, headers, principal)
             result, extra_headers = self._with_via(ctx)._dispatch(message, ctx)
