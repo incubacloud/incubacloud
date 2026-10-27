@@ -76,11 +76,23 @@ class TestOurTemplates(BaseCase):
                         self.assertEqual(code.get("t-translation"), "off")
 
 
-#: Checks run in the page; any failure is a console error.
+#: Checks run in the page; any failure is a console error. ``select``
+#: clicks a tab and waits until the page marks it selected: the same
+#: render shows its content.
 _CHECK = """
 (async () => {{
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const fail = (what) => {{ throw new Error("{page}: " + what); }};
+    const select = async (tab) => {{
+        tab.click();
+        const selected = () => tab.getAttribute("aria-selected") === "true";
+        for (let waited = 0; !selected(); waited += 20) {{
+            if (waited > 5000) {{
+                fail("the tab " + tab.textContent.trim() + " is not selected");
+            }}
+            await sleep(20);
+        }}
+    }};
     {body}
     console.log("test successful");
 }})().catch((error) => console.error(error.message));
@@ -100,8 +112,7 @@ _API_KEY_PAGE = """
     }}
     const tabs = [...page.querySelectorAll("[role=tablist] [role=tab]")];
     for (const tab of tabs) {{
-        tab.click();
-        await sleep(150);
+        await select(tab);
         if (page.innerHTML.includes("cursor://")) {{
             fail("a one-click link that would carry an API key");
         }}
@@ -116,8 +127,8 @@ _API_KEY_PAGE = """
             }}
         }}
     }}
-    tabs.find((tab) => tab.textContent.includes("Claude and Claude Desktop")).click();
-    await sleep(150);
+    const claudeTab = tabs.find((tab) => tab.textContent.includes("Claude and Claude"));
+    await select(claudeTab);
     for (const words of [
         "Customize", "Connectors", "Add custom connector", "Request headers",
         "Organization settings", "reachable from the internet",
@@ -135,13 +146,12 @@ _OAUTH_PAGE = """
         fail("an API key notice with an issuer");
     }}
     const tabs = [...page.querySelectorAll("[role=tablist] [role=tab]")];
-    tabs.find((tab) => tab.textContent.includes("Cursor")).click();
-    await sleep(150);
+    await select(tabs.find((tab) => tab.textContent.includes("Cursor")));
     if (!page.querySelector("a[href^='cursor://']")) {{
         fail("Cursor's one-click link");
     }}
-    tabs.find((tab) => tab.textContent.includes("Claude and Claude Desktop")).click();
-    await sleep(150);
+    const claudeTab = tabs.find((tab) => tab.textContent.includes("Claude and Claude"));
+    await select(claudeTab);
     if (page.textContent.includes("Request headers")) {{
         fail("an API key header with an issuer");
     }}
