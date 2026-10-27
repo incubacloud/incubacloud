@@ -67,6 +67,8 @@ class TestSecrets(TransactionCase):
 
     def test_stored_values_are_known_short_and_unreadable_ones_are_not(self):
         """Stored secrets are known and masked; short or unreadable ones are not."""
+        self.host.key_file = "sh0rt6"
+        self.env.flush_all()
         self.env.cr.execute(
             "UPDATE cloud_host SET traefik_panel_password = 'enc:not-a-token' "
             "WHERE id = %s",
@@ -74,6 +76,7 @@ class TestSecrets(TransactionCase):
         )
         values = self.Secrets._known_values()
         self.assertIn(HOST_PASSWORD, values)
+        self.assertNotIn("sh0rt6", values)
         self.assertFalse([value for value in values if len(value) < 8])
         self.assertEqual(
             self.Secrets._scrubber().text(f"ssh with {HOST_PASSWORD}"),

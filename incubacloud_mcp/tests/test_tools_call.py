@@ -3,12 +3,16 @@
 import json
 from unittest.mock import patch
 
+import psycopg2.errors
+from psycopg2.errorcodes import SERIALIZATION_FAILURE
+
 from odoo import http
 from odoo.exceptions import AccessError, UserError
 from odoo.http import request
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
 
+from odoo.addons.incubacloud_mcp.protocol.context import CallContext, Principal
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK
 from odoo.addons.incubacloud_mcp.protocol.tool_spec import (
     ToolSpec,
@@ -16,10 +20,12 @@ from odoo.addons.incubacloud_mcp.protocol.tool_spec import (
     record_id,
     string,
 )
+from odoo.addons.incubacloud_mcp.protocol.versions import MODERN
 
 from .common import McpHttpMixin, McpUsersMixin
 
 HOST_PASSWORD = "probe-host-pass-123"
+RESET_LINK = "https://acme.example/web/reset_password?token=abc123"
 SAFE_ERROR_LOGGER = "odoo.addons.incubacloud.controllers._safe_error"
 
 
@@ -77,6 +83,22 @@ class _CallProbes(http.Controller):
     def mcp_test_nothing(self):
         """Do its job and answer nothing, as some panel routes do."""
         request.env["cloud.tag"].create({"name": "mcp-did-it"})
+
+    @http.route("/cloud/mcp_test/queued", type="jsonrpc", auth="user")
+    def mcp_test_queued(self, job_id):
+        """Answer a job id alone, as most routes that enqueue do."""
+        return {"ok": True, "job_id": job_id}
+
+    @http.route("/cloud/mcp_test/link", type="jsonrpc", auth="user")
+    def mcp_test_link(self):
+        """Answer a link that signs someone in."""
+        return {"ok": True, "body": f"Reset: {RESET_LINK}"}
+
+    @http.route("/cloud/mcp_test/deny_quoting", type="jsonrpc", auth="user")
+    def mcp_test_deny_quoting(self, host_id):
+        """Refuse, quoting the host's password."""
+        host = request.env["cloud.host"].sudo().browse(host_id)
+        raise UserError(f"denied for {host.password}")
 
 
 PROBES = [
@@ -154,6 +176,54 @@ PROBES = [
         route="/cloud/mcp_test/nothing",
     ),
     ToolSpec(
+        "probe_developer",
+        "Developer only.",
+        "group_cloud_developer",
+        obj(),
+        route="/cloud/mcp_test/echo",
+        read_only=True,
+    ),
+    ToolSpec(
+        "probe_queued",
+        "Enqueue.",
+        "group_cloud_user",
+        obj({"job_id": record_id("Job.")}),
+        route="/cloud/mcp_test/queued",
+        enqueues=True,
+    ),
+    ToolSpec(
+        "probe_link_untrusted",
+        "Untrusted link.",
+        "group_cloud_user",
+        obj(),
+        route="/cloud/mcp_test/link",
+        read_only=True,
+        untrusted=True,
+    ),
+    ToolSpec(
+        "probe_link",
+        "Link.",
+        "group_cloud_user",
+        obj(),
+        route="/cloud/mcp_test/link",
+        read_only=True,
+    ),
+    ToolSpec(
+        "probe_unaudited",
+        "Writes its own audit.",
+        "group_cloud_user",
+        obj({"name": string("Tag.")}, required=("name",)),
+        route="/cloud/mcp_test/refuse",
+        audit=False,
+    ),
+    ToolSpec(
+        "probe_deny_quoting",
+        "Deny quoting a secret.",
+        "group_cloud_user",
+        obj({"host_id": record_id("Host.")}),
+        route="/cloud/mcp_test/deny_quoting",
+    ),
+    ToolSpec(
         "probe_manager",
         "Manager only.",
         "group_cloud_manager",
@@ -203,6 +273,29 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(first["tools"], second["tools"])
         self.assertEqual((first["ttlMs"], first["cacheScope"]), (300000, "private"))
         self.assertEqual(first["resultType"], "complete")
+
+    def test_each_role_lists_its_tools_and_those_below(self):
+        """A developer sees a developer's tool, a manager a manager's, and a
+        stakeholder neither."""
+        cases = (
+            (self.key, {"probe_developer"}, {"probe_manager"}),
+            (
+                self._api_key(self._cloud_user("mcp-call-mgr", "group_cloud_manager")),
+                {"probe_developer", "probe_manager"},
+                set(),
+            ),
+            (
+                self._api_key(self._cloud_user("mcp-call-user", "group_cloud_user")),
+                {"probe_echo"},
+                {"probe_developer", "probe_manager"},
+            ),
+        )
+        for key, seen, unseen in cases:
+            with self.subTest(seen=seen):
+                listing = self._modern("tools/list", credential=key).json()["result"]
+                names = {tool["name"] for tool in listing["tools"]}
+                self.assertLessEqual(seen, names)
+                self.assertFalse(unseen & names)
 
     def test_a_tool_runs_as_the_user_never_as_superuser(self):
         """The route runs as the credential's user, in the user's language."""
@@ -261,6 +354,75 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
             [("action", "=", "Agent: probe_nothing")], limit=1
         )
         self.assertNotIn("refused", row.details)
+
+    def test_an_exception_is_audited_as_a_refusal(self):
+        """A call that raised leaves its audit row, saying why."""
+        self._call_tool(self.key, "probe_deny", {"name": "mcp-denied-audit"})
+        row = self.env["cloud.audit.log"].search(
+            [("action", "=", "Agent: probe_deny")], limit=1
+        )
+        self.assertIn("refused: Denied on purpose", row.details)
+
+    def test_a_secret_in_an_exception_is_masked(self):
+        """The text of an exception is masked like an answer."""
+        host = self._probe_host()
+        result = self._call_tool(self.key, "probe_deny_quoting", {"host_id": host.id})
+        self.assertTrue(result["isError"])
+        self.assertEqual(result["content"][0]["text"], f"denied for {MASK}")
+
+    def test_a_job_id_alone_comes_back_with_its_state(self):
+        """A route that answers only the job id gets the job's state added."""
+        host = self._probe_host()
+        job_type = self.env["cloud.job.type"].create(
+            {"name": "Probe job", "code": "mcp_probe_job", "apply_to": "host"}
+        )
+        job = (
+            self.env["cloud.job"]
+            .sudo()
+            .create({"name": "probe", "host_id": host.id, "job_type_id": job_type.id})
+        )
+        payload = self._payload(
+            self._call_tool(self.key, "probe_queued", {"job_id": job.id})
+        )
+        self.assertEqual(payload["job_id"], job.id)
+        self.assertIn("state", payload)
+        self.assertIn("queued_behind", payload)
+
+    def test_links_that_sign_in_are_masked_only_in_untrusted_output(self):
+        """A reset link is masked in an untrusted tool's answer, and kept in a
+        trusted one's."""
+        untrusted = self._payload(self._call_tool(self.key, "probe_link_untrusted"))
+        self.assertEqual(untrusted["body"], f"Reset: {MASK}")
+        trusted = self._payload(self._call_tool(self.key, "probe_link"))
+        self.assertEqual(trusted["body"], f"Reset: {RESET_LINK}")
+
+    def test_a_tool_that_audits_itself_leaves_no_second_row(self):
+        """A spec with ``audit=False`` is not audited by the server."""
+        self._call_tool(self.key, "probe_unaudited", {"name": "mcp-unaudited"})
+        self.assertFalse(
+            self.env["cloud.audit.log"].search(
+                [("action", "=", "Agent: probe_unaudited")]
+            )
+        )
+
+    def test_the_audit_row_points_at_the_record_named_in_the_arguments(self):
+        """``host_id`` in the arguments sets the row's host, if it exists."""
+        host = self._probe_host()
+        self._call_tool(
+            self.key,
+            "probe_rotate",
+            {"host_id": host.id, "new_value": "probe-rotated-pass-1111"},
+        )
+        row = self.env["cloud.audit.log"].search(
+            [("action", "=", "Agent: probe_rotate")], limit=1
+        )
+        self.assertEqual(row.host_id, host)
+        self._call_tool(self.key, "probe_deny_quoting", {"host_id": 2**31 - 1})
+        row = self.env["cloud.audit.log"].search(
+            [("action", "=", "Agent: probe_deny_quoting")], limit=1
+        )
+        self.assertTrue(row)
+        self.assertFalse(row.host_id)
 
     def test_an_unexpected_error_hides_its_detail(self):
         """An unexpected error says a reference, not its internal detail."""
@@ -417,8 +579,14 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
             return_value=True,
         ):
             result = self._call_tool(self.key, "probe_echo", {"text": "x"})
+            refused = self._call_tool(self.key, "probe_refuse", {"name": "mcp-over"})
         self.assertTrue(result["isError"])
         self.assertIn("too many calls", result["content"][0]["text"])
+        self.assertTrue(refused["isError"])
+        self.assertFalse(self._tag("mcp-over"))
+        self.assertFalse(
+            self.env["cloud.audit.log"].search([("action", "=", "Agent: probe_refuse")])
+        )
 
 
 @tagged("post_install", "-at_install")
@@ -437,3 +605,28 @@ class TestUserLimit(McpUsersMixin, TransactionCase):
         self.assertFalse(server._over_user_limit(user.id))
         self.assertFalse(server._over_user_limit(user.id))
         self.assertTrue(server._over_user_limit(user.id))
+        other = self._cloud_user("mcp-limit-other")
+        self.assertFalse(server._over_user_limit(other.id))
+
+
+class _RetryableError(psycopg2.errors.SerializationFailure):
+    """A serialization failure, as PostgreSQL would raise it."""
+
+    pgcode = SERIALIZATION_FAILURE
+
+
+@tagged("post_install", "-at_install")
+class TestRunConcurrency(TransactionCase):
+    """A concurrency error is not a tool error: Odoo retries the request."""
+
+    def test_a_serialization_failure_is_raised_again(self):
+        """``_run`` raises a serialization failure instead of answering it."""
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        ctx = CallContext(MODERN, True, {}, "", Principal(self.env.uid, "test"))
+        with (
+            patch.object(
+                Tools, "_invoke", autospec=True, side_effect=_RetryableError()
+            ),
+            self.assertRaises(_RetryableError),
+        ):
+            self.env["incubacloud.mcp.server"]._run(PROBES[0], {}, ctx)
