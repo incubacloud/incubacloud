@@ -30,3 +30,4 @@ from . import test_tools_guarded
 from . import test_download
 from . import test_tools_command
 from . import test_inventory
+from . import test_frontend_suite

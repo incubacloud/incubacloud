@@ -26,6 +26,16 @@ approval. Secrets never go in or out.
         "views/auth_oauth_provider_views.xml",
         "views/approval_page.xml",
     ],
+    "assets": {
+        "incubacloud.assets_prod": [
+            "incubacloud_mcp/static/src/**/*",
+        ],
+        # JS unit tests (Hoot framework), beside core's.
+        "web.assets_unit_tests": [
+            "incubacloud_mcp/static/src/**/*.js",
+            "incubacloud_mcp/static/tests/**/*.test.js",
+        ],
+    },
     "installable": True,
     "auto_install": False,
 }
