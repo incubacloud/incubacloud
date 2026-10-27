@@ -1,10 +1,10 @@
 """How much one answer may carry, and how the agent asks for the rest.
 
-Logs, command output, mail and lists are cut at 64 KB with
-``truncated: true`` and a ``next_offset`` to continue from. Sizes are
-measured as the answer serialises them (JSON, ``ensure_ascii=False``,
-UTF-8): escaped quotes and newlines count, and so does every byte of an
-accented letter, no more.
+Logs, mail and lists are cut at 64 KB with ``truncated: true`` and a
+``next_offset`` to continue from; a command's output is only cut, and
+says so. Sizes are measured as the answer serialises them (JSON,
+``ensure_ascii=False``, UTF-8): escaped quotes and newlines count, and so
+does every byte of an accented letter, no more.
 """
 
 import copy
@@ -298,11 +298,12 @@ def _fit_page(obj, max_bytes):
     """Cut the page of entries of *obj* until *obj* fits, moving ``next_offset``.
 
     The entries left out are those after the last one kept: the next page
-    starts at the first of them, so none is skipped. When not even one
-    entry fits, the first is cut, as :func:`page_items` does. The page is
-    measured again with what it ends up saying — its new ``next_offset``,
-    and the notice of a page that shows no entry — and gives up one more
-    entry while that does not fit.
+    starts at the first of them, so none is skipped. The page is measured
+    again with what it ends up saying — its new ``next_offset``, and the
+    notice of a page that shows no entry — and gives up one more entry
+    while that does not fit. When not even one entry fits whole, the first
+    is cut to the room the page leaves it, as :func:`page_items` does, and
+    the page says ``truncated``.
 
     :param obj: a copy of the answer, changed in place
     :return: whether it now fits; False when not even an empty page that
@@ -326,16 +327,13 @@ def _fit_page(obj, max_bytes):
             low = middle
         else:
             high = middle - 1
-    kept = entries[:low]
-    if not kept and entries:
-        page[key] = []
-        first = entries[0]
-        text = first if isinstance(first, str) else _dumps(first)
-        cut = _fit(text, max_bytes - _size(obj) - SEPARATOR_BYTES - 2)
-        kept = [cut] if cut else []
+    kept, first_cut = entries[:low], False
     # A next_offset that grows from null to a long number, or the notice of
-    # a page that shows nothing, can take it past the limit: one entry less.
+    # a page that shows nothing, can take it past the limit: one entry less,
+    # and once no entry is left whole, a piece of the first, if one fits.
     while True:
+        if not kept and entries and not first_cut:
+            kept, first_cut = _cut_first(page, key, entries, obj, max_bytes), True
         page[key] = kept
         if len(kept) < len(entries):
             page["next_offset"] = page["offset"] + len(kept)
@@ -347,6 +345,29 @@ def _fit_page(obj, max_bytes):
         if not kept:
             return False
         kept = kept[:-1]
+
+
+def _cut_first(page, key, entries, obj, max_bytes):
+    """Return ``[the first of *entries*, cut to fit]``, or ``[]``.
+
+    Cut to the room *page* leaves it once it says what it will — the
+    entry after it is where the next page starts, and it is
+    ``truncated`` — so that saying it takes no room the piece counted on.
+
+    :param dict page: the page, inside *obj*, changed in place
+    :param str key: the key of the page's entries
+    :param list entries: all the entries the page had
+    :param obj: the whole answer
+    :param int max_bytes: what the whole answer must fit
+    """
+    page[key] = []
+    if len(entries) > 1:
+        page["next_offset"] = page["offset"] + 1
+    page["truncated"] = True
+    first = entries[0]
+    text = first if isinstance(first, str) else _dumps(first)
+    cut = _fit(text, max_bytes - _size(obj) - SEPARATOR_BYTES - 2)
+    return [cut] if cut else []
 
 
 def _cap_around_pages(obj):
