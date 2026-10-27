@@ -1,8 +1,10 @@
 """What an agent does carries its mark: audit rows and jobs."""
 
+import json
+
 from odoo.exceptions import AccessError
 from odoo.tests import tagged
-from odoo.tests.common import TransactionCase, new_test_user
+from odoo.tests.common import HttpCase, TransactionCase, new_test_user
 
 from odoo.addons.incubacloud_mcp.protocol.context import VIA_CONTEXT_KEY
 
@@ -84,3 +86,41 @@ class TestViaClient(TransactionCase):
         """A job created in an agent's request carries its mark."""
         self.assertEqual(self._job(**{VIA_CONTEXT_KEY: VIA}).via_client, VIA)
         self.assertFalse(self._job().via_client)
+
+
+@tagged("post_install", "-at_install")
+class TestViaClientFromThePanel(HttpCase):
+    """A panel user cannot stamp the mark through the context of an RPC.
+
+    ``post_install``: it creates a user.
+    """
+
+    def test_a_mark_sent_in_the_context_of_a_panel_call_is_ignored(self):
+        """``call_kw`` with the mark in its context writes a row without it."""
+        new_test_user(
+            self.env,
+            login="via-rpc-manager",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        self.authenticate("via-rpc-manager", "via-rpc-manager")
+        body = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "model": "cloud.audit.log",
+                "method": "create",
+                "args": [{"action": "Forged through the panel"}],
+                "kwargs": {"context": {VIA_CONTEXT_KEY: "forged"}},
+            },
+        }
+        response = self.url_open(
+            "/web/dataset/call_kw/cloud.audit.log/create",
+            data=json.dumps(body),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertIn("result", response.json(), response.text)
+        row = self.env["cloud.audit.log"].search(
+            [("action", "=", "Forged through the panel")]
+        )
+        self.assertTrue(row)
+        self.assertFalse(row.via_client)

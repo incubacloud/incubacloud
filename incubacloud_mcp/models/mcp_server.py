@@ -22,7 +22,7 @@ from odoo.service.model import PG_CONCURRENCY_ERRORS_TO_RETRY
 
 from odoo.addons.incubacloud.controllers._safe_error import safe_error_response
 
-from ..protocol.context import VIA_CONTEXT_KEY, CallContext, Reply
+from ..protocol.context import VIA_CONTEXT_KEY, VIA_REQUEST_ATTR, CallContext, Reply
 from ..protocol.errors import (
     INVALID_PARAMS,
     INVALID_REQUEST,
@@ -149,15 +149,14 @@ class McpServer(models.AbstractModel):
     def _with_via(self, ctx):
         """Mark what this request writes as done through the agent of *ctx*.
 
-        Routes read ``request.env``, so the mark goes on the request's
-        environment; without a request (tests calling the model) on this
-        recordset only.
+        The mark goes on the request itself, where audit rows and jobs
+        read it (``agent_mark``): a context key could be forged by any
+        panel user. Without a request (tests calling the model), on this
+        recordset's context.
         """
         if request:
-            request.update_env(
-                context=request.env.context | {VIA_CONTEXT_KEY: ctx.via()}
-            )
-            return self.with_env(request.env)
+            setattr(request, VIA_REQUEST_ATTR, ctx.via())
+            return self
         return self.with_context(**{VIA_CONTEXT_KEY: ctx.via()})
 
     @api.model

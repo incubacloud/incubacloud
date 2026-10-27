@@ -2,8 +2,13 @@
 
 from dataclasses import dataclass, field
 
-#: Context key that marks what a request writes as done through an agent.
+#: Context key that marks what is written as done through an agent, where
+#: there is no request (tests calling the models).
 VIA_CONTEXT_KEY = "incubacloud_mcp_client"
+#: Attribute of the HTTP request that marks what it writes as done through
+#: an agent. Only the MCP endpoint sets it: a context key could be sent by
+#: any panel user through ``call_kw``.
+VIA_REQUEST_ATTR = "incubacloud_mcp_via"
 
 
 @dataclass(frozen=True)
