@@ -95,19 +95,33 @@
                     </t>
 
                     <t t-if="state.tab === 'claude_ai'">
-                        <t t-if="view.needsApiKey">
-                            <p class="ic-mcp-step">
-                                Claude and Claude Desktop connect with OAuth only, which this
-                                panel does not offer: use one of the other clients.
-                            </p>
-                        </t>
-                        <t t-else="">
-                            <ol class="ic-mcp-steps">
-                                <li>In Claude, open Settings, then Connectors, and choose Add custom connector.</li>
-                                <li>Name it, for example IncubaCloud, and paste this panel's MCP address.</li>
-                                <li>Choose Connect and sign in with your IncubaCloud account.</li>
-                            </ol>
-                        </t>
+                        <ol class="ic-mcp-steps">
+                            <li>In Claude, open Customize, then Connectors, and choose + Add, then Add custom connector.</li>
+                            <li>Name it, for example IncubaCloud, and paste this panel's MCP address.</li>
+                            <li t-if="view.needsApiKey">
+                                Choose No sign in. Under Request headers, add the header
+                                <code t-translation="off">Authorization</code> with the value
+                                <code t-translation="off">Bearer <t t-esc="apiKeyPlaceholder"/></code>,
+                                then choose Add.
+                            </li>
+                            <li t-else="">
+                                Keep the sign-in settings Claude detects, choose Add, and sign in
+                                with your IncubaCloud account.
+                            </li>
+                        </ol>
+                        <p t-if="view.needsApiKey" class="ic-mcp-step">
+                            Only on a Pro or Max plan: a connector an owner adds in Organization
+                            settings is shared by every member, and so would your key be.
+                        </p>
+                        <p t-else="" class="ic-mcp-step">
+                            On a Team or Enterprise plan, an owner adds it once in Organization
+                            settings, Connectors (Add, Custom, Web); then each member finds it in
+                            Customize, Connectors, and chooses Connect.
+                        </p>
+                        <p class="ic-mcp-step">
+                            Claude connects from Anthropic's servers, not from your computer: this
+                            panel must be reachable from the internet.
+                        </p>
                     </t>
 
                     <t t-if="state.tab === 'cursor_vscode'">
