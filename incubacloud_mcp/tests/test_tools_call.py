@@ -87,6 +87,11 @@ class _CallProbes(http.Controller):
         host.password = new_value
         raise UserError(f"could not finish rotating to {new_value}")
 
+    @http.route("/cloud/mcp_test/huge_list", type="jsonrpc", auth="user")
+    def mcp_test_huge_list(self):
+        """Answer a list far over 64 KB."""
+        return [{"n": index, "text": "y" * 1000} for index in range(500)]
+
     @http.route("/cloud/mcp_test/nothing", type="jsonrpc", auth="user")
     def mcp_test_nothing(self):
         """Do its job and answer nothing, as some panel routes do."""
@@ -246,6 +251,14 @@ PROBES = [
         "group_cloud_user",
         obj({"host_id": record_id("Host.")}),
         route="/cloud/mcp_test/deny_quoting",
+    ),
+    ToolSpec(
+        "probe_huge_list",
+        "Huge list.",
+        "group_cloud_user",
+        obj(),
+        route="/cloud/mcp_test/huge_list",
+        read_only=True,
     ),
     ToolSpec(
         "probe_huge",
@@ -463,6 +476,14 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         payload = self._payload(result)
         self.assertTrue(payload["truncated"])
         self.assertEqual(payload["rows"][0]["n"], 0)
+
+    def test_a_list_answer_that_is_cut_says_so(self):
+        """An answer that is a list, far over 64 KB, is cut and says so."""
+        result = self._call_tool(self.key, "probe_huge_list")
+        self.assertLessEqual(len(result["content"][-1]["text"].encode()), MAX_BYTES)
+        payload = self._payload(result)
+        self.assertTrue(payload["truncated"])
+        self.assertEqual(payload["items"][0]["n"], 0)
 
     def test_an_unexpected_error_hides_its_detail(self):
         """An unexpected error says a reference, not its internal detail."""
