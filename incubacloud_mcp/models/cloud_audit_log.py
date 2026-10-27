@@ -1,8 +1,21 @@
 """The audit says when an action came through an agent, and which."""
 
 from odoo import api, fields, models
+from odoo.http import request
 
-from ..protocol.context import VIA_CONTEXT_KEY
+from ..protocol.context import VIA_CONTEXT_KEY, VIA_REQUEST_ATTR
+
+
+def agent_mark(env):
+    """Return the agent what is being written comes through, or ``''``.
+
+    In an HTTP request, only what the MCP endpoint left on the request
+    counts, never the context, which a panel user sends with any RPC.
+    Without a request, the context of *env*.
+    """
+    if request:
+        return getattr(request, VIA_REQUEST_ATTR, "") or ""
+    return env.context.get(VIA_CONTEXT_KEY) or ""
 
 
 class CloudAuditLog(models.Model):
@@ -20,7 +33,7 @@ class CloudAuditLog(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         """Stamp the rows of an agent's request; drop a forged stamp."""
-        via = self.env.context.get(VIA_CONTEXT_KEY)
+        via = agent_mark(self.env)
         for vals in vals_list:
             if via:
                 vals["via_client"] = via

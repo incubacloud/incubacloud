@@ -4,7 +4,7 @@ from odoo import api, fields, models
 from odoo.exceptions import AccessError
 from odoo.tools.sql import create_index
 
-from ..protocol.context import VIA_CONTEXT_KEY
+from .cloud_audit_log import agent_mark
 
 
 class CloudJob(models.Model):
@@ -37,7 +37,7 @@ class CloudJob(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         """Stamp the jobs an agent's request queues; drop a forged stamp."""
-        via = self.env.context.get(VIA_CONTEXT_KEY)
+        via = agent_mark(self.env)
         for vals in vals_list:
             if via:
                 vals["via_client"] = via
