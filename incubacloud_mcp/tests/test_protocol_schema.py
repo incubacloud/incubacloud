@@ -21,7 +21,10 @@ SCHEMA = {
 
 
 class TestSchema(BaseCase):
+    """Arguments are checked against the tool's schema, unknown keys included."""
+
     def test_valid_arguments_come_back_with_integers_coerced(self):
+        """Valid arguments come back, integral floats as integers."""
         self.assertEqual(
             validate(
                 SCHEMA,
@@ -31,14 +34,17 @@ class TestSchema(BaseCase):
         )
 
     def test_an_unknown_argument_is_named(self):
+        """An argument the tool does not know is refused by name."""
         with self.assertRaisesRegex(SchemaError, "postgres_pasword"):
             validate(SCHEMA, {"instance_id": 1, "postgres_pasword": "x"})
 
     def test_a_missing_required_argument_is_named(self):
+        """A missing required argument is refused by name."""
         with self.assertRaisesRegex(SchemaError, "instance_id"):
             validate(SCHEMA, {})
 
     def test_types_are_checked(self):
+        """Every JSON type is checked; a boolean is not an integer."""
         for bad in (
             {"instance_id": "7"},
             {"instance_id": True},
@@ -50,6 +56,7 @@ class TestSchema(BaseCase):
                 validate(SCHEMA, bad)
 
     def test_enum_range_and_length(self):
+        """enum, minimum, maximum and maxLength are enforced."""
         for bad in (
             {"instance_id": 1, "environment": "dev"},
             {"instance_id": 0},
@@ -59,6 +66,7 @@ class TestSchema(BaseCase):
                 validate(SCHEMA, bad)
 
     def test_an_open_object_accepts_any_key(self):
+        """An object open to more properties takes any key."""
         self.assertEqual(
             validate(SCHEMA, {"instance_id": 1, "vals": {"whatever": 1}})["vals"],
             {"whatever": 1},

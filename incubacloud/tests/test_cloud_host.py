@@ -1631,6 +1631,7 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
             yield scan, connect
 
     def test_a_peek_names_the_presented_key_without_logging_in(self):
+        """A peek names the key presented now, sends no credential, stores nothing."""
         host = self._host()
         trusted = host.known_hosts_key
         presented = asyncssh.generate_private_key("ssh-ed25519")
@@ -1645,6 +1646,7 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         connect.assert_not_called()
 
     def test_the_approved_key_is_trusted_and_the_login_accepts_only_it(self):
+        """The approved key is stored; the login it took accepted that key only."""
         host = self._host()
         with self._server(asyncssh.generate_private_key("ssh-ed25519")) as (
             _scan,
@@ -1663,6 +1665,7 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         )
 
     def test_another_key_is_refused_before_any_credential_is_sent(self):
+        """Another key is refused before the credentials leave; nothing changes."""
         host = self._host()
         trusted = host.known_hosts_key
         approved = asyncssh.generate_private_key("ssh-ed25519").get_fingerprint(
@@ -1681,6 +1684,7 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         self.assertEqual(host.known_hosts_key, trusted)
 
     def test_an_empty_approval_trusts_nothing(self):
+        """An empty fingerprint approves nothing: no login, nothing stored."""
         host = self._host()
         trusted = host.known_hosts_key
         with (
@@ -1696,6 +1700,7 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         self.assertEqual(host.known_hosts_key, trusted)
 
     def test_the_route_answers_logs_and_audits_the_refusal(self):
+        """The route answers the refusal; it is logged and audited."""
         from odoo.addons.incubacloud.controllers import data_load
         from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 
