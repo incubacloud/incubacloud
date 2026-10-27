@@ -28,3 +28,4 @@ from . import test_confirmation
 from . import test_approval_page
 from . import test_tools_guarded
 from . import test_download
+from . import test_tools_command
