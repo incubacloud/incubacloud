@@ -22,3 +22,4 @@ from . import test_tools_logs
 from . import test_tools_operate
 from . import test_tools_manager
 from . import test_tools_settings
+from . import test_approval

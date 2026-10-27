@@ -21,6 +21,7 @@ approval. Secrets never go in or out.
     "depends": ["incubacloud", "auth_oauth"],
     "external_dependencies": {"python": ["joserfc"]},
     "data": [
+        "security/ir.model.access.csv",
         "data/mcp_defaults.xml",
         "views/auth_oauth_provider_views.xml",
     ],
