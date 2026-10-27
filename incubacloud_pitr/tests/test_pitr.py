@@ -10,6 +10,10 @@ records.
 """
 import asyncio
 import base64
+import os
+import shutil
+import subprocess
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,6 +26,9 @@ from odoo import fields
 from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
+from odoo.addons.incubacloud.models.delete_instance_executor import (
+    DeleteInstanceExecutor,
+)
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
     JobEndAssertions,
@@ -283,10 +290,177 @@ class TestWhatReachesTheStack(_PitrCase):
         self.assertIn("purge pitr:", first[1])
         self.assertTrue(first[2]["stop_on_failure"])
         # Once the agent and the database stopped, for what they sent
-        # between the two; never a reason to stop the delete.
-        self.assertIn("docker compose stop pitr db", second[1])
-        self.assertTrue(second[1].endswith("; true"))
+        # between the two (``TestDeletingPurgesTheArchive``).
+        self.assertIn("purge pitr:", second[1])
         self.assertEqual(self.inst._teardown_pre_steps("~/pp/pitr-inst", True), [])
+
+
+class TestDeletingPurgesTheArchive(_PitrCase):
+    """Deleting the instance leaves nothing of its archive in the bucket.
+
+    The two purges run as the host runs them, through ``sh``, with a
+    ``docker`` that answers as told: the first with the stack up, the
+    second once the agent and the database stopped. Either one failing
+    stops the delete, and the instance, its directory and the agent's
+    credentials stay for the delete to be run again.
+    """
+
+    #: Records each call in ``$CALLS``, declares ``$STUB_SERVICES`` and
+    #: exits with ``$STUB_CONFIG``, ``$STUB_STOP``, ``$STUB_PURGE`` or
+    #: ``$STUB_START`` for the call that names it.
+    DOCKER = """#!/bin/sh
+echo "docker $*" >> "$CALLS"
+case "$*" in
+    "compose config --services")
+        [ "${STUB_CONFIG:-0}" -eq 0 ] || exit "$STUB_CONFIG"
+        printf '%s' "${STUB_SERVICES-db
+odoo
+pitr
+}" ;;
+    "compose stop"*) exit "${STUB_STOP:-0}" ;;
+    "run "*) exit "${STUB_PURGE:-0}" ;;
+    "compose start"*) exit "${STUB_START:-0}" ;;
+esac
+exit 0
+"""
+
+    def setUp(self):
+        super().setUp()
+        self.inst.pitr_enabled = True
+        tmp = Path(tempfile.mkdtemp(prefix="pitr-teardown-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        self.dir = tmp / "inst"
+        (self.dir / ".docker").mkdir(parents=True)
+        self.env_file = self.dir / ".docker" / "pitr.env"
+        self.env_file.write_text("AWS_REGION=auto\n")
+        self.calls = tmp / "calls"
+        self.calls.write_text("")
+        (tmp / "bin").mkdir()
+        docker = tmp / "bin" / "docker"
+        docker.write_text(self.DOCKER)
+        docker.chmod(0o755)
+        self.path = f"{tmp / 'bin'}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+        self.first, self.second = self.inst._teardown_pre_steps(str(self.dir), False)
+
+    def _run(self, step, **stubs):
+        """Run *step*'s command through ``sh``, as the host would.
+
+        :param tuple step: ``(label, command[, opts])``
+        :param stubs: what docker answers: ``services`` (what the compose
+            declares, one per line), and the exit status of ``config``
+            (reading the compose), ``stop``, ``purge`` (the ephemeral
+            rclone) and ``start``
+        :return: the command's exit status; what it wrote is left in
+            ``self.output``
+        :rtype: int
+        """
+        env = {"PATH": self.path, "CALLS": str(self.calls)}
+        env.update({f"STUB_{name.upper()}": str(v) for name, v in stubs.items()})
+        proc = subprocess.run(
+            ["sh", "-c", step[1]], env=env, capture_output=True, text=True,
+            timeout=60, check=False,
+        )
+        self.output = proc.stdout + proc.stderr
+        return proc.returncode
+
+    def _calls(self, prefix):
+        """The docker calls the steps made that start with *prefix*.
+
+        :rtype: list
+        """
+        return [
+            call for call in self.calls.read_text().splitlines()
+            if call.startswith(prefix)
+        ]
+
+    def test_a_second_purge_that_fails_stops_the_delete(self):
+        """What the agent sent between the two would outlive the instance."""
+        self.assertNotEqual(self._run(self.second, purge=1), 0)
+        opts = self.second[2] if len(self.second) > 2 else {}
+        self.assertTrue(opts.get("stop_on_failure"))
+        self.assertEqual(
+            self._calls("docker compose stop"), ["docker compose stop pitr db"],
+        )
+        # Running again, as a first purge that fails leaves it.
+        self.assertEqual(
+            self._calls("docker compose start"), ["docker compose start pitr db"],
+        )
+
+    def test_a_stop_that_fails_is_not_purged_over(self):
+        """An agent that may still be sending makes no purge the last one."""
+        self.assertNotEqual(self._run(self.second, stop=1), 0)
+        self.assertEqual(self._calls("docker run"), [])
+        self.assertEqual(
+            self._calls("docker compose start"), ["docker compose start pitr db"],
+        )
+
+    def test_a_compose_it_cannot_read_stops_the_step_untouched(self):
+        """Read as "no agent", the database alone was stopped and the
+        purge ran with the agent still sending."""
+        self.assertNotEqual(self._run(self.second, config=1), 0)
+        self.assertEqual(self._calls("docker compose stop"), [])
+        self.assertEqual(self._calls("docker run"), [])
+        self.assertEqual(self._calls("docker compose start"), [])
+
+    def test_the_log_says_whether_what_stopped_runs_again(self):
+        self._run(self.second, purge=1)
+        self.assertIn("pitr db running again", self.output)
+        self._run(self.second, purge=1, start=1)
+        self.assertIn("ERROR: pitr db could not be started again", self.output)
+        self.assertNotIn("running again", self.output)
+
+    def test_without_the_agent_only_the_database_is_stopped_and_started(self):
+        """Switched off, the credentials stay for the purge; the agent does not.
+
+        Compose refuses to stop or start a service it does not declare,
+        and does neither to the others then.
+        """
+        self.assertEqual(self._run(self.second, services="db\nodoo\n"), 0)
+        self.assertNotEqual(
+            self._run(self.second, services="db\nodoo\n", purge=1), 0,
+        )
+        self.assertEqual(self._calls("docker compose stop"), [
+            "docker compose stop db", "docker compose stop db",
+        ])
+        self.assertEqual(
+            self._calls("docker compose start"), ["docker compose start db"],
+        )
+
+    def test_an_empty_prefix_or_no_credentials_let_the_delete_go_on(self):
+        for purge in (0, 3):
+            self.assertEqual(self._run(self.second, purge=purge), 0)
+        self.env_file.unlink()
+        self.assertEqual(self._run(self.second, purge=1), 0)
+        self.assertEqual(len(self._calls("docker run")), 2)
+        self.assertEqual(self._calls("docker compose start"), [])
+
+    def test_the_first_purge_stops_the_delete_with_the_stack_up(self):
+        self.assertTrue(self.first[2]["stop_on_failure"])
+        self.assertNotEqual(self._run(self.first, purge=1), 0)
+        self.assertEqual(self._run(self.first, purge=3), 0)
+        self.assertEqual(self._calls("docker compose"), [])
+
+    def test_the_delete_keeps_the_instance_when_the_second_purge_fails(self):
+        """Nothing is torn down, and the instance is back to 'deployed'."""
+        executor = self._executor(DeleteInstanceExecutor, "delete_instance")
+        steps = executor.get_commands()
+        failing = dict(step[:2] for step in steps)[
+            "Stop archiving and purge what arrived meanwhile"
+        ]
+        transport = MagicMock(spec=SSHTransport)
+        transport.execute.side_effect = (
+            lambda command, *_handlers: CommandResult("", int(command == failing))
+        )
+        results, skipped = asyncio.run(executor._run_steps(transport, steps))
+        self.assertIn("Stop and remove containers", skipped)
+        self.assertIn("Remove instance directory", skipped)
+        errors = executor._outcome_errors(results, skipped)
+        self.assertTrue(errors)
+        self.inst._transition("deleting")
+        asyncio.run(executor.on_failure(results, errors))
+        self.assertEqual(self.inst.state, "deployed")
+        self.assertEqual(self.inst.status, "error")
+        self.assertFalse(self.inst.removal_finalized)
 
 
 # post_install: creating a user at_install trips over account's
@@ -672,6 +846,43 @@ class TestSwitchingOnAndBaseCopies(_PitrCase):
         }, ["housekeeping failed"]))
         self.assertEqual(str(self.inst.pitr_last_base_at), "2026-10-18 02:00:00")
         self.assertFalse(self.inst.pitr_previous_clusters)
+
+    def test_with_no_base_copy_left_the_window_is_empty(self):
+        """A purge took them all: no moment is offered, a copy is due at once.
+
+        ``[]`` is what wal-g 3.0.9 prints for a prefix with no copy.
+        """
+        self.inst.write({
+            "pitr_cluster_id": "77", "pitr_state": "ok",
+            "pitr_oldest_base_at": fields.Datetime.now() - timedelta(days=3),
+            "pitr_last_base_at": fields.Datetime.now() - timedelta(hours=2),
+        })
+        self.assertFalse(self.inst._pitr_base_due())
+        executor = self._executor(ex.PitrBaseBackupExecutor, "pitr_base_backup")
+        asyncio.run(executor.on_success({
+            "Drop what left the window": {
+                "stdout": "IC_PITR_BASES 77 []", "exit_status": 0,
+            },
+        }))
+        self.assertFalse(self.inst.pitr_oldest_base_at)
+        self.assertFalse(self.inst.pitr_last_base_at)
+        self.assertIsNone(self.inst._pitr_window())
+        status = self.inst._pitr_status_vals()
+        self.assertEqual((status["from"], status["last_base"]), (False, False))
+        with self.assertRaisesRegex(UserError, "outside the window"):
+            self.inst.action_pitr_restore("2026-10-18 22:31")
+        self.assertTrue(self.inst._pitr_base_due())
+
+    def test_a_listing_that_failed_leaves_the_window(self):
+        oldest = fields.Datetime.now() - timedelta(days=3)
+        self.inst.write({"pitr_cluster_id": "77", "pitr_oldest_base_at": oldest})
+        executor = self._executor(ex.PitrBaseBackupExecutor, "pitr_base_backup")
+        asyncio.run(executor.on_failure({
+            "Drop what left the window": {
+                "stdout": "IC_PITR_BASES 77 ", "exit_status": 1,
+            },
+        }, ["housekeeping failed"]))
+        self.assertEqual(self.inst.pitr_oldest_base_at, oldest)
 
     def test_after_a_restore_the_next_base_copy_is_full(self):
         base = self._executor(
