@@ -79,6 +79,9 @@ class McpApprovePage(http.Controller):
                 "command": command,
                 "csrf_token": request.csrf_token(),
                 "action": request.httprequest.path,
+                # Odoo's translations skip a template's <title>: it comes
+                # translated from here.
+                "title": request.env._("Approve an agent's action"),
             },
         )
         response.status_code = status
