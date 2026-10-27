@@ -16,8 +16,10 @@ Some actions wait for you, whatever the agent asks:
 - a command on a **production** instance, and every command on a server:
   you see the exact command;
 - purging the audit log, and changing a security setting — the audit
-  retention, the trusted proxies, a rate limit (the agents' included), the
-  agents' issuer or the MCP address: you see each value before and after.
+  retention, the trusted proxies (the panel's, or a server's), a rate limit
+  (the agents' included), the agents' issuer or the MCP address, and, on
+  IncubaCloud SaaS, the observability settings: you see each value before
+  and after.
 
 An action the panel would refuse anyway — your role does not allow it, the
 production instance cannot be refreshed — is refused before you are asked.
