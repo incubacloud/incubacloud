@@ -110,7 +110,6 @@ class TestManagerTools(McpUsersMixin, McpHttpMixin, HttpCase):
         consultant = self._cloud_user(
             "mcp-mgr-consultant", group="group_cloud_consultant"
         )
-        result = self._call_tool(
-            self._api_key(consultant), "manage_host", {"vals": NEW_HOST}
-        )
-        self.assertTrue(result["isError"])
+        key = self._api_key(consultant)
+        self._assert_refused_by_role(key, "manage_host", {"vals": NEW_HOST})
+        self._assert_refused_by_role(key, "browse_host_dir", {"host_id": 1})

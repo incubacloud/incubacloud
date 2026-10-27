@@ -64,7 +64,7 @@ class TestLogTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             autospec=True,
             side_effect=canned_logs,
         )
-        patcher.start()
+        self.dispatch = patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_a_megabyte_of_log_comes_back_cut_and_continues(self):
@@ -141,6 +141,20 @@ class TestLogTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             self.assertEqual(page["truncated"], offset is not None)
         self.assertGreater(pages, 5)
         self.assertEqual(("".join(texts), "".join(htmls)), (BIG_TEXT, BIG_HTML))
+
+    def test_logs_and_mail_are_a_developer_s(self):
+        """A consultant neither sees nor runs the log and mail tools."""
+        key = self._api_key(
+            self._cloud_user("mcp-logs-consultant", group="group_cloud_consultant")
+        )
+        names = self._tool_names(key)
+        for name in ("read_logs", "staging_mailbox"):
+            with self.subTest(tool=name):
+                self.assertNotIn(name, names)
+                self.dispatch.reset_mock()
+                result = self._call_tool(key, name, {"instance_id": self.staging.id})
+                self.assertTrue(result["isError"])
+                self.dispatch.assert_not_called()
 
     def test_long_strings_are_cut(self):
         """cap_strings cuts a string past the limit and says so."""

@@ -234,6 +234,16 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertTrue(result["isError"])
         self.assertNotIn('"environment"', json.dumps(result))
 
+    def test_server_and_audit_reads_are_a_manager_s(self):
+        """A consultant neither sees nor runs a manager's read tools."""
+        key = self._api_key(
+            self._cloud_user("mcp-read-consultant", group="group_cloud_consultant")
+        )
+        self._assert_refused_by_role(key, "get_host", {"host_id": self.host.id})
+        self._assert_refused_by_role(
+            key, "get_audit_log", {"instance_id": self.production.id}
+        )
+
     def test_a_job_s_log_comes_in_pages_as_untrusted_data(self):
         """A job's log is paged, marked untrusted and has its secrets masked."""
         result = self._call_tool(
