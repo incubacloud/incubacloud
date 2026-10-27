@@ -485,7 +485,7 @@ class McpServer(models.AbstractModel):
             outcome = str(
                 result.get("error") or self.env._("The panel refused this action.")
             )
-        if not spec.read_only and spec.audit:
+        if spec.audit and self.env["incubacloud.mcp.tools"]._writes(spec, args):
             self._audit_call(spec, args, scrubber, outcome)
         if raised:
             return self._error_result(ctx, scrubber.text(outcome))

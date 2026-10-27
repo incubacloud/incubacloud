@@ -120,6 +120,12 @@ class TestOperateTools(
             self._call_tool(self.key, "manage_tags", {"action": "list"})
         )
         self.assertIn("mcp-tag", [tag["name"] for tag in listed["tags"]])
+        # The listing is a read: only the creation is audited.
+        rows = self.env["cloud.audit.log"].search(
+            [("action", "=", "Agent: manage_tags")]
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertIn('"create"', rows.details)
 
     def test_dismiss_alerts_needs_a_target(self):
         """dismiss_alerts without alert_id or all=true is refused."""
