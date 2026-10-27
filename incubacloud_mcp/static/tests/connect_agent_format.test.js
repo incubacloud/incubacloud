@@ -78,6 +78,9 @@ describe("Connect an agent — what it shows", () => {
     test("on a tenant, the issuer and the URL are read-only", () => {
         expect(settingsView({ managed: true }).readonly).toBe(true);
         expect(settingsView({ managed: false }).readonly).toBe(false);
+        expect(settingsView({ managed: 1 }).readonly).toBe(true);
+        expect(settingsView({ managed: "" }).readonly).toBe(false);
+        expect(settingsView().readonly).toBe(false);
     });
 
     test("without an MCP address, it says so and shows no command", () => {
