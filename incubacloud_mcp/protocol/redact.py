@@ -7,6 +7,7 @@ logs, command output, job logs, alerts, captured mail. It is a
 mitigation: a developer with ``run_command`` can still read and encode a
 secret of the instance, as with the terminal.
 """
+
 import base64
 import re
 from urllib.parse import quote
@@ -23,7 +24,9 @@ _TOKEN_URL_RE = re.compile(
     re.IGNORECASE,
 )
 #: ``scheme://user:password@host``: a repository URL with its credential.
-_URL_CREDENTIAL_RE = re.compile(r"\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@", re.IGNORECASE)
+_URL_CREDENTIAL_RE = re.compile(
+    r"\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@", re.IGNORECASE
+)
 
 
 def secret_variants(value):
@@ -33,7 +36,11 @@ def secret_variants(value):
     """
     if not value or len(value) < MIN_SECRET_LEN:
         return set()
-    return {value, quote(value, safe=""), base64.b64encode(value.encode()).decode("ascii")}
+    return {
+        value,
+        quote(value, safe=""),
+        base64.b64encode(value.encode()).decode("ascii"),
+    }
 
 
 class Scrubber:
@@ -48,7 +55,9 @@ class Scrubber:
         for value in values:
             variants |= secret_variants(value)
         ordered = sorted(variants, key=len, reverse=True)
-        self._pattern = re.compile("|".join(map(re.escape, ordered))) if ordered else None
+        self._pattern = (
+            re.compile("|".join(map(re.escape, ordered))) if ordered else None
+        )
 
     def text(self, text):
         """Return *text* with every known secret and URL credential masked."""
@@ -86,7 +95,11 @@ def drop_secret_keys(obj, names):
     :param names: the encrypted fields' names (never ``has_*``)
     """
     if isinstance(obj, dict):
-        return {key: drop_secret_keys(item, names) for key, item in obj.items() if key not in names}
+        return {
+            key: drop_secret_keys(item, names)
+            for key, item in obj.items()
+            if key not in names
+        }
     if isinstance(obj, (list, tuple)):
         return [drop_secret_keys(item, names) for item in obj]
     return obj

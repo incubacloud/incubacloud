@@ -5,6 +5,7 @@ legacy client's capabilities, the approval a confirmation refers to — is
 handed to the client signed, and read back only if the signature, made
 with the module's key and a label of its own, still holds.
 """
+
 import base64
 import binascii
 import hashlib
@@ -24,7 +25,9 @@ def _b64decode(text):
 
 def _mac(key, label, body):
     """Return the signature of *body* under *key* and *label*."""
-    return _b64encode(hmac.new(key, f"{label}.{body}".encode(), hashlib.sha256).digest())
+    return _b64encode(
+        hmac.new(key, f"{label}.{body}".encode(), hashlib.sha256).digest()
+    )
 
 
 def sign(key, label, payload):
@@ -35,7 +38,9 @@ def sign(key, label, payload):
     :param dict payload: JSON-serialisable content
     :rtype: str
     """
-    body = _b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
+    body = _b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    )
     return f"{body}.{_mac(key, label, body)}"
 
 
@@ -67,6 +72,10 @@ def fingerprint(tool, arguments):
     :param dict arguments: the validated arguments
     :rtype: str
     """
-    raw = json.dumps({"tool": tool, "arguments": arguments}, sort_keys=True,
-                     separators=(",", ":"), default=str)
+    raw = json.dumps(
+        {"tool": tool, "arguments": arguments},
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
     return hashlib.sha256(raw.encode()).hexdigest()
