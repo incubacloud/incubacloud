@@ -165,6 +165,9 @@ class TestSecrets(TransactionCase):
 
     def test_an_argument_named_like_a_secret_is_refused_at_any_depth(self):
         """A key named like an encrypted field is refused, however deep."""
-        with self.assertRaisesRegex(UserError, "Secrets are changed in the panel"):
+        with self.assertRaisesRegex(
+            UserError,
+            r"in the panel \(arguments\.vals\.db\.postgres_password\)",
+        ):
             self.Secrets._check_arguments({"vals": {"db": {"postgres_password": "x"}}})
         self.Secrets._check_arguments({"vals": {"name": "x"}})
