@@ -299,10 +299,14 @@ def _fit_page(obj, max_bytes):
 
     The entries left out are those after the last one kept: the next page
     starts at the first of them, so none is skipped. When not even one
-    entry fits, the first is cut, as :func:`page_items` does.
+    entry fits, the first is cut, as :func:`page_items` does. The page is
+    measured again with what it ends up saying — its new ``next_offset``,
+    and the notice of a page that shows no entry — and gives up one more
+    entry while that does not fit.
 
     :param obj: a copy of the answer, changed in place
-    :return: whether it now fits
+    :return: whether it now fits; False when not even an empty page that
+        says so fits
     """
     page, key = max(_page_lists(obj), key=lambda found: len(found[0][found[1]]))
     entries = page[key]
@@ -329,13 +333,20 @@ def _fit_page(obj, max_bytes):
         text = first if isinstance(first, str) else _dumps(first)
         cut = _fit(text, max_bytes - _size(obj) - SEPARATOR_BYTES - 2)
         kept = [cut] if cut else []
-    page[key] = kept
-    if len(kept) < len(entries):
-        page["next_offset"] = page["offset"] + len(kept)
-        page["truncated"] = True
-    if not kept and entries:
-        _too_small(page)
-    return True
+    # A next_offset that grows from null to a long number, or the notice of
+    # a page that shows nothing, can take it past the limit: one entry less.
+    while True:
+        page[key] = kept
+        if len(kept) < len(entries):
+            page["next_offset"] = page["offset"] + len(kept)
+            page["truncated"] = True
+        if not kept and entries:
+            _too_small(page)
+        if _size(obj) <= max_bytes:
+            return True
+        if not kept:
+            return False
+        kept = kept[:-1]
 
 
 def _cap_around_pages(obj):
