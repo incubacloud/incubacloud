@@ -3,9 +3,10 @@
 The ``jwks_uri`` is read from the issuer's own metadata document — RFC
 8414's ``/.well-known/oauth-authorization-server`` first, OpenID
 Connect's ``/.well-known/openid-configuration`` when that is missing —
-and only from a document whose ``issuer`` is the configured one. Cached
-an hour per process: issuers do not move their keys' address often, and
-an agent's call must not cost a round trip to them.
+and only from a document whose ``issuer`` is the configured one, with
+or without a trailing slash (Auth0's ends in one, the setting does not).
+Cached an hour per process: issuers do not move their keys' address
+often, and an agent's call must not cost a round trip to them.
 """
 
 import logging
@@ -24,6 +25,16 @@ _HTTP_TIMEOUT = 5
 # {issuer: (fetched_at, jwks_uri)}
 _CACHE = {}
 _LOCK = threading.Lock()
+
+
+def issuer_spellings(issuer):
+    """Return the ``iss`` values that name *issuer*: without and with a slash.
+
+    :param str issuer: the issuer URL, as configured
+    :rtype: tuple[str, str]
+    """
+    bare = issuer.rstrip("/")
+    return bare, f"{bare}/"
 
 
 def metadata_urls(issuer):
@@ -80,7 +91,7 @@ def jwks_uri_for(issuer):
                 continue
             if document is None:
                 continue
-            if document.get("issuer") != issuer:
+            if document.get("issuer") not in issuer_spellings(issuer):
                 raise ValueError(
                     f"the metadata at {url} names issuer "
                     f"{document.get('issuer')!r}, not {issuer!r}"

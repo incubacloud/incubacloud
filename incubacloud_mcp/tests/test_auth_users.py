@@ -7,7 +7,7 @@ from odoo.tests.common import TransactionCase, tagged
 from odoo.addons.incubacloud_mcp.models.mcp_auth import AUTH_FAILURES_PER_MIN
 from odoo.addons.incubacloud_mcp.protocol.errors import AuthError
 
-from .common import CLIENT_ID, JwtMixin, McpUsersMixin
+from .common import CLIENT_ID, ISSUER, JwtMixin, McpUsersMixin
 
 RESOURCE = "https://panel.example.test/mcp"
 AUTH_LOGGER = "odoo.addons.incubacloud_mcp.models.mcp_auth"
@@ -43,6 +43,13 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
         self.assertEqual(
             (principal.uid, principal.credential), (self.user.id, CLIENT_ID)
         )
+
+    def test_an_issuer_that_ends_in_a_slash_like_auth0s_works(self):
+        self._issuer_published = ISSUER + "/"
+        self.env["cloud.settings"]._get_system().mcp_oauth_issuer = ISSUER + "/"
+        self.provider.issuer = ISSUER + "/"
+        principal = self.auth._authenticate(f"Bearer {self._token(iss=ISSUER + '/')}")
+        self.assertEqual(principal.uid, self.user.id)
 
     def test_a_token_without_a_local_user_says_sign_in_once(self):
         error = self._refused(f"Bearer {self._token(sub='9999')}", 403)

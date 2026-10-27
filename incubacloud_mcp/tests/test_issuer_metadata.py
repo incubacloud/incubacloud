@@ -60,6 +60,13 @@ class TestIssuerMetadata(BaseCase):
             [call.args[0] for call in get.call_args_list], [OAUTH_DOC, OIDC_DOC]
         )
 
+    def test_an_issuer_that_ends_in_a_slash_is_the_configured_one(self):
+        doc = {"issuer": ISSUER + "/", "jwks_uri": ISSUER + "/oauth/jwks"}
+        with patch.object(requests, "get", return_value=_response(200, doc)):
+            self.assertEqual(
+                _issuer_metadata.jwks_uri_for(ISSUER), ISSUER + "/oauth/jwks"
+            )
+
     def test_a_document_of_another_issuer_is_refused(self):
         doc = {
             "issuer": "https://evil.example.test",

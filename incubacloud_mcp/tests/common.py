@@ -49,6 +49,8 @@ class JwtMixin:
         self._kid = "kid-" + uuid.uuid4().hex[:8]
         self._rsa_key = RSAKey.generate_key(2048, parameters={"kid": self._kid})
         self._issuer_down = False
+        # What the issuer calls itself: Auth0's ends in a slash.
+        self._issuer_published = ISSUER
         self._jwks_calls = 0
         patcher = patch.object(requests, "get", side_effect=self._issuer_get)
         patcher.start()
@@ -62,7 +64,9 @@ class JwtMixin:
         if self._issuer_down:
             raise requests.ConnectionError("issuer down")
         if url == ISSUER + "/.well-known/oauth-authorization-server":
-            return http_response(200, {"issuer": ISSUER, "jwks_uri": JWKS_URI})
+            return http_response(
+                200, {"issuer": self._issuer_published, "jwks_uri": JWKS_URI}
+            )
         if url == JWKS_URI:
             self._jwks_calls += 1
             return http_response(200, {"keys": [self._rsa_key.as_dict(private=False)]})

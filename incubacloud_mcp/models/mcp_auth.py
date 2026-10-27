@@ -17,7 +17,7 @@ from joserfc.errors import JoseError
 
 from odoo import SUPERUSER_ID, api, models, tools
 
-from ..controllers._issuer_metadata import jwks_uri_for
+from ..controllers._issuer_metadata import issuer_spellings, jwks_uri_for
 from ..controllers._jwks_cache import get_keyset, unverified_kid
 from ..protocol.canonical import resource_metadata_url
 from ..protocol.context import Principal, Reply
@@ -84,7 +84,7 @@ class McpAuth(models.AbstractModel):
             raise self._invalid_token()
         registry = jwt.JWTClaimsRegistry(
             leeway=_LEEWAY_SECONDS,
-            iss={"essential": True, "value": issuer},
+            iss={"essential": True, "values": list(issuer_spellings(issuer))},
             aud={"essential": True, "value": resource},
             sub={"essential": True},
             exp={"essential": True},
