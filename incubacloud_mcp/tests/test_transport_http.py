@@ -7,6 +7,7 @@ from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
 from odoo.addons.incubacloud_mcp.controllers import mcp as mcp_controller
+from odoo.addons.incubacloud_mcp.models.cloud_settings import RESOURCE_PARAM
 from odoo.addons.incubacloud_mcp.protocol.versions import MODERN
 
 from .common import (
@@ -18,6 +19,7 @@ from .common import (
 )
 
 CONTROLLER_LOGGER = "odoo.addons.incubacloud_mcp.controllers.mcp"
+WELL_KNOWN_LOGGER = "odoo.addons.incubacloud_mcp.controllers.well_known"
 
 
 @tagged("post_install", "-at_install")
@@ -267,6 +269,19 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
                 )
                 self.assertEqual(document["bearer_methods_supported"], ["header"])
                 self.assertTrue(document["resource_name"])
+
+    def test_without_a_usable_resource_there_is_no_document(self):
+        """An issuer but no usable ``/mcp`` URL: 404 and why in the log, never
+        an empty resource."""
+        ICP = self.env["ir.config_parameter"].sudo()
+        ICP.set_param(RESOURCE_PARAM, False)
+        ICP.set_param("web.base.url", "nowhere")
+        with self.assertLogs(WELL_KNOWN_LOGGER, "WARNING"):
+            response = self.url_open(
+                "/.well-known/oauth-protected-resource/mcp",
+                headers={"X-Odoo-Database": self.env.cr.dbname},
+            )
+        self.assertEqual(response.status_code, 404)
 
     def test_without_issuer_there_is_no_document_and_the_challenge_has_a_realm(self):
         """API keys only: no RFC 9728 document, and a realm in the challenge."""
