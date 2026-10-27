@@ -437,6 +437,11 @@ class McpServer(models.AbstractModel):
         An ``{'ok': False}`` answer keeps what the route wrote, as in the
         panel. An exception rolls back the savepoint. A concurrency error
         is raised again so Odoo retries the whole request.
+
+        The routes a tool calls must not commit: a commit inside the
+        savepoint ends it, and a failure after it could no longer be
+        rolled back. A route that has to commit is called by a tool that
+        runs outside this savepoint, or is split so it does not.
         """
         Secrets = self.env["incubacloud.mcp.secrets"]
         known_before = Secrets._known_values()
