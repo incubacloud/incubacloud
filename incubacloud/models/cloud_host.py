@@ -1288,10 +1288,20 @@ class CloudHost(models.Model):
             if not found or found != expected_fingerprint:
                 self._refuse_unapproved_key(found, expected_fingerprint)
             # Swapped in between, another key fails the key exchange of
-            # the login, still before the credentials are sent.
-            entry = self._scan_host_key_entry(
-                known_hosts=asyncssh.import_known_hosts(presented),
-            )
+            # the login, still before the credentials are sent — and is
+            # refused, logged and audited like any other.
+            try:
+                entry = self._scan_host_key_entry(
+                    known_hosts=asyncssh.import_known_hosts(presented),
+                )
+            except asyncssh.HostKeyNotVerifiable:
+                try:
+                    swapped = self._known_hosts_fingerprint(
+                        self._presented_host_key_entry(),
+                    )
+                except (asyncssh.Error, OSError):
+                    swapped = ""
+                self._refuse_unapproved_key(swapped, expected_fingerprint)
         fingerprint = self._known_hosts_fingerprint(entry)
         previous = self.revoked_key_fingerprint or ""
         changed = bool(previous and fingerprint and fingerprint != previous)

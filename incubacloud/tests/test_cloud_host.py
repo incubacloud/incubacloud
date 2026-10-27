@@ -1683,6 +1683,42 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         connect.assert_not_called()
         self.assertEqual(host.known_hosts_key, trusted)
 
+    def test_a_key_swapped_before_the_login_is_refused_and_audited(self):
+        """A key swapped between the comparison and the login is refused and
+        audited like any other: the login fails its key exchange."""
+        from odoo.addons.incubacloud.controllers import data_load
+        from odoo.addons.incubacloud.controllers._data_load import _routes_crud
+
+        manager = new_test_user(
+            self.env, login="trust-swapped-manager",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        host = self._host()
+        trusted = host.known_hosts_key
+        approved = asyncssh.generate_private_key("ssh-ed25519")
+        swapped = asyncssh.generate_private_key("ssh-ed25519")
+        fake_request = MagicMock(spec=http.Request)
+        fake_request.env = self.env(user=manager)
+        ctrl = data_load.CloudDataLoadController()
+        with (
+            self._server(approved) as (scan, connect),
+            patch.object(http, "request", fake_request),
+            patch.object(data_load, "request", fake_request),
+            patch.object(_routes_crud, "request", fake_request),
+            self.assertLogs(self.HOST_LOGGER, level="WARNING"),
+        ):
+            scan.side_effect = [approved, swapped]
+            connect.side_effect = asyncssh.HostKeyNotVerifiable("Host key not trusted")
+            result = ctrl.cloud_trust_host_key(
+                host.id, expected_fingerprint=approved.get_fingerprint("sha256"),
+            )
+        self.assertFalse(result["ok"])
+        self.assertIn(swapped.get_fingerprint("sha256"), result["error"])
+        self.assertEqual(host.known_hosts_key, trusted)
+        details = self._audit_details(host, "SSH host key refused")
+        self.assertEqual(len(details), 1)
+        self.assertIn(swapped.get_fingerprint("sha256"), details[0])
+
     def test_an_empty_approval_trusts_nothing(self):
         """An empty fingerprint approves nothing: no login, nothing stored."""
         host = self._host()
