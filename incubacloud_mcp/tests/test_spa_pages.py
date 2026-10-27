@@ -160,11 +160,11 @@ _OAUTH_PAGE = """
     }}
 """
 
-#: Connect an agent without an MCP address, where the platform sets it.
-_SET_FROM_ABOVE_WITHOUT_URL_PAGE = """
+#: Connect an agent without a usable MCP address, where the platform sets it.
+_SET_FROM_ABOVE_URL_NOTICE = """
     const notice = document.querySelector(".ic-mcp-connect .ic-mcp-notice");
-    if (!notice.textContent.includes("not configured yet")) {{
-        fail("the notice about the missing address");
+    if (!notice.textContent.includes("{words}")) {{
+        fail("the notice about the address: {words}");
     }}
     if (!notice.textContent.includes("On IncubaCloud SaaS, contact support.")) {{
         fail("support, where the address is set from above");
@@ -230,20 +230,29 @@ class TestTheSpaPages(McpUsersMixin, HttpCase):
         )
 
     def test_where_the_platform_sets_the_address_its_notice_sends_to_support(self):
-        """Without an MCP address on a panel set from above (a tenant's), whose
-        Settings show it read-only, the notice sends to support, not there."""
-        self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, "ftp://x")
+        """Without a usable MCP address on a panel set from above (a tenant's),
+        whose Settings show it read-only, the notice sends to support, not
+        there: an address that is missing, and one the page will not put in a
+        command (an IPv6 host, which the panel accepts)."""
         self._cloud_user("mcp-spa-tenant", group="group_cloud_user")
         Settings = type(self.env["cloud.settings"])
-        with patch.object(
-            Settings, "_mcp_settings_managed", autospec=True, return_value=True
+        for resource, words in (
+            ("ftp://x", "not configured yet"),
+            ("https://[2001:db8::1]/mcp", "not a plain web address"),
         ):
-            self._open(
-                "/cloud/connect-agent",
-                ".ic-mcp-connect .ic-mcp-notice",
-                _SET_FROM_ABOVE_WITHOUT_URL_PAGE,
-                "mcp-spa-tenant",
-            )
+            self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, resource)
+            with (
+                self.subTest(resource=resource),
+                patch.object(
+                    Settings, "_mcp_settings_managed", autospec=True, return_value=True
+                ),
+            ):
+                self._open(
+                    "/cloud/connect-agent",
+                    ".ic-mcp-connect .ic-mcp-notice",
+                    _SET_FROM_ABOVE_URL_NOTICE.format(words=words),
+                    "mcp-spa-tenant",
+                )
 
     def test_the_agents_settings_tab_opens(self):
         """A manager opens Settings on the Agents tab and can edit its fields."""
