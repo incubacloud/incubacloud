@@ -482,6 +482,30 @@ class TestLimits(BaseCase):
         self.assertNotIn("page_too_small", cut)
         self.assertEqual(cut["note"], note)
 
+    def test_a_first_entry_cut_from_the_start_counts_its_next_offset(self):
+        """When no whole entry fits from the start, the first is cut to the
+        room the page leaves once its next_offset — a long number here —
+        is set: a piece of it, the next page after it, never past 64 KB."""
+        base = {
+            "note": "",
+            "entries": [],
+            "offset": 123_456_789,
+            "truncated": False,
+            "next_offset": None,
+        }
+        note = "c" * (MAX_BYTES - 600 - _answer_size(base))
+        cut, was_cut = fit_answer(
+            {**base, "note": note, "entries": ["a" * 1000, "b" * 1000]}
+        )
+        self.assertTrue(was_cut)
+        self.assertLessEqual(_answer_size(cut), MAX_BYTES)
+        self.assertEqual(len(cut["entries"]), 1)
+        self.assertTrue(cut["entries"][0])
+        self.assertTrue(("a" * 1000).startswith(cut["entries"][0]))
+        self.assertEqual(cut["next_offset"], 123_456_790)
+        self.assertNotIn("page_too_small", cut)
+        self.assertEqual(cut["note"], note)
+
     def test_a_page_whose_only_entry_is_cut_says_truncated(self):
         """A page whose only entry is cut to fit says truncated, as page_items
         does, also inside an answer: a job's log, in get_job."""
