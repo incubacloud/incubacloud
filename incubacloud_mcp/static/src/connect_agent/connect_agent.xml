@@ -35,9 +35,24 @@
                 </p>
 
                 <div class="rl-saas-fsec">This panel's MCP address</div>
-                <CopyBlock text="view.url" inline="true"/>
+                <CopyBlock t-if="!view.urlProblem" text="view.url" inline="true"/>
 
-                <t t-if="view.apiKeysRefused">
+                <t t-if="view.urlProblem === 'missing'">
+                    <div class="ic-mcp-notice">
+                        <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
+                        This panel's MCP address is not configured yet, so no agent can
+                        connect. A manager sets it in Settings, on the Agents tab.
+                    </div>
+                </t>
+                <t t-elif="view.urlProblem">
+                    <div class="ic-mcp-notice">
+                        <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
+                        This panel's MCP address is not a plain web address, so no command
+                        is shown for it. A manager can correct it in Settings, on the
+                        Agents tab.
+                    </div>
+                </t>
+                <t t-elif="view.apiKeysRefused">
                     <div class="ic-mcp-notice">
                         <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
                         Agents cannot connect to this panel yet: its sign-in for agents is
@@ -58,7 +73,7 @@
                     <a class="rl-link" t-att-href="view.agentsUrl" target="_blank" rel="noopener">Connected agents</a>.
                 </p>
 
-                <t t-if="!view.apiKeysRefused">
+                <t t-if="!view.apiKeysRefused and !view.urlProblem">
                     <div class="rl-tabs">
                         <button t-att-class="state.tab === 'claude_code' ? 'rl-tab active' : 'rl-tab'"
                                 t-on-click="() => this.setTab('claude_code')">Claude Code</button>
