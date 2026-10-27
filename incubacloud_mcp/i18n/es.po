@@ -17,9 +17,8 @@ msgstr ""
 #. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
-msgid "(Account Security, API Keys) and put it where the commands say"
-msgstr ""
-"(Seguridad de la cuenta, Claves API) y póngala donde los comandos dicen"
+msgid "(Security, API Keys) and put it where the commands say"
+msgstr "(Seguridad, Claves API) y póngala donde los comandos dicen"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
