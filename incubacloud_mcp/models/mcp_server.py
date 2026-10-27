@@ -69,10 +69,18 @@ _AUDIT_TARGETS = {
 
 
 def _client_name(info):
-    """Return the name a client declares, printable and at most 64 characters."""
+    """Return the name a client declares, printable and at most 64 characters.
+
+    Without brackets: the audit writes it between brackets after the
+    verified credential, and a name that closed them could pass for
+    another credential.
+    """
     if not isinstance(info, dict):
         return ""
-    return "".join(ch for ch in str(info.get("name") or "") if ch.isprintable())[:64]
+    name = "".join(
+        ch for ch in str(info.get("name") or "") if ch.isprintable() and ch not in "()"
+    )
+    return " ".join(name.split())[:64]
 
 
 def _session_capabilities(capabilities):

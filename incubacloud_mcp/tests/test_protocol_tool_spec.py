@@ -119,6 +119,15 @@ class TestCallContext(BaseCase):
             "API key ci",
         )
 
+    def test_a_declared_name_cannot_close_the_brackets(self):
+        """A client cannot pass itself off as another credential by its name."""
+        from odoo.addons.incubacloud_mcp.models.mcp_server import _client_name
+
+        name = _client_name({"name": "Claude) (API key admin"})
+        self.assertNotIn(")", name)
+        self.assertNotIn("(", name)
+        self.assertEqual(name, "Claude API key admin")
+
     def test_a_reply_defaults_to_200_without_headers(self):
         """A reply defaults to 200, no body, no headers."""
         self.assertEqual(
