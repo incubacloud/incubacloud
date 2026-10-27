@@ -2,6 +2,7 @@
 
 import pathlib
 import re
+from unittest.mock import patch
 
 from lxml import etree
 
@@ -9,10 +10,14 @@ from odoo.modules.module import get_module_path
 from odoo.tests import tagged
 from odoo.tests.common import BaseCase, HttpCase
 
+from ..models.cloud_settings import RESOURCE_PARAM
 from .common import McpUsersMixin
 
 _CORE_SRC = pathlib.Path(get_module_path("incubacloud")) / "static" / "src"
 _OUR_SRC = pathlib.Path(get_module_path("incubacloud_mcp")) / "static" / "src"
+
+#: The panel's MCP address in the browser tests.
+RESOURCE = "https://panel.example.test/mcp"
 
 #: A page is ready when *selector* is there and the panel's start-up
 #: loader, still animating for a second after the panel mounts, is gone:
@@ -71,28 +76,122 @@ class TestOurTemplates(BaseCase):
                         self.assertEqual(code.get("t-translation"), "off")
 
 
+#: Checks run in the page; any failure is a console error.
+_CHECK = """
+(async () => {{
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const fail = (what) => {{ throw new Error("{page}: " + what); }};
+    {body}
+    console.log("test successful");
+}})().catch((error) => console.error(error.message));
+"""
+
+#: Connect an agent with API keys only: what it shows, tab by tab.
+_API_KEY_PAGE = """
+    const page = document.querySelector(".ic-mcp-connect");
+    if (page.querySelector(".ic-mcp-url").textContent.trim() !== "{resource}") {{
+        fail("the URL");
+    }}
+    if (!page.querySelector(".ic-mcp-notice")?.textContent.includes("API keys only")) {{
+        fail("the API key notice");
+    }}
+    const tabs = [...page.querySelectorAll(".rl-tabs .rl-tab")];
+    for (const tab of tabs) {{
+        tab.click();
+        await sleep(150);
+        if (page.innerHTML.includes("cursor://")) {{
+            fail("a one-click link that would carry an API key");
+        }}
+    }}
+"""
+
+#: Connect an agent with the agents' OAuth issuer.
+_OAUTH_PAGE = """
+    const page = document.querySelector(".ic-mcp-connect");
+    if (page.querySelector(".ic-mcp-notice")) {{
+        fail("an API key notice with an issuer");
+    }}
+    const tabs = [...page.querySelectorAll(".rl-tabs .rl-tab")];
+    tabs.find((tab) => tab.textContent.includes("Cursor")).click();
+    await sleep(150);
+    if (!page.querySelector("a[href^='cursor://']")) {{
+        fail("Cursor's one-click link");
+    }}
+"""
+
+#: Settings → Agents: both fields, editable or not.
+_SETTINGS_PAGE = """
+    const inputs = [...document.querySelectorAll(".ic-mcp-settings input")];
+    if (inputs.length !== 2 || inputs.some((input) => input.readOnly !== {readonly})) {{
+        fail("the fields should be read-only: {readonly}");
+    }}
+"""
+
+
 @tagged("post_install", "-at_install")
 class TestTheSpaPages(McpUsersMixin, HttpCase):
     """The page and the Settings tab, opened by a user of each role."""
 
-    def test_connect_an_agent_opens_from_its_route(self):
-        """A stakeholder opens Connect an agent and reads the panel's MCP URL."""
-        self._cloud_user("mcp-spa-user", group="group_cloud_user")
+    def setUp(self):
+        """This panel's MCP address; agents sign in with API keys only."""
+        super().setUp()
+        self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, RESOURCE)
+        self.env["cloud.settings"]._get_system().mcp_oauth_issuer = ""
+
+    def _open(self, url, selector, body, login):
+        """Open *url* as *login* once *selector* is there; run the checks of *body*."""
         self.browser_js(
-            "/cloud/connect-agent",
-            "console.log('test successful')",
-            _READY.format(selector=".ic-mcp-connect .ic-mcp-url"),
-            login="mcp-spa-user",
+            url,
+            _CHECK.format(page=url, body=body),
+            _READY.format(selector=selector),
+            login=login,
             timeout=180,
         )
 
-    def test_the_agents_settings_tab_opens(self):
-        """A manager opens Settings on the Agents tab and finds its fields."""
-        self._cloud_user("mcp-spa-mgr", group="group_cloud_manager")
-        self.browser_js(
-            "/cloud/settings?tab=agents",
-            "console.log('test successful')",
-            _READY.format(selector=".ic-mcp-settings input"),
-            login="mcp-spa-mgr",
-            timeout=180,
+    def test_connect_an_agent_opens_from_its_route(self):
+        """A stakeholder opens Connect an agent: the panel's MCP URL, the API
+        key notice, and no one-click link that would carry the key."""
+        self._cloud_user("mcp-spa-user", group="group_cloud_user")
+        self._open(
+            "/cloud/connect-agent",
+            ".ic-mcp-connect .ic-mcp-url",
+            _API_KEY_PAGE.format(resource=RESOURCE),
+            "mcp-spa-user",
         )
+
+    def test_with_an_issuer_cursor_installs_in_one_click(self):
+        """With the agents' issuer, no API key notice and Cursor's link."""
+        self.env[
+            "cloud.settings"
+        ]._get_system().mcp_oauth_issuer = "https://login.example.test"
+        self._cloud_user("mcp-spa-oauth", group="group_cloud_user")
+        self._open(
+            "/cloud/connect-agent",
+            ".ic-mcp-connect .ic-mcp-url",
+            _OAUTH_PAGE,
+            "mcp-spa-oauth",
+        )
+
+    def test_the_agents_settings_tab_opens(self):
+        """A manager opens Settings on the Agents tab and can edit its fields."""
+        self._cloud_user("mcp-spa-mgr", group="group_cloud_manager")
+        self._open(
+            "/cloud/settings?tab=agents",
+            ".ic-mcp-settings input",
+            _SETTINGS_PAGE.format(readonly="false"),
+            "mcp-spa-mgr",
+        )
+
+    def test_where_the_platform_sets_them_the_fields_are_read_only(self):
+        """On a panel set from above (a tenant's), both fields are read-only."""
+        self._cloud_user("mcp-spa-mgr2", group="group_cloud_manager")
+        Settings = type(self.env["cloud.settings"])
+        with patch.object(
+            Settings, "_mcp_settings_managed", autospec=True, return_value=True
+        ):
+            self._open(
+                "/cloud/settings?tab=agents",
+                ".ic-mcp-settings input",
+                _SETTINGS_PAGE.format(readonly="true"),
+                "mcp-spa-mgr2",
+            )
