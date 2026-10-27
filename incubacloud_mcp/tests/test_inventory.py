@@ -51,13 +51,12 @@ class TestRouteInventory(TransactionCase):
     def _watched(self):
         """Core, PITR, the MCP and every installed module built on it,
         directly or through another one (the bridge's, the tenant's)."""
-        mcp = (
+        dependents = (
             self.env["ir.module.module"]
             .sudo()
             .search([("name", "=", "incubacloud_mcp")])
-        )
-        dependents = mcp.downstream_dependencies().filtered(
-            lambda module: module.state == "installed"
+            .downstream_dependencies()
+            .filtered(lambda module: module.state == "installed")
         )
         return {
             "incubacloud",
