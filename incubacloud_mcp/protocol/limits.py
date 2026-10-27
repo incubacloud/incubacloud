@@ -321,13 +321,28 @@ def _fit_page(obj, max_bytes):
     return True
 
 
+def _cap_around_pages(obj):
+    """Return a copy of *obj* with its strings cut to 1 KB, but its pages'
+    entries, which keep theirs."""
+    paged = copy.deepcopy(obj)
+    found = _page_lists(paged)
+    entries = [page[key] for page, key in found]
+    for page, key in found:
+        page[key] = []
+    capped, _cut = cap_strings(paged, _FIELD_BYTES)
+    for (page, key), kept in zip(_page_lists(capped), entries, strict=True):
+        page[key] = kept
+    return capped
+
+
 def fit_answer(obj, max_bytes=MAX_BYTES):
     """Return ``(obj, False)`` when *obj* fits *max_bytes*, else a cut of it.
 
     The safety net behind the tools that page their answers, which
     masking can still grow past the page. A page of entries loses its
     last entries and its ``next_offset`` moves back to the first of them:
-    nothing is skipped. A page of text, whose offsets count the
+    nothing is skipped; when what comes with the page is too big by itself,
+    its strings are cut to 1 KB first. A page of text, whose offsets count the
     characters before masking, is left as it is. Any other answer has its
     lists cut first, every one to the same number of entries, the most
     that fits; when even empty lists do not make it fit, strings are cut
@@ -338,10 +353,12 @@ def fit_answer(obj, max_bytes=MAX_BYTES):
     if _size(obj) <= max_bytes:
         return obj, False
     if _page_lists(obj):
-        paged = copy.deepcopy(obj)
-        if _fit_page(paged, max_bytes):
-            return paged, True
-        return obj, False
+        for paged in (copy.deepcopy(obj), _cap_around_pages(obj)):
+            if _fit_page(paged, max_bytes):
+                return paged, True
+        # Even cut, what comes with the page does not fit: no entry is
+        # skipped, as an answer without a page skips none.
+        return {"truncated": True, "error": "The answer is too large to show."}, True
     if _has_next_offset(obj):
         return obj, False
     for candidate in (obj, cap_strings(obj, _FIELD_BYTES)[0]):
