@@ -15,6 +15,18 @@ MAX_BYTES = 64 * 1024
 SEPARATOR_BYTES = 2
 #: The keys under which a paged answer carries its page of entries.
 PAGE_LIST_KEYS = ("items", "entries", "alerts")
+#: What a page that cannot show any entry tells the agent.
+PAGE_TOO_SMALL = (
+    "The rest of this answer leaves no room for its entries: none can be "
+    "shown, and asking again from next_offset gives the same page."
+)
+
+
+def _too_small(page):
+    """Mark *page* as one that shows no entry where entries remain."""
+    page["page_too_small"] = True
+    page["notice"] = PAGE_TOO_SMALL
+    return page
 
 
 def _dumps(value):
@@ -59,7 +71,8 @@ def page_items(items, offset=0, limit=None, max_bytes=MAX_BYTES):
     A first entry larger than the page is cut so the page still fits —
     a string to its longest prefix, anything else to the start of its
     JSON text — and the page says ``truncated``. A page with no room for
-    any of it is empty, and its ``next_offset`` is that entry.
+    any of it is empty, its ``next_offset`` is that entry, and it says so
+    (``page_too_small`` and a ``notice``).
 
     :param list items: lines or JSON-serialisable entries
     :param int offset: first index to return
@@ -86,13 +99,14 @@ def page_items(items, offset=0, limit=None, max_bytes=MAX_BYTES):
         page.append(item)
         size += cost
     following = offset + len(page)
-    return {
+    result = {
         "items": page,
         "offset": offset,
         "total": total,
         "truncated": cut or following < total,
         "next_offset": following if following < total else None,
     }
+    return _too_small(result) if not page and offset < end else result
 
 
 def cap_text(text, offset=0, max_bytes=MAX_BYTES):
@@ -209,13 +223,14 @@ def page_answer(
     following = offset + len(page["items"])
     known = total if isinstance(total, int) else first + len(items)
     more = following < known
-    return {
+    result = {
         **rest,
         key: page["items"],
         "offset": offset,
         "truncated": page["truncated"] or more,
         "next_offset": following if more else None,
     }
+    return _too_small(result) if page.get("page_too_small") else result
 
 
 def _head_lists(obj, count):
@@ -318,6 +333,8 @@ def _fit_page(obj, max_bytes):
     if len(kept) < len(entries):
         page["next_offset"] = page["offset"] + len(kept)
         page["truncated"] = True
+    if not kept and entries:
+        _too_small(page)
     return True
 
 

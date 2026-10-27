@@ -382,6 +382,18 @@ class TestLimits(BaseCase):
         self.assertEqual(cut["entries"], answer["entries"][: len(cut["entries"])])
         self.assertEqual(cut["next_offset"], len(cut["entries"]))
 
+    def test_a_page_without_room_says_so(self):
+        """A page that cannot show any entry says so, for the agent not to ask
+        for the same page again and again."""
+        answer = {"summary": {"top": ["p" * 100] * 700}, "entries": list(range(10))}
+        for page in (
+            page_answer(answer, "entries", 0),
+            page_items(["abc", "def"], 0, None, max_bytes=3),
+        ):
+            self.assertTrue(page["page_too_small"])
+            self.assertIn("no room", page["notice"])
+        self.assertNotIn("page_too_small", page_items(["abc"], 0, None))
+
     def test_a_single_entry_that_was_cut_says_so(self):
         """A page whose only entry was cut says truncated."""
         self.assertTrue(page_items(["y" * (MAX_BYTES * 2)])["truncated"])
