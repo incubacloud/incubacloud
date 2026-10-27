@@ -154,14 +154,21 @@ class TestNoReadToolLeaks(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCa
         }
 
         def canned(_self, path, params):
-            """Every route answers with a secret, by key and inside text."""
+            """Every route answers with a secret, by key and inside text,
+            in its lists' rows too."""
+            row = {
+                "id": 1,
+                "name": "row",
+                "postgres_password": PG_PASSWORD,
+                "note": f"secret {PG_PASSWORD}",
+            }
             return {
                 "ok": True,
                 "lines": [f"secret {PG_PASSWORD}"],
                 "postgres_password": PG_PASSWORD,
-                "items": [],
-                "instances": [],
-                "count": 0,
+                "items": [dict(row)],
+                "instances": [dict(row)],
+                "count": 1,
             }
 
         specs = [
