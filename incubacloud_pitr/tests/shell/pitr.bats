@@ -33,6 +33,7 @@ case "$*" in
     # ic_running_services: the ids above are the service names.
     *"com.docker.compose.oneoff"*) shift 3; printf '%s\n' "$@" ;;
     *"test -x /opt/walg/archive"*) exit "${STUB_ARCHIVE_MOUNTED:-0}" ;;
+    *"pg_isready"*) exit "${STUB_PG_READY:-0}" ;;
     *"SHOW archive_mode"*) echo "${STUB_ARCHIVE_MODE:-on}" ;;
     *"FROM pg_settings WHERE name = 'archive_mode'"*) echo "${STUB_ARCHIVE_SOURCE:-configuration file}" ;;
     # One more segment archived on every read: the end-to-end check passes.
@@ -128,6 +129,41 @@ STUB
     restart="$(grep -n "compose restart db" "$CALLS" | cut -d: -f1)"
     start="$(grep -n "compose start odoo" "$CALLS" | cut -d: -f1)"
     [ -n "$stop" ] && [ "$stop" -lt "$restart" ] && [ "$restart" -lt "$start" ]
+}
+
+@test "a restart that stopped Odoo says it started it again" {
+    # The job confirms the instance running on that line: the metrics
+    # cron would read the gap in Odoo's series as a stop.
+    install -m 755 /dev/null "$DIR/.walg/archive"
+    export STUB_ARCHIVE_MODE=off
+    # The stub still answers "off" after the restart, so the switch stops
+    # there: past what is checked here.
+    run bash "$SCRIPT" enable "$DIR" odoo 300
+    [[ "$output" == *"archive_mode is still off"* ]]
+    # On a line of its own: the executor reads it whole.
+    grep -qx "IC_PITR_ODOO_RESTARTED" <<< "$output"
+}
+
+@test "a restart with Odoo already stopped leaves it so, and says nothing of it" {
+    install -m 755 /dev/null "$DIR/.walg/archive"
+    export STUB_ARCHIVE_MODE=off STUB_RUNNING='db\npitr\n'
+    run bash "$SCRIPT" enable "$DIR" odoo 300
+    grep -q "compose restart db" "$CALLS"
+    [[ "$(cat "$CALLS")" != *"compose start odoo"* ]]
+    [[ "$output" != *"IC_PITR_ODOO_RESTARTED"* ]]
+}
+
+@test "Odoo is started again, and says so, when the database does not come back" {
+    install -m 755 /dev/null "$DIR/.walg/archive"
+    export STUB_ARCHIVE_MODE=off STUB_PG_READY=1
+    # The two minutes wait_db gives the database, at once.
+    printf '#!/usr/bin/env bash\n' > "$TMP/bin/sleep"
+    chmod +x "$TMP/bin/sleep"
+    run bash "$SCRIPT" enable "$DIR" odoo 300
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"did not come back"* ]]
+    grep -q "compose start odoo" "$CALLS"
+    [[ "$output" == *"IC_PITR_ODOO_RESTARTED"* ]]
 }
 
 @test "a base copy after a timeline change is a full one" {
@@ -307,6 +343,17 @@ STUB
     grep -q "pg_reload_conf" "$CALLS"
     ! grep -q "compose stop odoo" "$CALLS"
     ! grep -q "compose restart db" "$CALLS"
+}
+
+@test "switching off a database archiving from its settings restarts it with Odoo around it, and says so" {
+    export STUB_ARCHIVE_MODE=on
+    run bash "$SCRIPT" disable "$DIR" odoo
+    [ "$status" -eq 0 ]
+    stop="$(grep -n "compose stop odoo" "$CALLS" | cut -d: -f1)"
+    restart="$(grep -n "compose restart db" "$CALLS" | cut -d: -f1)"
+    start="$(grep -n "compose start odoo" "$CALLS" | cut -d: -f1)"
+    [ -n "$stop" ] && [ "$stop" -lt "$restart" ] && [ "$restart" -lt "$start" ]
+    [[ "$output" == *"IC_PITR_ODOO_RESTARTED"* ]]
 }
 
 @test "switching off waits for a restore" {

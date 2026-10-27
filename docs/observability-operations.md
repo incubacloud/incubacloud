@@ -426,7 +426,11 @@ flapped whenever they briefly disagreed.
 
 A job that brings odoo up (start, restart, deploy, rebuild, the
 restores, a move's cutover) confirms `running` and stamps
-`running_confirmed_at`; for 120 s after (`_CONFIRMED_GRACE_SECONDS`) the
+`running_confirmed_at` when it ends. Switching continuous recovery on or
+off, when it restarts the database with odoo stopped around it, does so
+mid-job instead, the moment `pitr.sh` prints `IC_PITR_ODOO_RESTARTED`:
+the first base copy that follows a switch takes longer than the grace.
+For 120 s after (`_CONFIRMED_GRACE_SECONDS`) the
 cron does not write the flag False while the recreated container's
 series is missing — a 30 s scrape plus VictoriaMetrics' 30 s latency
 offset, doubled. A rise the cron reads itself opens no grace, and any

@@ -102,20 +102,29 @@ wait_db() {
     ic_die "the database did not come back within 120 s"
 }
 
+# Start Odoo again after restart_db stopped it, and say so on a line of
+# its own: its metrics series is gone for about a minute, which the
+# panel's liveness cron reads as a stop unless the job confirms the
+# instance running, as it does on that line.
+start_odoo() {
+    docker compose start odoo
+    echo "IC_PITR_ODOO_RESTARTED"
+}
+
 # Restart the database with Odoo stopped around it, so no request meets
-# a database going away. Odoo comes back however this ends.
+# a database going away. Odoo comes back however this ends (start_odoo).
 #   $1  database user
 restart_db() {
     local was=0
     if running odoo; then
         was=1
         docker compose stop odoo
-        trap 'docker compose start odoo' EXIT
+        trap start_odoo EXIT
     fi
     docker compose restart db
     wait_db "$1"
     if [ "$was" -eq 1 ]; then
-        docker compose start odoo
+        start_odoo
         trap - EXIT
     fi
 }
