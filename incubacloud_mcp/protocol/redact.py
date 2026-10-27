@@ -182,11 +182,11 @@ class Scrubber:
         return _URL_CREDENTIAL_RE.sub(lambda match: f"{match.group(1)}{MASK}@", text)
 
     def value(self, obj):
-        """Apply :meth:`text` to every string inside *obj*."""
+        """Apply :meth:`text` to every string inside *obj*, keys included."""
         if isinstance(obj, str):
             return self.text(obj)
         if isinstance(obj, dict):
-            return {key: self.value(item) for key, item in obj.items()}
+            return {self.text(key): self.value(item) for key, item in obj.items()}
         if isinstance(obj, (list, tuple)):
             return [self.value(item) for item in obj]
         return obj
