@@ -6,6 +6,8 @@ from unittest.mock import patch
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
+from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
+
 from .common import PG_PASSWORD, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
 #: Read tools of this group that need nothing outside the database, with arguments.
@@ -114,6 +116,85 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             self.assertTrue(
                 result["content"][0]["text"].startswith("Untrusted data follows")
             )
+
+    def _size_of(self, result):
+        """The bytes of a tool result's last text, as the agent receives it."""
+        return len(result["content"][-1]["text"].encode())
+
+    def test_a_long_access_log_comes_in_pages_under_64_kb(self):
+        """Thousands of proxy log lines come in pages under 64 KB that follow."""
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        rows = [
+            {"ip": "198.51.100.7", "path": f"/web/{index}/" + "p" * 200, "status": 200}
+            for index in range(5000)
+        ]
+        args = {"instance_id": self.production.id, "tail": 5000}
+        with patch.object(
+            Dispatch,
+            "_call",
+            autospec=True,
+            return_value={"ok": True, "entries": rows, "summary": {"requests": 5000}},
+        ):
+            first_result = self._call_tool(self.key, "read_access_log", args)
+            first = self._payload(first_result)
+            second = self._payload(
+                self._call_tool(
+                    self.key, "read_access_log", args | {"offset": first["next_offset"]}
+                )
+            )
+        self.assertLessEqual(self._size_of(first_result), MAX_BYTES + 512)
+        self.assertTrue(first["truncated"])
+        self.assertEqual(first["summary"], {"requests": 5000})
+        self.assertEqual(second["entries"][0], rows[first["next_offset"]])
+
+    def test_a_long_audit_log_comes_in_pages_under_64_kb(self):
+        """Hundreds of long audit rows come in pages under 64 KB that follow."""
+        Audit = self.env["cloud.audit.log"].sudo()
+        Audit.create(
+            [
+                {
+                    "action": "MCP probe",
+                    "instance_id": self.production.id,
+                    "details": f"{index:04d} " + "d" * 400,
+                }
+                for index in range(400)
+            ]
+        )
+        args = {"instance_id": self.production.id, "limit": 1000}
+        first_result = self._call_tool(self.key, "get_audit_log", args)
+        first = self._payload(first_result)
+        self.assertLessEqual(self._size_of(first_result), MAX_BYTES + 512)
+        self.assertTrue(first["truncated"])
+        self.assertLess(first["next_offset"], 400)
+        second = self._payload(
+            self._call_tool(
+                self.key, "get_audit_log", args | {"offset": first["next_offset"]}
+            )
+        )
+        self.assertEqual(second["offset"], first["next_offset"])
+        seen = {entry["id"] for entry in first["entries"]}
+        self.assertFalse(seen & {entry["id"] for entry in second["entries"]})
+
+    def test_long_alerts_come_in_pages_and_the_overview_fits(self):
+        """A hundred long alerts come in pages; the overview still fits 64 KB."""
+        self.env["cloud.alert"].sudo().create(
+            [
+                {
+                    "code": f"mcp_probe_{index}",
+                    "instance_id": self.production.id,
+                    "message": f"{index:03d} " + "m" * 2000,
+                }
+                for index in range(100)
+            ]
+        )
+        alerts = self._call_tool(self.key, "list_alerts", {"limit": 100})
+        page = self._payload(alerts)
+        self.assertLessEqual(self._size_of(alerts), MAX_BYTES + 512)
+        self.assertTrue(page["truncated"])
+        self.assertTrue(page["next_offset"])
+        overview = self._call_tool(self.key, "panel_overview")
+        self.assertLessEqual(self._size_of(overview), MAX_BYTES + 512)
+        self.assertTrue(self._payload(overview)["dashboard"]["truncated"])
 
     def test_the_overview_says_the_role(self):
         """panel_overview names the user's role, the dashboard and the versions."""

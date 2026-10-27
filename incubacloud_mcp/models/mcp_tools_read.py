@@ -3,7 +3,7 @@
 from odoo import api, models
 from odoo.exceptions import UserError
 
-from ..protocol.limits import page_items
+from ..protocol.limits import MAX_BYTES, page_answer, page_items, size_of
 from ..protocol.tool_spec import (
     LIMIT,
     OFFSET,
@@ -137,7 +137,7 @@ TOOLS = (
                 "limit": LIMIT,
             }
         ),
-        route="/cloud/get_alert_history",
+        handler="_tool_list_alerts",
         read_only=True,
         untrusted=True,
     ),
@@ -157,7 +157,7 @@ TOOLS = (
                 "limit": LIMIT,
             }
         ),
-        route="/cloud/get_audit_log",
+        handler="_tool_get_audit_log",
         read_only=True,
         untrusted=True,
     ),
@@ -217,16 +217,18 @@ TOOLS = (
     ),
     ToolSpec(
         "read_access_log",
-        "The last lines of an instance's proxy access log.",
+        "The last lines of an instance's proxy access log, in pages.",
         _DEVELOPER,
         obj(
             {
                 "instance_id": _INSTANCE,
                 "tail": integer("How many lines.", minimum=1, maximum=5000),
+                "offset": OFFSET,
+                "limit": LIMIT,
             },
             required=("instance_id",),
         ),
-        route="/cloud/instance/access_log",
+        handler="_tool_read_access_log",
         read_only=True,
         untrusted=True,
     ),
@@ -262,6 +264,7 @@ ROUTES = {
     "/cloud/instance/access_log": "read_access_log",
 }
 
+
 _REPO_ROUTES = {
     "branches": "/cloud/get_repo_branches",
     "head": "/cloud/get_branch_head",
@@ -295,13 +298,60 @@ class McpToolsRead(models.AbstractModel):
     def _tool_panel_overview(self, args):
         """Role and permissions, dashboard, alert count and Odoo versions."""
         config = self._route("/cloud/get_config")
-        return {
+        overview = {
             "role": config.get("role"),
             "permissions": config.get("permissions"),
-            "dashboard": self._route("/cloud/get_dashboard"),
             "active_alerts": self._route("/cloud/get_alert_count").get("count"),
             "odoo_versions": self._route("/cloud/get_odoo_versions"),
         }
+        # The dashboard's alerts get what the rest leaves of 64 KB; all of
+        # them are in list_alerts.
+        dashboard = self._route("/cloud/get_dashboard")
+        alerts = page_answer(
+            dashboard, "alerts", max_bytes=MAX_BYTES - size_of(overview)
+        )
+        dashboard["alerts"] = alerts["alerts"]
+        dashboard["truncated"] = bool(dashboard.get("truncated") or alerts["truncated"])
+        return {**overview, "dashboard": dashboard}
+
+    @api.model
+    def _tool_list_alerts(self, args):
+        """The alerts, a page of the route's fitted to 64 KB."""
+        offset = args.get("offset") or 0
+        params = {
+            key: args[key] for key in ("state_filter", "level_filter") if key in args
+        }
+        result = self._route(
+            "/cloud/get_alert_history",
+            offset=offset,
+            limit=args.get("limit") or 20,
+            **params,
+        )
+        return page_answer(
+            result, "alerts", offset, first=offset, total=result.get("total")
+        )
+
+    @api.model
+    def _tool_get_audit_log(self, args):
+        """The audit log, a page of the route's fitted to 64 KB."""
+        offset = args.get("offset") or 0
+        params = {key: value for key, value in args.items() if key != "offset"}
+        result = self._route("/cloud/get_audit_log", offset=offset, **params)
+        return page_answer(
+            result, "entries", offset, first=offset, total=result.get("total")
+        )
+
+    @api.model
+    def _tool_read_access_log(self, args):
+        """The proxy log's last lines, in 64 KB pages; the summary on each."""
+        result = self._route(
+            "/cloud/instance/access_log",
+            instance_id=args["instance_id"],
+            tail=args.get("tail"),
+        )
+        if result.get("ok") is False:
+            return result
+        return page_answer(result, "entries", args.get("offset"), args.get("limit"))
 
     @api.model
     def _tool_list_projects(self, args):
