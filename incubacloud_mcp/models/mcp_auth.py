@@ -18,6 +18,8 @@ from joserfc.errors import JoseError
 
 from odoo import SUPERUSER_ID, api, models, tools
 
+from odoo.addons.base.models.res_users import KEY_CRYPT_CONTEXT
+
 from ..controllers._issuer_metadata import issuer_spellings, jwks_uri_for
 from ..controllers._jwks_cache import get_keyset, unverified_kid
 from ..protocol.canonical import resource_metadata_url
@@ -131,6 +133,7 @@ class McpAuth(models.AbstractModel):
             )
             user = self._user_for_claims(issuer, claims)
             label = str(claims["client_id"])
+            client = f"client_id {label}"
         else:
             if not Settings._mcp_api_keys_allowed():
                 raise AuthError(
@@ -138,10 +141,11 @@ class McpAuth(models.AbstractModel):
                     self.env._("On this panel agents connect with OAuth."),
                     token_presented=True,
                 )
-            user, key_name = self._user_for_api_key(credential)
+            user, key_name, key_id = self._user_for_api_key(credential)
             label = f"API key {key_name}"
+            client = f"API key #{key_id}"
         self._check_user(user)
-        return Principal(uid=user.id, credential=label)
+        return Principal(uid=user.id, credential=label, client=client)
 
     @api.model
     def _user_for_claims(self, issuer, claims):
@@ -198,7 +202,10 @@ class McpAuth(models.AbstractModel):
 
     @api.model
     def _user_for_api_key(self, key):
-        """Return ``(user, key name)`` for one of Odoo's API keys.
+        """Return ``(user, key name, key id)`` for one of Odoo's API keys.
+
+        The key's own row is found as Odoo checks it — its index, then its
+        hash — so two keys with the same name are told apart.
 
         :raises AuthError: 401 when the key is unknown, expired or revoked
         """
@@ -214,12 +221,19 @@ class McpAuth(models.AbstractModel):
                 token_presented=True,
             )
         self.env.cr.execute(
-            "SELECT name FROM res_users_apikeys WHERE user_id = %s AND index = %s "
-            "ORDER BY id DESC LIMIT 1",
+            "SELECT id, name, key FROM res_users_apikeys "
+            "WHERE user_id = %s AND index = %s ORDER BY id DESC",
             (uid, key[:_APIKEY_INDEX_SIZE]),
         )
-        row = self.env.cr.fetchone()
-        return self.env["res.users"].sudo().browse(uid), (row[0] if row else "?")
+        rows = self.env.cr.fetchall()
+        row = next((row for row in rows if KEY_CRYPT_CONTEXT.verify(key, row[2])), None)
+        if not row:
+            raise AuthError(
+                401,
+                self.env._("The API key is not valid, has expired or was revoked."),
+                token_presented=True,
+            )
+        return self.env["res.users"].sudo().browse(uid), row[1], row[0]
 
     @api.model
     def _check_user(self, user):

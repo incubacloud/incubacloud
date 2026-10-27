@@ -72,8 +72,9 @@ class McpApproval(models.Model):
     via_client = fields.Char(readonly=True)
     credential = fields.Char(
         readonly=True,
-        help="The verified credential of the agent that asked: only it uses "
-        "the approval.",
+        help="The verified credential of the agent that asked — the token's "
+        "client, or the API key itself, not its name: only it uses the "
+        "approval.",
     )
 
     @api.model
@@ -85,7 +86,7 @@ class McpApproval(models.Model):
         :param str message: what the user approves
         :param str channel: how the user is asked (see ``channel``)
         :param str credential: the verified credential of the agent asking
-            (the token's client id, or ``API key <name>``)
+            (``Principal.client``: the token's client, or the API key's id)
         :return: ``(approval, page token)``; only the token's hash is stored
         """
         token = secrets.token_urlsafe(32)

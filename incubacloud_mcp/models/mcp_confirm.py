@@ -8,8 +8,9 @@ The channel depends on what the client can do:
 * 2025-11-25 that declared URL elicitation: error ``-32042`` with the page;
 * anything else: an ``isError`` result whose text has the page's link.
 
-Every approval is bound to the user and the credential the agent calls
-with (the spec's "bind to the client and user identity"), the tool and
+Every approval is bound to the user and the very credential the agent
+calls with (the spec's "bind to the client and user identity": the
+token's client, or the API key itself, not its name), the tool and
 the fingerprint of the arguments, lasts ten minutes and is used once,
 before the action runs.
 Whatever does not hold — a state that does not verify, another user,
@@ -78,7 +79,7 @@ class McpConfirm(models.AbstractModel):
         if ctx.modern and params.get("requestState"):
             return self._resume(spec, digest, ctx, params)
         approved = self.env["incubacloud.mcp.approval"]._find_approved(
-            spec.name, digest, ctx.principal.credential
+            spec.name, digest, ctx.principal.client
         )
         if approved and approved._consume("approved"):
             return None
@@ -107,7 +108,7 @@ class McpConfirm(models.AbstractModel):
         message = self.env["incubacloud.mcp.secrets"]._scrubber().text(message)
         channel = self._channel(ctx)
         approval, token = self.env["incubacloud.mcp.approval"]._open(
-            spec.name, digest, message, channel, ctx.principal.credential
+            spec.name, digest, message, channel, ctx.principal.client
         )
         if channel == "mrtr_form":
             # The page's link is never handed out: the form is the channel.
@@ -193,7 +194,7 @@ class McpConfirm(models.AbstractModel):
                 "a": approval.id,
                 "n": secrets.token_hex(8),
                 "u": ctx.principal.uid,
-                "c": ctx.principal.credential,
+                "c": ctx.principal.client,
                 "t": spec.name,
                 "h": digest,
                 "e": int(time.time() + APPROVAL_TTL.total_seconds()),
@@ -235,7 +236,7 @@ class McpConfirm(models.AbstractModel):
             )
         if (
             state.get("u") != ctx.principal.uid
-            or state.get("c") != ctx.principal.credential
+            or state.get("c") != ctx.principal.client
             or state.get("t") != spec.name
             or state.get("h") != digest
         ):
@@ -253,7 +254,7 @@ class McpConfirm(models.AbstractModel):
         if (
             not approval
             or approval.user_id.id != ctx.principal.uid
-            or approval.credential != ctx.principal.credential
+            or approval.credential != ctx.principal.client
             or approval.tool != spec.name
             or approval.args_hash != digest
             or not isinstance(state.get("e"), int)
