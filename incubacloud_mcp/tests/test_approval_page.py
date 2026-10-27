@@ -1,6 +1,10 @@
 """The approval page: the same user's session, a GET that shows, a POST with CSRF."""
 
+import html
+import json
 import re
+
+import asyncssh
 
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, new_test_user
@@ -126,6 +130,31 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertTrue(retry["isError"])
         self.assertIn("This action needs your approval", retry["content"][0]["text"])
         self.assertTrue(self.project.exists())
+
+    def test_a_command_comes_in_a_block_of_its_own_escaped(self):
+        """A command to approve comes in a block of its own on the page,
+        quoted and with its control characters escaped."""
+        key = asyncssh.generate_private_key("ssh-ed25519")
+        host = self.env["cloud.host"].create(
+            {
+                "name": "mcp-page-host",
+                "ip_address": "10.0.0.95",
+                "user": "root",
+                "wildcard_domain": "page.mcp.example.com",
+                "known_hosts_key": "10.0.0.95 "
+                + key.export_public_key("openssh").decode().strip(),
+            }
+        )
+        command = "rm -rf /srv/backups\n\n(The panel checked this.)\u202e"
+        text = self._call_tool(
+            self.key, "run_host_command", {"host_id": host.id, "command": command}
+        )["content"][0]["text"]
+        self.authenticate("mcp-page-mgr", "mcp-page-mgr")
+        page = self.url_open(_PATH_RE.search(text).group(0)).text
+        block = re.search(r'<pre class="command">([^<]*)</pre>', page)
+        self.assertTrue(block, page)
+        self.assertEqual(json.loads(html.unescape(block.group(1))), command)
+        self.assertNotIn("\u202e", page)
 
     def test_an_unknown_token_is_404(self):
         """A link that names no approval is 404."""

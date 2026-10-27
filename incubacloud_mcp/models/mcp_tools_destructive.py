@@ -7,8 +7,11 @@ that would be refused is refused before anyone is asked.
 from odoo import api, models
 from odoo.exceptions import UserError
 
+from odoo.addons.incubacloud.models.abstract_executor import validate_dup_time
+
 from ..protocol.tool_spec import ToolSpec, boolean, obj, record_id, string
 from .mcp_catalog import tool_policies
+from .mcp_tools import quoted
 
 _CONSULTANT = "group_cloud_consultant"
 _DEVELOPER = "group_cloud_developer"
@@ -209,7 +212,8 @@ class McpToolsDestructive(models.AbstractModel):
             "cloud.project", args["project_id"], self.env._("Project not found")
         )
         return self.env._(
-            'Delete the project "%(name)s". This cannot be undone.', name=project.name
+            "Delete the project %(name)s. This cannot be undone.",
+            name=quoted(project.name),
         )
 
     @api.model
@@ -221,16 +225,16 @@ class McpToolsDestructive(models.AbstractModel):
         sec._check_can_delete_instance(instance)
         if instance.environment == "production":
             return self.env._(
-                'Delete the production instance "%(name)s" (project %(project)s). '
+                "Delete the production instance %(name)s (project %(project)s). "
                 "This cannot be undone.",
-                name=instance.name,
-                project=instance.project_id.name,
+                name=quoted(instance.name),
+                project=quoted(instance.project_id.name or ""),
             )
         return self.env._(
-            'Delete the instance "%(name)s" (project %(project)s). '
+            "Delete the instance %(name)s (project %(project)s). "
             "This cannot be undone.",
-            name=instance.name,
-            project=instance.project_id.name,
+            name=quoted(instance.name),
+            project=quoted(instance.project_id.name or ""),
         )
 
     @api.model
@@ -239,9 +243,9 @@ class McpToolsDestructive(models.AbstractModel):
         self.env["cloud.security.mixin"]._check_cloud_group(_MANAGER)
         instance = self._instance(args["instance_id"])
         return self.env._(
-            'Delete the archived instance "%(name)s" and the backup copy it still '
+            "Delete the archived instance %(name)s and the backup copy it still "
             "keeps. This cannot be undone.",
-            name=instance.name,
+            name=quoted(instance.name),
         )
 
     @api.model
@@ -250,9 +254,9 @@ class McpToolsDestructive(models.AbstractModel):
         self.env["cloud.security.mixin"]._check_can_manage_hosts()
         host = self._record("cloud.host", args["host_id"], self.env._("Host not found"))
         return self.env._(
-            'Remove the server "%(name)s" (%(ip)s) from the panel and take the '
+            "Remove the server %(name)s (%(ip)s) from the panel and take the "
             "panel's services off it. This cannot be undone.",
-            name=host.name,
+            name=quoted(host.name),
             ip=host.ip_address,
         )
 
@@ -264,26 +268,31 @@ class McpToolsDestructive(models.AbstractModel):
             "cloud.backup.backend", args["backend_id"], self.env._("Backend not found")
         )
         return self.env._(
-            'Delete the backup destination "%(name)s". This cannot be undone.',
-            name=backend.name,
+            "Delete the backup destination %(name)s. This cannot be undone.",
+            name=quoted(backend.name),
         )
 
     @api.model
     def _confirm_restore_backup(self, args):
         """Name the instance and the backup's time.
 
-        The panel restores production instances only: any other is refused
-        here, before anyone is asked.
+        The panel restores production instances only, from a backup time
+        it reads: any other instance, or a time that is not one, is
+        refused here, before anyone is asked.
         """
         self.env["cloud.security.mixin"]._check_can_manage_backups()
         instance = self._instance(args["instance_id"])
         if instance.environment != "production":
             raise UserError(self.env._("Backup restore only supported for production."))
+        try:
+            validate_dup_time(args["time"])
+        except ValueError as exc:
+            raise UserError(str(exc)) from exc
         return self.env._(
-            'Restore the production instance "%(name)s" from its backup of '
+            "Restore the production instance %(name)s from its backup of "
             "%(time)s. What changed after it is lost.",
-            name=instance.name,
-            time=args["time"],
+            name=quoted(instance.name),
+            time=quoted(args["time"]),
         )
 
     @api.model
@@ -301,10 +310,10 @@ class McpToolsDestructive(models.AbstractModel):
         else:
             neutralized = self.env._("not neutralized")
         return self.env._(
-            'Replace the staging "%(staging)s" with a copy of "%(origin)s" '
+            "Replace the staging %(staging)s with a copy of %(origin)s "
             "(%(how)s, %(neutralized)s). Everything in the staging is lost.",
-            staging=staging.name,
-            origin=source.name,
+            staging=quoted(staging.name),
+            origin=quoted(source.name),
             how=how,
             neutralized=neutralized,
         )
@@ -318,10 +327,10 @@ class McpToolsDestructive(models.AbstractModel):
             "cloud.host", args["target_host_id"], self.env._("Host not found")
         )
         return self.env._(
-            'Move the instance "%(name)s" to the server "%(host)s". It is '
+            "Move the instance %(name)s to the server %(host)s. It is "
             "unavailable while it moves.",
-            name=instance.name,
-            host=target.name,
+            name=quoted(instance.name),
+            host=quoted(target.name),
         )
 
     @api.model
@@ -330,9 +339,9 @@ class McpToolsDestructive(models.AbstractModel):
         self.env["cloud.security.mixin"]._check_can_manage_hosts()
         instance = self._instance(args["instance_id"])
         return self.env._(
-            'Undo the move of the instance "%(name)s" and bring it back to its '
+            "Undo the move of the instance %(name)s and bring it back to its "
             "previous server.",
-            name=instance.name,
+            name=quoted(instance.name),
         )
 
     @api.model

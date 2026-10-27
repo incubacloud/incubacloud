@@ -12,6 +12,7 @@ from odoo.exceptions import UserError
 
 from ..protocol.tool_spec import ToolSpec, boolean, integer, obj, record_id, string
 from .mcp_catalog import tool_policies
+from .mcp_tools import quoted
 
 _USER = "group_cloud_user"
 _DEVELOPER = "group_cloud_developer"
@@ -33,15 +34,13 @@ TOOLS = (
     ToolSpec(
         "instance_login_link",
         "Without user_id, list an instance's users. With user_id, get a one-time "
-        "link, valid 60 seconds, to sign in to the instance as that user.",
+        "link, valid 60 seconds, to sign in to the instance as that user; the "
+        "approval names them as the instance does.",
         _USER,
         obj(
             {
                 "instance_id": record_id("The instance."),
                 "user_id": integer("The instance's user (from the list).", minimum=1),
-                "user_name": string(
-                    "Their name, for the approval message.", max_length=200
-                ),
             },
             required=("instance_id",),
         ),
@@ -147,10 +146,10 @@ class McpToolsGuarded(models.AbstractModel):
             or self.env._("none")
         )
         return self.env._(
-            'Trust the SSH key the server "%(name)s" (%(ip)s) presents now: '
+            "Trust the SSH key the server %(name)s (%(ip)s) presents now: "
             "%(new)s. Key trusted until now: %(old)s. Compare them before "
             "approving.",
-            name=host.name,
+            name=quoted(host.name),
             ip=host.ip_address,
             new=args["expected_fingerprint"],
             old=old,
@@ -166,30 +165,77 @@ class McpToolsGuarded(models.AbstractModel):
         )
 
     @api.model
-    def _confirm_instance_login_link(self, args):
-        """Ask only for a link: name the user and say whether it is production.
+    def _prepare_instance_login_link(self, args):
+        """Name the user a link is asked for as the instance does.
 
-        The id is what the link is for; the name is the agent's word, shown
-        beside it.
+        Their name, login and whether they administer it are read from
+        the instance and join the arguments: the approval shows them, and
+        the call is bound to them. The agent never names the user.
+
+        :raises UserError: when the instance does not list the user
         """
+        if not args.get("user_id"):
+            return args
+        instance = self._instance(args["instance_id"])
+        self.env["cloud.security.mixin"]._check_can_connect_as_user(instance=instance)
+        listed = self._route("/cloud/get_instance_users", instance_id=instance.id)
+        if listed.get("ok") is False:
+            raise UserError(
+                str(
+                    listed.get("error") or self.env._("The instance could not be read.")
+                )
+            )
+        user = next(
+            (
+                user
+                for user in listed.get("users") or []
+                if user.get("id") == args["user_id"]
+            ),
+            None,
+        )
+        if not user:
+            raise UserError(
+                self.env._(
+                    "The instance has no active internal user with id %(id)s.",
+                    id=args["user_id"],
+                )
+            )
+        return {
+            **args,
+            "user_name": str(user.get("name") or ""),
+            "user_login": str(user.get("login") or ""),
+            "user_is_admin": bool(user.get("is_admin")),
+        }
+
+    @api.model
+    def _confirm_instance_login_link(self, args):
+        """Ask only for a link: name the user and say whether it is production."""
         if not args.get("user_id"):
             return None
         instance = self._instance(args["instance_id"])
-        self.env["cloud.security.mixin"]._check_can_connect_as_user(instance=instance)
-        user = f"id {args['user_id']}"
-        if args.get("user_name"):
-            user = f"{args['user_name']} ({user})"
+        values = {
+            "name": quoted(instance.name),
+            "user": quoted(args["user_name"]),
+            "login": quoted(args["user_login"]),
+            "id": args["user_id"],
+        }
         if instance.environment == "production":
-            return self.env._(
-                'Sign in to the production instance "%(name)s" as its user %(user)s.',
-                name=instance.name,
-                user=user,
+            message = self.env._(
+                "Sign in to the production instance %(name)s as its user %(user)s "
+                "(login %(login)s, id %(id)s).",
+                **values,
             )
-        return self.env._(
-            'Sign in to the instance "%(name)s" as its user %(user)s.',
-            name=instance.name,
-            user=user,
-        )
+        else:
+            message = self.env._(
+                "Sign in to the instance %(name)s as its user %(user)s "
+                "(login %(login)s, id %(id)s).",
+                **values,
+            )
+        if args["user_is_admin"]:
+            message += " " + self.env._(
+                "This user is an administrator of the instance."
+            )
+        return message
 
     @api.model
     def _tool_instance_login_link(self, args):
@@ -202,7 +248,7 @@ class McpToolsGuarded(models.AbstractModel):
             "/cloud/prepare_instance_connect",
             instance_id=args["instance_id"],
             user_id=args["user_id"],
-            user_name=args.get("user_name"),
+            user_name=args["user_name"],
         )
 
     @api.model
@@ -256,10 +302,10 @@ class McpToolsGuarded(models.AbstractModel):
             return None
         job, attachment = self._download_ready(args["job_id"])
         return self.env._(
-            'Get a single-use link, valid 15 minutes, to download "%(file)s" of '
-            'the instance "%(instance)s".',
-            file=attachment.name,
-            instance=job.instance_id.name or "-",
+            "Get a single-use link, valid 15 minutes, to download %(file)s of "
+            "the instance %(instance)s.",
+            file=quoted(attachment.name),
+            instance=quoted(job.instance_id.name or "-"),
         )
 
     @api.model

@@ -40,6 +40,7 @@
             padding: 14px 16px; font-family: "JetBrains Mono", "Fira Code", monospace;
             font-size: 14px;
         }
+        .command { border-color: var(--red); }
         .meta { color: var(--muted); font-size: 14px; }
         form { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
         .btn {
@@ -56,7 +57,8 @@
         <h1>Approve an agent's action</h1>
         <t t-if="state == 'pending'">
             <p>An agent connected to this panel with your account asks to:</p>
-            <pre class="message" t-out="approval.message"/>
+            <pre class="message" t-out="message"/>
+            <pre t-if="command" class="command" t-out="command"/>
             <p class="meta">
                 Asked through <t t-out="approval.via_client or '-'"/>, with the tool
                 <code t-out="approval.tool"/>. The request expires ten minutes after it

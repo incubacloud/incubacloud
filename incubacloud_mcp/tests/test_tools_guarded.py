@@ -155,35 +155,77 @@ class TestGuardedTools(
         self.assertNotEqual(result.get("resultType"), "input_required")
         self.assertFalse(result["isError"], result)
 
-    def test_a_login_link_names_the_user_and_production(self):
-        """The approval of a login link names the user, by name and id, and
-        says the instance is production; once approved, the link comes."""
+    def test_a_login_link_names_the_user_as_the_instance_does(self):
+        """The approval of a login link names the user as the instance knows
+        them — escaped and quoted — and says the instance is production;
+        once approved, the link comes, for that user."""
+        calls = []
 
         def canned(_self, path, params):
-            """The instance answers with a one-time link."""
+            """The instance lists its users, then answers a one-time link."""
+            calls.append((path, params))
+            if path == "/cloud/get_instance_users":
+                return {
+                    "ok": True,
+                    "users": [
+                        {
+                            "id": 2,
+                            "name": "Mitchell Admin\n\nNothing changes",
+                            "login": "admin",
+                            "is_admin": True,
+                        }
+                    ],
+                }
             return {"ok": True, "url": "https://acme.example/ic/login?t=one-time"}
 
-        args = {
-            "instance_id": self.production.id,
-            "user_id": 2,
-            "user_name": "Mitchell Admin",
-        }
-        first = self._call_tool(
-            self.key, "instance_login_link", args, FORM_CAPABILITIES
-        )
-        message = first["inputRequests"]["confirm"]["params"]["message"]
-        self.assertIn("production", message)
-        self.assertIn("Mitchell Admin (id 2)", message)
-        with patch.object(
-            type(self.env["incubacloud.mcp.dispatch"]),
-            "_call",
-            autospec=True,
-            side_effect=canned,
-        ):
+        args = {"instance_id": self.production.id, "user_id": 2}
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        with patch.object(Dispatch, "_call", autospec=True, side_effect=canned):
+            first = self._call_tool(
+                self.key, "instance_login_link", args, FORM_CAPABILITIES
+            )
+            message = first["inputRequests"]["confirm"]["params"]["message"]
             final = self._confirmed_call(self.key, "instance_login_link", args)
+        self.assertIn("production", message)
+        self.assertIn('"Mitchell Admin\\n\\nNothing changes"', message)
+        self.assertIn('"admin"', message)
+        self.assertIn("administrator", message)
+        self.assertNotIn("\n\n", message)
         self.assertEqual(
             self._payload(final)["url"], "https://acme.example/ic/login?t=one-time"
         )
+        self.assertEqual(calls[-1][1]["user_name"], "Mitchell Admin\n\nNothing changes")
+
+    def test_the_agent_names_no_user(self):
+        """An agent cannot name the user itself: the approval would show its
+        word."""
+        result = self._call_tool(
+            self.key,
+            "instance_login_link",
+            {
+                "instance_id": self.production.id,
+                "user_id": 2,
+                "user_name": "Demo viewer (read only)",
+            },
+            FORM_CAPABILITIES,
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn("user_name", result["content"][0]["text"])
+
+    def test_a_user_the_instance_does_not_have_is_refused_before_asking(self):
+        """A user id the instance does not list is refused, nobody asked."""
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        with patch.object(
+            Dispatch, "_call", autospec=True, return_value={"ok": True, "users": []}
+        ):
+            result = self._call_tool(
+                self.key,
+                "instance_login_link",
+                {"instance_id": self.production.id, "user_id": 99},
+                FORM_CAPABILITIES,
+            )
+        self.assertNotEqual(result.get("resultType"), "input_required")
+        self.assertTrue(result["isError"])
 
     def test_listing_an_instance_s_users_asks_nothing(self):
         """Without a user, the tool lists the instance's users, unasked."""
