@@ -3,6 +3,7 @@
 Logs, command output, mail and lists are cut at 64 KB with
 ``truncated: true`` and a ``next_offset`` to continue from.
 """
+
 import json
 
 MAX_BYTES = 64 * 1024

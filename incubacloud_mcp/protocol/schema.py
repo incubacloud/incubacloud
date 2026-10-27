@@ -42,7 +42,9 @@ def _check_object(schema, value, path):
     if missing:
         raise SchemaError(f"{path}: missing argument(s): {', '.join(missing)}")
     return {
-        key: validate(properties[key], item, f"{path}.{key}") if key in properties else item
+        key: validate(properties[key], item, f"{path}.{key}")
+        if key in properties
+        else item
         for key, item in value.items()
     }
 
@@ -61,14 +63,21 @@ def validate(schema, value, path="arguments"):
     if kind in ("integer", "number"):
         value = _check_number(schema, value, path)
     elif kind in _PY_TYPES:
-        if not isinstance(value, _PY_TYPES[kind]) or (kind != "boolean" and isinstance(value, bool)):
+        if not isinstance(value, _PY_TYPES[kind]) or (
+            kind != "boolean" and isinstance(value, bool)
+        ):
             raise SchemaError(f"{path} must be of type {kind}")
     if "enum" in schema and value not in schema["enum"]:
-        raise SchemaError(f"{path} must be one of: {', '.join(map(str, schema['enum']))}")
+        raise SchemaError(
+            f"{path} must be one of: {', '.join(map(str, schema['enum']))}"
+        )
     if kind == "string" and "maxLength" in schema and len(value) > schema["maxLength"]:
         raise SchemaError(f"{path} is longer than {schema['maxLength']} characters")
     if kind == "object":
         return _check_object(schema, value, path)
     if kind == "array" and "items" in schema:
-        return [validate(schema["items"], item, f"{path}[{i}]") for i, item in enumerate(value)]
+        return [
+            validate(schema["items"], item, f"{path}[{i}]")
+            for i, item in enumerate(value)
+        ]
     return value

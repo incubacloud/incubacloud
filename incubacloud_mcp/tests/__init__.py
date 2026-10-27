@@ -3,3 +3,4 @@ from . import test_protocol_canonical_signing
 from . import test_protocol_headers
 from . import test_protocol_redact_limits
 from . import test_protocol_schema
+from . import test_protocol_tool_spec

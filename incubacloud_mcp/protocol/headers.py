@@ -3,6 +3,7 @@
 A proxy may route on them, so the server refuses any request whose
 headers say something different from the body it executes.
 """
+
 import base64
 
 from .errors import HEADER_MISMATCH, McpError
@@ -25,9 +26,12 @@ def decode_header_value(value):
     :rtype: str
     :raises McpError: 400/-32020 when the sentinel wraps invalid base64
     """
-    if value.startswith(_PREFIX) and value.endswith(_SUFFIX) \
-            and len(value) >= len(_PREFIX) + len(_SUFFIX):
-        inner = value[len(_PREFIX):-len(_SUFFIX)]
+    if (
+        value.startswith(_PREFIX)
+        and value.endswith(_SUFFIX)
+        and len(value) >= len(_PREFIX) + len(_SUFFIX)
+    ):
+        inner = value[len(_PREFIX) : -len(_SUFFIX)]
         try:
             return base64.b64decode(inner, validate=True).decode("utf-8")
         # binascii.Error, UnicodeDecodeError and the plain ValueError of a
@@ -49,11 +53,15 @@ def check_modern_headers(headers, body, version):
     if not header_version:
         raise _mismatch("MCP-Protocol-Version is missing")
     if header_version != version:
-        raise _mismatch(f"MCP-Protocol-Version '{header_version}' does not match _meta '{version}'")
+        raise _mismatch(
+            f"MCP-Protocol-Version '{header_version}' does not match _meta '{version}'"
+        )
     method = body.get("method")
     header_method = headers.get("Mcp-Method")
     if header_method != method:
-        raise _mismatch(f"Mcp-Method '{header_method}' does not match the body's '{method}'")
+        raise _mismatch(
+            f"Mcp-Method '{header_method}' does not match the body's '{method}'"
+        )
     field = _NAMED_METHODS.get(method)
     if not field:
         return

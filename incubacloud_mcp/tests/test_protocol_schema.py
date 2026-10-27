@@ -1,4 +1,5 @@
 """An argument the route would silently drop is refused instead."""
+
 from odoo.tests.common import BaseCase
 
 from odoo.addons.incubacloud_mcp.protocol.schema import SchemaError, validate
@@ -20,10 +21,12 @@ SCHEMA = {
 
 
 class TestSchema(BaseCase):
-
     def test_valid_arguments_come_back_with_integers_coerced(self):
         self.assertEqual(
-            validate(SCHEMA, {"instance_id": 3.0, "ids": [1, 2], "vals": {"x": 1}, "anything": [1]}),
+            validate(
+                SCHEMA,
+                {"instance_id": 3.0, "ids": [1, 2], "vals": {"x": 1}, "anything": [1]},
+            ),
             {"instance_id": 3, "ids": [1, 2], "vals": {"x": 1}, "anything": [1]},
         )
 
@@ -36,17 +39,27 @@ class TestSchema(BaseCase):
             validate(SCHEMA, {})
 
     def test_types_are_checked(self):
-        for bad in ({"instance_id": "7"}, {"instance_id": True}, {"instance_id": 1, "force": 1},
-                    {"instance_id": 1, "ids": [1, "2"]}, {"instance_id": 1, "vals": []}):
+        for bad in (
+            {"instance_id": "7"},
+            {"instance_id": True},
+            {"instance_id": 1, "force": 1},
+            {"instance_id": 1, "ids": [1, "2"]},
+            {"instance_id": 1, "vals": []},
+        ):
             with self.subTest(bad=bad), self.assertRaises(SchemaError):
                 validate(SCHEMA, bad)
 
     def test_enum_range_and_length(self):
-        for bad in ({"instance_id": 1, "environment": "dev"}, {"instance_id": 0},
-                    {"instance_id": 1, "name": "toolong"}):
+        for bad in (
+            {"instance_id": 1, "environment": "dev"},
+            {"instance_id": 0},
+            {"instance_id": 1, "name": "toolong"},
+        ):
             with self.subTest(bad=bad), self.assertRaises(SchemaError):
                 validate(SCHEMA, bad)
 
     def test_an_open_object_accepts_any_key(self):
-        self.assertEqual(validate(SCHEMA, {"instance_id": 1, "vals": {"whatever": 1}})["vals"],
-                         {"whatever": 1})
+        self.assertEqual(
+            validate(SCHEMA, {"instance_id": 1, "vals": {"whatever": 1}})["vals"],
+            {"whatever": 1},
+        )

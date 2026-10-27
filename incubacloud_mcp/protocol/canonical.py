@@ -4,6 +4,7 @@ Agents' tokens carry it as their audience, so the panel and the master
 must spell it the same way: lower-case scheme and host, no default port,
 no trailing slash, nothing after the path.
 """
+
 from urllib.parse import urlsplit, urlunsplit
 
 _DEFAULT_PORTS = {"https": 443, "http": 80}
@@ -22,7 +23,9 @@ def canonical_resource(url):
     if scheme not in _DEFAULT_PORTS or not parts.hostname:
         raise ValueError(f"not an absolute http(s) URL: {url!r}")
     if parts.query or parts.fragment or parts.username or parts.password:
-        raise ValueError(f"a resource URL has no credentials, query or fragment: {url!r}")
+        raise ValueError(
+            f"a resource URL has no credentials, query or fragment: {url!r}"
+        )
     host = parts.hostname.lower()
     if ":" in host:
         host = f"[{host}]"
