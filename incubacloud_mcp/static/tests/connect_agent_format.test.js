@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@odoo/hoot";
 import {
     API_KEY_ENV,
+    API_KEY_PLACEHOLDER,
     changedSettings,
     claudeCodeCommand,
     codexConfig,
@@ -41,7 +42,10 @@ describe("Connect an agent — what it shows", () => {
         expect(view.vscode).toInclude('"headers":{"Authorization":"Bearer <API_KEY>"}');
         expect(view.codex).toInclude(`bearer_token_env_var = "${API_KEY_ENV}"`);
         expect(view.cursorLink).toBe("");
-        expect(view.cursorJson).toInclude('"Authorization": "Bearer <API_KEY>"');
+        expect(view.cursorJson).toInclude(
+            `"Authorization": "Bearer \${env:${API_KEY_ENV}}"`
+        );
+        expect(view.cursorJson).not.toInclude(API_KEY_PLACEHOLDER);
         expect(view.codexLogin).toBe("");
     });
 
@@ -138,6 +142,17 @@ describe("Connect an agent — each client's documented form", () => {
         );
         const config = decodeURIComponent(link.split("config=")[1]);
         expect(JSON.parse(atob(config))).toEqual({ url: URL });
+    });
+
+    test("Cursor reads the API key from the environment, as Codex", () => {
+        expect(JSON.parse(cursorConfig(URL, { apiKey: true }))).toEqual({
+            mcpServers: {
+                incubacloud: {
+                    url: URL,
+                    headers: { Authorization: `Bearer \${env:${API_KEY_ENV}}` },
+                },
+            },
+        });
     });
 
     test("Cursor's mcp.json entry names the server under mcpServers", () => {
