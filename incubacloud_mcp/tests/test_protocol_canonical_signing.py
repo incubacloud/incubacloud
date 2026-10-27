@@ -36,6 +36,16 @@ class TestCanonicalResource(BaseCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 canonical_resource(bad)
 
+    def test_an_empty_userinfo_query_or_fragment_or_a_non_ascii_host_is_refused(self):
+        for bad in (
+            "https://@panel.example.com/mcp",
+            "https://panel.example.com/mcp?",
+            "https://panel.example.com/mcp#",
+            "https://pänel.example.com/mcp",
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                canonical_resource(bad)
+
     def test_origin_and_the_rfc_9728_document(self):
         self.assertEqual(
             origin_of("https://panel.example.com/mcp"), "https://panel.example.com"
