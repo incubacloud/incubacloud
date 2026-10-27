@@ -52,11 +52,12 @@ def verify(key, label, token):
     :param token: what the client sent back (attacker-controlled)
     :rtype: dict | None
     """
-    if not isinstance(token, str) or token.count(".") != 1:
+    # A token is base64url text: anything else (a lone surrogate would not
+    # even encode) is refused before it reaches the HMAC.
+    if not isinstance(token, str) or not token.isascii() or token.count(".") != 1:
         return None
     body, mac = token.split(".")
-    # Compared as bytes: ``compare_digest`` refuses a non-ASCII str.
-    if not hmac.compare_digest(mac.encode(), _mac(key, label, body).encode()):
+    if not hmac.compare_digest(mac, _mac(key, label, body)):
         return None
     try:
         payload = json.loads(_b64decode(body))
