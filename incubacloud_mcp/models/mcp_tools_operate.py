@@ -299,6 +299,11 @@ class McpToolsOperate(models.AbstractModel):
         return self._route(route, repo_ids=ids, model=args["model"])
 
     @api.model
+    def _writes_manage_tags(self, args):
+        """Listing the tags is a read: only a creation is audited."""
+        return args["action"] != "list"
+
+    @api.model
     def _tool_manage_tags(self, args):
         """List a scope's tags (``{tags: [...]}``, as the panel's), or create one."""
         scope = args.get("scope") or "project"

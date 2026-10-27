@@ -40,6 +40,18 @@ class McpTools(models.AbstractModel):
         return self.env._("Run the tool %s with these arguments.", spec.name)
 
     @api.model
+    def _writes(self, spec, args):
+        """Return whether this call may change something, and so is audited.
+
+        A read-only tool never does; ``_writes_<tool name>`` decides for a
+        tool that also reads, when the group defines one.
+        """
+        if spec.read_only:
+            return False
+        method = getattr(self, f"_writes_{spec.name}", None)
+        return method(args) if method else True
+
+    @api.model
     def _route(self, path, **params):
         """Call the panel route at *path* (see ``incubacloud.mcp.dispatch``)."""
         return self.env["incubacloud.mcp.dispatch"]._call(path, params)
