@@ -39,6 +39,20 @@ SAVE_GENERAL_PARAMS = (
     "metrics_ship_security_logs",
 )
 #: What ``save_core_rate_limits`` accepts.
+#: What ``save_general_settings`` writes even when it is not sent, from its
+#: own defaults: sent with the value held. The rest it writes only when
+#: sent, so it is sent only when given — the value held would not always
+#: come back the same (a metrics retention of 0 is saved as 1).
+ALWAYS_WRITTEN_GENERAL = (
+    "autoassign_enabled",
+    "default_backup_backend_id",
+    "audit_log_retention_days",
+    "job_log_retention_days",
+    "job_retention_days",
+    "default_backup_alert_threshold_pct",
+    "github_event_retention_days",
+    "github_event_truncate_days",
+)
 CORE_RATE_KEYS = (
     "rate_limit_webhook_per_min",
     "rate_limit_terminal_per_min",
@@ -253,7 +267,7 @@ class McpToolsSettings(models.AbstractModel):
             self._only(section, values, SAVE_GENERAL_PARAMS)
             current = self._route("/cloud/get_general_settings")
             params = {
-                key: current[key] for key in SAVE_GENERAL_PARAMS if key in current
+                key: current[key] for key in ALWAYS_WRITTEN_GENERAL if key in current
             }
             params.update(values)
             return self._route("/cloud/save_general_settings", **params)
