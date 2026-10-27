@@ -33,7 +33,9 @@ Minimum wait:
 Issuer down:
     A failed download keeps the keys already known, expired or not: a
     token signed with one of them still verifies, and only a ``kid``
-    never seen waits for the issuer to answer again.
+    never seen waits for the issuer to answer again. For a day at most
+    after the last good download: a key the issuer may have withdrawn
+    since does not open the panel forever.
 
 Home:
     Moved from ``incubacloud_tenant`` to ``incubacloud_mcp``, which
@@ -70,6 +72,9 @@ _TTL_SECONDS = 600
 _MAX_JWKS_BYTES = 128 * 1024
 # At most one download for each key set in this many seconds.
 _MIN_REFRESH_SECONDS = 30
+# With the issuer down, known keys answer this long after the last good
+# download at most.
+_MAX_STALE_SECONDS = 24 * 3600
 # A JWT header is a few dozen bytes; past this its ``kid`` is not read.
 _MAX_HEADER_CHARS = 2048
 
@@ -161,7 +166,8 @@ def get_keyset(jwks_uri, kid=None):
     without waiting for the next expiry — and the last download, good or
     failed, is at least ``_MIN_REFRESH_SECONDS`` old. Meanwhile it answers
     with the set it has: the caller fails on a missing key instead of
-    buying a download. A failed download keeps the known keys in use.
+    buying a download. A failed download keeps the known keys in use,
+    for ``_MAX_STALE_SECONDS`` after the last good download at most.
 
     :param jwks_uri: absolute URL of the IdP's JWKS document.
     :param kid: key id the caller needs, read from the token header. A
@@ -185,7 +191,11 @@ def get_keyset(jwks_uri, kid=None):
         entry = _CACHE.get(jwks_uri)
         if entry is not None and _usable(entry, kid, now):
             return entry[1]
-        known = entry is not None and (kid is None or kid in entry[2])
+        known = (
+            entry is not None
+            and (kid is None or kid in entry[2])
+            and now - entry[0] < _MAX_STALE_SECONDS
+        )
         attempted_at, failed = _ATTEMPTS.get(jwks_uri, (0.0, False))
         if now - attempted_at < _MIN_REFRESH_SECONDS:
             if known or (entry is not None and not failed):
