@@ -5,9 +5,14 @@ must spell it the same way: lower-case scheme and host, no default port,
 no trailing slash, nothing after the path.
 """
 
+import re
 from urllib.parse import urlsplit, urlunsplit
 
 _DEFAULT_PORTS = {"https": 443, "http": 80}
+#: What the host and the path may hold. Connect an agent pastes the URL
+#: into commands a user runs in a terminal: nothing a shell would read.
+_SAFE_HOST = re.compile(r"[a-z0-9.-]+|\[[0-9a-f:.]+\]")
+_SAFE_PATH = re.compile(r"[A-Za-z0-9._~%/-]*")
 
 
 def canonical_resource(url):
@@ -17,7 +22,8 @@ def canonical_resource(url):
     :return: the canonical URL
     :raises ValueError: when *url* is not an absolute http(s) URL with an
         ASCII host, or carries credentials, a query or a fragment (even
-        an empty one)
+        an empty one), or a host or a path with characters a shell reads
+        (quotes, spaces, ``$``, backticks…)
     """
     raw = (url or "").strip()
     parts = urlsplit(raw)
@@ -37,6 +43,10 @@ def canonical_resource(url):
     host = parts.hostname.lower()
     if ":" in host:
         host = f"[{host}]"
+    if not _SAFE_HOST.fullmatch(host) or not _SAFE_PATH.fullmatch(parts.path):
+        raise ValueError(
+            f"a resource URL has a plain host and path, nothing a shell reads: {url!r}"
+        )
     port = parts.port
     netloc = host if port in (None, _DEFAULT_PORTS[scheme]) else f"{host}:{port}"
     return urlunsplit((scheme, netloc, parts.path.rstrip("/"), "", ""))

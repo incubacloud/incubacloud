@@ -52,6 +52,31 @@ class TestCanonicalResource(BaseCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 canonical_resource(bad)
 
+    def test_what_a_shell_would_read_is_refused(self):
+        """The URL goes into commands the user pastes in a terminal: a path
+        or a host with quotes, spaces, ``$()`` or backticks is refused."""
+        for bad in (
+            "https://x.example.com/mcp$(id)",
+            "https://x.example.com/mcp'x",
+            'https://x.example.com/mcp"x',
+            "https://x.example.com/mcp x",
+            "https://x.example.com/mcp`id`",
+            "https://x.example.com/mcp;id",
+            "https://x$(id).example.com/mcp",
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                canonical_resource(bad)
+
+    def test_a_plain_path_and_an_ip_literal_stay(self):
+        """Letters, digits, ``._~%/-`` and an IPv6 literal are a resource."""
+        self.assertEqual(
+            canonical_resource("https://panel.example.com/a-b_c.d~e%20f/mcp"),
+            "https://panel.example.com/a-b_c.d~e%20f/mcp",
+        )
+        self.assertEqual(
+            canonical_resource("http://[::1]:8069/mcp"), "http://[::1]:8069/mcp"
+        )
+
     def test_origin_and_the_rfc_9728_document(self):
         """The origin, and the RFC 9728 document with the path after it."""
         self.assertEqual(
