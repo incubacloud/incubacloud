@@ -234,7 +234,22 @@ HOST_PASSWORD = "mcp-host-pass-4821"
 PG_PASSWORD = "mcp-pg-pass-9137"
 ADMIN_PASSWORD = "mcp-admin-pass-5520"
 S3_SECRET = "mcp-s3-secret-7713"
-SECRETS = (HOST_PASSWORD, PG_PASSWORD, ADMIN_PASSWORD, S3_SECRET)
+METRICS_TOKEN = "mcp-metrics-token-6621"
+WEBHOOK_SECRET = "mcp-webhook-secret-3390"
+#: A line of the GitHub App's private key: a key printed line by line.
+GITHUB_KEY_LINE = "TUNQLWZpeHR1cmUtcHJpdmF0ZS1rZXktbGluZS1vZi1zaXh0eS1mb3VyLWNoYXJzLi4"
+GITHUB_KEY = (
+    f"-----BEGIN RSA PRIVATE KEY-----\n{GITHUB_KEY_LINE}\n-----END RSA PRIVATE KEY-----"
+)
+SECRETS = (
+    HOST_PASSWORD,
+    PG_PASSWORD,
+    ADMIN_PASSWORD,
+    S3_SECRET,
+    METRICS_TOKEN,
+    WEBHOOK_SECRET,
+    GITHUB_KEY_LINE,
+)
 
 
 class PanelFixtureMixin:
@@ -287,6 +302,25 @@ class PanelFixtureMixin:
                 }
             )
         )
+        self._settings_secrets()
+
+    def _settings_secrets(self):
+        """Give the settings their secrets: the metrics token and the GitHub App's."""
+        self.env[
+            "cloud.settings"
+        ]._get_system().metrics_remote_write_token = METRICS_TOKEN
+        App = self.env["cloud.github.app"].sudo()
+        vals = {
+            "app_id": "4711",
+            "installation_id": "8080",
+            "private_key": GITHUB_KEY,
+            "webhook_secret": WEBHOOK_SECRET,
+        }
+        self.github_app = App.search([], limit=1)
+        if self.github_app:
+            self.github_app.write(vals)
+        else:
+            self.github_app = App.create(vals)
 
     def _assert_no_secret(self, text):
         """Fail if a fixture secret appears in *text*: plain, URL-encoded or base64."""
