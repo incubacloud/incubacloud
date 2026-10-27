@@ -257,10 +257,18 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
 
     def test_projects_come_in_pages(self):
         """list_projects returns at most the page asked for."""
+        self.env["cloud.project"].create(
+            {"name": "MCP Beta", "remote_folder": "mcpbeta"}
+        )
         payload = self._payload(
             self._call_tool(self.key, "list_projects", {"limit": 1})
         )
         self.assertEqual(len(payload["items"]), 1)
+        self.assertEqual(payload["next_offset"], 1)
+        second = self._payload(
+            self._call_tool(self.key, "list_projects", {"limit": 1, "offset": 1})
+        )
+        self.assertNotEqual(second["items"][0]["id"], payload["items"][0]["id"])
 
     def test_no_read_tool_leaks_a_secret(self):
         """No read tool of this group lets a fixture secret through."""
