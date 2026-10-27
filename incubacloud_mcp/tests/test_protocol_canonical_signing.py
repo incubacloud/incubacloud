@@ -81,6 +81,11 @@ class TestSigning(BaseCase):
             with self.subTest(bad=bad):
                 self.assertIsNone(verify(self.KEY, "session", bad))
 
+    def test_a_token_that_is_not_ascii_is_refused_not_a_crash(self):
+        for bad in ("\ud800.a", "a.\ud800", "é.a"):
+            with self.subTest(bad=ascii(bad)):
+                self.assertIsNone(verify(self.KEY, "session", bad))
+
     def test_the_fingerprint_ignores_key_order_but_not_values_or_tool(self):
         self.assertEqual(
             fingerprint("t", {"a": 1, "b": 2}), fingerprint("t", {"b": 2, "a": 1})
