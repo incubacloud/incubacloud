@@ -6,6 +6,7 @@ from unittest.mock import patch
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
+from odoo.addons.incubacloud_mcp.controllers import mcp as mcp_controller
 from odoo.addons.incubacloud_mcp.protocol.versions import MODERN
 
 from .common import (
@@ -30,6 +31,8 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
     def setUp(self):
         """Point the panel at the test issuer; a developer with a token and a key."""
         super().setUp()
+        mcp_controller._LAST_WARNING.clear()
+        self.addCleanup(mcp_controller._LAST_WARNING.clear)
         self.resource = self._resource_here()
         self._setup_issuer(self.resource)
         self.provider = self._configure_issuer(self.resource)
@@ -216,19 +219,23 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
     def test_without_declared_proxies_failures_are_counted_not_refused(self):
         """No trusted proxy declared: the address may be the proxy's, shared
         by every client. It is never refused; its failures are still counted,
-        and one over the limit is logged."""
+        and going over the limit is logged once a minute at most."""
         self._proxies([])
         Auth = type(self.env["incubacloud.mcp.auth"])
         with (
             patch.object(Auth, "_auth_blocked", autospec=True, return_value=True),
-            patch.object(Auth, "_count_failure", autospec=True) as count,
+            patch.object(
+                Auth, "_count_failure", autospec=True, return_value=False
+            ) as count,
         ):
             self.assertEqual(self._discover(self.key).status_code, 200)
             count.assert_not_called()
             with self.assertLogs(CONTROLLER_LOGGER, "WARNING") as logs:
-                self.assertEqual(self._discover("not-a-key").status_code, 401)
-        self.assertEqual(count.call_count, 1)
+                for _i in range(2):
+                    self.assertEqual(self._discover("not-a-key").status_code, 401)
+        self.assertEqual(count.call_count, 2)
         self.assertEqual(count.call_args.args[1], "127.0.0.1")
+        self.assertEqual(len(logs.output), 1)
         self.assertIn("127.0.0.1", logs.output[0])
         self.assertIn("trusted proxies", logs.output[0])
 

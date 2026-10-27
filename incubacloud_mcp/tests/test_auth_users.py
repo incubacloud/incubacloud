@@ -183,6 +183,16 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
         self.assertTrue(auth._auth_blocked("198.51.100.7"))
         self.assertFalse(auth._auth_blocked("198.51.100.8"))
 
+    def test_a_failure_says_whether_its_address_is_within_the_limit(self):
+        """Counting a failure answers whether the address is still within it."""
+        self.registry_enter_test_mode()
+        auth = self.auth.with_context(force_rate_limit=True)
+        within = [
+            auth._count_failure("198.51.100.9")
+            for _i in range(AUTH_FAILURES_PER_MIN + 1)
+        ]
+        self.assertEqual(within, [True] * AUTH_FAILURES_PER_MIN + [False])
+
     def test_failures_from_one_ipv6_network_count_together(self):
         """IPv6 failures are counted per /64: one host has the whole block."""
         self.registry_enter_test_mode()

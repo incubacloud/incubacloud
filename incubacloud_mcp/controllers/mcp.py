@@ -22,6 +22,8 @@ only logged.
 
 import json
 import logging
+import threading
+import time
 
 from odoo import SUPERUSER_ID, http
 from odoo.http import request
@@ -35,6 +37,12 @@ from ..protocol.errors import INVALID_REQUEST, PARSE_ERROR, AuthError, McpError
 from ._reply import respond
 
 _logger = logging.getLogger(__name__)
+
+#: Seconds between two warnings about one address that is not refused.
+WARNING_INTERVAL = 60
+#: ``{failure bucket: when it was last logged}``, in this process.
+_LAST_WARNING = {}
+_WARNING_LOCK = threading.Lock()
 
 MAX_BODY_BYTES = 256 * 1024
 #: Lists and objects nested deeper than this make no message of MCP's.
@@ -147,17 +155,34 @@ class McpController(http.Controller):
         """Count a failed authentication of *ip*; log it when over the limit
         and the address cannot be refused.
 
+        Logged once a minute at most for each address (each process
+        counts its own minute): an address that keeps failing would
+        otherwise write a line per attempt.
+
         :param Auth: the ``incubacloud.mcp.auth`` model, as the superuser
         :param str ip: the client's address, as :func:`client_ip` reads it
         :param bool reliable: whether the installation declared its proxies,
             so that *ip* is the client's own
         """
-        Auth._count_failure(ip)
-        if not reliable and Auth._auth_blocked(ip):
-            _logger.warning(
-                "[mcp] %s failed to authenticate %s times or more in a minute "
-                "and is not refused: no trusted proxies are declared, so the "
-                "address may be a proxy's that every client shares",
-                ip,
-                AUTH_FAILURES_PER_MIN,
-            )
+        if Auth._count_failure(ip) or reliable:
+            return
+        bucket = Auth._failure_bucket(ip)
+        now = time.monotonic()
+        with _WARNING_LOCK:
+            if now - _LAST_WARNING.get(bucket, -WARNING_INTERVAL) < WARNING_INTERVAL:
+                return
+            # Forget the addresses not logged for a minute: the map stays small.
+            for stale in [
+                key
+                for key, logged_at in _LAST_WARNING.items()
+                if now - logged_at >= WARNING_INTERVAL
+            ]:
+                del _LAST_WARNING[stale]
+            _LAST_WARNING[bucket] = now
+        _logger.warning(
+            "[mcp] %s failed to authenticate more than %s times in a minute "
+            "and is not refused: no trusted proxies are declared, so the "
+            "address may be a proxy's that every client shares",
+            ip,
+            AUTH_FAILURES_PER_MIN,
+        )
