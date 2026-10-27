@@ -255,6 +255,30 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(payload["log"]["next_offset"], 2)
         self.assertIn("[secreto]", payload["log"]["items"][0])
 
+    def test_a_job_s_log_is_read_only_up_to_its_page(self):
+        """A page of a long job log reads the chunks up to it, not all of them."""
+        self.env["cloud.job.log.chunk"].sudo().create(
+            [
+                {"job_id": self.job.id, "source": "stdout", "content": f"more {index}"}
+                for index in range(120)
+            ]
+        )
+        Chunk = type(self.env["cloud.job.log.chunk"])
+        original = Chunk.search
+        Tools = self.env["incubacloud.mcp.tools"]
+        with patch.object(
+            Chunk, "search", autospec=True, side_effect=original
+        ) as search:
+            first = Tools._job_log_page(self.job.id, 0, 10)
+        self.assertEqual(search.call_count, 1)
+        self.assertEqual((len(first["items"]), first["next_offset"]), (10, 10))
+        self.assertTrue(first["truncated"])
+        last = Tools._job_log_page(self.job.id, 118, 10)
+        self.assertEqual(
+            last["items"], [f"[stdout] more {index}" for index in range(115, 120)]
+        )
+        self.assertEqual((last["next_offset"], last["total"]), (None, 123))
+
     def test_projects_come_in_pages(self):
         """list_projects returns at most the page asked for."""
         self.env["cloud.project"].create(
