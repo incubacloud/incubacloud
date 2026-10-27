@@ -2,6 +2,8 @@
 
 import base64
 import json
+import random
+import string
 import time
 from urllib.parse import quote
 
@@ -172,6 +174,24 @@ class TestRedactCost(BaseCase):
         for function, text in cases:
             with self.subTest(text=text[:16]):
                 self.assertLess(self._seconds(function, text), 1.0)
+
+    def test_a_thousand_secrets_scan_64_kb_well_under_100_ms(self):
+        """Once compiled, 1000 secrets scan 64 KB of output in a few ms."""
+        rng = random.Random(1)
+        alphabet = string.ascii_letters + string.digits + "-_"
+        values = ["".join(rng.choices(alphabet, k=32)) for _i in range(1000)]
+        text = "".join(rng.choices(alphabet + " \n:/.", k=MAX_BYTES))
+        Scrubber(values).text(text)
+        self.assertLess(self._seconds(Scrubber(values).text, text), 0.1)
+        self.assertEqual(
+            Scrubber(values).text(f"a {values[7]} b {values[700]}"),
+            f"a {MASK} b {MASK}",
+        )
+
+    def test_secrets_that_share_long_prefixes_still_mask(self):
+        """Secrets nested a thousand levels deep in a prefix tree still mask."""
+        values = ["x" * length + "y" for length in range(8, 1200)]
+        self.assertEqual(Scrubber(values).text(f"<{values[900]}>"), f"<{MASK}>")
 
 
 class TestSecretKeys(BaseCase):
