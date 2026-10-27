@@ -16,16 +16,19 @@ MASK = "[secreto]"
 #: Shorter values are not masked: they would shred the output.
 MIN_SECRET_LEN = 8
 
-#: Links that carry a one-time credential in captured mail.
-_TOKEN_URL_RE = re.compile(
-    r"https?://[^\s\"'<>]*?"
-    r"(?:/web/reset_password\?|/web/signup\?|/ic/login\?t=|[?&]token=|[?&]access_token=)"
-    r"[^\s\"'<>]*",
-    re.IGNORECASE,
+#: A link in text or HTML. Found first, then looked into: one pattern for
+#: both would rescan the rest of the text from every ``http``.
+_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+#: What makes a link a one-time credential in captured mail. ``token=``
+#: anywhere, so that HTML's ``&amp;token=`` and ``access_token=`` count.
+_TOKEN_MARK_RE = re.compile(
+    r"token=|/web/reset_password\?|/web/signup\?|/ic/login\?", re.IGNORECASE
 )
-#: ``scheme://user:password@host``: a repository URL with its credential.
+#: ``scheme://<userinfo>@host``: a repository URL with its credential —
+#: ``user:password``, a bare token or ``:token``. The scheme is bounded so
+#: a long dotted word costs no rescan.
 _URL_CREDENTIAL_RE = re.compile(
-    r"\b([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@", re.IGNORECASE
+    r"\b([a-z][a-z0-9+.-]{0,31}://)[^/?#\s@]+@", re.IGNORECASE
 )
 
 
@@ -78,10 +81,16 @@ class Scrubber:
         return obj
 
 
+def _mask_token_url(match):
+    """Return the mask for a link that carries a token, else the link."""
+    url = match.group(0)
+    return MASK if _TOKEN_MARK_RE.search(url) else url
+
+
 def mask_token_urls(obj):
     """Replace, inside *obj*, every URL that carries a one-time token."""
     if isinstance(obj, str):
-        return _TOKEN_URL_RE.sub(MASK, obj)
+        return _URL_RE.sub(_mask_token_url, obj)
     if isinstance(obj, dict):
         return {key: mask_token_urls(item) for key, item in obj.items()}
     if isinstance(obj, (list, tuple)):
