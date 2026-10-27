@@ -124,6 +124,9 @@ describe("Connect an agent — what a shell reads", () => {
 
     test("a plain URL is safe", () => {
         expect(connectView({ resource: URL, issuer: "x" }).urlProblem).toBe("");
+        expect(
+            connectView({ resource: "https://my_panel.example.com/mcp", issuer: "x" }).urlProblem
+        ).toBe("");
         expect(connectView({ resource: "http://[::1]:8069/mcp", issuer: "x" }).urlProblem).toBe(
             "unsafe"
         );

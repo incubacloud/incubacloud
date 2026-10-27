@@ -11,7 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 _DEFAULT_PORTS = {"https": 443, "http": 80}
 #: What the host and the path may hold. Connect an agent pastes the URL
 #: into commands a user runs in a terminal: nothing a shell would read.
-_SAFE_HOST = re.compile(r"[a-z0-9.-]+|\[[0-9a-f:.]+\]")
+_SAFE_HOST = re.compile(r"[a-z0-9._-]+|\[[0-9a-f:.]+\]")
 _SAFE_PATH = re.compile(r"[A-Za-z0-9._~%/-]*")
 
 

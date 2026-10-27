@@ -22,7 +22,7 @@ const BEARER = `Bearer ${API_KEY_PLACEHOLDER}`;
  * A URL the commands may carry: http(s), a plain host, an optional port and
  * a plain path. Anything else could be read by the user's shell.
  */
-const SAFE_URL = /^https?:\/\/[a-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._~%/-]*)?$/;
+const SAFE_URL = /^https?:\/\/[a-z0-9._-]+(:\d+)?(\/[A-Za-z0-9._~%/-]*)?$/;
 
 /**
  * Quote *text* for a POSIX shell: between single quotes, each quote in it
