@@ -5,9 +5,12 @@
         <div t-att-class="props.inline ? 'ic-mcp-copy ic-mcp-copy--inline' : 'ic-mcp-copy'">
             <code t-if="props.inline" class="ic-mcp-url" t-esc="props.text"/>
             <pre t-else="" class="ic-mcp-code" t-esc="props.text"/>
-            <button class="rl-btn rl-btn-ghost rl-btn-sm" type="button" t-on-click="copy">
-                <t t-if="state.copied">Copied</t>
-                <t t-else="">Copy</t>
+            <button class="rl-btn rl-btn-ghost rl-btn-sm" type="button"
+                    t-att-aria-label="props.label" t-on-click="copy">
+                <span aria-live="polite">
+                    <t t-if="state.copied">Copied</t>
+                    <t t-else="">Copy</t>
+                </span>
             </button>
         </div>
     </t>
@@ -35,7 +38,8 @@
                 </p>
 
                 <div class="rl-saas-fsec">This panel's MCP address</div>
-                <CopyBlock t-if="!view.urlProblem" text="view.url" inline="true"/>
+                <CopyBlock t-if="!view.urlProblem" text="view.url" inline="true"
+                           label.translate="Copy this panel's MCP address"/>
 
                 <t t-if="view.urlProblem === 'missing'">
                     <div class="ic-mcp-notice">
@@ -75,20 +79,28 @@
                 </p>
 
                 <t t-if="!view.apiKeysRefused and !view.urlProblem">
-                    <div class="rl-tabs">
+                    <div class="rl-tabs" role="tablist" aria-label="Clients">
                         <button t-att-class="state.tab === 'claude_code' ? 'rl-tab active' : 'rl-tab'"
+                                type="button" role="tab"
+                                t-att-aria-selected="state.tab === 'claude_code' ? 'true' : 'false'"
                                 t-on-click="() => this.setTab('claude_code')">Claude Code</button>
                         <button t-att-class="state.tab === 'claude_ai' ? 'rl-tab active' : 'rl-tab'"
+                                type="button" role="tab"
+                                t-att-aria-selected="state.tab === 'claude_ai' ? 'true' : 'false'"
                                 t-on-click="() => this.setTab('claude_ai')">Claude and Claude Desktop</button>
                         <button t-att-class="state.tab === 'cursor_vscode' ? 'rl-tab active' : 'rl-tab'"
+                                type="button" role="tab"
+                                t-att-aria-selected="state.tab === 'cursor_vscode' ? 'true' : 'false'"
                                 t-on-click="() => this.setTab('cursor_vscode')">Cursor and VS Code</button>
                         <button t-att-class="state.tab === 'codex' ? 'rl-tab active' : 'rl-tab'"
+                                type="button" role="tab"
+                                t-att-aria-selected="state.tab === 'codex' ? 'true' : 'false'"
                                 t-on-click="() => this.setTab('codex')">Codex and others</button>
                     </div>
 
                     <t t-if="state.tab === 'claude_code'">
                         <p class="ic-mcp-step">Run this in a terminal:</p>
-                        <CopyBlock text="view.claudeCode"/>
+                        <CopyBlock text="view.claudeCode" label.translate="Copy the Claude Code command"/>
                         <p t-if="!view.needsApiKey" class="ic-mcp-step">
                             Then run <code t-translation="off">/mcp</code> in Claude Code to sign in.
                         </p>
@@ -133,7 +145,7 @@
                         </t>
                         <t t-else="">
                             <p class="ic-mcp-step">Add this to ~/.cursor/mcp.json:</p>
-                            <CopyBlock text="view.cursorJson"/>
+                            <CopyBlock text="view.cursorJson" label.translate="Copy Cursor's configuration"/>
                             <p class="ic-mcp-step">
                                 Cursor reads the key from the environment variable
                                 <code t-esc="apiKeyEnv"/>: set it before you start Cursor.
@@ -141,16 +153,16 @@
                         </t>
                         <div class="rl-saas-fsec">VS Code</div>
                         <p class="ic-mcp-step">Run this in a terminal:</p>
-                        <CopyBlock text="view.vscode"/>
+                        <CopyBlock text="view.vscode" label.translate="Copy the VS Code command"/>
                     </t>
 
                     <t t-if="state.tab === 'codex'">
                         <div class="rl-saas-fsec">Codex</div>
                         <p class="ic-mcp-step">Add this to ~/.codex/config.toml:</p>
-                        <CopyBlock text="view.codex"/>
+                        <CopyBlock text="view.codex" label.translate="Copy Codex's configuration"/>
                         <t t-if="view.codexLogin">
                             <p class="ic-mcp-step">Then run this to sign in:</p>
-                            <CopyBlock text="view.codexLogin"/>
+                            <CopyBlock text="view.codexLogin" label.translate="Copy Codex's sign-in command"/>
                         </t>
                         <p t-if="view.needsApiKey" class="ic-mcp-step">
                             Codex reads the key from the environment variable
