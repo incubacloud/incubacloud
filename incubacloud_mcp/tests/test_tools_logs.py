@@ -84,6 +84,15 @@ class TestLogTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(second["offset"], first["next_offset"])
         self.assertNotEqual(first["items"][0], second["items"][0])
 
+    def test_the_live_log_says_its_pages_shift(self):
+        """The live log is read again on each call: the description warns
+        that new lines move the offset."""
+        listing = self._modern("tools/list", credential=self.key).json()["result"]
+        read_logs = next(
+            tool for tool in listing["tools"] if tool["name"] == "read_logs"
+        )
+        self.assertIn("new lines shift", read_logs["description"])
+
     def test_logs_are_untrusted_and_scrubbed(self):
         """Log lines are marked untrusted and a known secret is masked."""
         args = {"instance_id": self.staging.id, "offset": len(MEGABYTE_OF_LINES)}
