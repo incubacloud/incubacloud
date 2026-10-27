@@ -32,6 +32,7 @@ TOOLS = (
         obj(),
         handler="_tool_panel_overview",
         read_only=True,
+        untrusted=True,
     ),
     ToolSpec(
         "search",
@@ -138,6 +139,7 @@ TOOLS = (
         ),
         route="/cloud/get_alert_history",
         read_only=True,
+        untrusted=True,
     ),
     ToolSpec(
         "get_audit_log",
