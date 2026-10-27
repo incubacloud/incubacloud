@@ -41,15 +41,18 @@
                     <div class="ic-mcp-notice">
                         <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
                         This panel's MCP address is not configured yet, so no agent can
-                        connect. A manager sets it in Settings, on the Agents tab.
+                        connect.
+                        <t t-if="view.managed">On IncubaCloud SaaS, contact support.</t>
+                        <t t-else="">A manager sets it in Settings, on the Agents tab.</t>
                     </div>
                 </t>
                 <t t-elif="view.urlProblem">
                     <div class="ic-mcp-notice">
                         <i class="fa fa-exclamation-triangle" aria-hidden="true"/>
                         This panel's MCP address is not a plain web address, so no command
-                        is shown for it. A manager can correct it in Settings, on the
-                        Agents tab.
+                        is shown for it.
+                        <t t-if="view.managed">On IncubaCloud SaaS, contact support.</t>
+                        <t t-else="">A manager can correct it in Settings, on the Agents tab.</t>
                     </div>
                 </t>
                 <t t-elif="view.apiKeysRefused">

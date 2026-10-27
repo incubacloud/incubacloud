@@ -160,6 +160,20 @@ _OAUTH_PAGE = """
     }}
 """
 
+#: Connect an agent without an MCP address, where the platform sets it.
+_SET_FROM_ABOVE_WITHOUT_URL_PAGE = """
+    const notice = document.querySelector(".ic-mcp-connect .ic-mcp-notice");
+    if (!notice.textContent.includes("not configured yet")) {{
+        fail("the notice about the missing address");
+    }}
+    if (!notice.textContent.includes("On IncubaCloud SaaS, contact support.")) {{
+        fail("support, where the address is set from above");
+    }}
+    if (notice.textContent.includes("Settings")) {{
+        fail("Settings, where the address is read-only");
+    }}
+"""
+
 #: Settings → Agents: both fields, editable or not.
 _SETTINGS_PAGE = """
     const inputs = [...document.querySelectorAll(".ic-mcp-settings input")];
@@ -214,6 +228,22 @@ class TestTheSpaPages(McpUsersMixin, HttpCase):
             _OAUTH_PAGE,
             "mcp-spa-oauth",
         )
+
+    def test_where_the_platform_sets_the_address_its_notice_sends_to_support(self):
+        """Without an MCP address on a panel set from above (a tenant's), whose
+        Settings show it read-only, the notice sends to support, not there."""
+        self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, "ftp://x")
+        self._cloud_user("mcp-spa-tenant", group="group_cloud_user")
+        Settings = type(self.env["cloud.settings"])
+        with patch.object(
+            Settings, "_mcp_settings_managed", autospec=True, return_value=True
+        ):
+            self._open(
+                "/cloud/connect-agent",
+                ".ic-mcp-connect .ic-mcp-notice",
+                _SET_FROM_ABOVE_WITHOUT_URL_PAGE,
+                "mcp-spa-tenant",
+            )
 
     def test_the_agents_settings_tab_opens(self):
         """A manager opens Settings on the Agents tab and can edit its fields."""

@@ -66,6 +66,18 @@ msgstr "; después, elija Continuar y Añadir."
 #. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid "A manager can correct it in Settings, on the Agents tab."
+msgstr "Un gerente puede corregirla en Configuración, en la pestaña Agentes."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid "A manager sets it in Settings, on the Agents tab."
+msgstr "Un gerente la define en Configuración, en la pestaña Agentes."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
 "AI agents such as Claude Code, Claude, Cursor, VS Code or Codex can work\n"
 "                    on this panel for you, with your role and your projects' access.\n"
@@ -851,6 +863,12 @@ msgstr "Proveedor OAuth2"
 #. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid "On IncubaCloud SaaS, contact support."
+msgstr "En IncubaCloud SaaS, contacte con soporte."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
 "On a Team or Enterprise plan, an Owner or Primary Owner adds it once in\n"
 "                            Organization settings, Connectors (Add, Custom, Web); then each member\n"
@@ -1288,23 +1306,20 @@ msgstr "Dirección MCP de este panel"
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
 "This panel's MCP address is not a plain web address, so no command\n"
-"                        is shown for it. A manager can correct it in Settings, on the\n"
-"                        Agents tab."
+"                        is shown for it."
 msgstr ""
 "La dirección MCP de este panel no es una dirección web sencilla, así que no "
-"se muestra ningún comando con ella. Un gerente puede corregirla en "
-"Configuración, en la pestaña Agentes."
+"se muestra ningún comando con ella."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
 "This panel's MCP address is not configured yet, so no agent can\n"
-"                        connect. A manager sets it in Settings, on the Agents tab."
+"                        connect."
 msgstr ""
 "La dirección MCP de este panel aún no está configurada, así que ningún "
-"agente puede conectarse. Un gerente la define en Configuración, en la "
-"pestaña Agentes."
+"agente puede conectarse."
 
 #. module: incubacloud_mcp
 #. odoo-python
