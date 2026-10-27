@@ -55,6 +55,40 @@ class TestManagerTools(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertTrue(result["isError"])
         self.assertFalse(self.env["cloud.host"].search([("name", "=", "mcp-new-host")]))
 
+    def test_a_server_s_trusted_proxies_change_only_with_approval(self):
+        """The ranges a server trusts for client addresses wait for approval,
+        on creation and on change; the same ranges again do not."""
+        result = self._call_tool(
+            self.key,
+            "manage_host",
+            {"vals": NEW_HOST | {"trusted_proxy_ranges": "10.0.0.0/8"}},
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn("approval", result["content"][0]["text"])
+        self.assertFalse(self.env["cloud.host"].search([("name", "=", "mcp-new-host")]))
+        created = self._payload(
+            self._call_tool(self.key, "manage_host", {"vals": NEW_HOST})
+        )
+        host = self.env["cloud.host"].browse(created["id"])
+        host.trusted_proxy_ranges = "10.0.0.0/8"
+        changed = self._call_tool(
+            self.key,
+            "manage_host",
+            {"host_id": host.id, "vals": {"trusted_proxy_ranges": "0.0.0.0/0"}},
+        )
+        self.assertTrue(changed["isError"])
+        self.assertEqual(host.trusted_proxy_ranges, "10.0.0.0/8")
+        same = self._call_tool(
+            self.key,
+            "manage_host",
+            {
+                "host_id": host.id,
+                "vals": {"trusted_proxy_ranges": " 10.0.0.0/8 ", "name": "mcp-same"},
+            },
+        )
+        self.assertFalse(same["isError"], same)
+        self.assertEqual(host.name, "mcp-same")
+
     def test_whitelist_needs_a_server(self):
         """setup_whitelist without host_id is refused."""
         self.assertTrue(
