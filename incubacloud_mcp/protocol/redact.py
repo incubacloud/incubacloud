@@ -41,47 +41,84 @@ _PUBLIC_KEYS = frozenset({"machine", "login"})
 _PEM_LINE_RE = re.compile(rf"[A-Za-z0-9+/=]{{{MIN_SECRET_LEN},}}")
 
 
-def _json_leaves(node, secret=False):
-    """Yield the text leaves of *node* that sit under a secret key."""
-    if isinstance(node, dict):
-        for key, item in node.items():
-            name = str(key)
-            yield from _json_leaves(
-                item,
-                name not in _PUBLIC_KEYS and bool(_SECRET_KEY_RE.search(name)),
+#: Pieces one stored value may hide, at most: a JSON document of secrets
+#: or a PEM key has a few dozen; a value with more is not shaped like one,
+#: and every piece costs a branch of the pattern every answer is scanned
+#: with.
+MAX_PARTS = 256
+
+
+def _json_leaves(document):
+    """Return the text leaves of *document* under a secret key.
+
+    Walked without recursion — a document may nest past the stack — and
+    stopped at :data:`MAX_PARTS` leaves.
+
+    :rtype: list[str]
+    """
+    leaves = []
+    stack = [(document, False)]
+    while stack and len(leaves) < MAX_PARTS:
+        node, secret = stack.pop()
+        if isinstance(node, dict):
+            stack.extend(
+                (
+                    item,
+                    str(key) not in _PUBLIC_KEYS
+                    and bool(_SECRET_KEY_RE.search(str(key))),
+                )
+                for key, item in node.items()
             )
-    elif isinstance(node, list):
-        for item in node:
-            yield from _json_leaves(item, secret)
-    elif secret and isinstance(node, str):
-        yield node
+        elif isinstance(node, list):
+            stack.extend((item, secret) for item in node)
+        elif secret and isinstance(node, str):
+            leaves.append(node)
+    return leaves
 
 
-def secret_parts(value):
-    """Return what one stored secret hides: itself and its pieces.
+def secret_parts(value, structured=False):
+    """Return what one stored secret hides: itself and, if asked, its pieces.
 
-    A JSON object adds its text values under keys that name a secret
+    Only a field that stores a document is split (*structured*): a JSON
+    object adds its text values under keys that name a secret
     (``password``, ``client_secret``, ``new_usage_token``…, never
     ``machine`` or ``login``), at any depth; a PEM block adds each line
-    of its body, so a key printed a line at a time is masked too.
+    of its body, so a key printed a line at a time is masked too. Any
+    other value is one secret, whatever it looks like: a user's secret
+    shaped as a PEM block of common words would otherwise mask those
+    words for everyone. At most :data:`MAX_PARTS` pieces, and no
+    recursion: a document nested past the stack is no crash.
 
     :param str value: a decrypted secret
+    :param bool structured: whether its field stores a JSON document or a
+        PEM block
     :rtype: set[str]
     """
     parts = {value}
-    if value.lstrip().startswith("{"):
-        try:
-            document = json.loads(value)
-        except (ValueError, RecursionError):
-            document = None
-        for leaf in _json_leaves(document):
-            parts |= secret_parts(leaf)
-    if "-----BEGIN " in value:
-        parts.update(
-            line.strip()
-            for line in value.splitlines()
-            if _PEM_LINE_RE.fullmatch(line.strip())
-        )
+    pending = [value] if structured else []
+    while pending and len(parts) <= MAX_PARTS:
+        text = pending.pop()
+        found = []
+        if text.lstrip()[:1] == "{":
+            try:
+                document = json.loads(text)
+            except (ValueError, RecursionError):
+                document = None
+            found = _json_leaves(document)
+            pending.extend(leaf for leaf in found if leaf not in parts)
+        if "-----BEGIN " in text:
+            found = [
+                *found,
+                *(
+                    line.strip()
+                    for line in text.splitlines()
+                    if _PEM_LINE_RE.fullmatch(line.strip())
+                ),
+            ]
+        for piece in found:
+            if len(parts) > MAX_PARTS:
+                break
+            parts.add(piece)
     return parts
 
 

@@ -18,6 +18,7 @@ from odoo.addons.incubacloud_mcp.protocol.limits import (
 )
 from odoo.addons.incubacloud_mcp.protocol.redact import (
     MASK,
+    MAX_PARTS,
     Scrubber,
     drop_secret_keys,
     find_secret_key,
@@ -103,7 +104,7 @@ class TestSecretParts(BaseCase):
                 "port": 2222,
             }
         )
-        parts = secret_parts(stored)
+        parts = secret_parts(stored, structured=True)
         self.assertIn(stored, parts)
         for leaf in ("bk-pass-5531", "usage-tok-77812", "oidc-secret-90210"):
             self.assertIn(leaf, parts)
@@ -116,7 +117,7 @@ class TestSecretParts(BaseCase):
         pem = "\n".join(
             ["-----BEGIN PRIVATE KEY-----", *body, "Zm9v", "-----END PRIVATE KEY-----"]
         )
-        parts = secret_parts(pem)
+        parts = secret_parts(pem, structured=True)
         for line in body:
             self.assertIn(line, parts)
         self.assertNotIn("Zm9v", parts)
@@ -124,7 +125,44 @@ class TestSecretParts(BaseCase):
 
     def test_a_plain_value_is_itself(self):
         """A value that is neither JSON nor PEM is just itself."""
-        self.assertEqual(secret_parts("plain-pass-123"), {"plain-pass-123"})
+        self.assertEqual(
+            secret_parts("plain-pass-123", structured=True), {"plain-pass-123"}
+        )
+
+    def test_a_value_of_a_field_that_stores_no_document_is_never_split(self):
+        """JSON or a PEM-looking block in any other field is one secret: its
+        words do not become secrets that would mask everyone's text."""
+        pem = "-----BEGIN X-----\ndatabase\npostgres\ninstance\n-----END X-----"
+        stored = json.dumps({"password": "bk-pass-5531"})
+        self.assertEqual(secret_parts(pem), {pem})
+        self.assertEqual(secret_parts(stored), {stored})
+
+    def test_a_document_nested_past_the_stack_is_no_crash(self):
+        """A document nested ~990 levels deep, read with a deep stack as a
+        request has, is no crash."""
+        value = '{"password":' * 990 + '"abcdefgh1234"' + "}" * 990
+
+        def deep(levels):
+            """Call secret_parts *levels* frames down."""
+            if levels:
+                return deep(levels - 1)
+            return secret_parts(value, structured=True)
+
+        self.assertIn(value, deep(150))
+
+    def test_a_big_document_hides_a_bounded_number_of_secrets(self):
+        """A document of ten thousand secret leaves gives at most MAX_PARTS
+        pieces, quickly."""
+        rng = random.Random(3)
+        words = [
+            "".join(rng.choices(string.ascii_lowercase + string.digits, k=10))
+            for _ in range(10_000)
+        ]
+        stored = json.dumps({"password": words})
+        started = time.perf_counter()
+        parts = secret_parts(stored, structured=True)
+        self.assertLessEqual(len(parts), MAX_PARTS + 1)
+        self.assertLess(time.perf_counter() - started, 1)
 
 
 class TestScrubberReuse(BaseCase):
