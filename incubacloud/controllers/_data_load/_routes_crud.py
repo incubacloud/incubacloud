@@ -979,9 +979,13 @@ class CrudMixin:
         return {'job_id': job_id}
 
     @http.route(['/cloud/trust_host_key'], type='jsonrpc', auth='user', methods=['POST'])
-    def cloud_trust_host_key(self, host_id):
+    def cloud_trust_host_key(self, host_id, expected_fingerprint=None):
         """Connect once (without verification) to capture and store the server
-        host public key.  Subsequent connections will verify against it."""
+        host public key.  Subsequent connections will verify against it.
+
+        ``expected_fingerprint`` is the key a person approved after seeing
+        it (the MCP's confirmation shows it first): a server presenting
+        another one is refused and nothing is stored."""
         self._sec()._check_can_manage_hosts()
         # sudo: trusted endpoint (manager-only gate); secret fields now
         # require group_cloud_developer which manager inherits, but using
@@ -990,7 +994,11 @@ class CrudMixin:
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
         try:
-            captured = host._capture_known_host_key()
+            captured = host._capture_known_host_key(
+                expected_fingerprint=expected_fingerprint,
+            )
+        except UserError as exc:
+            return {'ok': False, 'error': str(exc)}
         except asyncssh.Error:
             _logger.exception("trust_host_key SSH error for host %s", host_id)
             return {'ok': False, 'error': _('SSH connection failed. Check host credentials and network.')}

@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.201] — 2026-10-27
+
+### Changed
+
+- **A host key is trusted only if it is the one approved.**
+  `/cloud/trust_host_key` takes an optional `expected_fingerprint`: a
+  server presenting any other key is refused (`{ok: false}`) and nothing
+  is stored. `cloud.host._peek_known_host_key()` reports the key a server
+  presents without trusting it. Agents use both (see `incubacloud_mcp`):
+  the person approving sees the old and the new fingerprint, and what is
+  stored is what they approved.
+
+---
+
 ## [1.0.200] — 2026-10-27
 
 Ships with `incubacloud_saas_manager` 1.178, as always: its Settings
