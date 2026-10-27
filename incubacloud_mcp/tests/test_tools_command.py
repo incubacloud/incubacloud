@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import shlex
 import tracemalloc
 import uuid
 from contextlib import closing
@@ -117,7 +118,7 @@ class TestCommandTools(
         (command,) = self.commands
         self.assertIn(
             "docker compose -f test.yaml exec -T odoo timeout -k 5 60 "
-            "sh -c 'env | grep PG'",
+            "sh -c -- 'env | grep PG'",
             command,
         )
         self.assertTrue(command.startswith("cd ~/mcpacme/mcp-acme-staging && "))
@@ -255,6 +256,42 @@ class TestCommandTools(
         self.assertLess(names.index("touch"), committed[0])
         self.assertLess(committed[0], names.index("connect"))
 
+    def test_a_command_reaches_the_shell_as_one_quoted_word(self):
+        """Quotes, line breaks, substitutions and a leading dash reach ``sh``
+        as one quoted word, after ``--``: the shell runs the command, and
+        reads none of it as its own options."""
+        for command in ("echo 'a'; id", "a\nb", "-i", "$(id)`id`"):
+            with self.subTest(command=command):
+                self._call_tool(
+                    self.key,
+                    "run_command",
+                    {"instance_id": self.staging.id, "command": command},
+                )
+                self.assertTrue(
+                    self.commands[-1].endswith(
+                        f" timeout -k 5 60 sh -c -- {shlex.quote(command)}"
+                    ),
+                    self.commands[-1],
+                )
+
+    def test_a_command_killed_after_its_minute_says_so(self):
+        """A command ``timeout`` had to kill (137) timed out too."""
+        self.output["exit"] = 137
+        payload = self._payload(
+            self._call_tool(
+                self.key,
+                "run_command",
+                {"instance_id": self.staging.id, "command": "trap '' TERM; sleep 600"},
+            )
+        )
+        self.assertEqual((payload["exit_code"], payload["timed_out"]), (137, True))
+
+    def test_the_description_says_background_processes_stay(self):
+        """The tools say what the minute does not stop."""
+        catalog = self.env["incubacloud.mcp.catalog"]
+        for name in ("run_command", "run_host_command"):
+            self.assertIn("background", catalog._spec(name).listed()["description"])
+
     def test_a_command_past_its_minute_says_so(self):
         """A command the session gives up on is reported as timed out."""
         self.output["raises"] = asyncio.TimeoutError()
@@ -309,7 +346,7 @@ class TestCommandTools(
             self._confirmed_call(manager_key, "run_host_command", args)
         )
         self.assertEqual(payload["exit_code"], 0)
-        self.assertEqual(self.commands, ["timeout -k 5 60 sh -c 'df -h'"])
+        self.assertEqual(self.commands, ["timeout -k 5 60 sh -c -- 'df -h'"])
         self.assertEqual(self.connect.call_args.kwargs["username"], "root")
         row = self._audit("Agent: run_host_command")
         self.assertEqual((row.details, row.host_id), ("df -h", self.host))
