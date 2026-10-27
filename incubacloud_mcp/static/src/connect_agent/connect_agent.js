@@ -8,11 +8,15 @@ import { API_KEY_ENV, API_KEY_PLACEHOLDER, connectView } from "./connect_agent_f
 /** How long a Copy button says it copied. */
 const COPIED_MS = 2000;
 
-/** A command or an address the user copies: the text and its Copy button. */
+/**
+ * A command or an address the user copies: the text and its Copy button,
+ * named by *label* for screen readers, which also hear "Copied".
+ */
 export class CopyBlock extends Component {
     static template = "incubacloud_mcp.CopyBlock";
     static props = {
         text: String,
+        label: String,
         inline: { type: Boolean, optional: true },
     };
 

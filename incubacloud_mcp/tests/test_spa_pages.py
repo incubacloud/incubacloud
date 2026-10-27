@@ -95,12 +95,25 @@ _API_KEY_PAGE = """
     if (!page.querySelector(".ic-mcp-notice")?.textContent.includes("API keys only")) {{
         fail("the API key notice");
     }}
-    const tabs = [...page.querySelectorAll(".rl-tabs .rl-tab")];
+    if (!page.querySelector("[role=tablist] [role=tab][aria-selected=true]")) {{
+        fail("the selected tab");
+    }}
+    const tabs = [...page.querySelectorAll("[role=tablist] [role=tab]")];
     for (const tab of tabs) {{
         tab.click();
         await sleep(150);
         if (page.innerHTML.includes("cursor://")) {{
             fail("a one-click link that would carry an API key");
+        }}
+        for (const button of page.querySelectorAll(".ic-mcp-copy button")) {{
+            if (!button.getAttribute("aria-label")) {{
+                fail("a Copy button without its own label");
+            }}
+        }}
+        for (const copy of page.querySelectorAll(".ic-mcp-copy")) {{
+            if (!copy.querySelector("[aria-live=polite]")) {{
+                fail("a Copy without its live region");
+            }}
         }}
     }}
     tabs.find((tab) => tab.textContent.includes("Claude and Claude Desktop")).click();
@@ -121,7 +134,7 @@ _OAUTH_PAGE = """
     if (page.querySelector(".ic-mcp-notice")) {{
         fail("an API key notice with an issuer");
     }}
-    const tabs = [...page.querySelectorAll(".rl-tabs .rl-tab")];
+    const tabs = [...page.querySelectorAll("[role=tablist] [role=tab]")];
     tabs.find((tab) => tab.textContent.includes("Cursor")).click();
     await sleep(150);
     if (!page.querySelector("a[href^='cursor://']")) {{
@@ -165,8 +178,9 @@ class TestTheSpaPages(McpUsersMixin, HttpCase):
 
     def test_connect_an_agent_opens_from_its_route(self):
         """A stakeholder opens Connect an agent: the panel's MCP URL, the API
-        key notice, no one-click link that would carry the key, and
-        claude.ai's steps with the key in a request header."""
+        key notice, no one-click link that would carry the key, claude.ai's
+        steps with the key in a request header, tabs and Copy buttons a
+        screen reader can name."""
         self._cloud_user("mcp-spa-user", group="group_cloud_user")
         self._open(
             "/cloud/connect-agent",
