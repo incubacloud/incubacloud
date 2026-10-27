@@ -77,6 +77,14 @@ class TestCanonicalResource(BaseCase):
             canonical_resource("http://[::1]:8069/mcp"), "http://[::1]:8069/mcp"
         )
 
+    def test_an_underscore_in_the_host_stays(self):
+        """A shell does not read ``_``: a host such as an internal one with
+        it is a resource."""
+        self.assertEqual(
+            canonical_resource("https://My_Panel.example.com/mcp"),
+            "https://my_panel.example.com/mcp",
+        )
+
     def test_origin_and_the_rfc_9728_document(self):
         """The origin, and the RFC 9728 document with the path after it."""
         self.assertEqual(
