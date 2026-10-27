@@ -61,6 +61,11 @@ def fetch_json(url, max_bytes):
                 raise ValueError(f"{url} sends more than {max_bytes} bytes")
             if time.monotonic() - start > DEADLINE_SECONDS:
                 raise ValueError(f"{url} takes more than {DEADLINE_SECONDS} s")
-        return 200, json.loads(bytes(body))
+        try:
+            return 200, json.loads(bytes(body))
+        # Nested past the parser's stack: as unreadable as any bad JSON,
+        # and the callers remember a ValueError as the issuer's failure.
+        except RecursionError as exc:
+            raise ValueError(f"{url} nests its JSON too deep") from exc
     finally:
         response.close()
