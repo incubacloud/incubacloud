@@ -105,26 +105,32 @@
                     <t t-if="state.tab === 'claude_ai'">
                         <ol class="ic-mcp-steps">
                             <li>In Claude, open Customize, then Connectors, and choose + Add, then Add custom connector.</li>
-                            <li>Name it, for example IncubaCloud, and paste this panel's MCP address.</li>
+                            <li>Name it, for example IncubaCloud, paste this panel's MCP address and choose Continue.</li>
                             <li t-if="view.needsApiKey">
-                                Choose No sign in. Under Request headers, add the header
+                                In the sign-in settings, choose No sign in and, under Request headers,
+                                add the header
                                 <code t-translation="off">Authorization</code> with the value
-                                <code t-translation="off">Bearer <t t-esc="apiKeyPlaceholder"/></code>,
-                                then choose Add.
+                                <code t-translation="off">Bearer <t t-esc="apiKeyPlaceholder"/></code>;
+                                then choose Continue and Add.
                             </li>
                             <li t-else="">
-                                Keep the sign-in settings Claude detects, choose Add, and sign in
-                                with your IncubaCloud account.
+                                Keep the sign-in settings Claude detects, choose Continue, then Add,
+                                and sign in.
                             </li>
                         </ol>
                         <p t-if="view.needsApiKey" class="ic-mcp-step">
-                            Only on an individual plan: a connector an owner adds in Organization
-                            settings is shared by every member, and so would your key be.
+                            Request headers is in beta in Claude: if you do not see it, use
+                            Claude Code or another client.
+                        </p>
+                        <p t-if="view.needsApiKey" class="ic-mcp-step">
+                            Only on an individual plan: a connector an Owner or Primary Owner adds
+                            in Organization settings is shared by every member, and so would your
+                            key be.
                         </p>
                         <p t-else="" class="ic-mcp-step">
-                            On a Team or Enterprise plan, an owner adds it once in Organization
-                            settings, Connectors (Add, Custom, Web); then each member finds it in
-                            Customize, Connectors, and chooses Connect.
+                            On a Team or Enterprise plan, an Owner or Primary Owner adds it once in
+                            Organization settings, Connectors (Add, Custom, Web); then each member
+                            finds it in Customize, Connectors, and chooses Connect.
                         </p>
                         <p class="ic-mcp-step">
                             Claude connects from Anthropic's servers, not from your computer: this

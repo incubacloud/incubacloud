@@ -24,14 +24,6 @@ msgstr "(Seguridad, Claves API) y póngala donde los comandos dicen"
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
-",\n"
-"                                then choose Add."
-msgstr "; después, elija Añadir."
-
-#. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
-msgid ""
 ", or in the environment variable\n"
 "                        they name. Treat it like a password."
 msgstr ""
@@ -62,6 +54,14 @@ msgstr ": defínala antes de abrir Codex."
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ": set it before you start Cursor."
 msgstr ": defínala antes de abrir Cursor."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid ""
+";\n"
+"                                then choose Continue and Add."
+msgstr "; después, elija Continuar y Añadir."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -276,13 +276,6 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__channel
 msgid "Channel"
 msgstr "Canal"
-
-#. module: incubacloud_mcp
-#. odoo-javascript
-#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
-msgid "Choose No sign in. Under Request headers, add the header"
-msgstr ""
-"Elija Sin iniciar sesión. En Encabezados de solicitud, añada el encabezado"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -677,6 +670,16 @@ msgstr ""
 "Añadir conector personalizado."
 
 #. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid ""
+"In the sign-in settings, choose No sign in and, under Request headers,\n"
+"                                add the header"
+msgstr ""
+"En los ajustes de inicio de sesión, elija Sin iniciar sesión y, en "
+"Encabezados de solicitud, añada el encabezado"
+
+#. module: incubacloud_mcp
 #: model_terms:ir.ui.view,arch_db:incubacloud_mcp.approval_page_html
 msgid "IncubaCloud"
 msgstr "IncubaCloud"
@@ -742,11 +745,11 @@ msgstr "Tarea no encontrada"
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
-"Keep the sign-in settings Claude detects, choose Add, and sign in\n"
-"                                with your IncubaCloud account."
+"Keep the sign-in settings Claude detects, choose Continue, then Add,\n"
+"                                and sign in."
 msgstr ""
-"Deje los ajustes de inicio de sesión que detecta Claude, elija Añadir e "
-"inicie sesión con su cuenta de IncubaCloud."
+"Deje los ajustes de inicio de sesión que detecta Claude, elija Continuar y "
+"después Añadir, e inicie sesión."
 
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__write_uid
@@ -821,10 +824,12 @@ msgstr ""
 #. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
-msgid "Name it, for example IncubaCloud, and paste this panel's MCP address."
+msgid ""
+"Name it, for example IncubaCloud, paste this panel's MCP address and choose "
+"Continue."
 msgstr ""
-"Póngale un nombre, por ejemplo IncubaCloud, y pegue la dirección MCP de este"
-" panel."
+"Póngale un nombre, por ejemplo IncubaCloud, pegue la dirección MCP de este "
+"panel y elija Continuar."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -847,14 +852,14 @@ msgstr "Proveedor OAuth2"
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
-"On a Team or Enterprise plan, an owner adds it once in Organization\n"
-"                            settings, Connectors (Add, Custom, Web); then each member finds it in\n"
-"                            Customize, Connectors, and chooses Connect."
+"On a Team or Enterprise plan, an Owner or Primary Owner adds it once in\n"
+"                            Organization settings, Connectors (Add, Custom, Web); then each member\n"
+"                            finds it in Customize, Connectors, and chooses Connect."
 msgstr ""
-"En un plan Team o Enterprise, un propietario lo añade una vez en "
-"Configuración de la organización, Conectores (Añadir, Personalizado, Web); "
-"después, cada miembro lo encuentra en Personalizar, Conectores, y elige "
-"Conectar."
+"En un plan Team o Enterprise, un Propietario o Propietario principal lo "
+"añade una vez en Configuración de la organización, Conectores (Añadir, "
+"Personalizado, Web); después, cada miembro lo encuentra en Personalizar, "
+"Conectores, y elige Conectar."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -881,12 +886,13 @@ msgstr "En este panel los dos los fija la plataforma."
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
-"Only on an individual plan: a connector an owner adds in Organization\n"
-"                            settings is shared by every member, and so would your key be."
+"Only on an individual plan: a connector an Owner or Primary Owner adds\n"
+"                            in Organization settings is shared by every member, and so would your\n"
+"                            key be."
 msgstr ""
-"Solo en un plan individual: un conector que un propietario añade en "
-"Configuración de la organización lo comparten todos los miembros, y también "
-"compartirían su clave."
+"Solo en un plan individual: un conector que un Propietario o Propietario "
+"principal añade en Configuración de la organización lo comparten todos los "
+"miembros, y también compartirían su clave."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -942,6 +948,16 @@ msgid ""
 msgstr ""
 "Sustituir el staging %(staging)s por una copia de %(origin)s (%(how)s, "
 "%(neutralized)s). Se pierde todo lo que hay en el staging."
+
+#. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
+msgid ""
+"Request headers is in beta in Claude: if you do not see it, use\n"
+"                            Claude Code or another client."
+msgstr ""
+"Encabezados de solicitud está en beta en Claude: si no lo ve, use Claude "
+"Code u otro cliente."
 
 #. module: incubacloud_mcp
 #. odoo-python
