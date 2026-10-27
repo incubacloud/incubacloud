@@ -7,6 +7,7 @@ from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
+from odoo.addons.incubacloud_mcp.protocol.redact import MASK
 
 from .common import PG_PASSWORD, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
@@ -278,6 +279,43 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             last["items"], [f"[stdout] more {index}" for index in range(115, 120)]
         )
         self.assertEqual((last["next_offset"], last["total"]), (None, 123))
+
+    def test_a_job_s_short_lines_are_all_read_page_after_page(self):
+        """Paging a job's log reaches every line, short and lengthened by
+        masking alike."""
+        secret = "s3cr3t-8"
+        self.host.password = secret
+        self.env["cloud.job.log.chunk"].sudo().create(
+            [
+                {
+                    "job_id": self.job.id,
+                    "source": "stdout",
+                    "content": "\n".join(
+                        f"{chunk:03d}{line:03d} {secret} {secret}"
+                        for line in range(100)
+                    ),
+                }
+                for chunk in range(100)
+            ]
+        )
+        seen, offset, pages = [], 0, 0
+        while offset is not None and pages < 100:
+            result = self._call_tool(
+                self.key, "get_job", {"job_id": self.job.id, "offset": offset}
+            )
+            self.assertLessEqual(
+                len(result["content"][-1]["text"].encode()), MAX_BYTES + 512
+            )
+            log = self._payload(result)["log"]
+            seen.extend(log["items"])
+            offset = log["next_offset"]
+            pages += 1
+        expected = [
+            f"[stdout] {chunk:03d}{line:03d} {MASK} {MASK}"
+            for chunk in range(100)
+            for line in range(100)
+        ]
+        self.assertEqual(seen[3:], expected)
 
     def test_projects_come_in_pages(self):
         """list_projects returns at most the page asked for."""

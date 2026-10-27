@@ -7,9 +7,14 @@ UTF-8): escaped quotes and newlines count, and so does every byte of an
 accented letter, no more.
 """
 
+import copy
 import json
 
 MAX_BYTES = 64 * 1024
+#: Bytes between two entries of a list, as the answer serialises it: ``, ``.
+SEPARATOR_BYTES = 2
+#: The keys under which a paged answer carries its page of entries.
+PAGE_LIST_KEYS = ("items", "entries", "alerts")
 
 
 def _dumps(value):
@@ -65,13 +70,13 @@ def page_items(items, offset=0, limit=None, max_bytes=MAX_BYTES):
     end = total if not limit else min(total, offset + max(1, int(limit)))
     page, size, cut = [], 2, False
     for item in items[offset:end]:
-        cost = _size(item) + 1
+        cost = _size(item) + SEPARATOR_BYTES
         if size + cost > max_bytes:
             if page:
                 break
             text = item if isinstance(item, str) else _dumps(item)
-            item = _fit(text, max_bytes - size - 1)
-            cost = _size(item) + 1
+            item = _fit(text, max_bytes - size - SEPARATOR_BYTES)
+            cost = _size(item) + SEPARATOR_BYTES
             cut = True
         page.append(item)
         size += cost
@@ -226,18 +231,113 @@ def _longest_list(obj):
     return 0
 
 
+def _page_lists(obj):
+    """Return ``[(page, key)]``: the pages of entries inside *obj*.
+
+    A page is a dict with an integer ``offset``, a ``next_offset`` and its
+    entries in a list under one of :data:`PAGE_LIST_KEYS`. Walked without
+    recursion.
+    """
+    found, stack = [], [obj]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if isinstance(node.get("offset"), int) and "next_offset" in node:
+                key = next(
+                    (
+                        name
+                        for name in PAGE_LIST_KEYS
+                        if isinstance(node.get(name), list)
+                    ),
+                    None,
+                )
+                if key:
+                    found.append((node, key))
+                    continue
+            stack.extend(node.values())
+        elif isinstance(node, (list, tuple)):
+            stack.extend(node)
+    return found
+
+
+def _has_next_offset(obj):
+    """Return whether a ``next_offset`` key is anywhere inside *obj*."""
+    stack = [obj]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if "next_offset" in node:
+                return True
+            stack.extend(node.values())
+        elif isinstance(node, (list, tuple)):
+            stack.extend(node)
+    return False
+
+
+def _fit_page(obj, max_bytes):
+    """Cut the page of entries of *obj* until *obj* fits, moving ``next_offset``.
+
+    The entries left out are those after the last one kept: the next page
+    starts at the first of them, so none is skipped. When not even one
+    entry fits, the first is cut, as :func:`page_items` does.
+
+    :param obj: a copy of the answer, changed in place
+    :return: whether it now fits
+    """
+    page, key = max(_page_lists(obj), key=lambda found: len(found[0][found[1]]))
+    entries = page[key]
+
+    def fits(count):
+        """Keep the first *count* entries; return whether *obj* fits."""
+        page[key] = entries[:count]
+        return _size(obj) <= max_bytes
+
+    if not fits(0):
+        page[key] = entries
+        return False
+    low, high = 0, len(entries)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if fits(middle):
+            low = middle
+        else:
+            high = middle - 1
+    kept = entries[:low]
+    if not kept and entries:
+        page[key] = []
+        first = entries[0]
+        text = first if isinstance(first, str) else _dumps(first)
+        cut = _fit(text, max_bytes - _size(obj) - SEPARATOR_BYTES - 2)
+        kept = [cut] if cut else []
+    page[key] = kept
+    if len(kept) < len(entries):
+        page["next_offset"] = page["offset"] + len(kept)
+        page["truncated"] = True
+    return True
+
+
 def fit_answer(obj, max_bytes=MAX_BYTES):
     """Return ``(obj, False)`` when *obj* fits *max_bytes*, else a cut of it.
 
-    The safety net behind the tools that page their answers: lists are
-    cut first, every one to the same number of entries, the most that
-    fits; when even empty lists do not make it fit, strings are cut to
-    1 KB first. No ``next_offset``: an answer this big was not expected
-    from its tool.
+    The safety net behind the tools that page their answers, which
+    masking can still grow past the page. A page of entries loses its
+    last entries and its ``next_offset`` moves back to the first of them:
+    nothing is skipped. A page of text, whose offsets count the
+    characters before masking, is left as it is. Any other answer has its
+    lists cut first, every one to the same number of entries, the most
+    that fits; when even empty lists do not make it fit, strings are cut
+    to 1 KB first.
 
     :return: ``(answer that fits, whether it was cut)``
     """
     if _size(obj) <= max_bytes:
+        return obj, False
+    if _page_lists(obj):
+        paged = copy.deepcopy(obj)
+        if _fit_page(paged, max_bytes):
+            return paged, True
+        return obj, False
+    if _has_next_offset(obj):
         return obj, False
     for candidate in (obj, cap_strings(obj, _FIELD_BYTES)[0]):
         if _size(_head_lists(candidate, 0)) > max_bytes:

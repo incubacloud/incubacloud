@@ -3,7 +3,13 @@
 from odoo import api, models
 from odoo.exceptions import UserError
 
-from ..protocol.limits import MAX_BYTES, page_answer, page_items, size_of
+from ..protocol.limits import (
+    MAX_BYTES,
+    SEPARATOR_BYTES,
+    page_answer,
+    page_items,
+    size_of,
+)
 from ..protocol.tool_spec import (
     LIMIT,
     OFFSET,
@@ -449,7 +455,7 @@ class McpToolsRead(models.AbstractModel):
                             break
                         text = f"[{chunk.source}] {line}"
                         window.append(text)
-                        size += size_of(text) + 1
+                        size += size_of(text) + SEPARATOR_BYTES
                     index += 1
                 if more:
                     break
