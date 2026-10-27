@@ -30,9 +30,11 @@ approval. Secrets never go in or out.
         "incubacloud.assets_prod": [
             "incubacloud_mcp/static/src/**/*",
         ],
-        # JS unit tests (Hoot framework), beside core's.
+        # JS unit tests (Hoot framework), beside core's. Without the SPA
+        # registration: the panel's own tests must not meet its route.
         "web.assets_unit_tests": [
             "incubacloud_mcp/static/src/**/*.js",
+            ("remove", "incubacloud_mcp/static/src/mcp_init.js"),
             "incubacloud_mcp/static/tests/**/*.test.js",
         ],
     },

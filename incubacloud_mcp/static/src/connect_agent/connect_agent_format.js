@@ -129,3 +129,22 @@ export function connectView(config = {}) {
 export function settingsView(settings = {}) {
     return { readonly: Boolean(settings.managed) };
 }
+
+/**
+ * What Settings saves: the fields the user changed since they were read.
+ *
+ * A field left alone is not sent: an MCP URL the panel could not work
+ * out stays empty, and saving another tab must not fail on it.
+ *
+ * @param {Object|null} loaded the values as read, or null when the read failed
+ * @param {Object} form the values in the form
+ * @returns {Object} the changed fields; none when nothing was read
+ */
+export function changedSettings(loaded, form) {
+    if (!loaded) {
+        return {};
+    }
+    return Object.fromEntries(
+        Object.entries(form).filter(([key, value]) => value !== loaded[key])
+    );
+}

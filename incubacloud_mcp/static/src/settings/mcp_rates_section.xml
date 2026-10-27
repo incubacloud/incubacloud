@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud_mcp.McpRatesSection">
+    <t t-if="state.loaded">
+
+        <div class="rl-saas-fsec">Agents (MCP)</div>
+        <p class="rl-tabnote">
+            Tool calls per minute that one user's agents may make together. Past it, the
+            panel refuses their calls until the minute ends.
+        </p>
+
+        <div class="rl-fgrid">
+            <div class="rl-frow">
+                <label for="ic_mcp_rate">Agent calls (per user, all their agents)</label>
+                <input id="ic_mcp_rate" type="number" min="1"
+                       t-att-value="state.value"
+                       t-on-change="(ev) => this.onInput(ev)"/>
+            </div>
+        </div>
+
+    </t>
+</t>
+
+</templates>

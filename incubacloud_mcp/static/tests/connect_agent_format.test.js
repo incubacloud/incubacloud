@@ -1,6 +1,7 @@
 import { describe, expect, test } from "@odoo/hoot";
 import {
     API_KEY_ENV,
+    changedSettings,
     claudeCodeCommand,
     codexConfig,
     connectView,
@@ -72,6 +73,18 @@ describe("Connect an agent — what it shows", () => {
     test("on a tenant, the issuer and the URL are read-only", () => {
         expect(settingsView({ managed: true }).readonly).toBe(true);
         expect(settingsView({ managed: false }).readonly).toBe(false);
+    });
+
+    test("Settings saves only the fields the user changed", () => {
+        const loaded = { mcp_oauth_issuer: "", mcp_resource: "" };
+        expect(changedSettings(loaded, { ...loaded })).toEqual({});
+        expect(
+            changedSettings(loaded, { mcp_oauth_issuer: "https://login.example.com", mcp_resource: "" })
+        ).toEqual({ mcp_oauth_issuer: "https://login.example.com" });
+    });
+
+    test("nothing is saved over settings that could not be read", () => {
+        expect(changedSettings(null, { mcp_oauth_issuer: "x" })).toEqual({});
     });
 });
 
