@@ -155,6 +155,19 @@ class McpApproval(models.Model):
         """
         return self._transition("pending", "approved" if approve else "cancelled")
 
+    def _withdraw(self):
+        """Cancel the approval, pending or already approved: the client said no.
+
+        A no from the agent's client outweighs a yes given on the page: the
+        approval is not left for another call to use.
+
+        :return: whether it was live and is now cancelled
+        :rtype: bool
+        """
+        return self._transition("pending", "cancelled") or self._transition(
+            "approved", "cancelled"
+        )
+
     def _approve_url(self, token):
         """Return the panel's approval page for *token*.
 
