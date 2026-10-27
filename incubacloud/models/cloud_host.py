@@ -1149,14 +1149,49 @@ class CloudHost(models.Model):
             return b""
         return base64.b64decode(self.key_file)
 
-    def _scan_host_key_entry(self):
-        """Connect once without verifying the server and return its key.
+    def _known_hosts_line(self, server_key):
+        """Return the ``known_hosts`` line of *server_key* at this endpoint.
 
-        Trust on first use: what the server presents is read, never
-        compared — the callers decide what to do with it.
+        :param server_key: the ``asyncssh`` key the server presented
+        """
+        self.ensure_one()
+        key_data = server_key.export_public_key("openssh").decode().strip()
+        return f"{self._known_hosts_prefix(self.ip_address, self.port)} {key_data}"
+
+    def _presented_host_key_entry(self):
+        """Return the key the server presents, without logging in.
+
+        Only the key exchange runs: no user name, password or client key
+        is sent, so asking a server that is not the trusted one gives it
+        nothing.
 
         Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
 
+        :returns: the ``known_hosts`` line for this host's endpoint, or
+            ``''`` when the server presented no key
+        """
+        self.ensure_one()
+        loop = asyncio.new_event_loop()
+        try:
+            server_key = loop.run_until_complete(
+                asyncssh.get_server_host_key(self.ip_address, self.port),
+            )
+        finally:
+            loop.close()
+        return self._known_hosts_line(server_key) if server_key else ""
+
+    def _scan_host_key_entry(self, known_hosts=None):
+        """Log in once and return the key the server presented.
+
+        Without *known_hosts* this is trust on first use: what the server
+        presents is read, never compared — the callers decide what to do
+        with it. With it, asyncssh refuses any other key during the key
+        exchange, before a credential is sent.
+
+        Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
+
+        :param known_hosts: an ``asyncssh.SSHKnownHosts`` the key must be
+            in, or None to accept any
         :returns: the ``known_hosts`` line for this host's endpoint
         """
         self.ensure_one()
@@ -1164,7 +1199,7 @@ class CloudHost(models.Model):
             host=self.ip_address,
             port=self.port,
             username=self.user,
-            known_hosts=None,
+            known_hosts=known_hosts,
             agent_path=None,
         )
         if self.login_type == "ssh_key" and self.key_file:
@@ -1175,16 +1210,7 @@ class CloudHost(models.Model):
 
         async def _capture():
             async with asyncssh.connect(**connect_kw) as conn:
-                server_key = conn.get_server_host_key()
-                key_data = (
-                    server_key.export_public_key(
-                        "openssh",
-                    )
-                    .decode()
-                    .strip()
-                )
-                prefix = self._known_hosts_prefix(self.ip_address, self.port)
-                return f"{prefix} {key_data}"
+                return self._known_hosts_line(conn.get_server_host_key())
 
         loop = asyncio.new_event_loop()
         try:
@@ -1199,6 +1225,9 @@ class CloudHost(models.Model):
         start themselves: the MCP's ``trust_host_key`` shows it in its
         confirmation and passes it back as ``expected_fingerprint``.
 
+        Nothing is sent but the key exchange: no credential reaches a
+        server that may not be the trusted one.
+
         Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
 
         :returns: dict with ``fingerprint`` (presented now),
@@ -1207,7 +1236,7 @@ class CloudHost(models.Model):
             change, ``''`` if none)
         """
         self.ensure_one()
-        entry = self._scan_host_key_entry()
+        entry = self._presented_host_key_entry()
         return {
             "fingerprint": self._known_hosts_fingerprint(entry),
             "trusted_fingerprint": self.known_hosts_fingerprint or "",
@@ -1232,30 +1261,38 @@ class CloudHost(models.Model):
         critical alert instead of overwriting trust silently.
 
         With *expected_fingerprint* — the key a person approved after
-        seeing it (``_peek_known_host_key``) — a server presenting any
-        other key is refused and nothing is stored.
+        seeing it (``_peek_known_host_key``) — the key is read and compared
+        before any credential is sent, and the login that follows accepts
+        that key only. A server presenting any other key is refused,
+        logged and audited, and nothing is stored.
 
         Raises ``asyncssh.Error`` / ``OSError`` on connection failure,
         ``UserError`` when the key is not the approved one.
 
-        :param expected_fingerprint: the approved ``SHA256:…`` fingerprint,
-            or None to trust whatever is presented
+        :param expected_fingerprint: the approved ``SHA256:…`` fingerprint
+            (an empty one approves nothing), or None to trust whatever is
+            presented
         :returns: dict with ``entry`` (the stored known_hosts line),
             ``fingerprint``, ``previous_fingerprint`` (``''`` when there
             was nothing to compare against) and ``changed`` (True only
             when both exist and differ).
         """
         self.ensure_one()
-        entry = self._scan_host_key_entry()
+        if expected_fingerprint is None:
+            entry = self._scan_host_key_entry()
+        else:
+            # Compared first, without logging in: a server that is not the
+            # approved one never receives the host's credentials.
+            presented = self._presented_host_key_entry()
+            found = self._known_hosts_fingerprint(presented)
+            if not found or found != expected_fingerprint:
+                self._refuse_unapproved_key(found, expected_fingerprint)
+            # Swapped in between, another key fails the key exchange of
+            # the login, still before the credentials are sent.
+            entry = self._scan_host_key_entry(
+                known_hosts=asyncssh.import_known_hosts(presented),
+            )
         fingerprint = self._known_hosts_fingerprint(entry)
-        if expected_fingerprint and fingerprint != expected_fingerprint:
-            raise UserError(_(
-                "The server '%(name)s' now presents the SSH key %(found)s, "
-                "not the approved %(expected)s. Nothing was trusted.",
-                name=self.name,
-                found=fingerprint or "?",
-                expected=expected_fingerprint,
-            ))
         previous = self.revoked_key_fingerprint or ""
         changed = bool(previous and fingerprint and fingerprint != previous)
         _logger.info(
@@ -1306,6 +1343,39 @@ class CloudHost(models.Model):
             "previous_fingerprint": previous,
             "changed": changed,
         }
+
+    def _refuse_unapproved_key(self, found, expected):
+        """Log, audit and refuse a key that is not the approved one.
+
+        Nothing is stored. The route answers the refusal rather than
+        raising it, so the audit row stays.
+
+        :param found: the fingerprint presented, ``''`` if none
+        :param expected: the fingerprint approved
+        :raises UserError: always
+        """
+        self.ensure_one()
+        _logger.warning(
+            "[host %s] refused SSH host key %s: the approved one is %s",
+            self.name,
+            found or "(none presented)",
+            expected or "(none)",
+        )
+        self.env["cloud.audit.log"].sudo().create(
+            {
+                "action": "SSH host key refused",
+                "host_id": self.id,
+                "details": f"{found or 'no key'} presented, "
+                f"{expected or 'none'} approved",
+            }
+        )
+        raise UserError(_(
+            "The server '%(name)s' now presents the SSH key %(found)s, "
+            "not the approved %(expected)s. Nothing was trusted.",
+            name=self.name,
+            found=found or "?",
+            expected=expected or "?",
+        ))
 
     def _audit_key_capture(self, fingerprint, previous, changed):
         """Record the capture and its verdict in the audit log.

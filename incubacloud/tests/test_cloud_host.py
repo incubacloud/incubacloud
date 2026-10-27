@@ -9,6 +9,7 @@ import asyncio
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
@@ -1596,54 +1597,105 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
     The MCP shows a person the key a server presents before trusting it
     (``_peek_known_host_key``) and hands the approved fingerprint back to
     the route (``expected_fingerprint``). A server that answers with
-    another key in between is not trusted.
+    another key in between is not trusted, and is never sent the host's
+    credentials.
     """
 
-    def _connecting_to(self, server_key):
-        """Patch ``asyncssh.connect`` so the server presents *server_key*.
+    HOST_LOGGER = "odoo.addons.incubacloud.models.cloud_host"
+
+    @contextmanager
+    def _server(self, server_key):
+        """Stub a server that presents *server_key*, logged in or not.
+
+        ``asyncssh.get_server_host_key`` is the key exchange alone, with no
+        credential sent; ``asyncssh.connect`` is the full login. Yields the
+        two doubles, ``(scan, connect)``, so a test can tell which ran.
 
         :param server_key: an asyncssh private key; its public half is
-            what the stubbed server hands back
-        :return: the ``patch`` context manager
+            what the stubbed server presents
         """
         conn = MagicMock(spec=asyncssh.SSHClientConnection)
         conn.get_server_host_key.return_value = server_key
         connection = MagicMock(spec=_ACMWrapper)
         connection.__aenter__.return_value = conn
         connection.__aexit__.return_value = False
-        return patch.object(asyncssh, "connect", return_value=connection)
+        with (
+            patch.object(
+                asyncssh,
+                "get_server_host_key",
+                autospec=True,
+                return_value=server_key,
+            ) as scan,
+            patch.object(asyncssh, "connect", return_value=connection) as connect,
+        ):
+            yield scan, connect
 
-    def test_a_peek_names_the_key_and_stores_nothing(self):
+    def test_a_peek_names_the_presented_key_without_logging_in(self):
         host = self._host()
         trusted = host.known_hosts_key
-        with self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")):
+        presented = asyncssh.generate_private_key("ssh-ed25519")
+        with self._server(presented) as (scan, connect):
             peek = host._peek_known_host_key()
-        self.assertTrue(peek["fingerprint"].startswith("SHA256:"))
+        self.assertEqual(peek["fingerprint"], presented.get_fingerprint("sha256"))
+        self.assertNotEqual(peek["fingerprint"], peek["trusted_fingerprint"])
         self.assertEqual(peek["trusted_fingerprint"], host.known_hosts_fingerprint)
         self.assertEqual(peek["revoked_fingerprint"], "")
         self.assertEqual(host.known_hosts_key, trusted)
+        scan.assert_called_once_with(host.ip_address, host.port)
+        connect.assert_not_called()
 
-    def test_the_approved_key_is_trusted(self):
+    def test_the_approved_key_is_trusted_and_the_login_accepts_only_it(self):
         host = self._host()
-        with self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")):
+        with self._server(asyncssh.generate_private_key("ssh-ed25519")) as (
+            _scan,
+            connect,
+        ):
             approved = host._peek_known_host_key()["fingerprint"]
             captured = host._capture_known_host_key(expected_fingerprint=approved)
         self.assertEqual(captured["fingerprint"], approved)
         self.assertEqual(host.known_hosts_fingerprint, approved)
+        # asyncssh checks the key during the key exchange, before the
+        # credentials go out: the login knows the approved key only.
+        pinned = connect.call_args.kwargs["known_hosts"]
+        host_keys = pinned.match(host.ip_address, "", host.port)[0]
+        self.assertEqual(
+            [key.get_fingerprint("sha256") for key in host_keys], [approved]
+        )
 
-    def test_another_key_is_refused_and_nothing_changes(self):
+    def test_another_key_is_refused_before_any_credential_is_sent(self):
         host = self._host()
         trusted = host.known_hosts_key
-        with self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")):
-            approved = host._peek_known_host_key()["fingerprint"]
+        approved = asyncssh.generate_private_key("ssh-ed25519").get_fingerprint(
+            "sha256"
+        )
         with (
-            self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")),
+            self._server(asyncssh.generate_private_key("ssh-ed25519")) as (
+                _scan,
+                connect,
+            ),
+            self.assertLogs(self.HOST_LOGGER, level="WARNING"),
             self.assertRaises(UserError),
         ):
             host._capture_known_host_key(expected_fingerprint=approved)
+        connect.assert_not_called()
         self.assertEqual(host.known_hosts_key, trusted)
 
-    def test_the_route_answers_the_refusal(self):
+    def test_an_empty_approval_trusts_nothing(self):
+        host = self._host()
+        trusted = host.known_hosts_key
+        with (
+            self._server(asyncssh.generate_private_key("ssh-ed25519")) as (
+                _scan,
+                connect,
+            ),
+            self.assertLogs(self.HOST_LOGGER, level="WARNING"),
+            self.assertRaises(UserError),
+        ):
+            host._capture_known_host_key(expected_fingerprint="")
+        connect.assert_not_called()
+        self.assertEqual(host.known_hosts_key, trusted)
+
+    def test_the_route_answers_logs_and_audits_the_refusal(self):
         from odoo.addons.incubacloud.controllers import data_load
         from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 
@@ -1656,13 +1708,18 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         fake_request.env = self.env(user=manager)
         ctrl = data_load.CloudDataLoadController()
         with (
-            self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")),
+            self._server(asyncssh.generate_private_key("ssh-ed25519")),
             patch.object(http, "request", fake_request),
             patch.object(data_load, "request", fake_request),
             patch.object(_routes_crud, "request", fake_request),
+            self.assertLogs(self.HOST_LOGGER, level="WARNING") as logs,
         ):
             result = ctrl.cloud_trust_host_key(
                 host.id, expected_fingerprint="SHA256:not-the-presented-one",
             )
         self.assertFalse(result["ok"])
         self.assertIn("SHA256:not-the-presented-one", result["error"])
+        self.assertIn("SHA256:not-the-presented-one", logs.output[0])
+        details = self._audit_details(host, "SSH host key refused")
+        self.assertEqual(len(details), 1)
+        self.assertIn("SHA256:not-the-presented-one", details[0])

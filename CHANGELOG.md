@@ -11,12 +11,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - **A host key is trusted only if it is the one approved.**
-  `/cloud/trust_host_key` takes an optional `expected_fingerprint`: a
-  server presenting any other key is refused (`{ok: false}`) and nothing
-  is stored. `cloud.host._peek_known_host_key()` reports the key a server
-  presents without trusting it. Agents use both (see `incubacloud_mcp`):
-  the person approving sees the old and the new fingerprint, and what is
-  stored is what they approved.
+  `/cloud/trust_host_key` takes an optional `expected_fingerprint`: the
+  key is read and compared before any credential is sent, and the login
+  that follows accepts that key only. A server presenting any other key
+  is refused (`{ok: false}`), the refusal is logged and audited (`SSH host
+  key refused`), and nothing is stored; an empty fingerprint approves
+  nothing. `cloud.host._peek_known_host_key()` reports the key a server
+  presents without logging in or trusting it. Agents use both (see
+  `incubacloud_mcp`): the person approving sees the old and the new
+  fingerprint, and what is stored is what they approved.
 
 ---
 
