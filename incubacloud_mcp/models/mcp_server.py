@@ -3,7 +3,13 @@
 The controller authenticated the caller and the request already runs as
 them. This model reads which protocol the message speaks, checks what
 that protocol requires, and answers.
+
+Clients of the earlier revisions open with ``initialize`` and get a
+session id that holds what it negotiated, signed: the server keeps
+nothing between requests.
 """
+
+import time
 
 from odoo import api, models
 from odoo.http import request
@@ -18,11 +24,14 @@ from ..protocol.errors import (
     McpError,
 )
 from ..protocol.headers import check_modern_headers
-from ..protocol.versions import LEGACY, MODERN, SUPPORTED
+from ..protocol.signing import sign, verify
+from ..protocol.versions import LEGACY, MODERN, SUPPORTED, negotiate_legacy
 
 SERVER_NAME = "incubacloud-panel"
 #: How long clients may reuse a listing (``ttlMs``).
 CACHE_TTL_MS = 300_000
+#: Seconds a legacy session id is honoured.
+SESSION_MAX_AGE = 24 * 3600
 META_VERSION = "io.modelcontextprotocol/protocolVersion"
 META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
 META_CLIENT = "io.modelcontextprotocol/clientInfo"
@@ -43,6 +52,19 @@ def _client_name(info):
     if not isinstance(info, dict):
         return ""
     return "".join(ch for ch in str(info.get("name") or "") if ch.isprintable())[:64]
+
+
+def _session_capabilities(capabilities):
+    """Keep, of what a legacy client declared, what the server reads later.
+
+    Only ``elicitation`` decides anything (the confirmation channel); the
+    rest would only grow a header the client sends on every request.
+    """
+    if isinstance(capabilities, dict) and isinstance(
+        capabilities.get("elicitation"), dict
+    ):
+        return {"elicitation": capabilities["elicitation"]}
+    return {}
 
 
 class McpServer(models.AbstractModel):
@@ -118,6 +140,10 @@ class McpServer(models.AbstractModel):
             raise McpError(400, INVALID_PARAMS, "_meta must be an object")
         version = meta.get(META_VERSION)
         if not version:
+            # The earlier revisions carry no version in _meta.
+            legacy = self._legacy_context(message, headers, principal)
+            if legacy:
+                return legacy
             raise McpError(
                 400,
                 INVALID_PARAMS,
@@ -148,6 +174,41 @@ class McpServer(models.AbstractModel):
         )
 
     @api.model
+    def _legacy_context(self, message, headers, principal):
+        """Return the context of an earlier revision's request, or None.
+
+        ``initialize`` negotiates the version; any other request carries the
+        session id ``initialize`` handed out. Without either, None.
+
+        :rtype: CallContext | None
+        :raises McpError: 404 when the session id does not hold, 400 when
+            ``MCP-Protocol-Version`` is sent and is not the session's
+        """
+        params = message.get("params") or {}
+        if message["method"] == "initialize":
+            return CallContext(
+                negotiate_legacy(params.get("protocolVersion")),
+                False,
+                _session_capabilities(params.get("capabilities")),
+                _client_name(params.get("clientInfo")),
+                principal,
+            )
+        session_id = headers.get("Mcp-Session-Id")
+        if not session_id:
+            return None
+        state = self._read_session(session_id, principal)
+        header_version = headers.get("MCP-Protocol-Version")
+        if header_version and header_version != state["v"]:
+            raise McpError(
+                400,
+                INVALID_REQUEST,
+                "MCP-Protocol-Version does not match the session's version.",
+            )
+        return CallContext(
+            state["v"], False, state.get("c") or {}, state.get("n") or "", principal
+        )
+
+    @api.model
     def _dispatch(self, message, ctx):
         """Run the method of *message*; return ``(result, extra headers)``.
 
@@ -156,6 +217,10 @@ class McpServer(models.AbstractModel):
         method = message["method"]
         if method == "server/discover" and ctx.modern:
             return self._finish(self._discover(), ctx), {}
+        if method == "initialize" and not ctx.modern:
+            return self._initialize(ctx)
+        if method == "ping" and not ctx.modern:
+            return {}, {}
         raise McpError(
             404 if ctx.modern else 200, METHOD_NOT_FOUND, f"Method not found: {method}"
         )
@@ -181,3 +246,62 @@ class McpServer(models.AbstractModel):
                 META_SERVER: self._server_info(),
             }
         return result
+
+    @api.model
+    def _initialize(self, ctx):
+        """Answer ``initialize`` and hand the client its signed session id.
+
+        The server keeps nothing: the id holds the version, the
+        capabilities it needs, the client's name, the user and the time,
+        signed with the module's key (label ``session``).
+
+        :return: ``(result, {"Mcp-Session-Id": <id>})``
+        """
+        session = sign(
+            self.env["cloud.settings"].sudo()._mcp_secret(),
+            "session",
+            {
+                "v": ctx.version,
+                "c": ctx.capabilities,
+                "n": ctx.client_name,
+                "u": ctx.principal.uid,
+                "t": int(time.time()),
+            },
+        )
+        result = {
+            "protocolVersion": ctx.version,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": self._server_info(),
+            "instructions": INSTRUCTIONS,
+        }
+        return result, {"Mcp-Session-Id": session}
+
+    @api.model
+    def _read_session(self, session_id, principal):
+        """Return the state of a legacy session id, or answer 404.
+
+        404 makes the client send ``initialize`` again: the id is forged,
+        another user's, of a version this server no longer speaks, or older
+        than a day.
+
+        :param str session_id: the ``Mcp-Session-Id`` header (attacker-controlled)
+        :param principal: who the request's credential named
+        :rtype: dict
+        :raises McpError: 404 when the id does not hold
+        """
+        state = verify(
+            self.env["cloud.settings"].sudo()._mcp_secret(), "session", session_id
+        )
+        if (
+            not state
+            or state.get("u") != principal.uid
+            or state.get("v") not in LEGACY
+            or not isinstance(state.get("t"), int)
+            or time.time() - state["t"] > SESSION_MAX_AGE
+        ):
+            raise McpError(
+                404,
+                INVALID_REQUEST,
+                "Session not found or expired: send initialize again.",
+            )
+        return state

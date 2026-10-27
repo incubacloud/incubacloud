@@ -11,3 +11,4 @@ from . import test_auth_tokens
 from . import test_auth_users
 from . import test_transport_http
 from . import test_transport_modern
+from . import test_transport_legacy
