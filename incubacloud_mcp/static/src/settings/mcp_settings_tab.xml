@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud_mcp.McpSettingsTab">
+    <div class="ic-mcp-settings">
+        <t t-if="state.loading">
+            <div class="ic-detail-loading">Loading…</div>
+        </t>
+        <t t-else="">
+
+            <div class="rl-saas-fsec">Agents (MCP)</div>
+            <p class="rl-tabnote">
+                Where AI agents connect to this panel, and who signs them in. Without an
+                issuer, agents connect with API keys only. With one, the panel accepts its
+                tokens for the users linked to an enabled OAuth provider with the same issuer.
+            </p>
+            <p class="rl-tabnote" t-if="view.readonly">
+                On this panel the platform sets both.
+            </p>
+
+            <div class="rl-fgrid">
+                <div class="rl-frow">
+                    <label for="ic_mcp_issuer">Agents' OAuth issuer</label>
+                    <input id="ic_mcp_issuer" type="url"
+                           placeholder="https://login.example.com"
+                           t-att-readonly="view.readonly"
+                           t-model="state.form.mcp_oauth_issuer"/>
+                </div>
+                <div class="rl-frow">
+                    <label for="ic_mcp_resource">MCP address</label>
+                    <input id="ic_mcp_resource" type="url"
+                           t-att-readonly="view.readonly"
+                           t-model="state.form.mcp_resource"/>
+                </div>
+            </div>
+
+        </t>
+    </div>
+</t>
+
+</templates>

@@ -1,0 +1,89 @@
+// Connect an agent: the page, its copy blocks, and the audit's agent mark.
+// Painted with the panel's --rl-* tokens only, so both themes hold.
+
+.ic-mcp-connect {
+    .ic-mcp-intro,
+    .ic-mcp-step {
+        max-inline-size: 760px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--rl-fg2);
+        margin-block: 0 12px;
+    }
+
+    .ic-mcp-steps {
+        font-size: 13px;
+        line-height: 1.8;
+        color: var(--rl-fg2);
+        padding-inline-start: 20px;
+    }
+
+    .ic-mcp-notice {
+        margin-block: 4px 16px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        line-height: 1.6;
+        color: var(--rl-amber-text);
+        background: var(--rl-amber-soft);
+        border: 1px solid rgba(var(--rl-amber-rgb), 0.3);
+        border-radius: var(--rl-rsm);
+
+        .fa {
+            margin-inline-end: 6px;
+        }
+
+        a {
+            text-decoration: underline;
+        }
+    }
+
+    .ic-mcp-docs {
+        margin-block-start: 24px;
+        font-size: 13px;
+    }
+
+    code {
+        font-family: var(--rl-fm);
+        font-size: 12px;
+        color: inherit;
+    }
+}
+
+.ic-mcp-copy {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-block-end: 14px;
+
+    &.ic-mcp-copy--inline {
+        align-items: center;
+    }
+
+    .ic-mcp-url {
+        font-family: var(--rl-fm);
+        font-size: 13px;
+        color: var(--rl-fg);
+        word-break: break-all;
+    }
+
+    .ic-mcp-code {
+        flex: 1;
+        min-inline-size: 0;
+        margin: 0;
+        padding: 10px 14px;
+        font-family: var(--rl-fm);
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: var(--rl-logs-fg);
+        background: var(--rl-logs-bg);
+        border: 1px solid var(--rl-line);
+        border-radius: var(--rl-r);
+    }
+}
+
+.ic-mcp-via {
+    color: var(--rl-muted);
+    font-size: 0.85em;
+}

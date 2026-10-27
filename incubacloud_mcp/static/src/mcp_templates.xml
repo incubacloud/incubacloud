@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- The page, routed like the panel's own. -->
+    <t t-inherit="incubacloud.AppShell" t-inherit-mode="extension">
+        <xpath expr="//main[hasclass('ic-main')]" position="inside">
+            <t t-if="state.route === 'connect_agent'">
+                <ConnectAgent/>
+            </t>
+        </xpath>
+    </t>
+
+    <!-- Every role reaches it from the user menu. -->
+    <t t-inherit="incubacloud.AppHeader" t-inherit-mode="extension">
+        <xpath expr="//button[@t-on-click='openNotifModal']" position="after">
+            <div class="ic-header-user-sep"/>
+            <button class="ic-header-user-action"
+                    t-on-click="() => { state.showUserMenu = false; env.navigate('connect_agent'); }">
+                <i class="fa fa-plug" aria-hidden="true"/> Connect an agent
+            </button>
+        </xpath>
+    </t>
+
+    <!-- Settings: an Agents tab, and the agents' limit with the other rates. -->
+    <t t-inherit="incubacloud.Settings" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('rl-tabs')]/button[last()]" position="after">
+            <button t-att-class="state.tab === 'agents' ? 'rl-tab active' : 'rl-tab'"
+                    t-on-click="() => this.setTab('agents')">Agents</button>
+        </xpath>
+        <xpath expr="//t[@t-if=&quot;state.tab === 'github'&quot;]" position="after">
+            <t t-if="state.tab === 'agents'">
+                <McpSettingsTab/>
+            </t>
+        </xpath>
+        <xpath expr="//t[@t-if=&quot;state.tab === 'rates'&quot;]/CoreRatesTab" position="after">
+            <McpRatesSection/>
+        </xpath>
+    </t>
+
+    <!-- The audit says when an action came through an agent, and which. -->
+    <t t-inherit="incubacloud.InstanceDetail.tabBody" t-inherit-mode="extension">
+        <xpath expr="//td[@t-esc='entry.user_name']" position="replace">
+            <td>
+                <t t-esc="entry.user_name"/>
+                <span t-if="entry.via_client" class="ic-mcp-via"> · via agent <t t-esc="entry.via_client"/></span>
+            </td>
+        </xpath>
+    </t>
+    <t t-inherit="incubacloud.HostDetail" t-inherit-mode="extension">
+        <xpath expr="//td[@t-esc='entry.user_name']" position="replace">
+            <td>
+                <t t-esc="entry.user_name"/>
+                <span t-if="entry.via_client" class="ic-mcp-via"> · via agent <t t-esc="entry.via_client"/></span>
+            </td>
+        </xpath>
+    </t>
+
+</templates>
