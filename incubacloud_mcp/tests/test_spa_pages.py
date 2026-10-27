@@ -103,6 +103,16 @@ _API_KEY_PAGE = """
             fail("a one-click link that would carry an API key");
         }}
     }}
+    tabs.find((tab) => tab.textContent.includes("Claude and Claude Desktop")).click();
+    await sleep(150);
+    for (const words of [
+        "Customize", "Connectors", "Add custom connector", "Request headers",
+        "Organization settings", "reachable from the internet",
+    ]) {{
+        if (!page.textContent.includes(words)) {{
+            fail("claude.ai's steps: " + words);
+        }}
+    }}
 """
 
 #: Connect an agent with the agents' OAuth issuer.
@@ -116,6 +126,11 @@ _OAUTH_PAGE = """
     await sleep(150);
     if (!page.querySelector("a[href^='cursor://']")) {{
         fail("Cursor's one-click link");
+    }}
+    tabs.find((tab) => tab.textContent.includes("Claude and Claude Desktop")).click();
+    await sleep(150);
+    if (page.textContent.includes("Request headers")) {{
+        fail("an API key header with an issuer");
     }}
 """
 
@@ -150,7 +165,8 @@ class TestTheSpaPages(McpUsersMixin, HttpCase):
 
     def test_connect_an_agent_opens_from_its_route(self):
         """A stakeholder opens Connect an agent: the panel's MCP URL, the API
-        key notice, and no one-click link that would carry the key."""
+        key notice, no one-click link that would carry the key, and
+        claude.ai's steps with the key in a request header."""
         self._cloud_user("mcp-spa-user", group="group_cloud_user")
         self._open(
             "/cloud/connect-agent",
