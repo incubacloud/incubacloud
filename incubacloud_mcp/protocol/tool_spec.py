@@ -5,7 +5,11 @@ accepts, which route (or handler) does the work and how careful the server
 must be with it. Names and descriptions are English: the model reads them.
 """
 
+import copy
 from dataclasses import dataclass
+
+#: The largest id a record can have: PostgreSQL's ``integer``.
+MAX_RECORD_ID = 2**31 - 1
 
 #: The panel's five roles, lowest first, and how the panel names them.
 ROLE_LABELS = {
@@ -65,7 +69,9 @@ class ToolSpec:
         return {
             "name": self.name,
             "description": description,
-            "inputSchema": self.input_schema,
+            # A copy: what the caller does with the listing must not reach
+            # the spec, nor schemas shared between tools (OFFSET, LIMIT).
+            "inputSchema": copy.deepcopy(self.input_schema),
             "annotations": {
                 "readOnlyHint": self.read_only,
                 "destructiveHint": self.destructive,
@@ -112,8 +118,8 @@ def boolean(description):
 
 
 def record_id(description):
-    """Return the property of a record id (an integer from 1)."""
-    return integer(description, minimum=1)
+    """Return the property of a record id (an integer from 1 to 2**31 - 1)."""
+    return integer(description, minimum=1, maximum=MAX_RECORD_ID)
 
 
 #: Paging arguments of the tools that return long lists or logs.

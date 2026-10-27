@@ -6,10 +6,13 @@ from odoo.tests.common import BaseCase
 
 from odoo.addons.incubacloud_mcp.protocol.context import CallContext, Principal, Reply
 from odoo.addons.incubacloud_mcp.protocol.tool_spec import (
+    LIMIT,
+    OFFSET,
     ToolSpec,
     boolean,
     integer,
     obj,
+    record_id,
     string,
 )
 
@@ -64,6 +67,17 @@ class TestToolSpec(BaseCase):
         )
         self.assertEqual(boolean("y"), {"type": "boolean", "description": "y"})
         self.assertNotIn("required", obj({}))
+
+    def test_a_record_id_fits_a_postgres_integer(self):
+        self.assertEqual(record_id("r")["maximum"], 2**31 - 1)
+
+    def test_a_listing_is_a_copy_of_the_schema(self):
+        spec = self._spec(input_schema=obj({"offset": OFFSET, "limit": LIMIT}))
+        listed = spec.listed()
+        listed["inputSchema"]["properties"]["offset"]["minimum"] = 5
+        listed["inputSchema"]["properties"]["limit"]["maximum"] = 5
+        self.assertEqual((OFFSET["minimum"], LIMIT["maximum"]), (0, 1000))
+        self.assertEqual(spec.input_schema["properties"]["offset"]["minimum"], 0)
 
     def test_a_spec_is_immutable(self):
         with self.assertRaises(dataclasses.FrozenInstanceError):
