@@ -1,7 +1,8 @@
 """Approvals: a person says yes to what an agent asked for.
 
-Bound to the user who asked, the tool and the fingerprint of its
-arguments; ten minutes; used once. Every change of state is one atomic
+Bound to the user who asked and the credential the agent used, the tool
+and the fingerprint of its arguments; ten minutes; used once. Every
+change of state is one atomic
 ``UPDATE … WHERE state = … AND expires_at > now() RETURNING id``: of two
 retries racing for the same approval, the second waits for the first and
 then finds it used (or fails to serialise), so the action runs once. Its
@@ -69,15 +70,22 @@ class McpApproval(models.Model):
     )
     expires_at = fields.Datetime(required=True, readonly=True)
     via_client = fields.Char(readonly=True)
+    credential = fields.Char(
+        readonly=True,
+        help="The verified credential of the agent that asked: only it uses "
+        "the approval.",
+    )
 
     @api.model
-    def _open(self, tool, args_hash, message, channel):
+    def _open(self, tool, args_hash, message, channel, credential=""):
         """Open a pending approval for the current user.
 
         :param str tool: the tool's name
         :param str args_hash: the fingerprint of its arguments
         :param str message: what the user approves
         :param str channel: how the user is asked (see ``channel``)
+        :param str credential: the verified credential of the agent asking
+            (the token's client id, or ``API key <name>``)
         :return: ``(approval, page token)``; only the token's hash is stored
         """
         token = secrets.token_urlsafe(32)
@@ -91,6 +99,7 @@ class McpApproval(models.Model):
                 "token_hash": token_hash(token),
                 "expires_at": fields.Datetime.now() + APPROVAL_TTL,
                 "via_client": agent_mark(self.env),
+                "credential": credential,
             }
         )
         return approval, token
@@ -103,11 +112,16 @@ class McpApproval(models.Model):
         return self.sudo().search([("token_hash", "=", token_hash(token))], limit=1)
 
     @api.model
-    def _find_approved(self, tool, args_hash):
-        """Return the current user's live approved approval for this call."""
+    def _find_approved(self, tool, args_hash, credential=""):
+        """Return the current user's live approved approval for this call.
+
+        :param str credential: the credential the agent calls with; an
+            approval asked for by another one does not count
+        """
         return self.sudo().search(
             [
                 ("user_id", "=", self.env.uid),
+                ("credential", "=", credential),
                 ("tool", "=", tool),
                 ("args_hash", "=", args_hash),
                 ("state", "=", "approved"),
