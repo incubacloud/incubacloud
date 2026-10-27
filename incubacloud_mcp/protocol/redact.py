@@ -99,12 +99,55 @@ def secret_variants(value):
     }
 
 
+def _trie_pattern(words):
+    """Return a regex of *words* as a prefix tree: one branch per next character.
+
+    A flat alternation tries every word at every position of the text; a
+    tree tries one character at a time, so a thousand secrets cost little
+    more than one. Each optional continuation is greedy: the longest word
+    that matches wins, as in the flat alternation, longest first. Built
+    without recursion: a word may be thousands of characters long.
+
+    :param words: non-empty strings
+    :rtype: str
+    """
+    root = {}
+    for word in words:
+        node = root
+        for char in word:
+            node = node.setdefault(char, {})
+        node[""] = None
+    patterns = {}
+    stack = [(root, False)]
+    while stack:
+        node, children_done = stack.pop()
+        if not children_done:
+            stack.append((node, True))
+            stack.extend((child, False) for char, child in node.items() if char)
+            continue
+        branches = [
+            re.escape(char) + patterns.pop(id(child))
+            for char, child in sorted(node.items())
+            if char
+        ]
+        ends_here = "" in node
+        if not branches:
+            pattern = ""
+        elif len(branches) == 1 and not ends_here:
+            pattern = branches[0]
+        else:
+            pattern = "(?:" + "|".join(branches) + ")" + ("?" if ends_here else "")
+        patterns[id(node)] = pattern
+    return patterns[id(root)]
+
+
 @functools.lru_cache(maxsize=16)
 def _compiled(values):
     """Return the pattern of every form of *values*, longest first, or None.
 
     Cached by the set itself: the same secrets, call after call, are
-    compiled once per process.
+    compiled once per process. Secrets whose tree nests too deep for the
+    regex compiler fall back to a flat alternation, longest first.
 
     :param frozenset values: the decrypted secrets
     """
@@ -113,8 +156,11 @@ def _compiled(values):
         variants |= secret_variants(value)
     if not variants:
         return None
-    ordered = sorted(variants, key=lambda variant: (-len(variant), variant))
-    return re.compile("|".join(map(re.escape, ordered)))
+    try:
+        return re.compile(_trie_pattern(variants))
+    except (RecursionError, re.error):
+        ordered = sorted(variants, key=lambda variant: (-len(variant), variant))
+        return re.compile("|".join(map(re.escape, ordered)))
 
 
 class Scrubber:
