@@ -14,6 +14,12 @@ import json
 import re
 from urllib.parse import quote
 
+try:
+    # What ``re.compile`` calls once its own cache misses (Python 3.11+).
+    from re import _compiler as _sre_compiler
+except ImportError:  # Python 3.10
+    import sre_compile as _sre_compiler
+
 MASK = "[secreto]"
 #: Shorter values are not masked: they would shred the output.
 MIN_SECRET_LEN = 8
@@ -178,13 +184,24 @@ def _trie_pattern(words):
     return patterns[id(root)]
 
 
+def _compile(pattern):
+    """Compile *pattern* without keeping it in the ``re`` module's cache.
+
+    ``re.compile`` keeps up to 512 patterns, beyond the reach of our own
+    cache: patterns of thousands of secrets, one per set seen, would pile
+    up there. Its compiler, called directly, keeps nothing.
+    """
+    return _sre_compiler.compile(pattern, 0)
+
+
 @functools.lru_cache(maxsize=16)
 def _compiled(values):
     """Return the pattern of every form of *values*, longest first, or None.
 
     Cached by the set itself: the same secrets, call after call, are
-    compiled once per process. Secrets whose tree nests too deep for the
-    regex compiler fall back to a flat alternation, longest first.
+    compiled once per process, and only the last sixteen sets stay
+    compiled. Secrets whose tree nests too deep for the regex compiler
+    fall back to a flat alternation, longest first.
 
     :param frozenset values: the decrypted secrets
     """
@@ -194,10 +211,10 @@ def _compiled(values):
     if not variants:
         return None
     try:
-        return re.compile(_trie_pattern(variants))
+        return _compile(_trie_pattern(variants))
     except (RecursionError, re.error):
         ordered = sorted(variants, key=lambda variant: (-len(variant), variant))
-        return re.compile("|".join(map(re.escape, ordered)))
+        return _compile("|".join(map(re.escape, ordered)))
 
 
 class Scrubber:

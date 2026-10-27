@@ -3,6 +3,7 @@
 import base64
 import json
 import random
+import re
 import string
 import time
 from urllib.parse import quote
@@ -20,6 +21,7 @@ from odoo.addons.incubacloud_mcp.protocol.redact import (
     MASK,
     MAX_PARTS,
     Scrubber,
+    _compiled,
     drop_secret_keys,
     find_secret_key,
     mask_token_urls,
@@ -166,7 +168,22 @@ class TestSecretParts(BaseCase):
 
 
 class TestScrubberReuse(BaseCase):
-    """The same secrets compile their pattern once per process."""
+    """The same secrets compile their pattern once per process, and only the
+    last sixteen sets stay compiled."""
+
+    def test_the_patterns_do_not_pile_up_in_re_s_own_cache(self):
+        """Forty sets of secrets leave none of their patterns in the ``re``
+        module's cache, which would keep up to 512 of them; our own cache
+        keeps sixteen."""
+        patterns = set()
+        for index in range(40):
+            values = [f"cache-secret-{index:03d}-{number:04d}" for number in range(20)]
+            patterns.add(Scrubber(values)._pattern.pattern)
+        cached = {key[1] for key in list(re._cache)}
+        cached |= {key[1] for key in list(getattr(re, "_cache2", {}))}
+        self.assertEqual(len(patterns), 40)
+        self.assertFalse(patterns & cached)
+        self.assertLessEqual(_compiled.cache_info().currsize, 16)
 
     def test_the_same_values_reuse_the_compiled_pattern(self):
         """Two scrubbers of the same values share one compiled pattern."""
