@@ -75,17 +75,23 @@ _AUDIT_TARGETS = {
 }
 
 
+#: Round brackets, and those that look like them in the audit.
+_BRACKETS = frozenset("()\uff08\uff09\ufe59\ufe5a\u207d\u207e\u208d\u208e")
+
+
 def _client_name(info):
     """Return the name a client declares, printable and at most 64 characters.
 
-    Without brackets: the audit writes it between brackets after the
-    verified credential, and a name that closed them could pass for
-    another credential.
+    Without brackets, nor any that look like them: the audit writes it
+    between brackets after the verified credential, and a name that
+    closed them could pass for another credential.
     """
     if not isinstance(info, dict):
         return ""
     name = "".join(
-        ch for ch in str(info.get("name") or "") if ch.isprintable() and ch not in "()"
+        ch
+        for ch in str(info.get("name") or "")
+        if ch.isprintable() and ch not in _BRACKETS
     )
     return " ".join(name.split())[:64]
 
