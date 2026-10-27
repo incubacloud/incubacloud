@@ -417,14 +417,15 @@ class TestLimits(BaseCase):
         )
 
     def test_a_page_with_no_room_for_its_first_entry_never_passes_the_limit(self):
-        """A page whose company leaves no room for its first entry, nor for
-        saying so, is measured with its notice: its company is cut instead,
-        and the entry shown, never past 64 KB."""
+        """A page whose company leaves no room for any piece of its first
+        entry, nor for saying so, is measured with its notice: its company
+        is cut instead, and the entry shown, never past 64 KB. (Already
+        truncated: saying so would free a byte, room for a piece.)"""
         base = {
             "note": "",
             "entries": [],
             "offset": 7,
-            "truncated": False,
+            "truncated": True,
             "next_offset": None,
         }
         for spare in range(7):
@@ -456,6 +457,49 @@ class TestLimits(BaseCase):
                 self.assertLessEqual(_answer_size(cut), MAX_BYTES)
                 self.assertTrue(cut["entries"])
                 self.assertEqual(cut["next_offset"], 123_456_789 + len(cut["entries"]))
+
+    def test_a_page_whose_last_whole_entry_does_not_fit_shows_a_piece_of_it(self):
+        """When the page's new next_offset leaves no room for its one whole
+        entry, that entry is cut to the room left, measured with the
+        next_offset: the page does not come empty, and the agent moves on."""
+        base = {
+            "note": "",
+            "entries": ["a" * 1000],
+            "offset": 99_999,
+            "truncated": False,
+            "next_offset": None,
+        }
+        note = "c" * (MAX_BYTES - _answer_size(base))
+        cut, was_cut = fit_answer(
+            {**base, "note": note, "entries": ["a" * 1000, "b" * 1000]}
+        )
+        self.assertTrue(was_cut)
+        self.assertLessEqual(_answer_size(cut), MAX_BYTES)
+        self.assertEqual(len(cut["entries"]), 1)
+        self.assertTrue(cut["entries"][0])
+        self.assertTrue(("a" * 1000).startswith(cut["entries"][0]))
+        self.assertEqual((cut["next_offset"], cut["truncated"]), (100_000, True))
+        self.assertNotIn("page_too_small", cut)
+        self.assertEqual(cut["note"], note)
+
+    def test_a_page_whose_only_entry_is_cut_says_truncated(self):
+        """A page whose only entry is cut to fit says truncated, as page_items
+        does, also inside an answer: a job's log, in get_job."""
+        job = {
+            "details": "d" * 2000,
+            "log": {
+                "items": ["L" * 64_000],
+                "offset": 41,
+                "total": 42,
+                "truncated": False,
+                "next_offset": None,
+            },
+        }
+        cut, was_cut = fit_answer(job, MAX_BYTES - 128)
+        self.assertTrue(was_cut)
+        self.assertLessEqual(_answer_size(cut), MAX_BYTES - 128)
+        self.assertTrue(cut["log"]["items"][0])
+        self.assertTrue(cut["log"]["truncated"])
 
     def test_a_page_without_room_says_so(self):
         """A page that cannot show any entry says so, for the agent not to ask
