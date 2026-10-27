@@ -96,3 +96,26 @@ def cap_text(text, offset=0, max_bytes=MAX_BYTES):
         "truncated": following < len(text),
         "next_offset": following if following < len(text) else None,
     }
+
+
+def cap_strings(obj, max_bytes=MAX_BYTES):
+    """Cut every string inside *obj* longer than *max_bytes*.
+
+    A string is measured as the answer serialises it, without the two
+    quotes around it, and cut to its longest prefix that fits.
+
+    :return: ``(obj with long strings cut, whether any was cut)``
+    """
+    if isinstance(obj, str):
+        cut = _fit(obj, max_bytes + 2)
+        return cut, cut != obj
+    if isinstance(obj, dict):
+        pairs = {key: cap_strings(item, max_bytes) for key, item in obj.items()}
+        return (
+            {key: pair[0] for key, pair in pairs.items()},
+            any(pair[1] for pair in pairs.values()),
+        )
+    if isinstance(obj, (list, tuple)):
+        pairs = [cap_strings(item, max_bytes) for item in obj]
+        return [pair[0] for pair in pairs], any(pair[1] for pair in pairs)
+    return obj, False
