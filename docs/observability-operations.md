@@ -424,6 +424,15 @@ odoo is still the metrics' to report while they are fresh. Without
 that arbitration the two wrote on their own schedules and the state
 flapped whenever they briefly disagreed.
 
+A job that brings odoo up (start, restart, deploy, rebuild, the
+restores, a move's cutover) confirms `running` and stamps
+`running_confirmed_at`; for 120 s after (`_CONFIRMED_GRACE_SECONDS`) the
+cron does not write the flag False while the recreated container's
+series is missing — a 30 s scrape plus VictoriaMetrics' 30 s latency
+offset, doubled. A rise the cron reads itself opens no grace, and any
+write of `running` False — a Stop, the probe finding the container
+down, a stack handed back stopped — closes it.
+
 `instance_health` cannot retire until synthetic probes cover its HTTP
 check. Its error-log scraping now has a better source in the access logs.
 

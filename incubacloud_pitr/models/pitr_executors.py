@@ -672,7 +672,9 @@ class PitrRestoreExecutor(_PitrExecutor):
         """
         inst = self._inst()
         inst._pitr_record_restore(result)
-        inst.sudo().write({"pitr_state": "ok", "status": "ok", "running": True})
+        inst.sudo().write({
+            "pitr_state": "ok", "status": "ok", **inst._running_confirmed_vals(),
+        })
         # With ``sudo``, as every head of a queue is: a restore asked for
         # without superuser rights runs without them.
         self.env["cloud.job"].sudo().enqueue(
@@ -739,6 +741,9 @@ class PitrRestoreExecutor(_PitrExecutor):
                 f"files: attachments may be missing. See the job's log."
             )
         elif state == "failed":
+            # The script's ``finish`` brings the stack up whatever
+            # happened: a stop the metrics cron reads now is the restart.
+            inst.sudo().write(inst._running_confirmed_vals())
             message = (
                 f"Restoring '{inst.name}' to {when} UTC failed at "
                 f"'{result.get('stopped_at', '?')}'. Its database is as it "

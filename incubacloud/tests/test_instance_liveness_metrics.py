@@ -11,13 +11,28 @@ say nothing about: a false "running" is just as wrong and far quieter,
 because everything downstream simply never fires. See
 ``TestWhichContainerDecides``.
 """
+import asyncio
 import re
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import requests
 
 from odoo import fields
 from odoo.tests.common import TransactionCase
+
+from odoo.addons.incubacloud.models.cloud_instance_metrics import (
+    _CONFIRMED_GRACE_SECONDS,
+)
+from odoo.addons.incubacloud.models.rebuild_instance_executor import (
+    RebuildInstanceExecutor,
+)
+from odoo.addons.incubacloud.models.start_instance_executor import (
+    StartInstanceExecutor,
+)
+from odoo.addons.incubacloud.models.stop_instance_executor import (
+    StopInstanceExecutor,
+)
 
 _MODULE = "odoo.addons.incubacloud.models.cloud_metric_rule"
 
@@ -605,3 +620,241 @@ class TestSeveralSeriesOfOneSubject(InstanceLivenessCase):
             ],
         )
         self.assertTrue(self.inst.running)
+
+
+class TestGraceAfterAConfirmation(InstanceLivenessCase):
+    """A job that has just brought odoo up is believed for a while.
+
+    A job that starts or recreates the ``odoo`` container takes its
+    series away at once, and the backend answers with the new one about
+    a minute later. Read as a stop, that gap showed a restored instance
+    "Stopped", without its Restart and Shell buttons, for over two
+    minutes (QA d76c, 26-oct-2026). The grace is a job's alone: a rise
+    the cron read itself opens none, and a stop closes it.
+    """
+
+    def setUp(self):
+        """The instance on a host, beside a neighbour whose odoo reports."""
+        super().setUp()
+        self.host = self.env["cloud.host"].create({
+            "name": "HGrace", "ip_address": "10.0.0.54", "user": "root",
+            "wildcard_domain": "hgrace.example.com",
+        })
+        self.inst.write({
+            "host_id": self.host.id,
+            "metrics_last_seen": fields.Datetime.now(),
+        })
+        # The fleet-wide guards (something covered, some odoo seen)
+        # stay satisfied whatever the instance under test reports.
+        other_project = self.env["cloud.project"].create({"name": "P3"})
+        self.other = self.env["cloud.instance"].create({
+            "name": "i3", "project_id": other_project.id,
+            "environment": "staging", "host_id": self.host.id,
+        })
+
+    def _executor(self, cls, code):
+        """Bind *cls* to a fresh job of type *code* on the instance.
+
+        :param type cls: the executor class
+        :param str code: the ``cloud.job.type`` code it runs
+        :return: the executor, ready for its hooks
+        """
+        job_type = self.env["cloud.job.type"].search(
+            [("code", "=", code)], limit=1,
+        ) or self.env["cloud.job.type"].create(
+            {"name": code, "code": code, "apply_to": "instance"},
+        )
+        job = self.env["cloud.job"].create({
+            "host_id": self.host.id, "instance_id": self.inst.id,
+            "job_type_id": job_type.id, "name": code,
+        })
+        return cls(job, self.host)
+
+    def _confirm(self, seconds_ago=0):
+        """Have a start job bring the instance up *seconds_ago* ago.
+
+        :param int seconds_ago: how long since the job confirmed it
+        """
+        self.inst.write({"running": False})
+        executor = self._executor(StartInstanceExecutor, "start_instance")
+        asyncio.run(executor.on_success({}))
+        self.assertTrue(self.inst.running)
+        if seconds_ago:
+            self.inst.write({
+                "running_confirmed_at": (
+                    self.inst.running_confirmed_at
+                    - timedelta(seconds=seconds_ago)
+                ),
+            })
+
+    def _tick(self, odoo_age=None, covered=True):
+        """Run the cron once, with the neighbour's odoo reporting.
+
+        :param odoo_age: seconds since the instance's ``odoo`` was seen,
+            or ``None`` when the backend holds no such series
+        :param bool covered: whether the backend still reports any
+            container of the instance; False is a stack stopped whole
+        """
+        coverage = [(self.other.id, 5)]
+        if covered:
+            coverage.append((self.inst.id, 5))
+        odoo = [(self.other.id, 5)]
+        if odoo_age is not None:
+            odoo.append((self.inst.id, odoo_age))
+        self._run(
+            _samples(*coverage),
+            odoo_payload=_samples(*odoo),
+            host_payload=_host_samples((self.host.id, 5)),
+        )
+        self.inst.invalidate_recordset()
+
+    def test_an_odoo_missing_right_after_a_confirmation_is_still_running(self):
+        """The QA d76c case: the series the job took away is not back yet."""
+        self._confirm()
+        self._tick()
+        self.assertTrue(
+            self.inst.running,
+            "a job's confirmation was undone by the series it had just "
+            "taken away",
+        )
+
+    def test_a_stack_silent_right_after_a_confirmation_is_still_running(self):
+        """The restore stops ``db`` too: every container leaves at once."""
+        self._confirm()
+        self._tick(covered=False)
+        self.assertTrue(self.inst.running)
+
+    def test_past_the_grace_a_missing_odoo_is_a_stop(self):
+        """The grace ends: an odoo still unseen is stopped, as before it."""
+        self._confirm(seconds_ago=_CONFIRMED_GRACE_SECONDS + 1)
+        self._tick()
+        self.assertFalse(self.inst.running)
+
+    def test_past_the_grace_a_silent_stack_is_a_stop(self):
+        """The same for a stack the backend no longer reports at all."""
+        self._confirm(seconds_ago=_CONFIRMED_GRACE_SECONDS + 1)
+        self._tick(covered=False)
+        self.assertFalse(self.inst.running)
+
+    def test_a_rise_the_cron_read_opens_no_grace(self):
+        """Or an odoo that keeps going away would never read as stopped."""
+        self.inst.write({"running": False})
+        self._tick(odoo_age=5)
+        self.assertTrue(self.inst.running)
+        self._tick()
+        self.assertFalse(self.inst.running)
+
+    def test_a_stop_closes_the_grace(self):
+        """A Stop after the confirmation leaves nothing to hold back."""
+        self._confirm()
+        executor = self._executor(StopInstanceExecutor, "stop_instance")
+        asyncio.run(executor.on_success({}))
+        self.assertFalse(self.inst.running)
+        # Its series ages out: inside the window, the cron reads it up…
+        self._tick(odoo_age=100)
+        self.assertTrue(self.inst.running)
+        # …and once it is gone, down at once.
+        self._tick()
+        self.assertFalse(
+            self.inst.running,
+            "a confirmation from before the stop held the stop back",
+        )
+
+    def _confirm_meanwhile(self):
+        """Write a job's confirmation of the instance straight to its row.
+
+        What a job committing as the cron runs looks like to the cron:
+        the row changes, and what the cron read of it before does not.
+        """
+        self.env.cr.execute(
+            "UPDATE cloud_instance SET running_confirmed_at = %s"
+            " WHERE id = %s",
+            (fields.Datetime.now(), self.inst.id),
+        )
+
+    def test_a_confirmation_committed_after_the_cron_read_is_kept(self):
+        """The cron reads every row it covers, then decides on each in
+        turn. A job confirming the instance in between is read again,
+        under the row's lock, before a stop is written over it."""
+        self.inst.write({"running": True})
+        Instance = type(self.env["cloud.instance"])
+        original = Instance.write
+        neighbour = self.other.id
+
+        def write(records, vals):
+            """Write; the neighbour's, decided first, lets the job in.
+
+            :param records: the instances written
+            :param dict vals: the values written
+            :return: what ``write`` returns
+            """
+            if neighbour in records.ids:
+                self._confirm_meanwhile()
+            return original(records, vals)
+
+        with patch.object(Instance, "write", autospec=True, side_effect=write):
+            self._tick()
+        self.assertTrue(
+            self.inst.running, "the cron wrote a stop over a confirmation",
+        )
+
+    def test_a_confirmation_committed_after_the_search_keeps_a_silent_stack(
+        self,
+    ):
+        """The stack stopped whole: found by a search, then written. A
+        job confirming the instance in between is read again too."""
+        self.inst.write({"running": True})
+        Instance = type(self.env["cloud.instance"])
+        original = Instance.search
+        silent = self.inst.id
+
+        def search(model, domain, *args, **kwargs):
+            """Search; a result holding the instance lets the job in.
+
+            :param model: the model searched
+            :param list domain: the search domain
+            :return: what ``search`` returns
+            """
+            found = original(model, domain, *args, **kwargs)
+            if silent in found.ids:
+                self._confirm_meanwhile()
+            return found
+
+        with patch.object(
+            Instance, "search", autospec=True, side_effect=search,
+        ):
+            self._tick(covered=False)
+        self.assertTrue(
+            self.inst.running, "the cron wrote a stop over a confirmation",
+        )
+
+    def test_without_a_recent_job_a_missing_odoo_is_a_stop_at_once(self):
+        """What the grace leaves as it was: the first tick decides."""
+        self.inst.write({"running": True})
+        self._tick()
+        self.assertFalse(self.inst.running)
+
+    def test_a_rebuild_leaves_the_instance_running(self):
+        """Its restart step is ``docker compose up -d``. It wrote nothing
+        about ``running``, so a stop the cron read during it stayed until
+        another job came by (QA d76c)."""
+        self.inst.write({"running": False})
+        executor = self._executor(RebuildInstanceExecutor, "rebuild_instance")
+        asyncio.run(executor.on_success({}))
+        self.assertTrue(self.inst.running)
+        self._tick()
+        self.assertTrue(self.inst.running)
+
+    def test_a_rebuild_whose_stack_may_be_down_confirms_nothing(self):
+        """A layer above may hand the rebuilt stack back stopped — a plan
+        that sleeps an idle instance does — and says so through
+        ``_stop_is_expected``."""
+        self.inst.write({"running": False})
+        executor = self._executor(RebuildInstanceExecutor, "rebuild_instance")
+        with patch.object(
+            type(self.inst), "_stop_is_expected", autospec=True,
+            return_value=True,
+        ):
+            asyncio.run(executor.on_success({}))
+        self.assertFalse(self.inst.running)
+        self.assertFalse(self.inst.running_confirmed_at)

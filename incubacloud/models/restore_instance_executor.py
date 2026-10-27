@@ -458,7 +458,7 @@ class RestoreInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         self._sys("✓ Database restored successfully.")
         await self._cleanup_cross_host_handoff()
         inst = self._inst()
-        inst.write({"status": "ok", "running": True})
+        inst.write({"status": "ok", **inst._running_confirmed_vals()})
         self._call_addon_hook(inst, "_after_restore_hook", "restore")
         if inst.pr_number:
             inst._post_or_update_pr_comment(inst._pr_preview_ready_body())

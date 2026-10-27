@@ -356,6 +356,13 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
         # only full deploys re-anchored, and a drift-curing rebuild left
         # the config_dirty pill lit forever.
         write_vals.update(inst._applied_config_vals())
+        # Its restart step brought the stack up (``docker compose up -d``):
+        # it says so, as a deploy does, and the metrics cron gives the
+        # recreated odoo's series time to arrive. Not for a stack whose
+        # stop is expected: a layer above that sleeps idle instances
+        # hands the rebuilt stack back stopped.
+        if not inst._stop_is_expected():
+            write_vals.update(inst._running_confirmed_vals())
         inst.write(write_vals)
         self._sys(
             f"✓ '{inst.name}' rebuilt and restarted"

@@ -20,6 +20,7 @@ deleting the old one in the same step is how you find out too late that
 the new one had a blind spot.
 """
 import logging
+from datetime import timedelta
 
 from odoo import api, fields, models
 
@@ -32,6 +33,21 @@ _logger = logging.getLogger(__name__)
 # Comfortably above the 30 s scrape interval so one missed scrape does
 # not flap the flag.
 _SEEN_WINDOW_SECONDS = 180
+
+#: How long after a job confirmed ``running`` (``running_confirmed_at``)
+#: the cron does not read an ``odoo`` it cannot see as a stop. A job that
+#: starts or recreates the container — a deploy, a rebuild, a restore,
+#: a restart — takes its series away at once, and the new one is not
+#: answered for about a minute: up to 30 s until the agent's next scrape
+#: (``scrape_interval``, ansible/playbooks/host_observability.yml) and
+#: about 30 s more until VictoriaMetrics serves it (its
+#: ``-search.latencyOffset``, left at the default). The window above
+#: does not cover that gap: it bounds the age of a series still there,
+#: not the absence of one. Those 60 s twice over, so one late scrape
+#: does not end it. QA d76c (26-oct-2026): a PITR restore confirmed the
+#: instance at 23:11:51, the cron stopped it at 23:12:22, and the panel
+#: showed it "Stopped", without Restart or Shell, until 23:14:31.
+_CONFIRMED_GRACE_SECONDS = 120
 
 #: How long a metrics reading keeps the SSH health probe from writing
 #: ``running``. Comfortably above the liveness cron's own period so one
@@ -106,6 +122,73 @@ class CloudInstance(models.Model):
              "probe to decide who owns ``running``: two writers with no "
              "arbitration would fight over the flag every few minutes.",
     )
+    running_confirmed_at = fields.Datetime(
+        string="Running confirmed at",
+        copy=False,
+        readonly=True,
+        help="Last time a job that brought the instance's odoo up "
+             "confirmed it running. For a short while after, the metrics "
+             "cron does not mark the instance stopped: the job took the "
+             "container's series away, and the new one takes about a "
+             "minute to arrive. Cleared whenever the instance is written "
+             "as stopped.",
+    )
+
+    def write(self, vals):
+        """Close a job's grace as soon as the instance is written stopped.
+
+        ``running_confirmed_at`` holds the metrics cron back from reading
+        a missing ``odoo`` as a stop. A stop written by anyone — a Stop
+        job, the probe that found the container down, a layer above that
+        parks the stack after its own job — ends that grace: a
+        confirmation from before it must not hold the next stop back, and
+        with the cron raising the flag on a series still ageing out, it
+        would.
+
+        :param dict vals: the values to write
+        :return: what ``write`` returns
+        """
+        if "running" in vals and not vals["running"]:
+            vals = vals | {"running_confirmed_at": False}
+        return super().write(vals)
+
+    def _running_confirmed_vals(self):
+        """Return the values a job writes once it has brought odoo up.
+
+        ``running``, and when it was confirmed: for
+        ``_CONFIRMED_GRACE_SECONDS`` after, the liveness cron does not
+        read the series the job took away as a stop. Only for a job that
+        started or recreated the container itself; what the cron or the
+        health probe see is an observation, and opens no grace.
+
+        :return: values for ``write``
+        :rtype: dict
+        """
+        return {
+            "running": True,
+            "running_confirmed_at": fields.Datetime.now(),
+        }
+
+    def _running_confirmed_after(self, moment):
+        """Return whether a job confirmed this instance running after *moment*.
+
+        Read from its row, locked, and not from the cache: the cron read
+        its rows before deciding, and a job that has confirmed the
+        instance since — or is committing its confirmation now, which the
+        lock waits for — must not see it overwritten with a stop. Asked
+        only before writing one, on a row the write locks anyway.
+
+        :param datetime moment: when the grace that still counts began
+        :rtype: bool
+        """
+        self.ensure_one()
+        self.env.cr.execute(
+            "SELECT running_confirmed_at FROM cloud_instance"
+            " WHERE id = %s FOR UPDATE",
+            (self.id,),
+        )
+        row = self.env.cr.fetchone()
+        return bool(row and row[0] and row[0] > moment)
 
     def _metric_alerts_suppressed(self):
         """Return True when metric alerts about this instance are noise.
@@ -213,6 +296,13 @@ class CloudInstance(models.Model):
         and is written as not running. Never one the backend never
         reported on, and never when the host itself has gone quiet.
 
+        Neither answer undoes a job's word too soon. A job that starts or
+        recreates ``odoo`` takes its series away and confirms ``running``
+        (``running_confirmed_at``); for ``_CONFIRMED_GRACE_SECONDS`` after,
+        an ``odoo`` the backend does not show, or a stack it does not show
+        at all, leaves the flag up. A rise read here opens no grace, and a
+        stop written by anyone closes it (``write``).
+
         Fail-safe, three times over:
 
         * a backend that cannot be reached updates nothing — silence is
@@ -259,6 +349,7 @@ class CloudInstance(models.Model):
         ]
 
         now = fields.Datetime.now()
+        grace_start = now - timedelta(seconds=_CONFIRMED_GRACE_SECONDS)
         # The stamping runs on its own READ COMMITTED cursor, opened
         # only now that the HTTP query is done: these are the very rows
         # the SSH health probe writes ``last_health_check`` on, and
@@ -272,6 +363,13 @@ class CloudInstance(models.Model):
             for inst in instances:
                 age = odoo_ages.get(inst.id)
                 running = age is not None and age <= _SEEN_WINDOW_SECONDS
+                if (
+                    inst.running and not running
+                    and inst._running_confirmed_after(grace_start)
+                ):
+                    # A job has just brought it up: its new series is
+                    # not answered yet. See ``_CONFIRMED_GRACE_SECONDS``.
+                    running = True
                 vals = {"metrics_last_seen": now}
                 if inst.running != running:
                     vals["running"] = running
@@ -292,8 +390,13 @@ class CloudInstance(models.Model):
                     ("host_id", "in", reporting_hosts),
                     ("running", "=", True),
                     ("metrics_last_seen", "!=", False),
+                    # Nor one a job has just brought up, as above.
+                    "|", ("running_confirmed_at", "=", False),
+                    ("running_confirmed_at", "<=", grace_start),
                 ])
                 for inst in parked:
+                    if inst._running_confirmed_after(grace_start):
+                        continue
                     _logger.info(
                         "[metrics] instance %s running: True → False"
                         " (no container reported on a reporting host)",

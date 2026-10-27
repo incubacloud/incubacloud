@@ -102,7 +102,7 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
             "✓ Database restored successfully from backup."
         )
         self._inst().write({
-            'status': 'ok', 'running': True,
+            'status': 'ok', **self._inst()._running_confirmed_vals(),
         })
         self._call_addon_hook(
             self._inst(), '_after_restore_hook', 'backup_restore',
