@@ -117,6 +117,14 @@ nav:
     - Restore a backup: backups/restore.md
     - Restore to any minute: backups/any-minute.md
   - Billing: billing/index.md
+  - Agents:
+    - agents/index.md
+    - Connect an agent: agents/connect.md
+    - Approvals: agents/confirmations.md
+    - Secrets: agents/secrets.md
+    - Revoke an agent: agents/revoke.md
+    - Limits: agents/limits.md
+    - Troubleshooting: agents/troubleshooting.md
   - Migrations:
     - migrations/index.md
     - From Odoo.sh: migrations/from-odoosh.md
