@@ -15,17 +15,25 @@ def canonical_resource(url):
 
     :param str url: an absolute http(s) URL
     :return: the canonical URL
-    :raises ValueError: when *url* is not an absolute http(s) URL, or
-        carries credentials, a query or a fragment
+    :raises ValueError: when *url* is not an absolute http(s) URL with an
+        ASCII host, or carries credentials, a query or a fragment (even
+        an empty one)
     """
-    parts = urlsplit((url or "").strip())
+    raw = (url or "").strip()
+    parts = urlsplit(raw)
     scheme = parts.scheme.lower()
     if scheme not in _DEFAULT_PORTS or not parts.hostname:
         raise ValueError(f"not an absolute http(s) URL: {url!r}")
-    if parts.query or parts.fragment or parts.username or parts.password:
+    # The characters themselves, not urlsplit's parts: an empty ``@``,
+    # ``?`` or ``#`` leaves the parts empty and would slip through.
+    if any(char in raw for char in "@?#"):
         raise ValueError(
             f"a resource URL has no credentials, query or fragment: {url!r}"
         )
+    # A host in Unicode has an ASCII (punycode) spelling: two spellings
+    # of one audience would not compare equal.
+    if not parts.hostname.isascii():
+        raise ValueError(f"the host of a resource URL is ASCII: {url!r}")
     host = parts.hostname.lower()
     if ":" in host:
         host = f"[{host}]"
