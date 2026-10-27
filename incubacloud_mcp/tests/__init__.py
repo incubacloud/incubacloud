@@ -26,3 +26,4 @@ from . import test_approval
 from . import test_tools_destructive
 from . import test_confirmation
 from . import test_approval_page
+from . import test_tools_guarded
