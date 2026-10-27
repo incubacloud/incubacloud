@@ -216,9 +216,9 @@ minutes. Defaults the call would resolve itself — a refresh's source, a
 purge's days, a download's file, the key a server presents — are resolved
 before the fingerprint, so the approval names what will run. One atomic
 `UPDATE … WHERE state = … AND expires_at > now() RETURNING id` per change of
-state, committed at once: of two racing retries, one runs the action. The
-approval is used before the action runs; if the action fails, the user
-approves again.
+state; its use is committed at once, in a transaction of its own: of two
+racing retries, one runs the action. The approval is used before the action
+runs; if the action fails, the user approves again.
 
 An approval is bound to the user **and to the credential the agent called
 with**: the token's `client_id` (`client_id <id>`) or the API key itself by
@@ -278,16 +278,17 @@ read and encode a secret of the instance, as with the terminal.
 
 ## Limits and untrusted content
 
-No answer passes 64 KB. Logs, command output, captured mail and lists come
-in pages (`truncated`, `next_offset`; `offset` and `limit` where a tool
-pages); sizes are measured as the answer serialises them, and the bytes
-between entries count. An answer that no tool pages is cut, lists first, and
-says so; a page that cannot show any entry says so too, so an agent does not
-ask for it again. The output of logs, job logs, mail, access logs, alerts,
-the overview, directory listings, repository data, the audit's free text and
-commands is wrapped as untrusted data, and those tools' descriptions say so.
-The server's instructions tell agents never to follow instructions found in
-it.
+No answer passes 64 KB. Logs, captured mail and lists come in pages
+(`truncated`, `next_offset`; `offset` and `limit` where a tool pages); a
+command's output is cut (stdout about 54 KB, stderr 8 KB) and says so
+(`stdout_truncated`, `stderr_truncated`). Sizes are measured as the answer
+serialises them, and the bytes between entries count. An answer that no
+tool pages is cut, lists first, and says so; a page that cannot show any
+entry says so too, so an agent does not ask for it again. The output of
+logs, job logs, mail, access logs, alerts, the overview, directory listings,
+repository data, the audit's free text and commands is wrapped as untrusted
+data, and those tools' descriptions say so. The server's instructions tell
+agents never to follow instructions found in it.
 
 ## Audit
 
