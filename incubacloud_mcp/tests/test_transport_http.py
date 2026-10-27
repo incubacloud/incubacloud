@@ -181,6 +181,28 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         )
         self.assertEqual(response.status_code, 411, response.text)
 
+    def test_a_message_nested_past_32_levels_is_refused(self):
+        """Valid JSON nested 2 000 levels deep is -32600; 20 levels are fine."""
+        body = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "server/discover",
+                "params": {
+                    "_meta": {META_VERSION: MODERN, META_CAPABILITIES: {}},
+                    "x": 0,
+                },
+            }
+        )
+        headers = {"MCP-Protocol-Version": MODERN, "Mcp-Method": "server/discover"}
+        for depth, status in ((20, 200), (2000, 400)):
+            with self.subTest(depth=depth):
+                nested = "[" * depth + "]" * depth
+                raw = body.replace('"x": 0', f'"x": {nested}')
+                response = self._post(None, self.key, headers, raw=raw)
+                self.assertEqual(response.status_code, status, response.text[:200])
+        self.assertEqual(response.json()["error"]["code"], -32600)
+
     def test_an_address_over_its_failures_is_429(self):
         """Behind declared proxies, an address over its failures is refused first."""
         self._proxies(["127.0.0.0/8"])
