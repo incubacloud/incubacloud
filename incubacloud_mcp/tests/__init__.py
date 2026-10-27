@@ -19,3 +19,4 @@ from . import test_secrets
 from . import test_tools_call
 from . import test_tools_read
 from . import test_tools_logs
+from . import test_tools_operate
