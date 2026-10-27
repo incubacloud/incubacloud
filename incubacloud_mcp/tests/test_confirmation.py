@@ -301,6 +301,24 @@ class TestConfirmation(
         self.assertFalse(done["isError"], done)
         self.assertFalse(project.exists())
 
+    def test_a_link_state_answered_with_a_form_yes_waits_for_the_page(self):
+        """A state that sent the user to the page, answered with a form's
+        yes, still waits for the page: it runs nothing."""
+        project = self._project()
+        args = {"project_id": project.id}
+        first = self._call_tool(self.key, "delete_project", args, URL_CAPABILITIES)
+        again = self._call_tool(
+            self.key,
+            "delete_project",
+            args,
+            FORM_CAPABILITIES,
+            requestState=first["requestState"],
+            inputResponses=ACCEPT,
+        )
+        self.assertEqual(again["resultType"], "input_required")
+        self.assertEqual(self._approval_of(first["requestState"]).state, "pending")
+        self.assertTrue(project.exists())
+
     def test_a_client_without_elicitation_gets_the_link_in_the_text(self):
         """A client that cannot be asked gets the page's link in the text;
         once approved there, asking again runs it."""
