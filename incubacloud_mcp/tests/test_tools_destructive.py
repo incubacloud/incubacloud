@@ -45,13 +45,14 @@ class TestDestructiveMessages(PanelFixtureMixin, McpUsersMixin, TransactionCase)
         )
 
     def _message(self, user, name, args):
-        """What *user* would be asked to approve for *name*."""
+        """What *user* would be asked to approve for *name*, its arguments
+        prepared as a call prepares them."""
+        tools = self.env["incubacloud.mcp.tools"].with_user(user)
+        prepare = getattr(tools, f"_prepare_{name}", None)
+        if prepare:
+            args = prepare(args)
         catalog = self.env["incubacloud.mcp.catalog"]
-        return (
-            self.env["incubacloud.mcp.tools"]
-            .with_user(user)
-            ._confirmation(catalog._spec(name), args)
-        )
+        return tools._confirmation(catalog._spec(name), args)
 
     def test_every_destructive_tool_asks(self):
         """Every destructive tool is declared destructive and always asks."""
@@ -156,6 +157,21 @@ class TestDestructiveMessages(PanelFixtureMixin, McpUsersMixin, TransactionCase)
                     "time": "1h_ago (a dry run: nothing is replaced)",
                 },
             )
+
+    def test_a_refresh_says_where_the_copy_really_comes_from(self):
+        """Without a backup destination, the last backup a refresh defaults
+        to is a dump taken now: the approval says so, and the call is bound
+        to it."""
+        self.assertFalse(self.production.effective_backup_backend)
+        args = {
+            "instance_id": self.staging.id,
+            "source_instance_id": self.production.id,
+        }
+        prepared = self.env["incubacloud.mcp.tools"]._prepare_refresh_staging(args)
+        self.assertEqual((prepared["source"], prepared["neutralize"]), ("live", True))
+        self.assertIn(
+            "a dump taken now", self._message(self.manager, "refresh_staging", args)
+        )
 
     def test_restoring_a_staging_is_refused_before_being_asked(self):
         """The panel restores production only: a staging is refused first."""

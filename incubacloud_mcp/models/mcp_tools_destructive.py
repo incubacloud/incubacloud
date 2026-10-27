@@ -296,6 +296,21 @@ class McpToolsDestructive(models.AbstractModel):
         )
 
     @api.model
+    def _prepare_refresh_staging(self, args):
+        """Resolve where the copy comes from, and bind the call to it.
+
+        The last backup, by default — a dump taken now when production has
+        no backup destination, as the panel degrades it — neutralized
+        unless told otherwise.
+        """
+        source = args.get("source") or "backup"
+        if source == "backup":
+            production = self._instance(args["source_instance_id"])
+            if not production.sudo().effective_backup_backend:
+                source = "live"
+        return {**args, "source": source, "neutralize": args.get("neutralize", True)}
+
+    @api.model
     def _confirm_refresh_staging(self, args):
         """Name the staging, its source and how the copy is taken."""
         self.env["cloud.security.mixin"]._check_can_clone_to_staging()
