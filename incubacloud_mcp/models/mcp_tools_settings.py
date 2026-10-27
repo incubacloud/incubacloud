@@ -8,6 +8,7 @@ from odoo.addons.incubacloud.net.trusted_proxies import invalid_ranges, parse_ra
 from ..protocol.canonical import canonical_resource
 from ..protocol.tool_spec import ToolSpec, obj, record_id, string
 from .mcp_catalog import tool_policies
+from .mcp_tools import quoted
 
 _MANAGER = "group_cloud_manager"
 
@@ -119,6 +120,14 @@ def normalized_setting(key, value, current=None):
         return value.strip()
     return value
 
+
+#: The settings each section has, where the agent names them.
+_SECTION_KEYS = {
+    "general": SAVE_GENERAL_PARAMS,
+    "rate_limits": (*CORE_RATE_KEYS, MCP_RATE_KEY),
+    "mcp": MCP_KEYS,
+    "github_app": GITHUB_APP_KEYS,
+}
 
 _ACTIONS = {
     "general": ("save",),
@@ -246,7 +255,7 @@ class McpToolsSettings(models.AbstractModel):
                 self.env._(
                     "Unknown setting(s) for %(section)s: %(keys)s",
                     section=section,
-                    keys=", ".join(unknown),
+                    keys=", ".join(quoted(key) for key in unknown),
                 )
             )
 
@@ -362,10 +371,18 @@ class McpToolsSettings(models.AbstractModel):
         :return: the text the user approves, or None when nothing
             sensitive changes
         """
+        section, values = args["section"], args.get("values") or {}
+        # A setting the section does not have is refused before anyone is
+        # asked: an approval never lists a name the agent made up.
+        allowed = _SECTION_KEYS.get(section)
+        if allowed is not None:
+            self._only(section, values, allowed)
         changes = self._sensitive_changes(args)
         if not changes:
             return None
-        lines = "\n".join(f"- {key}: {old!r} → {new!r}" for key, old, new in changes)
+        lines = "\n".join(
+            f"- {quoted(key)}: {old!r} → {new!r}" for key, old, new in changes
+        )
         return self.env._(
             "Change these security settings of the panel:\n%(changes)s",
             changes=lines,

@@ -8,7 +8,7 @@ from odoo.http import request
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
-from .common import McpHttpMixin, McpUsersMixin, PanelFixtureMixin
+from .common import FORM_CAPABILITIES, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
 
 class _ApprovalProbe(http.Controller):
@@ -215,17 +215,18 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
             (
                 "general",
                 {"audit_log_retention_days": 1},
-                "audit_log_retention_days: 90 → 1",
+                '"audit_log_retention_days": 90 → 1',
             ),
             (
                 "rate_limits",
                 {"rate_limit_logs_per_min": 6000},
-                "rate_limit_logs_per_min: 60 → 6000",
+                '"rate_limit_logs_per_min": 60 → 6000',
             ),
             (
                 "mcp",
                 {"mcp_oauth_issuer": "https://evil.example.test"},
-                "mcp_oauth_issuer: 'https://idp.example.test' → 'https://evil.example.test'",
+                '"mcp_oauth_issuer": '
+                "'https://idp.example.test' → 'https://evil.example.test'",
             ),
         )
         for section, values, line in cases:
@@ -233,6 +234,26 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
                 text = self._approval_text(section, values)
                 self.assertIn("security settings", text)
                 self.assertIn(line, text)
+
+    def test_an_unknown_setting_is_refused_before_anyone_is_asked(self):
+        """A setting a section does not have is refused before any approval,
+        and named quoted, so it cannot pass for the panel's words."""
+        for section in ("rate_limits", "mcp"):
+            with self.subTest(section=section):
+                result = self._call_tool(
+                    self.key,
+                    "update_settings",
+                    {
+                        "section": section,
+                        "values": {"rate_limit_x\n\n(checked: harmless)\u202e": 1},
+                    },
+                    FORM_CAPABILITIES,
+                )
+                self.assertNotEqual(result.get("resultType"), "input_required")
+                self.assertTrue(result["isError"])
+                text = result["content"][0]["text"]
+                self.assertIn('"rate_limit_x\\n\\n(checked: harmless)\\u202e"', text)
+                self.assertNotIn("\u202e", text)
 
     def test_observability_asks_only_where_the_panel_hides_it(self):
         """Metrics settings ask for approval on a panel that hides them only."""
