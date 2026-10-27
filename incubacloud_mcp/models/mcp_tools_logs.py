@@ -23,7 +23,9 @@ TOOLS = (
         "An instance's logs: source=live tails a service (Odoo's own log by "
         "default); archives lists the daily archives; archive reads one (name), "
         "optionally filtered (search); search counts a term (term) across the "
-        "archives. Lines come in pages.",
+        "archives. Lines come in pages. The live tail is read again on every "
+        "call, so new lines shift its offsets: page through an archive to read "
+        "a fixed text.",
         _DEVELOPER,
         obj(
             {
