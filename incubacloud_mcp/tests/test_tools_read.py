@@ -6,6 +6,7 @@ from unittest.mock import patch
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
+from odoo.addons.incubacloud_mcp.models.mcp_tools_read import _CHUNK_BATCH
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK
 
@@ -266,12 +267,22 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         )
         Chunk = type(self.env["cloud.job.log.chunk"])
         original = Chunk.search
+        read = []
+
+        def counted(*args, **kwargs):
+            """Search, and count the chunks the search read."""
+            found = original(*args, **kwargs)
+            read.append(len(found))
+            return found
+
         Tools = self.env["incubacloud.mcp.tools"]
         with patch.object(
-            Chunk, "search", autospec=True, side_effect=original
+            Chunk, "search", autospec=True, side_effect=counted
         ) as search:
             first = Tools._job_log_page(self.job.id, 0, 10)
         self.assertEqual(search.call_count, 1)
+        # One batch, not the 123 chunks of the log.
+        self.assertEqual(read, [_CHUNK_BATCH])
         self.assertEqual((len(first["items"]), first["next_offset"]), (10, 10))
         self.assertTrue(first["truncated"])
         last = Tools._job_log_page(self.job.id, 118, 10)

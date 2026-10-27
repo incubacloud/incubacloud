@@ -80,6 +80,21 @@ class TestConfirmation(
         self.assertFalse(final["isError"], final)
         self.assertFalse(project.exists())
 
+    def test_an_always_tool_whose_message_comes_out_empty_still_asks(self):
+        """A tool that always asks, whose own message comes out empty, asks
+        with a generic one: it never runs unasked."""
+        project = self._project()
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        with patch.object(
+            Tools, "_confirm_delete_project", autospec=True, return_value=""
+        ):
+            result = self._call_tool(
+                self.key, "delete_project", {"project_id": project.id}
+            )
+        self.assertTrue(result["isError"])
+        self.assertIn("This action needs your approval", result["content"][0]["text"])
+        self.assertTrue(project.exists())
+
     def test_the_same_state_twice_does_not_run_twice(self):
         """A request state already used runs nothing the second time."""
         project = self._project()
