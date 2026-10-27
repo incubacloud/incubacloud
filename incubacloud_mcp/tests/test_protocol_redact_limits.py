@@ -12,6 +12,7 @@ from odoo.tests.common import BaseCase
 from odoo.addons.incubacloud_mcp.protocol.limits import (
     MAX_BYTES,
     cap_text,
+    fit_answer,
     page_items,
     page_record,
 )
@@ -292,6 +293,21 @@ class TestLimits(BaseCase):
         self.assertNotIn("\ufffd", first["text"])
         rest = cap_text(text, first["next_offset"])
         self.assertEqual(first["text"] + rest["text"], text)
+
+    def test_an_answer_too_big_is_cut_lists_first(self):
+        """Lists are cut before strings; what fits is left alone."""
+        small = {"a": [1, 2], "b": "x"}
+        self.assertEqual(fit_answer(small), (small, False))
+        long_list = {"rows": list(range(100_000)), "name": "kept", "none": []}
+        cut, was_cut = fit_answer(long_list)
+        self.assertTrue(was_cut)
+        self.assertEqual(cut["name"], "kept")
+        self.assertEqual(cut["rows"][:3], [0, 1, 2])
+        self.assertLessEqual(len(json.dumps(cut).encode()), MAX_BYTES)
+        one_string = {"note": "z" * 200_000}
+        cut, was_cut = fit_answer(one_string)
+        self.assertTrue(was_cut)
+        self.assertLessEqual(len(json.dumps(cut).encode()), MAX_BYTES)
 
     def test_a_record_with_huge_fields_still_fits_its_page(self):
         """Huge metadata is cut too: the whole record fits, and says so."""
