@@ -13,3 +13,5 @@ from . import test_transport_http
 from . import test_transport_modern
 from . import test_transport_legacy
 from . import test_fetch_json
+from . import test_dispatch
+from . import test_via_client
