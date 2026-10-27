@@ -289,13 +289,17 @@ class McpAuth(models.AbstractModel):
 
         Its own transaction: the request's may roll back, and parallel
         failures must not fight over the bucket's row inside it.
+
+        :return: whether *ip* is still within its failures of the minute
+        :rtype: bool
         """
         with self.env.registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, dict(self.env.context))
-            env["cloud.rate.limit"].hit(
+            within = env["cloud.rate.limit"].hit(
                 self._failure_bucket(ip), max_per_window=AUTH_FAILURES_PER_MIN
             )
             cr.commit()
+        return within
 
     @api.model
     def _auth_reply(self, error):
