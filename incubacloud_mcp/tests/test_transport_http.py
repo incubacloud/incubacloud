@@ -3,6 +3,7 @@
 import json
 from unittest.mock import patch
 
+from odoo import api
 from odoo.tests import tagged
 from odoo.tests.common import BaseCase, HttpCase
 
@@ -231,6 +232,26 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             response = self._discover(self.key)
         self.assertEqual(
             (response.status_code, response.headers.get("Retry-After")), (429, "60")
+        )
+
+    def test_the_429_is_said_in_the_panel_s_languages(self):
+        """The 429's description goes through translation like the others."""
+        self._proxies(["127.0.0.0/8"])
+        Auth = type(self.env["incubacloud.mcp.auth"])
+
+        def mark(_env, source, *_args, **_kwargs):
+            """Mark what was handed to translation."""
+            return f"[translated] {source}"
+
+        with (
+            patch.object(Auth, "_auth_blocked", autospec=True, return_value=True),
+            patch.object(api.Environment, "_", autospec=True, side_effect=mark),
+        ):
+            response = self._discover(self.key)
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(
+            response.json()["error_description"],
+            "[translated] Too many failed authentications from this address.",
         )
 
     def test_without_declared_proxies_failures_are_counted_not_refused(self):
