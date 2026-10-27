@@ -47,6 +47,7 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
         self.authenticate("mcp-page-mgr", "mcp-page-mgr")
         response = self.url_open(self.path)
         self.assertEqual(response.status_code, 200)
+        self.assertIn('<html lang="en-US">', response.text)
         self.assertIn("<title>Approve an agent&#39;s action</title>", response.text)
         self.assertIn("mcp-page-doomed", response.text)
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
@@ -158,8 +159,9 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertNotIn("\u202e", page)
 
     def test_the_page_speaks_the_user_s_language(self):
-        """A user who reads the panel in Spanish gets the page in Spanish:
-        its own words and the message the agent's call wrote."""
+        """A user who reads the panel in Spanish gets the page in Spanish,
+        and says so to a screen reader: its own words and the message the
+        agent's call wrote."""
         self.env["res.lang"]._activate_lang("es_ES")
         self.env["ir.module.module"]._load_module_terms(
             ["incubacloud_mcp"], ["es_ES"], overwrite=True
@@ -172,6 +174,7 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
         self.authenticate("mcp-page-mgr", "mcp-page-mgr")
         page = html.unescape(self.url_open(_PATH_RE.search(text).group(0)).text)
         for words in (
+            '<html lang="es-ES">',
             "<title>Aprobar la acción de un agente</title>",
             "Un agente conectado a este panel con su cuenta pide:",
             'Borrar el proyecto "mcp-page-doomed". No se puede deshacer.',
