@@ -91,6 +91,13 @@ incubacloud/
 │   └── store/                # Project store (single fetch owner)
 └── tests/
     └── test_*.py             # Unit and integration tests
+
+incubacloud_mcp/              # Agents (MCP): see mcp.md
+├── controllers/              # /mcp, RFC 9728 documents, approval page, download link, settings
+├── models/                   # Credentials, server, catalog and dispatch, tools by group, approvals
+├── protocol/                 # Pure helpers: versions, headers, signing, schema, redaction, limits
+└── static/src/               # Connect an agent, Settings → Agents, the audit's agent mark
+incubacloud_mcp_pitr/         # The continuous recovery tools (installs itself)
 ```
 
 ---
@@ -690,6 +697,18 @@ A separate module, off until switched on per production instance (managers; a st
 - **Restore to a moment** (`pitr_restore`, after a duplicity snapshot of the present when the instance has one). The base copy is chosen by the panel (`choose_base`): each restore starts a new timeline at its promotion, branching off the moment it went back to (`pitr_timelines`); the copy must have been taken before the moment on the timeline live at that moment, or serve the moment that timeline branched off — a copy taken after the branch on the old timeline holds a history that was abandoned. The restore itself runs on the host, **detached** (`pitr.sh restore-start` hands it to a process of its own, holding `.walg/restore/lock`): Odoo stops, what the database still holds is archived, the copy is fetched **beside** the current data (wal-g only fetches into an empty directory) with room checked against the data as it is, swapped in, and recovered in a database container of its own that has the credentials `wal-fetch` needs — the `db` service never does, and nothing of the instance's runs meanwhile. If it does not come up, or the process is interrupted before it did, the previous data is put back; however it ends, the instance is started again and `.walg/restore/result` says how. The job follows it for 50 minutes and hands it to a job of the same type (`follow`) while it runs; the same job run again follows its restore instead of starting a second one. Then the filestore, a record of the new timeline and a full base copy of it.
 - **Its pieces reach the stack through the hooks above**: the mount on `db`, the `pitr` service, `.docker/pitr.env` (kept while the instance has an archive, so a delete purges it with fresh credentials), and the README files that create `.walg/` and its spool as the host user. Switching on is a rebuild then `pitr_enable`; a plan applied by a rebuild switches it with `_after_stack_rendered`, without a second one. Deleting the instance purges its prefix (`<folder>/<name>-pitr`, beside the duplicity prefix, never under it), once with the stack up and once more after the agent and the database stopped.
 - `pitr_*` fields are written by managers or by the panel itself only (`write` refuses others): switching the archive off, or pointing it at the wrong cluster to purge, loses a customer's history. `pitr_stack_external`: a stack whose compose is not the panel's (the platform's own manager): the panel only watches it and takes its base copies; switching and restoring go through its runbook (`invoke pitr-manager`). Uninstalling the module is refused while an instance archives.
+
+## Agents (MCP, `incubacloud_mcp`)
+
+A separate module: `POST /mcp` lets AI agents operate the panel as the user who connected them. Full reference in [`mcp.md`](mcp.md); user guide in `docs/user/docs/agents/`.
+
+- **Authentication.** `Authorization: Bearer` only, never the cookie: an RS256 `at+jwt` of the configured issuer whose audience is this panel's canonical `/mcp` URL (keys found through the issuer's metadata, cached), or an Odoo API key where the panel allows them. The request then runs as that user (`request.update_env`), never as the superuser.
+- **Protocol.** 2026-07-28 statelessly; 2025-03-26 to 2025-11-25 through `initialize` and a session id the server signs and does not store.
+- **Dispatch.** Each tool resolves its route in `ir.http.routing_map()` and calls the final endpoint inside a savepoint: the panel's own role checks, record rules and saas overrides apply. Tools and route policies form a registry (`incubacloud.mcp.catalog`) each module extends; a test fails on an unclassified `/cloud/*` route of any module built on it.
+- **Approval.** Destructive and security-sensitive tools wait for the user: a form in the client, the panel's approval page (URL elicitation or `-32042`), or a link in the answer. `incubacloud.mcp.approval` binds the user, the credential, the tool and the arguments, ten minutes, once. It protects from the model's mistakes and from injected instructions, not from a malicious client.
+- **Secrets.** Never in, never out: keys named like an encrypted field are refused and dropped, known values masked in every text.
+- **Commands.** `run_command` and `run_host_command` are tool handlers with the terminals' controls, not routes: a route would open command execution to the SPA's cookie. One minute, kept by `timeout` inside the container; what a command leaves in the background is not stopped.
+- **Audit.** `via_client` on audit rows and jobs names the verified credential and the declared client.
 
 ## Frontend SPA
 
