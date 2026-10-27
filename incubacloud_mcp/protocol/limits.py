@@ -119,3 +119,51 @@ def cap_strings(obj, max_bytes=MAX_BYTES):
         pairs = [cap_strings(item, max_bytes) for item in obj]
         return [pair[0] for pair in pairs], any(pair[1] for pair in pairs)
     return obj, False
+
+
+#: Bytes a string keeps, in a record whose long texts are paged.
+_FIELD_BYTES = 1024
+#: Room left for the keys and quotes around the paged texts.
+_PAGE_OVERHEAD = 256
+
+
+def page_record(record, fields, offset=0, max_bytes=MAX_BYTES):
+    """Return *record* within *max_bytes*, its long texts *fields* in pages.
+
+    The texts of *fields* are read as one, in that order, from character
+    *offset*: each comes back with the part of it the page holds, and
+    ``next_offset`` says where the next page starts. Everything else
+    comes back on every page, each string cut to 1 KB and each list to
+    an eighth of the page.
+
+    :param dict record: one entry, such as a captured message
+    :param fields: the keys of its long texts
+    :param int offset: where in those texts the page starts
+    :return: the record with ``offset``, ``total``, ``truncated`` and
+        ``next_offset``
+    """
+    rest, cut = cap_strings(
+        {key: value for key, value in record.items() if key not in fields},
+        _FIELD_BYTES,
+    )
+    for key, value in rest.items():
+        if isinstance(value, list):
+            page = page_items(value, 0, None, max_bytes // 8)
+            if page["truncated"]:
+                rest[key], cut = page["items"], True
+    texts = [str(record.get(name) or "") for name in fields]
+    room = max(0, max_bytes - _size(rest) - _PAGE_OVERHEAD)
+    chunk = cap_text("".join(texts), offset, room)
+    start = chunk["offset"]
+    end = start + len(chunk["text"])
+    position = 0
+    for name, text in zip(fields, texts, strict=True):
+        rest[name] = text[max(0, start - position) : max(0, end - position)]
+        position += len(text)
+    return {
+        **rest,
+        "offset": start,
+        "total": chunk["total"],
+        "truncated": cut or chunk["truncated"],
+        "next_offset": chunk["next_offset"],
+    }

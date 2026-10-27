@@ -10,20 +10,41 @@ from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES, cap_strings
 from .common import PG_PASSWORD, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
 MEGABYTE_OF_LINES = [f"{i:07d} " + "x" * 1000 for i in range(1024)]
+#: A captured message as long as the host lets one be: text and HTML.
+BIG_TEXT = "".join(f"line {i:05d} of the text, ñ\n" for i in range(2500))
+BIG_HTML = "<p>" + "h" * (256 * 1024 - 7) + "</p>"
+#: Messages in the staging's mailbox.
+MAILBOX_SIZE = 300
 
 
 def canned_logs(_self, path, params):
     """Answer the log and mailbox routes as a host would."""
     if path == "/cloud/fetch_container_logs":
         return {"ok": True, "lines": MEGABYTE_OF_LINES + [f"db password {PG_PASSWORD}"]}
+    if path == "/cloud/instance_mail" and params["message_id"] == "big":
+        return {
+            "ok": True,
+            "id": "big",
+            "subject": "Big",
+            "text": BIG_TEXT,
+            "html": BIG_HTML,
+            "attachments": [],
+            "headers": [],
+        }
     if path == "/cloud/instance_mail":
         return {
             "ok": True,
             "subject": "Reset",
-            "body": "Reset here: https://acme.example/web/reset_password?token=abc123&db=x",
+            "text": "Reset here: https://acme.example/web/reset_password?token=abc123&db=x",
+            "html": "",
         }
     if path == "/cloud/instance_mailbox":
-        return {"ok": True, "messages": [{"id": "1", "subject": "Hi"}], "total": 1}
+        start = params.get("start") or 0
+        items = [
+            {"id": str(index), "subject": f"Message {index}", "from": "x" * 900}
+            for index in range(start, MAILBOX_SIZE)
+        ]
+        return {"ok": True, "total": MAILBOX_SIZE, "items": items}
     raise AssertionError(path)
 
 
@@ -79,17 +100,47 @@ class TestLogTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
                 {"instance_id": self.staging.id, "message_id": "1"},
             )
         )
-        self.assertNotIn("abc123", payload["body"])
-        self.assertIn("[secreto]", payload["body"])
+        self.assertNotIn("abc123", payload["text"])
+        self.assertIn("[secreto]", payload["text"])
 
-    def test_the_mailbox_lists_messages(self):
-        """Without message_id, the staging's captured messages are listed."""
-        payload = self._payload(
+    def test_the_mailbox_lists_messages_in_pages_under_64_kb(self):
+        """Without message_id, the messages come in pages under 64 KB."""
+        args = {"instance_id": self.staging.id}
+        result = self._call_tool(self.key, "staging_mailbox", args)
+        self.assertLessEqual(
+            len(result["content"][-1]["text"].encode()), MAX_BYTES + 512
+        )
+        first = self._payload(result)
+        self.assertEqual(first["items"][0]["subject"], "Message 0")
+        self.assertEqual(first["total"], MAILBOX_SIZE)
+        self.assertTrue(first["truncated"])
+        self.assertLess(first["next_offset"], MAILBOX_SIZE)
+        second = self._payload(
             self._call_tool(
-                self.key, "staging_mailbox", {"instance_id": self.staging.id}
+                self.key, "staging_mailbox", args | {"offset": first["next_offset"]}
             )
         )
-        self.assertEqual(payload["messages"][0]["subject"], "Hi")
+        self.assertEqual(second["items"][0]["id"], str(first["next_offset"]))
+
+    def test_a_long_message_comes_in_pages_under_64_kb(self):
+        """A message's text and HTML, together, come in pages under 64 KB."""
+        args = {"instance_id": self.staging.id, "message_id": "big"}
+        texts, htmls, offset, pages = [], [], 0, 0
+        while offset is not None:
+            result = self._call_tool(
+                self.key, "staging_mailbox", args | {"offset": offset}
+            )
+            self.assertLessEqual(
+                len(result["content"][-1]["text"].encode()), MAX_BYTES + 512
+            )
+            page = self._payload(result)
+            self.assertEqual(page["subject"], "Big")
+            texts.append(page["text"])
+            htmls.append(page["html"])
+            offset, pages = page["next_offset"], pages + 1
+            self.assertEqual(page["truncated"], offset is not None)
+        self.assertGreater(pages, 5)
+        self.assertEqual(("".join(texts), "".join(htmls)), (BIG_TEXT, BIG_HTML))
 
     def test_long_strings_are_cut(self):
         """cap_strings cuts a string past the limit and says so."""
