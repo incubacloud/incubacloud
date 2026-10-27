@@ -1,8 +1,10 @@
 """Continuous recovery through an agent: read it, switch it, restore with approval."""
 
+import json
 from datetime import datetime
 from unittest.mock import patch
 
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
@@ -122,6 +124,29 @@ class TestPitrTools(
                     )
                     self.assertTrue(result.get("isError"), result)
                     self.assertNotIn("inputRequests", result)
+        self.assertFalse(self._approvals())
+
+    def test_a_restore_while_a_job_runs_is_refused_before_asking(self):
+        """While a continuous recovery job is queued or running, the restore
+        is refused at once, as the panel refuses it."""
+        busy = UserError("A continuous recovery job is already running.")
+        with (
+            patch.object(
+                self.Instance, "_pitr_window", autospec=True, return_value=WINDOW
+            ),
+            patch.object(
+                self.Instance, "_pitr_refuse_busy", autospec=True, side_effect=busy
+            ),
+        ):
+            result = self._call_tool(
+                self.key,
+                "pitr_restore",
+                {"instance_id": self.production.id, "target": "2026-10-20 11:41:00"},
+                FORM_CAPABILITIES,
+            )
+        self.assertTrue(result.get("isError"), result)
+        self.assertNotIn("inputRequests", result)
+        self.assertIn("already running", json.dumps(result))
         self.assertFalse(self._approvals())
 
     def _approvals(self):

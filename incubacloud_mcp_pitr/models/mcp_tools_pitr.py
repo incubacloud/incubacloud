@@ -128,14 +128,15 @@ class McpToolsPitr(models.AbstractModel):
         """Name the instance and the moment, as the panel reads it.
 
         The restore's own checks run first — a manager, a stack the panel
-        runs, a moment of the instance's window — so a restore that would
-        be refused is refused before anyone is asked.
+        runs, a moment of the instance's window, no continuous recovery job
+        queued or running — so a restore that would be refused is refused
+        before anyone is asked.
 
         :raises AccessError: below the manager role, or for an instance
             the user may not read
         :raises UserError: for a missing instance, a stack configured
-            outside the panel, or a moment that is not one or is outside
-            the window
+            outside the panel, a moment that is not one or is outside the
+            window, or a continuous recovery job already queued or running
         """
         self.env["cloud.security.mixin"]._check_cloud_group(_MANAGER)
         instance = self._instance(args["instance_id"])
@@ -155,6 +156,7 @@ class McpToolsPitr(models.AbstractModel):
                     when=fields.Datetime.to_string(when),
                 )
             )
+        instance._pitr_refuse_busy()
         return self.env._(
             "Restore the production instance %(name)s to %(target)s (UTC). "
             "Whatever happened after that moment is undone.",
