@@ -131,7 +131,7 @@ _API_KEY_PAGE = """
     await select(claudeTab);
     for (const words of [
         "Customize", "Connectors", "Add custom connector", "Request headers",
-        "Organization settings", "reachable from the internet",
+        "Organization settings", "individual plan", "reachable from the internet",
     ]) {{
         if (!page.textContent.includes(words)) {{
             fail("claude.ai's steps: " + words);

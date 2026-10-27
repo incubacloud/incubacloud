@@ -122,7 +122,7 @@
                             </li>
                         </ol>
                         <p t-if="view.needsApiKey" class="ic-mcp-step">
-                            Only on a Pro or Max plan: a connector an owner adds in Organization
+                            Only on an individual plan: a connector an owner adds in Organization
                             settings is shared by every member, and so would your key be.
                         </p>
                         <p t-else="" class="ic-mcp-step">
