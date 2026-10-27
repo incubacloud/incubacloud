@@ -52,13 +52,23 @@ class TestSecrets(TransactionCase):
             self.assertIn(name, names)
         self.assertNotIn("name", names)
 
+    def test_the_names_are_read_once_per_registry(self):
+        """The names are computed once, not on every call."""
+        self.assertIs(self.Secrets._field_names(), self.Secrets._field_names())
+
     def test_a_new_encrypted_field_is_covered_without_touching_the_mcp(self):
-        """An encrypted field added tomorrow is a secret name the same day."""
+        """An encrypted field added tomorrow is a secret name the same day.
+
+        A module that adds one loads a new registry, whose cache is empty:
+        here the cache is cleared instead.
+        """
         Host = type(self.env["cloud.host"])
         # Odoo 19 keeps a model's fields in a read-only mapping: the whole
         # attribute is swapped, not one entry.
         grown = Host._fields | {"ic_test_secret": EncryptedChar()}
+        self.addCleanup(self.env.registry.clear_cache)
         with patch.object(Host, "_fields", grown):
+            self.env.registry.clear_cache()
             names = self.Secrets._field_names()
         self.assertIn("ic_test_secret", names)
         self.assertEqual(

@@ -16,7 +16,7 @@ import threading
 
 from psycopg2 import sql
 
-from odoo import api, models
+from odoo import api, models, tools
 from odoo.exceptions import UserError
 
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedFieldMixin
@@ -67,8 +67,12 @@ class McpSecrets(models.AbstractModel):
     _description = "Secrets agents never see"
 
     @api.model
+    @tools.ormcache()
     def _field_names(self):
         """Return the names of every encrypted field of the registry.
+
+        Computed once per registry: a module that adds a field loads a
+        new one.
 
         :rtype: frozenset[str]
         """
