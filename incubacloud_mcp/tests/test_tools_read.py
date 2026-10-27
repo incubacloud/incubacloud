@@ -266,16 +266,16 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         texts = []
         for name in OFFLINE_READS:
             with self.subTest(tool=name):
-                texts.append(
-                    json.dumps(self._call_tool(self.key, name, self._args(name)))
-                )
+                result = self._call_tool(self.key, name, self._args(name))
+                self.assertFalse(result["isError"], result["content"][-1]["text"][:300])
+                texts.append(json.dumps(result))
         Dispatch = type(self.env["incubacloud.mcp.dispatch"])
         with patch.object(Dispatch, "_call", autospec=True, side_effect=canned):
             for name in NETWORK_READS:
                 with self.subTest(tool=name):
-                    texts.append(
-                        json.dumps(self._call_tool(self.key, name, self._args(name)))
-                    )
+                    result = self._call_tool(self.key, name, self._args(name))
+                    self.assertFalse(result["isError"], result)
+                    texts.append(json.dumps(result))
         for text in texts:
             self._assert_no_secret(text)
         self.assertFalse([text for text in texts if '"postgres_password"' in text])

@@ -118,8 +118,7 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
 
     def test_changing_the_app_id_keeps_the_installation(self):
         """A GitHub App change keeps the fields not given; others are refused."""
-        App = self.env["cloud.github.app"].sudo()
-        app = App.search([], limit=1) or App.create({"app_id": "111"})
+        app = self.github_app
         app.write({"app_id": "111", "installation_id": "222"})
         result = self._call_tool(
             self.key,
