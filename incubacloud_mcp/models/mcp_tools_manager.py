@@ -5,6 +5,7 @@ from odoo.exceptions import UserError
 
 from ..protocol.tool_spec import ToolSpec, boolean, obj, record_id, string
 from .mcp_catalog import tool_policies
+from .mcp_tools_settings import normalized_setting
 
 _MANAGER = "group_cloud_manager"
 
@@ -20,7 +21,9 @@ TOOLS = (
     ToolSpec(
         "manage_host",
         "Create a server (vals), change one (host_id and vals), or set up its egress "
-        "whitelist (host_id and setup_whitelist=true).",
+        "whitelist (host_id and setup_whitelist=true). The proxies it trusts for "
+        "client addresses (trusted_proxy_ranges) change only with the user's "
+        "approval.",
         _MANAGER,
         obj(
             {
@@ -30,6 +33,7 @@ TOOLS = (
             }
         ),
         handler="_tool_manage_host",
+        confirm="conditional",
     ),
     ToolSpec(
         "harden_host",
@@ -129,6 +133,33 @@ class McpToolsManager(models.AbstractModel):
         if host_id:
             return self._route("/cloud/save_host", host_id=host_id, vals=args["vals"])
         return self._route("/cloud/create_host", vals=args["vals"])
+
+    @api.model
+    def _confirm_manage_host(self, args):
+        """Ask for approval when the server's trusted proxy ranges change (D2).
+
+        They decide whose word the server takes for a client's address, as
+        the panel's own do: the message says from what to what.
+        """
+        vals = args.get("vals") or {}
+        if args.get("setup_whitelist") or "trusted_proxy_ranges" not in vals:
+            return None
+        current = ""
+        if args.get("host_id"):
+            host = self._route("/cloud/get_host", host_id=args["host_id"])
+            current = host.get("trusted_proxy_ranges")
+        new = vals["trusted_proxy_ranges"]
+        key = "trusted_proxy_ranges"
+        if normalized_setting(key, new, current) == normalized_setting(
+            key, current, current
+        ):
+            return None
+        return self.env._(
+            "Change which proxies the server trusts for client addresses:\n"
+            "- trusted_proxy_ranges: %(old)r → %(new)r",
+            old=current,
+            new=new,
+        )
 
     @api.model
     def _tool_harden_host(self, args):
