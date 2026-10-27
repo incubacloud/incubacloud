@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import psycopg2
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from lxml import etree
 
@@ -22,6 +23,9 @@ from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
+from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
+    JobEndAssertions,
+)
 from odoo.addons.incubacloud_pitr import uninstall_hook
 from odoo.addons.incubacloud_pitr.models import pitr_executors as ex
 from odoo.addons.incubacloud_pitr.models._constants import (
@@ -685,6 +689,97 @@ class TestSwitchingOnAndBaseCopies(_PitrCase):
             [c.args[3] for c in enqueue.call_args_list],
             ["pitr_enable", "pitr_base_backup"],
         )
+
+
+class TestOdooRestartedAroundTheDatabase(JobEndAssertions, _PitrCase):
+    """Switching archiving on or off may restart the database, with odoo
+    stopped around it (``restart_db``). Odoo's series is then gone for
+    about a minute, which the metrics cron read as a stop: the panel said
+    "Stopped" for up to two minutes. The job confirms the instance running
+    as soon as the script says odoo is back, durably, while its steps go
+    on: switching on takes a first base copy after it, for minutes, and
+    a confirmation at the job's end came after the grace was over."""
+
+    def setUp(self):
+        """Archiving being switched; the cron lowered ``running`` meanwhile."""
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.inst.write({
+            "pitr_enabled": True, "pitr_state": "enabling", "running": False,
+        })
+
+    def _line(self, cls, code, line):
+        """Hand *line* to a new job's executor, as a step prints it.
+
+        :return: the executor, its job not ended
+        """
+        executor = self._executor(cls, code)
+        # The durable cursor reads the database, not this env's cache.
+        self.env.flush_all()
+        asyncio.run(executor.on_stdout(line))
+        return executor
+
+    def test_the_switch_on_confirms_the_instance_as_the_line_comes(self):
+        """Stored before the job ends: no outcome hook has run."""
+        executor = self._line(
+            ex.PitrEnableExecutor, "pitr_enable", "IC_PITR_ODOO_RESTARTED",
+        )
+        self.assertIn(("IC_PITR_ODOO_RESTARTED", "stdout"), executor._log_buffer)
+        self.end_job()
+        self.assertTrue(self.stored(self.inst, "running"))
+        self.assertTrue(self.stored(self.inst, "running_confirmed_at"))
+
+    def test_the_switch_off_confirms_it_too(self):
+        """The same when switching off restarts the database."""
+        self._line(
+            ex.PitrDisableExecutor, "pitr_disable", "IC_PITR_ODOO_RESTARTED",
+        )
+        self.end_job()
+        self.assertTrue(self.stored(self.inst, "running"))
+        self.assertTrue(self.stored(self.inst, "running_confirmed_at"))
+
+    def test_a_restart_with_odoo_already_stopped_confirms_nothing(self):
+        """The database restarted (``restarted=1``), odoo was not running."""
+        self._line(
+            ex.PitrEnableExecutor, "pitr_enable", "IC_PITR_CLUSTER 77 restarted=1",
+        )
+        self.end_job()
+        self.assertFalse(self.stored(self.inst, "running"))
+        self.assertFalse(self.stored(self.inst, "running_confirmed_at"))
+
+    def test_the_job_s_end_confirms_nothing_again(self):
+        """A stop read after the grace is not undone when the job ends."""
+        executor = self._line(
+            ex.PitrEnableExecutor, "pitr_enable", "IC_PITR_ODOO_RESTARTED",
+        )
+        self.inst.write({"running": False})
+        asyncio.run(executor.on_success({"Switch archiving on": {
+            "stdout": "IC_PITR_ODOO_RESTARTED\nIC_PITR_CLUSTER 77 restarted=1",
+            "exit_status": 0,
+        }}))
+        self.assertEqual(self.inst.pitr_state, "ok")
+        self.assertFalse(self.inst.running)
+
+    def test_a_busy_row_does_not_stop_the_switch(self):
+        """Left unconfirmed, said in the job's log; the step goes on."""
+        with patch.object(
+            ex._PitrExecutor, "_persist", autospec=True,
+            side_effect=psycopg2.errors.LockNotAvailable(),
+        ):
+            self._line(
+                ex.PitrEnableExecutor, "pitr_enable", "IC_PITR_ODOO_RESTARTED",
+            )
+        self.assertIn("could not be confirmed running", self.sys_log.call_args.args[1])
+        self.assertFalse(self.inst.running)
+
+    def test_any_other_failure_of_the_write_still_raises(self):
+        """Only a busy row is forgiven: anything else is a fault to see."""
+        executor = self._executor(ex.PitrEnableExecutor, "pitr_enable")
+        with patch.object(
+            ex._PitrExecutor, "_persist", autospec=True,
+            side_effect=psycopg2.errors.SerializationFailure(),
+        ), self.assertRaises(psycopg2.errors.SerializationFailure):
+            asyncio.run(executor.on_stdout("IC_PITR_ODOO_RESTARTED"))
 
 
 class TestReadingTheArchiver(_PitrCase):

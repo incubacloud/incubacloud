@@ -17,6 +17,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from operator import itemgetter
 
+import psycopg2
+
 from odoo import fields
 
 from odoo.addons.incubacloud.models.abstract_executor import AbstractSSHExecutor
@@ -43,6 +45,8 @@ _BASES_RE = re.compile(r"^IC_PITR_BASES (\d+) (\[.*\])\s*$", re.MULTILINE)
 _STATUS_RE = re.compile(r"^IC_PITR_STATUS (.+)$", re.MULTILINE)
 _RESTORE_RE = re.compile(r"^IC_PITR_RESTORE (.+)$", re.MULTILINE)
 _PURGED_RE = re.compile(r"^IC_PITR_PURGED (\d+)$", re.MULTILINE)
+#: The line ``restart_db`` prints once it started odoo again.
+_ODOO_RESTARTED = "IC_PITR_ODOO_RESTARTED"
 
 
 def _stdout(results):
@@ -241,6 +245,35 @@ class _PitrExecutor(AbstractSSHExecutor):
         """Put a failure's errors in the job's log."""
         for err in errors:
             self._sys(f"✗ {err}")
+
+    async def on_stdout(self, line):
+        """Log *line*; on odoo's restart, confirm the instance running.
+
+        A restart of the database stops odoo around it (``restart_db``)
+        and says so once it started it again, whatever the step does
+        next. Odoo's series is then gone for about a minute, which the
+        metrics cron would read as a stop: the instance is confirmed
+        running there and then, durably (``_persist``), and not when the
+        job ends — the first base copy that follows a switch takes
+        minutes, longer than the grace the confirmation opens.
+
+        A row busy past the durable lock timeout leaves it unconfirmed,
+        and the step goes on: the switch matters more than the badge.
+
+        :param str line: a line of a step's output, stripped
+        """
+        await super().on_stdout(line)
+        if line != _ODOO_RESTARTED:
+            return
+        inst = self._inst()
+        try:
+            self._persist(inst.sudo(), inst._running_confirmed_vals())
+        except psycopg2.errors.LockNotAvailable:
+            self._sys(
+                f"⚠ Odoo of '{inst.name}' runs again, but the instance could "
+                f"not be confirmed running: the panel may show it stopped "
+                f"for up to two minutes."
+            )
 
 
 class PitrEnableExecutor(_PitrExecutor):

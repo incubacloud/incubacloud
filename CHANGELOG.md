@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.199] — 2026-10-27
+
+### Fixed
+
+- **An instance's page opens in debug mode again.** With
+  `?debug=assets` Owl checks every prop a component gets, and the
+  repositories' module selector refused the `error` RepoEditor gives it
+  until a module fetch fails, `null`, which is also its own default:
+  the page raised "Invalid props for component 'ModuleSelector': 'error'
+  is not a string or boolean". The prop accepts `null`.
+- **Switching continuous recovery on or off no longer reads the instance
+  as stopped.** On a stack whose database does not archive from its
+  command line, switching on (or off) restarts the database with odoo
+  stopped around it, which took odoo's metrics series away: the liveness
+  cron could write the instance stopped, and the panel showed "Stopped"
+  for up to two minutes, as after a restore before 1.0.198. `pitr.sh`
+  prints `IC_PITR_ODOO_RESTARTED` on a line of its own as soon as it
+  has started odoo again, also when the database does not come back and
+  odoo is started on the way out. The job confirms the instance running
+  (`running_confirmed_at`, written durably with `_persist`) the moment
+  that line arrives, while its steps go on, and not when it ends:
+  switching on takes a first base copy next, for minutes, longer than
+  the two minutes of grace the confirmation opens. The end of the job
+  confirms nothing again. A row still locked after the durable lock
+  timeout leaves the instance unconfirmed, says so in the job's log, and
+  the switch goes on. `incubacloud_pitr` 1.0.7.
+
 ## [1.0.198] — 2026-10-23
 
 ### Changed

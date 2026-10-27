@@ -23,7 +23,8 @@ export class ModuleSelector extends Component {
         onChange:    { type: Function },
         modules:     { type: Array },
         loading:     { type: Boolean, optional: true },
-        error:       { type: [String, Boolean], optional: true },
+        // null is "no error", as the default and RepoEditor's state say.
+        error:       { type: [String, Boolean, { value: null }], optional: true },
         disabled:    { type: Boolean, optional: true },
         blockedSet:  { type: Object, optional: true },   // Set
         placeholder: { type: String, optional: true },
