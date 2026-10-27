@@ -5,12 +5,14 @@ from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import HttpCase, TransactionCase
 
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
 from odoo.addons.incubacloud.models.password_utils import decrypt_value
 from odoo.addons.incubacloud_mcp.models import mcp_secrets
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK, drop_secret_keys
+
+from .common import McpHttpMixin, McpUsersMixin
 
 HOST_PASSWORD = "host-pass-1234567"
 
@@ -119,6 +121,41 @@ class TestSecrets(TransactionCase):
             f"curl -u backup:{MASK} https://backup.example.test/x",
         )
 
+    def test_a_user_s_secret_is_one_secret_whatever_it_looks_like(self):
+        """A secret a user types — a PEM-looking block of common words, or a
+        big JSON document — is masked whole and splits into nothing."""
+        user = self.env.ref("base.user_admin").sudo()
+        user.cloud_webhook_secret = (
+            "-----BEGIN X-----\ndatabase\npostgres\ninstance\n-----END X-----"
+        )
+        self.host.traefik_panel_password = json.dumps(
+            {"password": [f"word-{index:06d}" for index in range(2000)]}
+        )
+        self.env.flush_all()
+        values = self.Secrets._known_values()
+        self.assertIn(user.cloud_webhook_secret, values)
+        for piece in ("database", "postgres", "word-000001"):
+            self.assertNotIn(piece, values)
+        self.assertEqual(
+            self.Secrets._scrubber().text("the database and postgres"),
+            "the database and postgres",
+        )
+
+    def test_the_fields_that_store_documents_are_split(self):
+        """The fields that hold JSON or a PEM key are split: a key's lines
+        are masked one by one."""
+        self.assertLessEqual(
+            {"secret_payload", "private_key", "tls_default_key", "key_file"},
+            self.Secrets._structured_secret_fields(),
+        )
+        line = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9w"
+        self.host.key_file = (
+            f"-----BEGIN OPENSSH PRIVATE KEY-----\n{line}\n"
+            "-----END OPENSSH PRIVATE KEY-----"
+        )
+        self.env.flush_all()
+        self.assertIn(line, self.Secrets._known_values())
+
     def test_a_secret_is_decrypted_once_and_never_outlives_its_record(self):
         """The second read decrypts nothing; a deleted secret is no longer known."""
         host = self.env["cloud.host"].create(
@@ -171,3 +208,37 @@ class TestSecrets(TransactionCase):
         ):
             self.Secrets._check_arguments({"vals": {"db": {"postgres_password": "x"}}})
         self.Secrets._check_arguments({"vals": {"name": "x"}})
+
+
+@tagged("post_install", "-at_install")
+class TestDeepSecrets(McpUsersMixin, McpHttpMixin, HttpCase):
+    """A secret nested past the stack does not take the endpoint down."""
+
+    def test_a_secret_nested_990_levels_deep_does_not_break_tool_calls(self):
+        """A user's secret, and a job's, nested ~990 levels deep: every tool
+        call still answers."""
+        self._resource_here()
+        deep = '{"password":' * 990 + '"abcdefgh1234"' + "}" * 990
+        user = self._cloud_user("mcp-deep-secret")
+        user.sudo().cloud_webhook_secret = deep
+        host = self.env["cloud.host"].create(
+            {
+                "name": "deep-host",
+                "ip_address": "10.0.0.86",
+                "user": "ubuntu",
+                "wildcard_domain": "deep.example.com",
+            }
+        )
+        job_type = self.env["cloud.job.type"].create(
+            {"name": "Deep job", "code": "mcp_deep_job", "apply_to": "host"}
+        )
+        self.env["cloud.job"].sudo().create(
+            {
+                "name": "deep",
+                "host_id": host.id,
+                "job_type_id": job_type.id,
+                "secret_payload": deep,
+            }
+        )
+        result = self._call_tool(self._api_key(user), "list_projects")
+        self.assertFalse(result["isError"], result)
