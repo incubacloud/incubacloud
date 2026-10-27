@@ -159,6 +159,7 @@ TOOLS = (
         ),
         route="/cloud/get_audit_log",
         read_only=True,
+        untrusted=True,
     ),
     ToolSpec(
         "get_monitoring",
@@ -195,6 +196,7 @@ TOOLS = (
         ),
         handler="_tool_github_repo_info",
         read_only=True,
+        untrusted=True,
     ),
     ToolSpec(
         "list_backups",
