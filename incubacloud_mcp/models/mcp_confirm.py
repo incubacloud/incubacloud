@@ -8,8 +8,10 @@ The channel depends on what the client can do:
 * 2025-11-25 that declared URL elicitation: error ``-32042`` with the page;
 * anything else: an ``isError`` result whose text has the page's link.
 
-Every approval is bound to the user, the tool and the fingerprint of the
-arguments, lasts ten minutes and is used once, before the action runs.
+Every approval is bound to the user and the credential the agent calls
+with (the spec's "bind to the client and user identity"), the tool and
+the fingerprint of the arguments, lasts ten minutes and is used once,
+before the action runs.
 Whatever does not hold — a state that does not verify, another user,
 tool or arguments, an approval expired, cancelled or used — runs
 nothing. The confirmation protects from the model's mistakes and from
@@ -76,7 +78,7 @@ class McpConfirm(models.AbstractModel):
         if ctx.modern and params.get("requestState"):
             return self._resume(spec, digest, ctx, params)
         approved = self.env["incubacloud.mcp.approval"]._find_approved(
-            spec.name, digest
+            spec.name, digest, ctx.principal.credential
         )
         if approved and approved._consume("approved"):
             return None
@@ -105,7 +107,7 @@ class McpConfirm(models.AbstractModel):
         message = self.env["incubacloud.mcp.secrets"]._scrubber().text(message)
         channel = self._channel(ctx)
         approval, token = self.env["incubacloud.mcp.approval"]._open(
-            spec.name, digest, message, channel
+            spec.name, digest, message, channel, ctx.principal.credential
         )
         if channel == "mrtr_form":
             # The page's link is never handed out: the form is the channel.
@@ -179,9 +181,10 @@ class McpConfirm(models.AbstractModel):
     def _state(self, approval, spec, digest, ctx, mode, link):
         """Return the signed ``requestState`` of an approval (label ``request``).
 
-        It holds the approval, a nonce, the user, the tool, the fingerprint
-        of the arguments, when it expires, how the user is asked and the
-        page's link (only in ``url`` mode).
+        It holds the approval, a nonce, the user and the credential the
+        agent calls with, the tool, the fingerprint of the arguments, when
+        it expires, how the user is asked and the page's link (only in
+        ``url`` mode).
         """
         return sign(
             self.env["cloud.settings"].sudo()._mcp_secret(),
@@ -190,6 +193,7 @@ class McpConfirm(models.AbstractModel):
                 "a": approval.id,
                 "n": secrets.token_hex(8),
                 "u": ctx.principal.uid,
+                "c": ctx.principal.credential,
                 "t": spec.name,
                 "h": digest,
                 "e": int(time.time() + APPROVAL_TTL.total_seconds()),
@@ -231,6 +235,7 @@ class McpConfirm(models.AbstractModel):
             )
         if (
             state.get("u") != ctx.principal.uid
+            or state.get("c") != ctx.principal.credential
             or state.get("t") != spec.name
             or state.get("h") != digest
         ):
@@ -248,6 +253,7 @@ class McpConfirm(models.AbstractModel):
         if (
             not approval
             or approval.user_id.id != ctx.principal.uid
+            or approval.credential != ctx.principal.credential
             or approval.tool != spec.name
             or approval.args_hash != digest
             or not isinstance(state.get("e"), int)
