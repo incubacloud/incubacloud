@@ -9,3 +9,5 @@ from . import test_jwks_cache
 from . import test_issuer_metadata
 from . import test_auth_tokens
 from . import test_auth_users
+from . import test_transport_http
+from . import test_transport_modern

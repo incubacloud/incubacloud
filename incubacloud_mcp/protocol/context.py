@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass, field
 
+#: Context key that marks what a request writes as done through an agent.
+VIA_CONTEXT_KEY = "incubacloud_mcp_client"
+
 
 @dataclass(frozen=True)
 class Principal:
