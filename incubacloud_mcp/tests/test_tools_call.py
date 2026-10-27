@@ -580,6 +580,22 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         )
         self.assertFalse(self._tag("mcp-never"))
 
+    def test_messages_follow_the_user_s_language(self):
+        """An agent of a user who reads the panel in Spanish is answered in
+        Spanish, in usted."""
+        self.env["res.lang"]._activate_lang("es_ES")
+        self.env["ir.module.module"]._load_module_terms(
+            ["incubacloud_mcp"], ["es_ES"], overwrite=True
+        )
+        self.user.lang = "es_ES"
+        result = self._call_tool(
+            self.key, "probe_refuse", {"name": "x", "vals": {"postgres_password": "x"}}
+        )
+        self.assertEqual(
+            result["content"][0]["text"],
+            "Los secretos se cambian en el panel (arguments.vals.postgres_password).",
+        )
+
     def test_a_call_that_may_change_something_is_audited_with_the_agent(self):
         """A call that may write is audited with the user and the agent; a
         read-only one is not."""

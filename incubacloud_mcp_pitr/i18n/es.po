@@ -1,0 +1,71 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* incubacloud_mcp_pitr
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 19.0\n"
+"Report-Msgid-Bugs-To: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+
+#. module: incubacloud_mcp_pitr
+#. odoo-python
+#: code:addons/incubacloud_mcp_pitr/models/mcp_tools_pitr.py:0
+msgid "%(when)s is outside the window this instance can be restored to."
+msgstr ""
+"%(when)s queda fuera de la ventana a la que se puede restaurar esta "
+"instancia."
+
+#. module: incubacloud_mcp_pitr
+#: model:ir.model.fields,field_description:incubacloud_mcp_pitr.field_incubacloud_mcp_catalog__display_name
+#: model:ir.model.fields,field_description:incubacloud_mcp_pitr.field_incubacloud_mcp_tools__display_name
+msgid "Display Name"
+msgstr "Nombre para mostrar"
+
+#. module: incubacloud_mcp_pitr
+#. odoo-python
+#: code:addons/incubacloud_mcp_pitr/models/mcp_tools_pitr.py:0
+msgid "Give the objective."
+msgstr "Indique el objetivo."
+
+#. module: incubacloud_mcp_pitr
+#: model:ir.model,name:incubacloud_mcp_pitr.model_incubacloud_mcp_tools
+msgid "Handlers of the MCP tools"
+msgstr "Manejadores de las herramientas MCP"
+
+#. module: incubacloud_mcp_pitr
+#: model:ir.model.fields,field_description:incubacloud_mcp_pitr.field_incubacloud_mcp_catalog__id
+#: model:ir.model.fields,field_description:incubacloud_mcp_pitr.field_incubacloud_mcp_tools__id
+msgid "ID"
+msgstr "ID"
+
+#. module: incubacloud_mcp_pitr
+#. odoo-python
+#: code:addons/incubacloud_mcp_pitr/models/mcp_tools_pitr.py:0
+msgid ""
+"Restore the production instance %(name)s to %(target)s (UTC). Whatever "
+"happened after that moment is undone."
+msgstr ""
+"Restaurar la instancia de producción %(name)s a %(target)s (UTC). Se deshace"
+" todo lo que pasó después de ese momento."
+
+#. module: incubacloud_mcp_pitr
+#. odoo-python
+#: code:addons/incubacloud_mcp_pitr/models/mcp_tools_pitr.py:0
+msgid ""
+"This instance's stack is configured outside the panel: restore it with its "
+"runbook."
+msgstr ""
+"La pila de esta instancia se configura fuera del panel: restáurela con su "
+"procedimiento."
+
+#. module: incubacloud_mcp_pitr
+#: model:ir.model,name:incubacloud_mcp_pitr.model_incubacloud_mcp_catalog
+msgid "Tools agents may call, and the routes they may not"
+msgstr "Herramientas que pueden llamar los agentes, y rutas que no"
