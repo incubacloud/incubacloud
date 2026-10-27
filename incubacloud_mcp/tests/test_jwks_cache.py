@@ -171,6 +171,22 @@ class TestJwksCache(BaseCase):
                 _jwks_cache.get_keyset(_URI, kid="kid-B")
         self.assertEqual(get.call_count, 1)
 
+    def test_known_keys_answer_a_day_at_most_after_the_last_good_download(self):
+        """Down for a day, the issuer's known keys answer no more (503)."""
+        with self._get(return_value=self._response(["kid-A"])):
+            _jwks_cache.get_keyset(_URI, kid="kid-A")
+        unreachable = (requests.RequestException, ValueError)
+        with self._get(side_effect=requests.ConnectionError("down")) as get:
+            self._age(_jwks_cache._MAX_STALE_SECONDS - 60)
+            with self.assertLogs(_CACHE_LOGGER, level="WARNING"):
+                self.assertIsNotNone(_jwks_cache.get_keyset(_URI, kid="kid-A"))
+            self._age(120)
+            # The download that fails, then the minimum wait after it.
+            for _i in range(2):
+                with self.assertRaises(unreachable):
+                    _jwks_cache.get_keyset(_URI, kid="kid-A")
+        self.assertEqual(get.call_count, 2)
+
     def test_the_kid_is_read_from_the_header_only(self):
         """The kid comes from the first segment; garbage gives None."""
         # {"alg":"RS256","kid":"kid-A"}
