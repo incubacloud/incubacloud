@@ -36,7 +36,9 @@ export function shellQuote(text) {
 }
 
 /**
- * Claude Code: `claude mcp add`, with the key's header when there is no OAuth.
+ * Claude Code: `claude mcp add` in the user's scope, so the server is there
+ * in every folder, not only in the one it was added from; with the key's
+ * header when there is no OAuth.
  *
  * @param {string} url the panel's MCP URL
  * @param {{apiKey?: boolean}} [options] whether the command carries an API key
@@ -44,7 +46,8 @@ export function shellQuote(text) {
  */
 export function claudeCodeCommand(url, { apiKey = false } = {}) {
     const header = apiKey ? ` --header "Authorization: ${BEARER}"` : "";
-    return `claude mcp add --transport http ${SERVER_NAME} ${shellQuote(url)}${header}`;
+    const add = `claude mcp add --transport http --scope user ${SERVER_NAME}`;
+    return `${add} ${shellQuote(url)}${header}`;
 }
 
 /**
