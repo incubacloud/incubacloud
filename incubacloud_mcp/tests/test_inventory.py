@@ -7,6 +7,7 @@ tenant panel's) without a policy fails here — in saas's CI too.
 import json
 from unittest.mock import patch
 
+from odoo import Command
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
 
@@ -48,19 +49,53 @@ class TestRouteInventory(TransactionCase):
     """
 
     def _watched(self):
-        """Core, PITR, the MCP and every installed module that depends on it."""
-        dependents = (
+        """Core, PITR, the MCP and every installed module built on it,
+        directly or through another one (the bridge's, the tenant's)."""
+        mcp = (
             self.env["ir.module.module"]
             .sudo()
-            .search(
-                [
-                    ("state", "=", "installed"),
-                    ("dependencies_id.name", "=", "incubacloud_mcp"),
-                ]
-            )
-            .mapped("name")
+            .search([("name", "=", "incubacloud_mcp")])
         )
-        return {"incubacloud", "incubacloud_pitr", "incubacloud_mcp", *dependents}
+        dependents = mcp.downstream_dependencies().filtered(
+            lambda module: module.state == "installed"
+        )
+        return {
+            "incubacloud",
+            "incubacloud_pitr",
+            "incubacloud_mcp",
+            *dependents.mapped("name"),
+        }
+
+    def test_a_module_on_top_of_a_module_on_top_is_watched(self):
+        """A module that reaches the MCP through another one — on top of the
+        PITR bridge, or of the tenant panel — is watched too."""
+        Module = self.env["ir.module.module"].sudo()
+        Module.create(
+            {
+                "name": "mcp_probe_direct",
+                "state": "installed",
+                "dependencies_id": [Command.create({"name": "incubacloud_mcp"})],
+            }
+        )
+        Module.create(
+            {
+                "name": "mcp_probe_transitive",
+                "state": "installed",
+                "dependencies_id": [Command.create({"name": "mcp_probe_direct"})],
+            }
+        )
+        Module.create(
+            {
+                "name": "mcp_probe_uninstalled",
+                "state": "uninstalled",
+                "dependencies_id": [Command.create({"name": "mcp_probe_direct"})],
+            }
+        )
+        self.env.flush_all()
+        watched = self._watched()
+        self.assertIn("mcp_probe_direct", watched)
+        self.assertIn("mcp_probe_transitive", watched)
+        self.assertNotIn("mcp_probe_uninstalled", watched)
 
     def test_every_cloud_route_is_classified(self):
         """A /cloud route of a watched module is a tool's or excluded."""
