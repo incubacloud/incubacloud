@@ -12873,6 +12873,13 @@ msgstr "La clave SSH del host aún no es de confianza."
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/controllers/connect.py:0
+msgid "The Telegram bot token can be %(max)s characters at most."
+msgstr ""
+"El token del bot de Telegram puede tener como máximo %(max)s caracteres."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_instance.py:0
 msgid ""
 "The archived copy of %(name)s is gone from %(path)s. Nothing can be revived "
@@ -13271,6 +13278,12 @@ msgstr ""
 "ejecuta una vez confirmada la transacción del propio job (véase "
 "AbstractExecutor._unlink_after_job_commit). Una repetición del desmontaje "
 "que encuentre esto marcado no tiene nada más que hacer en el host."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/controllers/connect.py:0
+msgid "The webhook secret can be %(max)s characters at most."
+msgstr "El secreto del webhook puede tener como máximo %(max)s caracteres."
 
 #. module: incubacloud
 #. odoo-python

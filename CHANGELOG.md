@@ -20,6 +20,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   presents without logging in or trusting it. Agents use both (see
   `incubacloud_mcp`): the person approving sees the old and the new
   fingerprint, and what is stored is what they approved.
+- **A webhook secret or a Telegram bot token is 1024 characters at most.**
+  `/cloud/save_user_preferences` refuses a longer one (`{ok: false}`,
+  saying the limit) and stores nothing. Every stored secret is masked in
+  what agents read (`incubacloud_mcp`), at a cost that grows with its
+  length: a real secret fits well within this, and a huge one would weigh
+  on every call.
 
 ---
 

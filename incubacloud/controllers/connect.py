@@ -16,6 +16,8 @@ from ._rate_limit import Rule, rate_gate_json
 from .async_utils import run_async
 
 _CONTAINER_ID_RE = re.compile(r'^[a-f0-9]{12,64}$')
+# The longest webhook secret or Telegram token a user may store.
+_MAX_USER_SECRET_CHARS = 1024
 
 _logger = logging.getLogger(__name__)
 
@@ -469,6 +471,20 @@ class InstanceConnectController(http.Controller):
                 .browse(ids).exists()._filtered_access('read')
             )
             vals['cloud_muted_project_ids'] = [(6, 0, projects.ids)]
+        # Every stored secret is masked in what agents read, and its cost
+        # grows with its length: a secret worth the name fits well within
+        # this, and a huge one would weigh on every call.
+        too_long = _MAX_USER_SECRET_CHARS
+        if cloud_telegram_bot_token and len(cloud_telegram_bot_token) > too_long:
+            return {'ok': False, 'error': _(
+                'The Telegram bot token can be %(max)s characters at most.',
+                max=too_long,
+            )}
+        if cloud_webhook_secret and len(cloud_webhook_secret) > too_long:
+            return {'ok': False, 'error': _(
+                'The webhook secret can be %(max)s characters at most.',
+                max=too_long,
+            )}
         if cloud_telegram_bot_token:
             vals['cloud_telegram_bot_token'] = cloud_telegram_bot_token
         if cloud_telegram_chat_id is not None:
