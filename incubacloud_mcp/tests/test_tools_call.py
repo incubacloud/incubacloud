@@ -4,7 +4,7 @@ import json
 from unittest.mock import patch
 
 from odoo import http
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, UserError
 from odoo.http import request
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
@@ -313,6 +313,20 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
                 self.assertTrue(result["isError"])
                 self.assertIn("approval", result["content"][0]["text"])
                 self.assertFalse(self._tag(tag))
+
+    def test_a_secret_in_an_error_before_the_call_is_masked(self):
+        """What stops a call before it runs is masked like its answer."""
+        self._probe_host()
+
+        def prepare(_tools, args):
+            """Refuse, quoting a secret of the database."""
+            raise UserError(f"cannot prepare with {HOST_PASSWORD}")
+
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        with patch.object(Tools, "_prepare_probe_echo", prepare, create=True):
+            result = self._call_tool(self.key, "probe_echo", {"text": "x"})
+        self.assertTrue(result["isError"])
+        self.assertEqual(result["content"][0]["text"], f"cannot prepare with {MASK}")
 
     def test_a_secret_argument_is_refused_before_anything_runs(self):
         """An argument named like a secret stops the call before the route."""

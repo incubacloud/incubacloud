@@ -422,13 +422,19 @@ class McpServer(models.AbstractModel):
         except McpError:
             raise
         except (SchemaError, AccessError, UserError, ValidationError) as exc:
-            return self._error_result(ctx, str(exc))
+            return self._error_result(ctx, self._scrubbed(str(exc)))
         except Exception as exc:  # noqa: BLE001 - shown through safe_error_response
             message = self.env._("The panel could not prepare this action.")
-            return self._error_result(ctx, safe_error_response(exc, message)["error"])
+            text = safe_error_response(exc, message)["error"]
+            return self._error_result(ctx, self._scrubbed(text))
         if stop is not None:
-            return stop
+            return self.env["incubacloud.mcp.secrets"]._scrubber().value(stop)
         return self._run(spec, args, ctx)
+
+    @api.model
+    def _scrubbed(self, text):
+        """Return *text* with the database's secrets masked."""
+        return self.env["incubacloud.mcp.secrets"]._scrubber().text(text)
 
     @api.model
     def _run(self, spec, args, ctx):
