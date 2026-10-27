@@ -1,6 +1,7 @@
 """What an agent reads: no secret, no live link, no answer past 64 KB."""
 
 import base64
+import time
 from urllib.parse import quote
 
 from odoo.tests.common import BaseCase
@@ -41,6 +42,20 @@ class TestScrubber(BaseCase):
             f"git clone https://{MASK}@github.com/acme/repo",
         )
 
+    def test_a_token_alone_in_the_userinfo_is_masked(self):
+        scrub = Scrubber([])
+        for url in (
+            "https://ghp_tok12345@github.com/acme/repo",
+            "https://:ghp_tok12345@github.com/acme/repo",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(
+                    scrub.text(f"git clone {url}"),
+                    f"git clone https://{MASK}@github.com/acme/repo",
+                )
+        plain = "https://example.com/?email=a@b.example"
+        self.assertEqual(scrub.text(plain), plain)
+
     def test_nested_values_are_scrubbed(self):
         self.assertEqual(
             Scrubber([SECRET]).value({"a": [SECRET, 3], "b": None}),
@@ -61,6 +76,35 @@ class TestMailLinks(BaseCase):
         for leaked in ("abc", "def", "ghi", "jkl"):
             self.assertNotIn(leaked, masked)
         self.assertIn("https://acme.example/shop", masked)
+
+    def test_links_in_html_mail_are_replaced_too(self):
+        html = (
+            '<a href="https://acme.example/my/orders/7?db=x&amp;access_token=tok111">'
+            '<a href="https://acme.example/mail/view?model=x&amp;token=tok222">'
+            '<a href="https://acme.example/ic/login?db=x&t=tok333">'
+            '<a href="https://acme.example/shop">'
+        )
+        masked = mask_token_urls(html)
+        for leaked in ("tok111", "tok222", "tok333"):
+            self.assertNotIn(leaked, masked)
+        self.assertIn("https://acme.example/shop", masked)
+
+
+class TestRedactCost(BaseCase):
+    def _seconds(self, function, text):
+        """Return how long *function* takes on *text*."""
+        start = time.monotonic()
+        function(text)
+        return time.monotonic() - start
+
+    def test_hostile_text_is_scanned_in_linear_time(self):
+        cases = (
+            (mask_token_urls, "http://x" * 25_000),
+            (Scrubber([]).text, "a." * 100_000),
+        )
+        for function, text in cases:
+            with self.subTest(text=text[:16]):
+                self.assertLess(self._seconds(function, text), 1.0)
 
 
 class TestSecretKeys(BaseCase):
