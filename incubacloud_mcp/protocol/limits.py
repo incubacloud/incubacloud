@@ -58,7 +58,8 @@ def page_items(items, offset=0, limit=None, max_bytes=MAX_BYTES):
 
     A first entry larger than the page is cut so the page still fits —
     a string to its longest prefix, anything else to the start of its
-    JSON text — and the page says ``truncated``.
+    JSON text — and the page says ``truncated``. A page with no room for
+    any of it is empty, and its ``next_offset`` is that entry.
 
     :param list items: lines or JSON-serialisable entries
     :param int offset: first index to return
@@ -76,8 +77,12 @@ def page_items(items, offset=0, limit=None, max_bytes=MAX_BYTES):
                 break
             text = item if isinstance(item, str) else _dumps(item)
             item = _fit(text, max_bytes - size - SEPARATOR_BYTES)
-            cost = _size(item) + SEPARATOR_BYTES
             cut = True
+            # No room even for a piece of it: the page stays empty and the
+            # next one starts at this entry, neither invented nor skipped.
+            if not item:
+                break
+            cost = _size(item) + SEPARATOR_BYTES
         page.append(item)
         size += cost
     following = offset + len(page)
