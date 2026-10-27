@@ -136,7 +136,7 @@ class TestGuardedTools(
         args = {"section": "general", "values": {"audit_log_retention_days": 1}}
         first = self._call_tool(self.key, "update_settings", args, FORM_CAPABILITIES)
         self.assertIn(
-            "audit_log_retention_days: 90 → 1",
+            '"audit_log_retention_days": 90 → 1',
             first["inputRequests"]["confirm"]["params"]["message"],
         )
         self.assertFalse(
