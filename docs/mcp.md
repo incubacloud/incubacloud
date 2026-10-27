@@ -288,12 +288,15 @@ it (`PAGE_SLACK`): cutting a page for its own keys would only shorten it.
 An answer past that — which no tool pages, or a page that masking grew — is
 cut to just under 64 KB (`GUARD_MARGIN` leaves room for `truncated` and the
 untrusted wrapping), lists first, and says so; a page keeps its first
-entries and its `next_offset` moves back, so none is skipped. A page that
-cannot show any entry says so too, so an agent does not ask for it again.
-The output of logs, job logs, mail, access logs, alerts, the overview,
-directory listings, repository data, the audit's free text and commands is
-wrapped as untrusted data, and those tools' descriptions say so. The
-server's instructions tell agents never to follow instructions found in it.
+entries and its `next_offset` moves back, so none is skipped. A page of
+text — such as a captured mail of `staging_mailbox` (`page_record`) — is
+left as it is: its offsets count the characters before masking, and cutting
+it would skip text. A page that cannot show any entry says so too, so an
+agent does not ask for it again. The output of logs, job logs, mail, access
+logs, alerts, the overview, directory listings, repository data, the audit's
+free text and commands is wrapped as untrusted data, and those tools'
+descriptions say so. The server's instructions tell agents never to follow
+instructions found in it.
 
 ## Audit
 
