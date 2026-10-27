@@ -3,7 +3,7 @@
 from odoo import api, models
 from odoo.exceptions import UserError
 
-from ..protocol.limits import cap_strings, page_items
+from ..protocol.limits import page_items, page_record
 from ..protocol.tool_spec import (
     LIMIT,
     OFFSET,
@@ -53,7 +53,8 @@ TOOLS = (
     ToolSpec(
         "staging_mailbox",
         "The mail a staging caught instead of sending: the list, or one message "
-        "(message_id). Links with tokens are replaced.",
+        "(message_id), whose text and HTML come in pages. Links with tokens are "
+        "replaced.",
         _DEVELOPER,
         obj(
             {
@@ -146,21 +147,38 @@ class McpToolsLogs(models.AbstractModel):
 
     @api.model
     def _tool_staging_mailbox(self, args):
-        """A staging's captured mail: the list, or one message cut at 64 KB."""
+        """A staging's captured mail: the list, or one message, in 64 KB pages.
+
+        One message's text and HTML are paged as one (``page_record``); the
+        list is paged by messages, the host reading from ``offset``.
+        """
+        offset = args.get("offset") or 0
         if args.get("message_id"):
             result = self._route(
                 "/cloud/instance_mail",
                 instance_id=args["instance_id"],
                 message_id=args["message_id"],
             )
-        else:
-            result = self._route(
-                "/cloud/instance_mailbox",
-                instance_id=args["instance_id"],
-                limit=args.get("limit"),
-                start=args.get("offset") or 0,
-            )
-        capped, truncated = cap_strings(result)
-        if truncated:
-            capped["truncated"] = True
-        return capped
+            if result.get("ok") is False:
+                return result
+            return page_record(result, ("text", "html"), offset)
+        result = self._route(
+            "/cloud/instance_mailbox",
+            instance_id=args["instance_id"],
+            limit=args.get("limit"),
+            start=offset,
+        )
+        if result.get("ok") is False:
+            return result
+        items = result.get("items") or []
+        page = page_items(items, 0, None)
+        following = offset + len(page["items"])
+        total = result.get("total") or 0
+        more = following < max(total, offset + len(items))
+        return {
+            **{key: value for key, value in result.items() if key != "items"},
+            "items": page["items"],
+            "offset": offset,
+            "truncated": page["truncated"] or more,
+            "next_offset": following if more else None,
+        }

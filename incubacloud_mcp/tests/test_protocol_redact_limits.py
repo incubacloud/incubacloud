@@ -9,7 +9,12 @@ from urllib.parse import quote
 
 from odoo.tests.common import BaseCase
 
-from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES, cap_text, page_items
+from odoo.addons.incubacloud_mcp.protocol.limits import (
+    MAX_BYTES,
+    cap_text,
+    page_items,
+    page_record,
+)
 from odoo.addons.incubacloud_mcp.protocol.redact import (
     MASK,
     Scrubber,
@@ -287,6 +292,21 @@ class TestLimits(BaseCase):
         self.assertNotIn("\ufffd", first["text"])
         rest = cap_text(text, first["next_offset"])
         self.assertEqual(first["text"] + rest["text"], text)
+
+    def test_a_record_with_huge_fields_still_fits_its_page(self):
+        """Huge metadata is cut too: the whole record fits, and says so."""
+        record = {
+            "subject": "s" * 100_000,
+            "attachments": [{"filename": "f" * 900}] * 200,
+            "text": "t" * 10,
+            "html": "",
+        }
+        page = page_record(record, ("text", "html"))
+        size = len(json.dumps(page, ensure_ascii=False).encode())
+        self.assertLessEqual(size, MAX_BYTES)
+        self.assertTrue(page["truncated"])
+        self.assertEqual((page["text"], page["next_offset"]), ("t" * 10, None))
+        self.assertLessEqual(len(page["subject"]), 1024)
 
     def test_text_is_cut_and_continues_at_next_offset(self):
         """Text cut at the cap continues at next_offset, nothing lost."""
