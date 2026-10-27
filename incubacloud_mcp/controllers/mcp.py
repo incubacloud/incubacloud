@@ -37,6 +37,32 @@ from ._reply import respond
 _logger = logging.getLogger(__name__)
 
 MAX_BODY_BYTES = 256 * 1024
+#: Lists and objects nested deeper than this make no message of MCP's.
+MAX_DEPTH = 32
+
+
+def _too_deep(value, limit=MAX_DEPTH):
+    """Whether *value* nests lists or objects more than *limit* levels.
+
+    Walked with a stack of its own: a recursive walk, or any code that
+    recurses over the message later, would hit the very limit it guards.
+
+    :param value: a decoded JSON document
+    :rtype: bool
+    """
+    stack = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, dict):
+            children = item.values()
+        elif isinstance(item, list):
+            children = item
+        else:
+            continue
+        if depth > limit:
+            return True
+        stack.extend((child, depth + 1) for child in children)
+    return False
 
 
 class McpController(http.Controller):
@@ -106,6 +132,13 @@ class McpController(http.Controller):
         # as one that is not JSON.
         except (ValueError, RecursionError):
             error = McpError(400, PARSE_ERROR, "Parse error")
+            return respond(Reply(400, error.to_body(None)))
+        if _too_deep(message):
+            error = McpError(
+                400,
+                INVALID_REQUEST,
+                f"Invalid Request: nested more than {MAX_DEPTH} levels",
+            )
             return respond(Reply(400, error.to_body(None)))
         server = request.env["incubacloud.mcp.server"]
         return respond(server._handle(message, httprequest.headers, principal))
