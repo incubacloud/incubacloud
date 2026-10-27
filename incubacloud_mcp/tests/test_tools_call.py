@@ -64,6 +64,14 @@ class _CallProbes(http.Controller):
             "log": f"connecting with {host.password}",
         }
 
+    @http.route("/cloud/mcp_test/rotate", type="jsonrpc", auth="user")
+    def mcp_test_rotate(self, host_id, new_value=""):
+        """Change a host's password; answer the old and the new one."""
+        host = request.env["cloud.host"].sudo().browse(host_id)
+        old = host.password
+        host.password = new_value
+        return {"ok": True, "log": f"rotated {old} to {new_value}"}
+
 
 PROBES = [
     ToolSpec(
@@ -108,6 +116,13 @@ PROBES = [
         obj({"host_id": record_id("Host.")}),
         route="/cloud/mcp_test/leak",
         read_only=True,
+    ),
+    ToolSpec(
+        "probe_rotate",
+        "Rotate.",
+        "group_cloud_user",
+        obj({"host_id": record_id("Host."), "new_value": string("New.")}),
+        route="/cloud/mcp_test/rotate",
     ),
     ToolSpec(
         "probe_manager",
@@ -214,9 +229,9 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertIn("(ref: ", text)
         self.assertNotIn("/srv/very/private/path", text)
 
-    def test_secrets_leave_neither_by_key_nor_inside_text(self):
-        """A secret is dropped by its key and masked inside any text."""
-        host = self.env["cloud.host"].create(
+    def _probe_host(self):
+        """A host whose password is :data:`HOST_PASSWORD`."""
+        return self.env["cloud.host"].create(
             {
                 "name": "probe-host",
                 "ip_address": "10.0.0.83",
@@ -226,12 +241,28 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
                 "password": HOST_PASSWORD,
             }
         )
+
+    def test_secrets_leave_neither_by_key_nor_inside_text(self):
+        """A secret is dropped by its key and masked inside any text."""
+        host = self._probe_host()
         payload = self._payload(
             self._call_tool(self.key, "probe_leak", {"host_id": host.id})
         )
         self.assertNotIn("password", payload)
         self.assertTrue(payload["has_password"])
         self.assertEqual(payload["log"], f"connecting with {MASK}")
+
+    def test_a_secret_the_call_changes_is_masked_old_and_new(self):
+        """A secret the call writes, and the one it replaces, are both masked."""
+        host = self._probe_host()
+        payload = self._payload(
+            self._call_tool(
+                self.key,
+                "probe_rotate",
+                {"host_id": host.id, "new_value": "probe-rotated-pass-9876"},
+            )
+        )
+        self.assertEqual(payload["log"], f"rotated {MASK} to {MASK}")
 
     def test_a_secret_argument_is_refused_before_anything_runs(self):
         """An argument named like a secret stops the call before the route."""

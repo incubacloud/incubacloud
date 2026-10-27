@@ -439,7 +439,7 @@ class McpServer(models.AbstractModel):
         is raised again so Odoo retries the whole request.
         """
         Secrets = self.env["incubacloud.mcp.secrets"]
-        scrubber = Secrets._scrubber()
+        known_before = Secrets._known_values()
         failed = self.env._("The panel could not complete this action.")
         outcome = ""
         result = None
@@ -454,6 +454,11 @@ class McpServer(models.AbstractModel):
             outcome = safe_error_response(exc, failed)["error"]
         except Exception as exc:  # noqa: BLE001 - shown through safe_error_response
             outcome = safe_error_response(exc, failed)["error"]
+        # What the call created or changed is a secret too, and so is
+        # what it replaced: the scrubber knows the values of before and
+        # after the call.
+        self.env.flush_all()
+        scrubber = Secrets._scrubber(known_before)
         if isinstance(result, dict) and result.get("ok") is False:
             outcome = str(
                 result.get("error") or self.env._("The panel refused this action.")

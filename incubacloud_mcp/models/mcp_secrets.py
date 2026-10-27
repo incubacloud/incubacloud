@@ -66,9 +66,13 @@ class McpSecrets(models.AbstractModel):
         return values
 
     @api.model
-    def _scrubber(self):
-        """Return a :class:`Scrubber` of this database's secrets."""
-        return Scrubber(self._known_values())
+    def _scrubber(self, extra=()):
+        """Return a :class:`Scrubber` of this database's secrets.
+
+        :param extra: more values to mask, such as the secrets known
+            before a call that may have changed them
+        """
+        return Scrubber(self._known_values() | set(extra))
 
     @api.model
     def _check_arguments(self, args):
