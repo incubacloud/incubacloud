@@ -1398,9 +1398,10 @@ one filestore. It belongs to a project and runs on a host.</p>
 <li><strong>Odoo version</strong> — any from 7.0 to 20.0, taken from the project when the instance
   is created and fixed once it is deployed. Odoo 20.0 runs on PostgreSQL 16 to 18;
   the others, on 14 to 18.</li>
-<li><strong>Sleeping instance</strong> (SaaS Free plan) — automatically suspended after ~30 minutes
-  without traffic to save resources. Wakes up on the next request (the first request
-  after a nap takes a few seconds).</li>
+<li><strong>Sleeping</strong> (SaaS Free plan) — on Free it is your control plane, not your
+  instances, that is suspended after ~30 minutes without traffic to save
+  resources. It wakes up on the next request (the first request after a nap takes
+  a few seconds). The instances you deploy keep running.</li>
 </ul>
 <div class="admonition info">
 <p class="admonition-title">IncubaCloud SaaS</p>

@@ -1045,6 +1045,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#an-unused-free-control-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      An unused Free control plane
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cancellation" class="md-nav__link">
     <span class="md-ellipsis">
       Cancellation
@@ -1407,6 +1416,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#an-unused-free-control-plane" class="md-nav__link">
+    <span class="md-ellipsis">
+      An unused Free control plane
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#cancellation" class="md-nav__link">
     <span class="md-ellipsis">
       Cancellation
@@ -1468,7 +1486,7 @@ core module have no plans or invoices.</p>
 <th>Annual (per month)</th>
 <th>Hosts</th>
 <th>Production instances</th>
-<th>Backup retention</th>
+<th>Control plane backups</th>
 </tr>
 </thead>
 <tbody>
@@ -1477,7 +1495,7 @@ core module have no plans or invoices.</p>
 <td>0 €</td>
 <td>0 €</td>
 <td>1</td>
-<td>1 (sleeps when idle)</td>
+<td>1</td>
 <td>—</td>
 </tr>
 <tr>
@@ -1506,6 +1524,15 @@ core module have no plans or invoices.</p>
 </tr>
 </tbody>
 </table>
+<ul>
+<li><strong>Hosts</strong> are the servers you connect yourself. A VPS you
+  <a href="../hosts/hire/">order through the platform</a> is billed by the hour and does
+  not use this allowance.</li>
+<li><strong>Control plane backups</strong> are the automatic backups we take of your control
+  plane. Your instances' backups keep the retention of their backup backend —
+  see <a href="../backups/#how-long-backups-are-kept">Backups</a>.</li>
+<li>On Free, the control plane sleeps when idle and wakes on the next request.</li>
+</ul>
 <div class="admonition tip">
 <p class="admonition-title">Staging instances are not counted</p>
 <p>Only <strong>production</strong> instances use up the allowance. Stagings — the test
@@ -1513,8 +1540,10 @@ copies you clone from production, one per pull request or as many as you
 want to keep — run on servers you already pay for, so we do not charge a
 slot for them. Neither does the limit on extra instances below.</p>
 </div>
-<p>Annual saves 22%. You can switch monthly ⇄ annual at any time;
-the new rate kicks in on the next renewal.</p>
+<p>Annual billing is paid once a year and costs 20–22% less than twelve monthly
+payments. You choose monthly or annual billing at checkout. Changing plans keeps
+that billing period: an existing subscription cannot be moved between monthly
+and annual billing.</p>
 <h2 id="extras">Extras<a class="headerlink" href="#extras" title="Permanent link">&para;</a></h2>
 <p>If you need more capacity without jumping a tier, add extra hosts or instances
 from <code>My account → IncubaCloud → Extras</code>. Per unit and month:</p>
@@ -1530,29 +1559,40 @@ from <code>My account → IncubaCloud → Extras</code>. Per unit and month:</p>
 <tr>
 <td>Starter</td>
 <td>3 €</td>
-<td>2 €</td>
+<td>1.50 €</td>
 </tr>
 <tr>
 <td>Professional</td>
-<td>5 €</td>
-<td>3 €</td>
+<td>2.50 €</td>
+<td>1 €</td>
 </tr>
 <tr>
 <td>Business</td>
-<td>7 €</td>
-<td>4 €</td>
+<td>2 €</td>
+<td>0.75 €</td>
 </tr>
 </tbody>
 </table>
+<p>Free has no extras.</p>
+<ul>
+<li><strong>Adding one</strong> charges your saved card right away for the whole current
+  billing period — a full year on annual billing — with no proration. From then
+  on it renews with your plan.</li>
+<li><strong>Removing one</strong> takes effect at your next renewal: you keep it until then, and
+  it is not billed again. One you are still using cannot be removed; free the
+  host or instance first.</li>
+<li>The price follows your plan: after a plan change, your extras renew at the new
+  plan's price.</li>
+</ul>
 <h2 id="vps-billing">VPS billing<a class="headerlink" href="#vps-billing" title="Permanent link">&para;</a></h2>
 <p>If you <a href="../hosts/hire/">order a VPS</a> through the platform, it is billed <strong>by the
-hour with a monthly cap</strong> — you never pay more than the VPS's monthly price, and
-short-lived servers only cost the hours they ran. Your plan gives a discount on
-the catalog price: 5% (Starter), 10% (Professional), 15% (Business). The line
-appears on your subscription invoice. Ordering a VPS beyond your plan's host
-quota automatically adds an extra-host line.</p>
-<p>If you <a href="../hosts/connect/">bring your own VPS</a>, nothing extra is billed —
-only your IncubaCloud plan.</p>
+hour with a monthly cap</strong>: in a calendar month you never pay more than the
+monthly price the catalog showed you when you ordered it, and short-lived
+servers only cost the hours they ran. The usage appears as a line on your
+subscription invoice. An ordered VPS does not use your plan's host allowance,
+so it never adds an extra-host line.</p>
+<p>If you <a href="../hosts/connect/">bring your own VPS</a>, we bill nothing for it: it
+takes one host of your plan's allowance, or an extra host.</p>
 <h2 id="payment">Payment<a class="headerlink" href="#payment" title="Permanent link">&para;</a></h2>
 <p>We use <a href="https://stripe.com">Stripe</a>. Payment is by card; the card is saved
 (tokenized by Stripe) to charge the recurring subscription.</p>
@@ -1564,39 +1604,67 @@ on the invoice (and to apply reverse-charge if applicable).</p>
 <h2 id="changing-plans">Changing plans<a class="headerlink" href="#changing-plans" title="Permanent link">&para;</a></h2>
 <p><code>My account → IncubaCloud → Change plan</code>, or from your control plane.</p>
 <ul>
-<li><strong>Upgrading</strong> — takes effect immediately: limits are raised on the spot and the
-  subscription lines switch to the new plan. One upgrade per billing cycle.
-  Upgrading from Free goes through checkout first.</li>
+<li><strong>Upgrading</strong> — takes effect immediately: limits are raised on the spot, and
+  your control plane may be briefly unavailable while the new plan is applied.
+  There is no proration: the current billing period stays at the price you
+  paid, and the new plan's price is billed from your next renewal. You can
+  upgrade once per billing cycle; after an upgrade, the next one is possible
+  from your next renewal.</li>
+<li><strong>From Free</strong> — moving from Free to a paid plan goes through checkout: the new
+  plan applies once that payment goes through.</li>
 <li><strong>Downgrading</strong> — scheduled for the start of your next billing cycle; you keep
-  the higher tier until then. You can cancel a pending downgrade at any time.</li>
+  the higher tier until then. You can cancel a pending downgrade at any time
+  before it applies.</li>
 </ul>
 <div class="admonition warning">
 <p class="admonition-title">Downgrading with too many resources</p>
 <p>A downgrade is refused while you use more hosts or instances than the target
-plan allows (unless the excess can be converted to paid extras), or while
-paid-only resources — an on-demand VPS or Managed Backup Storage — are still
-active. Release those first.</p>
+plan allows; towards a paid plan you can choose instead to keep the excess
+as paid extras. A move to Free is also refused while you still have an
+on-demand VPS, active Managed Backup Storage or extras: release, cancel or
+remove them first.</p>
 </div>
 <h2 id="if-a-payment-fails">If a payment fails<a class="headerlink" href="#if-a-payment-fails" title="Permanent link">&para;</a></h2>
-<p>We retry and notify you. If the subscription stays unpaid, the platform
-progressively steps in: external resources are released after ~7 days, your
-instances are suspended after ~14 days, and data is deleted after ~30 days.
-Paying at any point before deletion restores service immediately.</p>
-<h2 id="cancellation">Cancellation<a class="headerlink" href="#cancellation" title="Permanent link">&para;</a></h2>
-<p>If you don't want to continue, downgrade to Free (keeps one instance, no
-automatic backups) or request cancellation from the
-<a href="https://www.incubacloud.io/contactus">contact form</a>. If you also want your data
-deleted, say so in the request.</p>
-<h3 id="coming-back">Coming back<a class="headerlink" href="#coming-back" title="Permanent link">&para;</a></h3>
-<p>When a paid instance is removed we keep <strong>one copy of it for 30 days</strong>. If you
-come back within that window, signing in and picking a plan offers you two
-paths:</p>
+<p>We retry and notify you. If the subscription stays unpaid, the platform steps in
+progressively, counting from the day the payment was found overdue:</p>
 <ul>
-<li><strong>Recover my data</strong> — we redeploy your instance and restore that copy into
-  it. Your subdomain, data and settings come back as they were at the moment of
-  removal.</li>
-<li><strong>Start from scratch</strong> — a new empty instance on the same subdomain. The copy
-  is deleted, so this one asks you to type your subdomain to confirm.</li>
+<li><strong>After ~7 days</strong> — on-demand VPS and Managed Backup Storage are released. A
+  VPS is destroyed once a snapshot of its disk is taken; Managed Backup Storage
+  keeps its bucket, but your access to it is revoked.</li>
+<li><strong>After ~14 days</strong> — your control plane is suspended: stopped, with its data
+  kept.</li>
+<li><strong>After ~30 days</strong> — your control plane is deleted, together with those VPS
+  snapshots and storage buckets. As on a cancellation, we keep one copy of the
+  control plane for 30 days: see <a href="#coming-back">Coming back</a>.</li>
+</ul>
+<p>Paying before the deletion brings your control plane back and gives you access
+to your Managed Backup Storage again. A released VPS is not rebuilt for you:
+once you have paid, open it in your panel and use <strong>Restore server</strong> to bring
+its disk back from the snapshot. Servers you connected yourself are not touched
+at any step.</p>
+<h2 id="an-unused-free-control-plane">An unused Free control plane<a class="headerlink" href="#an-unused-free-control-plane" title="Permanent link">&para;</a></h2>
+<p>A Free control plane nobody uses for 14 days is suspended; we email you three
+days before. You can reactivate it with one click from
+<code>My account → IncubaCloud</code>. If it stays suspended for 30 days it is deleted,
+with a reminder a week before. Free makes no backups of the control plane, so
+nothing is kept.</p>
+<h2 id="cancellation">Cancellation<a class="headerlink" href="#cancellation" title="Permanent link">&para;</a></h2>
+<p>To stop paying, downgrade to Free — it applies at your next renewal — or ask us
+to cancel through the <a href="https://www.incubacloud.io/contactus">contact form</a>.
+Cancelling removes your control plane and closes your subscription. On paid
+plans we keep one copy of it for 30 days, as described below; if you want it
+destroyed sooner, say so in the request.</p>
+<h3 id="coming-back">Coming back<a class="headerlink" href="#coming-back" title="Permanent link">&para;</a></h3>
+<p>When the control plane of a paid plan is removed — because you cancelled, or
+after non-payment — we keep <strong>one copy of it for 30 days</strong>. If you come back
+within that window, signing in and picking a plan offers you two paths:</p>
+<ul>
+<li><strong>Recover my data</strong> — we redeploy your control plane and restore that copy
+  into it. Your subdomain, data and settings come back as they were at the
+  moment of removal. Recovering needs a paid plan: Free has no backup service to
+  restore the copy with.</li>
+<li><strong>Start from scratch</strong> — a new empty control plane on the same subdomain. The
+  copy is deleted, so this one asks you to type your subdomain to confirm.</li>
 </ul>
 <p>After the 30 days the copy is destroyed and cannot be recovered. Plans without
 automatic backups (Free) have no copy to keep, so coming back always means

@@ -1231,9 +1231,9 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#retention-by-plan" class="md-nav__link">
+  <a href="#how-long-backups-are-kept" class="md-nav__link">
     <span class="md-ellipsis">
-      Retention by plan
+      How long backups are kept
     </span>
   </a>
   
@@ -1320,40 +1320,26 @@ S3-compatible service. You hold the keys. We run the schedule and the encryption
 </ol>
 <p>The backup format is the standard Odoo dump (<code>dump.sql + filestore/</code>) wrapped
 in an encrypted archive.</p>
-<h2 id="retention-by-plan">Retention by plan<a class="headerlink" href="#retention-by-plan" title="Permanent link">&para;</a></h2>
+<h2 id="how-long-backups-are-kept">How long backups are kept<a class="headerlink" href="#how-long-backups-are-kept" title="Permanent link">&para;</a></h2>
+<p>Every backup backend has a <strong>retention period</strong> — 3 months unless you change it
+(<code>30D</code>, <code>3M</code>, <code>1Y</code>…) — and a <strong>retention owner</strong>, who deletes the backups older
+than that:</p>
+<ul>
+<li><strong>Duplicity cron</strong> (the default) — the instance's backup service deletes them.</li>
+<li><strong>Bucket lifecycle</strong> — a lifecycle rule you set up on the bucket, outside
+  IncubaCloud, deletes them.</li>
+<li><strong>Nobody</strong> — nothing is deleted, and the archive keeps growing.</li>
+</ul>
+<p>A manual backup of a production instance runs the same job as the nightly one,
+into the same bucket, and expires under the same rules.</p>
 <div class="admonition info">
-<p class="admonition-title">IncubaCloud SaaS</p>
-<p>Plan-based retention applies to the hosted service. Self-hosted deployments
-configure retention per backend.</p>
+<p class="admonition-title">IncubaCloud SaaS: the backup days in your plan</p>
+<p>The backup days in your <a href="../billing/#plans">plan</a> — 7 on Starter, 14
+on Professional, 30 on Business, none on Free — are for the backups we take
+of your <strong>control plane</strong>, the panel at <code>&lt;subdomain&gt;.incubacloud.io</code>. They do
+not change how long your instances' backups are kept: that is always the
+retention of their backend.</p>
 </div>
-<table>
-<thead>
-<tr>
-<th>Plan</th>
-<th>Automatic backup retention</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Free</td>
-<td>None (manual backups only)</td>
-</tr>
-<tr>
-<td>Starter</td>
-<td>7 days</td>
-</tr>
-<tr>
-<td>Professional</td>
-<td>14 days</td>
-</tr>
-<tr>
-<td>Business</td>
-<td>30 days</td>
-</tr>
-</tbody>
-</table>
-<p>Manual backups never expire. They count against your bucket storage,
-not against the retention window.</p>
 <h2 id="what-happens-to-backups-when-an-instance-ends">What happens to backups when an instance ends<a class="headerlink" href="#what-happens-to-backups-when-an-instance-ends" title="Permanent link">&para;</a></h2>
 <p>Backups belong to the instance that made them, and they never outlive it.</p>
 <table>
