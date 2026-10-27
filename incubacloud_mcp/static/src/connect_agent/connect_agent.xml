@@ -6,12 +6,8 @@
             <code t-if="props.inline" class="ic-mcp-url" t-esc="props.text"/>
             <pre t-else="" class="ic-mcp-code" t-esc="props.text"/>
             <button class="rl-btn rl-btn-ghost rl-btn-sm" type="button"
-                    t-att-aria-label="props.label" t-on-click="copy">
-                <span aria-live="polite">
-                    <t t-if="state.copied">Copied</t>
-                    <t t-else="">Copy</t>
-                </span>
-            </button>
+                    t-att-aria-label="props.label" t-on-click="copy">Copy</button>
+            <span class="ic-mcp-copied" role="status"><t t-if="state.copied">Copied</t></span>
         </div>
     </t>
 

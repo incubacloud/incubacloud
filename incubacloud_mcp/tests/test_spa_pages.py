@@ -116,14 +116,16 @@ _API_KEY_PAGE = """
         if (page.innerHTML.includes("cursor://")) {{
             fail("a one-click link that would carry an API key");
         }}
-        for (const button of page.querySelectorAll(".ic-mcp-copy button")) {{
+        for (const copy of page.querySelectorAll(".ic-mcp-copy")) {{
+            const button = copy.querySelector("button");
             if (!button.getAttribute("aria-label")) {{
                 fail("a Copy button without its own label");
             }}
-        }}
-        for (const copy of page.querySelectorAll(".ic-mcp-copy")) {{
-            if (!copy.querySelector("[aria-live=polite]")) {{
-                fail("a Copy without its live region");
+            if (button.querySelector("[aria-live], [role=status]")) {{
+                fail("a live region inside a labelled button, which hides it");
+            }}
+            if (!copy.querySelector(":scope > [role=status]")) {{
+                fail("a Copy without its status beside the button");
             }}
         }}
     }}
