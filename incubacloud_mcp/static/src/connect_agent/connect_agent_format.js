@@ -19,6 +19,23 @@ export const API_KEY_ENV = "INCUBACLOUD_API_KEY";
 const BEARER = `Bearer ${API_KEY_PLACEHOLDER}`;
 
 /**
+ * A URL the commands may carry: http(s), a plain host, an optional port and
+ * a plain path. Anything else could be read by the user's shell.
+ */
+const SAFE_URL = /^https?:\/\/[a-z0-9.-]+(:\d+)?(\/[A-Za-z0-9._~%/-]*)?$/;
+
+/**
+ * Quote *text* for a POSIX shell: between single quotes, each quote in it
+ * closing, escaped and reopening (`'\''`).
+ *
+ * @param {string} text what the shell must read as one word
+ * @returns {string} the quoted word
+ */
+export function shellQuote(text) {
+    return `'${String(text).replaceAll("'", "'\\''")}'`;
+}
+
+/**
  * Claude Code: `claude mcp add`, with the key's header when there is no OAuth.
  *
  * @param {string} url the panel's MCP URL
@@ -27,7 +44,7 @@ const BEARER = `Bearer ${API_KEY_PLACEHOLDER}`;
  */
 export function claudeCodeCommand(url, { apiKey = false } = {}) {
     const header = apiKey ? ` --header "Authorization: ${BEARER}"` : "";
-    return `claude mcp add --transport http ${SERVER_NAME} ${url}${header}`;
+    return `claude mcp add --transport http ${SERVER_NAME} ${shellQuote(url)}${header}`;
 }
 
 /**
@@ -42,7 +59,7 @@ export function vscodeCommand(url, { apiKey = false } = {}) {
     if (apiKey) {
         config.headers = { Authorization: BEARER };
     }
-    return `code --add-mcp '${JSON.stringify(config)}'`;
+    return `code --add-mcp ${shellQuote(JSON.stringify(config))}`;
 }
 
 /**
@@ -82,7 +99,7 @@ export function cursorConfig(url, { apiKey = false } = {}) {
  * @returns {string} the table to add to `~/.codex/config.toml`
  */
 export function codexConfig(url, { apiKey = false } = {}) {
-    const lines = [`[mcp_servers.${SERVER_NAME}]`, `url = "${url}"`];
+    const lines = [`[mcp_servers.${SERVER_NAME}]`, `url = ${JSON.stringify(url)}`];
     if (apiKey) {
         lines.push(`bearer_token_env_var = "${API_KEY_ENV}"`);
     }
@@ -95,28 +112,37 @@ export function codexConfig(url, { apiKey = false } = {}) {
  * Without an issuer, agents sign in with an API key: every command
  * carries it, and Cursor's one-click link, which would put it in a URL,
  * gives way to its `mcp.json` entry. With neither an issuer nor API keys,
- * no agent can sign in yet.
+ * no agent can sign in yet. Without a URL, or with one a shell could
+ * read, no command at all: `urlProblem` says which.
  *
  * @param {Object} [config] the answer of `/cloud/mcp/config`
  * @returns {Object} the URL, the notices, the links and each client's command
  */
 export function connectView(config = {}) {
     const url = config.resource || "";
+    let urlProblem = "";
+    if (!url) {
+        urlProblem = "missing";
+    } else if (!SAFE_URL.test(url)) {
+        urlProblem = "unsafe";
+    }
+    const usable = !urlProblem;
     const needsApiKey = !config.issuer;
     const options = { apiKey: needsApiKey };
     return {
         url,
+        urlProblem,
         needsApiKey,
         apiKeysRefused: !config.issuer && !config.api_keys,
         agentsUrl: config.agents_url || "",
         docsUrl: config.docs_url || "",
         preferencesUrl: config.preferences_url || "",
-        claudeCode: claudeCodeCommand(url, options),
-        vscode: vscodeCommand(url, options),
-        cursorLink: needsApiKey ? "" : cursorInstallLink(url),
-        cursorJson: cursorConfig(url, options),
-        codex: codexConfig(url, options),
-        codexLogin: needsApiKey ? "" : `codex mcp login ${SERVER_NAME}`,
+        claudeCode: usable ? claudeCodeCommand(url, options) : "",
+        vscode: usable ? vscodeCommand(url, options) : "",
+        cursorLink: usable && !needsApiKey ? cursorInstallLink(url) : "",
+        cursorJson: usable ? cursorConfig(url, options) : "",
+        codex: usable ? codexConfig(url, options) : "",
+        codexLogin: usable && !needsApiKey ? `codex mcp login ${SERVER_NAME}` : "",
     };
 }
 

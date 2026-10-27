@@ -8,6 +8,7 @@ import {
     cursorConfig,
     cursorInstallLink,
     settingsView,
+    shellQuote,
     vscodeCommand,
 } from "@incubacloud_mcp/connect_agent/connect_agent_format";
 
@@ -28,7 +29,7 @@ describe("Connect an agent — what it shows", () => {
             api_keys: false,
         });
         expect(view.url).toBe(URL);
-        expect(view.claudeCode).toBe(`claude mcp add --transport http incubacloud ${URL}`);
+        expect(view.claudeCode).toBe(`claude mcp add --transport http incubacloud '${URL}'`);
         expect(view.needsApiKey).toBe(false);
         expect(view.apiKeysRefused).toBe(false);
     });
@@ -75,6 +76,14 @@ describe("Connect an agent — what it shows", () => {
         expect(settingsView({ managed: false }).readonly).toBe(false);
     });
 
+    test("without an MCP address, it says so and shows no command", () => {
+        const view = connectView({ resource: "", issuer: "https://incubacloud.io" });
+        expect(view.urlProblem).toBe("missing");
+        for (const key of ["claudeCode", "vscode", "cursorLink", "cursorJson", "codex", "codexLogin"]) {
+            expect(view[key]).toBe("");
+        }
+    });
+
     test("Settings saves only the fields the user changed", () => {
         const loaded = { mcp_oauth_issuer: "", mcp_resource: "" };
         expect(changedSettings(loaded, { ...loaded })).toEqual({});
@@ -85,6 +94,39 @@ describe("Connect an agent — what it shows", () => {
 
     test("nothing is saved over settings that could not be read", () => {
         expect(changedSettings(null, { mcp_oauth_issuer: "x" })).toEqual({});
+    });
+});
+
+describe("Connect an agent — what a shell reads", () => {
+    test("a URL a shell would read gives no command, only a notice", () => {
+        for (const resource of ["https://x.example.com/mcp$(id)", "https://x.example.com/mcp'x"]) {
+            const view = connectView({ resource, issuer: "", api_keys: true });
+            expect(view.urlProblem).toBe("unsafe");
+            for (const key of [
+                "claudeCode",
+                "vscode",
+                "cursorLink",
+                "cursorJson",
+                "codex",
+                "codexLogin",
+            ]) {
+                expect(view[key]).toBe("");
+            }
+        }
+    });
+
+    test("a plain URL is safe", () => {
+        expect(connectView({ resource: URL, issuer: "x" }).urlProblem).toBe("");
+        expect(connectView({ resource: "http://[::1]:8069/mcp", issuer: "x" }).urlProblem).toBe(
+            "unsafe"
+        );
+    });
+
+    test("the commands quote the URL for the shell", () => {
+        expect(shellQuote("a'b")).toBe(`'a'\\''b'`);
+        expect(claudeCodeCommand("https://x/a'b")).toInclude(`'https://x/a'\\''b'`);
+        expect(vscodeCommand("https://x/a'b")).toInclude(`a'\\''b`);
+        expect(codexConfig('https://x/a"b')).toInclude('url = "https://x/a\\"b"');
     });
 });
 
