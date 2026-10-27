@@ -364,6 +364,24 @@ class TestLimits(BaseCase):
         direct = page_items(["abc", "def"], 0, None, max_bytes=3)
         self.assertEqual((direct["items"], direct["next_offset"]), ([], 0))
 
+    def test_a_page_whose_company_is_too_big_has_it_cut_and_keeps_its_place(self):
+        """When what comes with a page is too big by itself, its strings are
+        cut to 1 KB; the page keeps what fits and its next_offset follows."""
+        answer = {
+            "summary": "s" * 100_000,
+            "entries": [f"line {index:05d} " + "e" * 80 for index in range(2000)],
+            "offset": 0,
+            "truncated": True,
+            "next_offset": 2000,
+        }
+        cut, was_cut = fit_answer(answer, MAX_BYTES)
+        self.assertTrue(was_cut)
+        self.assertLessEqual(len(json.dumps(cut).encode()), MAX_BYTES)
+        self.assertLess(len(cut["summary"]), 2048)
+        self.assertTrue(cut["entries"])
+        self.assertEqual(cut["entries"], answer["entries"][: len(cut["entries"])])
+        self.assertEqual(cut["next_offset"], len(cut["entries"]))
+
     def test_a_single_entry_that_was_cut_says_so(self):
         """A page whose only entry was cut says truncated."""
         self.assertTrue(page_items(["y" * (MAX_BYTES * 2)])["truncated"])
