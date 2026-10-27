@@ -2,6 +2,7 @@
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError
+from odoo.tools.sql import create_index
 
 from ..protocol.context import VIA_CONTEXT_KEY
 
@@ -16,6 +17,22 @@ class CloudJob(models.Model):
         help="Set when the job was queued through the MCP endpoint, as in the "
         "audit log.",
     )
+
+    def init(self):
+        """Index the few jobs that hold a secret.
+
+        Every tool call reads the secrets of the database to mask them,
+        and the jobs are its one big table: without this, each call
+        would scan all of them.
+        """
+        super().init()
+        create_index(
+            self.env.cr,
+            "cloud_job_secret_payload_set_index",
+            self._table,
+            ["id"],
+            where="secret_payload IS NOT NULL AND secret_payload <> ''",
+        )
 
     @api.model_create_multi
     def create(self, vals_list):

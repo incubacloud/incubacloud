@@ -9,6 +9,7 @@ secret of the instance, as with the terminal.
 """
 
 import base64
+import functools
 import json
 import re
 from urllib.parse import quote
@@ -98,6 +99,24 @@ def secret_variants(value):
     }
 
 
+@functools.lru_cache(maxsize=16)
+def _compiled(values):
+    """Return the pattern of every form of *values*, longest first, or None.
+
+    Cached by the set itself: the same secrets, call after call, are
+    compiled once per process.
+
+    :param frozenset values: the decrypted secrets
+    """
+    variants = set()
+    for value in values:
+        variants |= secret_variants(value)
+    if not variants:
+        return None
+    ordered = sorted(variants, key=lambda variant: (-len(variant), variant))
+    return re.compile("|".join(map(re.escape, ordered)))
+
+
 class Scrubber:
     """Mask known secret values, and credentials in URLs, in text."""
 
@@ -106,13 +125,7 @@ class Scrubber:
 
         :param values: the decrypted secrets of the database
         """
-        variants = set()
-        for value in values:
-            variants |= secret_variants(value)
-        ordered = sorted(variants, key=len, reverse=True)
-        self._pattern = (
-            re.compile("|".join(map(re.escape, ordered))) if ordered else None
-        )
+        self._pattern = _compiled(frozenset(values))
 
     def text(self, text):
         """Return *text* with every known secret and URL credential masked."""

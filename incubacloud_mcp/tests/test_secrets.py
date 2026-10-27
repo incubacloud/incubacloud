@@ -8,6 +8,8 @@ from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
+from odoo.addons.incubacloud.models.password_utils import decrypt_value
+from odoo.addons.incubacloud_mcp.models import mcp_secrets
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK, drop_secret_keys
 
 HOST_PASSWORD = "host-pass-1234567"
@@ -103,6 +105,38 @@ class TestSecrets(TransactionCase):
             ),
             f"curl -u backup:{MASK} https://backup.example.test/x",
         )
+
+    def test_a_secret_is_decrypted_once_and_never_outlives_its_record(self):
+        """The second read decrypts nothing; a deleted secret is no longer known."""
+        host = self.env["cloud.host"].create(
+            {
+                "name": "cached-host",
+                "ip_address": "10.0.0.84",
+                "user": "ubuntu",
+                "wildcard_domain": "cached.example.com",
+                "login_type": "password",
+                "password": "cached-pass-24680",
+            }
+        )
+        self.env.flush_all()
+        self.assertIn("cached-pass-24680", self.Secrets._known_values())
+        with patch.object(
+            mcp_secrets, "decrypt_value", autospec=True, side_effect=decrypt_value
+        ) as decrypt:
+            self.assertIn("cached-pass-24680", self.Secrets._known_values())
+        decrypt.assert_not_called()
+        host.unlink()
+        self.env.flush_all()
+        self.assertNotIn("cached-pass-24680", self.Secrets._known_values())
+
+    def test_the_jobs_that_hold_a_secret_are_indexed(self):
+        """A partial index finds the few jobs with a secret among all the jobs."""
+        self.env.cr.execute(
+            "SELECT indexdef FROM pg_indexes WHERE indexname = %s",
+            ("cloud_job_secret_payload_set_index",),
+        )
+        (definition,) = self.env.cr.fetchone() or ("",)
+        self.assertIn("secret_payload IS NOT NULL", definition)
 
     def test_an_argument_named_like_a_secret_is_refused_at_any_depth(self):
         """A key named like an encrypted field is refused, however deep."""
