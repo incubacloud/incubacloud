@@ -98,8 +98,8 @@ OAuth, send an API key in a header.
 Without an OAuth provider for agents, the page says *This panel accepts API
 keys only*, and every command it shows carries the key.
 
-1. Open your preferences (the page links them), **Account Security**,
-   **API Keys**, and create one. Treat it like a password.
+1. Open your preferences (the page links them), **Security**, **API Keys**,
+   and choose **Add API Key**. Treat it like a password.
 2. Use the commands the page shows. Where one says `<API_KEY>`, put your
    key; where it names the environment variable `INCUBACLOUD_API_KEY`, set
    that variable to your key before you start the client.

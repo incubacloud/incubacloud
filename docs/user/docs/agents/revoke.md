@@ -13,7 +13,7 @@
 On a self-hosted panel:
 
 - **With API keys**, delete the agent's key in your preferences
-  (**Account Security**, **API Keys**): its next call fails.
+  (**Security**, **API Keys**): its next call fails.
 - **With your own OAuth provider**, revoke the agent's grant there; its
   access ends when its current token expires.
 

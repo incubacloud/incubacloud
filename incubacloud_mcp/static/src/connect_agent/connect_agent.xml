@@ -64,7 +64,7 @@
                         <i class="fa fa-key" aria-hidden="true"/>
                         This panel accepts API keys only. Create one in your
                         <a t-att-href="view.preferencesUrl" target="_blank" rel="noopener">preferences</a>
-                        (Account Security, API Keys) and put it where the commands say
+                        (Security, API Keys) and put it where the commands say
                         <code t-esc="apiKeyPlaceholder"/>, or in the environment variable
                         they name. Treat it like a password.
                     </div>
