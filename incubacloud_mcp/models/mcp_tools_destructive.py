@@ -312,9 +312,17 @@ class McpToolsDestructive(models.AbstractModel):
 
     @api.model
     def _confirm_refresh_staging(self, args):
-        """Name the staging, its source and how the copy is taken."""
+        """Name the staging, its source and how the copy is taken.
+
+        A production instance is never refreshed: refused here, before
+        anyone is asked.
+        """
         self.env["cloud.security.mixin"]._check_can_clone_to_staging()
         staging = self._instance(args["instance_id"])
+        if staging.environment == "production":
+            raise UserError(
+                self.env._("Production instances cannot be refreshed from production.")
+            )
         source = self._instance(args["source_instance_id"])
         if args.get("source") == "live":
             how = self.env._("a dump taken now")
@@ -335,12 +343,19 @@ class McpToolsDestructive(models.AbstractModel):
 
     @api.model
     def _confirm_move_instance(self, args):
-        """Name the instance and where it goes."""
+        """Name the instance, whether it is production, and where it goes."""
         self.env["cloud.security.mixin"]._check_can_manage_hosts()
         instance = self._instance(args["instance_id"])
         target = self._record(
             "cloud.host", args["target_host_id"], self.env._("Host not found")
         )
+        if instance.environment == "production":
+            return self.env._(
+                "Move the production instance %(name)s to the server %(host)s. "
+                "It is unavailable while it moves.",
+                name=quoted(instance.name),
+                host=quoted(target.name),
+            )
         return self.env._(
             "Move the instance %(name)s to the server %(host)s. It is "
             "unavailable while it moves.",
@@ -350,9 +365,15 @@ class McpToolsDestructive(models.AbstractModel):
 
     @api.model
     def _confirm_rollback_move(self, args):
-        """Name the instance."""
+        """Name the instance and whether it is production."""
         self.env["cloud.security.mixin"]._check_can_manage_hosts()
         instance = self._instance(args["instance_id"])
+        if instance.environment == "production":
+            return self.env._(
+                "Undo the move of the production instance %(name)s and bring it "
+                "back to its previous server.",
+                name=quoted(instance.name),
+            )
         return self.env._(
             "Undo the move of the instance %(name)s and bring it back to its "
             "previous server.",
