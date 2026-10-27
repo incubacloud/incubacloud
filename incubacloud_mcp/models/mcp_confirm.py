@@ -260,14 +260,14 @@ class McpConfirm(models.AbstractModel):
         answer = (params.get("inputResponses") or {}).get(INPUT_KEY)
         action = answer.get("action") if isinstance(answer, dict) else None
         if action in ("decline", "cancel"):
-            approval._decide(False)
+            approval._withdraw()
             return server._error_result(ctx, self.env._("Operation cancelled."))
         if action != "accept":
             return self._reask(approval, state, params, ctx)
         if state.get("m") == "form":
             content = answer.get("content")
             if not isinstance(content, dict) or content.get(INPUT_KEY) is not True:
-                approval._decide(False)
+                approval._withdraw()
                 return server._error_result(ctx, self.env._("Operation cancelled."))
             if approval._consume("pending"):
                 return None

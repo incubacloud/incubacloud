@@ -79,6 +79,18 @@ class TestApprovals(McpUsersMixin, TransactionCase):
         self.assertFalse(approval._decide(True))
         self.assertEqual(approval.state, "cancelled")
 
+    def test_a_no_from_the_client_withdraws_even_an_approved_one(self):
+        """Withdrawing cancels a pending or an approved approval, never a
+        used one."""
+        approved, _token = self._open()
+        approved._decide(True)
+        self.assertTrue(approved._withdraw())
+        self.assertEqual(approved.state, "cancelled")
+        used, _token = self._open(digest="h2")
+        used._consume("pending")
+        self.assertFalse(used._withdraw())
+        self.assertEqual(used.state, "used")
+
     def test_the_page_lives_on_the_panel(self):
         """The approval page is on the panel's origin, under its token."""
         self.env["ir.config_parameter"].sudo().set_param(

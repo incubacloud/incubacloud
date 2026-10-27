@@ -162,6 +162,30 @@ class TestConfirmation(
         self.assertEqual(self._approval_of(first["requestState"]).state, "cancelled")
         self.assertTrue(project.exists())
 
+    def test_declining_after_the_page_approved_withdraws_it(self):
+        """A client that declines after the page approved withdraws the
+        approval: the same call asks again."""
+        project = self._project()
+        args = {"project_id": project.id}
+        first = self._call_tool(self.key, "delete_project", args, URL_CAPABILITIES)
+        approval = self._approval_of(first["requestState"])
+        approval.with_user(self.manager)._decide(True)
+        result = self._call_tool(
+            self.key,
+            "delete_project",
+            args,
+            URL_CAPABILITIES,
+            requestState=first["requestState"],
+            inputResponses={"confirm": {"action": "decline"}},
+        )
+        self.assertEqual(result["content"][0]["text"], "Operation cancelled.")
+        self.assertEqual(approval.state, "cancelled")
+        again = self._call_tool(self.key, "delete_project", args)
+        self.assertIn(
+            "This action needs your approval: open", again["content"][0]["text"]
+        )
+        self.assertTrue(project.exists())
+
     def test_after_ten_minutes_the_approval_is_gone(self):
         """An approval past its ten minutes runs nothing, even accepted."""
         project = self._project()
