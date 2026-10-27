@@ -173,6 +173,37 @@ class TestDestructiveMessages(PanelFixtureMixin, McpUsersMixin, TransactionCase)
             "a dump taken now", self._message(self.manager, "refresh_staging", args)
         )
 
+    def test_refreshing_production_is_refused_before_being_asked(self):
+        """Production is never refreshed from production: refused first."""
+        with self.assertRaises(UserError):
+            self._message(
+                self.manager,
+                "refresh_staging",
+                {
+                    "instance_id": self.production.id,
+                    "source_instance_id": self.production.id,
+                },
+            )
+
+    def test_moving_production_says_production(self):
+        """Moving a production instance, or undoing its move, says so."""
+        moved = self._message(
+            self.manager,
+            "move_instance",
+            {"instance_id": self.production.id, "target_host_id": self.other_host.id},
+        )
+        undone = self._message(
+            self.manager, "rollback_move", {"instance_id": self.production.id}
+        )
+        for message in (moved, undone):
+            self.assertIn("production instance", message)
+        self.assertNotIn(
+            "production",
+            self._message(
+                self.manager, "rollback_move", {"instance_id": self.staging.id}
+            ),
+        )
+
     def test_restoring_a_staging_is_refused_before_being_asked(self):
         """The panel restores production only: a staging is refused first."""
         with self.assertRaises(UserError):
