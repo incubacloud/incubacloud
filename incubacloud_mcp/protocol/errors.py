@@ -30,12 +30,18 @@ class McpError(Exception):
     def to_body(self, request_id):
         """Return the JSON-RPC error response for *request_id*.
 
+        :param request_id: the request's id, or None when there is none to
+            answer (unreadable or invalid message): the response then has
+            no ``id`` member, as MCP's ids are never null
         :rtype: dict
         """
         error = {"code": self.code, "message": self.message}
         if self.data is not None:
             error["data"] = self.data
-        return {"jsonrpc": "2.0", "id": request_id, "error": error}
+        body = {"jsonrpc": "2.0", "error": error}
+        if request_id is not None:
+            body["id"] = request_id
+        return body
 
 
 class AuthError(Exception):
