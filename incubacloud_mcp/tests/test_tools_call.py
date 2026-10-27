@@ -13,6 +13,7 @@ from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
 
 from odoo.addons.incubacloud_mcp.protocol.context import CallContext, Principal
+from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK
 from odoo.addons.incubacloud_mcp.protocol.tool_spec import (
     ToolSpec,
@@ -99,6 +100,15 @@ class _CallProbes(http.Controller):
         """Refuse, quoting the host's password."""
         host = request.env["cloud.host"].sudo().browse(host_id)
         raise UserError(f"denied for {host.password}")
+
+    @http.route("/cloud/mcp_test/huge", type="jsonrpc", auth="user")
+    def mcp_test_huge(self):
+        """Answer far more than 64 KB, in a list and in one string."""
+        return {
+            "ok": True,
+            "rows": [{"n": index, "text": "y" * 1000} for index in range(500)],
+            "note": "z" * 200_000,
+        }
 
 
 PROBES = [
@@ -222,6 +232,14 @@ PROBES = [
         "group_cloud_user",
         obj({"host_id": record_id("Host.")}),
         route="/cloud/mcp_test/deny_quoting",
+    ),
+    ToolSpec(
+        "probe_huge",
+        "Huge.",
+        "group_cloud_user",
+        obj(),
+        route="/cloud/mcp_test/huge",
+        read_only=True,
     ),
     ToolSpec(
         "probe_manager",
@@ -423,6 +441,14 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         )
         self.assertTrue(row)
         self.assertFalse(row.host_id)
+
+    def test_no_answer_passes_64_kb(self):
+        """An answer far over 64 KB that no tool pages is cut, and says so."""
+        result = self._call_tool(self.key, "probe_huge")
+        self.assertLessEqual(len(result["content"][-1]["text"].encode()), MAX_BYTES)
+        payload = self._payload(result)
+        self.assertTrue(payload["truncated"])
+        self.assertEqual(payload["rows"][0]["n"], 0)
 
     def test_an_unexpected_error_hides_its_detail(self):
         """An unexpected error says a reference, not its internal detail."""

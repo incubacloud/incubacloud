@@ -206,3 +206,48 @@ def page_answer(
         "truncated": page["truncated"] or more,
         "next_offset": following if more else None,
     }
+
+
+def _head_lists(obj, count):
+    """Return *obj* with every list in it cut to its first *count* entries."""
+    if isinstance(obj, dict):
+        return {key: _head_lists(item, count) for key, item in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_head_lists(item, count) for item in obj[:count]]
+    return obj
+
+
+def _longest_list(obj):
+    """Return the length of the longest list inside *obj*."""
+    if isinstance(obj, dict):
+        return max((_longest_list(item) for item in obj.values()), default=0)
+    if isinstance(obj, (list, tuple)):
+        return max([len(obj), *(_longest_list(item) for item in obj)])
+    return 0
+
+
+def fit_answer(obj, max_bytes=MAX_BYTES):
+    """Return ``(obj, False)`` when *obj* fits *max_bytes*, else a cut of it.
+
+    The safety net behind the tools that page their answers: lists are
+    cut first, every one to the same number of entries, the most that
+    fits; when even empty lists do not make it fit, strings are cut to
+    1 KB first. No ``next_offset``: an answer this big was not expected
+    from its tool.
+
+    :return: ``(answer that fits, whether it was cut)``
+    """
+    if _size(obj) <= max_bytes:
+        return obj, False
+    for candidate in (obj, cap_strings(obj, _FIELD_BYTES)[0]):
+        if _size(_head_lists(candidate, 0)) > max_bytes:
+            continue
+        low, high = 0, _longest_list(candidate)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if _size(_head_lists(candidate, middle)) <= max_bytes:
+                low = middle
+            else:
+                high = middle - 1
+        return _head_lists(candidate, low), True
+    return {"truncated": True, "error": "The answer is too large to show."}, True
