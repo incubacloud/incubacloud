@@ -3,6 +3,8 @@
 import pathlib
 import re
 
+from lxml import etree
+
 from odoo.modules.module import get_module_path
 from odoo.tests import tagged
 from odoo.tests.common import BaseCase, HttpCase
@@ -10,6 +12,7 @@ from odoo.tests.common import BaseCase, HttpCase
 from .common import McpUsersMixin
 
 _CORE_SRC = pathlib.Path(get_module_path("incubacloud")) / "static" / "src"
+_OUR_SRC = pathlib.Path(get_module_path("incubacloud_mcp")) / "static" / "src"
 
 #: A page is ready when *selector* is there and the panel's start-up
 #: loader, still animating for a second after the panel mounts, is gone:
@@ -50,6 +53,22 @@ class TestTheTemplatesWeExtendKeepTheirAnchors(BaseCase):
         self.assertIn("t-if=\"state.tab === 'github'\"", settings)
         self.assertIn("t-if=\"state.tab === 'rates'\"", settings)
         self.assertIn('<main class="ic-main" role="main">', self._text("app/app.xml"))
+
+
+class TestOurTemplates(BaseCase):
+    """What our own templates promise, read from their source."""
+
+    def test_the_text_of_a_code_element_is_never_translated(self):
+        """A ``<code>`` shows a command, a header or a path: its literal text
+        stays out of the translations."""
+        for path in sorted(_OUR_SRC.rglob("*.xml")):
+            for code in etree.parse(str(path)).iter("code"):
+                literal = (code.text or "").strip() or any(
+                    (child.tail or "").strip() for child in code
+                )
+                if literal:
+                    with self.subTest(path=path.name, line=code.sourceline):
+                        self.assertEqual(code.get("t-translation"), "off")
 
 
 @tagged("post_install", "-at_install")
