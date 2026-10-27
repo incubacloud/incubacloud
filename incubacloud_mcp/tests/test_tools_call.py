@@ -80,6 +80,13 @@ class _CallProbes(http.Controller):
         host.password = new_value
         return {"ok": True, "log": f"rotated {old} to {new_value}"}
 
+    @http.route("/cloud/mcp_test/rotate_then_fail", type="jsonrpc", auth="user")
+    def mcp_test_rotate_then_fail(self, host_id, new_value=""):
+        """Change a host's password, then fail quoting the new one."""
+        host = request.env["cloud.host"].sudo().browse(host_id)
+        host.password = new_value
+        raise UserError(f"could not finish rotating to {new_value}")
+
     @http.route("/cloud/mcp_test/nothing", type="jsonrpc", auth="user")
     def mcp_test_nothing(self):
         """Do its job and answer nothing, as some panel routes do."""
@@ -161,6 +168,13 @@ PROBES = [
         "group_cloud_user",
         obj({"host_id": record_id("Host."), "new_value": string("New.")}),
         route="/cloud/mcp_test/rotate",
+    ),
+    ToolSpec(
+        "probe_rotate_fail",
+        "Rotate, then fail.",
+        "group_cloud_user",
+        obj({"host_id": record_id("Host."), "new_value": string("New.")}),
+        route="/cloud/mcp_test/rotate_then_fail",
     ),
     ToolSpec(
         "probe_always",
@@ -491,6 +505,21 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
             )
         )
         self.assertEqual(payload["log"], f"rotated {MASK} to {MASK}")
+
+    def test_a_secret_the_call_wrote_before_failing_is_masked_in_the_error(self):
+        """A secret the call wrote, then quoted in its failure, is masked even
+        though the failure undid the write."""
+        host = self._probe_host()
+        result = self._call_tool(
+            self.key,
+            "probe_rotate_fail",
+            {"host_id": host.id, "new_value": "probe-failed-pass-5150"},
+        )
+        self.assertTrue(result["isError"])
+        self.assertEqual(
+            result["content"][0]["text"], f"could not finish rotating to {MASK}"
+        )
+        self.assertEqual(host.password, HOST_PASSWORD)
 
     def test_a_tool_that_asks_without_a_text_of_its_own_does_not_run(self):
         """``always``, or ``conditional`` without its method, fails closed."""
