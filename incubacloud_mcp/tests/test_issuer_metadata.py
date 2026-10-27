@@ -106,6 +106,13 @@ class TestIssuerMetadata(BaseCase):
                 _issuer_metadata.jwks_uri_for(ISSUER)
             _issuer_metadata.invalidate()
 
+    def test_a_document_nested_too_deep_is_a_failure_it_remembers(self):
+        """JSON nested past the parser is a ValueError, remembered as a failure."""
+        nested = http_response(200, body=b"[" * 50_000)
+        with self._get(return_value=nested), self.assertRaises(ValueError):
+            _issuer_metadata.jwks_uri_for(ISSUER)
+        self.assertIn(ISSUER, _issuer_metadata._FAILURES)
+
     def test_an_unreachable_issuer_raises(self):
         """Down, the issuer's error comes out (the caller answers 503)."""
         with (

@@ -143,6 +143,12 @@ class TestJwksCache(BaseCase):
                 _jwks_cache.get_keyset(_URI, kid="k")
             _jwks_cache.invalidate()
 
+    def test_a_key_set_nested_too_deep_is_a_value_error(self):
+        """JSON nested past the parser is a ValueError (503), not a crash."""
+        nested = http_response(200, body=b"[" * 50_000)
+        with self._get(return_value=nested), self.assertRaises(ValueError):
+            _jwks_cache.get_keyset(_URI, kid="kid-A")
+
     def test_an_issuer_down_is_asked_once_per_minimum_wait(self):
         """Down, it is asked once; unknown kids meanwhile cost no download."""
         down = requests.ConnectionError("down")
