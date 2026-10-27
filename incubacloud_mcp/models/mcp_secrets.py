@@ -15,7 +15,7 @@ from odoo.exceptions import UserError
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedFieldMixin
 from odoo.addons.incubacloud.models.password_utils import decrypt_value
 
-from ..protocol.redact import MIN_SECRET_LEN, Scrubber, find_secret_key
+from ..protocol.redact import MIN_SECRET_LEN, Scrubber, find_secret_key, secret_parts
 
 
 class McpSecrets(models.AbstractModel):
@@ -41,6 +41,9 @@ class McpSecrets(models.AbstractModel):
     def _known_values(self):
         """Return every decryptable secret of the database, 8 characters or more.
 
+        A secret stored as a JSON document or a PEM block counts with its
+        pieces (:func:`secret_parts`).
+
         :rtype: set[str]
         """
         values = set()
@@ -61,8 +64,12 @@ class McpSecrets(models.AbstractModel):
                         plain = decrypt_value(cipher, self.env)
                     except ValueError:
                         continue
-                    if plain and len(plain) >= MIN_SECRET_LEN:
-                        values.add(plain)
+                    if plain:
+                        values |= {
+                            part
+                            for part in secret_parts(plain)
+                            if len(part) >= MIN_SECRET_LEN
+                        }
         return values
 
     @api.model
