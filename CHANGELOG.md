@@ -6,6 +6,167 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.200] — 2026-10-27
+
+Ships with `incubacloud_saas_manager` 1.178, as always: its Settings
+tabs are drawn into the template changed here (`openedTabs`), and its
+template anchors on it — this core with saas 1.177, whose anchor is the
+old `t-if`, breaks Settings. Build the master's image only once both
+repositories are pushed, this core and saas 1.178 together. And
+`incubacloud_tenant`'s stylesheets now use `$state-warning-text`, which
+exists only from this version on: a saas newer than this core fails to
+build its styles. Neither the image nor a tenant may get the new saas
+with an older core — publish this core first.
+
+### Fixed
+
+- **What is typed on a Settings tab survives a visit to another tab,
+  and Save sends it from any tab.** The Rates tab (and saas's SaaS and
+  Providers) is a component with its own form and a save handler it
+  registers with Settings; drawn with `t-if`, it was unmounted on
+  leaving, so its edits were lost — back on it the stored values
+  showed — and its save handler went with it: Save pressed on another
+  tab never sent them. Such a tab now stays mounted once opened, hidden
+  while another one shows (`openedTabs`).
+- **An unsaved edit on the Rates, SaaS or Providers tab is an unsaved
+  change.** Settings compared only its own form, so these tabs showed
+  no "Unsaved changes" in the footer, and leaving Settings, or the
+  page, did not ask. A tab now registers its state
+  (`registerSettingsSave(key, save, state, writeOnly)`), and Settings
+  counts its form as changed until it is saved — footer, leave dialog
+  and `beforeunload` alike, as for the General, GitHub and Monitoring
+  forms. It registers once mounted: a tab Settings cancels by drawing
+  again while it loads never mounts, so it cannot stand in for the one
+  on screen. And only if it loaded: a tab that failed to load shows the
+  error and Retry instead of a form of defaults, and is never sent;
+  once a retry loads it, it registers.
+- **Save sends only the tabs that changed, and what it sent is what is
+  saved.** It called the save of every registered tab, so an untouched
+  form — the whole SaaS form — went back to the server, which can act
+  on it. A tab is now sent only while its form differs from what was
+  loaded or last saved; a tab that registers no state is sent every
+  time, as before. The reference copy, of a tab as of Settings' own
+  form, is what was sent, taken before the request, with the
+  write-only fields the tab empties once saved (`writeOnly`, the
+  secrets) empty: an edit made while the request is out stays unsaved. A
+  Hetzner token of spaces alone is no token: it is emptied on save like
+  one, instead of staying a change.
+- **Amber text reaches WCAG AA in the light theme.** Amber was both a
+  mark and the colour of some thirty text rules — pills, tenant badges,
+  warnings, the staging label, the job history's active chips, the
+  warning toast — which measured 2.8 to 4.0:1 in `#b7791f` and
+  `#9a6614`. Text in amber now uses `--rl-amber-ink` (`$state-warning-text`):
+  `--rl-amber-text` in the light theme, `#865602` (4.6:1 on its 20%
+  tint, its worst case), and the accent itself in the dark theme, as
+  before. `--rl-amber` stays the mark's colour — dots, bars, borders,
+  icons — darkened only to reach 3:1 (`#b27418`; `#b7791f` measured
+  2.9–3.0:1 on its own tint and on the gauge's track), with
+  `--rl-amber-rgb` and `--rl-amber-soft` following it. Text on solid
+  amber is dark, `--rl-amber-fg` `#1c1408` (white reaches 3.9:1 on it),
+  which the tenant panel's "Invited" filter chip now uses. The dark
+  theme's colours are unchanged except that chip's label, near-black in
+  both (`#06140d` → `#1c1408`).
+- **A move whose removal of the old copy fails no longer holds the
+  instance's queue.** `move_cleanup_source` runs after the cutover, on
+  the source host, when the instance already lives on the destination;
+  its failure held the instance's queue (`failure_holds_queue`), so its
+  scheduled backups and every other job waited until someone retried it
+  or dismissed the alert. The type no longer holds it: the failure is
+  still announced, its `job_failed` alert stays, and it can be retried.
+  The data file says `False` rather than dropping the field, since an
+  update writes only the fields listed; no migration is needed, the
+  record is not `noupdate`. A move that fails before the cutover is
+  unchanged: the step that failed holds the queue, and the cleanup ends
+  cancelled without running.
+- **A retry runs with the credential the failed job held.**
+  `cloud.job.retry_job` copied `payload` and left `secret_payload`
+  behind, so the retry of a restore from a URL that needs a login
+  downloaded without it. The retry now takes it too, encrypted at rest
+  and out of the payload as on the original, so neither the lists nor
+  the log show it. `incubacloud_saas_manager` copied it in its own
+  `retry_job`; that copy is now redundant.
+- **A restore to a moment tells the addons, as every other restore
+  does.** `PitrRestoreExecutor` recorded the new timeline and queued its
+  base copy, but never called `_after_restore_hook`: an addon that acts
+  on a replaced database did not hear of it. The SaaS layer hands a
+  tenant's panel new secrets after a restore; a panel brought back to a
+  moment before its last deploy kept an OIDC secret the manager no
+  longer accepts. The hook is now called with a new `kind`, `pitr`,
+  once the restore has ended with the database restored — also when
+  its files were not, which the job reports as a failure — and not
+  while the next job still follows it on the host. `incubacloud_pitr`'s
+  own hook does nothing for `pitr`: the restore's job already took the
+  full base copy of its new timeline, and the hook's would have run
+  beside it. A restore that outlived the jobs following it was recorded
+  by the watch (`pitr_status`), which took no base copy of it and told
+  nobody: whichever records a restore first, its job or the watch, now
+  takes that copy and calls the hook, and the other repeats neither
+  (`_pitr_record_restore` says whether it recorded it). A restore whose
+  new timeline `pitr.sh` could not read after the promotion cannot be
+  recorded; its job still takes the copy and calls the hook, and the
+  watch does neither. `incubacloud_pitr` 1.0.8.
+- **A rebuild no longer fails because continuous recovery wrote its
+  spool.** `pitr.sh install` puts wal-g, the host's libraries it runs
+  with and the pitr agent's spool in `.walg/`, inside the copier
+  project directory, which is a git repository, and nothing kept it
+  out: `rebuild.sh commit-dirty` committed it — wal-g and libc on the
+  first rebuild, the marks that changed on every one since — while the
+  agent keeps writing it: a mark per uploaded segment, its removal an
+  hour later, `spool/fs-ok` after each filestore copy. One of those
+  landing between the commit and `copier update`'s own check made
+  copier refuse the tree ("Destination repository is dirty"): the
+  rebuild ran its other steps and failed at the end, and a job type
+  that holds the queue held the instance's queue with it (a plan
+  change, QA run 7016). `commit-dirty` now keeps `.walg/` out as it
+  keeps `logs/` out, before it stages anything, so the same rebuild is
+  clean: `ic_git_exclude`, which `ic_git_exclude_logs` now calls,
+  writes `/.walg/` to `.git/info/exclude` and untracks what earlier
+  rebuilds committed, leaving every file on disk. Every `copier update`
+  goes through it — rebuilds, plan changes, warm claims, template
+  upgrades.
+- **A change made to the project after the rebuild's commit is named.**
+  copier only says the tree is dirty. `rebuild.sh copier-update` now
+  looks first and stops with the paths that changed (up to ten): what
+  the product writes on its own is kept out of the repository, so what
+  it lists was changed by someone else.
+
+### Security
+
+- **A job's credential is the server's alone.** `cloud.job.secret_payload`
+  had no `groups`, unlike the secrets of instances, hosts and backup
+  backends: any member of a project, a stakeholder included, reads its
+  instances' jobs, and `read(["secret_payload"])` returned it decrypted
+  — the password of a restore from a URL a developer had typed. It is now
+  `groups="base.group_system"`: asked for through `read`, `search_read`
+  or the record, it is refused, and it no longer appears in
+  `fields_get`. The server reads it with `sudo`: the restore's download
+  (`_restore_url_credential`), which runs as the person who asked for
+  it, and `retry_job`. The panel's lists never read the field.
+- **A rebuild no longer commits the project's secrets.** Every rebuild
+  commits the copier project before `copier update` (`git add -A`,
+  since the first release), and that took in `odoo/custom/ssh/`, which
+  doodba copies into the image as root's `~/.ssh` and where a deploy
+  key goes; `odoo/custom/src/repos.yaml`, with the repository tokens
+  the panel writes into its URLs (a GitHub App installation token, or
+  the personal access token when the App cannot read the repository);
+  and `odoo/custom/conf.d/*.conf` and `odoo/custom/dependencies/pip.txt`,
+  whose contents are the user's — an `admin_passwd`, a database
+  password, a token in a git URL. Committed, they stay in the
+  repository's history on the host whatever later rotates the file.
+  `commit-dirty` now keeps the four out as it keeps `logs/` and
+  `.walg/` out, before it stages anything (`ic_git_exclude` takes a
+  file or a pattern as well as a directory), and takes out of the index
+  what earlier rebuilds committed, forcibly (`--cached` never touches
+  the disk); every file stays on disk for the build. It fails closed:
+  a secret still in the index after `git add -A` — an exclude file it
+  could not write — stops the rebuild before the commit, naming it.
+  copier does not need them in the repository: it renders `ssh/`,
+  `repos.yaml` and `pip.txt` only when they are missing (the template's
+  `_skip_if_exists`) and never the conf, which a real `copier update`
+  confirmed, also across a template upgrade. What earlier rebuilds
+  committed stays in their history; no flow of the panel copies an
+  instance's `.git` off its host (an export leaves it out).
+
 ## [1.0.199] — 2026-10-27
 
 ### Fixed

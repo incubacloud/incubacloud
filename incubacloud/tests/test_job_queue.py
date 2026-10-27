@@ -1641,6 +1641,107 @@ class TestMoves(_QueueCase):
         _run_after_commit(self.env)
         self.assertEqual(cleanup.state, "pending")
 
+    def _move_chain(self):
+        """Move the instance to the target host; return the chain's steps in order."""
+        self.inst.move_to_host(self.target)
+        return self.inst._get_move_chain_jobs()
+
+    def _fail_as_the_runner(self, step):
+        """Start *step* and end it failed, as the runner would, then commit."""
+        step.queue_job_id.write({"state": "started"})
+        step.queue_job_id.write({"state": "failed", "exc_message": "boom"})
+        _run_after_commit(self.env)
+
+    def _job_failed_alert(self, job):
+        """The active ``job_failed`` alert of *job*, if any."""
+        return self.env["cloud.alert"].search([
+            ("job_id", "=", job.id), ("code", "=", "job_failed"),
+            ("state", "=", "active"),
+        ])
+
+    def test_a_failed_source_cleanup_does_not_hold_the_queue(self):
+        """The move cut over, and removing the old copy from the source
+        failed: the instance lives on the destination, and its backups
+        and jobs go on (owner, 27-oct-2026). The failure is still
+        announced, and its alert stays."""
+        *steps, cleanup = self._move_chain()
+        self.assertEqual(cleanup.job_type_id.code, "move_cleanup_source")
+        for step in steps:
+            self._end(step)
+        # What the cutover's success writes.
+        self.inst.write({
+            "host_id": self.target.id,
+            "move_origin_host_id": False,
+            "move_target_host_id": False,
+            "move_chain_job_ids": False,
+        })
+        with patch.object(
+            type(self.Job), "_broadcast_job_update", autospec=True,
+        ) as told:
+            self._fail_as_the_runner(cleanup)
+        self.assertEqual(cleanup.state, "failed")
+        self.assertIn(
+            (cleanup.id, "failed"),
+            [(c.args[1], c.kwargs.get("state")) for c in told.call_args_list],
+        )
+        self.assertTrue(self._job_failed_alert(cleanup))
+        self.assertFalse(self.Job._queue_held_by(self.inst.id, None))
+        backup = self.Job.browse(
+            self.Job.enqueue(self.target.id, self.inst.id, "backup_create"),
+        )
+        self.assertEqual(backup.state, "pending")
+        self.assertFalse(backup._format()[0]["queue_held"])
+
+    def test_a_failed_source_cleanup_can_still_be_retried(self):
+        """Its retry runs, and its success dismisses the alert."""
+        cleanup, alert = self._failed_with_alert("move_cleanup_source")
+        retry = self.Job.browse(cleanup.retry_job())
+        _run_after_commit(self.env)
+        self.assertEqual(retry.state, "pending")
+        self.assertEqual(alert.state, "active")
+        self._end(retry)
+        self.assertEqual(alert.state, "dismissed")
+
+    def _assert_a_failure_before_the_cutover_holds_the_queue(self, code):
+        """Fail the move at its *code* step: that step holds the queue,
+        and the source's cleanup ends without running."""
+        chain = self._move_chain()
+        failing = chain.filtered(lambda job: job.job_type_id.code == code)
+        self.assertEqual(len(failing), 1, code)
+        for step in chain[:list(chain).index(failing)]:
+            self._end(step)
+        self._fail_as_the_runner(failing)
+        cleanup = chain[-1]
+        self.assertEqual(cleanup.job_type_id.code, "move_cleanup_source")
+        self.assertEqual(failing.state, "failed")
+        self.assertEqual(cleanup.state, "cancelled")
+        self.assertFalse(cleanup.queue_job_id.date_started)
+        self.assertEqual(
+            self._note(cleanup), f"Not run: step #{failing.id} ended failed.",
+        )
+        self.assertFalse(self._job_failed_alert(cleanup))
+        self.assertEqual(
+            self.Job._queue_held_by(self.inst.id, None),
+            self._job_failed_alert(failing),
+        )
+        backup = self._enqueue("backup_create")
+        self.assertEqual(backup.state, "queued")
+        self.assertTrue(backup._format()[0]["queue_held"])
+
+    def test_a_deploy_that_fails_before_the_cutover_holds_the_queue(self):
+        """The first step: the destination never came up (15-oct-2026's
+        ``tenant_deploy_instance`` is the SaaS manager's)."""
+        self._assert_a_failure_before_the_cutover_holds_the_queue("deploy_instance")
+
+    def test_a_restore_that_fails_before_the_cutover_holds_the_queue(self):
+        """The source is stopped by then: the hold keeps everything but
+        the rollback out until someone acts."""
+        self._assert_a_failure_before_the_cutover_holds_the_queue("restore_instance")
+
+    def test_a_cutover_that_fails_holds_the_queue(self):
+        """The instance still lives on the source: the move did not happen."""
+        self._assert_a_failure_before_the_cutover_holds_the_queue("move_cutover")
+
 
 class TestTheStoredName(_QueueCase):
     """A job's name and its audit action are stored in English; a reader

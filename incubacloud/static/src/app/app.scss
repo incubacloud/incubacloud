@@ -964,7 +964,7 @@ body,
 .ic-conflict-ver {
     color: $text-secondary;
     font-family: $font-mono;
-    &--incoming { color: $state-warning; }
+    &--incoming { color: $state-warning-text; }
 }
 
 // ── Override Odoo dialogs (error, confirm) inside our SPA ──────────────────

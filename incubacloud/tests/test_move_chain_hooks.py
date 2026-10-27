@@ -73,6 +73,21 @@ class TestAMoveClosesEveryStep(TransactionCase):
         self.assertFalse(self.inst.move_origin_host_id)
         self.assertFalse(self.inst.move_target_host_id)
 
+    def test_a_move_tells_the_addons_of_its_restore_and_its_cutover(self):
+        """``restore`` on the target, then ``move`` once it is cut over."""
+        Host = type(self.env["cloud.host"])
+        with patch.object(
+            Host, "get_transport", autospec=True,
+            side_effect=ConnectionRefusedError("no SSH in tests"),
+        ), patch.object(
+            type(self.inst), "_after_restore_hook", autospec=True,
+        ) as hook:
+            for job in self._chain():
+                self._close(job)
+        self.assertEqual(
+            [c.args[1] for c in hook.call_args_list], ["restore", "move"],
+        )
+
     def test_the_deploy_on_the_target_leaves_the_live_record_deployed(self):
         """The step that broke: the record is live on its source the whole
         time, so the deploy on the target must not move its state."""

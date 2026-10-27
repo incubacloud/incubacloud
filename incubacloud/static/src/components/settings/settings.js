@@ -1,4 +1,4 @@
-import { Component, useState, useSubEnv, onWillStart, onMounted, onWillUnmount } from "@odoo/owl";
+import { Component, useState, useSubEnv, onWillStart, onMounted, onWillUnmount, batched, reactive } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { _t } from "@web/core/l10n/translation";
 import { announceJob } from "../../utils/job_queue";
@@ -19,6 +19,12 @@ export class Settings extends Component {
     setup() {
         this.state = useState({
             tab: this.props.initialTab || "general",
+            // Tabs drawn by a component of their own (Rates; saas adds
+            // SaaS and Providers) keep their form in it, and register
+            // its save below. They stay mounted once opened, hidden while
+            // another tab shows: unmounting one dropped what was typed
+            // in it, and its save handler with it.
+            openedTabs: { [this.props.initialTab || "general"]: true },
             loading: true,
             saving: false,
             testing: false,
@@ -82,10 +88,26 @@ export class Settings extends Component {
             auditPurging: false,
         });
 
-        // Save registry: child tab components register their save handlers
+        // Save registry: a tab component registers, once mounted and loaded,
+        // how to save and its state, with the fields it empties once saved
+        // (secrets the server keeps and never shows back). Save sends a tab
+        // only while its form differs from what was loaded or last sent,
+        // and such a difference is an unsaved change here, as one in
+        // Settings' own form is. A tab that gives no state is saved every
+        // time, as before.
         const _saveHandlers = new Map();
+        // The tab's state is read through a proxy of Settings' own, so an
+        // edit there re-renders the footer here. Reading its form once at
+        // registration subscribes to it without rendering anything.
+        const rerender = batched(() => this.render());
         useSubEnv({
-            registerSettingsSave: (key, handler) => _saveHandlers.set(key, handler),
+            registerSettingsSave: (key, save, state, writeOnly = []) => {
+                const tab = { save, writeOnly, state: state && reactive(state, rerender) };
+                if (tab.state) {
+                    tab.saved = JSON.stringify(tab.state.form);
+                }
+                _saveHandlers.set(key, tab);
+            },
             unregisterSettingsSave: (key) => _saveHandlers.delete(key),
         });
         this._saveHandlers = _saveHandlers;
@@ -168,7 +190,23 @@ export class Settings extends Component {
     }
 
     get hasUnsavedChanges() {
-        return this._savedForm && JSON.stringify(this.state.form) !== this._savedForm;
+        if (this._savedForm && JSON.stringify(this.state.form) !== this._savedForm) {
+            return true;
+        }
+        return [...this._saveHandlers.values()].some(
+            (tab) => tab.state && this._tabChanged(tab),
+        );
+    }
+
+    /**
+     * Whether a registered tab has something to save.
+     *
+     * @param {{state?: object, saved?: string}} tab a save registry entry
+     * @returns {boolean} true when its form differs from what was loaded
+     *     or last saved, or when the tab gave no state to compare
+     */
+    _tabChanged(tab) {
+        return !tab.state || JSON.stringify(tab.state.form) !== tab.saved;
     }
 
     /**
@@ -376,6 +414,9 @@ export class Settings extends Component {
         }
         this.state.saving = true;
         const errors = [];
+        // What is sent, not what the form holds once the answers are in, is
+        // what gets saved: an edit made while a request is out stays unsaved.
+        const sent = { ...this.state.form };
 
         // General settings
         try {
@@ -450,6 +491,7 @@ export class Settings extends Component {
                     this.state.hasPrivateKey = true;
                     this.state.configured = true;
                     this.state.form.private_key = "";
+                    sent.private_key = "";
                 } else if (result.error) {
                     errors.push(result.error);
                 }
@@ -465,17 +507,29 @@ export class Settings extends Component {
                 await rpc("/cloud/save_github_pat", { pat });
                 this.state.hasPat = true;
                 this.state.form.github_pat = "";
+                sent.github_pat = "";
             } catch {
                 errors.push(_t("GitHub PAT"));
             }
         }
 
-        // Registered save handlers from inheriting modules
-        for (const [key, handler] of this._saveHandlers) {
+        // Registered tabs, those with something to save: an untouched form
+        // is not sent again, since saving can have effects on the server.
+        for (const [key, tab] of this._saveHandlers) {
+            if (!this._tabChanged(tab)) {
+                continue;
+            }
+            const tabSent = tab.state && { ...tab.state.form };
             try {
-                const result = await handler();
+                const result = await tab.save();
                 if (result && !result.ok && result.error) {
                     errors.push(result.error);
+                }
+                if (tabSent && result?.ok !== false) {
+                    for (const field of tab.writeOnly) {
+                        tabSent[field] = "";
+                    }
+                    tab.saved = JSON.stringify(tabSent);
                 }
             } catch {
                 errors.push(key);
@@ -487,7 +541,7 @@ export class Settings extends Component {
             this.env.toast?.error(_t("Failed to save: %s").replace('%s', errors.join(", ")));
         } else {
             this.env.toast?.success(_t("Changes saved"));
-            this._savedForm = JSON.stringify(this.state.form);
+            this._savedForm = JSON.stringify(sent);
         }
     }
 
@@ -557,6 +611,7 @@ export class Settings extends Component {
 
     setTab(tab) {
         this.state.tab = tab;
+        this.state.openedTabs[tab] = true;
         this.state.ghActionMsg = null;
     }
 

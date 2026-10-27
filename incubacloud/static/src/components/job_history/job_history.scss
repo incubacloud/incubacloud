@@ -129,8 +129,8 @@
     &.jh-chip-queued.active,
     &.jh-chip-pending.active,
     &.jh-chip-enqueued.active,
-    &.jh-chip-wait_dependencies.active { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning; }
-    &.jh-chip-started.active   { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning; }
+    &.jh-chip-wait_dependencies.active { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning-text; }
+    &.jh-chip-started.active   { background: rgba(var(--rl-amber-rgb), 0.18); color: $state-warning-text; }
     &.jh-chip-done.active      { background: $toast-success-bg; color: $state-ok; }
     &.jh-chip-failed.active    { background: rgba(var(--rl-red-rgb), 0.16); color: $state-error; }
     &.jh-chip-cancelled.active { background: rgba(var(--rl-faint-rgb), 0.22); color: $text-secondary; }

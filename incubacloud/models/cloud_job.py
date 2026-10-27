@@ -218,10 +218,13 @@ class CloudJob(models.Model):
     # on purpose: the payload is read back into the UI, echoed in
     # notifications and dumped when a job is inspected, and none of those
     # should ever carry a password. Encrypted at rest like every other
-    # secret this module holds.
+    # secret this module holds, and read by the server alone, with
+    # ``sudo``: every member of a project reads its instances' jobs, and
+    # without ``groups`` one read a restore's password with ``read``.
     secret_payload = EncryptedChar(
         string="Job Secret",
         copy=False,
+        groups="base.group_system",
         help="Credential this job needs at run time. Never shown.",
     )
     queue_job_uuid = fields.Char(string="Queue Job UUID", copy=False, index=True)
@@ -2781,7 +2784,9 @@ class CloudJob(models.Model):
         :return: ``(machine, login, password)``, or ``None``.
         """
         self.ensure_one()
-        raw = self.secret_payload
+        # The job runs as whoever asked for it, without superuser rights
+        # unless they had them; the field is the server's.
+        raw = self.sudo().secret_payload
         if not raw:
             return None
         try:
@@ -3027,7 +3032,9 @@ class CloudJob(models.Model):
         # intact. It goes to the head of the queue and, when this
         # failure holds the queue, past the hold: the retry is what
         # releases it. One retry per failed job at a time: a second one
-        # while the first waits or runs is refused.
+        # while the first waits or runs is refused. It runs with the
+        # credential the failed job held (a restore from a URL's), kept
+        # encrypted apart from the payload as there.
         new_job = self._create_queued(
             {
                 "name": self.name,
@@ -3035,6 +3042,7 @@ class CloudJob(models.Model):
                 "job_type_id": self.job_type_id.id,
                 "instance_id": self.instance_id.id if self.instance_id else False,
                 "payload": self.payload,
+                "secret_payload": self.sudo().secret_payload,
                 "retry_of_id": self.id,
                 "queue_head": True,
                 "state": "queued",

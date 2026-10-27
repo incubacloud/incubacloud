@@ -690,6 +690,17 @@ class TestSwitchingOnAndBaseCopies(_PitrCase):
             ["pitr_enable", "pitr_base_backup"],
         )
 
+    def test_a_restore_to_a_moment_takes_no_second_base_copy(self):
+        """Its executor took a full one, on the timeline the restore
+        started (``PitrRestoreExecutor._restored``): the hook's would be a
+        second, running beside it."""
+        with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+            self.inst._after_restore_hook("pitr")
+            self.inst._after_restore_hook("restore")
+        self.assertEqual(
+            [c.args[3] for c in enqueue.call_args_list], ["pitr_base_backup"],
+        )
+
 
 class TestOdooRestartedAroundTheDatabase(JobEndAssertions, _PitrCase):
     """Switching archiving on or off may restart the database, with odoo
@@ -853,17 +864,36 @@ class TestReadingTheArchiver(_PitrCase):
         self.assertIn("job 9", message)
         self.assertIn("lock", message)
 
+    ENDED = (
+        "IC_PITR_STATUS restoring=1 restore_job=9 restore_state=done "
+        "restore_timeline=00000002 restore_promoted_at=1792369056 "
+        "restore_target=2026-10-19T00:06:30+00"
+    )
+
     def test_during_a_restore_the_reading_waits_and_records_one_that_ended(self):
-        self._read(
-            "IC_PITR_STATUS restoring=1 restore_job=9 restore_state=done "
-            "restore_timeline=00000002 restore_promoted_at=1792369056 "
-            "restore_target=2026-10-19T00:06:30+00",
-        )
+        with patch.object(self.Job, "enqueue", autospec=True):
+            self._read(self.ENDED)
         self.assertEqual(self.inst.pitr_state, "ok")
         (entry,) = self.inst.pitr_timelines
         self.assertEqual(entry["timeline"], "00000002")
         self.assertEqual(entry["target"], "2026-10-19 00:06:30")
         self.assertEqual(entry["cluster"], "77")
+
+    def test_a_restore_that_outlived_its_jobs_is_followed_up_once(self):
+        """Nobody followed it to its end: the watch, which records it, takes
+        its full base copy and tells the addons (``pitr``) as its job would
+        have, and the next reading repeats neither."""
+        with patch.object(
+            self.Job, "enqueue", autospec=True,
+        ) as enqueue, patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            self._read(self.ENDED, times=2)
+        self.assertEqual(
+            [(c.args[3], c.kwargs.get("payload")) for c in enqueue.call_args_list],
+            [("pitr_base_backup", {"full": True})],
+        )
+        hook.assert_called_once_with(self.inst, "pitr")
 
 
 class TestARestore(_PitrCase):
@@ -944,6 +974,137 @@ class TestARestore(_PitrCase):
             ), "exit_status": 0}}))
         self.assertTrue(self.inst.running)
         self.assertTrue(self.inst.running_confirmed_at)
+
+    def _done(self, executor):
+        """What the host answers once *executor*'s restore is done."""
+        return {"Wait for the restore": {"stdout": (
+            f"IC_PITR_RESTORE job={executor.job.id} state=done "
+            "timeline=00000002 promoted_at=1792369056 target=2026-10-18T22:31:00+00"
+        ), "exit_status": 0}}
+
+    def test_a_restore_that_ended_tells_the_addons_once(self):
+        """Its database was replaced, as by any restore (``pitr``): SaaS
+        hands a tenant's panel new secrets then, since a moment before
+        its last deploy holds ones the manager no longer accepts."""
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True), patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            asyncio.run(executor.on_success(self._done(executor)))
+        hook.assert_called_once_with(self.inst, "pitr")
+
+    def test_a_restore_still_running_tells_the_addons_nothing(self):
+        """The next job follows it, and tells them once it ends."""
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True), patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            asyncio.run(executor.on_success({"Wait for the restore": {
+                "stdout": "IC_PITR_RESTORE state=running", "exit_status": 0,
+            }}))
+        hook.assert_not_called()
+
+    def test_a_database_restored_without_its_files_tells_the_addons(self):
+        """The job fails, but the database was replaced all the same."""
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True), patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            asyncio.run(executor.on_failure({"Wait for the restore": {"stdout": (
+                f"IC_PITR_RESTORE job={executor.job.id} state=db-only "
+                "timeline=00000002 promoted_at=1792369056 filestore=failed"
+            ), "exit_status": 2}}, ["exit 2"]))
+        hook.assert_called_once_with(self.inst, "pitr")
+
+    def test_a_restore_put_back_tells_the_addons_nothing(self):
+        """Its database is as it was."""
+        executor = self._planned()
+        with patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            asyncio.run(executor.on_failure({
+                "Start the restore": {"stdout": "", "exit_status": 0},
+                "Wait for the restore": {"stdout": (
+                    "IC_PITR_RESTORE job=1 state=failed stopped_at=recovering"
+                ), "exit_status": 1},
+            }, ["exit 1"]))
+        hook.assert_not_called()
+
+    def test_a_restore_that_ended_takes_one_base_copy(self):
+        """Its own, full; the hook it calls takes none besides."""
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
+            asyncio.run(executor.on_success(self._done(executor)))
+        self.assertEqual(
+            [(c.args[3], c.kwargs.get("payload")) for c in enqueue.call_args_list],
+            [("pitr_base_backup", {"full": True})],
+        )
+
+    def _watch_reads_it_ended(self, executor, timeline="00000002"):
+        """The watch reads *executor*'s restore as ended, before or after it."""
+        watch = self._executor(ex.PitrStatusExecutor, "pitr_status")
+        asyncio.run(watch.on_success({"r": {"stdout": (
+            f"IC_PITR_STATUS restoring=1 restore_job={executor.job.id} "
+            f"restore_state=done restore_timeline={timeline} "
+            "restore_promoted_at=1792369056 restore_target=2026-10-18T22:31:00+00"
+        ), "exit_status": 0}}))
+
+    def test_a_restore_its_job_followed_up_is_not_followed_up_by_the_watch(self):
+        """The job records it first: the watch's reading repeats nothing."""
+        executor = self._planned()
+        with patch.object(
+            self.Job, "enqueue", autospec=True,
+        ) as enqueue, patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            asyncio.run(executor.on_success(self._done(executor)))
+            self._watch_reads_it_ended(executor)
+        self.assertEqual(
+            [c.args[3] for c in enqueue.call_args_list], ["pitr_base_backup"],
+        )
+        hook.assert_called_once_with(self.inst, "pitr")
+
+    def test_a_restore_the_watch_followed_up_is_not_followed_up_by_its_job(self):
+        """The watch records it first; the job, ending later, repeats
+        nothing and still says the instance runs."""
+        self.inst.write({"running": False})
+        executor = self._planned()
+        with patch.object(
+            self.Job, "enqueue", autospec=True,
+        ) as enqueue, patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            self._watch_reads_it_ended(executor)
+            asyncio.run(executor.on_success(self._done(executor)))
+        self.assertEqual(
+            [c.args[3] for c in enqueue.call_args_list], ["pitr_base_backup"],
+        )
+        hook.assert_called_once_with(self.inst, "pitr")
+        self.assertEqual(len(self.inst.pitr_timelines), 1)
+        self.assertTrue(self.inst.running)
+
+    def test_a_restore_without_its_timeline_is_still_followed_up_once(self):
+        """``pitr.sh`` reads the new timeline after the promotion, and that
+        read may fail: the restore is done but cannot be recorded. Its job
+        still copies it and tells the addons; the watch, which cannot
+        record it either, repeats neither."""
+        executor = self._planned()
+        with patch.object(
+            self.Job, "enqueue", autospec=True,
+        ) as enqueue, patch.object(
+            self.Instance, "_after_restore_hook", autospec=True,
+        ) as hook:
+            asyncio.run(executor.on_success({"Wait for the restore": {"stdout": (
+                f"IC_PITR_RESTORE job={executor.job.id} state=done timeline= "
+                "promoted_at=1792369056 target=2026-10-18T22:31:00+00"
+            ), "exit_status": 0}}))
+            self._watch_reads_it_ended(executor, timeline="")
+        self.assertEqual(
+            [(c.args[3], c.kwargs.get("payload")) for c in enqueue.call_args_list],
+            [("pitr_base_backup", {"full": True})],
+        )
+        hook.assert_called_once_with(self.inst, "pitr")
+        self.assertFalse(self.inst.pitr_timelines)
 
     def test_one_still_running_is_handed_to_the_next_job(self):
         executor = self._planned()

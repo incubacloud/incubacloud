@@ -29,6 +29,24 @@ _repo_with_tracked_log() {
     printf '%s\n' "$dir"
 }
 
+# The same repo with continuous recovery's directory tracked: wal-g, and
+# the spool the pitr agent writes. Every instance a rebuild committed
+# after continuous recovery was switched on is in this state.
+_repo_with_tracked_walg() {
+    local dir="$TMP/inst"
+    mkdir -p "$dir/.walg/spool/done"
+    git -C "$dir" init -q
+    git -C "$dir" config user.email t@example.com
+    git -C "$dir" config user.name Test
+    printf 'template\n' > "$dir/prod.yaml"
+    printf 'wal-g\n' > "$dir/.walg/wal-g"
+    : > "$dir/.walg/spool/done/00000001000000000000000B"
+    printf '1761566560\n' > "$dir/.walg/spool/fs-ok"
+    git -C "$dir" add -A
+    git -C "$dir" commit -qm initial
+    printf '%s\n' "$dir"
+}
+
 @test "ic_log prefixes the message" {
     run ic_log "deploying instance"
     [ "$status" -eq 0 ]
@@ -143,6 +161,85 @@ _repo_with_tracked_log() {
     run ic_git_exclude_logs "$TMP/plain"
     [ "$status" -eq 0 ]
     [ ! -e "$TMP/plain/.git" ]
+}
+
+@test "ic_git_exclude untracks continuous recovery's directory but leaves it on disk" {
+    dir="$(_repo_with_tracked_walg)"
+    run ic_git_exclude "$dir" .walg/
+    [ "$status" -eq 0 ]
+    grep -qxF '/.walg/' "$dir/.git/info/exclude"
+    [ -z "$(git -C "$dir" ls-files .walg)" ]
+    [ -f "$dir/.walg/wal-g" ]
+    [ -f "$dir/.walg/spool/fs-ok" ]
+}
+
+@test "ic_git_exclude leaves the tree clean while the pitr agent keeps writing" {
+    # QA 7016, 2026-10-27: the agent marked a segment, dropped an old
+    # mark or recorded a filestore copy between the commit and copier's
+    # check, and a plan change died on "Destination repository is
+    # dirty", holding the instance's queue.
+    dir="$(_repo_with_tracked_walg)"
+    ic_git_exclude "$dir" .walg/
+    git -C "$dir" commit -qm untrack
+    : > "$dir/.walg/spool/done/000000010000000000000018"
+    rm "$dir/.walg/spool/done/00000001000000000000000B"
+    printf '1761566860\n' > "$dir/.walg/spool/fs-ok"
+    mkdir -p "$dir/.walg/restore"
+    printf 'job=7\n' > "$dir/.walg/restore/result"
+    [ -z "$(git -C "$dir" status --porcelain)" ]
+}
+
+@test "ic_git_exclude is idempotent and keeps the log's line" {
+    dir="$(_repo_with_tracked_walg)"
+    ic_git_exclude_logs "$dir"
+    ic_git_exclude "$dir" .walg/
+    ic_git_exclude "$dir" .walg/
+    [ "$(grep -cxF '/.walg/' "$dir/.git/info/exclude")" -eq 1 ]
+    [ "$(grep -cxF '/logs/' "$dir/.git/info/exclude")" -eq 1 ]
+}
+
+@test "ic_git_exclude keeps out a single file and a pattern, not their neighbours" {
+    dir="$TMP/inst"
+    mkdir -p "$dir/odoo/custom/src" "$dir/odoo/custom/conf.d"
+    git -C "$dir" init -q
+    git -C "$dir" config user.email t@example.com
+    git -C "$dir" config user.name Test
+    printf 'odoo: {}\n' > "$dir/odoo/custom/src/repos.yaml"
+    printf 'odoo: {}\n' > "$dir/odoo/custom/src/addons.yaml"
+    printf '[options]\n' > "$dir/odoo/custom/conf.d/inst.conf"
+    : > "$dir/odoo/custom/conf.d/.empty"
+    git -C "$dir" add -A
+    git -C "$dir" commit -qm initial
+    ic_git_exclude "$dir" odoo/custom/src/repos.yaml
+    ic_git_exclude "$dir" 'odoo/custom/conf.d/*.conf'
+    grep -qxF '/odoo/custom/src/repos.yaml' "$dir/.git/info/exclude"
+    grep -qxF '/odoo/custom/conf.d/*.conf' "$dir/.git/info/exclude"
+    [ "$(git -C "$dir" ls-files odoo)" = "$(printf 'odoo/custom/conf.d/.empty\nodoo/custom/src/addons.yaml')" ]
+    [ -f "$dir/odoo/custom/src/repos.yaml" ]
+    [ -f "$dir/odoo/custom/conf.d/inst.conf" ]
+}
+
+@test "ic_git_exclude untracks a path staged with content neither HEAD nor the disk has" {
+    # A commit that failed (commit-dirty swallows it) leaves the file
+    # staged, and the next deploy rewrites it on disk: plain
+    # ``git rm --cached`` refuses that path, and ``git add -A`` would
+    # then commit it. ``-f`` is safe: ``--cached`` never touches the disk.
+    dir="$TMP/inst"
+    mkdir -p "$dir/odoo/custom/src"
+    git -C "$dir" init -q
+    git -C "$dir" config user.email t@example.com
+    git -C "$dir" config user.name Test
+    printf 'token: one\n' > "$dir/odoo/custom/src/repos.yaml"
+    git -C "$dir" add -A
+    git -C "$dir" commit -qm initial
+    printf 'token: two\n' > "$dir/odoo/custom/src/repos.yaml"
+    git -C "$dir" add -A
+    printf 'token: three\n' > "$dir/odoo/custom/src/repos.yaml"
+    run ic_git_exclude "$dir" odoo/custom/src/repos.yaml
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"WARNING"* ]]
+    [ -z "$(git -C "$dir" ls-files odoo)" ]
+    [ "$(cat "$dir/odoo/custom/src/repos.yaml")" = "token: three" ]
 }
 
 # ── The instance's database tool ─────────────────────────────────────────
