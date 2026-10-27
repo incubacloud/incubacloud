@@ -399,9 +399,10 @@ class TestLimits(BaseCase):
         )
 
     def test_a_page_with_no_room_for_a_piece_of_its_first_entry_says_so(self):
-        """When the page has room for its company but not for any piece of
-        its first entry, it comes empty, says so, and the next page starts
-        at that entry."""
+        """When the page has room for its company but neither for any piece
+        of its first entry nor for saying so, and its company cannot be cut,
+        the answer is the error: never an empty page that does not say why,
+        nor one past the limit."""
         answer = {
             "note": "n" * 100,
             "entries": ["e" * 50, "f"],
@@ -410,13 +411,51 @@ class TestLimits(BaseCase):
             "next_offset": None,
         }
         room = _answer_size({**answer, "entries": []}) + 2
-        cut, was_cut = fit_answer(answer, room)
-        self.assertTrue(was_cut)
         self.assertEqual(
-            (cut["entries"], cut["next_offset"], cut["truncated"]), ([], 3, True)
+            fit_answer(answer, room),
+            ({"truncated": True, "error": "The answer is too large to show."}, True),
         )
-        self.assertTrue(cut.get("page_too_small"))
-        self.assertIn("no room", cut.get("notice", ""))
+
+    def test_a_page_with_no_room_for_its_first_entry_never_passes_the_limit(self):
+        """A page whose company leaves no room for its first entry, nor for
+        saying so, is measured with its notice: its company is cut instead,
+        and the entry shown, never past 64 KB."""
+        base = {
+            "note": "",
+            "entries": [],
+            "offset": 7,
+            "truncated": False,
+            "next_offset": None,
+        }
+        for spare in range(7):
+            note = "c" * (MAX_BYTES - spare - _answer_size(base))
+            with self.subTest(spare=spare):
+                cut, was_cut = fit_answer(
+                    {**base, "note": note, "entries": ["e" * 500]}
+                )
+                self.assertTrue(was_cut)
+                self.assertLessEqual(_answer_size(cut), MAX_BYTES)
+                self.assertEqual(cut["entries"], ["e" * 500])
+                self.assertLess(len(cut["note"]), 2048)
+
+    def test_a_page_s_next_offset_never_takes_it_past_the_limit(self):
+        """A page is measured with the next_offset it ends with: one that grows
+        from null to a long number leaves one more entry out, never passes
+        64 KB, and the next page starts where this one ends."""
+        for extra in range(40):
+            answer = {
+                "entries": ["x" * 10] * 6000,
+                "offset": 123_456_789,
+                "truncated": False,
+                "next_offset": None,
+                "pad": "p" * extra,
+            }
+            with self.subTest(extra=extra):
+                cut, was_cut = fit_answer(answer)
+                self.assertTrue(was_cut)
+                self.assertLessEqual(_answer_size(cut), MAX_BYTES)
+                self.assertTrue(cut["entries"])
+                self.assertEqual(cut["next_offset"], 123_456_789 + len(cut["entries"]))
 
     def test_a_page_without_room_says_so(self):
         """A page that cannot show any entry says so, for the agent not to ask
