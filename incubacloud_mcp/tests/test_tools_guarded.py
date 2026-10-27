@@ -243,6 +243,14 @@ class TestGuardedTools(
         self.assertFalse(result["isError"], result)
         self.assertEqual(call.call_args.args[1], "/cloud/get_instance_users")
 
+    def test_a_purge_is_bound_to_the_days_it_keeps(self):
+        """A purge without days is bound to the retention it defaults to."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.audit_log_retention_days", "90"
+        )
+        tools = self.env["incubacloud.mcp.tools"].with_user(self.manager)
+        self.assertEqual(tools._prepare_purge_audit_logs({}), {"days": 90})
+
     def test_purging_the_audit_asks_and_purges(self):
         """Purging the audit says how much goes, and purges once approved."""
         old = self.env["cloud.audit.log"].sudo().create({"action": "Very old"})

@@ -7,6 +7,7 @@ from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
 from .common import (
+    ACCEPT,
     FORM_CAPABILITIES,
     ConfirmMixin,
     McpHttpMixin,
@@ -132,6 +133,35 @@ class TestDownload(
         self.dev.group_ids = [(3, self.env.ref("incubacloud.group_cloud_developer").id)]
         self.env.flush_all()
         self.assertEqual(self._get(path).status_code, 404)
+
+    def test_an_approval_is_for_the_file_it_named(self):
+        """A file the job gains after the approval is not the one approved:
+        the retry hands out no link."""
+        first = self._call_tool(
+            self.key, "download_backup", {"job_id": self.job.id}, FORM_CAPABILITIES
+        )
+        self.env["ir.attachment"].sudo().create(
+            {
+                "name": "other.zip",
+                "raw": b"OTHER",
+                "res_model": "cloud.job",
+                "res_id": self.job.id,
+            }
+        )
+        final = self._call_tool(
+            self.key,
+            "download_backup",
+            {"job_id": self.job.id},
+            FORM_CAPABILITIES,
+            requestState=first["requestState"],
+            inputResponses=ACCEPT,
+        )
+        self.assertTrue(final["isError"])
+        self.assertFalse(
+            self.env["incubacloud.mcp.download"]
+            .sudo()
+            .search([("job_id", "=", self.job.id)])
+        )
 
     def test_a_download_not_ready_yet_is_refused_without_asking(self):
         """A download whose job has not finished is refused, nobody asked."""

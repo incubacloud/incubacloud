@@ -252,19 +252,25 @@ class McpToolsGuarded(models.AbstractModel):
         )
 
     @api.model
-    def _confirm_purge_audit_logs(self, args):
-        """Say how much of the audit goes."""
-        self.env["cloud.security.mixin"]._check_cloud_group(_MANAGER)
+    def _prepare_purge_audit_logs(self, args):
+        """Resolve how many days are kept (the retention, by default), and
+        bind the call to them."""
         days = args.get("days") or int(
             self.env["ir.config_parameter"]
             .sudo()
             .get_param("incubacloud.audit_log_retention_days", "90")
             or 90
         )
+        return {**args, "days": days}
+
+    @api.model
+    def _confirm_purge_audit_logs(self, args):
+        """Say how much of the audit goes."""
+        self.env["cloud.security.mixin"]._check_cloud_group(_MANAGER)
         return self.env._(
             "Delete the audit log entries older than %(days)s days. This cannot "
             "be undone.",
-            days=days,
+            days=args["days"],
         )
 
     @api.model
@@ -296,6 +302,15 @@ class McpToolsGuarded(models.AbstractModel):
         return job, attachment
 
     @api.model
+    def _prepare_download_backup(self, args):
+        """Bind a link to the file the job holds now: one it gains later is
+        not the file approved."""
+        if not args.get("job_id"):
+            return args
+        _job, attachment = self._download_ready(args["job_id"])
+        return {**args, "attachment_id": attachment.id}
+
+    @api.model
     def _confirm_download_backup(self, args):
         """Ask only for the link: name the file and the instance."""
         if not args.get("job_id"):
@@ -313,6 +328,12 @@ class McpToolsGuarded(models.AbstractModel):
         """Queue a download, or issue the link of a finished one."""
         if args.get("job_id"):
             job, attachment = self._download_ready(args["job_id"])
+            if attachment.id != args["attachment_id"]:
+                raise UserError(
+                    self.env._(
+                        "The download's file changed since it was approved. Ask again."
+                    )
+                )
             return {
                 "ok": True,
                 "url": self.env["incubacloud.mcp.download"]._issue(job, attachment),
