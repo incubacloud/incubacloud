@@ -90,7 +90,7 @@
                         <p class="ic-mcp-step">Run this in a terminal:</p>
                         <CopyBlock text="view.claudeCode"/>
                         <p t-if="!view.needsApiKey" class="ic-mcp-step">
-                            Then run <code>/mcp</code> in Claude Code to sign in.
+                            Then run <code t-translation="off">/mcp</code> in Claude Code to sign in.
                         </p>
                     </t>
 
@@ -147,7 +147,7 @@
                             Add a remote MCP server of type HTTP with this panel's MCP address.
                             <t t-if="view.needsApiKey">
                                 Send your API key in the header
-                                <code>Authorization: Bearer <t t-esc="apiKeyPlaceholder"/></code>.
+                                <code t-translation="off">Authorization: Bearer <t t-esc="apiKeyPlaceholder"/></code>.
                             </t>
                         </p>
                     </t>
