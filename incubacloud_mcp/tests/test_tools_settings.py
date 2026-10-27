@@ -91,19 +91,30 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
         self.assertIn("rate_limit_mcp_user_per_min", payload["rate_limits"])
         self._assert_no_secret(json.dumps(result))
 
+    def _general(self):
+        """The general settings, as get_settings reads them."""
+        return self._payload(self._call_tool(self.key, "get_settings"))["general"]
+
     def test_changing_one_general_field_keeps_the_others(self):
-        """update_settings changes the field given and leaves the rest as they were."""
-        self.settings.write({"job_retention_days": 200, "job_log_retention_days": 30})
+        """update_settings changes the field given and leaves every other one
+        as it was, even one the route would not write back the same (a
+        metrics retention of 0 it would save as 1)."""
+        self.settings.write(
+            {
+                "job_retention_days": 200,
+                "job_log_retention_days": 30,
+                "metrics_retention_days": 0,
+            }
+        )
+        before = self._general()
         result = self._call_tool(
             self.key,
             "update_settings",
             {"section": "general", "values": {"job_log_retention_days": 45}},
         )
         self.assertFalse(result["isError"], result)
-        self.assertEqual(
-            (self.settings.job_log_retention_days, self.settings.job_retention_days),
-            (45, 200),
-        )
+        self.assertEqual(self._general(), before | {"job_log_retention_days": 45})
+        self.assertEqual(self.settings.metrics_retention_days, 0)
 
     def test_changing_the_app_id_keeps_the_installation(self):
         """A GitHub App change keeps the fields not given; others are refused."""
