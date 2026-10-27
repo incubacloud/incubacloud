@@ -487,12 +487,15 @@ class McpServer(models.AbstractModel):
 
         :param str outcome: ``''`` when it went through, else why not
         """
-        detail = json.dumps(args, sort_keys=True, default=str)
+        # Masked before JSON escapes a quote or an accent of a secret.
+        detail = json.dumps(
+            scrubber.value(args), sort_keys=True, default=str, ensure_ascii=False
+        )
         if outcome:
-            detail = f"refused: {outcome} · {detail}"
+            detail = f"refused: {scrubber.text(outcome)} · {detail}"
         vals = {
             "action": f"Agent: {spec.name}",
-            "details": scrubber.text(detail)[:2000],
+            "details": detail[:2000],
         }
         for field_name, model in _AUDIT_TARGETS.items():
             value = args.get(field_name)

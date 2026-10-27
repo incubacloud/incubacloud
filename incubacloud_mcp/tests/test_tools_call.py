@@ -1,5 +1,6 @@
 """tools/list and tools/call: role, arguments, transaction, audit, output."""
 
+import json
 from unittest.mock import patch
 
 from odoo import http
@@ -338,6 +339,20 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertFalse(
             self.env["cloud.audit.log"].search([("action", "=", "Agent: probe_echo")])
         )
+
+    def test_a_secret_in_the_arguments_is_masked_in_the_audit_however_spelt(self):
+        """A secret with a quote and an accent is masked in the audit details,
+        not left there escaped by JSON."""
+        secret = 'mcp-s\u00e9cret"0042'
+        host = self._probe_host()
+        host.password = secret
+        self._call_tool(self.key, "probe_refuse", {"name": f"tag {secret}"})
+        row = self.env["cloud.audit.log"].search(
+            [("action", "=", "Agent: probe_refuse")], limit=1
+        )
+        self.assertIn(MASK, row.details)
+        for form in (secret, json.dumps(secret)[1:-1]):
+            self.assertNotIn(form, row.details)
 
     def test_an_earlier_client_initializes_and_calls_a_tool(self):
         """A 2025-06-18 client lists and calls tools in its session."""
