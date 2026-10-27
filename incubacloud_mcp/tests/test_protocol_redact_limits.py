@@ -74,6 +74,13 @@ class TestScrubber(BaseCase):
             {"a": [MASK, 3], "b": None},
         )
 
+    def test_a_secret_used_as_a_key_is_masked(self):
+        """A secret that is a dict's key is masked too."""
+        self.assertEqual(
+            Scrubber([SECRET]).value({f"by {SECRET}": 1, 2: "x"}),
+            {f"by {MASK}": 1, 2: "x"},
+        )
+
 
 class TestSecretParts(BaseCase):
     """What one stored secret hides: the value, JSON leaves, PEM lines."""
