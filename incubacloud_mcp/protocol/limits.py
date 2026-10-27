@@ -25,6 +25,11 @@ def _size(value):
     return len(_dumps(value).encode("utf-8", errors="surrogatepass"))
 
 
+def size_of(value):
+    """Return the bytes *value* takes in a tool's answer."""
+    return _size(value)
+
+
 def _fit(text, max_bytes):
     """Return the longest prefix of *text* that fits *max_bytes* serialised.
 
@@ -166,4 +171,38 @@ def page_record(record, fields, offset=0, max_bytes=MAX_BYTES):
         "total": chunk["total"],
         "truncated": cut or chunk["truncated"],
         "next_offset": chunk["next_offset"],
+    }
+
+
+def page_answer(
+    answer, key, offset=0, limit=None, first=0, total=None, max_bytes=MAX_BYTES
+):
+    """Return a route's *answer* with its list *key* cut to a page that fits.
+
+    The list holds the entries from index *first* on: ``0`` when the
+    route answered them all and the tool pages them, *offset* when the
+    route paged them itself. The rest of the answer comes on every page.
+
+    :param dict answer: what the route answered
+    :param str key: the key of its long list
+    :param int offset: where the page starts, among all the entries
+    :param limit: at most this many entries, or None
+    :param int first: the index of the list's first entry
+    :param total: how many entries there are, if the route says so
+    :return: the answer with ``offset``, ``truncated`` and ``next_offset``
+    """
+    rest = {name: value for name, value in answer.items() if name != key}
+    items = answer.get(key) or []
+    offset = max(0, int(offset or 0))
+    room = max(0, max_bytes - _size(rest) - _PAGE_OVERHEAD)
+    page = page_items(items, offset - first, limit, room)
+    following = offset + len(page["items"])
+    known = total if isinstance(total, int) else first + len(items)
+    more = following < known
+    return {
+        **rest,
+        key: page["items"],
+        "offset": offset,
+        "truncated": page["truncated"] or more,
+        "next_offset": following if more else None,
     }
