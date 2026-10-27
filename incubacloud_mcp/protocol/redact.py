@@ -9,6 +9,7 @@ secret of the instance, as with the terminal.
 """
 
 import base64
+import json
 import re
 from urllib.parse import quote
 
@@ -30,6 +31,57 @@ _TOKEN_MARK_RE = re.compile(
 _URL_CREDENTIAL_RE = re.compile(
     r"\b([a-z][a-z0-9+.-]{0,31}://)[^/?#\s@]+@", re.IGNORECASE
 )
+
+#: Keys of a stored JSON document whose text values are secrets.
+_SECRET_KEY_RE = re.compile(r"password|secret|token|passphrase|key", re.IGNORECASE)
+#: Keys that never hold one, whatever they are called next to.
+_PUBLIC_KEYS = frozenset({"machine", "login"})
+#: A line of a PEM block's body.
+_PEM_LINE_RE = re.compile(rf"[A-Za-z0-9+/=]{{{MIN_SECRET_LEN},}}")
+
+
+def _json_leaves(node, secret=False):
+    """Yield the text leaves of *node* that sit under a secret key."""
+    if isinstance(node, dict):
+        for key, item in node.items():
+            name = str(key)
+            yield from _json_leaves(
+                item,
+                name not in _PUBLIC_KEYS and bool(_SECRET_KEY_RE.search(name)),
+            )
+    elif isinstance(node, list):
+        for item in node:
+            yield from _json_leaves(item, secret)
+    elif secret and isinstance(node, str):
+        yield node
+
+
+def secret_parts(value):
+    """Return what one stored secret hides: itself and its pieces.
+
+    A JSON object adds its text values under keys that name a secret
+    (``password``, ``client_secret``, ``new_usage_token``…, never
+    ``machine`` or ``login``), at any depth; a PEM block adds each line
+    of its body, so a key printed a line at a time is masked too.
+
+    :param str value: a decrypted secret
+    :rtype: set[str]
+    """
+    parts = {value}
+    if value.lstrip().startswith("{"):
+        try:
+            document = json.loads(value)
+        except (ValueError, RecursionError):
+            document = None
+        for leaf in _json_leaves(document):
+            parts |= secret_parts(leaf)
+    if "-----BEGIN " in value:
+        parts.update(
+            line.strip()
+            for line in value.splitlines()
+            if _PEM_LINE_RE.fullmatch(line.strip())
+        )
+    return parts
 
 
 def secret_variants(value):

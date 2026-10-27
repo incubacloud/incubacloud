@@ -1,5 +1,6 @@
 """Secrets never go in or out: names from the registry, values from the database."""
 
+import json
 from unittest.mock import patch
 
 from odoo.exceptions import UserError
@@ -75,6 +76,32 @@ class TestSecrets(TransactionCase):
         self.assertEqual(
             self.Secrets._scrubber().text(f"ssh with {HOST_PASSWORD}"),
             f"ssh with {MASK}",
+        )
+
+    def test_a_secret_stored_as_json_is_masked_by_its_leaves(self):
+        """A job's netrc credential is masked where a log shows its password."""
+        job_type = self.env["cloud.job.type"].create(
+            {"name": "Secret job", "code": "mcp_secret_job", "apply_to": "host"}
+        )
+        self.env["cloud.job"].sudo().create(
+            {
+                "name": "restore",
+                "host_id": self.host.id,
+                "job_type_id": job_type.id,
+                "secret_payload": json.dumps(
+                    {
+                        "machine": "backup.example.test",
+                        "login": "backup",
+                        "password": "bk-pass-5531",
+                    }
+                ),
+            }
+        )
+        self.assertEqual(
+            self.Secrets._scrubber().text(
+                "curl -u backup:bk-pass-5531 https://backup.example.test/x"
+            ),
+            f"curl -u backup:{MASK} https://backup.example.test/x",
         )
 
     def test_an_argument_named_like_a_secret_is_refused_at_any_depth(self):

@@ -14,6 +14,7 @@ from odoo.addons.incubacloud_mcp.protocol.redact import (
     drop_secret_keys,
     find_secret_key,
     mask_token_urls,
+    secret_parts,
 )
 
 SECRET = "s3cr3t/P@ss word+42"
@@ -70,6 +71,45 @@ class TestScrubber(BaseCase):
             Scrubber([SECRET]).value({"a": [SECRET, 3], "b": None}),
             {"a": [MASK, 3], "b": None},
         )
+
+
+class TestSecretParts(BaseCase):
+    """What one stored secret hides: the value, JSON leaves, PEM lines."""
+
+    def test_a_json_document_gives_its_secret_leaves_not_machine_nor_login(self):
+        """The text leaves under secret keys count, at any depth; others do not."""
+        stored = json.dumps(
+            {
+                "machine": "backup.example.test",
+                "login": "backup",
+                "password": "bk-pass-5531",
+                "new_usage_token": "usage-tok-77812",
+                "icp": {"incubacloud.oidc.client_secret": "oidc-secret-90210"},
+                "port": 2222,
+            }
+        )
+        parts = secret_parts(stored)
+        self.assertIn(stored, parts)
+        for leaf in ("bk-pass-5531", "usage-tok-77812", "oidc-secret-90210"):
+            self.assertIn(leaf, parts)
+        for public in ("backup.example.test", "backup", "2222"):
+            self.assertNotIn(public, parts)
+
+    def test_each_base64_line_of_a_pem_block_counts(self):
+        """Each line of a PEM body counts, so a key printed line by line is masked."""
+        body = [base64.b64encode(bytes([i]) * 48).decode() for i in range(3)]
+        pem = "\n".join(
+            ["-----BEGIN PRIVATE KEY-----", *body, "Zm9v", "-----END PRIVATE KEY-----"]
+        )
+        parts = secret_parts(pem)
+        for line in body:
+            self.assertIn(line, parts)
+        self.assertNotIn("Zm9v", parts)
+        self.assertNotIn("-----END PRIVATE KEY-----", parts)
+
+    def test_a_plain_value_is_itself(self):
+        """A value that is neither JSON nor PEM is just itself."""
+        self.assertEqual(secret_parts("plain-pass-123"), {"plain-pass-123"})
 
 
 class TestMailLinks(BaseCase):
