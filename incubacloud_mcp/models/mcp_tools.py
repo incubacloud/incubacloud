@@ -26,10 +26,18 @@ class McpTools(models.AbstractModel):
     def _confirmation(self, spec, args):
         """Return what the user must approve for this call, or None.
 
-        Delegates to ``_confirm_<tool name>`` when the group defines one.
+        ``_confirm_<tool name>`` says it when the group defines one. Fails
+        closed: an ``always`` tool asks even when that method is missing
+        or says nothing, and a ``conditional`` tool without the method
+        asks every time.
         """
+        if spec.confirm == "never":
+            return None
         method = getattr(self, f"_confirm_{spec.name}", None)
-        return method(args) if method else None
+        text = method(args) if method else None
+        if text or (method and spec.confirm == "conditional"):
+            return text or None
+        return self.env._("Run the tool %s with these arguments.", spec.name)
 
     @api.model
     def _route(self, path, **params):

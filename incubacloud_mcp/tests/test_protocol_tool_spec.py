@@ -88,6 +88,13 @@ class TestToolSpec(BaseCase):
         self.assertEqual((OFFSET["minimum"], LIMIT["maximum"]), (0, 1000))
         self.assertEqual(spec.input_schema["properties"]["offset"]["minimum"], 0)
 
+    def test_a_destructive_tool_cannot_skip_the_approval(self):
+        """A destructive tool that would run without approval is not declared."""
+        with self.assertRaises(ValueError):
+            self._spec(destructive=True)
+        with self.assertRaises(ValueError):
+            self._spec(confirm="sometimes")
+
     def test_a_spec_is_immutable(self):
         """A spec cannot be changed once declared."""
         with self.assertRaises(dataclasses.FrozenInstanceError):
