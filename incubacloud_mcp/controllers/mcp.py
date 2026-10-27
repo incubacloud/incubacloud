@@ -119,7 +119,7 @@ class McpController(http.Controller):
                     429,
                     {
                         "error": "too_many_requests",
-                        "error_description": (
+                        "error_description": system._(
                             "Too many failed authentications from this address."
                         ),
                     },
