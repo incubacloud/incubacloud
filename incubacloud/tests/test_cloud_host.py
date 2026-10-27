@@ -1719,6 +1719,25 @@ class TestTrustOnlyTheApprovedKey(KnownHostsCase):
         self.assertEqual(len(details), 1)
         self.assertIn(swapped.get_fingerprint("sha256"), details[0])
 
+    def test_a_login_refused_with_the_approved_key_back_does_not_name_it_twice(self):
+        """A login refused while a second look shows the approved key again
+        says the approved key was not presented, not that it replaced itself."""
+        host = self._host()
+        approved = asyncssh.generate_private_key("ssh-ed25519")
+        fingerprint = approved.get_fingerprint("sha256")
+        with (
+            self._server(approved) as (scan, connect),
+            self.assertLogs(self.HOST_LOGGER, level="WARNING") as logged,
+            self.assertRaises(UserError) as caught,
+        ):
+            scan.side_effect = [approved, approved]
+            connect.side_effect = asyncssh.HostKeyNotVerifiable("Host key not trusted")
+            host._capture_known_host_key(expected_fingerprint=fingerprint)
+        message = str(caught.exception)
+        self.assertEqual(message.count(fingerprint), 1)
+        self.assertNotIn("now presents", message)
+        self.assertEqual("".join(logged.output).count(fingerprint), 1)
+
     def test_an_empty_approval_trusts_nothing(self):
         """An empty fingerprint approves nothing: no login, nothing stored."""
         host = self._host()

@@ -13171,6 +13171,16 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud/models/cloud_host.py:0
 msgid ""
+"The server '%(name)s' did not present the approved SSH key %(expected)s. "
+"Nothing was trusted."
+msgstr ""
+"El servidor «%(name)s» no ha presentado la clave SSH aprobada "
+"%(expected)s. No se ha guardado ninguna clave."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host.py:0
+msgid ""
 "The server '%(name)s' now presents the SSH key %(found)s, not the approved "
 "%(expected)s. Nothing was trusted."
 msgstr ""

@@ -1301,6 +1301,10 @@ class CloudHost(models.Model):
                     )
                 except (asyncssh.Error, OSError):
                     swapped = ""
+                # A second look that shows the approved key again says
+                # nothing about the one the login met.
+                if swapped == expected_fingerprint:
+                    swapped = ""
                 self._refuse_unapproved_key(swapped, expected_fingerprint)
         fingerprint = self._known_hosts_fingerprint(entry)
         previous = self.revoked_key_fingerprint or ""
@@ -1360,30 +1364,49 @@ class CloudHost(models.Model):
         Nothing is stored. The route answers the refusal rather than
         raising it, so the audit row stays.
 
-        :param found: the fingerprint presented, ``''`` if none
+        :param found: the fingerprint presented, ``''`` if none or not
+            known
         :param expected: the fingerprint approved
         :raises UserError: always
         """
         self.ensure_one()
+        if not found:
+            _logger.warning(
+                "[host %s] refused: the approved SSH host key %s was not presented",
+                self.name,
+                expected or "(none)",
+            )
+            self.env["cloud.audit.log"].sudo().create(
+                {
+                    "action": "SSH host key refused",
+                    "host_id": self.id,
+                    "details": f"{expected or 'none'} approved, not presented",
+                }
+            )
+            raise UserError(_(
+                "The server '%(name)s' did not present the approved SSH key "
+                "%(expected)s. Nothing was trusted.",
+                name=self.name,
+                expected=expected or "?",
+            ))
         _logger.warning(
             "[host %s] refused SSH host key %s: the approved one is %s",
             self.name,
-            found or "(none presented)",
+            found,
             expected or "(none)",
         )
         self.env["cloud.audit.log"].sudo().create(
             {
                 "action": "SSH host key refused",
                 "host_id": self.id,
-                "details": f"{found or 'no key'} presented, "
-                f"{expected or 'none'} approved",
+                "details": f"{found} presented, {expected or 'none'} approved",
             }
         )
         raise UserError(_(
             "The server '%(name)s' now presents the SSH key %(found)s, "
             "not the approved %(expected)s. Nothing was trusted.",
             name=self.name,
-            found=found or "?",
+            found=found,
             expected=expected or "?",
         ))
 
