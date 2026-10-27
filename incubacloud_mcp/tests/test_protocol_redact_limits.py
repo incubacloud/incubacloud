@@ -114,6 +114,18 @@ class TestSecretParts(BaseCase):
         for public in ("backup.example.test", "backup", "2222"):
             self.assertNotIn(public, parts)
 
+    def test_what_sits_under_a_secret_key_is_secret_but_a_login(self):
+        """Under a secret key every text is secret, however deep, but a login
+        or a machine; a document may also be a list."""
+        stored = json.dumps(
+            {"token": {"value": "token-value-123", "login": "admin-user-01"}}
+        )
+        parts = secret_parts(stored, structured=True)
+        self.assertIn("token-value-123", parts)
+        self.assertNotIn("admin-user-01", parts)
+        listed = json.dumps([{"password": "listed-pass-77"}])
+        self.assertIn("listed-pass-77", secret_parts(listed, structured=True))
+
     def test_each_base64_line_of_a_pem_block_counts(self):
         """Each line of a PEM body counts, so a key printed line by line is masked."""
         body = [base64.b64encode(bytes([i]) * 48).decode() for i in range(3)]

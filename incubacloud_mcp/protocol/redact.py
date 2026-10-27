@@ -41,7 +41,8 @@ _URL_CREDENTIAL_RE = re.compile(
 
 #: Keys of a stored JSON document whose text values are secrets.
 _SECRET_KEY_RE = re.compile(r"password|secret|token|passphrase|key", re.IGNORECASE)
-#: Keys that never hold one, whatever they are called next to.
+#: Keys that never hold one, even under a secret key: who and where a
+#: credential is for.
 _PUBLIC_KEYS = frozenset({"machine", "login"})
 #: A line of a PEM block's body.
 _PEM_LINE_RE = re.compile(rf"[A-Za-z0-9+/=]{{{MIN_SECRET_LEN},}}")
@@ -57,8 +58,10 @@ MAX_PARTS = 256
 def _json_leaves(document):
     """Return the text leaves of *document* under a secret key.
 
-    Walked without recursion — a document may nest past the stack — and
-    stopped at :data:`MAX_PARTS` leaves.
+    Under a secret key everything is secret, however deep, but what a
+    key of :data:`_PUBLIC_KEYS` holds. Walked without recursion — a
+    document may nest past the stack — and stopped at :data:`MAX_PARTS`
+    leaves.
 
     :rtype: list[str]
     """
@@ -71,7 +74,7 @@ def _json_leaves(document):
                 (
                     item,
                     str(key) not in _PUBLIC_KEYS
-                    and bool(_SECRET_KEY_RE.search(str(key))),
+                    and (secret or bool(_SECRET_KEY_RE.search(str(key)))),
                 )
                 for key, item in node.items()
             )
@@ -86,7 +89,7 @@ def secret_parts(value, structured=False):
     """Return what one stored secret hides: itself and, if asked, its pieces.
 
     Only a field that stores a document is split (*structured*): a JSON
-    object adds its text values under keys that name a secret
+    object or list adds its text values under keys that name a secret
     (``password``, ``client_secret``, ``new_usage_token``…, never
     ``machine`` or ``login``), at any depth; a PEM block adds each line
     of its body, so a key printed a line at a time is masked too. Any
@@ -105,7 +108,7 @@ def secret_parts(value, structured=False):
     while pending and len(parts) <= MAX_PARTS:
         text = pending.pop()
         found = []
-        if text.lstrip()[:1] == "{":
+        if text.lstrip()[:1] in ("{", "["):
             try:
                 document = json.loads(text)
             except (ValueError, RecursionError):
