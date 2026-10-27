@@ -1,5 +1,6 @@
 """A backup leaves through a single-use link of 15 minutes, audited twice."""
 
+import os
 from datetime import timedelta
 
 from odoo import fields
@@ -45,13 +46,17 @@ class TestDownload(
                 }
             )
         )
-        self.env["ir.attachment"].sudo().create(
-            {
-                "name": "mcp-acme-prod.zip",
-                "raw": b"ZIP-CONTENT",
-                "res_model": "cloud.job",
-                "res_id": self.job.id,
-            }
+        self.attachment = (
+            self.env["ir.attachment"]
+            .sudo()
+            .create(
+                {
+                    "name": "mcp-acme-prod.zip",
+                    "raw": b"ZIP-CONTENT",
+                    "res_model": "cloud.job",
+                    "res_id": self.job.id,
+                }
+            )
         )
 
     def _link(self):
@@ -162,6 +167,24 @@ class TestDownload(
             .sudo()
             .search([("job_id", "=", self.job.id)])
         )
+
+    def test_a_file_gone_from_the_filestore_is_gone_not_a_crash(self):
+        """A link whose file left the filestore answers 410, not an error."""
+        path = self._link()
+        full = self.attachment._full_path(self.attachment.store_fname)
+        os.rename(full, full + ".moved")
+        self.addCleanup(os.rename, full + ".moved", full)
+        self.assertEqual(self._get(path).status_code, 410)
+
+    def test_the_file_name_cannot_point_elsewhere(self):
+        """The name the file is saved under is a plain name: no directories,
+        quotes or control characters."""
+        self.attachment.name = '../../etc/pa"ss\nwd.zip'
+        disposition = self._get(self._link()).headers["Content-Disposition"]
+        self.assertNotIn("/", disposition)
+        self.assertNotIn("..", disposition)
+        self.assertNotIn("\n", disposition)
+        self.assertIn("passwd.zip", disposition)
 
     def test_a_download_not_ready_yet_is_refused_without_asking(self):
         """A download whose job has not finished is refused, nobody asked."""
