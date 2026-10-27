@@ -108,12 +108,12 @@ class TestModernProtocol(McpUsersMixin, McpHttpMixin, HttpCase):
         self._error(self._modern("resources/list", credential=self.key), 404, -32601)
 
     def test_meta_must_carry_version_and_capabilities(self):
-        """``_meta`` without the version, or without the capabilities: -32602."""
+        """A 2026-07-28 client whose ``_meta`` lacks the version or the
+        capabilities: -32602."""
         body = {"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {}}
-        headers = {"Mcp-Method": "server/discover"}
+        headers = {"Mcp-Method": "server/discover", "MCP-Protocol-Version": MODERN}
         self._error(self._post(body, self.key, headers), 400, -32602)
         body["params"]["_meta"] = {"io.modelcontextprotocol/protocolVersion": MODERN}
-        headers["MCP-Protocol-Version"] = MODERN
         self._error(self._post(body, self.key, headers), 400, -32602)
 
     def test_params_and_meta_must_be_objects(self):
