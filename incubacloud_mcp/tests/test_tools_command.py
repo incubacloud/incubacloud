@@ -2,13 +2,17 @@
 
 import asyncio
 import tracemalloc
+import uuid
+from contextlib import closing
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
 from asyncssh.misc import _ACMWrapper
 
+from odoo import api, sql_db
+from odoo.orm.environments import Transaction
 from odoo.tests import tagged
-from odoo.tests.common import HttpCase
+from odoo.tests.common import HttpCase, TransactionCase
 
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES
 from odoo.addons.incubacloud_mcp.protocol.redact import MASK
@@ -188,6 +192,68 @@ class TestCommandTools(
         self.assertTrue(result["isError"])
         self.assertEqual(self._audit("Agent: run_command").details, "id")
 
+    def test_a_failure_other_than_ssh_leaves_the_command_audited(self):
+        """A failure that is not SSH's, once the command may have run,
+        answers an error and leaves the command audited."""
+        self.output["raises"] = MemoryError()
+        with self.assertLogs(SAFE_ERROR_LOGGER, level="ERROR"):
+            result = self._call_tool(
+                self.key,
+                "run_command",
+                {"instance_id": self.staging.id, "command": "touch /tmp/ran"},
+            )
+        self.assertTrue(result["isError"])
+        self.assertEqual(self._audit("Agent: run_command").details, "touch /tmp/ran")
+
+    def test_what_must_outlive_the_command_is_committed_before_the_ssh(self):
+        """The staging's clock (and the audit row with it) is written in a
+        transaction of its own, committed before the SSH starts: the
+        instance's row is not held for the minute the command may run."""
+        events = []
+        Instance = type(self.env["cloud.instance"])
+        touch_original = Instance._touch_autopurge_clock
+        with self.env.registry.cursor() as cr:
+            Cursor = type(cr)
+        commit_original = Cursor.commit
+
+        def touch(records):
+            """Touch the clock, noting on which cursor."""
+            events.append(("touch", records.env.cr))
+            return touch_original(records)
+
+        def commit(cursor):
+            """Commit, noting which cursor."""
+            events.append(("commit", cursor))
+            return commit_original(cursor)
+
+        def connect(**_kwargs):
+            """Open the stub connection, noting when."""
+            events.append(("connect", None))
+            return self.connect.return_value
+
+        self.connect.side_effect = connect
+        with (
+            patch.object(
+                Instance, "_touch_autopurge_clock", autospec=True, side_effect=touch
+            ),
+            patch.object(Cursor, "commit", autospec=True, side_effect=commit),
+        ):
+            self._call_tool(
+                self.key,
+                "run_command",
+                {"instance_id": self.staging.id, "command": "id"},
+            )
+        names = [name for name, _cursor in events]
+        touched_on = events[names.index("touch")][1]
+        committed = [
+            index
+            for index, (name, cursor) in enumerate(events)
+            if name == "commit" and cursor is touched_on
+        ]
+        self.assertTrue(committed, "the clock's cursor was never committed")
+        self.assertLess(names.index("touch"), committed[0])
+        self.assertLess(committed[0], names.index("connect"))
+
     def test_a_command_past_its_minute_says_so(self):
         """A command the session gives up on is reported as timed out."""
         self.output["raises"] = asyncio.TimeoutError()
@@ -257,3 +323,43 @@ class TestCommandTools(
         )
         self.assertTrue(result["isError"])
         self.connect.assert_not_called()
+
+
+@tagged("post_install", "-at_install")
+class TestCommandAuditOutlivesTheWorker(TransactionCase):
+    """The audit row of a command outlives the request that wrote it.
+
+    The request is a transaction of its own, rolled back as a worker
+    killed mid-command leaves it: the test commits, on cursors of its
+    own, and removes what it committed.
+    """
+
+    def test_the_audit_row_outlives_a_worker_that_dies(self):
+        """Written before the SSH, the row is there after the request's
+        transaction is rolled back."""
+        action = f"Agent: run_command (test {uuid.uuid4().hex})"
+        self.addCleanup(self._remove, action)
+        dbname = self.env.cr.dbname
+        admin_id = self.env.ref("base.user_admin").id
+        with closing(sql_db.db_connect(dbname).cursor()) as request_cr:
+            # The test's registry, not one looked up by name: the thread
+            # that loaded it may hold the registries' lock while tests run.
+            request_cr.transaction = Transaction(self.registry)
+            tools = api.Environment(request_cr, admin_id, {})["incubacloud.mcp.tools"]
+            tools._before_command({"action": action}, "echo outlives")
+            request_cr.rollback()
+        self.assertEqual(self._details(action), ["echo outlives"])
+
+    def _details(self, action):
+        """The details of the committed audit rows of *action*."""
+        with closing(sql_db.db_connect(self.env.cr.dbname).cursor()) as cr:
+            cr.execute(
+                "SELECT details FROM cloud_audit_log WHERE action = %s", (action,)
+            )
+            return [row[0] for row in cr.fetchall()]
+
+    def _remove(self, action):
+        """Delete the committed audit rows of *action*."""
+        with closing(sql_db.db_connect(self.env.cr.dbname).cursor()) as cr:
+            cr.execute("DELETE FROM cloud_audit_log WHERE action = %s", (action,))
+            cr.commit()

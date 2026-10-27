@@ -9,11 +9,12 @@ for each command, bound to its exact text.
 
 The minute is kept where the command runs: ``timeout`` inside the
 container (a ``docker exec`` whose client is killed leaves its process
-running), and around the client and the SSH session as a backstop. The
-audit row, with the whole command (secrets masked), is written before
-the SSH and stays when the connection fails; the buckets are counted in
-a cursor of their own, and every write is flushed before the SSH: a
-serialisation failure cannot replay a command that already ran.
+running), and around the client and the SSH session as a backstop.
+Before the SSH, everything the command writes is committed in
+transactions of their own: the buckets, the approval it uses, its audit
+row (the whole command, secrets masked) and the staging's clock. A
+worker that dies while it runs leaves it audited and its approval spent,
+and the request holds no lock on the instance while it runs.
 """
 
 import asyncio
@@ -160,12 +161,25 @@ class McpToolsCommand(models.AbstractModel):
         )
 
     @api.model
-    def _audit_command(self, vals, command):
-        """Write the command's audit row, secrets masked, before it runs."""
-        scrubber = self.env["incubacloud.mcp.secrets"]._scrubber()
-        self.env["cloud.audit.log"].sudo().create(
-            {**vals, "details": scrubber.text(command)}
-        )
+    def _before_command(self, vals, command, instance=None):
+        """Write, and commit, what must outlive the command, before the SSH.
+
+        The command's audit row (secrets masked) and, for an instance, its
+        staging clock go in a transaction of their own, committed now: a
+        worker that dies while the command runs leaves it audited, and the
+        instance's row is not held locked for the minute it may run.
+
+        :param dict vals: the audit row, but its details
+        :param str command: the command, as the agent sent it
+        :param instance: the instance it runs in, if any
+        """
+        details = self.env["incubacloud.mcp.secrets"]._scrubber().text(command)
+        with self.env.registry.cursor() as cr:
+            env = self.env(cr=cr)
+            env["cloud.audit.log"].sudo().create({**vals, "details": details})
+            if instance:
+                instance.with_env(env)._touch_autopurge_clock()
+            cr.commit()
 
     @api.model
     def _tool_run_command(self, args):
@@ -187,12 +201,11 @@ class McpToolsCommand(models.AbstractModel):
                     "Too many commands recently. Try again in a minute."
                 ),
             }
-        self._audit_command(
+        self._before_command(
             {"action": "Agent: run_command", "instance_id": instance.id},
             args["command"],
+            instance,
         )
-        instance._touch_autopurge_clock()
-        self.env.flush_all()
         remote_dir = instance.get_remote_dir()
         safe_dir = (
             "~/" + shlex.quote(remote_dir[2:])
@@ -225,10 +238,9 @@ class McpToolsCommand(models.AbstractModel):
                     "Too many commands recently. Try again in a minute."
                 ),
             }
-        self._audit_command(
+        self._before_command(
             {"action": "Agent: run_host_command", "host_id": host.id}, args["command"]
         )
-        self.env.flush_all()
         return self._ssh_capture(host, _limited(args["command"]))
 
     @api.model
@@ -278,13 +290,15 @@ class McpToolsCommand(models.AbstractModel):
                 )
                 return process.exit_status
 
-        # A timeout is an OSError too: it is caught first.
+        # A timeout is an OSError too: it is caught first. Anything else
+        # answers {'ok': False}: the command may have run, and its audit
+        # row, already committed, says so.
         try:
             exit_code = run_async(_run())
             timed_out = exit_code == _TIMED_OUT
         except asyncio.TimeoutError:
             exit_code, timed_out = None, True
-        except (asyncssh.Error, OSError) as exc:
+        except Exception as exc:  # noqa: BLE001 - shown through safe_error_response
             return safe_error_response(
                 exc, self.env._("The command could not be run on the server.")
             )
