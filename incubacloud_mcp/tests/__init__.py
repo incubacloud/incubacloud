@@ -32,3 +32,4 @@ from . import test_tools_command
 from . import test_inventory
 from . import test_frontend_suite
 from . import test_spa_pages
+from . import test_settings_tabs

@@ -56,7 +56,7 @@ class TestTheTemplatesWeExtendKeepTheirAnchors(BaseCase):
         self.assertIn('<div class="rl-tabs">', settings)
         self.assertIn("<CoreRatesTab/>", settings)
         self.assertIn("t-if=\"state.tab === 'github'\"", settings)
-        self.assertIn("t-if=\"state.tab === 'rates'\"", settings)
+        self.assertIn('<div t-if="state.openedTabs.rates"', settings)
         self.assertIn('<main class="ic-main" role="main">', self._text("app/app.xml"))
 
 
