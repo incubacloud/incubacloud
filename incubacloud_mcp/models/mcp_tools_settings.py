@@ -3,6 +3,9 @@
 from odoo import api, models
 from odoo.exceptions import UserError
 
+from odoo.addons.incubacloud.net.trusted_proxies import invalid_ranges, parse_ranges
+
+from ..protocol.canonical import canonical_resource
 from ..protocol.tool_spec import ToolSpec, obj, record_id, string
 from .mcp_catalog import tool_policies
 
@@ -64,6 +67,43 @@ OBSERVABILITY_FIELDS = (
     "metrics_central_public_host",
     "metrics_central_operator_sources",
 )
+
+
+def normalized_setting(key, value, current=None):
+    """Return *value* as the panel would hold it, to compare with *current*.
+
+    Numbers count as numbers and booleans as booleans (by the type of the
+    value held), text without its surrounding spaces, the issuer without
+    its final slash, the MCP URL in canonical form and trusted proxy
+    ranges as the networks they name. A value that cannot be read so is
+    returned as it is: it counts as a change.
+
+    :param str key: the setting's name
+    :param value: a value given, or the one held
+    :param current: the value held, whose type decides
+    """
+    if key == "trusted_proxy_ranges":
+        text = "" if value in (None, False) else str(value)
+        return tuple(parse_ranges(text)), tuple(invalid_ranges(text))
+    if key == "mcp_oauth_issuer":
+        return str(value or "").strip().rstrip("/")
+    if key == "mcp_resource":
+        try:
+            return canonical_resource(value)
+        except (AttributeError, ValueError):
+            return value
+    if isinstance(current, bool):
+        return bool(value)
+    if isinstance(current, int):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+    if isinstance(current, str) and isinstance(value, str):
+        return value.strip()
+    return value
+
+
 _ACTIONS = {
     "general": ("save",),
     "rate_limits": ("save",),
@@ -265,7 +305,9 @@ class McpToolsSettings(models.AbstractModel):
 
         D2: the audit retention, the trusted proxy ranges, every rate
         limit, the agents' issuer and MCP URL, and what ``get_config``
-        hides on this panel (observability, on a tenant).
+        hides on this panel (observability, on a tenant). A value equal
+        to the one held once normalised (:func:`normalized_setting`) is
+        no change.
         """
         section, values = args["section"], args.get("values") or {}
         if section == "general":
@@ -288,7 +330,8 @@ class McpToolsSettings(models.AbstractModel):
         return [
             (key, current.get(key), values[key])
             for key in sorted(sensitive & set(values))
-            if current.get(key) != values[key]
+            if normalized_setting(key, values[key], current.get(key))
+            != normalized_setting(key, current.get(key), current.get(key))
         ]
 
     @api.model
