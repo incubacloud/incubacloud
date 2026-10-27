@@ -24,8 +24,13 @@ class TestApprovals(McpUsersMixin, TransactionCase):
     """What an approval binds, how long it lasts, and that it is used once."""
 
     def setUp(self):
-        """A manager who asks for approvals."""
+        """A manager who asks for approvals.
+
+        In test mode: an approval is used in a transaction of its own,
+        which must see the test's.
+        """
         super().setUp()
+        self.registry_enter_test_mode()
         self.user = self._cloud_user("mcp-approval-mgr", group="group_cloud_manager")
         self.Approval = self.env["incubacloud.mcp.approval"].with_user(self.user)
 
@@ -169,11 +174,12 @@ class TestApprovalRace(TransactionCase):
             time.sleep(0.05)
         self.fail("The second retry never waited for the first.")
 
-    def test_two_retries_at_once_use_it_once(self):
-        """The second retry waits for the first, then does not get it.
+    def test_two_uses_at_once_take_it_once(self):
+        """Of two transactions using it at once, the second waits for the
+        first, then does not get it.
 
-        Under Odoo's isolation it fails to serialise, and Odoo retries the
-        request; the retry finds the approval used.
+        Under Odoo's isolation it fails to serialise; tried again, it finds
+        the approval used.
         """
         # A name of its own, removed whatever happens, registered before
         # anything is committed.
@@ -196,15 +202,17 @@ class TestApprovalRace(TransactionCase):
                 # logs the query that met it.
                 try:
                     with mute_logger("odoo.sql_db"):
-                        outcome["second"] = self._approval(cr, approval_id)._consume(
-                            "approved"
+                        outcome["second"] = self._approval(cr, approval_id)._transition(
+                            "approved", "used"
                         )
                 except psycopg2.errors.SerializationFailure:
                     outcome["second"] = "serialization failure"
                 cr.rollback()
 
         with self._cursor() as first_cr:
-            self.assertTrue(self._approval(first_cr, approval_id)._consume("approved"))
+            self.assertTrue(
+                self._approval(first_cr, approval_id)._transition("approved", "used")
+            )
             thread = threading.Thread(target=second)
             thread.start()
             self._wait_for_a_lock_wait()
@@ -213,5 +221,25 @@ class TestApprovalRace(TransactionCase):
         self.assertIn(outcome.get("second"), (False, "serialization failure"))
         with self._cursor() as cr:
             retried = self._approval(cr, approval_id)
-            self.assertFalse(retried._consume("approved"))
+            self.assertFalse(retried._transition("approved", "used"))
             self.assertEqual(retried.state, "used")
+
+    def test_a_use_outlives_the_request_that_made_it(self):
+        """An approval used by a request whose transaction is then rolled
+        back — a worker killed while the action ran — stays used."""
+        digest = f"outlives-{uuid.uuid4().hex}"
+        self.addCleanup(self._remove, digest)
+        with self._cursor() as cr:
+            approval, _token = self._approvals(cr)._open(
+                "delete_project", digest, "Outlives.", "text"
+            )
+            approval._decide(True)
+            cr.commit()
+            approval_id = approval.id
+        with self._cursor() as request_cr:
+            self.assertTrue(
+                self._approval(request_cr, approval_id)._consume("approved")
+            )
+            request_cr.rollback()
+        with self._cursor() as cr:
+            self.assertEqual(self._approval(cr, approval_id).state, "used")

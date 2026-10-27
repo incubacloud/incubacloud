@@ -4,8 +4,8 @@ Bound to the user who asked, the tool and the fingerprint of its
 arguments; ten minutes; used once. Every change of state is one atomic
 ``UPDATE … WHERE state = … AND expires_at > now() RETURNING id``: of two
 retries racing for the same approval, the second waits for the first and
-then finds it used (or fails to serialise, and Odoo's retry finds it
-used), so the action runs once.
+then finds it used (or fails to serialise), so the action runs once. Its
+use is committed at once, in a transaction of its own.
 """
 
 import hashlib
@@ -13,6 +13,7 @@ import secrets
 from datetime import timedelta
 
 from odoo import api, fields, models
+from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
 from ..protocol.canonical import origin_of
 from .cloud_audit_log import agent_mark
@@ -141,10 +142,26 @@ class McpApproval(models.Model):
     def _consume(self, from_state):
         """Use the approval once, from *from_state* (``pending`` or ``approved``).
 
+        In a transaction of its own, committed at once, before the action
+        runs: a worker that dies while it runs leaves the approval spent,
+        so its ``requestState`` cannot run it again. A transaction that
+        meets another one using it at the same time does not get it.
+
         :return: whether this call used it
         :rtype: bool
         """
-        return self._transition(from_state, "used")
+        self.ensure_one()
+        # What the ORM still holds for the row reaches the database first.
+        self.flush_recordset(["state", "expires_at"])
+        with self.env.registry.cursor() as cr:
+            try:
+                moved = self.with_env(self.env(cr=cr))._transition(from_state, "used")
+                cr.commit()
+            except PG_CONCURRENCY_EXCEPTIONS_TO_RETRY:
+                cr.rollback()
+                moved = False
+        self.invalidate_recordset(["state", "write_uid", "write_date"])
+        return moved
 
     def _decide(self, approve):
         """Approve or cancel a pending approval.
