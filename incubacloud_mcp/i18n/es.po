@@ -988,6 +988,13 @@ msgstr ""
 "Se pierde lo que cambió después."
 
 #. module: incubacloud_mcp
+#. odoo-javascript
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_rates_section.xml:0
+#: code:addons/incubacloud_mcp/static/src/settings/mcp_settings_tab.xml:0
+msgid "Retry"
+msgstr "Reintentar"
+
+#. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools.py:0
 msgid "Run the tool %s with these arguments."

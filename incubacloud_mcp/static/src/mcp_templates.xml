@@ -27,12 +27,14 @@
             <button t-att-class="state.tab === 'agents' ? 'rl-tab active' : 'rl-tab'"
                     t-on-click="() => this.setTab('agents')">Agents</button>
         </xpath>
+        <!-- Kept mounted once opened, hidden while another tab shows,
+             as core's Rates tab is (``openedTabs`` in settings.js). -->
         <xpath expr="//t[@t-if=&quot;state.tab === 'github'&quot;]" position="after">
-            <t t-if="state.tab === 'agents'">
+            <div t-if="state.openedTabs.agents" t-att-hidden="state.tab !== 'agents'">
                 <McpSettingsTab/>
-            </t>
+            </div>
         </xpath>
-        <xpath expr="//t[@t-if=&quot;state.tab === 'rates'&quot;]/CoreRatesTab" position="after">
+        <xpath expr="//div[@t-if='state.openedTabs.rates']/CoreRatesTab" position="after">
             <McpRatesSection/>
         </xpath>
     </t>

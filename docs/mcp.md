@@ -270,7 +270,7 @@ The routes' contract is unchanged: `has_<field>`, never the value. Behind it:
   (arguments.vals.password)."). A server an agent creates has no SSH
   credentials until a person sets them.
 - **Cost.** A webhook secret and a Telegram bot token are 1024 characters at
-  most (`/cloud/save_user_preferences`, core 1.0.199): every stored secret is
+  most (`/cloud/save_user_preferences`, core 1.0.201): every stored secret is
   part of what each answer is scanned for.
 
 This is a mitigation, not a guarantee: a developer with `run_command` can

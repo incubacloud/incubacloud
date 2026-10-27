@@ -2,7 +2,19 @@
 <templates xml:space="preserve">
 
 <t t-name="incubacloud_mcp.McpRatesSection">
-    <t t-if="state.loaded">
+    <!-- Failed to load: the error and a way out, never a limit that was
+         not read. -->
+    <t t-if="state.loadError">
+        <div class="rl-stub" role="alert">
+            <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+            <p t-esc="state.loadError"/>
+            <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
+                    t-on-click="() => this.reload()">
+                Retry
+            </button>
+        </div>
+    </t>
+    <t t-elif="state.loaded">
 
         <div class="rl-saas-fsec">Agents (MCP)</div>
         <p class="rl-tabnote">
@@ -14,7 +26,7 @@
             <div class="rl-frow">
                 <label for="ic_mcp_rate">Agent calls (per user, all their agents)</label>
                 <input id="ic_mcp_rate" type="number" min="1"
-                       t-att-value="state.value"
+                       t-att-value="state.form.rate_limit_mcp_user_per_min"
                        t-on-change="(ev) => this.onInput(ev)"/>
             </div>
         </div>
