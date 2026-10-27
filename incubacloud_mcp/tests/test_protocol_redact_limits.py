@@ -14,6 +14,7 @@ from odoo.addons.incubacloud_mcp.protocol.limits import (
     MAX_BYTES,
     cap_text,
     fit_answer,
+    page_answer,
     page_items,
     page_record,
 )
@@ -320,6 +321,16 @@ class TestLimits(BaseCase):
         """A single line over the cap is cut to fit."""
         page = page_items(["y" * (MAX_BYTES * 2)])
         self.assertLessEqual(len(page["items"][0]), MAX_BYTES)
+
+    def test_a_page_without_room_neither_invents_nor_skips_an_entry(self):
+        """When what comes with the page already fills it, the page is empty
+        and the next one starts at the same entry."""
+        answer = {"summary": {"top": ["p" * 100] * 700}, "entries": list(range(10))}
+        page = page_answer(answer, "entries", 0)
+        self.assertEqual((page["entries"], page["next_offset"]), ([], 0))
+        self.assertTrue(page["truncated"])
+        direct = page_items(["abc", "def"], 0, None, max_bytes=3)
+        self.assertEqual((direct["items"], direct["next_offset"]), ([], 0))
 
     def test_a_single_entry_that_was_cut_says_so(self):
         """A page whose only entry was cut says truncated."""
