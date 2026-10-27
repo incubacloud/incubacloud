@@ -41,6 +41,16 @@ paths = [
     # ``PRIVATE KEY`` literal proves a key pasted along with the
     # authority is refused. No real key.
     '''incubacloud/tests/test_cdn_client_auth\.py''',
+    # Tests of what agents never see (incubacloud_mcp): made-up secrets
+    # of every shape the masking must catch — PEM-shaped key literals, a
+    # GitHub App key line, a netrc password in a ``curl -u`` line, an
+    # OIDC client secret — prove each is found and masked. No real key.
+    '''incubacloud_mcp/tests/common\.py''',
+    '''incubacloud_mcp/tests/test_secrets\.py''',
+    '''incubacloud_mcp/tests/test_protocol_redact_limits\.py''',
+    # Test of the agents' issuer key cache: a made-up, unsigned JWT
+    # whose header names a key id. No real token.
+    '''incubacloud_mcp/tests/test_jwks_cache\.py''',
     # Settings form textarea ``placeholder=""`` attribute showing the
     # expected PEM shape.
     '''incubacloud/static/src/components/settings/settings\.xml''',
