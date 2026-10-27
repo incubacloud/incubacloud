@@ -1083,8 +1083,17 @@ msgstr "La clave API no es válida, ha caducado o se ha revocado."
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/controllers/settings.py:0
-msgid "The MCP URL must be an absolute https URL."
-msgstr "La URL del MCP tiene que ser una URL https absoluta."
+msgid ""
+"The MCP URL must be an absolute http or https URL, with no credentials, "
+"query or fragment. Its host may hold only letters a to z, digits, dots, "
+"hyphens and underscores, or be an IPv6 address in brackets; its path may "
+"also hold tildes, percent signs and slashes."
+msgstr ""
+"La URL del MCP tiene que ser una URL http o https absoluta, sin "
+"credenciales, consulta ni fragmento. Su host solo puede tener letras de la a"
+" a la z, dígitos, puntos, guiones y guiones bajos, o ser una dirección IPv6 "
+"entre corchetes; su ruta puede tener además virgulillas (~), signos de "
+"porcentaje y barras."
 
 #. module: incubacloud_mcp
 #. odoo-python

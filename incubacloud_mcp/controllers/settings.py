@@ -88,7 +88,13 @@ class McpSettingsController(http.Controller):
             except ValueError:
                 return {
                     "ok": False,
-                    "error": _("The MCP URL must be an absolute https URL."),
+                    "error": _(
+                        "The MCP URL must be an absolute http or https URL, with no "
+                        "credentials, query or fragment. Its host may hold only "
+                        "letters a to z, digits, dots, hyphens and underscores, or be "
+                        "an IPv6 address in brackets; its path may also hold tildes, "
+                        "percent signs and slashes."
+                    ),
                 }
             request.env["ir.config_parameter"].sudo().set_param(
                 RESOURCE_PARAM, resource
