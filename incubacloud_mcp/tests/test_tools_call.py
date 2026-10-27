@@ -125,6 +125,22 @@ PROBES = [
         route="/cloud/mcp_test/rotate",
     ),
     ToolSpec(
+        "probe_always",
+        "Always asks, with no text of its own.",
+        "group_cloud_user",
+        obj({"name": string("Tag.")}, required=("name",)),
+        route="/cloud/mcp_test/refuse",
+        confirm="always",
+    ),
+    ToolSpec(
+        "probe_conditional",
+        "Asks when its own method says so, and has none.",
+        "group_cloud_user",
+        obj({"name": string("Tag.")}, required=("name",)),
+        route="/cloud/mcp_test/refuse",
+        confirm="conditional",
+    ),
+    ToolSpec(
         "probe_manager",
         "Manager only.",
         "group_cloud_manager",
@@ -263,6 +279,16 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
             )
         )
         self.assertEqual(payload["log"], f"rotated {MASK} to {MASK}")
+
+    def test_a_tool_that_asks_without_a_text_of_its_own_does_not_run(self):
+        """``always``, or ``conditional`` without its method, fails closed."""
+        for name in ("probe_always", "probe_conditional"):
+            with self.subTest(tool=name):
+                tag = f"mcp-unapproved-{name}"
+                result = self._call_tool(self.key, name, {"name": tag})
+                self.assertTrue(result["isError"])
+                self.assertIn("approval", result["content"][0]["text"])
+                self.assertFalse(self._tag(tag))
 
     def test_a_secret_argument_is_refused_before_anything_runs(self):
         """An argument named like a secret stops the call before the route."""
