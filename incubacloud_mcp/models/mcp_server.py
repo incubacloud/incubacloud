@@ -524,7 +524,10 @@ class McpServer(models.AbstractModel):
         # with its next_offset moved back so no entry is skipped.
         if size_of(payload) > MAX_BYTES + PAGE_SLACK:
             payload, cut = fit_answer(payload, MAX_BYTES - GUARD_MARGIN)
-            if cut and isinstance(payload, dict):
+            # A list cannot say it was cut: it comes back under items.
+            if cut and isinstance(payload, list):
+                payload = {"items": payload}
+            if cut:
                 payload["truncated"] = True
         return self._tool_result(ctx, spec, payload, is_error=bool(outcome))
 
