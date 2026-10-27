@@ -2,7 +2,7 @@
 
 import time
 
-from joserfc.jwk import RSAKey
+from joserfc.jwk import ECKey, RSAKey
 
 from odoo.tests.common import TransactionCase
 
@@ -59,6 +59,33 @@ class TestAccessTokens(JwtMixin, TransactionCase):
         self._issuer_published = ISSUER + "/"
         claims = self._verify(self._token(iss=ISSUER + "/"))
         self.assertEqual(claims["iss"], ISSUER + "/")
+
+    def test_a_token_missing_a_required_claim_is_refused(self):
+        """Without exp, iat, sub, aud or iss a token opens nothing."""
+        for claim in ("exp", "iat", "sub", "aud", "iss"):
+            with self.subTest(claim=claim):
+                self._refused(self._token(**{claim: None}))
+
+    def test_the_clock_skew_is_a_minute_and_no_more(self):
+        """Expired 90 s ago, or valid only in 90 s: refused."""
+        now = int(time.time())
+        self._refused(self._token(iat=now - 600, exp=now - 90))
+        self._refused(self._token(nbf=now + 90))
+
+    def test_another_algorithm_is_refused_even_with_a_published_key(self):
+        """ES256 with a key the issuer publishes: only RS256 opens the panel."""
+        ec_key = ECKey.generate_key("P-256", parameters={"kid": "kid-ec"})
+        self._extra_keys.append(ec_key)
+        self._refused(self._token(header={"alg": "ES256", "kid": "kid-ec"}, key=ec_key))
+
+    def test_iss_and_sub_are_strings_and_aud_may_be_a_list(self):
+        """A list where a string belongs is refused; aud may list audiences."""
+        self._refused(self._token(iss=[ISSUER]))
+        self._refused(self._token(sub=["4242"]))
+        claims = self._verify(
+            self._token(aud=[RESOURCE, "https://other-panel.example.test/mcp"])
+        )
+        self.assertEqual(claims["sub"], "4242")
 
     def test_a_minute_of_clock_skew_is_tolerated(self):
         now = int(time.time())
