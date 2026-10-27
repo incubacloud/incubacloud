@@ -3,10 +3,22 @@
 import json
 from unittest.mock import patch
 
+from odoo import http
+from odoo.http import request
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
 from .common import McpHttpMixin, McpUsersMixin, PanelFixtureMixin
+
+
+class _ApprovalProbe(http.Controller):
+    """What update_settings would ask the user to approve (test only)."""
+
+    @http.route("/cloud/mcp_test/approval_text", type="jsonrpc", auth="user")
+    def mcp_test_approval_text(self, args):
+        """Return the approval text of update_settings for *args*, or None."""
+        spec = request.env["incubacloud.mcp.catalog"]._spec("update_settings")
+        return {"text": request.env["incubacloud.mcp.tools"]._confirmation(spec, args)}
 
 
 @tagged("post_install", "-at_install")
@@ -21,6 +33,7 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
         self.manager = self._cloud_user("mcp-set-mgr", group="group_cloud_manager")
         self.key = self._api_key(self.manager)
         self.settings = self.env["cloud.settings"]._get_system()
+        self.env.registry.clear_cache("routing")
 
     def _session_rpc(self, route, params=None):
         """Call a JSON-RPC route of the panel with the logged-in session."""
@@ -178,6 +191,69 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
             with self.subTest(args=args):
                 result = self._call_tool(self.key, "update_settings", args)
                 self.assertFalse(result["isError"], result)
+
+    def _approval_text(self, section, values):
+        """What update_settings asks the manager to approve, or None."""
+        params = {"args": {"section": section, "values": values}}
+        return self._session_rpc("/cloud/mcp_test/approval_text", params)["result"][
+            "text"
+        ]
+
+    def test_the_approval_says_each_security_setting_from_what_to_what(self):
+        """Retention, limits and the issuer each ask, with old and new values."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.audit_log_retention_days", "90"
+        )
+        self.settings.write(
+            {
+                "rate_limit_logs_per_min": 60,
+                "mcp_oauth_issuer": "https://idp.example.test",
+            }
+        )
+        self.authenticate("mcp-set-mgr", "mcp-set-mgr")
+        cases = (
+            (
+                "general",
+                {"audit_log_retention_days": 1},
+                "audit_log_retention_days: 90 → 1",
+            ),
+            (
+                "rate_limits",
+                {"rate_limit_logs_per_min": 6000},
+                "rate_limit_logs_per_min: 60 → 6000",
+            ),
+            (
+                "mcp",
+                {"mcp_oauth_issuer": "https://evil.example.test"},
+                "mcp_oauth_issuer: 'https://idp.example.test' → 'https://evil.example.test'",
+            ),
+        )
+        for section, values, line in cases:
+            with self.subTest(section=section):
+                text = self._approval_text(section, values)
+                self.assertIn("security settings", text)
+                self.assertIn(line, text)
+
+    def test_observability_asks_only_where_the_panel_hides_it(self):
+        """Metrics settings ask for approval on a panel that hides them only."""
+        values = {
+            "metrics_retention_days": (self.settings.metrics_retention_days or 0) + 7
+        }
+        self.authenticate("mcp-set-mgr", "mcp-set-mgr")
+        self.assertIsNone(self._approval_text("general", values))
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        original = Dispatch._call
+
+        def hidden(dispatch, path, params):
+            """Answer get_config as a tenant panel does: observability hidden."""
+            result = original(dispatch, path, params)
+            if path == "/cloud/get_config":
+                result["features"]["observability"]["configure"] = False
+            return result
+
+        with patch.object(Dispatch, "_call", autospec=True, side_effect=hidden):
+            text = self._approval_text("general", values)
+        self.assertIn("metrics_retention_days", text)
 
     def test_a_sensitive_change_does_not_happen_without_approval(self):
         """Shortening the audit retention waits for an approval, and nothing changes."""
