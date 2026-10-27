@@ -43,6 +43,9 @@
   --rl-mail-canvas:#ffffff;
   // Lifted state-text colours (used on pills/timeline/badges); were hardcoded literals.
   --rl-green-text:#9fe7c4; --rl-amber-text:#f0c987; --rl-red-text:#ff9b9d;
+  // Amber as text (labels, badges, warnings): here the accent itself, as
+  // it always was; the light theme points it at its --rl-amber-text.
+  --rl-amber-ink:var(--rl-amber);
   // Card elevation: surface is now lighter than bg + a hairline top highlight.
   --rl-card-shadow:0 1px 2px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.025);
   --rl-r:10px; --rl-rsm:7px;
@@ -57,15 +60,25 @@
   --rl-line:#dde6df; --rl-line2:#cdd8d0;
   --rl-fg:#0e1512; --rl-fg2:#33403a; --rl-muted:#5d6b63; --rl-faint:#7d8a82;
   --rl-green:#14a06e; --rl-green-soft:rgba(20,160,110,.12); --rl-green-fg:#ffffff; --rl-green-dim:#0c7a55;
-  --rl-amber:#b7791f; --rl-amber-soft:rgba(183,121,31,.13); --rl-amber-fg:#ffffff;
+  // Amber is a mark here — dots, bars, borders, icons — which needs 3:1
+  // (WCAG non-text contrast); #b7791f measured 2.9–3.0:1 on the gauge
+  // track and on its own soft tint. Same hue, darkened just enough.
+  // Text in amber uses --rl-amber-ink, and text on amber is dark: white
+  // reaches 3.9:1 on it, 4.5:1 is needed.
+  --rl-amber:#b27418; --rl-amber-soft:rgba(178,116,24,.13); --rl-amber-fg:#1c1408;
   --rl-red:#dc4c4f; --rl-red-soft:rgba(220,76,79,.12); --rl-red-fg:#ffffff;
   --rl-cyan:#0e7c8c; --rl-cyan-dim:#0a6270; --rl-cyan-soft:rgba(14,124,140,.12);
   --rl-cyan-fg:#ffffff; --rl-cyan-text:#0a6270;
-  --rl-green-text:#0c7a55; --rl-amber-text:#9a6614; --rl-red-text:#c0393c;
+  // Amber text — pills, badges, warnings, the staging label, chips, the
+  // warning toast — measured 2.8–4.0:1, drawn in #b7791f or #9a6614.
+  // Same hue, darkened just enough for its worst case, its 20% tint
+  // (4.6:1). --rl-amber-ink, the amber of every amber text, is this one.
+  --rl-green-text:#0c7a55; --rl-amber-text:#865602; --rl-red-text:#c0393c;
+  --rl-amber-ink:var(--rl-amber-text);
   --rl-card-shadow:0 2px 6px rgba(16,24,20,.10), 0 1px 2px rgba(16,24,20,.06);
   --rl-bg-rgb:243,247,244; --rl-surf-rgb:243,247,244; --rl-surf2-rgb:234,241,236; --rl-line-rgb:221,230,223;
   --rl-fg-rgb:14,21,18; --rl-muted-rgb:93,107,99; --rl-faint-rgb:125,138,130;
-  --rl-green-rgb:20,160,110; --rl-amber-rgb:183,121,31; --rl-red-rgb:220,76,79; --rl-cyan-rgb:14,124,140;
+  --rl-green-rgb:20,160,110; --rl-amber-rgb:178,116,24; --rl-red-rgb:220,76,79; --rl-cyan-rgb:14,124,140;
   // Light theme: ink on paper, like the rest of the theme (~16:1).
   // Flagged for the visual-review session — it is item 1 of the human
   // judgement list in AUDIT_UI.md ("is a light log panel right, or
@@ -146,7 +159,7 @@
     border-radius:5px; border:1px solid var(--rl-line2); color:var(--rl-muted); text-transform:lowercase;
   }
   .rl-env.production { color:var(--rl-green); border-color:rgba(47,199,140,.4); background:var(--rl-green-soft); }
-  .rl-env.staging { color:var(--rl-amber); border-color:rgba(239,165,62,.35); background:var(--rl-amber-soft); }
+  .rl-env.staging { color:var(--rl-amber-ink); border-color:rgba(239,165,62,.35); background:var(--rl-amber-soft); }
   .rl-env.development { color:var(--rl-muted); }
 
   // ── Status pill (instance lifecycle) ─────────────────────────────────────
@@ -258,7 +271,7 @@
     .rl-v.link { color:var(--rl-green); }
     .rl-v.ok { color:var(--rl-green-text); }
     .rl-v.muted { color:var(--rl-faint); }
-    .rl-v.warn { color:var(--rl-amber); }
+    .rl-v.warn { color:var(--rl-amber-ink); }
     .rl-v.crit { color:var(--rl-red); } }
   .rl-svc-row { display:flex; gap:16px; padding-block-start:12px; padding-inline:16px; padding-block-end:14px; margin-block-start:4px; border-block-start:1px solid var(--rl-line); flex-wrap:wrap; }
   .rl-svc { display:flex; align-items:center; gap:7px; font-family:var(--rl-fm); font-size:11.5px; color:var(--rl-fg2);
@@ -537,7 +550,7 @@
   .rl-envbar.env-production { background:var(--rl-green-soft); border-color:rgba(47,199,140,.4);
     .rl-eb-dot { background:var(--rl-green); box-shadow:0 0 0 3px var(--rl-green-soft); } .rl-eb-label { color:var(--rl-green); } }
   .rl-envbar.env-staging { background:var(--rl-amber-soft); border-color:rgba(239,165,62,.35);
-    .rl-eb-dot { background:var(--rl-amber); } .rl-eb-label { color:var(--rl-amber); } }
+    .rl-eb-dot { background:var(--rl-amber); } .rl-eb-label { color:var(--rl-amber-ink); } }
   .rl-envbar.env-development { background:var(--rl-surf2); .rl-eb-dot { background:var(--rl-faint); } .rl-eb-label { color:var(--rl-fg2); } }
 
   // ── Project context sidebar (the .ctx rail inside a project) ─────────────
@@ -564,7 +577,7 @@
   .rl-jstep { display:flex; align-items:center; gap:11px; padding-block:9px; padding-inline:0; border-block-end:1px solid var(--rl-line); font-size:13px;
     &:last-child { border-block-end:none; }
     .rl-si2 { width:18px; height:18px; flex:none; display:flex; align-items:center; justify-content:center; }
-    &.pending { color:var(--rl-faint); } &.run { color:var(--rl-amber); } &.done { color:var(--rl-fg2); } }
+    &.pending { color:var(--rl-faint); } &.run { color:var(--rl-amber-ink); } &.done { color:var(--rl-fg2); } }
   .rl-spin { width:13px; height:13px; border:2px solid var(--rl-line2); border-block-start-color:var(--rl-amber); border-radius:50%; animation:rl-sp .7s linear infinite; }
 
   // ── Modal explain block ──────────────────────────────────────────────────

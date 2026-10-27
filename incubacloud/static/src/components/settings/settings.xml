@@ -510,9 +510,12 @@
                 </t>
 
                 <!-- ── Rates tab (core endpoints) ──────────────────────────── -->
-                <t t-if="state.tab === 'rates'">
+                <!-- Kept mounted once opened, hidden while another tab
+                     shows, so what was typed in it is not lost (see
+                     ``openedTabs`` in settings.js). -->
+                <div t-if="state.openedTabs.rates" t-att-hidden="state.tab !== 'rates'">
                     <CoreRatesTab/>
-                </t>
+                </div>
 
                 <t t-if="state.tab === 'monitoring' and env.features?.observability?.configure !== false">
                     <div class="rl-saas-fsec">Observability</div>

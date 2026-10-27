@@ -241,6 +241,24 @@ class _PitrExecutor(AbstractSSHExecutor):
         for code in codes:
             self.env["cloud.alert"].resolve_alert(code, instance=self._inst())
 
+    def _follow_up_restore(self, inst):
+        """Copy a restored database at once and tell the addons (``pitr``).
+
+        Once per restore to a moment, by whichever records it first
+        (``cloud.instance._pitr_record_restore``): the job that followed
+        it, or the watch when it outlived its jobs. One that cannot be
+        recorded, by its job alone.
+
+        :param inst: the restored ``cloud.instance``
+        """
+        # With ``sudo``, as every head of a queue is: a restore asked for
+        # without superuser rights runs without them.
+        self.env["cloud.job"].sudo().enqueue(
+            inst.host_id.id, inst.id, "pitr_base_backup",
+            payload={"full": True}, bypass_running_check=True,
+        )
+        self._call_addon_hook(inst, "_after_restore_hook", "pitr")
+
     def _log_errors(self, errors):
         """Put a failure's errors in the job's log."""
         for err in errors:
@@ -486,9 +504,11 @@ class PitrStatusExecutor(_PitrExecutor):
             k.removeprefix("restore_"): v for k, v in status.items()
             if k.startswith("restore_")
         }
-        if restore.get("state") in ("done", "db-only"):
+        if restore.get("state") in ("done", "db-only") and (
             # A restore that outlived the jobs that followed it.
             inst._pitr_record_restore(restore)
+        ):
+            self._follow_up_restore(inst)
         if status.get("restoring") == "lost":
             self._pitr_alert(
                 ALERT_FAILING,
@@ -701,19 +721,21 @@ class PitrRestoreExecutor(_PitrExecutor):
     def _restored(self, result):
         """The database is restored: record its timeline, copy it at once.
 
+        Then the addons hear of it, as after any restore (``pitr``): the
+        database is the one of a moment before, files restored or not.
+        The watch may have recorded it first, and followed it up then. One
+        that cannot be recorded (its timeline unread) is followed up here
+        all the same: the watch, which cannot record it either, never does.
+
         :param dict result: the restore's ``IC_PITR_RESTORE`` fields
         """
         inst = self._inst()
-        inst._pitr_record_restore(result)
+        recorded = inst._pitr_record_restore(result)
         inst.sudo().write({
             "pitr_state": "ok", "status": "ok", **inst._running_confirmed_vals(),
         })
-        # With ``sudo``, as every head of a queue is: a restore asked for
-        # without superuser rights runs without them.
-        self.env["cloud.job"].sudo().enqueue(
-            inst.host_id.id, inst.id, "pitr_base_backup",
-            payload={"full": True}, bypass_running_check=True,
-        )
+        if recorded is not False:
+            self._follow_up_restore(inst)
 
     def _follow_on(self, reached=True):
         """Hand the restore, still running, to a job of the same type.

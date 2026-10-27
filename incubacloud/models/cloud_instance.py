@@ -1415,8 +1415,11 @@ class CloudInstance(models.Model):
 
         :param str kind: ``restore`` (a copy was restored onto it: clone,
             refresh, the destination of a move), ``backup_restore`` (one
-            of its own backups, a revival included) or ``move`` (its
-            cutover onto a new host, after the restore there)
+            of its own backups, a revival included), ``move`` (its
+            cutover onto a new host, after the restore there) or ``pitr``
+            (its own database brought back to a moment by continuous
+            recovery, ``incubacloud_pitr``; also when its files could not
+            be)
         """
         self.ensure_one()
 

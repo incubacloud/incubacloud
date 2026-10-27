@@ -10,6 +10,7 @@ Tests focus on the parts that don't require actual SSH execution:
   - _webhook_fields trigger-aware payload serialization
 """
 import base64
+import json
 from datetime import timedelta
 
 from odoo.tests.common import BaseCase, TransactionCase, new_test_user
@@ -882,6 +883,33 @@ class TestRetryAndUnblockRespectTheGuard(TransactionCase):
         blocked.unblock_and_enqueue()
         _run_after_commit(self.env)
         self.assertTrue(blocked.queue_job_uuid)
+
+    def test_a_retry_carries_the_secret_of_the_failed_job(self):
+        """A restore from a URL keeps its credential in ``secret_payload``:
+        retried without it, the download ran without the credential. The
+        retry holds it as the failed job does, encrypted and out of what
+        the lists read."""
+        failed = self._job('failed')
+        secret = json.dumps({
+            'machine': 'files.example.com', 'login': 'bob', 'password': 'hunter2',
+        })
+        failed.secret_payload = secret
+        retry = self.env['cloud.job'].browse(failed.retry_job())
+        self.assertEqual(retry.secret_payload, secret)
+        self.env.flush_all()
+        self.env.cr.execute(
+            "SELECT secret_payload FROM cloud_job WHERE id = %s", (retry.id,),
+        )
+        stored = self.env.cr.fetchone()[0]
+        self.assertTrue(stored)
+        self.assertNotIn('hunter2', stored)
+        self.assertNotIn('hunter2', json.dumps(retry._format(), default=str))
+
+    def test_a_retry_of_a_job_without_a_secret_has_none(self):
+        """Nothing is made up for a job that carried no credential."""
+        failed = self._job('failed')
+        retry = self.env['cloud.job'].browse(failed.retry_job())
+        self.assertFalse(retry.secret_payload)
 
 
 class TestChainFailurePropagation(TransactionCase):

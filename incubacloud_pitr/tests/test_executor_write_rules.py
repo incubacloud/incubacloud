@@ -24,6 +24,7 @@ _HOOK_HELPERS = {
     "_record_archiving": "records what switching on did",
     "_record": "records what a base copy and its housekeeping did",
     "_restored": "records a restore and queues its full base copy",
+    "_follow_up_restore": "queues a restore's full base copy, tells the addons",
     "_follow_on": "hands a running restore to the next job",
     "_pitr_alert": "raises a continuous recovery alert on the instance",
     "_pitr_resolve": "closes continuous recovery alerts on the instance",

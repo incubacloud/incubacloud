@@ -5,6 +5,18 @@
     <t t-if="state.loading">
         <div class="ic-detail-loading">Loading…</div>
     </t>
+    <!-- Failed to load: the error and a way out, never a form of
+         defaults that Save would not send. -->
+    <t t-elif="state.loadError">
+        <div class="rl-stub" role="alert">
+            <span class="rl-si"><t t-out="env.icon('alert', 46)"/></span>
+            <p t-esc="state.loadError"/>
+            <button class="rl-btn rl-btn-primary" style="margin-top: 14px;"
+                    t-on-click="() => this.reload()">
+                Retry
+            </button>
+        </div>
+    </t>
     <t t-else="">
 
         <div class="rl-saas-fsec">Rate limits for core endpoints</div>

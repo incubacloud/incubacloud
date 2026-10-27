@@ -31,11 +31,40 @@ case "$op" in
         # copier update needs a clean working tree. Commit anything dirty
         # with inline identity — the host may have no git user configured.
         ic_log "committing any dirty files before copier update"
-        # Before staging, not after: the live Odoo log lives inside this
-        # repo and would dirty the tree again between the commit and
-        # copier's own cleanliness check.
+        # Before staging, not after, so that this very commit goes
+        # without them (see ic_git_exclude). The live Odoo log and
+        # continuous recovery's spool would dirty the tree again between
+        # the commit and copier's own cleanliness check. ``.walg`` as a
+        # whole: wal-g, the host's libraries it runs with and a restore's
+        # working files are no project's either.
         ic_git_exclude_logs "$dir"
+        ic_git_exclude "$dir" .walg/
+        # Secrets, which a commit keeps for good: the SSH directory
+        # doodba copies into the image as root's ~/.ssh (where a deploy
+        # key goes), repos.yaml with the repository tokens the panel
+        # writes into its URLs, and the Odoo conf and pip.txt, whose
+        # contents are the user's (a password, a token in a git URL).
+        # All of them stay on disk for the build; copier renders ssh/,
+        # repos.yaml and pip.txt only when missing (the template's
+        # ``_skip_if_exists``), and never the conf.
+        secrets=(
+            odoo/custom/ssh/
+            odoo/custom/src/repos.yaml
+            'odoo/custom/conf.d/*.conf'
+            odoo/custom/dependencies/pip.txt
+        )
+        for path in "${secrets[@]}"; do
+            ic_git_exclude "$dir" "$path"
+        done
         git add -A
+        # Fail closed: an exclusion that could not be written, or an
+        # untracking git refused, only warns, and the secret is staged
+        # again by now. A rebuild stopped here can be retried; a commit
+        # stays in the history.
+        staged="$(git ls-files -- "${secrets[@]}" | tr '\n' ' ')"
+        if [ -n "$staged" ]; then
+            ic_die "secrets are still in the repository's index after excluding them, so nothing was committed: ${staged% } (check $dir/.git/info/exclude and the warnings above)"
+        fi
         git diff --cached --quiet || git \
             -c user.email='system@incubacloud' \
             -c user.name='IncubaCloud' \
@@ -49,6 +78,15 @@ case "$op" in
         export PATH="$HOME/.local/bin:$PATH"
         git config --global --get init.defaultBranch >/dev/null 2>&1 \
             || git config --global init.defaultBranch master
+        # commit-dirty has just committed everything but what it keeps out
+        # of the repository, the product's own writes among it. What is
+        # dirty now changed since, and copier would refuse it saying only
+        # that the tree is dirty: say what changed.
+        dirty="$(git status --porcelain --untracked-files=all 2>/dev/null || true)"
+        if [ -n "$dirty" ]; then
+            changed="$(sed -n '1,10{s/^...//;p}' <<<"$dirty" | tr '\n' ' ')"
+            ic_die "the project changed after the rebuild's commit, and copier refuses a dirty tree: ${changed% }"
+        fi
         # Unpinned, ``copier update`` moves the project to the template's
         # latest revision — and rebuild runs on every push, so upstream
         # changes land continuously and invisibly. Log the effective ref

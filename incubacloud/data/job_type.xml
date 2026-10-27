@@ -158,7 +158,13 @@
             <field name="code">move_cleanup_source</field>
             <field name="apply_to">instance</field>
             <field name="description">Removes the old host copy after a successful move, without archiving the instance record.</field>
-            <field name="failure_holds_queue">True</field>
+            <!-- False, not left out: an update writes only the fields
+                 listed, and the type held the queue until 1.0.200. It
+                 runs after the cutover, when the instance already lives
+                 on the destination: a failure to remove the old copy
+                 must not stop its backups and jobs. Its alert stays,
+                 and so does the retry. -->
+            <field name="failure_holds_queue">False</field>
         </record>
 
         <record id="move_rollback_cleanup" model="cloud.job.type">

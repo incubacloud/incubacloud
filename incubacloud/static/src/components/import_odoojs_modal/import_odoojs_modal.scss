@@ -113,7 +113,7 @@
     &.pending { color: var(--rl-faint); }
 
     &.run {
-        color: var(--rl-amber);
+        color: var(--rl-amber-ink);
         .ic-jstep__icon svg { display: none; }
     }
 

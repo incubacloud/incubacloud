@@ -26,6 +26,9 @@ $border: var(--rl-line);
 
 $state-ok: var(--rl-green);
 $state-warning: var(--rl-amber);
+// Warning as text: a mark needs 3:1, text 4.5:1, and in the light theme
+// the amber that gives the first is too light for the second.
+$state-warning-text: var(--rl-amber-ink);
 $state-error: var(--rl-red);
 $state-neutral: var(--rl-faint);
 

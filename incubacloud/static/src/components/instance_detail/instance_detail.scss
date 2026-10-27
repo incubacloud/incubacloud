@@ -73,7 +73,7 @@
 
 .ic-ab-rebuild {
     border-color: rgba(var(--rl-amber-rgb), 0.4);
-    color: $state-warning;
+    color: $state-warning-text;
 
     &:hover { background: rgba(var(--rl-amber-rgb), 0.1); }
 }
@@ -87,7 +87,7 @@
 
 .ic-ab-warn {
     border-color: rgba(var(--rl-amber-rgb), 0.5);
-    color: $state-warning;
+    color: $state-warning-text;
 
     &:hover { background: rgba(var(--rl-amber-rgb), 0.12); }
 }
@@ -208,7 +208,7 @@
 }
 
 .ic-ov-warn {
-    color: $state-warning;
+    color: $state-warning-text;
     font-size: 0.75rem;
     .fa { margin-right: 4px; font-size: 0.625rem; }
 }
@@ -490,7 +490,7 @@
     gap: 4px;
     font-size: 0.625rem;
     font-weight: 600;
-    color: $state-warning;
+    color: $state-warning-text;
     background: rgba(var(--rl-amber-rgb), 0.1);
     border: 1px solid rgba(var(--rl-amber-rgb), 0.3);
     border-radius: 4px;
@@ -526,8 +526,8 @@
 .jst-cancelled { color: $text-secondary; background: rgba(var(--rl-line-rgb), 0.4); }
 .jst-running   { color: $primary-blue;  background: rgba(var(--rl-green-rgb), 0.12); }
 .jst-pending   { color: $text-secondary; background: rgba(var(--rl-line-rgb), 0.3); }
-.jst-queued    { color: $state-warning; background: rgba(var(--rl-line-rgb), 0.3); }
-.jst-blocked   { color: $state-warning; background: rgba(var(--rl-amber-rgb), 0.12); }
+.jst-queued    { color: $state-warning-text; background: rgba(var(--rl-line-rgb), 0.3); }
+.jst-blocked   { color: $state-warning-text; background: rgba(var(--rl-amber-rgb), 0.12); }
 
 .ic-ov-load-more {
     align-self: center;
@@ -670,7 +670,7 @@
 
 .ic-sync-tag-conflict {
     background: rgba(var(--rl-amber-rgb), 0.15);
-    color: $state-warning;
+    color: $state-warning-text;
 }
 
 .ic-sync-direction {
@@ -1145,7 +1145,7 @@
 
 .ic-unsaved-hint {
     font-size: 0.75rem;
-    color: $state-warning;
+    color: $state-warning-text;
     margin-right: 8px;
     animation: ic-fade-in 0.3s ease;
 }

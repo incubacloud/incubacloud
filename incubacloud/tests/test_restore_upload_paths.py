@@ -36,7 +36,8 @@ from odoo.addons.incubacloud.restore_staging import (
 from odoo.addons.incubacloud.tests.test_executor_durable_writes import (
     JobEndAssertions,
 )
-from odoo.tests.common import BaseCase, TransactionCase
+from odoo.exceptions import AccessError
+from odoo.tests.common import BaseCase, TransactionCase, new_test_user, tagged
 
 
 class TestStagedUploadTokens(BaseCase):
@@ -345,3 +346,97 @@ class TestTheConsumedGrantOutlivesTheJob(JobEndAssertions, TransactionCase):
         rows = self.env.cr.fetchall()
         self.assertEqual(len(rows), 1, "exactly one revocation is queued")
         self.assertTrue(rows[0][0], "the revocation lost its queue job")
+
+
+@tagged("-at_install", "post_install")
+class TestTheJobSecretIsTheServers(TransactionCase):
+    """A job's ``secret_payload`` is read by the server alone.
+
+    Every member of a project reads its instances' jobs, and the field
+    had no ``groups``: a stakeholder read a restore's password, decrypted,
+    with ``read``. The flows that need it read it with ``sudo``, also
+    when the job runs as a person without superuser rights.
+
+    Post-install: its people need partners, and a module installed after
+    this one may add a column to them that only its own defaults fill.
+    """
+
+    URL = "https://bob:hunter2@93.184.216.34/backup.zip"
+
+    def setUp(self):
+        """A project with a stakeholder and a developer, and an instance."""
+        super().setUp()
+        self.registry_enter_test_mode()
+        self.host = self.env["cloud.host"].create({
+            "name": "secret-reader-host",
+            "ip_address": "198.51.100.24",
+            "user": "root",
+            "wildcard_domain": "secret-reader.example",
+        })
+        project = self.env["cloud.project"].create({"name": "secret-reader"})
+        self.instance = self.env["cloud.instance"].create({
+            "name": "secret-reader-inst",
+            "project_id": project.id,
+            "host_id": self.host.id,
+            "odoo_version": "19.0",
+        })
+        self.stakeholder = new_test_user(
+            self.env, login="secret-stakeholder",
+            groups="base.group_user,incubacloud.group_cloud_user",
+        )
+        self.developer = new_test_user(
+            self.env, login="secret-developer",
+            groups="base.group_user,incubacloud.group_cloud_developer",
+        )
+        project.member_ids = [(4, self.stakeholder.id), (4, self.developer.id)]
+        self.secret = json.dumps({
+            "machine": "93.184.216.34", "login": "bob", "password": "hunter2",
+        })
+
+    def _job(self, state=False):
+        """A from-URL restore of the instance carrying the credential."""
+        return self.env["cloud.job"].create({
+            "name": "restore",
+            "host_id": self.host.id,
+            "instance_id": self.instance.id,
+            "job_type_id": self.env.ref("incubacloud.restore_instance").id,
+            "payload": {"mode": "from_url"},
+            "secret_payload": self.secret,
+            "state": state,
+        })
+
+    def test_a_project_member_cannot_read_a_jobs_secret(self):
+        """They read the job, not its credential, however they ask."""
+        job = self._job()
+        for user in (self.stakeholder, self.developer):
+            with self.subTest(user=user.login):
+                theirs = job.with_user(user)
+                self.assertEqual(theirs.read(["name"])[0]["name"], "restore")
+                self.assertNotIn("secret_payload", set(theirs.fields_get()))
+                with self.assertRaises(AccessError):
+                    theirs.read(["secret_payload"])
+                with self.assertRaises(AccessError):
+                    theirs.search_read([("id", "=", job.id)], ["secret_payload"])
+                with self.assertRaises(AccessError):
+                    _value = theirs.secret_payload
+
+    def test_a_developers_restore_from_a_link_still_logs_in(self):
+        """The job runs as the developer who asked for it, without
+        superuser rights, and still writes the credential for curl."""
+        job_id = self.instance.with_user(self.developer).restore_from_url(self.URL)
+        job = self.env["cloud.job"].browse(job_id)
+        self.assertEqual(job.create_uid, self.developer)
+        self.assertFalse(job.asked_as_superuser)
+        executor = RestoreInstanceExecutor(
+            job.with_user(self.developer), self.host,
+        )
+        _label, command, _opts = executor._download_command("/tmp/r.zip")
+        self.assertIn("machine 93.184.216.34 login bob password hunter2", command)
+        self.assertNotIn("hunter2", job.payload.get("url_display", ""))
+
+    def test_a_developers_retry_keeps_the_credential(self):
+        """The retry reads the failed job's secret as the server does."""
+        retry_id = self._job(state="failed").with_user(self.developer).retry_job()
+        self.assertEqual(
+            self.env["cloud.job"].browse(retry_id).secret_payload, self.secret,
+        )

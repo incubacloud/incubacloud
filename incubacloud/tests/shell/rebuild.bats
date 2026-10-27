@@ -331,6 +331,174 @@ STUB
     [ "$untrack_at" -lt "$stage_at" ]
 }
 
+@test "commit-dirty excludes continuous recovery's directory before it stages anything" {
+    mkdir -p "$DIR/.git/info"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261027T120743Z
+    [ "$status" -eq 0 ]
+    grep -qxF '/.walg/' "$DIR/.git/info/exclude"
+    untrack_at="$(grep -n 'ls-files --error-unmatch .walg' "$CALLS" | head -1 | cut -d: -f1)"
+    stage_at="$(grep -n 'add -A' "$CALLS" | head -1 | cut -d: -f1)"
+    [ -n "$untrack_at" ]
+    [ "$untrack_at" -lt "$stage_at" ]
+}
+
+# A real repository, with git itself rather than the stub, and a copier
+# that refuses a dirty tree as copier's ``run_update`` does, with
+# ``git status --porcelain``. The instance has continuous recovery on,
+# whose agent writes its spool inside the project.
+_instance_repo_with_pitr() {
+    rm -f "$TMP/bin/git"
+    cat > "$HOME/.local/bin/copier" <<'STUB'
+#!/usr/bin/env bash
+echo "copier $*" >> "$CALLS"
+if [ -n "$(git -C "${!#}" status --porcelain)" ]; then
+    echo "Destination repository is dirty; cannot continue." >&2
+    exit 1
+fi
+STUB
+    git -C "$DIR" init -q
+    printf 'template\n' > "$DIR/prod.yaml"
+    mkdir -p "$DIR/.walg/spool/done"
+    printf 'wal-g\n' > "$DIR/.walg/wal-g"
+    : > "$DIR/.walg/spool/done/00000001000000000000000B"
+    printf '1761566560\n' > "$DIR/.walg/spool/fs-ok"
+}
+
+@test "copier-update runs on the commit while the pitr agent writes its spool" {
+    # QA 7016, 2026-10-27: the first commit took the spool in, the agent
+    # wrote it again before copier looked, and the plan change failed
+    # on "Destination repository is dirty", holding the instance's queue.
+    _instance_repo_with_pitr
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261027T120743Z
+    [ "$status" -eq 0 ]
+    [ "$(git -C "$DIR" ls-files prod.yaml)" = "prod.yaml" ]
+    # The agent, between the commit and copier's check: a segment
+    # uploaded, an hour-old mark dropped, a filestore copy recorded.
+    : > "$DIR/.walg/spool/done/000000010000000000000018"
+    rm "$DIR/.walg/spool/done/00000001000000000000000B"
+    printf '1761566860\n' > "$DIR/.walg/spool/fs-ok"
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *"copier update"* ]]
+    [[ "$output" != *"dirty"* ]]
+}
+
+@test "copier-update names a change made after the commit instead of running copier" {
+    # copier only says the tree is dirty, never what: the path is what
+    # tells someone else's change from the product's own.
+    _instance_repo_with_pitr
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261027T120743Z
+    [ "$status" -eq 0 ]
+    printf 'edited on the host\n' >> "$DIR/prod.yaml"
+    printf 'note\n' > "$DIR/notes.txt"
+    run bash "$SCRIPT" copier-update "$DIR" "$TMP/answers.yml" v10.0.8
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ERROR"*"prod.yaml"* ]]
+    [[ "$output" == *"notes.txt"* ]]
+    [[ "$(cat "$CALLS")" != *"copier update"* ]]
+}
+
+# A copier project as a deploy leaves it, with git itself rather than the
+# stub: the template's SSH directory (with a key someone put there), the
+# repository tokens the panel writes into repos.yaml, and an Odoo conf
+# holding a password.
+_instance_repo_with_secrets() {
+    rm -f "$TMP/bin/git"
+    git -C "$DIR" init -q
+    mkdir -p "$DIR/odoo/custom/ssh" "$DIR/odoo/custom/src" "$DIR/odoo/custom/conf.d" \
+        "$DIR/odoo/custom/dependencies"
+    printf 'template\n' > "$DIR/prod.yaml"
+    printf '_commit: v10.0.8\n' > "$DIR/.copier-answers.yml"
+    printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\nIC_FAKE_KEY\n' > "$DIR/odoo/custom/ssh/id_rsa"
+    printf 'ssh-ed25519 IC_FAKE_PUB\n' > "$DIR/odoo/custom/ssh/id_rsa.pub"
+    printf 'github.com ssh-ed25519 AAAA\n' > "$DIR/odoo/custom/ssh/known_hosts"
+    printf 'Host *\n' > "$DIR/odoo/custom/ssh/config"
+    printf 'priv:\n  remotes:\n    priv: https://x-access-token:IC_FAKE_TOKEN@github.com/o/priv.git\n' \
+        > "$DIR/odoo/custom/src/repos.yaml"
+    printf 'odoo: {}\n' > "$DIR/odoo/custom/src/addons.yaml"
+    printf 'git+https://IC_FAKE_PIP_TOKEN@github.com/o/lib.git\n' \
+        > "$DIR/odoo/custom/dependencies/pip.txt"
+    printf 'curl\n' > "$DIR/odoo/custom/dependencies/apt.txt"
+    printf '[options]\nadmin_passwd = IC_FAKE_PASSWORD\n' > "$DIR/odoo/custom/conf.d/inst.conf"
+    : > "$DIR/odoo/custom/conf.d/.empty"
+}
+
+# Whether a secret of the fixture is in the repository: index or history.
+_repo_holds_secrets() {
+    git -C "$DIR" ls-files | grep -E '^odoo/custom/ssh/|repos\.yaml$|conf\.d/.*\.conf$|pip\.txt$' \
+        || git -C "$DIR" log --all -p | grep -E 'IC_FAKE_(KEY|PUB|TOKEN|PASSWORD|PIP_TOKEN)'
+}
+
+@test "commit-dirty keeps the project's secrets out of the repository" {
+    # The template's ssh/ (doodba copies it into the image as root's
+    # ~/.ssh, so a deploy key goes there), the tokens in repos.yaml and a
+    # password in the Odoo conf went into every rebuild's commit.
+    _instance_repo_with_secrets
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261027T120743Z
+    [ "$status" -eq 0 ]
+    run _repo_holds_secrets
+    [ "$status" -ne 0 ]
+    # What copier owns is committed as before, and every file stays on disk.
+    [ "$(git -C "$DIR" ls-files prod.yaml)" = "prod.yaml" ]
+    [ "$(git -C "$DIR" ls-files odoo/custom/conf.d)" = "odoo/custom/conf.d/.empty" ]
+    [ "$(git -C "$DIR" ls-files odoo/custom/dependencies)" = "odoo/custom/dependencies/apt.txt" ]
+    grep -q IC_FAKE_PIP_TOKEN "$DIR/odoo/custom/dependencies/pip.txt"
+    grep -q IC_FAKE_KEY "$DIR/odoo/custom/ssh/id_rsa"
+    grep -q IC_FAKE_TOKEN "$DIR/odoo/custom/src/repos.yaml"
+    grep -q IC_FAKE_PASSWORD "$DIR/odoo/custom/conf.d/inst.conf"
+    [ -z "$(git -C "$DIR" status --porcelain)" ]
+}
+
+@test "commit-dirty stops before committing a secret it could not keep out" {
+    # Fail closed: an exclude file it cannot write lets ``git add -A``
+    # stage the secret again. Aborting the rebuild can be retried; a
+    # commit stays in the history.
+    [ "$(id -u)" -ne 0 ] || skip "root writes a read-only exclude file anyway"
+    _instance_repo_with_secrets
+    mkdir -p "$DIR/.git/info"
+    : > "$DIR/.git/info/exclude"
+    chmod 444 "$DIR/.git/info/exclude"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261027T120743Z
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"ERROR"*"odoo/custom/src/repos.yaml"* ]]
+    [[ "$output" == *"odoo/custom/ssh/id_rsa"* ]]
+    [ -z "$(git -C "$DIR" rev-parse -q --verify HEAD)" ]
+    run _repo_holds_secrets
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "$DIR" log --all -p 2>/dev/null)" ]
+}
+
+@test "commit-dirty keeps out a secret staged by a commit that failed" {
+    # The index holds what neither HEAD nor the disk has: a commit that
+    # failed after staging, then a deploy that rewrote repos.yaml.
+    _instance_repo_with_secrets
+    git -C "$DIR" add -A
+    git -C "$DIR" -c user.email=t@example.com -c user.name=T commit -qm "an earlier rebuild"
+    printf 'priv: {remotes: {priv: "https://x-access-token:IC_FAKE_TOKEN2@github.com/o/priv.git"}}\n' \
+        > "$DIR/odoo/custom/src/repos.yaml"
+    git -C "$DIR" add -A
+    printf 'priv: {remotes: {priv: "https://x-access-token:IC_FAKE_TOKEN3@github.com/o/priv.git"}}\n' \
+        > "$DIR/odoo/custom/src/repos.yaml"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261027T120743Z
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "$DIR" ls-tree -r --name-only HEAD | grep -E 'repos\.yaml$')" ]
+    [ -z "$(git -C "$DIR" log --all -p | grep 'IC_FAKE_TOKEN[23]')" ]
+    grep -q IC_FAKE_TOKEN3 "$DIR/odoo/custom/src/repos.yaml"
+}
+
+@test "commit-dirty takes out of the index the secrets an earlier rebuild committed" {
+    _instance_repo_with_secrets
+    git -C "$DIR" add -A
+    git -C "$DIR" -c user.email=t@example.com -c user.name=T commit -qm "an earlier rebuild"
+    run bash "$SCRIPT" commit-dirty "$DIR" 20261027T120743Z
+    [ "$status" -eq 0 ]
+    [ -z "$(git -C "$DIR" ls-tree -r --name-only HEAD | grep -E '^odoo/custom/ssh/|repos\.yaml$|conf\.d/.*\.conf$|pip\.txt$')" ]
+    grep -q IC_FAKE_PIP_TOKEN "$DIR/odoo/custom/dependencies/pip.txt"
+    grep -q IC_FAKE_KEY "$DIR/odoo/custom/ssh/id_rsa"
+    grep -q IC_FAKE_TOKEN "$DIR/odoo/custom/src/repos.yaml"
+    [ -z "$(git -C "$DIR" status --porcelain)" ]
+}
+
 
 # ── a staging rendered by template v10: odoo lives in the gatekeeper's namespace ──
 

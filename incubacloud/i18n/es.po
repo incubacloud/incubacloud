@@ -11055,6 +11055,7 @@ msgstr "Período de retención (días)"
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/core_rates_tab/core_rates_tab.xml:0
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 #: code:addons/incubacloud/static/src/components/hosts_dashboard/hosts_dashboard.xml:0
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0

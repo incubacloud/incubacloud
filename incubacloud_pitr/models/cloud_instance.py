@@ -499,10 +499,14 @@ class CloudInstance(models.Model):
         A move lands on a new cluster, which has no archiving yet:
         switch it on there. Any other restore wrote a lot of history at
         once; a fresh base copy keeps a later restore from replaying it.
-        A restore that is part of a move waits for its cutover.
+        A restore that is part of a move waits for its cutover. A restore
+        to a moment (``pitr``) needs nothing here: its job has recorded
+        the timeline it started and queued a full base copy of it
+        (``PitrRestoreExecutor._restored``), and a second one would run
+        beside it.
         """
         super()._after_restore_hook(kind)
-        if not self._pitr_active() or self.move_origin_host_id:
+        if kind == "pitr" or not self._pitr_active() or self.move_origin_host_id:
             return
         code = "pitr_enable" if kind == "move" else "pitr_base_backup"
         if self.pitr_stack_external:
@@ -877,20 +881,26 @@ class CloudInstance(models.Model):
         """Remember the timeline a restore to a moment started.
 
         Called from the job that followed it, or from the watch when the
-        restore outlived its jobs. Each restore is recorded once.
+        restore outlived its jobs. Each restore is recorded once, and
+        whichever records it follows it up (``_follow_up_restore``).
 
         :param dict result: the restore's ``job``, ``timeline`` (8 hex
             digits), ``promoted_at`` (epoch) and ``target``
+        :return: ``True`` when this call recorded it, ``False`` when it
+            was recorded before, ``None`` when *result* says too little to
+            record it (``pitr.sh`` reads the new timeline after the
+            promotion, and that read may fail)
+        :rtype: bool or None
         """
         self.ensure_one()
         job = str(result.get("job") or "")
         timeline = result.get("timeline") or ""
         promoted = int(result.get("promoted_at") or 0)
         if not (job and re.fullmatch(r"[0-9A-F]{8}", timeline) and promoted):
-            return
+            return None
         entries = list(self.pitr_timelines or [])
         if any(str(e.get("job")) == job for e in entries):
-            return
+            return False
         entries.append({
             "job": job,
             "cluster": self.pitr_cluster_id,
@@ -901,6 +911,7 @@ class CloudInstance(models.Model):
             "target": (result.get("target") or "").replace("T", " ")[:19],
         })
         self.sudo().pitr_timelines = entries[-50:]
+        return True
 
     def _pitr_status_vals(self):
         """What the panel shows about this instance's continuous recovery.

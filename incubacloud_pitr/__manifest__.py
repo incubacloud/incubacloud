@@ -1,6 +1,6 @@
 {
     "name": "IncubaCloud Continuous Recovery",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "summary": "Restore a production instance to any minute of its backup "
                "window (PostgreSQL archiving with wal-g, filestore copied "
                "as it changes)",

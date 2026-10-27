@@ -51,43 +51,69 @@ ic_expand_home() {
     esac
 }
 
-# Keep the instance's live Odoo log out of the copier repo's index.
+# Keep a path of the copier project out of its git repository's index.
 #
-# instance_logs.sh puts ``logs/`` INSIDE the copier project directory,
-# which is a git repository, and Odoo writes ``odoo.log`` continuously.
-# Tracking it means the working tree goes dirty again between
-# ``git add -A`` and the moment ``copier update`` looks — and copier
-# refuses to run on a dirty tree, failing the whole rebuild after every
-# other step has already succeeded. Measured in production: only the
-# instance with live traffic failed; its idle sibling, rebuilt in the
-# same second, did not.
+# The project directory is a git repository, and a rebuild commits
+# whatever it holds before ``copier update`` (rebuild.sh commit-dirty).
+# Two kinds of path do not belong in it:
+#
+# * What the instance's stack writes on its own: Odoo its live log in
+#   ``logs/`` (instance_logs.sh), continuous recovery's pitr agent its
+#   spool in ``.walg/`` (incubacloud_pitr), a mark per uploaded segment,
+#   their removal an hour later and each filestore copy. Tracked, the
+#   working tree goes dirty again between ``git add -A`` and the moment
+#   ``copier update`` looks — and copier refuses to run on a dirty tree,
+#   failing the whole rebuild after every other step has already
+#   succeeded. Measured in production for the log: only the instance
+#   with live traffic failed; its idle sibling, rebuilt in the same
+#   second, did not. In QA for the spool (run 7016, 2026-10-27): a plan
+#   change, whose failure holds the instance's queue.
+# * Secrets: committed, they stay in the history for good, past any
+#   rotation of the file.
 #
 # Written to ``.git/info/exclude`` and not ``.gitignore`` because copier
 # owns ``.gitignore``: editing it would provoke the very template
 # conflict this exists to avoid.
 #
-# Nothing here is fatal. Failing to exclude leaves the pre-existing
-# race, which is worse than a rebuild but not worse than aborting one.
-ic_git_exclude_logs() {
-    local dir="$1" exclude
+# Nothing here is fatal. Failing to exclude leaves the path in the next
+# commit, which is worse than a rebuild but not worse than aborting one.
+#
+# Usage: ic_git_exclude <dir> <path>
+#   <dir>   the copier project directory
+#   <path>  relative to it, as a .gitignore line anchored at its top: a
+#           directory ends in ``/`` (``logs/``), a file or a pattern
+#           does not (``odoo/custom/conf.d/*.conf``)
+ic_git_exclude() {
+    local dir="$1" path="$2" exclude
     [ -d "$dir/.git" ] || return 0
     exclude="$dir/.git/info/exclude"
     mkdir -p "$dir/.git/info" 2>/dev/null || true
-    if ! grep -qxF '/logs/' "$exclude" 2>/dev/null; then
+    if ! grep -qxF "/$path" "$exclude" 2>/dev/null; then
         # A file not ending in a newline would glue the pattern onto
         # whatever the last line happens to be.
         if [ -s "$exclude" ] && [ -n "$(tail -c 1 "$exclude")" ]; then
             printf '\n' >> "$exclude" 2>/dev/null || true
         fi
-        printf '/logs/\n' >> "$exclude" 2>/dev/null \
-            || ic_warn "could not write $exclude: the log stays tracked"
+        printf '/%s\n' "$path" >> "$exclude" 2>/dev/null \
+            || ic_warn "could not write $exclude: $path stays tracked"
     fi
     # Untrack what earlier rebuilds already committed. ``--cached``
     # leaves every file on disk: this only takes them out of the index.
-    if git -C "$dir" ls-files --error-unmatch logs >/dev/null 2>&1; then
-        git -C "$dir" rm -r --cached --quiet logs \
-            || ic_warn "could not untrack $dir/logs: the tree may still go dirty mid-rebuild"
+    # ``-f`` because git refuses a path staged with content that neither
+    # HEAD nor the disk has (a commit that failed after staging, then a
+    # file rewritten), and ``--cached`` makes forcing it lose nothing.
+    if git -C "$dir" ls-files --error-unmatch "$path" >/dev/null 2>&1; then
+        git -C "$dir" rm -r --cached -f --quiet "$path" \
+            || ic_warn "could not untrack $path in $dir: the next commit still takes it"
     fi
+}
+
+# Keep the instance's live Odoo log out of the copier repo's index
+# (see ic_git_exclude).
+#
+# Usage: ic_git_exclude_logs <dir>
+ic_git_exclude_logs() {
+    ic_git_exclude "$1" logs/
 }
 
 # Abort unless a script received the arguments it needs.
