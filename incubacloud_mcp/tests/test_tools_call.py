@@ -498,7 +498,10 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
             {"name": "mcp-never", "vals": {"db": {"postgres_password": "x"}}},
         )
         self.assertTrue(result["isError"])
-        self.assertIn("Secrets are changed in the panel.", result["content"][0]["text"])
+        self.assertEqual(
+            result["content"][0]["text"],
+            "Secrets are changed in the panel (arguments.vals.db.postgres_password).",
+        )
         self.assertFalse(self._tag("mcp-never"))
 
     def test_a_call_that_may_change_something_is_audited_with_the_agent(self):

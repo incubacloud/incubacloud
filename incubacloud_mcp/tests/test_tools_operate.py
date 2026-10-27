@@ -76,9 +76,12 @@ class TestOperateTools(
 
     def test_update_instance_refuses_a_password_even_nested(self):
         """A secret among the values is refused, at any depth."""
-        for vals in (
-            {"postgres_password": "x"},
-            {"odoo_conf": {"postgres_password": "x"}},
+        for vals, path in (
+            ({"postgres_password": "x"}, "arguments.vals.postgres_password"),
+            (
+                {"odoo_conf": {"postgres_password": "x"}},
+                "arguments.vals.odoo_conf.postgres_password",
+            ),
         ):
             with self.subTest(vals=vals):
                 result = self._call_tool(
@@ -88,7 +91,8 @@ class TestOperateTools(
                 )
                 self.assertTrue(result["isError"])
                 self.assertEqual(
-                    result["content"][0]["text"], "Secrets are changed in the panel."
+                    result["content"][0]["text"],
+                    f"Secrets are changed in the panel ({path}).",
                 )
 
     def test_update_instance_writes_what_the_route_allows(self):

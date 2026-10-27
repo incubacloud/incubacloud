@@ -140,7 +140,9 @@ class McpSecrets(models.AbstractModel):
     def _check_arguments(self, args):
         """Refuse arguments that carry a secret, at any depth.
 
-        :raises UserError: when a key is the name of an encrypted field
+        :raises UserError: when a key is the name of an encrypted field,
+            saying which argument
         """
-        if find_secret_key(args, self._field_names()):
-            raise UserError(self.env._("Secrets are changed in the panel."))
+        path = find_secret_key(args, self._field_names())
+        if path:
+            raise UserError(self.env._("Secrets are changed in the panel (%s).", path))
