@@ -16,8 +16,8 @@ import werkzeug.wrappers
 from asyncssh.misc import _ACMWrapper
 
 from odoo import http
-from odoo.exceptions import AccessError, ValidationError
-from odoo.tests.common import TransactionCase, new_test_user
+from odoo.exceptions import AccessError, UserError, ValidationError
+from odoo.tests.common import TransactionCase, new_test_user, tagged
 from odoo.tools import config
 
 from odoo.addons.incubacloud.models.cloud_host import CloudHost
@@ -1585,3 +1585,84 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
         access = self._access("::ffff:81.40.12.7")
         self.assertEqual(access["person"], "offer")
         self.assertEqual(access["person_ip"], self._PERSON)
+
+# post_install: the route test creates a manager, and creating res.users
+# at_install trips over the ``res_partner.autopost_bills`` NOT NULL column
+# (account loads later) — same constraint as test_audit_tracked_mixin.
+@tagged("post_install", "-at_install")
+class TestTrustOnlyTheApprovedKey(KnownHostsCase):
+    """An agent's approval names a key; only that key may be trusted.
+
+    The MCP shows a person the key a server presents before trusting it
+    (``_peek_known_host_key``) and hands the approved fingerprint back to
+    the route (``expected_fingerprint``). A server that answers with
+    another key in between is not trusted.
+    """
+
+    def _connecting_to(self, server_key):
+        """Patch ``asyncssh.connect`` so the server presents *server_key*.
+
+        :param server_key: an asyncssh private key; its public half is
+            what the stubbed server hands back
+        :return: the ``patch`` context manager
+        """
+        conn = MagicMock(spec=asyncssh.SSHClientConnection)
+        conn.get_server_host_key.return_value = server_key
+        connection = MagicMock(spec=_ACMWrapper)
+        connection.__aenter__.return_value = conn
+        connection.__aexit__.return_value = False
+        return patch.object(asyncssh, "connect", return_value=connection)
+
+    def test_a_peek_names_the_key_and_stores_nothing(self):
+        host = self._host()
+        trusted = host.known_hosts_key
+        with self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")):
+            peek = host._peek_known_host_key()
+        self.assertTrue(peek["fingerprint"].startswith("SHA256:"))
+        self.assertEqual(peek["trusted_fingerprint"], host.known_hosts_fingerprint)
+        self.assertEqual(peek["revoked_fingerprint"], "")
+        self.assertEqual(host.known_hosts_key, trusted)
+
+    def test_the_approved_key_is_trusted(self):
+        host = self._host()
+        with self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")):
+            approved = host._peek_known_host_key()["fingerprint"]
+            captured = host._capture_known_host_key(expected_fingerprint=approved)
+        self.assertEqual(captured["fingerprint"], approved)
+        self.assertEqual(host.known_hosts_fingerprint, approved)
+
+    def test_another_key_is_refused_and_nothing_changes(self):
+        host = self._host()
+        trusted = host.known_hosts_key
+        with self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")):
+            approved = host._peek_known_host_key()["fingerprint"]
+        with (
+            self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")),
+            self.assertRaises(UserError),
+        ):
+            host._capture_known_host_key(expected_fingerprint=approved)
+        self.assertEqual(host.known_hosts_key, trusted)
+
+    def test_the_route_answers_the_refusal(self):
+        from odoo.addons.incubacloud.controllers import data_load
+        from odoo.addons.incubacloud.controllers._data_load import _routes_crud
+
+        manager = new_test_user(
+            self.env, login="trust-approved-manager",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        host = self._host()
+        fake_request = MagicMock(spec=http.Request)
+        fake_request.env = self.env(user=manager)
+        ctrl = data_load.CloudDataLoadController()
+        with (
+            self._connecting_to(asyncssh.generate_private_key("ssh-ed25519")),
+            patch.object(http, "request", fake_request),
+            patch.object(data_load, "request", fake_request),
+            patch.object(_routes_crud, "request", fake_request),
+        ):
+            result = ctrl.cloud_trust_host_key(
+                host.id, expected_fingerprint="SHA256:not-the-presented-one",
+            )
+        self.assertFalse(result["ok"])
+        self.assertIn("SHA256:not-the-presented-one", result["error"])

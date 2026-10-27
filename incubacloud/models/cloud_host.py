@@ -1149,29 +1149,15 @@ class CloudHost(models.Model):
             return b""
         return base64.b64decode(self.key_file)
 
-    def _capture_known_host_key(self):
-        """Connect once bypassing host-key verification (TOFU) and store
-        the server public key in ``known_hosts_key``.
+    def _scan_host_key_entry(self):
+        """Connect once without verifying the server and return its key.
 
-        Used both by the manual 'Trust SSH Key' UI action and by autoprov
-        right after a freshly contracted VPS boots — the latter has no
-        human in the loop, so the capture has to happen automatically.
-
-        When the previous key was revoked by an endpoint change, its
-        fingerprint is still on the record, and comparing the two answers
-        the only question the operator actually has: an identical
-        fingerprint means the machine did not change and the endpoint
-        edit was administrative, while a different one means something
-        else is answering there. The captured key is stored either way
-        (the operator asked for a capture), but a change raises a
-        critical alert instead of overwriting trust silently.
+        Trust on first use: what the server presents is read, never
+        compared — the callers decide what to do with it.
 
         Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
 
-        :returns: dict with ``entry`` (the stored known_hosts line),
-            ``fingerprint``, ``previous_fingerprint`` (``''`` when there
-            was nothing to compare against) and ``changed`` (True only
-            when both exist and differ).
+        :returns: the ``known_hosts`` line for this host's endpoint
         """
         self.ensure_one()
         connect_kw = dict(
@@ -1202,10 +1188,74 @@ class CloudHost(models.Model):
 
         loop = asyncio.new_event_loop()
         try:
-            entry = loop.run_until_complete(_capture())
+            return loop.run_until_complete(_capture())
         finally:
             loop.close()
+
+    def _peek_known_host_key(self):
+        """Report the key the server presents now, without trusting it.
+
+        What a person compares before approving a capture they did not
+        start themselves: the MCP's ``trust_host_key`` shows it in its
+        confirmation and passes it back as ``expected_fingerprint``.
+
+        Raises ``asyncssh.Error`` / ``OSError`` on connection failure.
+
+        :returns: dict with ``fingerprint`` (presented now),
+            ``trusted_fingerprint`` (trusted until now, ``''`` if none)
+            and ``revoked_fingerprint`` (dropped by the last endpoint
+            change, ``''`` if none)
+        """
+        self.ensure_one()
+        entry = self._scan_host_key_entry()
+        return {
+            "fingerprint": self._known_hosts_fingerprint(entry),
+            "trusted_fingerprint": self.known_hosts_fingerprint or "",
+            "revoked_fingerprint": self.revoked_key_fingerprint or "",
+        }
+
+    def _capture_known_host_key(self, expected_fingerprint=None):
+        """Connect once bypassing host-key verification (TOFU) and store
+        the server public key in ``known_hosts_key``.
+
+        Used both by the manual 'Trust SSH Key' UI action and by autoprov
+        right after a freshly contracted VPS boots — the latter has no
+        human in the loop, so the capture has to happen automatically.
+
+        When the previous key was revoked by an endpoint change, its
+        fingerprint is still on the record, and comparing the two answers
+        the only question the operator actually has: an identical
+        fingerprint means the machine did not change and the endpoint
+        edit was administrative, while a different one means something
+        else is answering there. The captured key is stored either way
+        (the operator asked for a capture), but a change raises a
+        critical alert instead of overwriting trust silently.
+
+        With *expected_fingerprint* — the key a person approved after
+        seeing it (``_peek_known_host_key``) — a server presenting any
+        other key is refused and nothing is stored.
+
+        Raises ``asyncssh.Error`` / ``OSError`` on connection failure,
+        ``UserError`` when the key is not the approved one.
+
+        :param expected_fingerprint: the approved ``SHA256:…`` fingerprint,
+            or None to trust whatever is presented
+        :returns: dict with ``entry`` (the stored known_hosts line),
+            ``fingerprint``, ``previous_fingerprint`` (``''`` when there
+            was nothing to compare against) and ``changed`` (True only
+            when both exist and differ).
+        """
+        self.ensure_one()
+        entry = self._scan_host_key_entry()
         fingerprint = self._known_hosts_fingerprint(entry)
+        if expected_fingerprint and fingerprint != expected_fingerprint:
+            raise UserError(_(
+                "The server '%(name)s' now presents the SSH key %(found)s, "
+                "not the approved %(expected)s. Nothing was trusted.",
+                name=self.name,
+                found=fingerprint or "?",
+                expected=expected_fingerprint,
+            ))
         previous = self.revoked_key_fingerprint or ""
         changed = bool(previous and fingerprint and fingerprint != previous)
         _logger.info(
