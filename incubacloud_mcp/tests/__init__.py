@@ -15,3 +15,4 @@ from . import test_transport_legacy
 from . import test_fetch_json
 from . import test_dispatch
 from . import test_via_client
+from . import test_secrets
