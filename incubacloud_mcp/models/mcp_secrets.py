@@ -5,7 +5,14 @@ Names come from the registry — every field built on
 covered the day it is added. Values are read with SQL and decrypted here,
 not through the ORM: reading an unreadable value through the field raises
 an operator alert, and a scan must not.
+
+Every call reads the ciphertexts again — cheap: the one big table, the
+jobs, has an index of the few rows that hold one — and decrypts only
+those this process has not seen. Nothing expires because nothing can go
+stale: a secret changed or deleted is a ciphertext no longer read.
 """
+
+import threading
 
 from psycopg2 import sql
 
@@ -16,6 +23,37 @@ from odoo.addons.incubacloud.models.encrypted_char import EncryptedFieldMixin
 from odoo.addons.incubacloud.models.password_utils import decrypt_value
 
 from ..protocol.redact import MIN_SECRET_LEN, Scrubber, find_secret_key, secret_parts
+
+#: ``{(database, ciphertext): what it hides}`` in this process.
+_PARTS_BY_CIPHER = {}
+#: Entries kept before the map starts over.
+_MAX_CACHED = 20_000
+_CACHE_LOCK = threading.Lock()
+
+
+def _parts_of(env, cipher):
+    """Return what *cipher* hides, 8 characters or more, decrypting it once.
+
+    An unreadable value hides nothing, and is not retried in this process.
+
+    :rtype: frozenset[str]
+    """
+    key = (env.cr.dbname, cipher)
+    parts = _PARTS_BY_CIPHER.get(key)
+    if parts is not None:
+        return parts
+    try:
+        plain = decrypt_value(cipher, env)
+    except ValueError:
+        plain = ""
+    parts = frozenset(
+        part for part in secret_parts(plain or "") if len(part) >= MIN_SECRET_LEN
+    )
+    with _CACHE_LOCK:
+        if len(_PARTS_BY_CIPHER) >= _MAX_CACHED:
+            _PARTS_BY_CIPHER.clear()
+        _PARTS_BY_CIPHER[key] = parts
+    return parts
 
 
 class McpSecrets(models.AbstractModel):
@@ -60,16 +98,7 @@ class McpSecrets(models.AbstractModel):
                     ).format(f=sql.Identifier(name), t=sql.Identifier(model._table))
                 )
                 for (cipher,) in cr.fetchall():
-                    try:
-                        plain = decrypt_value(cipher, self.env)
-                    except ValueError:
-                        continue
-                    if plain:
-                        values |= {
-                            part
-                            for part in secret_parts(plain)
-                            if len(part) >= MIN_SECRET_LEN
-                        }
+                    values |= _parts_of(self.env, cipher)
         return values
 
     @api.model

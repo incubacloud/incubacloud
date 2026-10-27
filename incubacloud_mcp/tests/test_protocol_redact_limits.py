@@ -112,6 +112,17 @@ class TestSecretParts(BaseCase):
         self.assertEqual(secret_parts("plain-pass-123"), {"plain-pass-123"})
 
 
+class TestScrubberReuse(BaseCase):
+    """The same secrets compile their pattern once per process."""
+
+    def test_the_same_values_reuse_the_compiled_pattern(self):
+        """Two scrubbers of the same values share one compiled pattern."""
+        values = [f"reuse-secret-{index:04d}" for index in range(50)]
+        first = Scrubber(values)
+        self.assertIs(Scrubber(set(reversed(values)))._pattern, first._pattern)
+        self.assertIsNot(Scrubber(values[1:])._pattern, first._pattern)
+
+
 class TestMailLinks(BaseCase):
     """Links that sign someone in, in captured mail, are replaced."""
 
