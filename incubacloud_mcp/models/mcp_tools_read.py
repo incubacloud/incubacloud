@@ -22,6 +22,8 @@ _DEVELOPER = "group_cloud_developer"
 _MANAGER = "group_cloud_manager"
 
 _INSTANCE = record_id("The instance.")
+#: Log chunks read at a time while paging a job's log.
+_CHUNK_BATCH = 50
 
 TOOLS = (
     ToolSpec(
@@ -403,14 +405,6 @@ class McpToolsRead(models.AbstractModel):
         if not state.get("ok"):
             return {"ok": False, "error": self.env._("Job not found")}
         brief = self._route("/cloud/get_job_brief", job_id=args["job_id"])
-        chunks = self.env["cloud.job.log.chunk"].search(
-            [("job_id", "=", args["job_id"])], order="id"
-        )
-        lines = [
-            f"[{chunk.source}] {line}"
-            for chunk in chunks
-            for line in (chunk.content or "").splitlines()
-        ]
         details = (
             {key: value for key, value in brief.items() if key != "ok"}
             if brief.get("ok")
@@ -419,7 +413,55 @@ class McpToolsRead(models.AbstractModel):
         return {
             **details,
             **{key: value for key, value in state.items() if key != "ok"},
-            "log": page_items(lines, args.get("offset"), args.get("limit")),
+            "log": self._job_log_page(
+                args["job_id"], args.get("offset"), args.get("limit")
+            ),
+        }
+
+    @api.model
+    def _job_log_page(self, job_id, offset=0, limit=None):
+        """Return a page of a job's log, reading its chunks only up to it.
+
+        The lines the user may read (the record rules of
+        ``cloud.job.log.chunk``), counted from the first; the chunks are
+        read a batch at a time and the reading stops once the page is
+        full, so a page of a long log does not cost the whole log.
+
+        :return: ``{items, offset, total, truncated, next_offset}``;
+            ``total`` is None when the log was not read to its end
+        """
+        Chunk = self.env["cloud.job.log.chunk"]
+        start = max(0, int(offset or 0))
+        cap = int(limit) if limit else None
+        window, size, index, read, more = [], 2, 0, 0, False
+        while not more:
+            chunks = Chunk.search(
+                [("job_id", "=", job_id)], order="id", offset=read, limit=_CHUNK_BATCH
+            )
+            if not chunks:
+                break
+            read += len(chunks)
+            for chunk in chunks:
+                for line in (chunk.content or "").splitlines():
+                    if index >= start:
+                        if (cap and len(window) >= cap) or size > MAX_BYTES:
+                            more = True
+                            break
+                        text = f"[{chunk.source}] {line}"
+                        window.append(text)
+                        size += size_of(text) + 1
+                    index += 1
+                if more:
+                    break
+        page = page_items(window, 0, cap)
+        following = start + len(page["items"])
+        more = more or following < start + len(window)
+        return {
+            "items": page["items"],
+            "offset": start,
+            "total": None if more else index,
+            "truncated": page["truncated"] or more,
+            "next_offset": following if more else None,
         }
 
     @api.model
