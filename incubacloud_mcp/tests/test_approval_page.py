@@ -47,6 +47,7 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
         self.authenticate("mcp-page-mgr", "mcp-page-mgr")
         response = self.url_open(self.path)
         self.assertEqual(response.status_code, 200)
+        self.assertIn("<title>Approve an agent&#39;s action</title>", response.text)
         self.assertIn("mcp-page-doomed", response.text)
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertEqual(

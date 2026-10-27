@@ -13,7 +13,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <meta name="robots" content="noindex"/>
     <meta name="referrer" content="no-referrer"/>
-    <title>Approve an agent's action</title>
+    <title t-out="title"/>
     <!-- The panel's colours (relay.scss). Nothing is loaded from elsewhere:
          the address of this page carries the approval's token. -->
     <style>
