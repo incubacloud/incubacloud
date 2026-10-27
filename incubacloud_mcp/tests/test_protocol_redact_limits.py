@@ -382,6 +382,42 @@ class TestLimits(BaseCase):
         self.assertEqual(cut["entries"], answer["entries"][: len(cut["entries"])])
         self.assertEqual(cut["next_offset"], len(cut["entries"]))
 
+    def test_a_page_whose_company_does_not_fit_even_cut_is_an_error(self):
+        """When what comes with a page does not fit even with its strings cut
+        to 1 KB, the answer is an error that says it is too large: no page
+        that would skip entries, and not the answer as it was."""
+        answer = {
+            "summary": {"top": ["p" * 100] * 10},
+            "entries": [1, 2, 3],
+            "offset": 0,
+            "truncated": False,
+            "next_offset": None,
+        }
+        self.assertEqual(
+            fit_answer(answer, 500),
+            ({"truncated": True, "error": "The answer is too large to show."}, True),
+        )
+
+    def test_a_page_with_no_room_for_a_piece_of_its_first_entry_says_so(self):
+        """When the page has room for its company but not for any piece of
+        its first entry, it comes empty, says so, and the next page starts
+        at that entry."""
+        answer = {
+            "note": "n" * 100,
+            "entries": ["e" * 50, "f"],
+            "offset": 3,
+            "truncated": False,
+            "next_offset": None,
+        }
+        room = _answer_size({**answer, "entries": []}) + 2
+        cut, was_cut = fit_answer(answer, room)
+        self.assertTrue(was_cut)
+        self.assertEqual(
+            (cut["entries"], cut["next_offset"], cut["truncated"]), ([], 3, True)
+        )
+        self.assertTrue(cut.get("page_too_small"))
+        self.assertIn("no room", cut.get("notice", ""))
+
     def test_a_page_without_room_says_so(self):
         """A page that cannot show any entry says so, for the agent not to ask
         for the same page again and again."""
