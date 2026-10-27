@@ -8,3 +8,4 @@ from . import test_settings
 from . import test_jwks_cache
 from . import test_issuer_metadata
 from . import test_auth_tokens
+from . import test_auth_users

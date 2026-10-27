@@ -11,6 +11,7 @@ from odoo.addons.incubacloud_mcp.protocol.errors import AuthError
 from .common import ISSUER, JwtMixin
 
 RESOURCE = "https://panel.example.test/mcp"
+AUTH_LOGGER = "odoo.addons.incubacloud_mcp.models.mcp_auth"
 
 
 class TestAccessTokens(JwtMixin, TransactionCase):
@@ -60,5 +61,6 @@ class TestAccessTokens(JwtMixin, TransactionCase):
 
     def test_an_unreachable_issuer_is_503_with_retry_after(self):
         self._issuer_down = True
-        error = self._refused(self._token(), status=503)
+        with self.assertLogs(AUTH_LOGGER, level="WARNING"):
+            error = self._refused(self._token(), status=503)
         self.assertTrue(error.retry_after)

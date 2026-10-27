@@ -97,7 +97,11 @@ class JwtMixin:
 
 
 class McpUsersMixin:
-    """Users, API keys and the issuer's configuration."""
+    """Users, API keys and the issuer's configuration.
+
+    A test case that creates users runs ``post_install``: a user needs a
+    partner, and a module installed later may add a column to it.
+    """
 
     def _cloud_user(self, login, group="group_cloud_developer", extra=""):
         """Create an internal user with the cloud role *group*."""
