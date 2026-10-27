@@ -4,6 +4,7 @@ import os
 from datetime import timedelta
 
 from odoo import fields
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
@@ -185,6 +186,20 @@ class TestDownload(
         self.assertNotIn("..", disposition)
         self.assertNotIn("\n", disposition)
         self.assertIn("passwd.zip", disposition)
+
+    def test_a_link_is_issued_only_for_the_file_the_call_was_bound_to(self):
+        """The handler checks the file again: a call bound to another one
+        issues no link."""
+        tools = self.env["incubacloud.mcp.tools"].with_user(self.dev)
+        with self.assertRaises(UserError):
+            tools._tool_download_backup(
+                {"job_id": self.job.id, "attachment_id": self.attachment.id + 1}
+            )
+        self.assertFalse(
+            self.env["incubacloud.mcp.download"]
+            .sudo()
+            .search([("job_id", "=", self.job.id)])
+        )
 
     def test_a_download_not_ready_yet_is_refused_without_asking(self):
         """A download whose job has not finished is refused, nobody asked."""

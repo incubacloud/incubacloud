@@ -394,6 +394,26 @@ class TestLimits(BaseCase):
             self.assertIn("no room", page["notice"])
         self.assertNotIn("page_too_small", page_items(["abc"], 0, None))
 
+    def test_a_page_counts_the_two_bytes_between_entries(self):
+        """Tiny entries fill a page to its size as the answer writes them,
+        two bytes between each: never past it."""
+        page = page_items(["x"] * 100_000, 0, None, max_bytes=1000)
+        self.assertLessEqual(len(json.dumps(page["items"]).encode()), 1000)
+        self.assertGreater(len(json.dumps(page["items"]).encode()), 990)
+
+    def test_the_guard_leaves_a_page_of_text_as_it_is(self):
+        """A page of text, whose offsets count characters before masking, is
+        not cut by the guard: cutting it would skip text."""
+        page = {
+            "subject": "Big",
+            "text": "t" * 70_000,
+            "offset": 0,
+            "total": 140_000,
+            "truncated": True,
+            "next_offset": 70_000,
+        }
+        self.assertEqual(fit_answer(page, MAX_BYTES), (page, False))
+
     def test_a_single_entry_that_was_cut_says_so(self):
         """A page whose only entry was cut says truncated."""
         self.assertTrue(page_items(["y" * (MAX_BYTES * 2)])["truncated"])
