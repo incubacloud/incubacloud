@@ -72,6 +72,11 @@ class _CallProbes(http.Controller):
         host.password = new_value
         return {"ok": True, "log": f"rotated {old} to {new_value}"}
 
+    @http.route("/cloud/mcp_test/nothing", type="jsonrpc", auth="user")
+    def mcp_test_nothing(self):
+        """Do its job and answer nothing, as some panel routes do."""
+        request.env["cloud.tag"].create({"name": "mcp-did-it"})
+
 
 PROBES = [
     ToolSpec(
@@ -139,6 +144,13 @@ PROBES = [
         obj({"name": string("Tag.")}, required=("name",)),
         route="/cloud/mcp_test/refuse",
         confirm="conditional",
+    ),
+    ToolSpec(
+        "probe_nothing",
+        "Answers nothing.",
+        "group_cloud_user",
+        obj(),
+        route="/cloud/mcp_test/nothing",
     ),
     ToolSpec(
         "probe_manager",
@@ -237,6 +249,17 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertTrue(result["isError"])
         self.assertIn("Denied on purpose", result["content"][0]["text"])
         self.assertFalse(self._tag("mcp-rolled-back"))
+
+    def test_a_route_that_answers_nothing_went_through(self):
+        """A route that returns None did its job: no error, no refusal audited."""
+        result = self._call_tool(self.key, "probe_nothing")
+        self.assertFalse(result["isError"], result)
+        self.assertIsNone(self._payload(result))
+        self.assertTrue(self._tag("mcp-did-it"))
+        row = self.env["cloud.audit.log"].search(
+            [("action", "=", "Agent: probe_nothing")], limit=1
+        )
+        self.assertNotIn("refused", row.details)
 
     def test_an_unexpected_error_hides_its_detail(self):
         """An unexpected error says a reference, not its internal detail."""

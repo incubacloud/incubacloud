@@ -443,9 +443,13 @@ class McpServer(models.AbstractModel):
         failed = self.env._("The panel could not complete this action.")
         outcome = ""
         result = None
+        # Whether the tool raised: a route may also answer None, having
+        # done its job.
+        raised = True
         try:
             with self.env.cr.savepoint():
                 result = self.env["incubacloud.mcp.tools"]._invoke(spec, args)
+            raised = False
         except (AccessError, UserError, ValidationError) as exc:
             outcome = str(exc)
         except psycopg2.Error as exc:
@@ -465,7 +469,7 @@ class McpServer(models.AbstractModel):
             )
         if not spec.read_only and spec.audit:
             self._audit_call(spec, args, scrubber, outcome)
-        if result is None:
+        if raised:
             return self._error_result(ctx, scrubber.text(outcome))
         payload = scrubber.value(drop_secret_keys(result, Secrets._field_names()))
         if spec.untrusted:
