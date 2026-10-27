@@ -71,6 +71,11 @@ class McpController(http.Controller):
                 415, INVALID_REQUEST, "Content-Type must be application/json"
             )
             return respond(Reply(415, error.to_body(None)))
+        # A chunked body has no length to check against the cap: it would
+        # be cut there without a word, and its first part run.
+        if httprequest.content_length is None:
+            error = McpError(411, INVALID_REQUEST, "Content-Length is required")
+            return respond(Reply(411, error.to_body(None)))
         Auth = system["incubacloud.mcp.auth"]
         ip = client_ip()
         reliable = bool(system["cloud.settings"]._effective_trusted_proxy_ranges())
