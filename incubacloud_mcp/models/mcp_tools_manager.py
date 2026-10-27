@@ -59,6 +59,7 @@ TOOLS = (
         ),
         route="/cloud/browse_host_dir",
         read_only=True,
+        untrusted=True,
     ),
     ToolSpec(
         "import_host_instance",
