@@ -15,7 +15,10 @@ AUTH_LOGGER = "odoo.addons.incubacloud_mcp.models.mcp_auth"
 
 
 class TestAccessTokens(JwtMixin, TransactionCase):
+    """The access token itself: signature, type, claims and their margins."""
+
     def setUp(self):
+        """Stand up the test issuer for the test panel."""
         super().setUp()
         self._setup_issuer(RESOURCE)
         self.auth = self.env["incubacloud.mcp.auth"]
@@ -32,10 +35,12 @@ class TestAccessTokens(JwtMixin, TransactionCase):
         return caught.exception
 
     def test_a_good_token_gives_its_claims(self):
+        """A token of the issuer for this panel gives back its claims."""
         claims = self._verify(self._token())
         self.assertEqual(claims["sub"], "4242")
 
     def test_bad_tokens_are_refused(self):
+        """Another key, issuer or panel, out of time, wrong type, incomplete: 401."""
         now = int(time.time())
         other_key = RSAKey.generate_key(2048, parameters={"kid": self._kid})
         cases = {
@@ -56,6 +61,7 @@ class TestAccessTokens(JwtMixin, TransactionCase):
         self._refused("a.b.c")
 
     def test_an_iss_that_ends_in_a_slash_is_the_configured_issuer(self):
+        """An iss with a trailing slash names the configured issuer."""
         self._issuer_published = ISSUER + "/"
         claims = self._verify(self._token(iss=ISSUER + "/"))
         self.assertEqual(claims["iss"], ISSUER + "/")
@@ -88,10 +94,12 @@ class TestAccessTokens(JwtMixin, TransactionCase):
         self.assertEqual(claims["sub"], "4242")
 
     def test_a_minute_of_clock_skew_is_tolerated(self):
+        """Expired 30 s ago is still within the minute of margin."""
         now = int(time.time())
         self._verify(self._token(iat=now - 600, nbf=now - 600, exp=now - 30))
 
     def test_an_unreachable_issuer_is_503_with_retry_after(self):
+        """Keys that cannot be fetched are a 503 with Retry-After, logged."""
         self._issuer_down = True
         with self.assertLogs(AUTH_LOGGER, level="WARNING"):
             error = self._refused(self._token(), status=503)

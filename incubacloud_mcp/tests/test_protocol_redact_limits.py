@@ -20,7 +20,10 @@ SECRET = "s3cr3t/P@ss word+42"
 
 
 class TestScrubber(BaseCase):
+    """Known secret values and URL credentials are masked in text."""
+
     def test_a_secret_is_masked_plain_url_encoded_and_in_base64(self):
+        """A secret is masked as is, URL-encoded and in base64."""
         scrub = Scrubber([SECRET])
         for form in (
             SECRET,
@@ -31,19 +34,23 @@ class TestScrubber(BaseCase):
                 self.assertEqual(scrub.text(f"x {form} y"), f"x {MASK} y")
 
     def test_short_values_are_left_alone(self):
+        """Values too short to be told apart from text are not masked."""
         self.assertEqual(Scrubber(["odoo", ""]).text("odoo runs"), "odoo runs")
 
     def test_a_longer_secret_containing_a_shorter_one_is_masked_whole(self):
+        """The longest secret wins: no half-masked value is left."""
         scrub = Scrubber(["abcdefgh", "abcdefgh-ijklmnop"])
         self.assertEqual(scrub.text("abcdefgh-ijklmnop"), MASK)
 
     def test_credentials_in_a_url_are_masked(self):
+        """user:password in a repository URL is masked."""
         self.assertEqual(
             Scrubber([]).text("git clone https://bot:ghp_x1y2z3@github.com/acme/repo"),
             f"git clone https://{MASK}@github.com/acme/repo",
         )
 
     def test_a_token_alone_in_the_userinfo_is_masked(self):
+        """A bare token or :token before the host is masked; a query email is not."""
         scrub = Scrubber([])
         for url in (
             "https://ghp_tok12345@github.com/acme/repo",
@@ -58,6 +65,7 @@ class TestScrubber(BaseCase):
         self.assertEqual(scrub.text(plain), plain)
 
     def test_nested_values_are_scrubbed(self):
+        """Strings inside lists and dicts are scrubbed; other values stay."""
         self.assertEqual(
             Scrubber([SECRET]).value({"a": [SECRET, 3], "b": None}),
             {"a": [MASK, 3], "b": None},
@@ -65,7 +73,10 @@ class TestScrubber(BaseCase):
 
 
 class TestMailLinks(BaseCase):
+    """Links that sign someone in, in captured mail, are replaced."""
+
     def test_links_that_carry_a_token_are_replaced(self):
+        """Reset, signup, access-token and panel login links go; plain links stay."""
         mail = (
             "Reset: https://acme.example/web/reset_password?token=abc&db=x\n"
             "Join: https://acme.example/web/signup?token=def\n"
@@ -79,6 +90,7 @@ class TestMailLinks(BaseCase):
         self.assertIn("https://acme.example/shop", masked)
 
     def test_links_in_html_mail_are_replaced_too(self):
+        """In HTML, &amp;token=, &amp;access_token= and any /ic/login? query go too."""
         html = (
             '<a href="https://acme.example/my/orders/7?db=x&amp;access_token=tok111">'
             '<a href="https://acme.example/mail/view?model=x&amp;token=tok222">'
@@ -92,6 +104,8 @@ class TestMailLinks(BaseCase):
 
 
 class TestRedactCost(BaseCase):
+    """Masking stays linear on hostile text."""
+
     def _seconds(self, function, text):
         """Return how long *function* takes on *text*."""
         start = time.monotonic()
@@ -99,6 +113,7 @@ class TestRedactCost(BaseCase):
         return time.monotonic() - start
 
     def test_hostile_text_is_scanned_in_linear_time(self):
+        """200 KB built to make a regex backtrack takes under a second."""
         cases = (
             (mask_token_urls, "http://x" * 25_000),
             (Scrubber([]).text, "a." * 100_000),
@@ -109,9 +124,12 @@ class TestRedactCost(BaseCase):
 
 
 class TestSecretKeys(BaseCase):
+    """Keys named like an encrypted field, in and out."""
+
     NAMES = frozenset({"password", "postgres_password"})
 
     def test_keys_named_like_an_encrypted_field_are_dropped_has_flags_stay(self):
+        """Secret keys are dropped at any depth; has_* flags stay."""
         self.assertEqual(
             drop_secret_keys(
                 {
@@ -126,6 +144,7 @@ class TestSecretKeys(BaseCase):
         )
 
     def test_a_secret_key_is_found_at_any_depth(self):
+        """A secret key in the arguments is found, with its path."""
         self.assertEqual(
             find_secret_key({"vals": {"db": {"postgres_password": "x"}}}, self.NAMES),
             "arguments.vals.db.postgres_password",
@@ -139,7 +158,10 @@ def _answer_size(value):
 
 
 class TestLimits(BaseCase):
+    """No answer carries more than 64 KB, and the rest can be asked for."""
+
     def test_a_long_list_comes_in_pages_under_64_kb(self):
+        """A long list comes in pages under 64 KB that follow on."""
         lines = [f"{i:06d} " + "x" * 1000 for i in range(1000)]
         first = page_items(lines)
         self.assertTrue(first["truncated"])
@@ -148,6 +170,7 @@ class TestLimits(BaseCase):
         self.assertEqual(second["items"][0], lines[first["next_offset"]])
 
     def test_limit_is_honoured_and_the_last_page_says_so(self):
+        """limit is honoured and the last page has no next_offset."""
         page = page_items(list(range(10)), offset=8, limit=5)
         self.assertEqual(
             (page["items"], page["truncated"], page["next_offset"]),
@@ -155,18 +178,22 @@ class TestLimits(BaseCase):
         )
 
     def test_one_huge_line_is_cut(self):
+        """A single line over the cap is cut to fit."""
         page = page_items(["y" * (MAX_BYTES * 2)])
         self.assertLessEqual(len(page["items"][0]), MAX_BYTES)
 
     def test_a_single_entry_that_was_cut_says_so(self):
+        """A page whose only entry was cut says truncated."""
         self.assertTrue(page_items(["y" * (MAX_BYTES * 2)])["truncated"])
 
     def test_a_big_dict_is_cut_too(self):
+        """An entry that is not a string is cut too, as its JSON text."""
         page = page_items([{"log": "x" * (MAX_BYTES * 2)}])
         self.assertTrue(page["truncated"])
         self.assertLessEqual(_answer_size(page["items"]), MAX_BYTES)
 
     def test_a_page_is_measured_as_the_answer_serialises_it(self):
+        """Escaped quotes count, accented letters count as UTF-8, no more."""
         quotes = page_items(['"' * MAX_BYTES])
         self.assertLessEqual(_answer_size(quotes["items"]), MAX_BYTES)
         accented = page_items(["é" * 500] * 200)
@@ -175,6 +202,7 @@ class TestLimits(BaseCase):
         self.assertGreater(size, MAX_BYTES - 1100)
 
     def test_a_character_across_the_cut_is_not_broken(self):
+        """A character across the cut goes whole to the next slice."""
         text = "a" * (MAX_BYTES - 1) + "é" * 3
         first = cap_text(text)
         self.assertLessEqual(len(first["text"].encode("utf-8")), MAX_BYTES)
@@ -183,6 +211,7 @@ class TestLimits(BaseCase):
         self.assertEqual(first["text"] + rest["text"], text)
 
     def test_text_is_cut_and_continues_at_next_offset(self):
+        """Text cut at the cap continues at next_offset, nothing lost."""
         text = "z" * (MAX_BYTES + 10)
         first = cap_text(text)
         self.assertTrue(first["truncated"])

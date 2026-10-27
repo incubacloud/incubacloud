@@ -12,12 +12,16 @@ from odoo.addons.incubacloud_mcp.models.cloud_settings import (
 
 
 class TestMcpSettings(TransactionCase):
+    """Where the MCP keeps its key, its URL, its issuer and its limit."""
+
     def setUp(self):
+        """Keep the settings model and the parameters at hand."""
         super().setUp()
         self.Settings = self.env["cloud.settings"]
         self.ICP = self.env["ir.config_parameter"].sudo()
 
     def test_the_provider_records_its_issuer_and_shows_it(self):
+        """A provider stores its issuer, and its form shows the field."""
         provider = self.env["auth.oauth.provider"].create(
             {
                 "name": "MCP test IdP",
@@ -33,16 +37,19 @@ class TestMcpSettings(TransactionCase):
         self.assertIn('name="issuer"', views["views"]["form"]["arch"])
 
     def test_the_module_has_a_key_and_a_resource_url(self):
+        """Installed, the module has a 32-byte key and a resource URL."""
         self.assertEqual(len(self.ICP.get_param(SECRET_PARAM) or ""), 64)
         self.assertTrue(self.ICP.get_param(RESOURCE_PARAM))
 
     def test_the_key_is_created_when_missing(self):
+        """A missing key is created on first use."""
         self.ICP.set_param(SECRET_PARAM, False)
         key = self.Settings._mcp_secret()
         self.assertEqual(len(key), 32)
         self.assertEqual(bytes.fromhex(self.ICP.get_param(SECRET_PARAM)), key)
 
     def test_the_resource_defaults_to_web_base_url_in_canonical_form(self):
+        """Without a URL, web.base.url gives one, in canonical form."""
         self.ICP.set_param(RESOURCE_PARAM, False)
         self.ICP.set_param("web.base.url", "HTTPS://Panel.Example.TEST:443/")
         self.assertEqual(
@@ -54,11 +61,13 @@ class TestMcpSettings(TransactionCase):
         )
 
     def test_a_resource_already_set_is_kept(self):
+        """A URL already set is never overwritten."""
         self.ICP.set_param(RESOURCE_PARAM, "https://acme.example.test/mcp")
         self.Settings._mcp_install_defaults()
         self.assertEqual(self.Settings._mcp_resource(), "https://acme.example.test/mcp")
 
     def test_the_user_cap_falls_back_to_its_default(self):
+        """Zero falls back to 120 calls a minute; a positive value stays."""
         settings = self.Settings._get_system()
         settings.rate_limit_mcp_user_per_min = 0
         self.assertEqual(self.Settings._mcp_user_cap(), 120)
@@ -66,6 +75,7 @@ class TestMcpSettings(TransactionCase):
         self.assertEqual(self.Settings._mcp_user_cap(), 30)
 
     def test_the_issuer_must_be_an_https_url(self):
+        """The issuer is an https URL without credentials, query or fragment."""
         settings = self.Settings._get_system()
         for bad in (
             "http://idp.example.test",
@@ -81,11 +91,13 @@ class TestMcpSettings(TransactionCase):
         self.assertEqual(self.Settings._mcp_issuer(), "https://idp.example.test")
 
     def test_a_self_hosted_panel_is_its_own_master(self):
+        """Here API keys are allowed and the settings are the panel's own."""
         self.assertTrue(self.Settings._mcp_api_keys_allowed())
         self.assertFalse(self.Settings._mcp_settings_managed())
         self.assertEqual(self.Settings._mcp_agents_url(), "")
 
     def test_a_layer_above_can_say_otherwise(self):
+        """A module above can turn API keys off."""
         with patch.object(
             type(self.Settings),
             "_mcp_api_keys_allowed",

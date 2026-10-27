@@ -18,6 +18,8 @@ from odoo.addons.incubacloud_mcp.protocol.tool_spec import (
 
 
 class TestToolSpec(BaseCase):
+    """How a tool presents itself in tools/list."""
+
     def _spec(self, **kw):
         """A tool spec with defaults, *kw* applied."""
         values = {
@@ -33,6 +35,7 @@ class TestToolSpec(BaseCase):
         return ToolSpec(**values)
 
     def test_the_listing_says_the_minimum_role(self):
+        """The listing names the tool, its minimum role and its schema."""
         listed = self._spec().listed()
         self.assertEqual(listed["name"], "delete_instance")
         self.assertIn("Minimum role: consultant.", listed["description"])
@@ -40,6 +43,7 @@ class TestToolSpec(BaseCase):
         self.assertFalse(listed["inputSchema"]["additionalProperties"])
 
     def test_a_destructive_tool_says_so_and_that_it_asks(self):
+        """A destructive tool says so, that it asks, and is hinted so."""
         listed = self._spec(destructive=True, confirm="always").listed()
         self.assertIn("Destructive.", listed["description"])
         self.assertIn("asks the user to approve it", listed["description"])
@@ -49,18 +53,21 @@ class TestToolSpec(BaseCase):
         )
 
     def test_a_read_tool_is_hinted_read_only_and_untrusted_output_is_announced(self):
+        """A read tool is hinted read-only; untrusted output is announced."""
         listed = self._spec(read_only=True, untrusted=True).listed()
         self.assertTrue(listed["annotations"]["readOnlyHint"])
         self.assertFalse(listed["annotations"]["destructiveHint"])
         self.assertIn("untrusted data", listed["description"])
 
     def test_the_stakeholder_role_is_named_as_the_panel_names_it(self):
+        """group_cloud_user is called stakeholder, as in the panel."""
         self.assertIn(
             "Minimum role: stakeholder.",
             self._spec(min_group="group_cloud_user").listed()["description"],
         )
 
     def test_schema_helpers(self):
+        """The schema helpers build what they say."""
         self.assertEqual(
             string("x", max_length=3),
             {"type": "string", "description": "x", "maxLength": 3},
@@ -69,9 +76,11 @@ class TestToolSpec(BaseCase):
         self.assertNotIn("required", obj({}))
 
     def test_a_record_id_fits_a_postgres_integer(self):
+        """A record id is capped at PostgreSQL's integer."""
         self.assertEqual(record_id("r")["maximum"], 2**31 - 1)
 
     def test_a_listing_is_a_copy_of_the_schema(self):
+        """Changing a listing changes neither the spec nor OFFSET and LIMIT."""
         spec = self._spec(input_schema=obj({"offset": OFFSET, "limit": LIMIT}))
         listed = spec.listed()
         listed["inputSchema"]["properties"]["offset"]["minimum"] = 5
@@ -80,12 +89,16 @@ class TestToolSpec(BaseCase):
         self.assertEqual(spec.input_schema["properties"]["offset"]["minimum"], 0)
 
     def test_a_spec_is_immutable(self):
+        """A spec cannot be changed once declared."""
         with self.assertRaises(dataclasses.FrozenInstanceError):
             self._spec().name = "x"
 
 
 class TestCallContext(BaseCase):
+    """Who a call came from, as the audit records it."""
+
     def test_the_audit_names_the_verified_credential_and_the_declared_client(self):
+        """The verified credential first, then the client's own name."""
         ctx = CallContext(
             "2026-07-28",
             True,
@@ -100,6 +113,7 @@ class TestCallContext(BaseCase):
         )
 
     def test_a_reply_defaults_to_200_without_headers(self):
+        """A reply defaults to 200, no body, no headers."""
         self.assertEqual(
             (Reply().status, Reply().body, Reply().headers), (200, None, {})
         )
