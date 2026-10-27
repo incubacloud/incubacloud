@@ -1,8 +1,10 @@
 {
     "name": "IncubaCloud MCP",
     "version": "1.0.0",
-    "summary": "AI agents operate the panel through the Model Context "
-               "Protocol, with the signed-in user's role",
+    "summary": (
+        "AI agents operate the panel through the Model Context "
+        "Protocol, with the signed-in user's role"
+    ),
     "description": """
 Model Context Protocol server for the IncubaCloud panel.
 

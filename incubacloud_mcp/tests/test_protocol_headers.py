@@ -115,15 +115,20 @@ class TestModernHeaders(BaseCase):
         )
 
     def test_a_base64_name_is_decoded_before_comparing(self):
-        encoded = (
-            "=?base64?" + base64.b64encode(b"get_instance").decode() + "?="
-        )
+        encoded = "=?base64?" + base64.b64encode(b"get_instance").decode() + "?="
         check_modern_headers(self._headers(**{"Mcp-Name": encoded}), _call(), MODERN)
         self.assertEqual(decode_header_value("plain"), "plain")
 
     def test_invalid_base64_is_refused(self):
-        self._refused(self._headers(**{"Mcp-Name": "=?base64?%%%?="}))
-        self._refused(self._headers(**{"Mcp-Name": "=?base64?ñ?="}))
+        for value in ("=?base64?%%%?=", "=?base64?ñ?="):
+            with self.subTest(value=value):
+                with self.assertRaises(McpError) as caught:
+                    decode_header_value(value)
+                self.assertIn("not valid base64", caught.exception.message)
+                self.assertIn(
+                    "not valid base64",
+                    self._refused(self._headers(**{"Mcp-Name": value})),
+                )
 
     def test_other_methods_need_no_name(self):
         body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
