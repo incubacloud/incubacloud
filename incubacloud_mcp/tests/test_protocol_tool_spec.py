@@ -127,6 +127,9 @@ class TestCallContext(BaseCase):
         self.assertNotIn(")", name)
         self.assertNotIn("(", name)
         self.assertEqual(name, "Claude API key admin")
+        # Brackets that look the same in the audit count as brackets.
+        lookalike = _client_name({"name": "Claude\uff09 \uff08API key admin\ufe5a"})
+        self.assertEqual(lookalike, "Claude API key admin")
 
     def test_a_reply_defaults_to_200_without_headers(self):
         """A reply defaults to 200, no body, no headers."""
