@@ -555,13 +555,13 @@ class TestToolsCall(McpUsersMixin, McpHttpMixin, HttpCase):
     def test_a_secret_in_an_error_before_the_call_is_masked(self):
         """What stops a call before it runs is masked like its answer."""
         self._probe_host()
-
-        def prepare(_tools, args):
-            """Refuse, quoting a secret of the database."""
-            raise UserError(f"cannot prepare with {HOST_PASSWORD}")
-
-        Tools = type(self.env["incubacloud.mcp.tools"])
-        with patch.object(Tools, "_prepare_probe_echo", prepare, create=True):
+        Secrets = type(self.env["incubacloud.mcp.secrets"])
+        with patch.object(
+            Secrets,
+            "_check_arguments",
+            autospec=True,
+            side_effect=UserError(f"cannot prepare with {HOST_PASSWORD}"),
+        ):
             result = self._call_tool(self.key, "probe_echo", {"text": "x"})
         self.assertTrue(result["isError"])
         self.assertEqual(result["content"][0]["text"], f"cannot prepare with {MASK}")
