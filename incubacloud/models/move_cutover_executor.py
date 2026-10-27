@@ -49,7 +49,7 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         inst.write({
             'host_id': target.id,
             'status': 'ok',
-            'running': True,
+            **inst._running_confirmed_vals(),
             'move_origin_host_id': False,
             'move_target_host_id': False,
             'move_chain_job_ids': False,

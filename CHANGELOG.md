@@ -343,6 +343,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   metrics cron's next reading writes what that reading says. A stopped
   or not yet answering odoo is still the metrics' to report while they
   own the flag.
+- **An instance a job has just brought up no longer reads as stopped.**
+  On 26-oct-2026 (QA) an instance restored to a point in time showed
+  "Stopped", without its Restart and Shell buttons, for over two
+  minutes after the restore had confirmed it running. A job that starts
+  or recreates odoo takes its container's series away at once, and the
+  new one reaches the metrics backend about a minute later (a 30 s
+  scrape, then VictoriaMetrics' 30 s latency offset): the liveness cron
+  read that gap as a stop half a minute after the restore. A job that
+  brings odoo up — a start, a restart, a deploy, a rebuild, a backup
+  restore, a restore, a move's cutover, a point-in-time restore, one
+  that failed and put the data back included — now stamps
+  `cloud.instance.running_confirmed_at`, and for two minutes after it
+  the cron does not write `running` False, whether the instance's odoo
+  is missing or its whole stack is (`_CONFIRMED_GRACE_SECONDS`). It
+  reads the stamp again from the row, locked, before it writes a stop,
+  so a job confirming the instance meanwhile is not overwritten. A rise
+  the cron reads itself opens no grace, so an odoo that keeps going
+  away still reads as stopped, and a stop written by anyone — a Stop
+  job, the probe that found the container down — closes it. The
+  rebuild now writes `running` True, as the deploy does: its restart
+  step is `docker compose up -d`, and without it a stop the cron had
+  read during the rebuild stayed until another job came by. Not for an
+  instance whose stop is expected (`_stop_is_expected`): a layer above
+  may hand its rebuilt stack back stopped.
 - **A new website visitor's race no longer reads as an error of the
   instance.** Two requests of one new visitor at once (bots, mostly)
   race on its `website_visitor` row, and Odoo logs the loser's insert as

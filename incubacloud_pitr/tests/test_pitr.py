@@ -836,6 +836,20 @@ class TestARestore(_PitrCase):
         self.assertEqual(enqueue.call_args.kwargs["payload"], {"full": True})
         self.assertEqual(self.inst.pitr_timelines[0]["job"], str(executor.job.id))
 
+    def test_done_confirms_the_instance_running(self):
+        """And opens the grace the metrics cron gives a job that has just
+        started odoo (QA d76c: this restore's instance read "Stopped"
+        half a minute later)."""
+        self.inst.write({"running": False})
+        executor = self._planned()
+        with patch.object(self.Job, "enqueue", autospec=True):
+            asyncio.run(executor.on_success({"Wait for the restore": {"stdout": (
+                f"IC_PITR_RESTORE job={executor.job.id} state=done "
+                "timeline=00000002 promoted_at=1792369056 target=2026-10-18T22:31:00+00"
+            ), "exit_status": 0}}))
+        self.assertTrue(self.inst.running)
+        self.assertTrue(self.inst.running_confirmed_at)
+
     def test_one_still_running_is_handed_to_the_next_job(self):
         executor = self._planned()
         with patch.object(self.Job, "enqueue", autospec=True) as enqueue:
@@ -873,6 +887,21 @@ class TestARestore(_PitrCase):
         message = self._alerts("pitr_failing").message
         self.assertIn("'recovering'", message)
         self.assertIn("as it was", message)
+
+    def test_one_put_back_is_confirmed_running(self):
+        """The script brings the stack up whatever happened, so the
+        instance runs again and the metrics cron gives its odoo the same
+        grace as after a restore that went through."""
+        self.inst.write({"running": False})
+        executor = self._planned()
+        asyncio.run(executor.on_failure({
+            "Start the restore": {"stdout": "", "exit_status": 0},
+            "Wait for the restore": {"stdout": (
+                "IC_PITR_RESTORE job=1 state=failed stopped_at=recovering"
+            ), "exit_status": 1},
+        }, ["exit 1"]))
+        self.assertTrue(self.inst.running)
+        self.assertTrue(self.inst.running_confirmed_at)
 
     def test_one_that_could_not_start_changed_nothing(self):
         executor = self._planned()

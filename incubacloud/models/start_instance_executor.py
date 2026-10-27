@@ -39,7 +39,7 @@ class StartInstanceExecutor(AbstractSSHExecutor):
     async def on_success(self, results):
         inst = self._inst()
         self._sys(f"✓ Instance '{inst.name}' started.")
-        inst.write({"running": True, "status": "ok"})
+        inst.write({**inst._running_confirmed_vals(), "status": "ok"})
 
     async def on_failure(self, results, errors):
         for err in errors:

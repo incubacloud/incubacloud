@@ -7305,6 +7305,21 @@ msgid "Last measured:"
 msgstr "Última medición:"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_instance__running_confirmed_at
+msgid ""
+"Last time a job that brought the instance's odoo up confirmed it running. "
+"For a short while after, the metrics cron does not mark the instance "
+"stopped: the job took the container's series away, and the new one takes "
+"about a minute to arrive. Cleared whenever the instance is written as "
+"stopped."
+msgstr ""
+"Última vez que un trabajo que levantó el odoo de la instancia confirmó que "
+"está en ejecución. Durante un breve margen después, el cron de métricas no "
+"marca la instancia como detenida: el trabajo se llevó la serie del "
+"contenedor, y la nueva tarda alrededor de un minuto en llegar. Se borra cada"
+" vez que la instancia se marca como detenida."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_last_seen
 msgid ""
 "Last time a sample for this host came back FROM the metrics backend. Written"
@@ -11209,6 +11224,11 @@ msgstr ""
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__running
 msgid "Running"
 msgstr "En ejecución"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_instance__running_confirmed_at
+msgid "Running confirmed at"
+msgstr "Ejecución confirmada el"
 
 #. module: incubacloud
 #. odoo-javascript

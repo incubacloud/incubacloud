@@ -1670,7 +1670,7 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         inst.write(
             {
                 "status": "ok",
-                "running": True,
+                **inst._running_confirmed_vals(),
                 "stack_template_ref": self._copier_template()[1] or False,
                 "compose_services": ",".join(services) if services else "odoo,db",
                 "last_rebuild_fingerprint": inst.rebuild_fingerprint,
