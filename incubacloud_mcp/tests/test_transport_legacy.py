@@ -79,6 +79,23 @@ class TestLegacyProtocol(McpUsersMixin, McpHttpMixin, HttpCase):
             (self.user.id, "legacy-agent", "2025-11-25"),
         )
 
+    def test_the_session_id_keeps_the_elicitation_modes_only(self):
+        """What the client says inside each mode is not copied into the id."""
+        for declared, kept in (
+            (
+                {"form": {"pad": "y" * 50_000}, "url": {}, "pad": "y" * 100_000},
+                {"form": {}, "url": {}},
+            ),
+            ({}, {}),
+        ):
+            with self.subTest(kept=kept):
+                _response, session = self._initialize(
+                    capabilities={"elicitation": declared}
+                )
+                state = verify(self.secret, "session", session)
+                self.assertEqual(state["c"], {"elicitation": kept})
+                self.assertLess(len(session), 512)
+
     def test_initialized_is_202_and_ping_answers(self):
         """``notifications/initialized`` is 202; ``ping`` answers an empty result."""
         _response, session = self._initialize()

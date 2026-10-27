@@ -41,6 +41,8 @@ SERVER_NAME = "incubacloud-panel"
 CACHE_TTL_MS = 300_000
 #: Seconds a legacy session id is honoured.
 SESSION_MAX_AGE = 24 * 3600
+#: The elicitation modes a client may declare.
+ELICITATION_MODES = ("form", "url")
 META_VERSION = "io.modelcontextprotocol/protocolVersion"
 META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
 META_CLIENT = "io.modelcontextprotocol/clientInfo"
@@ -76,14 +78,18 @@ def _client_name(info):
 def _session_capabilities(capabilities):
     """Keep, of what a legacy client declared, what the server reads later.
 
-    Only ``elicitation`` decides anything (the confirmation channel); the
-    rest would only grow a header the client sends on every request.
+    Only ``elicitation`` decides anything (the confirmation channel), and
+    of it only which modes the client has: whatever else it says, of any
+    size, would grow a header the client sends on every request.
     """
-    if isinstance(capabilities, dict) and isinstance(
-        capabilities.get("elicitation"), dict
-    ):
-        return {"elicitation": capabilities["elicitation"]}
-    return {}
+    elicitation = (
+        capabilities.get("elicitation") if isinstance(capabilities, dict) else None
+    )
+    if not isinstance(elicitation, dict):
+        return {}
+    return {
+        "elicitation": {mode: {} for mode in ELICITATION_MODES if mode in elicitation}
+    }
 
 
 class McpServer(models.AbstractModel):
