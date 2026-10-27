@@ -246,6 +246,34 @@ class McpHttpMixin:
         return json.loads(text)
 
 
+#: What a client of the stateless revision declares to be asked through a form.
+FORM_CAPABILITIES = {"elicitation": {"form": {}}}
+#: What a client declares to be asked through a link only.
+URL_CAPABILITIES = {"elicitation": {"url": {}}}
+#: The answer of a person who approves in the client's form.
+ACCEPT = {"confirm": {"action": "accept", "content": {"confirm": True}}}
+
+
+class ConfirmMixin:
+    """Approve through the client's form, as a 2026-07-28 client does.
+
+    For a test case that also mixes in :class:`McpHttpMixin`.
+    """
+
+    def _confirmed_call(self, credential, name, arguments):
+        """Call *name*, accept its form, and return the final result."""
+        first = self._call_tool(credential, name, arguments, FORM_CAPABILITIES)
+        self.assertEqual(first.get("resultType"), "input_required", first)
+        return self._call_tool(
+            credential,
+            name,
+            arguments,
+            FORM_CAPABILITIES,
+            requestState=first["requestState"],
+            inputResponses=ACCEPT,
+        )
+
+
 HOST_PASSWORD = "mcp-host-pass-4821"
 PG_PASSWORD = "mcp-pg-pass-9137"
 ADMIN_PASSWORD = "mcp-admin-pass-5520"

@@ -399,7 +399,10 @@ class McpServer(models.AbstractModel):
         :param dict params: the request's ``params``
         :param ctx: the request's :class:`CallContext`
         :raises McpError: -32602 for a tool that does not exist, or
-            arguments that are not an object
+            arguments that are not an object; -32042 to ask an earlier
+            client for an approval
+        :raises psycopg2.Error: a concurrency error, for Odoo to retry the
+            whole request
         """
         name = params.get("name")
         arguments = params.get("arguments")
@@ -438,6 +441,14 @@ class McpServer(models.AbstractModel):
         except (SchemaError, AccessError, UserError, ValidationError) as exc:
             return self._error_result(ctx, self._scrubbed(str(exc)))
         except Exception as exc:  # noqa: BLE001 - shown through safe_error_response
+            # Of two retries racing for one approval, the second fails to
+            # serialise when it uses it: Odoo retries the whole request,
+            # which then finds the approval used.
+            if (
+                isinstance(exc, psycopg2.Error)
+                and exc.pgcode in PG_CONCURRENCY_ERRORS_TO_RETRY
+            ):
+                raise
             message = self.env._("The panel could not prepare this action.")
             text = safe_error_response(exc, message)["error"]
             return self._error_result(ctx, self._scrubbed(text))
