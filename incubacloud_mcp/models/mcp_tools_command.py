@@ -43,6 +43,8 @@ _STDERR_BYTES = 8 * 1024
 _STDOUT_BYTES = MAX_BYTES - _STDERR_BYTES - 2048
 #: Characters kept of each stream while the command runs.
 _KEEP_CHARS = 2 * MAX_BYTES
+#: Characters read at a time from each stream.
+_READ_SIZE = 65536
 #: The exit status of ``timeout`` when it ended the command.
 _TIMED_OUT = 124
 
@@ -233,39 +235,52 @@ class McpToolsCommand(models.AbstractModel):
     def _ssh_capture(self, host, command):
         """Run *command* on *host*; return exit code, stdout and stderr, cut.
 
-        A connection that fails or is lost answers ``{'ok': False}``, which
-        keeps the audit row already written.
+        The streams are read a block at a time: what passes the part kept
+        is read and dropped, so a command's output costs a bounded amount
+        of memory however much it prints. A connection that fails or is
+        lost answers ``{'ok': False}``, which keeps the audit row already
+        written.
 
         :return: ``{ok, exit_code, timed_out, stdout, stdout_truncated,
             stderr, stderr_truncated}``; ``exit_code`` is None when the
             SSH session gave up on the command
         """
-        lines = {"stdout": [], "stderr": []}
-        kept = {"stdout": 0, "stderr": 0}
+        connect_kw = host.sudo().ssh_connect_kwargs()
+        connect_kw.update(keepalive_interval=30, keepalive_count_max=10)
+        kept = {"stdout": [], "stderr": []}
+        sizes = {"stdout": 0, "stderr": 0}
         dropped = set()
 
-        async def _keep(stream, line):
-            """Keep *line* of *stream* while there is room; note what is dropped."""
-            if kept[stream] >= _KEEP_CHARS:
-                dropped.add(stream)
-                return
-            lines[stream].append(line)
-            kept[stream] += len(line) + 1
+        async def _drain(name, stream):
+            """Read *stream* to its end, keeping what fits and dropping the rest."""
+            while chunk := await stream.read(_READ_SIZE):
+                room = _KEEP_CHARS - sizes[name]
+                if len(chunk) > room:
+                    dropped.add(name)
+                    chunk = chunk[: max(room, 0)]
+                if chunk:
+                    kept[name].append(chunk)
+                    sizes[name] += len(chunk)
 
         async def _run():
-            """Open the host's transport and run the command."""
-            async with host.get_transport() as transport:
-                return await transport.execute(
-                    command,
-                    lambda line: _keep("stdout", line),
-                    lambda line: _keep("stderr", line),
+            """Connect, run the command, read both streams; return its exit status."""
+            async with asyncssh.connect(**connect_kw) as conn:
+                process = await conn.create_process(
+                    command, encoding="utf-8", errors="replace"
+                )
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        _drain("stdout", process.stdout),
+                        _drain("stderr", process.stderr),
+                        process.wait(),
+                    ),
                     timeout=_SSH_TIMEOUT,
                 )
+                return process.exit_status
 
         # A timeout is an OSError too: it is caught first.
         try:
-            result = run_async(_run())
-            exit_code = result.exit_status
+            exit_code = run_async(_run())
             timed_out = exit_code == _TIMED_OUT
         except asyncio.TimeoutError:
             exit_code, timed_out = None, True
@@ -273,8 +288,8 @@ class McpToolsCommand(models.AbstractModel):
             return safe_error_response(
                 exc, self.env._("The command could not be run on the server.")
             )
-        out = cap_text("\n".join(lines["stdout"]), max_bytes=_STDOUT_BYTES)
-        err = cap_text("\n".join(lines["stderr"]), max_bytes=_STDERR_BYTES)
+        out = cap_text("".join(kept["stdout"]), max_bytes=_STDOUT_BYTES)
+        err = cap_text("".join(kept["stderr"]), max_bytes=_STDERR_BYTES)
         return {
             "ok": True,
             "exit_code": exit_code,
