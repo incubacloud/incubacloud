@@ -15,10 +15,15 @@ from odoo.tests.common import new_test_user
 
 from odoo.addons.incubacloud_mcp.controllers import _issuer_metadata, _jwks_cache
 from odoo.addons.incubacloud_mcp.models.cloud_settings import RESOURCE_PARAM
+from odoo.addons.incubacloud_mcp.protocol.canonical import canonical_resource
+from odoo.addons.incubacloud_mcp.protocol.versions import MODERN
 
 ISSUER = "https://idp.example.test"
 JWKS_URI = ISSUER + "/oauth/jwks"
 CLIENT_ID = "https://client.example.test/oauth/client.json"
+META_VERSION = "io.modelcontextprotocol/protocolVersion"
+META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
+META_CLIENT = "io.modelcontextprotocol/clientInfo"
 
 
 def http_response(status, data=None, body=None, announce=True):
@@ -158,3 +163,67 @@ class McpUsersMixin:
                 }
             )
         )
+
+
+class McpHttpMixin:
+    """Talk to ``/mcp`` over real HTTP, as an agent does. For an ``HttpCase``."""
+
+    def _resource_here(self):
+        """The canonical ``/mcp`` URL of the test server; also stored as the panel's."""
+        resource = canonical_resource(self.base_url() + "/mcp")
+        self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, resource)
+        return resource
+
+    def _post(self, body, credential=None, headers=None, raw=None):
+        """POST *body* (or the *raw* text) to ``/mcp``; return the response."""
+        sent = {
+            "Content-Type": "application/json",
+            "X-Odoo-Database": self.env.cr.dbname,
+        }
+        if credential:
+            sent["Authorization"] = f"Bearer {credential}"
+        sent.update(headers or {})
+        data = raw if raw is not None else json.dumps(body)
+        return self.url_open("/mcp", data=data, headers=sent)
+
+    def _modern(
+        self,
+        method,
+        params=None,
+        credential=None,
+        capabilities=None,
+        request_id=1,
+        headers=None,
+    ):
+        """Send a 2026-07-28 request with consistent ``_meta`` and headers."""
+        params = dict(params or {})
+        params["_meta"] = {
+            META_VERSION: MODERN,
+            META_CAPABILITIES: capabilities if capabilities is not None else {},
+            META_CLIENT: {"name": "test-agent", "version": "1.0"},
+        }
+        sent = {"MCP-Protocol-Version": MODERN, "Mcp-Method": method}
+        if method == "tools/call":
+            sent["Mcp-Name"] = params["name"]
+        sent.update(headers or {})
+        body = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+        return self._post(body, credential, sent)
+
+    def _call_tool(self, credential, name, arguments=None, capabilities=None, **params):
+        """Call tool *name* in 2026-07-28 and return the JSON-RPC ``result``."""
+        response = self._modern(
+            "tools/call",
+            {"name": name, "arguments": arguments or {}} | params,
+            credential,
+            capabilities,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["result"]
+
+    @staticmethod
+    def _payload(result):
+        """Return the JSON a successful tool result carries."""
+        text = result["content"][-1]["text"]
+        if text.startswith("<untrusted_data>\n"):
+            text = text[len("<untrusted_data>\n") : -len("\n</untrusted_data>")]
+        return json.loads(text)
