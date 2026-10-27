@@ -5,9 +5,11 @@
 </template>
 
 <!-- The page itself. Odoo's translations skip a template whose text opens
-     with a DOCTYPE, so the page's words live here, not in the one above. -->
+     with a DOCTYPE, so the page's words live here, not in the one above.
+     Its language, for screen readers, is the user's, QWeb's lang, as
+     BCP 47 spells it: es-ES. -->
 <template id="approval_page_html" name="Approve an agent's action: the page">
-<html>
+<html t-att-lang="(lang or 'en_US').replace('_', '-')">
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
