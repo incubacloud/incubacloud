@@ -14,21 +14,26 @@ S3-compatible service. You hold the keys. We run the schedule and the encryption
 The backup format is the standard Odoo dump (`dump.sql + filestore/`) wrapped
 in an encrypted archive.
 
-## Retention by plan
+## How long backups are kept
 
-!!! info "IncubaCloud SaaS"
-    Plan-based retention applies to the hosted service. Self-hosted deployments
-    configure retention per backend.
+Every backup backend has a **retention period** — 3 months unless you change it
+(`30D`, `3M`, `1Y`…) — and a **retention owner**, who deletes the backups older
+than that:
 
-| Plan | Automatic backup retention |
-| --- | --- |
-| Free | None (manual backups only) |
-| Starter | 7 days |
-| Professional | 14 days |
-| Business | 30 days |
+- **Duplicity cron** (the default) — the instance's backup service deletes them.
+- **Bucket lifecycle** — a lifecycle rule you set up on the bucket, outside
+  IncubaCloud, deletes them.
+- **Nobody** — nothing is deleted, and the archive keeps growing.
 
-Manual backups never expire. They count against your bucket storage,
-not against the retention window.
+A manual backup of a production instance runs the same job as the nightly one,
+into the same bucket, and expires under the same rules.
+
+!!! info "IncubaCloud SaaS: the backup days in your plan"
+    The backup days in your [plan](../billing/index.md#plans) — 7 on Starter, 14
+    on Professional, 30 on Business, none on Free — are for the backups we take
+    of your **control plane**, the panel at `<subdomain>.incubacloud.io`. They do
+    not change how long your instances' backups are kept: that is always the
+    retention of their backend.
 
 ## What happens to backups when an instance ends
 

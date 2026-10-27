@@ -13,8 +13,8 @@ from the backup ZIP you download from Odoo.sh. Each step is straightforward.
 
 - Your project's Git URL (find it on the Odoo.sh dashboard).
 - A backup ZIP from Odoo.sh.
-- An IncubaCloud account — for production use a paid plan (Free-plan instances
-  sleep when idle and get no automatic backups).
+- An IncubaCloud account — for production use a paid plan (on Free your control
+  plane sleeps when idle and gets no automatic backups).
 - A host (yours or hired).
 
 ## Step 1 — import the project from Git

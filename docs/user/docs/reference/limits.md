@@ -79,4 +79,4 @@ data-protection terms that govern them — see the
 - [Restore a backup](../backups/restore.md) — the routes that are not limited by
   request size.
 - [Backups](../backups/index.md) — retention, encryption and storage.
-- [Instances](../instances/index.md) — lifecycle and sleeping instances.
+- [Instances](../instances/index.md) — lifecycle, and what sleeps on the Free plan.

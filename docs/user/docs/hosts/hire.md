@@ -11,14 +11,14 @@ registers it as a host ready to receive instances.
 
 ## Pricing
 
-VPS usage is billed **by the hour with a monthly cap**: you never pay more than
-the server's monthly catalog price, and short-lived servers only cost the hours
-they ran. Your plan discounts the catalog price — 5% on Starter, 10% on
-Professional, 15% on Business. The charge appears as a line on your subscription
-invoice.
+VPS usage is billed **by the hour with a monthly cap**: in a calendar month you
+never pay more than the monthly price the catalog shows when you order, and
+short-lived servers only cost the hours they ran. The charge appears as a line on
+your subscription invoice.
 
-If the new server exceeds your plan's host quota, an extra-host line is added
-automatically (see [Billing → Extras](../billing/index.md#extras)).
+An ordered VPS does not use your plan's host allowance, which counts the servers
+you connect yourself, so it never adds an extra host
+(see [Billing → Extras](../billing/index.md#extras)).
 
 ## Walkthrough
 
@@ -28,8 +28,8 @@ In your control plane, go to `/cloud/hosts` and click **Order VPS**.
 
 ### 2. Pick size and location
 
-The catalog (sizes, prices, locations, live availability) comes straight from
-Hetzner, with your plan discount already applied. Pick the size that fits your
+The catalog (sizes, locations, live availability) comes straight from Hetzner,
+and its prices are the ones you will pay. Pick the size that fits your
 workload and a region close to your users — EU (Helsinki, Nuremberg,
 Falkenstein) or US (Ashburn, Hillsboro).
 

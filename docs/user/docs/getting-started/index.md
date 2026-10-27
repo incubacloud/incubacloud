@@ -12,7 +12,8 @@ Each step is independent — if you already have an account, jump straight to st
 
 ## What you'll need
 
-- A Google or Odoo.com account to sign in with (hosted SaaS).
+- An account with one of the identity providers listed on the sign-up page, such
+  as GitHub, to sign in with (hosted SaaS).
 - A payment method if you choose a paid plan (we use Stripe — card).
 - Optionally: a Git repo URL for your custom code.
 - Optionally: a VPS you already own (or [order one through the platform](../hosts/hire.md)

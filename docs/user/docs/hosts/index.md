@@ -10,7 +10,7 @@ your own VPS or order one through the platform.
   [:octicons-arrow-right-24: Walkthrough](connect.md)
 - **Order one through the platform** *(SaaS, paid plans)* — we provision a Hetzner
   VPS, lock down SSH, configure the proxy and register it ready to use. Billed by
-  the hour with a monthly cap, minus your plan's discount.
+  the hour with a monthly cap.
   [:octicons-arrow-right-24: Walkthrough](hire.md)
 
 ## What we install

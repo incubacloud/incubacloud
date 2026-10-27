@@ -22,7 +22,6 @@ This document describes the planned direction for IncubaCloud Core. It is a livi
 ## Near term
 
 - **Monitoring follow-up** — per-instance database metrics (connections, cache hit ratio and locks) and synthetic probes from outside remain designed but deferred; they are not part of the monitoring already shipped. See [what is not here yet](user/docs/reference/monitoring.md#what-is-not-here-yet).
-- **User SSH keys and direct shell access** — register per-user public SSH keys (added manually or imported from a GitHub account), grant them per instance, and open a shell directly over SSH with your own identity. Restricted server-side authorization, immediate revocation and full audit trail.
 
 ## Medium term
 
