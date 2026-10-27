@@ -257,7 +257,8 @@ class McpConfirm(models.AbstractModel):
                 ctx,
                 self.env._("This confirmation has expired. Ask for the action again."),
             )
-        answer = (params.get("inputResponses") or {}).get(INPUT_KEY)
+        responses = params.get("inputResponses")
+        answer = responses.get(INPUT_KEY) if isinstance(responses, dict) else None
         action = answer.get("action") if isinstance(answer, dict) else None
         if action in ("decline", "cancel"):
             approval._withdraw()

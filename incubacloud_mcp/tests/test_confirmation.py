@@ -145,6 +145,26 @@ class TestConfirmation(
         self.assertTrue(project.exists())
         self.assertTrue(other.exists())
 
+    def test_an_answer_that_is_not_one_asks_again(self):
+        """Input responses of the wrong shape answer nothing: the form is
+        asked again and nothing runs."""
+        project = self._project()
+        args = {"project_id": project.id}
+        first = self._call_tool(self.key, "delete_project", args, FORM_CAPABILITIES)
+        for responses in (["confirm"], "confirm", {"confirm": "yes"}):
+            with self.subTest(responses=responses):
+                result = self._call_tool(
+                    self.key,
+                    "delete_project",
+                    args,
+                    FORM_CAPABILITIES,
+                    requestState=first["requestState"],
+                    inputResponses=responses,
+                )
+                self.assertEqual(result["resultType"], "input_required")
+        self.assertEqual(self._approval_of(first["requestState"]).state, "pending")
+        self.assertTrue(project.exists())
+
     def test_declining_cancels(self):
         """Declining the form cancels the approval and runs nothing."""
         project = self._project()
