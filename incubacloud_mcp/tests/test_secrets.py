@@ -138,6 +138,18 @@ class TestSecrets(TransactionCase):
         (definition,) = self.env.cr.fetchone() or ("",)
         self.assertIn("secret_payload IS NOT NULL", definition)
 
+    def test_secrets_kept_in_system_parameters_are_known(self):
+        """The database secret and the module's key are masked too."""
+        ICP = self.env["ir.config_parameter"].sudo()
+        ICP.set_param("database.secret", "db-secret-1357924680")
+        self.env["cloud.settings"]._mcp_secret()
+        values = self.Secrets._known_values()
+        self.assertIn("db-secret-1357924680", values)
+        self.assertIn(ICP.get_param("incubacloud.mcp.secret"), values)
+        self.assertEqual(
+            self.Secrets._scrubber().text("key db-secret-1357924680"), f"key {MASK}"
+        )
+
     def test_an_argument_named_like_a_secret_is_refused_at_any_depth(self):
         """A key named like an encrypted field is refused, however deep."""
         with self.assertRaisesRegex(UserError, "Secrets are changed in the panel"):

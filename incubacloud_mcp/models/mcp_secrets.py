@@ -23,6 +23,10 @@ from odoo.addons.incubacloud.models.encrypted_char import EncryptedFieldMixin
 from odoo.addons.incubacloud.models.password_utils import decrypt_value
 
 from ..protocol.redact import MIN_SECRET_LEN, Scrubber, find_secret_key, secret_parts
+from .cloud_settings import SECRET_PARAM
+
+#: System parameters that hold a secret outside any encrypted field.
+SECRET_PARAMS = (SECRET_PARAM, "database.secret")
 
 #: ``{(database, ciphertext): what it hides}`` in this process.
 _PARTS_BY_CIPHER = {}
@@ -80,7 +84,8 @@ class McpSecrets(models.AbstractModel):
         """Return every decryptable secret of the database, 8 characters or more.
 
         A secret stored as a JSON document or a PEM block counts with its
-        pieces (:func:`secret_parts`).
+        pieces (:func:`secret_parts`); so do those of
+        :meth:`_extra_known_values`.
 
         :rtype: set[str]
         """
@@ -99,7 +104,24 @@ class McpSecrets(models.AbstractModel):
                 )
                 for (cipher,) in cr.fetchall():
                     values |= _parts_of(self.env, cipher)
+        values |= {
+            value
+            for value in self._extra_known_values()
+            if value and len(value) >= MIN_SECRET_LEN
+        }
         return values
+
+    @api.model
+    def _extra_known_values(self):
+        """Return the secrets kept outside encrypted fields.
+
+        Here the system parameters of :data:`SECRET_PARAMS`; a module on
+        top adds its own (the tenant, its OIDC client secret).
+
+        :rtype: set[str]
+        """
+        ICP = self.env["ir.config_parameter"].sudo()
+        return {ICP.get_param(key) or "" for key in SECRET_PARAMS}
 
     @api.model
     def _scrubber(self, extra=()):
