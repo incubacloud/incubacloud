@@ -59,7 +59,8 @@ class TestCommandTools(
             instance.sudo().write({"running": True, "compose_services": "odoo,db"})
         self.dev = self._cloud_user("mcp-cmd-dev")
         self.key = self._api_key(self.dev)
-        #: What the next process prints and how it ends.
+        #: What the next process prints and how it ends; ``closes`` is what
+        #: waiting for its end raises, if anything.
         self.output = {
             "stdout": [f"PGPASSWORD={PG_PASSWORD}\n"],
             "stderr": ["warning: none\n"],
@@ -109,6 +110,9 @@ class TestCommandTools(
         process.stderr = self._reader(self.output["stderr"])
         process.wait = AsyncMock(
             return_value=MagicMock(spec=asyncssh.SSHCompletedProcess)
+        )
+        process.wait_closed = AsyncMock(
+            return_value=None, side_effect=self.output.get("closes")
         )
         process.exit_status = self.output["exit"]
         self.processes.append(process)
@@ -308,9 +312,32 @@ class TestCommandTools(
         for name in ("run_command", "run_host_command"):
             self.assertIn("background", catalog._spec(name).listed()["description"])
 
+    def test_a_server_that_does_not_answer_in_time_is_not_a_timed_out_command(
+        self,
+    ):
+        """A connection or a login that times out is a server that could not
+        be reached, not a command that ran out of time."""
+        self.connect.return_value.__aenter__.side_effect = TimeoutError()
+        result = self._call_tool(
+            self.key, "run_command", {"instance_id": self.staging.id, "command": "id"}
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn("Could not connect", result["content"][0]["text"])
+        self.assertEqual(self.commands, [])
+
+    def test_the_process_is_awaited_until_its_channel_closes(self):
+        """The process is awaited until its channel closes, never through a
+        call that would read what is left of its output on its own."""
+        self._call_tool(
+            self.key, "run_command", {"instance_id": self.staging.id, "command": "id"}
+        )
+        self.processes[-1].wait_closed.assert_awaited_once()
+        self.processes[-1].wait.assert_not_awaited()
+
     def test_a_command_past_its_minute_says_so(self):
-        """A command the session gives up on is reported as timed out."""
-        self.output["raises"] = asyncio.TimeoutError()
+        """A command the session gives up on, once started, is reported as
+        timed out."""
+        self.output["closes"] = asyncio.TimeoutError()
         payload = self._payload(
             self._call_tool(
                 self.key,
