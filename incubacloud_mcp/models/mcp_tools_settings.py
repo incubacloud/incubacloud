@@ -38,7 +38,6 @@ SAVE_GENERAL_PARAMS = (
     "metrics_central_operator_sources",
     "metrics_ship_security_logs",
 )
-#: What ``save_core_rate_limits`` accepts.
 #: What ``save_general_settings`` writes even when it is not sent, from its
 #: own defaults: sent with the value held. The rest it writes only when
 #: sent, so it is sent only when given — the value held would not always
@@ -53,6 +52,7 @@ ALWAYS_WRITTEN_GENERAL = (
     "github_event_retention_days",
     "github_event_truncate_days",
 )
+#: What ``save_core_rate_limits`` accepts.
 CORE_RATE_KEYS = (
     "rate_limit_webhook_per_min",
     "rate_limit_terminal_per_min",
