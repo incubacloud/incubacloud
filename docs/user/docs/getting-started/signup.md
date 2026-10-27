@@ -14,23 +14,33 @@ the plan that matches your stage. There are four:
 
 | Plan | Best for | What you get |
 | --- | --- | --- |
-| **Free** | Looking around | 1 host, 1 instance (sleeps when idle), no automatic backups |
-| **Starter** | Freelancers & solo devs | 3 hosts, 5 instances, 7-day backups |
-| **Professional** | Small businesses | 10 hosts, 20 instances, 14-day backups |
-| **Business** | Agencies & mid-size companies | 25 hosts, 50 instances, 30-day backups, dedicated host |
+| **Free** | Looking around | 1 host, 1 instance; the control plane sleeps when idle and has no automatic backups |
+| **Starter** | Freelancers & solo devs | 3 hosts, 5 instances, 7-day control plane backups |
+| **Professional** | Small businesses | 10 hosts, 20 instances, 14-day control plane backups |
+| **Business** | Agencies & mid-size companies | 25 hosts, 50 instances, 30-day control plane backups |
 
-You can change plan at any moment. Free has no card requirement.
+The backup days are for the backups we take of your control plane. Your
+instances' backups go to the backup backend you set up, and keep its retention —
+see [Backups](../backups/index.md#how-long-backups-are-kept).
 
-!!! note "Free plan instances sleep"
-    On the Free plan your instance is suspended after ~30 minutes without traffic
-    and wakes automatically on the next request (the first request after a nap takes
-    a few seconds). Paid plans run 24/7.
+You can [change plan](../billing/index.md#changing-plans) later. Free has no card
+requirement.
+
+!!! note "On Free, the control plane sleeps"
+    On the Free plan your control plane is suspended after ~30 minutes without
+    traffic and wakes automatically on the next request (the first request after a
+    nap takes a few seconds). The instances you deploy keep running. On paid plans
+    the control plane runs 24/7.
+
+    A Free control plane nobody uses for 14 days is suspended until you reactivate
+    it, and deleted after 30 days suspended. We email you before each step — see
+    [Billing](../billing/index.md#an-unused-free-control-plane).
 
 ## 2. Choose your subdomain and sign in
 
 Enter the subdomain you want for your control plane (e.g. `acme` →
-`acme.incubacloud.io`), then continue with a social login — **Google** or
-**Odoo.com** (GitHub is planned). There is no email-and-password form and no
+`acme.incubacloud.io`), then continue with one of the identity providers listed on
+the page, such as **GitHub**. There is no email-and-password form and no
 separate verification email: your identity comes from the provider you pick.
 
 Subdomain rules: 3–63 characters, letters/digits/hyphens (a DNS label). Reserved
