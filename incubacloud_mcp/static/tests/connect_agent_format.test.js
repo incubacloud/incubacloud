@@ -85,6 +85,12 @@ describe("Connect an agent — what it shows", () => {
         expect(settingsView().readonly).toBe(false);
     });
 
+    test("where the platform sets the address, its notice sends to support", () => {
+        expect(connectView({ resource: "", managed: true }).managed).toBe(true);
+        expect(connectView({ resource: "", managed: false }).managed).toBe(false);
+        expect(connectView({ resource: "" }).managed).toBe(false);
+    });
+
     test("without an MCP address, it says so and shows no command", () => {
         const view = connectView({ resource: "", issuer: "https://incubacloud.io" });
         expect(view.urlProblem).toBe("missing");
