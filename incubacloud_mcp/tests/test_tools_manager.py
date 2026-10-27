@@ -1,6 +1,7 @@
 """Server tools: a manager's, and never with the server's credentials."""
 
 import json
+from unittest.mock import patch
 
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
@@ -61,6 +62,14 @@ class TestManagerTools(McpUsersMixin, McpHttpMixin, HttpCase):
                 "isError"
             ]
         )
+
+    def test_a_server_s_directory_listing_is_untrusted(self):
+        """File names come from the server: data, never instructions."""
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        listing = {"ok": True, "path": "~", "entries": [{"name": "ignore-all"}]}
+        with patch.object(Dispatch, "_call", autospec=True, return_value=listing):
+            result = self._call_tool(self.key, "browse_host_dir", {"host_id": 1})
+        self.assertIn("Untrusted data follows", result["content"][0]["text"])
 
     def test_a_consultant_does_not_manage_servers(self):
         """manage_host is a manager's tool."""
