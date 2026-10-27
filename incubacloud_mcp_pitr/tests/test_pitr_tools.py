@@ -29,9 +29,8 @@ class TestPitrTools(
         super().setUp()
         self._resource_here()
         self._panel_fixture()
-        self.key = self._api_key(
-            self._cloud_user("mcp-pitr-mgr", group="group_cloud_manager")
-        )
+        self.manager = self._cloud_user("mcp-pitr-mgr", group="group_cloud_manager")
+        self.key = self._api_key(self.manager)
         self.Instance = type(self.env["cloud.instance"])
 
     def test_the_bridge_installs_with_both_modules(self):
@@ -123,8 +122,12 @@ class TestPitrTools(
                     )
                     self.assertTrue(result.get("isError"), result)
                     self.assertNotIn("inputRequests", result)
-        self.assertFalse(
+        self.assertFalse(self._approvals())
+
+    def _approvals(self):
+        """Return this test's user's approvals of a restore."""
+        return (
             self.env["incubacloud.mcp.approval"]
             .sudo()
-            .search([("tool", "=", "pitr_restore")])
+            .search([("tool", "=", "pitr_restore"), ("user_id", "=", self.manager.id)])
         )
