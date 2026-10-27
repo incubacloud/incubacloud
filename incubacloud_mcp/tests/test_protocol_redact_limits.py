@@ -1,6 +1,7 @@
 """What an agent reads: no secret, no live link, no answer past 64 KB."""
 
 import base64
+import json
 import time
 from urllib.parse import quote
 
@@ -132,6 +133,11 @@ class TestSecretKeys(BaseCase):
         self.assertIsNone(find_secret_key({"vals": {"name": "x"}}, self.NAMES))
 
 
+def _answer_size(value):
+    """Return the bytes *value* takes in a tool's answer."""
+    return len(json.dumps(value, ensure_ascii=False, default=str).encode("utf-8"))
+
+
 class TestLimits(BaseCase):
     def test_a_long_list_comes_in_pages_under_64_kb(self):
         lines = [f"{i:06d} " + "x" * 1000 for i in range(1000)]
@@ -151,6 +157,30 @@ class TestLimits(BaseCase):
     def test_one_huge_line_is_cut(self):
         page = page_items(["y" * (MAX_BYTES * 2)])
         self.assertLessEqual(len(page["items"][0]), MAX_BYTES)
+
+    def test_a_single_entry_that_was_cut_says_so(self):
+        self.assertTrue(page_items(["y" * (MAX_BYTES * 2)])["truncated"])
+
+    def test_a_big_dict_is_cut_too(self):
+        page = page_items([{"log": "x" * (MAX_BYTES * 2)}])
+        self.assertTrue(page["truncated"])
+        self.assertLessEqual(_answer_size(page["items"]), MAX_BYTES)
+
+    def test_a_page_is_measured_as_the_answer_serialises_it(self):
+        quotes = page_items(['"' * MAX_BYTES])
+        self.assertLessEqual(_answer_size(quotes["items"]), MAX_BYTES)
+        accented = page_items(["é" * 500] * 200)
+        size = _answer_size(accented["items"])
+        self.assertLessEqual(size, MAX_BYTES)
+        self.assertGreater(size, MAX_BYTES - 1100)
+
+    def test_a_character_across_the_cut_is_not_broken(self):
+        text = "a" * (MAX_BYTES - 1) + "é" * 3
+        first = cap_text(text)
+        self.assertLessEqual(len(first["text"].encode("utf-8")), MAX_BYTES)
+        self.assertNotIn("\ufffd", first["text"])
+        rest = cap_text(text, first["next_offset"])
+        self.assertEqual(first["text"] + rest["text"], text)
 
     def test_text_is_cut_and_continues_at_next_offset(self):
         text = "z" * (MAX_BYTES + 10)
