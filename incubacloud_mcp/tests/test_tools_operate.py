@@ -133,6 +133,7 @@ class TestOperateTools(
 
     def test_a_project_manager_tool_is_not_a_consultant_s(self):
         """create_project is refused to a consultant, naming the role it needs."""
-        result = self._call_tool(self.key, "create_project", {"vals": {"name": "x"}})
-        self.assertTrue(result["isError"])
+        result = self._assert_refused_by_role(
+            self.key, "create_project", {"vals": {"name": "x"}}
+        )
         self.assertIn("group_cloud_project_manager", result["content"][0]["text"])

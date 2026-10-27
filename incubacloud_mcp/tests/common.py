@@ -221,6 +221,22 @@ class McpHttpMixin:
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["result"]
 
+    def _tool_names(self, credential):
+        """Return the names ``tools/list`` gives *credential*'s user."""
+        listing = self._modern("tools/list", credential=credential).json()["result"]
+        return {tool["name"] for tool in listing["tools"]}
+
+    def _assert_refused_by_role(self, credential, name, arguments):
+        """Check that tool *name* is neither listed nor run for this user:
+        the call is refused before any route of the panel is reached."""
+        self.assertNotIn(name, self._tool_names(credential))
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        with patch.object(Dispatch, "_call", autospec=True, return_value={}) as call:
+            result = self._call_tool(credential, name, arguments)
+        self.assertTrue(result["isError"])
+        call.assert_not_called()
+        return result
+
     @staticmethod
     def _payload(result):
         """Return the JSON a successful tool result carries."""

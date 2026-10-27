@@ -73,6 +73,14 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
         self.assertFalse(refused["result"]["ok"])
         self.assertEqual(self.settings.mcp_oauth_issuer, "https://idp.example.test")
 
+    def test_settings_are_a_manager_s(self):
+        """A developer neither sees nor runs the settings tools."""
+        key = self._api_key(self._cloud_user("mcp-set-dev"))
+        self._assert_refused_by_role(key, "get_settings", {})
+        self._assert_refused_by_role(
+            key, "update_settings", {"section": "general", "values": {}}
+        )
+
     def test_get_settings_has_every_section_and_no_secret(self):
         """get_settings answers every section, with no secret in it."""
         result = self._call_tool(
