@@ -129,6 +129,21 @@ with an older core — publish this core first.
   looks first and stops with the paths that changed (up to ten): what
   the product writes on its own is kept out of the repository, so what
   it lists was changed by someone else.
+- **A delete whose second purge of the continuous recovery archive fails
+  no longer reports the instance removed.** The purge after the agent
+  and the database stop ended in `true`, so what arrived between the two
+  purges stayed in the bucket after the delete. It now stops the delete,
+  as the first purge and the duplicity one do, and starts again what it
+  stopped, so the instance stays running for the delete to be retried.
+  The stop no longer fails, unseen, on a stack whose agent was switched
+  off, and a composition it cannot read stops the step before anything
+  is stopped or purged. `incubacloud_pitr` 1.0.8.
+- **With no base copy left, the recovery window is empty and a copy is
+  due at once.** A listing that found no base copy left the oldest and
+  the last base where they were, so after a purge the panel still
+  offered a window that no longer existed and asked for a new base only
+  hours later. An empty listing now clears both; a listing that failed
+  leaves them as they were. `incubacloud_pitr` 1.0.8.
 
 ### Security
 

@@ -189,17 +189,22 @@ class _PitrExecutor(AbstractSSHExecutor):
     def _record_pitr_bases(self, stdout):
         """Keep the window the base copies of the current cluster span.
 
+        A listing with no copy left (a purge took them all) empties it:
+        the panel offers no moment to restore to, and the next copy is
+        due at once (``_pitr_base_due``). Without the line (a listing
+        that failed) it is left as it was.
+
         :param str stdout: output holding an ``IC_PITR_BASES`` line
         :return: the cluster id read, or None
         """
         cluster, bases = parse_bases(stdout)
         if not cluster:
             return None
-        vals = {"pitr_cluster_id": cluster}
-        if bases:
-            vals["pitr_oldest_base_at"] = bases[0]["finish_time"]
-            vals["pitr_last_base_at"] = bases[-1]["finish_time"]
-        self._inst().sudo().write(vals)
+        self._inst().sudo().write({
+            "pitr_cluster_id": cluster,
+            "pitr_oldest_base_at": bases[0]["finish_time"] if bases else False,
+            "pitr_last_base_at": bases[-1]["finish_time"] if bases else False,
+        })
         return cluster
 
     def _record_cluster(self, cluster):

@@ -463,7 +463,13 @@ class CloudInstance(models.Model):
         is deleted for good. Purged with the stack up, like the duplicity
         prefix, so a purge that fails leaves the instance running; then
         once more after the agent and the database stopped, for what they
-        uploaded in between.
+        uploaded in between. Either one failing stops the delete, as the
+        duplicity purge does: what it left in the prefix would otherwise
+        outlive the instance, with nothing left that knows where it is.
+        The second one, or the stop before it, starts again what it
+        stopped, so the instance is left running for the delete to be
+        run again; a compose it cannot read stops it before it touches
+        anything.
         """
         steps = super()._teardown_pre_steps(inst_dir, keep_in_panel)
         if keep_in_panel or not (self.pitr_cluster_id or self.pitr_enabled):
@@ -485,11 +491,22 @@ class CloudInstance(models.Model):
             ),
             (
                 "Stop archiving and purge what arrived meanwhile",
-                f"cd {inst_dir} && docker compose stop {AGENT_SERVICE} db"
-                f" >/dev/null 2>&1; if [ -f {ENV_FILE} ]; then {purge};"
-                ' [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]'
-                " || echo 'WARNING: the second purge failed; objects may be"
-                " left in the prefix'; fi; true",
+                # Archiving switched off keeps the credentials for this
+                # purge but not the agent, and compose refuses to stop a
+                # service it does not declare: only the database then.
+                f"cd {inst_dir} && services=$(docker compose config --services)"
+                " && set -- db && if printf '%s\\n' \"$services\" | grep -qx"
+                f" {AGENT_SERVICE}; then set -- {AGENT_SERVICE} db; fi"
+                ' && if ! { docker compose stop "$@" >/dev/null &&'
+                f" {{ [ ! -f {ENV_FILE} ] || {{ {purge};"
+                ' [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]; }; }; }; then'
+                " echo 'ERROR: the archive could not be emptied once"
+                " archiving stopped: the instance is not deleted' >&2;"
+                ' if docker compose start "$@"; then'
+                ' echo "$* running again: the delete can be run again";'
+                ' else echo "ERROR: $* could not be started again" >&2; fi;'
+                " false; fi",
+                {"stop_on_failure": True},
             ),
         ]
 
