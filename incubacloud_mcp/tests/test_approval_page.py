@@ -7,7 +7,7 @@ import re
 import asyncssh
 
 from odoo.tests import tagged
-from odoo.tests.common import HttpCase, new_test_user
+from odoo.tests.common import HttpCase, TransactionCase, new_test_user
 
 from .common import McpHttpMixin, McpUsersMixin
 
@@ -162,3 +162,25 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(
             self.url_open("/cloud/mcp/approve/not-a-token").status_code, 404
         )
+
+
+class TestTheApprovalPageTranslates(TransactionCase):
+    """The page's words reach the translations."""
+
+    def test_every_word_of_the_page_is_a_term(self):
+        """Odoo's translations skip a template whose text opens with a
+        DOCTYPE: the page's words must live in another one."""
+        terms = set()
+        for view in self.env["ir.ui.view"].search(
+            [("key", "=like", "incubacloud_mcp.approval_page%")]
+        ):
+            terms.update(view._fields["arch_db"].get_trans_terms(view.arch_db))
+        for words in (
+            "Approve an agent's action",
+            "An agent connected to this panel with your account asks to:",
+            "Approve",
+            "Cancel",
+            "This approval link is not valid.",
+        ):
+            with self.subTest(words=words):
+                self.assertIn(words, terms)

@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 <template id="approval_page" name="Approve an agent's action">&lt;!DOCTYPE html&gt;
+<t t-call="incubacloud_mcp.approval_page_html"/>
+</template>
+
+<!-- The page itself. Odoo's translations skip a template whose text opens
+     with a DOCTYPE, so the page's words live here, not in the one above. -->
+<template id="approval_page_html" name="Approve an agent's action: the page">
 <html>
 <head>
     <meta charset="UTF-8"/>
