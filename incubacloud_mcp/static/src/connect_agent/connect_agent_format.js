@@ -79,6 +79,9 @@ export function cursorInstallLink(url) {
 /**
  * Cursor: the `mcp.json` entry, for a key the link must not carry.
  *
+ * The key is read from the environment, as Codex reads it: Cursor
+ * documents `${env:NAME}` in a header, and the file keeps no secret.
+ *
  * @param {string} url the panel's MCP URL
  * @param {{apiKey?: boolean}} [options] whether the entry carries an API key
  * @returns {string} the JSON to add to `~/.cursor/mcp.json`
@@ -86,7 +89,7 @@ export function cursorInstallLink(url) {
 export function cursorConfig(url, { apiKey = false } = {}) {
     const server = { url };
     if (apiKey) {
-        server.headers = { Authorization: BEARER };
+        server.headers = { Authorization: `Bearer \${env:${API_KEY_ENV}}` };
     }
     return JSON.stringify({ mcpServers: { [SERVER_NAME]: server } }, null, 2);
 }
