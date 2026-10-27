@@ -24,6 +24,7 @@ approval. Secrets never go in or out.
         "security/ir.model.access.csv",
         "data/mcp_defaults.xml",
         "views/auth_oauth_provider_views.xml",
+        "views/approval_page.xml",
     ],
     "installable": True,
     "auto_install": False,

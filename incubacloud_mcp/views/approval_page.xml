@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<template id="approval_page" name="Approve an agent's action">&lt;!DOCTYPE html&gt;
+<html>
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="robots" content="noindex"/>
+    <meta name="referrer" content="no-referrer"/>
+    <title>Approve an agent's action</title>
+    <!-- The panel's colours (relay.scss). Nothing is loaded from elsewhere:
+         the address of this page carries the approval's token. -->
+    <style>
+        :root {
+            --bg: #f3f7f4; --surf: #ffffff; --surf2: #eaf1ec; --line: #dde6df;
+            --fg: #0e1512; --muted: #5d6b63; --red: #dc4c4f; --red-fg: #ffffff;
+            color-scheme: light dark;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0a0c0d; --surf: #101315; --surf2: #181c1f; --line: #262b2f;
+                --fg: #eef1f3; --muted: #8a949c; --red: #ff6063; --red-fg: #2a0808;
+            }
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            margin: 0; min-height: 100vh; display: flex; align-items: center;
+            justify-content: center; padding: 24px; background: var(--bg); color: var(--fg);
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5;
+        }
+        .card {
+            width: 100%; max-width: 560px; background: var(--surf);
+            border: 1px solid var(--line); border-radius: 16px; padding: 32px;
+        }
+        .logo { width: 40px; height: 40px; display: block; margin-bottom: 16px; }
+        h1 { font-size: 20px; margin: 0 0 16px; }
+        .message {
+            white-space: pre-wrap; word-break: break-word; margin: 0 0 16px;
+            background: var(--surf2); border: 1px solid var(--line); border-radius: 10px;
+            padding: 14px 16px; font-family: "JetBrains Mono", "Fira Code", monospace;
+            font-size: 14px;
+        }
+        .meta { color: var(--muted); font-size: 14px; }
+        form { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
+        .btn {
+            border-radius: 10px; padding: 10px 20px; font: inherit; font-weight: 600;
+            cursor: pointer; border: 1px solid var(--line); background: var(--surf2);
+            color: var(--fg);
+        }
+        .btn-approve { background: var(--red); border-color: var(--red); color: var(--red-fg); }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <img class="logo" src="/incubacloud/static/src/img/icon-solid.svg" alt="IncubaCloud"/>
+        <h1>Approve an agent's action</h1>
+        <t t-if="state == 'pending'">
+            <p>An agent connected to this panel with your account asks to:</p>
+            <pre class="message" t-out="approval.message"/>
+            <p class="meta">
+                Asked through <t t-out="approval.via_client or '-'"/>, with the tool
+                <code t-out="approval.tool"/>. The request expires ten minutes after it
+                was made. Approve only what you asked your agent to do.
+            </p>
+            <form method="post" t-att-action="action">
+                <input type="hidden" name="csrf_token" t-att-value="csrf_token"/>
+                <button type="submit" class="btn" name="decision" value="cancel">Cancel</button>
+                <button type="submit" class="btn btn-approve" name="decision" value="approve">Approve</button>
+            </form>
+        </t>
+        <p t-elif="state == 'approved'">Approved. Go back to your agent and ask it to try again: it runs once.</p>
+        <p t-elif="state == 'cancelled'">Cancelled. The agent will not do it.</p>
+        <p t-elif="state == 'other_user'">This request belongs to another user of the panel. Sign in as that user to answer it.</p>
+        <p t-elif="state == 'missing'">This approval link is not valid.</p>
+        <p t-else="">This request has expired or was already answered. Ask your agent to request it again.</p>
+    </main>
+</body>
+</html>
+</template>
+</odoo>
