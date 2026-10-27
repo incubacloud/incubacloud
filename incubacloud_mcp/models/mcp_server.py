@@ -110,6 +110,9 @@ class McpServer(models.AbstractModel):
     def _handle(self, message, headers, principal):
         """Answer one decoded JSON-RPC message.
 
+        One message per POST: a JSON-RPC batch, which 2025-03-26 allowed
+        and later revisions removed, is an invalid request.
+
         :param message: the decoded body
         :param headers: the request headers
         :param principal: who the credential named
@@ -176,11 +179,18 @@ class McpServer(models.AbstractModel):
             legacy = self._legacy_context(message, headers, principal)
             if legacy:
                 return legacy
+            # A client that says it speaks 2026-07-28 forgot its _meta;
+            # any other lost (or never had) its session.
+            if headers.get("MCP-Protocol-Version") == MODERN:
+                raise McpError(
+                    400,
+                    INVALID_PARAMS,
+                    "Missing io.modelcontextprotocol/protocolVersion in _meta.",
+                )
             raise McpError(
                 400,
-                INVALID_PARAMS,
-                "Missing io.modelcontextprotocol/protocolVersion in _meta. "
-                "Clients of earlier versions start with initialize.",
+                INVALID_REQUEST,
+                "Mcp-Session-Id is missing: send initialize first.",
             )
         check_modern_headers(headers, message, version)
         if version in LEGACY:

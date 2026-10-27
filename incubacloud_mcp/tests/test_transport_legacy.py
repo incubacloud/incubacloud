@@ -109,8 +109,16 @@ class TestLegacyProtocol(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual((ping.status_code, ping.json()["result"]), (200, {}))
 
     def test_without_the_session_id_it_is_400(self):
-        """A legacy request other than ``initialize`` needs the session id."""
-        self.assertEqual(self._legacy("ping").status_code, 400)
+        """A legacy request other than ``initialize`` needs the session id,
+        and the answer says to send initialize."""
+        for version in (None, "2025-06-18"):
+            with self.subTest(version=version):
+                response = self._legacy("ping", version=version)
+                self.assertEqual(response.status_code, 400)
+                error = response.json()["error"]
+                self.assertEqual(error["code"], -32600)
+                self.assertIn("Mcp-Session-Id", error["message"])
+                self.assertIn("initialize", error["message"])
 
     def test_a_tampered_foreign_or_old_session_is_404(self):
         """A forged id, another user's, or one past a day: 404, initialize again."""
