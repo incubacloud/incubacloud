@@ -17,5 +17,6 @@ from . import mcp_tools_destructive
 from . import mcp_tools_guarded
 from . import mcp_secrets
 from . import mcp_approval
+from . import mcp_download
 from . import mcp_confirm
 from . import mcp_server
