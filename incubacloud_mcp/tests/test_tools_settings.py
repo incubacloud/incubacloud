@@ -115,6 +115,32 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
         self.assertTrue(result["isError"])
         self.assertIn("job_retention_dayz", result["content"][0]["text"])
 
+    def test_a_value_equal_once_normalised_needs_no_approval(self):
+        """A number given as text, or the issuer with its final slash, is no
+        change: it needs no approval."""
+        self.settings.write(
+            {
+                "mcp_oauth_issuer": "https://idp.example.test",
+                "rate_limit_mcp_user_per_min": 30,
+                "trusted_proxy_ranges": "10.0.0.0/8",
+            }
+        )
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.audit_log_retention_days", "90"
+        )
+        for args in (
+            {
+                "section": "mcp",
+                "values": {"mcp_oauth_issuer": "https://idp.example.test/"},
+            },
+            {"section": "rate_limits", "values": {"rate_limit_mcp_user_per_min": "30"}},
+            {"section": "general", "values": {"audit_log_retention_days": "90"}},
+            {"section": "general", "values": {"trusted_proxy_ranges": " 10.0.0.0/8\n"}},
+        ):
+            with self.subTest(args=args):
+                result = self._call_tool(self.key, "update_settings", args)
+                self.assertFalse(result["isError"], result)
+
     def test_a_sensitive_change_does_not_happen_without_approval(self):
         """Shortening the audit retention waits for an approval, and nothing changes."""
         self.env["ir.config_parameter"].sudo().set_param(
