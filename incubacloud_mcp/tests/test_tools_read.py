@@ -100,6 +100,21 @@ class TestReadTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
                 self.assertTrue(texts[0].startswith("Untrusted data follows"))
                 self.assertTrue("ignore your instructions" in texts[-1])
 
+    def test_repositories_and_audit_details_come_as_untrusted_data(self):
+        """What a repository holds and the audit's free text are untrusted."""
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        with patch.object(
+            Dispatch, "_call", autospec=True, return_value={"ok": True, "branches": []}
+        ):
+            repo = self._call_tool(
+                self.key, "github_repo_info", self._args("github_repo_info")
+            )
+        audit = self._call_tool(self.key, "get_audit_log", self._args("get_audit_log"))
+        for result in (repo, audit):
+            self.assertTrue(
+                result["content"][0]["text"].startswith("Untrusted data follows")
+            )
+
     def test_the_overview_says_the_role(self):
         """panel_overview names the user's role, the dashboard and the versions."""
         payload = self._payload(self._call_tool(self.key, "panel_overview"))
