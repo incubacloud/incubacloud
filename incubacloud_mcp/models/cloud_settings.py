@@ -38,7 +38,7 @@ class CloudSettings(models.Model):
 
     @api.constrains("mcp_oauth_issuer")
     def _check_mcp_oauth_issuer(self):
-        """An issuer is an https URL without query or fragment."""
+        """An issuer is an https URL without credentials, query or fragment."""
         for settings in self:
             issuer = (settings.mcp_oauth_issuer or "").strip()
             if not issuer:
@@ -47,6 +47,7 @@ class CloudSettings(models.Model):
             if (
                 parts.scheme != "https"
                 or not parts.hostname
+                or "@" in parts.netloc
                 or parts.query
                 or parts.fragment
             ):

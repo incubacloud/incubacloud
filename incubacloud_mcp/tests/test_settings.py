@@ -71,6 +71,8 @@ class TestMcpSettings(TransactionCase):
             "http://idp.example.test",
             "idp.example.test",
             "https://idp.example.test/x?y=1",
+            "https://user:pw@idp.example.test",
+            "https://@idp.example.test",
         ):
             with self.subTest(bad=bad), self.assertRaises(ValidationError):
                 settings.mcp_oauth_issuer = bad
@@ -85,6 +87,9 @@ class TestMcpSettings(TransactionCase):
 
     def test_a_layer_above_can_say_otherwise(self):
         with patch.object(
-            type(self.Settings), "_mcp_api_keys_allowed", return_value=False
+            type(self.Settings),
+            "_mcp_api_keys_allowed",
+            autospec=True,
+            return_value=False,
         ):
             self.assertFalse(self.Settings._mcp_api_keys_allowed())
