@@ -13175,7 +13175,7 @@ msgid ""
 "%(expected)s. Nothing was trusted."
 msgstr ""
 "El servidor «%(name)s» presenta ahora la clave SSH %(found)s, no la aprobada"
-" %(expected)s. No se ha confiado en nada."
+" %(expected)s. No se ha guardado ninguna clave."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__applied_config_snapshot

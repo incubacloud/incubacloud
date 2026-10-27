@@ -984,8 +984,9 @@ class CrudMixin:
         host public key.  Subsequent connections will verify against it.
 
         ``expected_fingerprint`` is the key a person approved after seeing
-        it (the MCP's confirmation shows it first): a server presenting
-        another one is refused and nothing is stored."""
+        it (the MCP's confirmation shows it first): it is compared before
+        any credential is sent, and a server presenting another one is
+        refused — logged and audited by the model — with nothing stored."""
         self._sec()._check_can_manage_hosts()
         # sudo: trusted endpoint (manager-only gate); secret fields now
         # require group_cloud_developer which manager inherits, but using
