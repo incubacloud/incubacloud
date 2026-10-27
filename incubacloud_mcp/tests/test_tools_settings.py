@@ -105,6 +105,26 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
             (45, 200),
         )
 
+    def test_changing_the_app_id_keeps_the_installation(self):
+        """A GitHub App change keeps the fields not given; others are refused."""
+        App = self.env["cloud.github.app"].sudo()
+        app = App.search([], limit=1) or App.create({"app_id": "111"})
+        app.write({"app_id": "111", "installation_id": "222"})
+        result = self._call_tool(
+            self.key,
+            "update_settings",
+            {"section": "github_app", "values": {"app_id": "333"}},
+        )
+        self.assertFalse(result["isError"], result)
+        self.assertEqual((app.app_id, app.installation_id), ("333", "222"))
+        refused = self._call_tool(
+            self.key,
+            "update_settings",
+            {"section": "github_app", "values": {"force": True}},
+        )
+        self.assertTrue(refused["isError"])
+        self.assertIn("force", refused["content"][0]["text"])
+
     def test_an_unknown_setting_is_refused(self):
         """A key the section does not have is refused, by name."""
         result = self._call_tool(

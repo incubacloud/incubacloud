@@ -52,6 +52,8 @@ CORE_RATE_KEYS = (
     "rate_limit_github_previews_per_hour",
     "rate_limit_github_imports_per_hour",
 )
+#: What ``save_github_app`` takes besides its secrets, which agents never send.
+GITHUB_APP_KEYS = ("app_id", "installation_id")
 MCP_RATE_KEY = "rate_limit_mcp_user_per_min"
 MCP_KEYS = ("mcp_oauth_issuer", "mcp_resource")
 #: General settings that always ask for approval (D2).
@@ -280,7 +282,12 @@ class McpToolsSettings(models.AbstractModel):
             return self._route("/cloud/detect_github_installation")
         if action == "test_connection":
             return self._route("/cloud/test_github_connection")
-        return self._route("/cloud/save_github_app", vals=values)
+        # save_github_app writes both ids: the one not given keeps its value.
+        self._only(section, values, GITHUB_APP_KEYS)
+        current = self._route("/cloud/get_github_app")
+        vals = {key: current.get(key) or "" for key in GITHUB_APP_KEYS}
+        vals.update(values)
+        return self._route("/cloud/save_github_app", vals=vals)
 
     @api.model
     def _update_backup_backend(self, backend_id, values, action):
