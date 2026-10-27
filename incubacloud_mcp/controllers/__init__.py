@@ -2,3 +2,4 @@
 
 from . import mcp
 from . import well_known
+from . import settings
