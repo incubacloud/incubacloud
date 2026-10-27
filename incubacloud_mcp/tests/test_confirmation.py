@@ -207,6 +207,33 @@ class TestConfirmation(
         )
         self.assertTrue(project.exists())
 
+    def test_two_keys_of_the_same_name_are_two_clients(self):
+        """Two API keys the user named alike are still two clients: neither
+        redeems the other's request state nor its approval on the page."""
+        project = self._project()
+        args = {"project_id": project.id}
+        twin = self._api_key(self.manager)
+        first = self._call_tool(self.key, "delete_project", args, FORM_CAPABILITIES)
+        stolen = self._call_tool(
+            twin,
+            "delete_project",
+            args,
+            FORM_CAPABILITIES,
+            requestState=first["requestState"],
+            inputResponses=ACCEPT,
+        )
+        self.assertTrue(stolen["isError"])
+        text = self._call_tool(self.key, "delete_project", args)["content"][0]["text"]
+        token = _LINK_RE.search(text).group(0).rsplit("/", 1)[1]
+        self.env["incubacloud.mcp.approval"]._by_token(token).with_user(
+            self.manager
+        )._decide(True)
+        other = self._call_tool(twin, "delete_project", args)
+        self.assertIn(
+            "This action needs your approval: open", other["content"][0]["text"]
+        )
+        self.assertTrue(project.exists())
+
     def test_declining_cancels(self):
         """Declining the form cancels the approval and runs nothing."""
         project = self._project()

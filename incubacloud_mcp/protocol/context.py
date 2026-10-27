@@ -15,12 +15,15 @@ VIA_REQUEST_ATTR = "incubacloud_mcp_via"
 class Principal:
     """The panel user a credential resolved to.
 
-    ``credential`` is what the server verified: the ``client_id`` of an
-    OAuth token, or ``API key <name>``.
+    ``credential`` is what the server verified, as the audit names it:
+    the ``client_id`` of an OAuth token, or ``API key <name>``. ``client``
+    tells one credential from another, where names may repeat: the
+    token's ``client_id``, or the API key's id.
     """
 
     uid: int
     credential: str
+    client: str = ""
 
 
 @dataclass(frozen=True)
