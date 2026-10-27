@@ -23,6 +23,9 @@ except ImportError:  # Python 3.10
 MASK = "[secreto]"
 #: Shorter values are not masked: they would shred the output.
 MIN_SECRET_LEN = 8
+#: Longer values stay out of the prefix tree, whose cost grows with every
+#: character: each is replaced as it is, in linear time.
+LONG_SECRET_CHARS = 4096
 
 #: A link in text or HTML. Found first, then looked into: one pattern for
 #: both would rescan the rest of the text from every ``http``.
@@ -220,20 +223,47 @@ def _compiled(values):
         return _compile("|".join(map(re.escape, ordered)))
 
 
+@functools.lru_cache(maxsize=16)
+def _long_variants(values):
+    """Return every form of the long *values*, longest first.
+
+    Cached by the set itself, as :func:`_compiled` is.
+
+    :param frozenset values: secrets of more than :data:`LONG_SECRET_CHARS`
+    :rtype: tuple[str]
+    """
+    variants = set()
+    for value in values:
+        variants |= secret_variants(value)
+    return tuple(sorted(variants, key=lambda variant: (-len(variant), variant)))
+
+
 class Scrubber:
     """Mask known secret values, and credentials in URLs, in text."""
 
     def __init__(self, values):
         """Build the matcher, longest variant first.
 
+        Secrets of up to :data:`LONG_SECRET_CHARS` characters go in the
+        prefix tree; longer ones, whose tree would cost seconds and
+        hundreds of megabytes to build, are replaced as they are.
+
         :param values: the decrypted secrets of the database
         """
-        self._pattern = _compiled(frozenset(values))
+        values = frozenset(values)
+        long_values = frozenset(
+            value for value in values if len(value) > LONG_SECRET_CHARS
+        )
+        self._long = _long_variants(long_values) if long_values else ()
+        self._pattern = _compiled(values - long_values)
 
     def text(self, text):
         """Return *text* with every known secret and URL credential masked."""
         if not isinstance(text, str) or not text:
             return text
+        for variant in self._long:
+            if variant in text:
+                text = text.replace(variant, MASK)
         if self._pattern:
             text = self._pattern.sub(MASK, text)
         return _URL_CREDENTIAL_RE.sub(lambda match: f"{match.group(1)}{MASK}@", text)
