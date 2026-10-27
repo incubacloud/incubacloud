@@ -47,8 +47,9 @@ _STDOUT_BYTES = MAX_BYTES - _STDERR_BYTES - 2048
 _KEEP_CHARS = 2 * MAX_BYTES
 #: Characters read at a time from each stream.
 _READ_SIZE = 65536
-#: The exit status of ``timeout`` when it ended the command.
-_TIMED_OUT = 124
+#: The exit statuses of ``timeout`` when it ended the command: stopped
+#: (124), or killed once its grace ran out (137).
+_TIMED_OUT = (124, 137)
 #: The tools whose approval ends with the command, quoted, on a line of its
 #: own: the approval page shows it in a block of its own.
 COMMAND_TOOLS = frozenset({"run_command", "run_host_command"})
@@ -57,8 +58,9 @@ TOOLS = (
     ToolSpec(
         "run_command",
         "Run one non-interactive shell command in an instance's odoo container "
-        "(60 seconds at most) and get stdout, stderr and the exit code. On "
-        "production the user approves each command.",
+        "(60 seconds at most) and get stdout, stderr and the exit code. The "
+        "minute stops the command, not what it leaves running in the "
+        "background. On production the user approves each command.",
         "group_cloud_developer",
         obj(
             {
@@ -75,7 +77,8 @@ TOOLS = (
     ToolSpec(
         "run_host_command",
         "Run one non-interactive shell command on a server, as its SSH user (60 "
-        "seconds at most). The user approves each command.",
+        "seconds at most; what it leaves running in the background is not "
+        "stopped). The user approves each command.",
         "group_cloud_manager",
         obj(
             {
@@ -93,8 +96,12 @@ TOOLS = (
 
 
 def _limited(command):
-    """Return *command* run by ``sh`` under the minute's ``timeout``."""
-    return f"timeout -k {_KILL_AFTER} {COMMAND_TIMEOUT} sh -c {shlex.quote(command)}"
+    """Return *command* run by ``sh`` under the minute's ``timeout``.
+
+    One quoted word after ``--``: the shell runs it, and reads none of it
+    (a leading dash included) as its own options.
+    """
+    return f"timeout -k {_KILL_AFTER} {COMMAND_TIMEOUT} sh -c -- {shlex.quote(command)}"
 
 
 class McpCatalogCommand(models.AbstractModel):
@@ -299,7 +306,7 @@ class McpToolsCommand(models.AbstractModel):
         # row, already committed, says so.
         try:
             exit_code = run_async(_run())
-            timed_out = exit_code == _TIMED_OUT
+            timed_out = exit_code in _TIMED_OUT
         except asyncio.TimeoutError:
             exit_code, timed_out = None, True
         except Exception as exc:  # noqa: BLE001 - shown through safe_error_response
