@@ -21,11 +21,18 @@ JWKS_URI = ISSUER + "/oauth/jwks"
 CLIENT_ID = "https://client.example.test/oauth/client.json"
 
 
-def http_response(status, data):
-    """A ``requests`` response with *status* and the JSON *data*."""
+def http_response(status, data=None, body=None, announce=True):
+    """A ``requests`` response with *status* and the JSON *data*.
+
+    :param bytes body: a raw body instead of *data*'s JSON
+    :param bool announce: whether ``Content-Length`` gives the body's size
+    """
+    raw = body if body is not None else json.dumps(data).encode()
     response = MagicMock(spec=requests.Response)
     response.status_code = status
-    response.content = json.dumps(data).encode()
+    response.headers = {"Content-Length": str(len(raw))} if announce else {}
+    response.content = raw
+    response.iter_content.return_value = [raw]
     response.json.return_value = data
     if status >= 400:
         response.raise_for_status.side_effect = requests.HTTPError(str(status))
@@ -51,8 +58,12 @@ class JwtMixin:
         self._issuer_down = False
         # What the issuer calls itself: Auth0's ends in a slash.
         self._issuer_published = ISSUER
+        # More public keys the issuer publishes (another algorithm's).
+        self._extra_keys = []
         self._jwks_calls = 0
-        patcher = patch.object(requests, "get", side_effect=self._issuer_get)
+        patcher = patch.object(
+            requests, "get", autospec=True, side_effect=self._issuer_get
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         for cache in (_jwks_cache, _issuer_metadata):
@@ -69,7 +80,10 @@ class JwtMixin:
             )
         if url == JWKS_URI:
             self._jwks_calls += 1
-            return http_response(200, {"keys": [self._rsa_key.as_dict(private=False)]})
+            keys = [self._rsa_key, *self._extra_keys]
+            return http_response(
+                200, {"keys": [key.as_dict(private=False) for key in keys]}
+            )
         return http_response(404, {})
 
     def _token(self, header=None, key=None, **claims):
@@ -140,6 +154,7 @@ class McpUsersMixin:
                     "auth_endpoint": ISSUER + "/oauth/authorize",
                     "validation_endpoint": ISSUER + "/oauth/userinfo",
                     "issuer": ISSUER,
+                    "enabled": True,
                 }
             )
         )
