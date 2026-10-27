@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Every install and update: the HMAC key and the resource URL, when missing. -->
+    <function model="cloud.settings" name="_mcp_install_defaults"/>
+</odoo>

@@ -18,7 +18,10 @@ approval. Secrets never go in or out.
     "license": "Other proprietary",
     "depends": ["incubacloud", "auth_oauth"],
     "external_dependencies": {"python": ["joserfc"]},
-    "data": [],
+    "data": [
+        "data/mcp_defaults.xml",
+        "views/auth_oauth_provider_views.xml",
+    ],
     "installable": True,
     "auto_install": False,
 }
