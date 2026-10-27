@@ -126,6 +126,8 @@ class TestModernProtocol(McpUsersMixin, McpHttpMixin, HttpCase):
                 self._error(response, 400, -32602)
 
     def test_a_batch_is_refused(self):
-        """One JSON-RPC message per POST: a batch is -32600."""
+        """One JSON-RPC message per POST: a batch is -32600, with no id."""
         batch = [{"jsonrpc": "2.0", "id": 1, "method": "server/discover"}]
-        self._error(self._post(batch, self.key), 400, -32600)
+        response = self._post(batch, self.key)
+        self._error(response, 400, -32600)
+        self.assertNotIn("id", response.json())

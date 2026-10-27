@@ -60,6 +60,12 @@ class TestErrors(BaseCase):
             },
         )
 
+    def test_an_error_that_answers_no_request_has_no_id(self):
+        """Without a request id, the error has no ``id`` member, not a null one."""
+        body = McpError(400, HEADER_MISMATCH, "nope").to_body(None)
+        self.assertNotIn("id", body)
+        self.assertEqual(body["error"], {"code": -32020, "message": "nope"})
+
     def test_an_auth_error_carries_its_status(self):
         """An authentication error carries its status and Retry-After."""
         error = AuthError(503, "down", retry_after=30)
