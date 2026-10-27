@@ -21,3 +21,6 @@ pyOpenSSL==26.4.0
 # passlib itself still comes in transitively through Odoo core.
 bcrypt==5.0.0
 PyYAML==6.0.3
+# Agents' OAuth tokens (incubacloud_mcp) and the tenant panels' SSO: JWS and
+# JWT validation. Self-hosted installs rebuild their image to get it.
+joserfc==1.6.8

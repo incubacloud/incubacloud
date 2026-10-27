@@ -47,7 +47,7 @@ jobs:
         # runs ``-u`` with the new code so pre/post-migrate scripts
         # actually execute.
         run: |
-          find incubacloud incubacloud_connect incubacloud_pitr \
+          find incubacloud incubacloud_connect incubacloud_pitr incubacloud_mcp \
             -name '*.py' -not -path '*/migrations/*' -print0 \
             | xargs -0 --no-run-if-empty refurb
 
@@ -60,7 +60,7 @@ jobs:
         # only go down. Fixed a few? Lower the baseline in this step.
         run: |
           count=$(grep -rEo 'MagicMock\(\)' --include='test_*.py' \
-            incubacloud incubacloud_connect incubacloud_pitr | wc -l)
+            incubacloud incubacloud_connect incubacloud_pitr incubacloud_mcp | wc -l)
           baseline=30
           echo "bare MagicMock() in tests: $count (baseline: $baseline)"
           if [ "$count" -gt "$baseline" ]; then
@@ -74,7 +74,7 @@ jobs:
         # unseen that way until 20-oct-2026, 13 of them broken.
         run: |
           found=$(grep -rnE '^class \w+\((unittest\.)?TestCase\)' --include='test_*.py' \
-            incubacloud incubacloud_connect incubacloud_pitr || true)
+            incubacloud incubacloud_connect incubacloud_pitr incubacloud_mcp || true)
           if [ -n "$found" ]; then
             echo "$found"
             echo "::error::A test class based on unittest.TestCase never runs under Odoo: base it on BaseCase."
@@ -188,7 +188,7 @@ jobs:
         # ``oca_init_test_database`` fails to install queue_job. Not
         # pinned/audited — pip-audit excludes it (git URL in pip.txt)
         # and it never executes in our tests.
-        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib'
+        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib' 'joserfc==1.6.8'
 
       - name: Fetch OCA dependencies
         run: |
@@ -273,7 +273,7 @@ jobs:
 
       - name: Install extra dependencies
         # Same pins as the test job (see rationale there).
-        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib'
+        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib' 'joserfc==1.6.8'
 
       - name: Fetch OCA dependencies
         run: |
@@ -473,7 +473,7 @@ jobs:
       # ``random`` used for non-crypto, etc.) that bandit flags by
       # default and that have no security impact in this codebase.
       - name: Run bandit
-        run: bandit -r incubacloud/ incubacloud_connect/ incubacloud_pitr/ -ll -iii
+        run: bandit -r incubacloud/ incubacloud_connect/ incubacloud_pitr/ incubacloud_mcp/ -ll -iii
 
   pip-audit:
     name: Deps audit (pip-audit)
