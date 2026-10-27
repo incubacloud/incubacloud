@@ -1,11 +1,20 @@
 """The endpoint's door: method, origin, body and credential."""
 
+import json
 from unittest.mock import patch
 
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
-from .common import JwtMixin, McpHttpMixin, McpUsersMixin
+from odoo.addons.incubacloud_mcp.protocol.versions import MODERN
+
+from .common import (
+    META_CAPABILITIES,
+    META_VERSION,
+    JwtMixin,
+    McpHttpMixin,
+    McpUsersMixin,
+)
 
 CONTROLLER_LOGGER = "odoo.addons.incubacloud_mcp.controllers.mcp"
 
@@ -134,6 +143,43 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(
             (response.status_code, response.json()["error"]["code"]), (400, -32700)
         )
+
+    def test_a_body_without_its_length_is_411(self):
+        """A chunked body has no length to check against the cap: 411, unread.
+
+        Cut at 256 KiB without a word, its first part would run.
+        """
+        body = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "server/discover",
+                "params": {
+                    "_meta": {
+                        META_VERSION: MODERN,
+                        META_CAPABILITIES: {},
+                    }
+                },
+            }
+        ).encode()
+
+        def chunks():
+            """The body as a generator: requests sends it chunked."""
+            yield body
+
+        response = self.opener.post(
+            f"{self.base_url()}/mcp",
+            data=chunks(),
+            headers={
+                "Content-Type": "application/json",
+                "X-Odoo-Database": self.env.cr.dbname,
+                "Authorization": f"Bearer {self.key}",
+                "MCP-Protocol-Version": MODERN,
+                "Mcp-Method": "server/discover",
+            },
+            timeout=30,
+        )
+        self.assertEqual(response.status_code, 411, response.text)
 
     def test_an_address_over_its_failures_is_429(self):
         """Behind declared proxies, an address over its failures is refused first."""
