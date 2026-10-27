@@ -30,6 +30,7 @@ from odoo.addons.incubacloud.controllers.async_utils import run_async
 
 from ..protocol.limits import MAX_BYTES, cap_text
 from ..protocol.tool_spec import ToolSpec, obj, record_id, string
+from .mcp_tools import quoted
 
 #: Seconds a command may run.
 COMMAND_TIMEOUT = 60
@@ -48,6 +49,9 @@ _KEEP_CHARS = 2 * MAX_BYTES
 _READ_SIZE = 65536
 #: The exit status of ``timeout`` when it ended the command.
 _TIMED_OUT = 124
+#: The tools whose approval ends with the command, quoted, on a line of its
+#: own: the approval page shows it in a block of its own.
+COMMAND_TOOLS = frozenset({"run_command", "run_host_command"})
 
 TOOLS = (
     ToolSpec(
@@ -139,26 +143,26 @@ class McpToolsCommand(models.AbstractModel):
 
     @api.model
     def _confirm_run_command(self, args):
-        """Ask on production only, with the exact command."""
+        """Ask on production only, with the exact command, quoted, last."""
         instance = self._command_instance(args["instance_id"])
         if instance.environment != "production":
             return None
-        return self.env._(
-            'Run this command in the production instance "%(name)s":\n%(command)s',
-            name=instance.name,
-            command=args["command"],
+        intro = self.env._(
+            "Run this command in the production instance %(name)s:",
+            name=quoted(instance.name),
         )
+        return f"{intro}\n{quoted(args['command'])}"
 
     @api.model
     def _confirm_run_host_command(self, args):
-        """Always ask, with the exact command."""
+        """Always ask, with the exact command, quoted, last."""
         host = self._command_host(args["host_id"])
-        return self.env._(
-            'Run this command on the server "%(name)s" (%(ip)s):\n%(command)s',
-            name=host.name,
+        intro = self.env._(
+            "Run this command on the server %(name)s (%(ip)s):",
+            name=quoted(host.name),
             ip=host.ip_address,
-            command=args["command"],
         )
+        return f"{intro}\n{quoted(args['command'])}"
 
     @api.model
     def _before_command(self, vals, command, instance=None):

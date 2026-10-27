@@ -5,7 +5,28 @@ handlers and ``incubacloud.mcp.catalog`` with its specs. A spec with a
 ``route`` and no ``handler`` is served by :meth:`_invoke` alone.
 """
 
+import json
+
 from odoo import api, models
+
+
+def quoted(value):
+    """Return *value* as an approval shows what an agent or a user typed.
+
+    Between double quotes, as JSON writes it, every character that does
+    not print — line breaks, carriage returns, terminal escapes,
+    bidirectional controls, unusual spaces — escaped: nothing in it can
+    pass for the panel's own words, nor hide part of itself.
+
+    :rtype: str
+    """
+    text = json.dumps(str(value), ensure_ascii=False)
+    return "".join(
+        char
+        if char.isprintable()
+        else (f"\\u{ord(char):04x}" if ord(char) <= 0xFFFF else f"\\U{ord(char):08x}")
+        for char in text
+    )
 
 
 class McpTools(models.AbstractModel):

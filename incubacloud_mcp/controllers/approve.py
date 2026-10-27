@@ -9,6 +9,8 @@ address — which carries the token — is never sent on as a referrer.
 from odoo import fields, http
 from odoo.http import request
 
+from ..models.mcp_tools_command import COMMAND_TOOLS
+
 _PAGE_HEADERS = {
     "Content-Security-Policy": "frame-ancestors 'none'",
     "X-Frame-Options": "DENY",
@@ -62,11 +64,19 @@ class McpApprovePage(http.Controller):
         :param approval: the approval shown (empty but for ``pending``)
         :param int status: the HTTP status
         """
+        message = (approval.message or "") if state == "pending" else ""
+        command = ""
+        # A command comes last in its approval, quoted on a line of its own:
+        # the page shows it in a block of its own.
+        if message and approval.tool in COMMAND_TOOLS:
+            message, _newline, command = message.rpartition("\n")
         response = request.render(
             "incubacloud_mcp.approval_page",
             {
                 "state": state,
                 "approval": approval if state == "pending" else approval.browse(),
+                "message": message,
+                "command": command,
                 "csrf_token": request.csrf_token(),
                 "action": request.httprequest.path,
             },

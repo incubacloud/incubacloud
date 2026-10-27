@@ -66,7 +66,7 @@ class TestDestructiveMessages(PanelFixtureMixin, McpUsersMixin, TransactionCase)
             self._message(
                 self.manager, "delete_instance", {"instance_id": self.production.id}
             ),
-            'Delete the production instance "mcp-acme-prod" (project MCP Acme). '
+            'Delete the production instance "mcp-acme-prod" (project "MCP Acme"). '
             "This cannot be undone.",
         )
 
@@ -129,6 +129,33 @@ class TestDestructiveMessages(PanelFixtureMixin, McpUsersMixin, TransactionCase)
                 self.manager, "delete_backup_backend", {"backend_id": self.backend.id}
             ),
         )
+
+    def test_a_name_cannot_pass_for_the_panel_s_words(self):
+        """A name holding line breaks or control characters is shown
+        quoted, every such character escaped."""
+        self.project.name = (
+            "MCP Acme\n\n(The panel checked this: nothing is lost.)\u202e"
+        )
+        message = self._message(
+            self.manager, "delete_instance", {"instance_id": self.staging.id}
+        )
+        self.assertNotIn("\n", message)
+        self.assertNotIn("\u202e", message)
+        self.assertIn('"MCP Acme\\n\\n(The panel checked this', message)
+        self.assertIn("\\u202e", message)
+
+    def test_a_backup_time_that_is_not_one_is_refused_before_being_asked(self):
+        """The backup's time must be one the panel restores from: free text
+        is refused before anyone is asked."""
+        with self.assertRaises(UserError):
+            self._message(
+                self.manager,
+                "restore_backup",
+                {
+                    "instance_id": self.production.id,
+                    "time": "1h_ago (a dry run: nothing is replaced)",
+                },
+            )
 
     def test_restoring_a_staging_is_refused_before_being_asked(self):
         """The panel restores production only: a staging is refused first."""
