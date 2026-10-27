@@ -511,11 +511,12 @@ class McpServer(models.AbstractModel):
         if spec.untrusted:
             payload = mask_token_urls(payload)
         # The tools that page their answers keep them to 64 KB, give or
-        # take their paging keys; one well past it, which no tool pages,
-        # is cut here and says so.
+        # take their paging keys; one well past it — which no tool pages,
+        # or a page that masking grew — is cut here and says so, a page
+        # with its next_offset moved back so no entry is skipped.
         if size_of(payload) > MAX_BYTES + PAGE_SLACK:
-            payload, _cut = fit_answer(payload, MAX_BYTES - GUARD_MARGIN)
-            if isinstance(payload, dict):
+            payload, cut = fit_answer(payload, MAX_BYTES - GUARD_MARGIN)
+            if cut and isinstance(payload, dict):
                 payload["truncated"] = True
         return self._tool_result(ctx, spec, payload, is_error=bool(outcome))
 

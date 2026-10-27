@@ -6,6 +6,7 @@ from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
 from odoo.addons.incubacloud_mcp.protocol.limits import MAX_BYTES, cap_strings
+from odoo.addons.incubacloud_mcp.protocol.redact import MASK
 
 from .common import PG_PASSWORD, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
@@ -15,6 +16,8 @@ BIG_TEXT = "".join(f"line {i:05d} of the text, ñ\n" for i in range(2500))
 BIG_HTML = "<p>" + "h" * (256 * 1024 - 7) + "</p>"
 #: Messages in the staging's mailbox.
 MAILBOX_SIZE = 300
+#: A secret as short as one that is masked: its mask is one character longer.
+SHORT_SECRET = "s3cr3t-8"
 
 
 def canned_logs(_self, path, params):
@@ -170,3 +173,64 @@ class TestLogTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         capped, truncated = cap_strings({"body": "y" * (MAX_BYTES + 5), "n": 1})
         self.assertTrue(truncated)
         self.assertEqual(len(capped["body"]), MAX_BYTES)
+
+
+@tagged("post_install", "-at_install")
+class TestLogPagesAddUp(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
+    """Paging a log reaches every line, however short, however masked."""
+
+    def setUp(self):
+        """A developer with an API key, and a server whose password is short."""
+        super().setUp()
+        self._resource_here()
+        self._panel_fixture()
+        self.key = self._api_key(self._cloud_user("mcp-pages-dev"))
+        self.env["cloud.host"].create(
+            {
+                "name": "short-secret-host",
+                "ip_address": "10.0.0.87",
+                "user": "root",
+                "wildcard_domain": "short.mcp.example.com",
+                "login_type": "password",
+                "password": SHORT_SECRET,
+            }
+        )
+
+    def _read_all(self, lines):
+        """Page through read_logs over *lines*; return every line read.
+
+        Each page is checked to stay within 64 KB.
+        """
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        seen, offset, pages = [], 0, 0
+        with patch.object(
+            Dispatch, "_call", autospec=True, return_value={"ok": True, "lines": lines}
+        ):
+            while offset is not None and pages < 100:
+                result = self._call_tool(
+                    self.key,
+                    "read_logs",
+                    {"instance_id": self.staging.id, "offset": offset},
+                )
+                self.assertLessEqual(
+                    len(result["content"][-1]["text"].encode()), MAX_BYTES + 512
+                )
+                payload = self._payload(result)
+                seen.extend(payload["items"])
+                offset = payload["next_offset"]
+                pages += 1
+        return seen
+
+    def test_short_lines_are_all_read(self):
+        """Ten thousand lines of twenty characters: none is skipped."""
+        lines = [f"{index:06d} " + "l" * 13 for index in range(10_000)]
+        self.assertEqual(self._read_all(lines), lines)
+
+    def test_lines_that_masking_lengthens_are_all_read(self):
+        """Lines whose secrets grow when masked: none is skipped."""
+        lines = [
+            f"{index:05d} " + " ".join([SHORT_SECRET] * 10) for index in range(5000)
+        ]
+        self.assertEqual(
+            self._read_all(lines), [line.replace(SHORT_SECRET, MASK) for line in lines]
+        )
