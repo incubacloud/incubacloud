@@ -476,6 +476,7 @@ class McpServer(models.AbstractModel):
         """
         Secrets = self.env["incubacloud.mcp.secrets"]
         known_before = Secrets._known_values()
+        known_during = set()
         failed = self.env._("The panel could not complete this action.")
         outcome = ""
         result = None
@@ -484,7 +485,14 @@ class McpServer(models.AbstractModel):
         raised = True
         try:
             with self.env.cr.savepoint():
-                result = self.env["incubacloud.mcp.tools"]._invoke(spec, args)
+                try:
+                    result = self.env["incubacloud.mcp.tools"]._invoke(spec, args)
+                except Exception as exc:
+                    # The rollback is about to take away what the call
+                    # wrote, and its error may quote it.
+                    if not isinstance(exc, psycopg2.Error):
+                        known_during = self._known_before_rollback()
+                    raise
             raised = False
         except (AccessError, UserError, ValidationError) as exc:
             outcome = str(exc)
@@ -498,7 +506,7 @@ class McpServer(models.AbstractModel):
         # what it replaced: the scrubber knows the values of before and
         # after the call.
         self.env.flush_all()
-        scrubber = Secrets._scrubber(known_before)
+        scrubber = Secrets._scrubber(known_before | known_during)
         if isinstance(result, dict) and result.get("ok") is False:
             outcome = str(
                 result.get("error") or self.env._("The panel refused this action.")
@@ -519,6 +527,23 @@ class McpServer(models.AbstractModel):
             if cut and isinstance(payload, dict):
                 payload["truncated"] = True
         return self._tool_result(ctx, spec, payload, is_error=bool(outcome))
+
+    @api.model
+    def _known_before_rollback(self):
+        """Return the secrets as a failing call left them, before its rollback.
+
+        What the call wrote is flushed and read in a savepoint of its own;
+        a failure there — the database may refuse what the call wrote —
+        answers nothing more than what was known before the call.
+
+        :rtype: set[str]
+        """
+        try:
+            with self.env.cr.savepoint(flush=False):
+                self.env.flush_all()
+                return self.env["incubacloud.mcp.secrets"]._known_values()
+        except Exception:  # noqa: BLE001 - the call's own error is the one reported
+            return set()
 
     @api.model
     def _audit_call(self, spec, args, scrubber, outcome):
