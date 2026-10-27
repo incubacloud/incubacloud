@@ -198,7 +198,7 @@ msgstr "Huella de los argumentos"
 #. module: incubacloud_mcp
 #: model_terms:ir.ui.view,arch_db:incubacloud_mcp.approval_page_html
 msgid "Asked through"
-msgstr "Pedida a través de"
+msgstr "Solicitada a través de"
 
 #. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__attachment_id
@@ -224,13 +224,13 @@ msgstr ""
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid "Backend not found"
-msgstr "Destino de backups no encontrado"
+msgstr "Backend no encontrado"
 
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid "Backup restore only supported for production."
-msgstr "La restauración de backups solo se admite en producción."
+msgstr "La restauración de backup solo es compatible con producción."
 
 #. module: incubacloud_mcp
 #: model:ir.model,name:incubacloud_mcp.model_incubacloud_mcp_dispatch
@@ -634,7 +634,7 @@ msgstr "Manejadores de las herramientas MCP"
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 #: code:addons/incubacloud_mcp/models/mcp_tools_guarded.py:0
 msgid "Host not found"
-msgstr "Servidor no encontrado"
+msgstr "Host no encontrado"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -693,13 +693,13 @@ msgstr "Ajustes de IncubaCloud"
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_command.py:0
 msgid "Instance has no host"
-msgstr "La instancia no tiene servidor"
+msgstr "La instancia no tiene host"
 
 #. module: incubacloud_mcp
 #. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_command.py:0
 msgid "Instance is not running"
-msgstr "La instancia no está en marcha"
+msgstr "La instancia no está en ejecución"
 
 #. module: incubacloud_mcp
 #. odoo-python
