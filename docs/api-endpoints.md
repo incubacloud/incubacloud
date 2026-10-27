@@ -52,7 +52,7 @@ Groups form a hierarchy (each implies the previous): `user` < `consultant` < `pr
 | `/cloud/create_host` | manage hosts | Create host (field whitelist enforced). |
 | `/cloud/save_host` | manage hosts | Update host; also syncs whitelist entries. Accepts `tls_default_cert` / `tls_default_key`: an empty key keeps the stored one, an empty certificate removes both, and a pair that cannot serve is refused with a validation error. |
 | `/cloud/delete_host` | manage hosts | Archive or delete host. |
-| `/cloud/trust_host_key` | manage hosts | Pin the host's SSH key (TOFU confirmation). |
+| `/cloud/trust_host_key` | manage hosts | Pin the host's SSH key (TOFU confirmation). With `expected_fingerprint`, the key is read and compared before any credential is sent, and a server presenting another key is refused with nothing stored (agents' approval, see [`mcp.md`](mcp.md)). |
 | `/cloud/setup_whitelist` | manage hosts | Enqueue whitelist setup SSH job. |
 | `/cloud/get_host_instances` | record rules | Instances deployed on a host. |
 | `/cloud/browse_host_dir` | manage hosts | Browse a remote directory (path-safety validated). |
@@ -238,6 +238,19 @@ Repository operations (all gated on **consultant**):
 | `/cloud/get_instance_users` | connect as user + read access | List the instance's internal Odoo users (via docker exec). |
 | `/cloud/prepare_instance_connect` | connect as user + read access | Inject a one-time session token, return the `/ic/login` redirect URL. |
 
+## MCP (`incubacloud_mcp`)
+
+Agents' endpoint and the MCP's own pages; see [`mcp.md`](mcp.md).
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/mcp` | `Authorization: Bearer` (OAuth access token or API key); the cookie is ignored | The MCP endpoint. One JSON-RPC message per POST, JSON answers, 256 KiB at most. `GET`/`DELETE`: 405. |
+| GET | `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-protected-resource` | **public** | RFC 9728 document of `/mcp`; 404 without an issuer. |
+| GET, POST | `/cloud/mcp/approve/<token>` | user (the one whose agent asked; others 403) | Approval page of an agent's action. GET shows; POST (CSRF) approves or cancels. Never framed or cached. |
+| GET | `/cloud/mcp/download/<token>` | **public** (single-use token) | The backup an approved `download_backup` link names: once, 15 minutes; the user's role and access checked again; another user's session 404, `HEAD` 405, a file gone 410. |
+| JSON | `/cloud/mcp/config` | cloud user | What *Connect an agent* shows: the MCP address, the issuer, whether API keys are accepted, the links. |
+| JSON | `/cloud/mcp/get_settings`, `/cloud/mcp/save_settings` | manage settings | The agents' issuer, the MCP address and the agents' limit; read-only where the platform sets them. |
+
 ## Static pages and public HTTP endpoints
 
 | Method | Path | Auth | Description |
@@ -266,8 +279,10 @@ DB-backed tumbling counters (`cloud.rate.limit`), 60-second windows, atomic upse
 | `POST /cloud/github/webhook` | per IP | 300/min | yes |
 | `/cloud/terminal/open` | per user | 10/min | yes |
 | `/cloud/terminal/open` | per instance | 30/min | yes |
+| `POST /mcp` (failed authentications) | per IP (IPv6 /64) | 60/min; refused only where trusted proxies are declared, else logged | no |
+| `POST /mcp` (tool calls of all of a user's agents) | per user | 120/min | yes |
 
-Exceeding a limit returns HTTP 429 (HTTP endpoints, webhook adds `Retry-After: 60`) or `{ok: false, error}` (JSON-RPC).
+Exceeding a limit returns HTTP 429 (HTTP endpoints, webhook adds `Retry-After: 60`) or `{ok: false, error}` (JSON-RPC). Over the agents' limit, a tool call answers an MCP error result (`isError`); over the failed authentications, `/mcp` answers 429 with `Retry-After: 60`. `run_command` also counts in the terminal's buckets, and `run_host_command` in the host console's.
 
 ## Error handling
 

@@ -8,6 +8,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [1.0.201] — 2026-10-27
 
+### Added
+
+- **Agents connect to the panel (`incubacloud_mcp` 1.0.0, a new module).**
+  `POST /mcp` speaks the Model Context Protocol (2026-07-28, and 2025-03-26
+  to 2025-11-25 through `initialize` and a signed session id) and lets AI
+  agents operate the panel as the user who connected them, with that user's
+  role and project rules. Credentials: OAuth access tokens of the configured
+  issuer (RS256 `at+jwt`, audience the panel's MCP address; RFC 9728 document
+  published), or Odoo API keys where the panel allows them; never the cookie,
+  never the superuser. Fifty-eight tools call the panel's own routes through
+  the routing map, so overrides apply; every `/cloud/*` route is a tool or
+  excluded with its reason, and a test fails on one left out. Destructive and
+  security-sensitive actions wait for the user's approval — a form in the
+  client, the panel's approval page, or a link — bound to the user and to the
+  agent's credential, ten minutes, once; it protects from the model's
+  mistakes and from injected instructions, not from a malicious client.
+  Secrets never go in or out: keys named like an encrypted field are refused
+  and dropped, and every known secret is masked in what agents read. No
+  answer passes 64 KB; logs, mail and command output come in pages, marked as
+  untrusted data. `run_command` and `run_host_command` run one command with
+  the terminals' controls, a minute at most (`timeout` inside the container;
+  what it leaves in the background is not stopped). `download_backup` hands
+  out a single-use link for 15 minutes. Audit rows and jobs say which agent
+  (`via_client`). *Connect an agent* in the user menu; the agents' issuer, the
+  MCP address and their limit in Settings. See `docs/mcp.md` and the user
+  guide (`docs/user/docs/agents/`).
+- **`incubacloud_mcp_pitr` 1.0.0**: the continuous recovery tools
+  (`get_pitr`, `configure_pitr`, `pitr_restore`), installed where both modules
+  are.
+
+### Dependencies
+
+- **`joserfc` 1.6.8 is a core requirement** (`requirements.txt`): agents'
+  tokens are validated with it. A self-hosted install rebuilds its image.
+
 ### Changed
 
 - **A host key is trusted only if it is the one approved.**
