@@ -305,6 +305,21 @@ class TestPreferencesRoute(HttpCase):
         self.assertTrue(result.get('ok'), result)
         self.assertEqual(user.cloud_webhook_url, 'https://hooks.example.com/x')
 
+    def test_a_secret_or_a_token_longer_than_1024_characters_is_refused(self):
+        """A webhook secret or a Telegram token over 1024 characters is
+        refused with a reason, and nothing is stored: every secret is
+        masked in what agents read, and a huge one would cost every call."""
+        user = self._make_user('secret-long', ['base.group_user'])
+        self.authenticate('secret-long', 'secret-long')
+        for field in ('cloud_webhook_secret', 'cloud_telegram_bot_token'):
+            with self.subTest(field=field):
+                result = self._save(**{field: 'x' * 1025})
+                self.assertFalse(result.get('ok'))
+                self.assertIn('1024', result.get('error', ''))
+                user.invalidate_recordset([field])
+                self.assertFalse(user.sudo()[field])
+                self.assertTrue(self._save(**{field: 'y' * 1024}).get('ok'))
+
     def test_the_failures_and_warnings_level_can_be_saved(self):
         """The route keeps its own list of levels; a level the selector
         offers but the route refuses would fail on every save."""
