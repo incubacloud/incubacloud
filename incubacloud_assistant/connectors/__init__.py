@@ -1,5 +1,6 @@
 """The assistant's connectors, one per provider, behind one shape."""
 
+from . import anthropic_connector
 from .base import REGISTRY, ProviderError
 
 
