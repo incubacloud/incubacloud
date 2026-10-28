@@ -70,6 +70,10 @@
     # ``acme`` (a certificate of its own) or ``default`` (the host's, when
     # a CDN fronts the name and that certificate covers it).
     ic_public_tls: ""
+    # The central's direct name (plan-trafico-interno-directo): published
+    # on the host's ``direct`` entrypoint for the platform's own servers.
+    # Empty changes nothing in the compose file.
+    ic_direct_host: ""
     # Who may reach the series-deletion route under the public name; the
     # other operator routes answer this host only.
     ic_operator_sources: []
@@ -316,7 +320,7 @@
                 - {{ ic_central_dir }}/vmauth/auth.yml:/etc/vmauth/auth.yml:ro
               ports:
                 - "{{ ic_gateway_bind }}:8428"
-          {% if ic_public_host %}
+          {% if ic_public_host or ic_direct_host %}
               # Published under its own name through this host's Traefik,
               # which reaches it over the shared network. The same routes
               # as the hand-written gateway of a central next to its panel
@@ -331,6 +335,8 @@
                 traefik.enable: "true"
                 traefik.docker.network: inverseproxy_shared
                 traefik.http.services.ic-central-gateway.loadbalancer.server.port: "8428"
+          {% endif %}
+          {% if ic_public_host %}
                 traefik.http.routers.ic-central-data.rule: "Host(`{{ ic_public_host }}`) && (PathPrefix(`/w/`)
                   || PathPrefix(`/r/`) || PathPrefix(`/lw/`) || PathPrefix(`/lr/`))"
                 traefik.http.routers.ic-central-data.entrypoints: https
@@ -358,6 +364,22 @@
                 traefik.http.routers.{{ router }}.tls.certresolver: letsencrypt
           {% endif %}
           {% endfor %}
+          {% endif %}
+          {% if ic_direct_host %}
+                # The account prefixes again, under the direct name and on
+                # the host's direct entrypoint: the platform's own servers,
+                # admitted by the host's direct list, without the CDN. No
+                # operator route is published there. Its certificate comes
+                # from the direct-dns resolver, its TLS option asks no
+                # client certificate, and it outranks the entrypoint's
+                # catch-all refusal (priority 10000).
+                traefik.http.routers.ic-central-direct.rule: "Host(`{{ ic_direct_host }}`) && (PathPrefix(`/w/`)
+                  || PathPrefix(`/r/`) || PathPrefix(`/lw/`) || PathPrefix(`/lr/`))"
+                traefik.http.routers.ic-central-direct.entrypoints: direct
+                traefik.http.routers.ic-central-direct.service: ic-central-gateway
+                traefik.http.routers.ic-central-direct.priority: "10010"
+                traefik.http.routers.ic-central-direct.tls.certresolver: direct-dns
+                traefik.http.routers.ic-central-direct.tls.options: direct@file
           {% endif %}
               depends_on:
                 - victoriametrics
@@ -463,7 +485,7 @@
               depends_on:
                 - vmauth
 
-          {% if ic_public_host %}
+          {% if ic_public_host or ic_direct_host %}
           networks:
             inverseproxy_shared:
               external: true
