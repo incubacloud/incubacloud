@@ -33,3 +33,4 @@ from . import test_inventory
 from . import test_frontend_suite
 from . import test_spa_pages
 from . import test_settings_tabs
+from . import test_github_write
