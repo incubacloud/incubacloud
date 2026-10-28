@@ -14,8 +14,10 @@ from odoo.addons.incubacloud.github.client import (
     GitHubAppClient,
 )
 from odoo.addons.incubacloud_mcp.github_write import GitHubWriter
+from odoo.addons.incubacloud_mcp.models.mcp_tools_code import MAX_COMMIT_CHARS
 
 from .common import (
+    FORM_CAPABILITIES,
     HOST_PASSWORD,
     ConfirmMixin,
     McpHttpMixin,
@@ -207,6 +209,257 @@ class TestCodeTools(
 
     def test_the_code_tools_are_a_developer_s(self):
         """A consultant neither sees nor runs them."""
-        for name, arguments in (("repo_read", {"url": REPO, "branch": "main"}),):
+        for name, arguments in (
+            ("repo_read", {"url": REPO, "branch": "main"}),
+            ("repo_create_branch", {"url": REPO, "branch": "assistant/x"}),
+        ):
             with self.subTest(name):
                 self._assert_refused_by_role(self.consultant_key, name, arguments)
+
+    def _feed(self, instance, branch, rebuild=True, deployed=False):
+        """Make *instance* deploy from *branch* of the repository."""
+        # No requirements.txt fetched from GitHub: the panel's form does the same.
+        instance.sudo().with_context(skip_apply_requirements=True).write(
+            {
+                "auto_rebuild": rebuild,
+                "repo_ids": [(0, 0, {"url": REPO, "branch": branch})],
+            }
+        )
+        if deployed:
+            # As a finished deploy leaves it; ``_transition`` needs the deploy.
+            instance.sudo().with_context(cloud_state_transition=True).write(
+                {"state": "deployed"}
+            )
+
+    def _write(self, branch, files=None, capabilities=None, **params):
+        """Call ``repo_write_files`` on *branch*; return the result."""
+        files = files or [{"path": "acme_code/__init__.py", "content": ""}]
+        return self._call_tool(
+            self.key,
+            "repo_write_files",
+            {"url": REPO, "branch": branch, "message": "Add acme_code", "files": files},
+            capabilities,
+            **params,
+        )
+
+    def _asked(self, name, arguments):
+        """Call *name* with a form-capable client; return the approval's message."""
+        first = self._call_tool(self.key, name, arguments, FORM_CAPABILITIES)
+        self.assertEqual(first.get("resultType"), "input_required", first)
+        return first["inputRequests"]["confirm"]["params"]["message"]
+
+    def _branch(self, branch="assistant/x"):
+        """Create *branch* as the developer's agent (no approval: private)."""
+        return self._call_tool(
+            self.key, "repo_create_branch", {"url": REPO, "branch": branch}
+        )
+
+    def test_a_new_branch_needs_no_approval_and_is_remembered(self):
+        """The branch starts at the default branch's head; the agent's from now on."""
+        payload = self._payload(self._branch())
+        self.assertEqual(
+            (payload["branch"], payload["from_branch"], payload["sha"]),
+            ("assistant/x", "main", "sha-main"),
+        )
+        Branch = self.env["incubacloud.mcp.agent.branch"].with_user(self.developer)
+        self.assertTrue(Branch._created_by_user("acme/odoo-addons", "assistant/x"))
+
+    def test_an_existing_branch_is_not_created_again(self):
+        """GitHub's 422 comes back as a refusal the agent can read."""
+        result = self._branch("main")
+        # An ``{ok: false, error}`` answer reaches the agent as its error's text.
+        self.assertTrue(result["isError"])
+        self.assertIn("already exists", result["content"][-1]["text"])
+
+    def test_writing_to_the_agent_s_branch_needs_no_approval(self):
+        """One commit, audited as the agent's."""
+        self._branch()
+        result = self._write("assistant/x", capabilities=FORM_CAPABILITIES)
+        self.assertNotEqual(result.get("resultType"), "input_required", result)
+        payload = self._payload(result)
+        self.assertEqual(payload["commit"], "commit-new")
+        audit = (
+            self.env["cloud.audit.log"]
+            .sudo()
+            .search([("action", "=", "Agent: repo_write_files")], limit=1)
+        )
+        self.assertTrue(audit.via_client)
+
+    def test_a_git_address_in_a_file_is_no_secret(self):
+        """``git+ssh://git@github.com/…`` in a requirements file is written."""
+        self._branch()
+        line = "git+ssh://git@github.com/acme/lib.git@19.0#egg=acme_lib\n"
+        result = self._write(
+            "assistant/x", files=[{"path": "requirements.txt", "content": line}]
+        )
+        self.assertFalse(result["isError"], result)
+
+    def test_writing_to_a_branch_that_existed_asks_first(self):
+        """``main`` was there before: the approval names the branch."""
+        message = self._asked(
+            "repo_write_files",
+            {
+                "url": REPO,
+                "branch": "main",
+                "message": "Add acme_code",
+                "files": [{"path": "acme_code/__init__.py", "content": ""}],
+            },
+        )
+        self.assertIn('"main"', message)
+        self.assertNotIn("production", message.lower())
+        self.assertFalse([c for c in self.github.calls if c[0] == "POST"])
+
+    def test_a_branch_production_deploys_from_says_so_even_the_agent_s(self):
+        """With Auto-Rebuild or without, the approval names the production."""
+        self._branch()
+        for rebuild in (True, False):
+            with self.subTest(rebuild=rebuild):
+                self.production.sudo().repo_ids.unlink()
+                self._feed(self.production, "assistant/x", rebuild=rebuild)
+                first = self._write("assistant/x", capabilities=FORM_CAPABILITIES)
+                self.assertEqual(first.get("resultType"), "input_required", first)
+                message = first["inputRequests"]["confirm"]["params"]["message"]
+                self.assertIn("production", message.lower())
+                self.assertIn(self.production.name, message)
+
+    def test_production_is_found_however_its_line_spells_the_address(self):
+        """A production line with git@… and other letters still makes the card."""
+        self._branch()
+        self.production.sudo().with_context(skip_apply_requirements=True).write(
+            {
+                "repo_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "url": "git@github.com:Acme/Odoo-Addons.git",
+                            "branch": "assistant/x",
+                        },
+                    )
+                ]
+            }
+        )
+        message = self._asked(
+            "repo_write_files",
+            {
+                "url": REPO,
+                "branch": "assistant/x",
+                "message": "Add acme_code",
+                "files": [{"path": "acme_code/__init__.py", "content": ""}],
+            },
+        )
+        self.assertIn(self.production.name, message)
+
+    def test_a_branch_nobody_can_tell_about_counts_as_one_that_existed(self):
+        """Every credential refused the read of its head: the write asks."""
+        self.github.refuse_heads = True
+        message = self._asked(
+            "repo_write_files",
+            {
+                "url": REPO,
+                "branch": "feature/y",
+                "message": "Add acme_code",
+                "files": [{"path": "acme_code/__init__.py", "content": ""}],
+            },
+        )
+        self.assertIn('"feature/y"', message)
+
+    def test_a_repository_only_an_instance_uses_is_read_never_written(self):
+        """An instance's dependency (OCA): readable, but no branch is made there."""
+        other = "https://github.com/oca/web"
+        self.staging.sudo().with_context(skip_apply_requirements=True).write(
+            {"repo_ids": [(0, 0, {"url": other, "branch": "19.0"})]}
+        )
+        result = self._call_tool(
+            self.key, "repo_create_branch", {"url": other, "branch": "assistant/x"}
+        )
+        self.assertTrue(result["isError"])
+        self.assertIn("writes only there", result["content"][-1]["text"])
+        self.assertFalse(self.github.calls)
+
+    def test_a_staging_that_rebuilds_from_an_agent_branch_asks_nothing(self):
+        """Only production turns the agent's branch into an approval."""
+        self._branch()
+        self._feed(self.staging, "assistant/x")
+        result = self._write("assistant/x", capabilities=FORM_CAPABILITIES)
+        self.assertNotEqual(result.get("resultType"), "input_required", result)
+
+    def test_in_a_public_repository_every_write_asks_first(self):
+        """A branch, a commit or a pull request there is public: the user approves."""
+        self.github.private = False
+        message = self._asked(
+            "repo_create_branch", {"url": REPO, "branch": "assistant/x"}
+        )
+        self.assertIn("public", message)
+        self._confirmed_call(
+            self.key, "repo_create_branch", {"url": REPO, "branch": "assistant/x"}
+        )
+        for name, arguments in (
+            (
+                "repo_write_files",
+                {
+                    "url": REPO,
+                    "branch": "assistant/x",
+                    "message": "Add acme_code",
+                    "files": [{"path": "acme_code/__init__.py", "content": ""}],
+                },
+            ),
+            (
+                "repo_open_pull_request",
+                {"url": REPO, "branch": "assistant/x", "title": "Internal code"},
+            ),
+        ):
+            with self.subTest(name):
+                self.assertIn("public", self._asked(name, arguments))
+
+    def test_a_pull_request_that_makes_a_preview_asks_first(self):
+        """The project copies production for each pull request: the user approves."""
+        self.project.sudo().pr_reviews_enabled = True
+        self._feed(self.production, "main", deployed=True)
+        message = self._asked(
+            "repo_open_pull_request",
+            {"url": REPO, "branch": "assistant/x", "title": "Internal code"},
+        )
+        self.assertIn(self.production.name, message)
+        self.assertIn("preview", message)
+
+    def test_workflows_paths_out_secrets_and_too_much_are_refused(self):
+        """Nothing is written: a workflow, a path out, a panel secret, too much text."""
+        self._branch()
+        calls = len(self.github.calls)
+        half = "x" * (MAX_COMMIT_CHARS // 2 + 1)
+        for files in (
+            [{"path": ".github/workflows/x.yml", "content": "on: push"}],
+            [{"path": ".GitHub/workflows/x.yml", "content": "on: push"}],
+            [{"path": "vendor/.Git/config", "content": "[core]"}],
+            [{"path": "../x.py", "content": ""}],
+            [{"path": "x.py", "content": f"PASSWORD = '{HOST_PASSWORD}'"}],
+            [{"path": "a.py", "content": half}, {"path": "b.py", "content": half}],
+        ):
+            with self.subTest(files[0]["path"]):
+                result = self._write("assistant/x", files=files)
+                self.assertTrue(result["isError"], result)
+                self._assert_no_secret(result["content"][0]["text"])
+        self.assertFalse([c for c in self.github.calls[calls:] if c[0] != "GET"])
+
+    def test_the_app_refused_the_token_writes(self):
+        """GitHub lets the App only read (403 on writes): the personal token writes."""
+        self.env["cloud.settings"]._get_system().github_pat = "ghp_panel-pat-0001"
+        self.github.read_only_tokens.add("ghs_app-installation-token")
+        payload = self._payload(self._branch("assistant/y"))
+        self.assertTrue(payload["ok"], payload)
+        self.assertEqual(self.github.branches["assistant/y"], "sha-main")
+        self.assertEqual(self.github.tokens[-1], "ghp_panel-pat-0001")
+
+    def test_a_pull_request_is_opened_or_found(self):
+        """Opened into the default branch; when one is open already, that one."""
+        payload = self._payload(
+            self._call_tool(
+                self.key,
+                "repo_open_pull_request",
+                {"url": REPO, "branch": "assistant/x", "title": "Internal code"},
+            )
+        )
+        self.assertEqual((payload["number"], payload["url"]), (7, f"{REPO}/pull/7"))
+        posted = [c for c in self.github.calls if c[1].endswith("/pulls")]
+        self.assertEqual(posted[0][2]["base"], "main")
