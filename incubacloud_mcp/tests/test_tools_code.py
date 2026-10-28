@@ -5,6 +5,7 @@ import dataclasses
 import functools
 from unittest.mock import patch
 
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
@@ -180,6 +181,28 @@ class TestCodeTools(
         result = self._read("a/../b")
         self.assertTrue(result["isError"])
         GitHubAppClient.get.assert_not_called()
+
+    def test_dot_segments_never_reach_github(self):
+        """``.`` in a path, ``.`` or ``..`` as owner or name: refused before GitHub."""
+        self._read_as_app({})
+        for path in ("./README.md", "a/./b", "./.github/workflows/x.yml"):
+            with self.subTest(path):
+                self.assertTrue(self._read(path)["isError"])
+        GitHubAppClient.get.assert_not_called()
+        Tools = self.env["incubacloud.mcp.tools"].with_user(self.developer)
+        for url in ("https://github.com/../..", "https://github.com/acme/.."):
+            with self.subTest(url), self.assertRaises(UserError):
+                Tools._repo_of(url)
+        self.env["cloud.settings"]._get_system().github_pat = "ghp_panel-pat-0001"
+        for arguments in ({"name": ".."}, {"name": "acme-code", "owner": ".."}):
+            with self.subTest(arguments):
+                result = self._confirmed_call(
+                    self.key,
+                    "repo_create",
+                    {"project_id": self.project.id, **arguments},
+                )
+                self.assertTrue(result["isError"], result)
+        self.assertFalse([c for c in self.github.calls if c[0] == "POST"])
 
     def test_a_repository_of_no_project_is_refused_before_github(self):
         """The panel's access reaches more repositories than the user works on."""
@@ -423,6 +446,37 @@ class TestCodeTools(
         self.assertIn(self.production.name, message)
         self.assertIn("preview", message)
 
+    def test_a_production_the_user_does_not_see_is_never_named(self):
+        """A branch it deploys from, or its preview, asks without its name.
+
+        A developer reads every instance today: the approvals are asked as a
+        consultant, who reads only the projects they are a member of.
+        """
+        other = self.env["cloud.project"].create(
+            {"name": "Hidden Corp", "remote_folder": "hiddencorp"}
+        )
+        other.pr_reviews_enabled = True
+        hidden = self.env["cloud.instance"].create(
+            {
+                "name": "hidden-corp-prod",
+                "project_id": other.id,
+                "host_id": self.host.id,
+                "environment": "production",
+            }
+        )
+        self._feed(hidden, "assistant/x", deployed=True)
+        Tools = self.env["incubacloud.mcp.tools"].with_user(self.consultant)
+        self.assertFalse(hidden.with_user(self.consultant).has_access("read"))
+        args = {"url": REPO, "branch": "assistant/x", "public": False}
+        files = [{"path": "acme_code/__init__.py", "content": ""}]
+        for message in (
+            Tools._confirm_repo_write_files({**args, "files": files}),
+            Tools._confirm_repo_open_pull_request(args),
+        ):
+            with self.subTest(message[:40]):
+                self.assertIn("production instance, one you may not see", message)
+                self.assertNotIn(hidden.name, message)
+
     def test_workflows_paths_out_secrets_and_too_much_are_refused(self):
         """Nothing is written: a workflow, a path out, a panel secret, too much text."""
         self._branch()
@@ -431,6 +485,7 @@ class TestCodeTools(
         for files in (
             [{"path": ".github/workflows/x.yml", "content": "on: push"}],
             [{"path": ".GitHub/workflows/x.yml", "content": "on: push"}],
+            [{"path": "./.github/workflows/x.yml", "content": "on: push"}],
             [{"path": "vendor/.Git/config", "content": "[core]"}],
             [{"path": "../x.py", "content": ""}],
             [{"path": "x.py", "content": f"PASSWORD = '{HOST_PASSWORD}'"}],
