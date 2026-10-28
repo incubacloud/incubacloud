@@ -87,6 +87,44 @@ class TestPricing(BaseCase):
             pricing.cost_eur((2.0, 8.0, 2.0, 2.0), Usage(20, 20)),
         )
 
+    def test_openai_cache_writes_cost_1_25_times_the_input_from_gpt_5_6(self):
+        """GPT-5.6 on: written tokens at 1.25x the input, also past the threshold."""
+        none = lambda _m: None  # the listing of a provider with a table
+        for model, price_in, long_in in (
+            ("gpt-5.6-terra", 2.0, 4.0),
+            ("gpt-6-astra", 10.0, 20.0),
+            ("gpt-6-luna", 0.10, 0.20),
+        ):
+            response = ChatResponse(
+                text="",
+                tool_calls=(),
+                usage=Usage(0, 0, cache_write_tokens=100_000),
+                model=model,
+                stop="end",
+            )
+            self.assertAlmostEqual(
+                pricing.response_cost("openai", response, none),
+                round(price_in * 1.25 * 0.1 * pricing.EUR_PER_USD, 6),
+            )
+            long = dataclasses.replace(
+                response, usage=Usage(0, 0, cache_write_tokens=300_000)
+            )
+            self.assertAlmostEqual(
+                pricing.response_cost("openai", long, none),
+                round(long_in * 1.25 * 0.3 * pricing.EUR_PER_USD, 6),
+            )
+        before = ChatResponse(
+            text="",
+            tool_calls=(),
+            usage=Usage(0, 0, cache_write_tokens=100_000),
+            model="gpt-5.5",
+            stop="end",
+        )
+        self.assertAlmostEqual(
+            pricing.response_cost("openai", before, none),
+            round(5.0 * 0.1 * pricing.EUR_PER_USD, 6),
+        )
+
     def test_with_a_monthly_limit_a_model_without_a_price_is_not_usable(self):
         """Allowed and priced: usable. Unpriced: only without a limit."""
         listing = (

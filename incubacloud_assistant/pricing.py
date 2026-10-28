@@ -37,18 +37,19 @@ ANTHROPIC = {
 }
 #: Same columns. https://platform.openai.com/docs/pricing (now
 #: https://developers.openai.com/api/docs/pricing), Standard prices of the models
-#: that take tools in Chat Completions. OpenAI lists no cache write price: it is
+#: that take tools in Chat Completions. Cache writes cost 1.25 times the input from
+#: GPT-5.6 on (the default "30m" lifetime); before it, there is no write price:
 #: the input price. GPT-5.6 Sol's promotional price is available at least
 #: through 2026-11-21: check it when the candidate is prepared.
 OPENAI = {
-    "gpt-6-astra": (10.0, 50.0, 10.0, 1.0),
-    "gpt-6.1-sol": (2.0, 10.0, 2.0, 0.10),
-    "gpt-6.1-terra": (1.0, 5.0, 1.0, 0.05),
-    "gpt-6-sol": (2.0, 10.0, 2.0, 0.20),
-    "gpt-6-luna": (0.10, 0.50, 0.10, 0.01),
-    "gpt-5.6-sol": (4.0, 20.0, 4.0, 0.40),
-    "gpt-5.6-terra": (2.0, 12.0, 2.0, 0.20),
-    "gpt-5.6-luna": (0.20, 1.20, 0.20, 0.02),
+    "gpt-6-astra": (10.0, 50.0, 12.50, 1.0),
+    "gpt-6.1-sol": (2.0, 10.0, 2.50, 0.10),
+    "gpt-6.1-terra": (1.0, 5.0, 1.25, 0.05),
+    "gpt-6-sol": (2.0, 10.0, 2.50, 0.20),
+    "gpt-6-luna": (0.10, 0.50, 0.125, 0.01),
+    "gpt-5.6-sol": (4.0, 20.0, 5.0, 0.40),
+    "gpt-5.6-terra": (2.0, 12.0, 2.50, 0.20),
+    "gpt-5.6-luna": (0.20, 1.20, 0.25, 0.02),
     "gpt-5.5": (5.0, 30.0, 5.0, 0.50),
     "gpt-5.4-mini": (0.75, 4.50, 0.75, 0.075),
     "gpt-5.4-nano": (0.20, 1.25, 0.20, 0.02),
@@ -93,14 +94,14 @@ LONG_PROMPT = {
     "anthropic": {"claude-haiku-5-5": (100_000, (0.50, 2.50, 0.625, 0.05))},
     # OpenAI's flagships past 272,000 input tokens.
     "openai": {
-        "gpt-6-astra": (272_000, (20.0, 75.0, 20.0, 2.0)),
-        "gpt-6.1-sol": (272_000, (4.0, 15.0, 4.0, 0.20)),
-        "gpt-6.1-terra": (272_000, (2.0, 7.50, 2.0, 0.10)),
-        "gpt-6-sol": (272_000, (4.0, 15.0, 4.0, 0.40)),
-        "gpt-6-luna": (272_000, (0.20, 0.75, 0.20, 0.02)),
-        "gpt-5.6-sol": (272_000, (8.0, 30.0, 8.0, 0.80)),
-        "gpt-5.6-terra": (272_000, (4.0, 18.0, 4.0, 0.40)),
-        "gpt-5.6-luna": (272_000, (0.40, 1.80, 0.40, 0.04)),
+        "gpt-6-astra": (272_000, (20.0, 75.0, 25.0, 2.0)),
+        "gpt-6.1-sol": (272_000, (4.0, 15.0, 5.0, 0.20)),
+        "gpt-6.1-terra": (272_000, (2.0, 7.50, 2.50, 0.10)),
+        "gpt-6-sol": (272_000, (4.0, 15.0, 5.0, 0.40)),
+        "gpt-6-luna": (272_000, (0.20, 0.75, 0.25, 0.02)),
+        "gpt-5.6-sol": (272_000, (8.0, 30.0, 10.0, 0.80)),
+        "gpt-5.6-terra": (272_000, (4.0, 18.0, 5.0, 0.40)),
+        "gpt-5.6-luna": (272_000, (0.40, 1.80, 0.50, 0.04)),
         "gpt-5.5": (272_000, (10.0, 45.0, 10.0, 1.0)),
         "gpt-5.4": (272_000, (5.0, 22.50, 5.0, 0.50)),
     },
