@@ -9,7 +9,9 @@ The time of the last probe is the exception: it moves at every probe, so
 it is not a column of the settings row but a system parameter, and the
 Settings screen shows it as a read-only computed field. A probe every few
 minutes then never competes with a save of the Settings screen for the one
-row.
+row. The time of the last good PromQL read of the central
+(``metrics_read_ok_at``) is kept the same way, for the same reason: it
+moves at every pass of the specs cron.
 """
 from datetime import timedelta
 
@@ -26,6 +28,10 @@ _READ_FRESH = timedelta(minutes=10)
 
 #: Where the time of a name's last probe is kept; ``%s`` is its prefix.
 _CHECKED_AT_KEY = "incubacloud.direct_checked_at.%s"
+
+#: The "prefix" under which the time of the last good read of the central
+#: is kept, beside the names' own (so a copy forgets them all together).
+_READ_OK_PREFIX = "metrics_read_ok"
 
 
 class CloudSettings(models.Model):
@@ -69,10 +75,24 @@ class CloudSettings(models.Model):
     )
     metrics_central_direct_error = fields.Char(readonly=True, copy=False)
     metrics_read_ok_at = fields.Datetime(
-        string="Metrics last read", readonly=True, copy=False,
+        string="Metrics last read",
+        compute="_compute_metrics_read_ok_at",
+        inverse="_inverse_metrics_read_ok_at",
         help="Last time a PromQL read of the central answered. Says the "
-             "central is up, not that its direct port is.",
+             "central is up, not that its direct port is. Kept in a system "
+             "parameter, not in this row: it moves at every pass.",
     )
+
+    def _compute_metrics_read_ok_at(self):
+        """Show when the central last answered a PromQL read."""
+        read = self._direct_checked_at(_READ_OK_PREFIX)
+        for settings in self:
+            settings.metrics_read_ok_at = read
+
+    def _inverse_metrics_read_ok_at(self):
+        """Keep the time assigned to ``metrics_read_ok_at`` (False forgets it)."""
+        for settings in self:
+            self._direct_note_checked(_READ_OK_PREFIX, settings.metrics_read_ok_at)
 
     def _compute_metrics_central_direct_checked_at(self):
         """Show when the central's direct name was last probed."""
@@ -199,6 +219,16 @@ class CloudSettings(models.Model):
             self._direct_path_in_force()
             and read and read >= fields.Datetime.now() - _READ_FRESH
         )
+
+    @api.model
+    def _direct_note_read_ok(self):
+        """Stamp a PromQL read of the central that answered.
+
+        A system parameter, like the time of a probe: the specs cron
+        writes it at every pass and must not compete with a save of the
+        Settings screen for the one row.
+        """
+        self._direct_note_checked(_READ_OK_PREFIX, fields.Datetime.now())
 
     @api.model
     def _direct_probe_apply(self, prefix, outcome):

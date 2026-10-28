@@ -73,6 +73,10 @@ class CloudHost(models.Model):
             )
             return
 
+        # The central answered every query: what the convergence of the
+        # direct path reads as "the central is up" (cloud_host_direct).
+        settings._direct_note_read_ok()
+
         if not readings:
             return
 

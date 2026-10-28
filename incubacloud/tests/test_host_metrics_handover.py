@@ -105,6 +105,17 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
             "select_best_host would never place on it again",
         )
 
+    def test_a_good_read_is_stamped_and_a_failed_one_is_not(self):
+        self.settings.metrics_read_ok_at = False
+        self._refresh_with_disk_usage(40)
+        self.settings.invalidate_recordset()
+        self.assertTrue(self.settings.metrics_read_ok_at)
+        self.settings.metrics_read_ok_at = False
+        with patch("requests.get", side_effect=requests.ConnectionError("down")):
+            self.env["cloud.host"]._cron_refresh_specs_from_metrics()
+        self.settings.invalidate_recordset()
+        self.assertFalse(self.settings.metrics_read_ok_at)
+
     def test_full_disk_degrades_the_host(self):
         """Above the threshold the host must leave the placement pool."""
         self.host.write({"status": "compatible"})

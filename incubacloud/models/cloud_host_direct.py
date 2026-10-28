@@ -54,6 +54,12 @@ _STALE_AFTER = timedelta(minutes=30)
 #: A host that turned the direct path down is not offered it again for this long.
 _REFUSED_FOR = timedelta(hours=6)
 
+#: A host on the direct path whose metrics stopped this long is re-applied.
+_SILENT_AFTER = timedelta(minutes=20)
+
+#: And not more often than this.
+_REAPPLY_EVERY = timedelta(hours=1)
+
 #: How old the last good sync may be before the cron runs it anyway: it
 #: puts back what a reboot or an old re-hardening took, and probes again.
 _RESYNC_EVERY = timedelta(hours=1)
@@ -750,6 +756,101 @@ class CloudHost(models.Model):
             "url": write_url, "method": "POST", "status": 401,
             "prefix": "metrics_central_direct",
         }]
+
+    def _direct_untried_probes(self):
+        """Return the direct checks on offer that this host's last install never tried.
+
+        Only after an install whose checks all answered: one that failed
+        waits out its six hours instead.
+
+        :return: URLs.
+        :rtype: list
+        """
+        self.ensure_one()
+        offer = self._direct_write_offer()
+        if not (offer and self.direct_reach_ok):
+            return []
+        tried = set((self.direct_reach_urls or "").split())
+        return [
+            probe["url"] for probe in self._direct_reach_probes(offer)
+            if probe["url"] not in tried
+        ]
+
+    def _direct_silent(self, now, others):
+        """Whether this host, installed on the direct path, has gone quiet.
+
+        Quiet for 20 minutes, its agents not applied in the last hour, and,
+        when *others* write directly too, at least one of them up to date:
+        all of them quiet at once is the central, not the hosts.
+
+        :param datetime now: the reconciliation's time.
+        :param others: the other hosts installed on the direct path.
+        :rtype: bool
+        """
+        self.ensure_one()
+        seen = self.metrics_last_seen
+        quiet = not seen or seen < now - _SILENT_AFTER
+        since = self.metrics_agents_since
+        recent = since and since > now - _REAPPLY_EVERY
+        if not quiet or recent:
+            return False
+        if not others:
+            return True
+        return any(
+            other.metrics_last_seen
+            and other.metrics_last_seen >= now - _SILENT_AFTER
+            for other in others
+        )
+
+    @api.model
+    def _reconcile_direct_agents(self):
+        """Re-apply the agents whose URL no longer matches the direct path.
+
+        Three cases: a host installed with another URL than the one it is
+        offered now (the path came, went, or the host turned it down six
+        hours ago); a host with a direct check it never tried (the panel's
+        name appeared after its install); a host on the direct path gone
+        quiet while the central is healthy (``_direct_silent``), which the
+        install tries again and drops to the public path if it must. An
+        empty recorded URL is the remote-write URL of before this version.
+
+        :return: how many installs were queued.
+        :rtype: int
+        """
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if not settings.metrics_enabled:
+            return 0
+        public = (settings.metrics_remote_write_url or "").strip()
+        now = fields.Datetime.now()
+        hosts = self.sudo().search([
+            ("metrics_agents_state", "=", "installed"), ("active", "=", True),
+        ])
+        direct = hosts.filtered(
+            lambda h: h.metrics_agents_write_url
+            and h.metrics_agents_write_url != public,
+        )
+        healthy = settings._direct_central_healthy()
+        queued = 0
+        for host in hosts:
+            if not host._observability_target():
+                continue
+            installed = host.metrics_agents_write_url or public
+            if installed != host._metrics_remote_write_url():
+                reason = "direct path changed"
+            elif host._direct_untried_probes():
+                reason = "direct path to try"
+            elif (
+                host in direct and healthy
+                and host._direct_silent(now, direct - host)
+            ):
+                reason = "quiet on the direct path"
+            else:
+                continue
+            if host._enqueue_observability(reason):
+                queued += 1
+        if queued:
+            _logger.info("[direct] re-applied the agents of %s host(s)", queued)
+        return queued
 
     def _record_direct_reach(self, report):
         """Keep what this host's own try of the direct path said.

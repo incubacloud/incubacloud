@@ -198,6 +198,10 @@ class CloudHost(models.Model):
             _logger.info(
                 "[metrics] reconciliation queued agents on %s host(s)", queued,
             )
+        # Installed hosts too: the URL the direct path offers them moves
+        # (plan-trafico-interno-directo), and a change of the path asks
+        # for this cron at once (``_direct_path_changed``).
+        self._reconcile_direct_agents()
 
     # ── State transitions, called by the install job ──────────────────────
 
