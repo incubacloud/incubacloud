@@ -31,7 +31,14 @@ from odoo.addons.incubacloud.models._repo_requirements import (
 
 from ..github_write import GitHubWriter, path_of, segment
 from ..protocol.limits import cap_text
-from ..protocol.tool_spec import OFFSET, ToolSpec, boolean, obj, string
+from ..protocol.tool_spec import (
+    OFFSET,
+    ToolSpec,
+    boolean,
+    obj,
+    record_id,
+    string,
+)
 from .mcp_tools import quoted
 
 _logger = logging.getLogger(__name__)
@@ -136,6 +143,48 @@ TOOLS = (
         ),
         handler="_tool_repo_open_pull_request",
         confirm="conditional",
+    ),
+    ToolSpec(
+        "repo_create",
+        "Create a private GitHub repository with the panel's personal access token "
+        "and add it to a project's repositories (branch main). The user approves it "
+        "first. Without a token that may create repositories, the answer says how "
+        "the user creates it on GitHub; then connect it with project_connect_repo.",
+        _DEVELOPER,
+        obj(
+            {
+                "project_id": record_id("The project."),
+                "name": string("The repository's name.", max_length=100),
+                "owner": string(
+                    "An organization; empty for the token's own account.",
+                    max_length=100,
+                ),
+                "private": boolean("False makes it public. Private by default."),
+            },
+            required=("project_id", "name"),
+        ),
+        handler="_tool_repo_create",
+        confirm="always",
+    ),
+    ToolSpec(
+        "project_connect_repo",
+        "Add an existing GitHub repository to a project's repositories. The user "
+        "approves it first: instances created from the project afterwards clone it.",
+        _DEVELOPER,
+        obj(
+            {
+                "project_id": record_id("The project."),
+                "url": _URL,
+                "branch": _BRANCH,
+                "addons": string(
+                    "Comma-separated modules to install from it; empty for all.",
+                    max_length=500,
+                ),
+            },
+            required=("project_id", "url"),
+        ),
+        handler="_tool_project_connect_repo",
+        confirm="always",
     ),
 )
 
@@ -721,3 +770,156 @@ class McpToolsCode(models.AbstractModel):
                 self.env._("GitHub refused the pull request (%s).", exc.status_code)
             ) from exc
         return {"ok": True, "number": pull["number"], "url": pull["html_url"]}
+
+    # ── Connecting a repository ────────────────────────────────────────────
+
+    @api.model
+    def _project_label(self, project_id):
+        """Return the project's name as an approval shows it, or its id."""
+        project = self.env["cloud.project"].browse(project_id).exists()
+        return quoted(project.name) if project else f"#{project_id}"
+
+    @api.model
+    def _connect_repo(self, project_id, url, branch, addons):
+        """Add *url* to the project's repositories through the project's own route.
+
+        ``/cloud/save_project`` replaces the whole list, so the list sent
+        is the project's own plus the new line; the route checks the role
+        and the project's access as in the panel. A repository already
+        there under another spelling of its address is not added again.
+
+        :param str url: the canonical address (``https://github.com/o/n``)
+        """
+        project = self._route("/cloud/get_project", project_id=project_id)
+        if project.get("ok") is False:
+            return project
+        repos = project.get("repos") or []
+        key = _repo_key(url)
+        if any(_repo_key(repo["url"]) == key for repo in repos):
+            return {"ok": True, "already_connected": True}
+        lines = [
+            {
+                field: repo[field]
+                for field in ("id", "url", "branch", "addons", "excludes", "commit_sha")
+            }
+            for repo in repos
+        ]
+        lines.append(
+            {
+                "url": url,
+                "branch": branch or "main",
+                "addons": addons or "",
+                "excludes": "",
+                "commit_sha": "",
+            }
+        )
+        return self._route(
+            "/cloud/save_project", project_id=project_id, vals={"repos": lines}
+        )
+
+    @api.model
+    def _confirm_project_connect_repo(self, args):
+        """What connecting a repository changes in the project."""
+        return self.env._(
+            "Add %(url)s (branch %(branch)s) to the repositories of project "
+            "%(project)s. Instances created from the project afterwards clone it; "
+            "existing instances keep theirs.",
+            url=quoted(args["url"]),
+            branch=quoted(args.get("branch") or "main"),
+            project=self._project_label(args["project_id"]),
+        )
+
+    @api.model
+    def _tool_project_connect_repo(self, args):
+        """Check the address and the branch, then connect it under one spelling."""
+        owner, name = self._repo_of(args["url"])
+        branch = args.get("branch") or "main"
+        self._check_branch(branch)
+        return self._connect_repo(
+            args["project_id"],
+            f"https://github.com/{owner}/{name}",
+            branch,
+            args.get("addons") or "",
+        )
+
+    # ── repo_create ────────────────────────────────────────────────────────
+
+    @api.model
+    def _confirm_repo_create(self, args):
+        """What creating the repository does on GitHub and in the project."""
+        return self.env._(
+            "Create the %(visibility)s repository %(name)s on GitHub, in "
+            "%(owner)s, with the panel's personal access token, and add it to the "
+            "repositories of project %(project)s (branch main).",
+            visibility=self.env._("private")
+            if args.get("private", True)
+            else self.env._("public"),
+            name=quoted(args["name"]),
+            owner=quoted(args["owner"])
+            if args.get("owner")
+            else self.env._("the token's own account"),
+            project=self._project_label(args["project_id"]),
+        )
+
+    @api.model
+    def _check_can_connect(self, project_id):
+        """Raise unless the user may add a repository to the project.
+
+        Checked before GitHub, so a refusal leaves no repository behind.
+
+        :raises UserError: when the project does not exist
+        :raises AccessError: when the user may not change it
+        """
+        project = self.env["cloud.project"].browse(project_id).exists()
+        if not project:
+            raise UserError(self.env._("Project not found"))
+        project.check_access("write")
+        self.env["cloud.project.repo"].check_access("create")
+
+    @api.model
+    def _tool_repo_create(self, args):
+        """Create the repository with the PAT, then connect it."""
+        if not _REPO_NAME_RE.match(args["name"]):
+            raise UserError(
+                self.env._(
+                    "A repository's name holds letters, digits, dots, hyphens and "
+                    "underscores only."
+                )
+            )
+        self._check_can_connect(args["project_id"])
+        guide = self.env._(
+            "This panel's GitHub access cannot create repositories. On GitHub, use "
+            "New repository (private, with a README), then ask me to connect it to "
+            "the project."
+        )
+        pat = self.env["cloud.github.credential.service"].sudo().get_pat()
+        if not pat:
+            return {"ok": False, "error": guide}
+        writer = GitHubWriter(pat)
+        try:
+            login = writer.login()
+            owner = (args.get("owner") or login).strip()
+            repo = writer.create_repository(
+                owner,
+                args["name"],
+                args.get("private", True),
+                own_account=owner.lower() == login.lower(),
+            )
+        except GitHubAPIError as exc:
+            if exc.status_code == 422:
+                return {
+                    "ok": False,
+                    "error": self.env._(
+                        "A repository with that name already exists there: connect "
+                        "it with project_connect_repo, or pick another name."
+                    ),
+                }
+            return {"ok": False, "error": guide}
+        branch = repo.get("default_branch") or "main"
+        connected = self._connect_repo(args["project_id"], repo["html_url"], branch, "")
+        return {
+            "ok": connected.get("ok", True) is not False,
+            "url": repo["html_url"],
+            "branch": branch,
+            "connected": connected,
+        }
