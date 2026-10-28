@@ -38,6 +38,7 @@ from ...models.cloud_settings import (
     LOG_SEARCH_TIMEOUT_S_DEFAULT,
     ODOO_LOG_ARCHIVE_DAYS_DEFAULT,
 )
+from .._client_ip import client_ip
 from .._safe_error import safe_error_response
 from ._helpers import (
     _LIST_MAX,
@@ -1018,7 +1019,10 @@ class CrudMixin:
         offers hardening and Full Setup as one chain,
         ``has_known_hosts_key`` whether the host can be reached at all, and
         ``has_active_job`` that a hardening is already asked for —
-        ``active_job_queued`` when it only waits in the host's queue.
+        ``active_job_queued`` when it only waits in the host's queue —
+        and ``ssh_access`` who will be able to open SSH afterwards, and
+        whether the asker's own address can be offered
+        (``cloud.host._ssh_access_preview``).
 
         :param int host_id: the ``cloud.host`` to harden
         :returns: ``{'ok': True, ...}`` with the figures, or
@@ -1064,22 +1068,34 @@ class CrudMixin:
             'active_job_queued': bool(active_hardening) and all(
                 job.state == 'queued' for job in active_hardening
             ),
+            'ssh_access': host._ssh_access_preview(client_ip()),
         }
 
     @http.route(
         ['/cloud/apply_host_hardening'], type='jsonrpc', auth='user',
     )
-    def cloud_apply_host_hardening(self, host_id, chain_full_setup=False):
+    def cloud_apply_host_hardening(
+        self, host_id, chain_full_setup=False, allow_ip=None,
+    ):
         """Queue ``host_hardening`` for a host, optionally followed by Full Setup.
 
         ``chain_full_setup`` queues ``host_hardening → full_setup``, the
         order a host that was never set up needs: Full Setup then installs
         its tools in the hardened user's home instead of root's.
 
+        ``allow_ip`` is the asker's own address, ticked in the dialog's
+        "Also allow my IP": added to the host's ``allowed_ssh_ips`` first,
+        and only when it is the address this request comes from and the
+        dialog could offer it (``cloud.host._allow_asker_ssh``). Nothing
+        else writes the list here: a caller that sends no address (the
+        MCP) leaves it as it is.
+
         :param int host_id: the ``cloud.host`` to harden
         :param bool chain_full_setup: queue Full Setup after the hardening
-        :returns: ``{'ok': True, 'job_ids': [...]}`` in execution order, or
-            ``{'ok': False, 'error': ...}``
+        :param str allow_ip: the asker's address to allow, or nothing
+        :returns: ``{'ok': True, 'job_ids': [...]}`` in execution order,
+            with ``allowed_ssh_ips``, the list as stored, when an address
+            was added; or ``{'ok': False, 'error': ...}``
         :rtype: dict
         """
         self._sec()._check_can_manage_hosts()
@@ -1087,11 +1103,14 @@ class CrudMixin:
         if not host.exists():
             return {'ok': False, 'error': _('Host not found')}
         Job = request.env['cloud.job']
+        allowed = None
         try:
             # A refusal half-way (another job running on the host) must not
-            # leave the first job of the chain queued on its own.
+            # leave the first job of the chain queued on its own, nor the
+            # asker's address in the list without a hardening to apply it.
             with request.env.cr.savepoint():
-                self._before_host_hardening(host)
+                if allow_ip:
+                    allowed = host._allow_asker_ssh(allow_ip, client_ip())
                 if chain_full_setup:
                     job_ids = Job.enqueue_chain([
                         {
@@ -1105,19 +1124,10 @@ class CrudMixin:
                     job_ids = [Job.enqueue(host.id, False, 'host_hardening')]
         except Exception as exc:
             return safe_error_response(exc, _("Failed to queue the hardening"))
-        return {'ok': True, 'job_ids': job_ids}
-
-    def _before_host_hardening(self, host):
-        """Prepare *host* right before its hardening is queued.
-
-        Core does nothing: it knows no public address of its own to put
-        in the SSH allowlist, so the hardening allows whatever
-        ``allowed_ssh_ips`` holds (any address when it is empty). A layer
-        that knows where the panel and its operator connect from can
-        override this to fill the allowlist in first.
-
-        :param host: the ``cloud.host`` about to be hardened
-        """
+        result = {'ok': True, 'job_ids': job_ids}
+        if allowed is not None:
+            result['allowed_ssh_ips'] = allowed
+        return result
 
     @http.route(['/cloud/save_host'], type='jsonrpc', auth='user')
     def cloud_save_host(self, host_id, vals):

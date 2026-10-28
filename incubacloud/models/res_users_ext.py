@@ -236,6 +236,11 @@ class ResUsers(models.Model):
             # What the provider was told about is not this operator's
             # morning reading either.
             alert_domain.append(('audience', '=', 'fleet'))
+        silent = self.env['cloud.alert']._silent_alert_codes()
+        if silent:
+            # Listed in the panel, told to nobody: not in the morning
+            # either.
+            alert_domain.append(('code', 'not in', tuple(silent)))
         if muted_ids:
             alert_domain += [
                 '!', '|',

@@ -1,4 +1,12 @@
-"""Post-migrate for 1.0.200 — close the upload grants an older release opened.
+"""Post-migrate for 1.0.200 — hand the hourly posture check to the cron bot,
+and close the upload grants an older release opened.
+
+``post_init_hook`` promotes every ``ir.cron`` of this module from the
+implicit OdooBot to the dedicated cron user, and it runs only on a fresh
+install. ``cron_check_host_posture`` (``models/cloud_host_posture.py``)
+arrives with this version; on an existing database it lands owned by
+uid 1, so it is put on the platform bot like every other cron of the
+module, as in 1.0.111 and 1.0.198.
 
 An upload grant still open was installed by an older release, with a
 key line this version no longer writes (``-wo`` alone, see
@@ -9,7 +17,8 @@ grant. Nothing is queued and no host is reached during the upgrade
 itself, so a host that is down cannot fail it; its revocation fails
 like any other, and the key stops being accepted at its own expiry.
 
-Idempotent: a grant already closed is left as it is.
+Idempotent: the assignment skips crons that already point at the bot,
+and a grant already closed is left as it is.
 """
 from datetime import timedelta
 
@@ -17,7 +26,8 @@ from odoo import SUPERUSER_ID, api, fields
 
 
 def migrate(cr, version):
-    """Close the upload grants an older release opened.
+    """Reassign this module's crons to the cron bot user, and close the
+    upload grants an older release opened.
 
     :param cr: database cursor
     :param version: module version being upgraded from
@@ -25,6 +35,10 @@ def migrate(cr, version):
     if not version:
         return
     env = api.Environment(cr, SUPERUSER_ID, {})
+    env["res.users"]._incubacloud_ensure_cron_bot()
+    env["res.users"]._incubacloud_assign_cron_user_id(
+        module_name="incubacloud",
+    )
     _close_open_upload_grants(env)
 
 

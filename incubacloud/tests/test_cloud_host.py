@@ -12,15 +12,19 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncssh
+import werkzeug.wrappers
 from asyncssh.misc import _ACMWrapper
 
 from odoo import http
 from odoo.exceptions import AccessError, ValidationError
 from odoo.tests.common import TransactionCase, new_test_user
+from odoo.tools import config
 
+from odoo.addons.incubacloud.models.cloud_host import CloudHost
 from odoo.addons.incubacloud.models.host_hardening_executor import (
     HostHardeningExecutor,
 )
+from odoo.addons.incubacloud.net import real_ip
 
 from ._certs import make_pair
 from .test_cloud_job import _run_after_commit
@@ -1219,20 +1223,31 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
     Reuses the parent's manager user, host and NOT NULL workaround.
     """
 
-    def _call(self, method, user=None, **kwargs):
-        """Drive a CRUD route against the test cursor as *user* (manager)."""
-        from odoo.addons.incubacloud.controllers import data_load
+    def _call(self, method, user=None, remote_addr=None, **kwargs):
+        """Drive a CRUD route against the test cursor as *user* (manager).
+
+        :param str remote_addr: the address the request comes from, as
+            ``real_ip`` leaves it before the route runs; ``None`` for a
+            request that names none
+        """
+        from odoo.addons.incubacloud.controllers import _client_ip, data_load
         from odoo.addons.incubacloud.controllers._data_load import (
             _routes_crud,
         )
 
         fake_request = MagicMock(spec=http.Request)
         fake_request.env = self.env(user=user or self.manager)
+        fake_request.httprequest = MagicMock(spec=werkzeug.wrappers.Request)
+        fake_request.httprequest.remote_addr = remote_addr
+        fake_request.httprequest.access_route = (
+            [remote_addr] if remote_addr else []
+        )
         ctrl = data_load.CloudDataLoadController()
         with (
             patch.object(http, "request", fake_request),
             patch.object(data_load, "request", fake_request),
             patch.object(_routes_crud, "request", fake_request),
+            patch.object(_client_ip, "request", fake_request),
         ):
             return getattr(ctrl, method)(**kwargs)
 
@@ -1320,3 +1335,253 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
         data = self._call("cloud_get_host", host_id=self.host.id)
         self.assertIs(data["hardened"], False)
         self.assertEqual(data["hardened_at"], "")
+
+    # ── Who can open SSH after the hardening ───────────────────────────
+    #
+    # The dialog says it, and the asker's own address enters the list only
+    # through its checkbox (planes-mejoras/plan-lista-ssh-sin-relleno.md).
+    # Until 27-oct-2026 the SaaS manager filled an empty list with the
+    # asker's address before every hardening, unannounced: an IPv6 a host
+    # reached over IPv4 could not use, and on Tenants1 an address of the
+    # CDN (104.22.23.52).
+
+    _PERSON = "81.40.12.7"
+    _PERSON6 = "2a01:4f8:c0c:1234::1"
+    _CDN = "104.22.23.52"
+    _HOST_IP = "77.42.42.201"
+    _UNCONFIRMED = (
+        "Your address could not be confirmed. Close this dialog and open "
+        "it again."
+    )
+
+    def _ssh(self, allowed="", host_ip=_HOST_IP, proxy_ranges=(),
+             real_ip_trusted=""):
+        """Set the host's SSH list and address, and the proxies believed.
+
+        The panel's own address is left out: a layer installed beside
+        core may know it (the SaaS manager's ``core_public_ip``, a tenant
+        panel's ``tenant_public_ip``), and these cases are core's, which
+        knows none (``test_core_knows_no_panel_address``).
+
+        :param str allowed: ``allowed_ssh_ips``
+        :param str host_ip: the host's ``ip_address``
+        :param proxy_ranges: what Settings declares as this panel's
+            proxies, whatever the layer adds; ``None`` keeps the layer's
+            own answer (the field as written)
+        :param str real_ip_trusted: ``x_real_ip_trusted`` in the Odoo
+            configuration
+        """
+        self.host.write({"ip_address": host_ip, "allowed_ssh_ips": allowed})
+        self.startPatcher(patch.object(
+            type(self.env["cloud.host"]), "_hardening_panel_ip",
+            autospec=True, return_value="",
+        ))
+        if proxy_ranges is not None:
+            self.startPatcher(patch.object(
+                type(self.env["cloud.settings"]),
+                "_effective_trusted_proxy_ranges",
+                autospec=True, return_value=list(proxy_ranges),
+            ))
+        self.startPatcher(patch.dict(
+            config.options.maps[0], {real_ip.TRUSTED_OPTION: real_ip_trusted},
+        ))
+
+    def _access(self, remote_addr):
+        """Return what the preflight says about SSH, asked from *remote_addr*."""
+        data = self._call(
+            "cloud_preflight_host_hardening",
+            host_id=self.host.id, remote_addr=remote_addr,
+        )
+        self.assertTrue(data["ok"])
+        return data["ssh_access"]
+
+    def _apply(self, remote_addr, **kwargs):
+        """Ask for the hardening from *remote_addr*."""
+        return self._call(
+            "cloud_apply_host_hardening",
+            host_id=self.host.id, remote_addr=remote_addr, **kwargs,
+        )
+
+    def _stored_list(self):
+        """Return ``allowed_ssh_ips`` as the database holds it."""
+        self.host.invalidate_recordset(["allowed_ssh_ips"])
+        return self.host.allowed_ssh_ips or ""
+
+    def _store_unchecked(self, value):
+        """Write ``allowed_ssh_ips`` as a value stored before the check."""
+        # A write still pending in the cache would land over it.
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE cloud_host SET allowed_ssh_ips = %s WHERE id = %s",
+            (value, self.host.id),
+        )
+        self.host.invalidate_recordset(["allowed_ssh_ips"])
+
+    def test_core_knows_no_panel_address(self):
+        """Core has no address of its own and no edge in front of SSH."""
+        self.assertEqual(CloudHost._hardening_panel_ip(self.host), "")
+        self.assertIs(CloudHost._ssh_closed_by_foreign_edge(self.host), False)
+
+    def test_c1_an_empty_list_leaves_ssh_open_and_stays_empty(self):
+        self._ssh()
+        access = self._access(self._PERSON)
+        self.assertEqual(access["state"], "open")
+        self.assertEqual(access["person"], "")
+        data = self._apply(self._PERSON)
+        self.assertTrue(data["ok"])
+        self.assertNotIn("allowed_ssh_ips", data)
+        self.assertEqual(self._host_jobs().ids, data["job_ids"])
+        self.assertEqual(self._stored_list(), "")
+
+    def test_c2_a_list_offers_the_asker_s_address(self):
+        self._ssh("45.10.20.0/24")
+        access = self._access(self._PERSON)
+        self.assertEqual(access["state"], "list")
+        self.assertEqual(access["entries"], ["45.10.20.0/24"])
+        self.assertEqual(access["panel_ip"], "")
+        self.assertEqual(access["person"], "offer")
+        self.assertEqual(access["person_ip"], self._PERSON)
+
+    def test_c3_an_address_inside_the_list_is_already_allowed(self):
+        self._ssh("45.10.20.0/24")
+        access = self._access("45.10.20.9")
+        self.assertEqual(access["person"], "allowed")
+        self.assertEqual(access["person_ip"], "45.10.20.9")
+
+    def test_c4_a_proxy_declared_in_settings_is_never_offered(self):
+        self._ssh("45.10.20.0/24", proxy_ranges=None)
+        self.env["cloud.settings"]._get_system().trusted_proxy_ranges = (
+            "104.16.0.0/13"
+        )
+        self.assertEqual(self._access(self._CDN)["person"], "unknown")
+
+    def test_c5_a_proxy_named_by_the_cdn_configuration_is_never_offered(self):
+        self._ssh("45.10.20.0/24", real_ip_trusted="104.16.0.0/13")
+        access = self._access(self._PERSON)
+        self.assertEqual(access["person"], "offer")
+        self.assertEqual(access["person_ip"], self._PERSON)
+        # A request ``real_ip`` did not correct: no CDN header, or a
+        # proxy that is not ours.
+        self.assertEqual(self._access(self._CDN)["person"], "unknown")
+
+    def test_c6_an_address_that_is_not_public_is_not_offered(self):
+        self._ssh("45.10.20.0/24")
+        for remote in ("192.168.1.20", "100.64.3.4", None):
+            with self.subTest(remote=remote):
+                self.assertEqual(self._access(remote)["person"], "unknown")
+
+    def test_c7_another_family_than_the_host_s_is_explained(self):
+        self._ssh("45.10.20.0/24")
+        access = self._access(self._PERSON6)
+        self.assertEqual(access["person"], "family")
+        self.assertEqual(access["person_ip"], self._PERSON6)
+        self.assertEqual(access["person_family"], "IPv6")
+        self.assertEqual(access["host_family"], "IPv4")
+
+    def test_c8_the_catch_all_in_the_list_leaves_ssh_open(self):
+        self._ssh("0.0.0.0/0, 45.10.20.9")
+        access = self._access(self._PERSON)
+        self.assertEqual(access["state"], "open")
+        self.assertEqual(access["person"], "")
+
+    def test_c9_the_ipv6_catch_all_alone_is_a_list(self):
+        self._ssh("::/0")
+        self.assertEqual(self._access(self._PERSON)["state"], "list")
+
+    def test_c10_an_entry_stored_before_the_check_is_shown_as_it_is(self):
+        self._ssh()
+        self._store_unchecked("foo, 45.10.20.0/24")
+        access = self._access("45.10.20.9")
+        self.assertEqual(access["state"], "list")
+        self.assertEqual(access["entries"], ["foo", "45.10.20.0/24"])
+        self.assertEqual(access["person"], "allowed")
+
+    def test_c11_a_host_on_a_lan_takes_an_address_of_the_lan(self):
+        self._ssh("10.0.1.0/24", host_ip="10.0.0.99")
+        access = self._access("10.0.0.20")
+        self.assertEqual(access["person"], "offer")
+        self.assertEqual(access["person_ip"], "10.0.0.20")
+        self.assertEqual(self._access("127.0.0.1")["person"], "unknown")
+
+    def test_c12_the_ticked_address_joins_the_list(self):
+        self._ssh("45.10.20.0/24")
+        data = self._apply(self._PERSON, allow_ip=self._PERSON)
+        self.assertTrue(data["ok"], data)
+        jobs = self._host_jobs()
+        self.assertEqual(jobs.ids, data["job_ids"])
+        self.assertEqual(jobs.job_type_id.code, "host_hardening")
+        self.assertEqual(data["allowed_ssh_ips"], "45.10.20.0/24, 81.40.12.7")
+        self.assertEqual(self._stored_list(), "45.10.20.0/24, 81.40.12.7")
+
+    def test_apply_without_an_address_leaves_the_list_alone(self):
+        """The MCP, and any caller that does not know the checkbox."""
+        self._ssh("45.10.20.0/24")
+        data = self._apply(self._PERSON)
+        self.assertTrue(data["ok"])
+        self.assertNotIn("allowed_ssh_ips", data)
+        self.assertEqual(self._stored_list(), "45.10.20.0/24")
+
+    def test_c13_an_address_the_server_does_not_see_is_refused(self):
+        self._ssh("45.10.20.0/24")
+        data = self._apply("81.40.12.8", allow_ip=self._PERSON)
+        self.assertEqual(data, {"ok": False, "error": self._UNCONFIRMED})
+        self.assertFalse(self._host_jobs())
+        self.assertEqual(self._stored_list(), "45.10.20.0/24")
+
+    def test_c14_no_address_is_added_where_none_is_offered(self):
+        self._ssh()
+        data = self._apply(self._PERSON, allow_ip=self._PERSON)
+        self.assertEqual(data, {"ok": False, "error": self._UNCONFIRMED})
+        self.assertFalse(self._host_jobs())
+        self.assertEqual(self._stored_list(), "")
+
+    def test_c15_a_failed_queueing_keeps_the_list(self):
+        self._ssh("45.10.20.0/24")
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", autospec=True,
+            side_effect=RuntimeError("queue down"),
+        ):
+            data = self._apply(self._PERSON, allow_ip=self._PERSON)
+        self.assertIs(data["ok"], False)
+        self.assertIn("Failed to queue the hardening", data["error"])
+        self.assertFalse(self._host_jobs())
+        self.assertEqual(self._stored_list(), "45.10.20.0/24")
+
+    def test_c16_the_chain_with_full_setup_adds_it_too(self):
+        self._ssh("45.10.20.0/24")
+        data = self._apply(
+            self._PERSON, allow_ip=self._PERSON, chain_full_setup=True,
+        )
+        self.assertTrue(data["ok"], data)
+        jobs = self.env["cloud.job"].sudo().browse(data["job_ids"])
+        self.assertEqual(
+            jobs.mapped("job_type_id.code"), ["host_hardening", "full_setup"],
+        )
+        self.assertEqual(self._stored_list(), "45.10.20.0/24, 81.40.12.7")
+
+    def test_c17_an_unchecked_entry_stops_the_addition_and_is_named(self):
+        self._ssh()
+        self._store_unchecked("foo, 45.10.20.0/24")
+        data = self._apply(self._PERSON, allow_ip=self._PERSON)
+        self.assertIs(data["ok"], False)
+        self.assertIn("foo", data["error"])
+        self.assertFalse(self._host_jobs())
+        self.assertEqual(self._stored_list(), "foo, 45.10.20.0/24")
+
+    def test_c18_an_ipv6_address_is_offered_and_kept_compressed(self):
+        self._ssh("45.10.20.0/24", host_ip="2a01:4f8:c0c:1234::10")
+        written_long = "2a01:04f8:0c0c:1234:0000:0000:0000:0001"
+        access = self._access(written_long)
+        self.assertEqual(access["person"], "offer")
+        self.assertEqual(access["person_ip"], self._PERSON6)
+        data = self._apply(written_long, allow_ip=self._PERSON6)
+        self.assertTrue(data["ok"], data)
+        self.assertEqual(
+            self._stored_list(), "45.10.20.0/24, 2a01:4f8:c0c:1234::1",
+        )
+
+    def test_c19_an_ipv4_mapped_address_is_its_ipv4(self):
+        self._ssh("45.10.20.0/24")
+        access = self._access("::ffff:81.40.12.7")
+        self.assertEqual(access["person"], "offer")
+        self.assertEqual(access["person_ip"], self._PERSON)

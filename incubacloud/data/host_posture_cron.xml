@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Hourly. Two questions about the hosts that nothing else asks:
+         does one said to admit only its trusted proxies really drop a
+         direct connection (``host_origin_open``, measured from this
+         panel and confirmed over two runs), and is its hardening the
+         recipe and the posture the panel wants now
+         (``host_hardening_outdated``, read from the records). On
+         2026-10-27 a host behind the CDN had been open at its origin for
+         nineteen days, and no host had taken the hardening changes of the
+         twelve days before. See ``models/cloud_host_posture.py``. -->
+    <record id="cron_check_host_posture" model="ir.cron">
+        <field name="name">Alert When a Host Is Not as Closed or as Hardened as Set</field>
+        <field name="model_id" ref="model_cloud_host"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_check_posture()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+    </record>
+</odoo>
