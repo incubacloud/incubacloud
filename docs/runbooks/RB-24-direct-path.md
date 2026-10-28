@@ -61,7 +61,9 @@ print(requests.get('https://<name>:9443/oauth/jwks', timeout=5).status_code)"
 ## Rotate the DNS token
 
 1. Cloudflare → API Tokens: create a token with _Zone → Zone → Read_ and _Zone → DNS →
-   Edit_ on the zone, client addresses filtered to the panel's.
+   Edit_ on the zone, client addresses filtered to those of the hosts that publish a
+   direct name (the central's host and the master's): their Traefik asks for the
+   certificates, not the panel.
 2. Settings → Monitoring → Advanced → _DNS token for direct certificates_: paste it and
    save.
 3. _Push Trusted Proxy Settings_ on every host with a direct port (it restarts Traefik

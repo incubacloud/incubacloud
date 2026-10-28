@@ -15620,13 +15620,13 @@ msgstr ""
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
-"Zone read and DNS edit on the zone only, limited to this\n"
-"                                panel's address. Written to each host that needs it as a\n"
-"                                root-only file."
+"Zone read and DNS edit on the zone only, limited to the\n"
+"                                addresses of the hosts that publish a direct name. Written to\n"
+"                                each host that needs it as a root-only file."
 msgstr ""
-"Lectura de la zona y edición de su DNS solamente, limitado a la\n"
-"                                dirección de este panel. Se escribe en cada host que lo necesita\n"
-"                                como un fichero legible solo por root."
+"Lectura de la zona y edición de su DNS solamente, limitado a las\n"
+"                                direcciones de los hosts que publican un nombre directo. Se escribe\n"
+"                                en cada host que lo necesita como un fichero legible solo por root."
 
 #. module: incubacloud
 #. odoo-python
