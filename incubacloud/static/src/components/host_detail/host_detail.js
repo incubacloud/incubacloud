@@ -52,6 +52,8 @@ const EMPTY_FORM = () => ({
     trusted_proxy_ranges:     "",
     block_direct_access:      false,
     cdn_client_ca:            "",
+    direct_port:              0,
+    direct_path_opt_out:      false,
     tls_default_cert:         "",
     tls_default_key:          "",
     whitelist:                [...DEFAULT_WHITELIST],
@@ -86,6 +88,11 @@ export class HostDetail extends Component {
             effectiveProxyRanges: [],
             trustedProxySource: "none",
             trustedProxiesShipped: "",
+            directPortShipped: 0,
+            directAllowlist: [],
+            directAllowlistPending: false,
+            agentsWriteUrl: "",
+            directReachReason: "",
             traefik_file: "traefik_config_yml",
             loading: !this.isNew,
             saving: false,
@@ -280,6 +287,8 @@ export class HostDetail extends Component {
                 trusted_proxy_ranges:     host.trusted_proxy_ranges || "",
                 block_direct_access:      host.block_direct_access || false,
                 cdn_client_ca:            host.cdn_client_ca || "",
+                direct_port:              host.direct_port || 0,
+                direct_path_opt_out:      host.direct_path_opt_out || false,
                 tls_default_cert:         host.tls_default_cert || "",
                 tls_default_key:          "",
                 whitelist:                host.whitelist || [],
@@ -293,6 +302,12 @@ export class HostDetail extends Component {
                 host.effective_trusted_proxy_ranges || [];
             this.state.trustedProxySource = host.trusted_proxy_source || "none";
             this.state.trustedProxiesShipped = host.trusted_proxies_shipped || "";
+            // Read-only: what the direct port admits and what the agents use.
+            this.state.directPortShipped = host.direct_port_shipped || 0;
+            this.state.directAllowlist = host.direct_allowlist_shipped || [];
+            this.state.directAllowlistPending = host.direct_allowlist_pending || false;
+            this.state.agentsWriteUrl = host.metrics_agents_write_url || "";
+            this.state.directReachReason = host.direct_reach_reason || "";
             this.state.selectedTags = [...(host.tags || [])];
             this.state.allTags = [...(host.all_tags || [])];
             this._snapshotForm();
@@ -534,6 +549,16 @@ export class HostDetail extends Component {
     }
 
     /**
+     * Whether the direct port typed differs from the one the proxy publishes.
+     *
+     * @returns {boolean} true when Full Setup still has to apply it.
+     */
+    get directPortPending() {
+        const typed = parseInt(this.state.form.direct_port, 10) || 0;
+        return (this.state.directPortShipped || 0) !== typed;
+    }
+
+    /**
      * Whether the host is running the proxy settings currently saved.
      *
      * @returns {boolean} true when a run is still needed for them to
@@ -715,6 +740,7 @@ export class HostDetail extends Component {
             vals.whitelist = Array.from(this.state.form.whitelist || []);
             if (vals.port) vals.port = parseInt(vals.port, 10);
             vals.http_conn_rate = parseInt(vals.http_conn_rate, 10) || 0;
+            vals.direct_port = parseInt(vals.direct_port, 10) || 0;
             vals.tag_ids = this.state.selectedTags.map(t => t.id);
 
             if (this.isNew) {

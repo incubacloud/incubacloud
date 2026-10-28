@@ -666,6 +666,37 @@
                         </div>
 
                         <div class="rl-frow">
+                            <label for="ic-central-direct-host">Central's direct name</label>
+                            <input id="ic-central-direct-host" type="text"
+                                   placeholder="direct.metrics.example.com"
+                                   t-att-value="state.form.metrics_central_direct_host"
+                                   t-on-change="(ev) => this.state.form.metrics_central_direct_host = ev.target.value"/>
+                            <div class="rl-th">
+                                For the platform's own servers, on the direct port of the
+                                central's host, without the CDN. Two levels under the zone,
+                                DNS only, no IPv6 record. Empty: every agent writes to the
+                                remote-write URL.
+                            </div>
+                            <div class="rl-th" t-if="centralDirectStatus" t-esc="centralDirectStatus"/>
+                        </div>
+
+                        <div class="rl-frow">
+                            <label for="ic-acme-dns-token">DNS token for direct certificates (Cloudflare)</label>
+                            <input id="ic-acme-dns-token" type="password" autocomplete="new-password"
+                                   placeholder="API token"
+                                   t-att-value="state.form.acme_dns_cloudflare_token"
+                                   t-on-change="(ev) => this.state.form.acme_dns_cloudflare_token = ev.target.value"/>
+                            <div class="rl-th" t-if="state.hasAcmeDnsToken">
+                                A token is stored. Leave blank to keep it.
+                            </div>
+                            <div class="rl-th">
+                                Zone read and DNS edit on the zone only, limited to this
+                                panel's address. Written to each host that needs it as a
+                                root-only file.
+                            </div>
+                        </div>
+
+                        <div class="rl-frow">
                             <label for="ic-central-operator-sources">Who may delete series on the central</label>
                             <textarea id="ic-central-operator-sources" rows="2"
                                       placeholder="203.0.113.10/32"

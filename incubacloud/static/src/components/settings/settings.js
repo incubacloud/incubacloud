@@ -40,6 +40,8 @@ export class Settings extends Component {
             // Observability: the token is write-only, so only its
             // presence is tracked client-side.
             hasMetricsToken: false,
+            hasAcmeDnsToken: false,
+            centralDirect: null,
             // Advanced metrics fields stay folded: with the button doing
             // the wiring, a single-host setup never needs them, and six
             // visible fields read as six decisions to make.
@@ -70,6 +72,9 @@ export class Settings extends Component {
                 // Where the metrics central is published
                 metrics_central_public_host: "",
                 metrics_central_operator_sources: "",
+                // The platform's own servers' direct path
+                metrics_central_direct_host: "",
+                acme_dns_cloudflare_token: "",
                 // GitHub
                 app_id: "",
                 installation_id: "",
@@ -246,6 +251,27 @@ export class Settings extends Component {
         }[this.state.trustedProxySource] || "";
     }
 
+    /**
+     * What the central's direct name is doing, in a sentence, or "".
+     *
+     * @returns {string} the sentence, empty without a name or a status.
+     */
+    get centralDirectStatus() {
+        const status = this.state.centralDirect;
+        if (!status || !this.state.form.metrics_central_direct_host) {
+            return "";
+        }
+        if (status.state === "ok") {
+            return _t("Working, certificate valid until %s").replace(
+                "%s", (status.cert_expires || "").slice(0, 10));
+        }
+        if (status.state === "failing") {
+            return _t("Failing since %s").replace(
+                "%s", (status.failing_since || "").slice(0, 16));
+        }
+        return _t("Not checked yet");
+    }
+
     async loadConfig() {
         this.state.loading = true;
         try {
@@ -272,6 +298,10 @@ export class Settings extends Component {
                 general.metrics_central_public_host || "";
             this.state.form.metrics_central_operator_sources =
                 general.metrics_central_operator_sources || "";
+            this.state.form.metrics_central_direct_host = general.metrics_central_direct_host || "";
+            this.state.form.acme_dns_cloudflare_token = "";
+            this.state.centralDirect = general.metrics_central_direct || null;
+            this.state.hasAcmeDnsToken = !!general.has_acme_dns_token;
             this.state.hasMetricsToken = !!general.has_metrics_remote_write_token;
             this.state.form.trusted_proxy_ranges = general.trusted_proxy_ranges || "";
             this.state.effectiveProxyRanges =
@@ -447,6 +477,8 @@ export class Settings extends Component {
                 metrics_central_public_host: this.state.form.metrics_central_public_host,
                 metrics_central_operator_sources:
                     this.state.form.metrics_central_operator_sources,
+                metrics_central_direct_host: this.state.form.metrics_central_direct_host,
+                acme_dns_cloudflare_token: this.state.form.acme_dns_cloudflare_token,
             });
             if (res && res.ok === false) {
                 // The range lists and the central's name are refused by a
