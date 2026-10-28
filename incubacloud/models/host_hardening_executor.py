@@ -217,7 +217,28 @@ class HostHardeningExecutor(AnsibleExecutor):
             # at the proxy: enabling the firewall half on its own is how
             # a host stops answering anybody without the panel saying so.
             **self._http_allowlist,
+            # The direct port's set and rules, with the list the host has
+            # in force, so hardening again does not lose them.
+            **self._direct_vars(),
         }
+
+    def _direct_vars(self):
+        """Return the firewall variables of the host's direct port, if any.
+
+        The port the last Full Setup published and the list the last sync
+        applied; a host whose list was never applied gets the one it
+        should have.
+
+        :rtype: dict
+        """
+        host = self.job.host_id
+        port = host.direct_port_shipped or 0
+        if not port:
+            return {}
+        entries = (host.direct_allowlist_shipped or "").split()
+        if not entries:
+            entries = host._direct_peers_entries()
+        return {"ic_direct_port": port, "ic_direct_allowlist": ", ".join(entries)}
 
     def _http_allowlist_vars(self):
         """Return the firewall variables for a host behind a CDN.
