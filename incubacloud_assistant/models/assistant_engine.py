@@ -29,7 +29,7 @@ from .. import pricing
 from ..connectors import connector_for
 from ..connectors.base import ChatRequest, ProviderError, ToolCall, Turn, same_model
 from ..request_scope import call_context, tool_request
-from .assistant_prompt import system_prompt
+from .assistant_prompt import SUMMARY_PROMPT, SUMMARY_SYSTEM, system_prompt
 from .assistant_tools import THIRD_PARTY_READS
 
 _logger = logging.getLogger(__name__)
@@ -877,5 +877,83 @@ class AssistantEngine(models.AbstractModel):
 
     @api.model
     def _summarize(self, conversation_id, connector, model, config):
-        """Summarize the start of a conversation too long; completed in task 16."""
-        return False
+        """Summarize the first half of the context; return whether it worked.
+
+        The cut falls before a message of the person's, never inside a
+        round of tool calls. The summary replaces, in the context, what it
+        summarizes (and the previous summary); the messages stay for the
+        person. The summary's cost counts as any call's.
+        """
+        with self._durable() as env:
+            conv = self._conversation_in(env, conversation_id)
+            messages = (
+                env["incubacloud.assistant.message"]
+                .sudo()
+                .search(
+                    [
+                        ("conversation_id", "=", conversation_id),
+                        ("in_context", "=", True),
+                        ("pending", "=", False),
+                        ("role", "in", ("user", "assistant", "tool", "job")),
+                    ],
+                    order="sequence, id",
+                )
+            )
+            cuts = [
+                index
+                for index, message in enumerate(messages)
+                if message.role == "user" and 0 < index <= len(messages) // 2
+            ]
+            if not conv or not cuts:
+                return False
+            older = messages[: cuts[-1]]
+            scrubber = env["incubacloud.mcp.secrets"]._scrubber()
+            transcript = "\n\n".join(
+                f"{message.role}: {scrubber.text(message.content or '')}"
+                for message in older
+            )
+            text = "\n\n".join(
+                part for part in (conv.summary or "", transcript) if part
+            )
+            older_ids = older.ids
+        request = ChatRequest(
+            model=model,
+            system=SUMMARY_SYSTEM,
+            tools=(),
+            turns=(
+                Turn("user", SUMMARY_PROMPT + as_data("conversation", text[-200_000:])),
+            ),
+            max_tokens=4000,
+        )
+        try:
+            response = connector.chat(request)
+        except ProviderError:
+            return False
+        self._record_cost(conversation_id, config, response, model)
+        if not same_model(model, response.model):
+            _logger.warning(
+                "assistant: %s summarized conversation %s with model %r instead of %r",
+                config.provider,
+                conversation_id,
+                response.model,
+                model,
+            )
+            return False
+        with self._durable() as env:
+            conv = self._conversation_in(env, conversation_id)
+            if not conv:
+                return False
+            env["incubacloud.assistant.message"].sudo().browse(older_ids).write(
+                {"in_context": False}
+            )
+            conv.sudo().summary = response.text
+            conv._add_message(
+                {
+                    "role": "notice",
+                    "content": env._(
+                        "This conversation got long: I summarized its first part to "
+                        "go on."
+                    ),
+                }
+            )
+        return True
