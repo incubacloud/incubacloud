@@ -35,10 +35,10 @@
                 <div class="rl-frow">
                     <label for="ic_asst_enabled">Assistant on</label>
                     <input id="ic_asst_enabled" type="checkbox" t-model="state.form.enabled"
-                           t-att-disabled="(state.blocked and !state.form.enabled) or (needsTerms and !state.form.enabled and !state.form.accept_ai_terms)"/>
+                           t-att-disabled="(state.blocked and !state.form.enabled) or providerChanged or (needsTerms and !state.form.enabled and !state.form.accept_ai_terms)"/>
                 </div>
                 <div class="rl-frow" t-if="needsTerms">
-                    <label for="ic_asst_terms">I accept section 12A (AI features) of the Terms of Service</label>
+                    <label for="ic_asst_terms" t-esc="state.termsLabel"/>
                     <input id="ic_asst_terms" type="checkbox" t-model="state.form.accept_ai_terms"/>
                 </div>
                 <div class="rl-frow">
@@ -74,11 +74,17 @@
                            t-model.number="state.form.step_cap"/>
                 </div>
             </div>
-            <p class="rl-tabnote" t-if="needsTerms">
+            <!-- The Terms only where the panel has some to accept (a tenant
+                 panel); a self-hosted one acknowledges, and links nowhere. -->
+            <p class="rl-tabnote" t-if="needsTerms and state.termsUrl">
                 Switching the assistant on needs section 12A of the Terms accepted, each
                 time: what is sent to the AI provider, who pays for it, and which actions
                 wait for confirmation.
-                <a href="https://www.incubacloud.io/terms" target="_blank" rel="noopener noreferrer">Read the Terms</a>
+                <a t-att-href="state.termsUrl" target="_blank" rel="noopener noreferrer">Read the Terms</a>
+            </p>
+            <p class="rl-tabnote" t-elif="needsTerms">
+                Switching the assistant on needs the box above ticked, each time. The
+                panel records when, by whom and from which address.
             </p>
             <p class="rl-tabnote" t-if="termsLine" t-esc="termsLine"/>
             <p class="rl-tabnote">

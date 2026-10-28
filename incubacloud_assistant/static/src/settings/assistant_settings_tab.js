@@ -25,8 +25,11 @@ export class AssistantSettingsTab extends Component {
             modelsAt: "",
             // Why the assistant can never be switched on here, or "".
             blocked: "",
-            // Who accepted section 12A of the Terms, when, from where; or null.
+            // Who ticked the box to switch it on, when, from where; or null.
             termsAcceptance: null,
+            // The box's text, and the address of the Terms it accepts or "".
+            termsLabel: "",
+            termsUrl: "",
             usage: [],
             form: {
                 enabled: false,
@@ -88,6 +91,8 @@ export class AssistantSettingsTab extends Component {
         this.state.modelsAt = data.models_at;
         this.state.blocked = data.blocked || "";
         this.state.termsAcceptance = data.terms_acceptance || null;
+        this.state.termsLabel = data.terms_label || "";
+        this.state.termsUrl = data.terms_url || "";
     }
 
     /** Join Settings' save registry once the form holds what the server has. */
@@ -134,9 +139,10 @@ export class AssistantSettingsTab extends Component {
 
     /**
      * Pick another provider. Its models are others and its key is its own:
-     * the allowed models and the default empty, the assistant goes off, and
-     * the server refuses the change unless its key is typed with it. Back
-     * to the saved provider, its models show again.
+     * the allowed models and the default empty, the assistant goes off (and
+     * cannot go on until it is saved), and the server refuses the change
+     * unless its key is typed with it. Back to the saved provider, its
+     * models show again.
      */
     changeProvider(value) {
         const form = this.state.form;
@@ -163,6 +169,12 @@ export class AssistantSettingsTab extends Component {
         }
     }
 
+    /** Whether the form's provider is not the saved one: no models to use yet. */
+    get providerChanged() {
+        const loaded = this._loaded;
+        return Boolean(loaded) && this.state.form.provider !== loaded.provider;
+    }
+
     /** Whether the saved key is the selected provider's (one to keep or remove). */
     get keySaved() {
         const form = this.state.form;
@@ -179,14 +191,19 @@ export class AssistantSettingsTab extends Component {
     }
 
     /**
-     * Whether switching on needs section 12A of the Terms accepted: the
-     * assistant is saved off, on a database that does not block it.
+     * Whether switching on needs the box ticked (section 12A of the Terms on
+     * a tenant panel): the assistant is saved off, on a database that does
+     * not block it.
      */
     get needsTerms() {
         return !this.state.blocked && !this._loaded?.enabled;
     }
 
-    /** Who accepted section 12A, when, from where and which version; or "". */
+    /**
+     * Who ticked the box, when and from where; or "". With a version, it was
+     * section 12A of IncubaCloud's Terms (a tenant panel); without one, the
+     * acknowledgement of a self-hosted panel.
+     */
     get termsLine() {
         const accepted = this.state.termsAcceptance;
         if (!accepted) {
@@ -203,7 +220,7 @@ export class AssistantSettingsTab extends Component {
                   "Section 12A of the Terms accepted on %(date)s by %(user)s from %(ip)s (terms of %(version)s).",
                   values
               )
-            : _t("Section 12A of the Terms accepted on %(date)s by %(user)s from %(ip)s.", values);
+            : _t("Last switched on, with the box ticked, on %(date)s by %(user)s from %(ip)s.", values);
     }
 
     /** Read the provider's models again with the key kept. */
@@ -265,8 +282,8 @@ export class AssistantSettingsTab extends Component {
     /**
      * Save what changed. What is sent, not what the form holds once the answer
      * is in, is what counts as saved. A new key or provider brings a new listing.
-     * The box of section 12A goes only with the switch-on, and is asked for
-     * again at the next one.
+     * The box goes only with the switch-on, and is asked for again at the
+     * next one.
      *
      * @returns {Promise<{ok: boolean, error?: string}>} the save's answer
      */
@@ -276,7 +293,7 @@ export class AssistantSettingsTab extends Component {
             return { ok: true };
         }
         if (vals.enabled === true) {
-            // Section 12A of the Terms: each switch-on accepts it again.
+            // The box (section 12A on a tenant panel): each switch-on ticks it again.
             vals.accept_ai_terms = this.state.form.accept_ai_terms === true;
         }
         const sent = { ...this.state.form, api_key: "", clear_api_key: "", accept_ai_terms: "" };

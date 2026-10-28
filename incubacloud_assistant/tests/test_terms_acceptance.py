@@ -1,9 +1,11 @@
-"""Switching the assistant on needs section 12A of the Terms accepted (28-oct).
+"""Switching the assistant on needs a box ticked, each time (28-oct).
 
-The manager ticks «I accept section 12A (AI features) of the Terms» with the
-switch; without it the assistant stays off. The acceptance (date, version,
-address, user) is kept on the settings and shown in the tab; on a tenant
-panel IncubaCloud records it first (incubacloud_tenant, task 24).
+On a tenant panel the box is «I accept section 12A (AI features) of the
+Terms of Service», with a link to them, and IncubaCloud records it first
+(incubacloud_tenant, task 24). On a self-hosted core there are no Terms of
+IncubaCloud's: the box is a plain acknowledgement, without a link. Without
+it the assistant stays off. The acceptance (date, version, address, user) is
+kept on the settings and shown in the tab.
 """
 
 import json
@@ -76,7 +78,10 @@ class TestTermsAcceptance(AssistantMixin, HttpCase):
             with self.subTest(vals):
                 result = self._rpc("save_settings", vals=vals)
                 self.assertFalse(result["ok"])
-                self.assertIn("12A", result["error"])
+                self.assertIn(
+                    self.env["cloud.settings"]._assistant_terms_label(),
+                    result["error"],
+                )
         self.hook.assert_not_called()
         settings = self._settings()
         self.assertFalse(settings.assistant_enabled)
@@ -107,6 +112,13 @@ class TestTermsAcceptance(AssistantMixin, HttpCase):
             },
         )
         self.assertTrue(self.env["cloud.settings"]._assistant_available_for(self.dev))
+
+    def test_the_tab_reads_the_box_and_its_link_from_the_panel(self):
+        """``get_settings`` answers the box's text and the Terms' address, or ""."""
+        Settings = self.env["cloud.settings"]
+        result = self._rpc("get_settings")
+        self.assertEqual(result["terms_label"], Settings._assistant_terms_label())
+        self.assertEqual(result["terms_url"], Settings._assistant_terms_url())
 
     def test_a_save_that_keeps_it_on_records_nothing(self):
         """On already: another change, or the switch sent again, asks for nothing."""
@@ -208,17 +220,29 @@ class TestTermsAcceptance(AssistantMixin, HttpCase):
 
 @tagged("post_install", "-at_install")
 class TestCoreKeepsItOnThePanel(AssistantMixin, TransactionCase):
-    """Core alone: the hook keeps the acceptance here, with no version."""
+    """Core alone: no Terms of IncubaCloud's; the acceptance stays here, no version."""
 
-    def test_the_panel_keeps_it_without_a_version(self):
-        """Nothing outside the panel knows the Terms here."""
+    def setUp(self):
+        """Core alone only: a tenant panel overrides the hooks (incubacloud_tenant)."""
+        super().setUp()
         tenant = self.env["ir.module.module"].search(
             [("name", "=", "incubacloud_tenant"), ("state", "=", "installed")]
         )
         if tenant:
-            self.skipTest(
-                "a tenant panel has IncubaCloud record it (incubacloud_tenant)"
-            )
+            self.skipTest("a tenant panel has IncubaCloud's Terms (incubacloud_tenant)")
+
+    def test_the_box_names_no_terms_and_links_nowhere(self):
+        """A self-hosted panel has no contract with IncubaCloud to accept."""
+        Settings = self.env["cloud.settings"]
+        label = Settings._assistant_terms_label()
+        self.assertIn("sent to my AI provider", label)
+        self.assertIn("can make mistakes", label)
+        self.assertNotIn("12A", label)
+        self.assertNotIn("Terms", label)
+        self.assertEqual(Settings._assistant_terms_url(), "")
+
+    def test_the_panel_keeps_it_without_a_version(self):
+        """Nothing outside the panel knows the Terms here."""
         acceptance = {
             "at": fields.Datetime.now(),
             "ip": "198.51.100.7",

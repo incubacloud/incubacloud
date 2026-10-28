@@ -35,8 +35,9 @@ assistant reads to train AI models.
 - **Usage**: tokens and approximate cost per user and month, for the managers. It
   holds no message, so it stays when a conversation is deleted: deleting one does
   not give the month's limit back.
-- **Your acceptance of section 12A** of the Terms: when, who and from where, at the
-  moment the assistant was switched on.
+- **The box ticked to switch it on** (on IncubaCloud SaaS, your acceptance of
+  section 12A of the Terms): when, who and from where, at the moment the assistant
+  was switched on.
 
 ## What it cannot do
 

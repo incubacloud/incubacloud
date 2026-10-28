@@ -7,6 +7,12 @@
         margin-block-start: 14px;
     }
 
+    // A link in a note looks like one, not only by its colour (WCAG 1.4.1):
+    // the panel's base styles paint links as text.
+    .rl-tabnote a {
+        text-decoration: underline;
+    }
+
     .ic-asst-models,
     .ic-asst-usage {
         margin-block-end: 20px;
