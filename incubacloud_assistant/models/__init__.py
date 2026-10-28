@@ -5,6 +5,7 @@ from . import assistant_message
 from . import assistant_usage
 from . import cloud_settings
 from . import mcp_approval
+from . import assistant_engine
 from . import assistant_tools
 from . import mcp_confirm
 from . import res_users

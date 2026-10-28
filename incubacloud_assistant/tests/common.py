@@ -1,11 +1,15 @@
 """Shared fixtures of the assistant's tests: users, settings, conversations."""
 
 import json
+from unittest.mock import MagicMock, patch
 
 from odoo import fields
 
 from odoo.addons.incubacloud_mcp.tests.common import McpUsersMixin, PanelFixtureMixin
 
+from ..connectors.anthropic_connector import AnthropicConnector
+from ..connectors.base import ChatResponse, ToolCall, Usage
+from ..models import assistant_engine
 from ..models.cloud_settings import BLOCKED_PARAM
 
 #: The provider key of the tests: a secret, as a real one.
@@ -75,3 +79,69 @@ class AssistantMixin(McpUsersMixin, PanelFixtureMixin):
         # The secret filter reads the ciphertexts with SQL: they must be there.
         self.env.flush_all()
         return settings
+
+
+def answer(text="", calls=(), stop=None, usage=None, model="claude-opus-5-5"):
+    """A provider's answer: *text*, and *calls* as ``(id, name, arguments)``."""
+    tool_calls = tuple(ToolCall(*call) for call in calls)
+    return ChatResponse(
+        text=text,
+        tool_calls=tool_calls,
+        usage=usage or Usage(1000, 50),
+        model=model,
+        stop=stop or ("tool_use" if tool_calls else "end"),
+    )
+
+
+class EngineMixin(AssistantMixin):
+    """Run the engine's steps against a connector that answers as told.
+
+    The connector is a ``MagicMock(spec=AnthropicConnector)``; the engine's
+    pauses are patched out. Steps run in registry test mode: their own
+    cursors are the test's.
+    """
+
+    def _provider(self, *answers):
+        """Make the provider answer *answers* in turn; return the connector mock.
+
+        Patched once per test: patching again with autospec fails. A later
+        call gives the same connector new answers.
+        """
+        if not hasattr(self, "connector"):
+            self.connector = MagicMock(spec=AnthropicConnector)
+            patcher = patch.object(
+                assistant_engine,
+                "connector_for",
+                autospec=True,
+                return_value=self.connector,
+            )
+            self.connector_for = patcher.start()
+            self.addCleanup(patcher.stop)
+            sleeper = patch.object(assistant_engine, "_sleep", autospec=True)
+            self.sleep = sleeper.start()
+            self.addCleanup(sleeper.stop)
+        self.connector.reset_mock()
+        self.connector.chat.side_effect = list(answers)
+        return self.connector
+
+    def _step(self, conversation, job_uuid=None):
+        """Run one step of *conversation*, as its owner (as job *job_uuid*)."""
+        owner = conversation.sudo().user_id
+        engine = self.env["incubacloud.assistant.engine"].with_user(owner)
+        if job_uuid:
+            engine = engine.with_context(job_uuid=job_uuid)
+        with self.enter_registry_test_mode():
+            engine._step(conversation.with_user(owner))
+        conversation.invalidate_recordset()
+
+    def _working(self, user, text="Hello", context=None):
+        """A conversation of *user* whose task was just started by *text*."""
+        conversation = (
+            self.env["incubacloud.assistant.conversation"].with_user(user)._start()
+        )
+        conversation._post(text, context or {})
+        return conversation
+
+    def _sent(self, connector, call=-1):
+        """Return the ``ChatRequest`` of the provider's call *call*."""
+        return connector.chat.call_args_list[call].args[0]
