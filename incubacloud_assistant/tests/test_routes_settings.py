@@ -128,6 +128,23 @@ class TestSettingsRoutes(AssistantMixin, HttpCase):
         config = self.env["cloud.settings"]._assistant_config()
         self.assertEqual((config.allowed_models, config.default_model), ((), ""))
 
+    def test_a_new_provider_shows_the_notice_again(self):
+        """The notice names the provider: read once, it comes back for the new one."""
+        self.dev.sudo().assistant_notice_at = "2026-10-28 10:00:00"
+        result, _error, _text = self._rpc(
+            self.manager.login, "save_settings", vals={"step_cap": 40}
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(self.dev.sudo().assistant_notice_at)
+        result, _error, _text = self._rpc(
+            self.manager.login,
+            "save_settings",
+            vals={"provider": "openai", "api_key": "sk-openai-0004"},
+        )
+        self.assertTrue(result["ok"], result)
+        self.dev.invalidate_recordset()
+        self.assertFalse(self.dev.sudo().assistant_notice_at)
+
     def test_the_key_is_not_read_through_the_orm_either(self):
         """A manager reads the settings by RPC, never the key's field."""
         self.authenticate(self.manager.login, self.manager.login)
@@ -168,6 +185,8 @@ class TestSettingsRoutes(AssistantMixin, HttpCase):
             {"default_model": "claude-haiku-5-5"},
             {"user_ids": [self.portal.id]},
             {"monthly_limit": -1},
+            {"monthly_limit": "nan"},
+            {"monthly_limit": "Infinity"},
             {"step_cap": 0},
         )
         for vals in cases:

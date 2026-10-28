@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 
 from odoo import api, fields, models
+from odoo.exceptions import AccessError
 
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
 
@@ -21,6 +22,11 @@ DEFAULT_STEP_CAP = 30
 #: A system parameter that keeps the assistant off on this database for good,
 #: its value the reason shown (IncubaCloud's own panel sets it, from saas).
 BLOCKED_PARAM = "incubacloud_assistant.blocked"
+#: The context key the Settings routes set, with sudo, to write the
+#: assistant's fields: the ORM alone (a manager's ``call_kw``) never does.
+SETTINGS_WRITE = "incubacloud_assistant_settings_write"
+#: The prefix of the assistant's fields of the settings.
+_FIELDS_PREFIX = "assistant_"
 
 
 def _json_list(text):
@@ -140,6 +146,42 @@ class CloudSettings(models.Model):
         help="The address the acceptance came from.",
     )
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Refuse the assistant's fields, unless they come through Settings."""
+        for vals in vals_list:
+            self._assistant_check_write(vals)
+        return super().create(vals_list)
+
+    def write(self, vals):
+        """Refuse the assistant's fields, unless they come through Settings."""
+        self._assistant_check_write(vals)
+        return super().write(vals)
+
+    def _assistant_check_write(self, vals):
+        """Raise when *vals* changes the assistant outside Settings → Assistant.
+
+        The checks of switching it on (section 12A accepted), of the
+        provider and its key, of the models and of the limits live in the
+        Settings routes: those write in sudo with :data:`SETTINGS_WRITE`
+        in the context; a manager's write through the ORM is refused.
+
+        :param dict vals: the values to write
+        :raises AccessError: for a field of the assistant's without both
+        """
+        if not any(name.startswith(_FIELDS_PREFIX) for name in vals):
+            return
+        if self.env.su and self.env.context.get(SETTINGS_WRITE):
+            return
+        raise AccessError(
+            self.env._("The assistant's settings change in Settings → Assistant only.")
+        )
+
+    @api.model
+    def _assistant_settings(self):
+        """Return the settings singleton the Settings routes write the assistant to."""
+        return self._get_system().with_context(**{SETTINGS_WRITE: True})
+
     @api.model
     def _assistant_config(self):
         """Return the assistant's settings.
@@ -255,7 +297,7 @@ class CloudSettings(models.Model):
 
         :param list listing: ``{id, name, tools, price_in, price_out}`` dicts
         """
-        self._get_system().write(
+        self._assistant_settings().write(
             {
                 "assistant_models": json.dumps(listing),
                 "assistant_models_at": fields.Datetime.now(),

@@ -60,7 +60,8 @@ class TestEngineStep(EngineMixin, TransactionCase):
         self._provider(answer("One."), answer("Two."))
         conversation = self._working(self.dev)
         self._step(conversation)
-        self.env["cloud.settings"]._get_system().assistant_api_key = "sk-ant-new-0002"
+        settings = self.env["cloud.settings"]._assistant_settings()
+        settings.assistant_api_key = "sk-ant-new-0002"
         with trap_jobs():
             conversation._post("Again", {})
         self._step(conversation)
