@@ -821,7 +821,7 @@ msgid ""
 "it moves."
 msgstr ""
 "Mover la instancia %(name)s al servidor %(host)s. No estará disponible "
-"mientras se mueve."
+"durante el traslado."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -831,7 +831,7 @@ msgid ""
 "unavailable while it moves."
 msgstr ""
 "Mover la instancia de producción %(name)s al servidor %(host)s. No estará "
-"disponible mientras se mueve."
+"disponible durante el traslado."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
