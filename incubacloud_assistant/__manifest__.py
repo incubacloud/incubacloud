@@ -23,7 +23,11 @@ only their owner reads them; every action is in the audit log.
     "author": "IncubaCloud",
     "license": "Other proprietary",
     "depends": ["incubacloud_mcp", "bus", "queue_job"],
-    "data": [],
+    "data": [
+        "security/ir.model.access.csv",
+        "security/assistant_rules.xml",
+        "data/assistant_data.xml",
+    ],
     "assets": {
         "incubacloud.assets_prod": [
             "incubacloud_assistant/static/src/**/*",
