@@ -216,3 +216,5 @@ from . import test_direct_sync_job
 from . import test_direct_triggers
 from . import test_direct_agents
 from . import test_direct_convergence
+from . import test_direct_migration
+from . import test_direct_identity

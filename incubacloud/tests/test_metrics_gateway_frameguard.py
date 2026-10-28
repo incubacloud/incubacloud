@@ -92,6 +92,13 @@ class TestMetricsGatewayFrameguard(BaseCase):
             "tenant panels embed it from their own origins.",
         )
 
+    def test_every_router_names_its_entrypoints_and_none_is_direct(self):
+        """Nothing here may answer on the direct entrypoint (piece 9)."""
+        for name, router in _gateway()["routers"].items():
+            with self.subTest(router=name):
+                self.assertTrue(router.get("entryPoints"))
+                self.assertNotIn("direct", router["entryPoints"])
+
     def test_grafana_router_sends_no_frame_options(self):
         """``X-Frame-Options`` cannot name another origin.
 

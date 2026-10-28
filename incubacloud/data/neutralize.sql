@@ -77,3 +77,14 @@ END $$;
 DELETE FROM ir_config_parameter WHERE key = 'incubacloud.backup_backend_id';
 DELETE FROM ir_config_parameter WHERE key = 'incubacloud.host_autoassign';
 UPDATE ir_config_parameter SET value = '' WHERE key = 'web.base.url';
+
+-- 6. The direct path (1.0.200): its DNS token, the central's direct name
+-- (no host of the copy may be offered it) and the dates of production's
+-- last probes, which say nothing about the copy. Newer than older copies.
+DO $$ BEGIN
+    UPDATE cloud_settings SET acme_dns_cloudflare_token = NULL,
+        metrics_central_direct_host = NULL;
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
+DELETE FROM ir_config_parameter
+ WHERE key LIKE 'incubacloud.direct\_checked\_at.%';
