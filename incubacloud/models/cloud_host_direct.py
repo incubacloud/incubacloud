@@ -13,7 +13,11 @@ applied, the list of admitted addresses, the documents the setup jobs
 ship, and which URL each host's agents write to. The job that applies the
 list and probes the names is ``sync_direct_path``.
 """
+import ipaddress
 import logging
+from datetime import timedelta
+
+import yaml
 
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
@@ -27,6 +31,45 @@ DIRECT_MARK = "# incubacloud:direct"
 #: Ports the platform publishes on a host, whatever the host says: mail,
 #: web, Traefik's dashboard and metrics, the central's gateway and Grafana.
 _PLATFORM_PORTS = frozenset({25, 80, 143, 443, 465, 587, 993, 3000, 8080, 8082, 8428})
+
+#: Traffic born on the host itself reaches its own direct port with a
+#: container's address (Docker's DNAT and masquerade), never its public one.
+DIRECT_PRIVATE_RANGES = ("10.0.0.0/8", "127.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+
+#: Where the job writes the dynamic document Traefik reads the list from.
+DIRECT_DYNAMIC_FILE = "~/traefik/dynamic/direct.yml"
+
+#: A host absent from the metrics for this long may not be ours any more:
+#: Hetzner hands a released address to someone else within hours.
+_ABSENT_FOR = timedelta(hours=24)
+
+
+def global_ipv4(value):
+    """Return *value* as a global IPv4 address, or ''.
+
+    Only such an address is the one a host's traffic leaves with. A name,
+    an IPv6 address, ``0.0.0.0`` (a host bought and not answered yet), a
+    private, shared or documentation address all say nothing about it.
+
+    :param value: an address as a host or a reservation stores it.
+    :rtype: str
+    """
+    try:
+        address = ipaddress.ip_address((value or "").strip())
+    except ValueError:
+        return ""
+    if address.version != 4 or not address.is_global:
+        return ""
+    return str(address)
+
+
+def sorted_networks(entries):
+    """Return *entries* without duplicates, in address order.
+
+    :param entries: CIDR strings.
+    :rtype: list
+    """
+    return sorted(set(entries), key=ipaddress.ip_network)
 
 
 class CloudHost(models.Model):
@@ -139,3 +182,141 @@ class CloudHost(models.Model):
         if port:
             snap["direct_port"] = port
         return snap
+
+    @api.model
+    def _direct_absent_hosts(self, hosts):
+        """Return the hosts of *hosts* missing from the metrics for over a day.
+
+        Read from the ``metrics_host_absent`` alert, open and older than
+        ``_ABSENT_FOR``. When it is resolved the host comes back at the
+        next pass of the job.
+
+        :param hosts: ``cloud.host`` records.
+        :rtype: cloud.host
+        """
+        alerts = self.env["cloud.alert"].sudo().search([
+            ("code", "=", "metrics_host_absent"),
+            ("state", "=", "active"),
+            ("host_id", "in", hosts.ids),
+            ("create_date", "<", fields.Datetime.now() - _ABSENT_FOR),
+        ])
+        return alerts.host_id
+
+    def _direct_excluded(self):
+        """Whether this active host's address must stay out of the list.
+
+        Core knows no such case beyond the absence above; the SaaS layer
+        leaves out a host bought on demand whose server is gone.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        return False
+
+    @api.model
+    def _direct_hosts_entries(self):
+        """Return ``(entries, left_out)`` for ``direct-hosts``.
+
+        The private ranges and the /32 of every active host with a global
+        IPv4 address, without duplicates and in order; *left_out* names
+        the hosts kept out although active, for the job's log.
+
+        :rtype: tuple
+        """
+        hosts = self.sudo().search([("active", "=", True)])
+        absent = self._direct_absent_hosts(hosts)
+        entries, left_out = list(DIRECT_PRIVATE_RANGES), []
+        for host in hosts:
+            address = global_ipv4(host.ip_address)
+            if not address:
+                continue
+            if host in absent or host._direct_excluded():
+                left_out.append(host.name)
+                continue
+            entries.append(f"{address}/32")
+        return sorted_networks(entries), sorted(left_out)
+
+    @api.model
+    def _direct_extra_peers(self):
+        """Return what a layer above admits on the direct port besides hosts.
+
+        Core admits nothing more; the SaaS layer adds the servers its
+        customers rent while their reservation lives.
+
+        :return: CIDR strings.
+        :rtype: list
+        """
+        return []
+
+    @api.model
+    def _direct_peers_entries(self):
+        """Return the whole list the direct port admits (``direct-peers``).
+
+        :rtype: list
+        """
+        hosts, _left_out = self._direct_hosts_entries()
+        return sorted_networks(hosts + list(self._direct_extra_peers()))
+
+    def _direct_admits(self, address):
+        """Whether this host has *address* applied, by its own /32.
+
+        Never by a range it falls in: a private address is admitted only
+        to what was born on this host, and says nothing about another.
+
+        :param str address: an address as a host or reservation stores it.
+        :rtype: bool
+        """
+        self.ensure_one()
+        ip = global_ipv4(address)
+        if not ip:
+            return False
+        return f"{ip}/32" in (self.sudo().direct_allowlist_shipped or "").split()
+
+    @api.model
+    def _shipped_direct_yml(self):
+        """Return the dynamic document every direct entrypoint reads.
+
+        The two lists, the header stripper, the per-source rate limit and
+        the router that answers 403 to whatever has no router of its own
+        above priority 10000 (Traefik 2.11 attaches a router without
+        entry points to every one of them). The TLS option ``direct``
+        asks no client certificate; only the two routers allowed on the
+        port name it.
+
+        :rtype: str
+        """
+        hosts, _left_out = self._direct_hosts_entries()
+        document = {
+            "http": {
+                "middlewares": {
+                    "direct-peers": {
+                        "ipWhiteList": {"sourceRange": self._direct_peers_entries()},
+                    },
+                    "direct-hosts": {"ipWhiteList": {"sourceRange": hosts}},
+                    "direct-strip": {"headers": {"customRequestHeaders": {
+                        "CF-Connecting-IP": "",
+                        "CF-Connecting-IPv6": "",
+                        "True-Client-IP": "",
+                    }}},
+                    "direct-ratelimit": {
+                        "rateLimit": {"average": 600, "period": "1m", "burst": 300},
+                    },
+                    "direct-deny-all": {
+                        "ipWhiteList": {"sourceRange": ["127.0.0.2/32"]},
+                    },
+                },
+                "routers": {
+                    "direct-deny": {
+                        "rule": "PathPrefix(`/`)",
+                        "priority": 10000,
+                        "entryPoints": ["direct"],
+                        "middlewares": ["direct-deny-all"],
+                        "service": "noop@internal",
+                        "tls": {},
+                    },
+                },
+            },
+            "tls": {"options": {"direct": {"minVersion": "VersionTLS12"}}},
+        }
+        body = yaml.safe_dump(document, sort_keys=False, default_flow_style=False)
+        return "# Auto-generated by IncubaCloud. Do not edit by hand.\n" + body
