@@ -28,6 +28,29 @@ class CommandResult(NamedTuple):
     exit_status: int
 
 
+class StagingPathTaken(RuntimeError):
+    """A file that has to be created owner-only finds its path taken.
+
+    Another account holds something there that this one may not remove,
+    or put something there between the removal and the creation. The
+    secret is not written; the message names the path, so whoever reads
+    the job log knows what to remove on the host.
+    """
+
+    def __init__(self, path, why):
+        """Name *path* and say *why* it could not be used.
+
+        :param str path: the remote path that was taken
+        :param str why: what was found there
+        """
+        super().__init__(
+            f"Could not stage {path} on the host: {why}. A secret is"
+            " only ever written into a file this job creates; remove"
+            " what is there and run the job again."
+        )
+        self.path = path
+
+
 class BaseTransport(ABC):
     """Protocol for executing commands and transferring files on a remote target."""
 
@@ -65,7 +88,10 @@ class BaseTransport(ABC):
 
         *files* is ``{remote_path: text_content}``. *mode*, when given,
         is the permission bits a file is created with (``0o600`` for a
-        secret, so it is never readable by others, not even briefly).
+        secret, so it is never readable by others, not even briefly):
+        whatever is at the path is removed first and the file is created
+        by this call, never written into an existing one, whose mode
+        would stay as it was.
         """
 
     @abstractmethod
@@ -151,10 +177,52 @@ class SSHTransport(BaseTransport):
             asyncssh.SFTPAttrs(permissions=mode) if mode is not None
             else asyncssh.SFTPAttrs()
         )
+        # The server applies the mode only to a file it creates. With a
+        # mode, a copy an earlier run left (0644, before secrets were
+        # staged this way) is removed, and the create is exclusive: a
+        # file of another account in /tmp, which this one cannot remove,
+        # fails the upload instead of receiving the secret.
+        flags = 'w' if mode is None else 'x'
         async with self._conn.start_sftp_client() as sftp:
             for path, content in files.items():
-                async with sftp.open(path, 'w', attrs) as fh:
-                    await fh.write(content)
+                if mode is not None:
+                    await self._clear_for_private(sftp, path)
+                created = False
+                try:
+                    async with sftp.open(path, flags, attrs) as fh:
+                        created = True
+                        await fh.write(content)
+                except asyncssh.SFTPError as exc:
+                    # Only the exclusive create is about the path; a
+                    # write that fails afterwards is the server's story.
+                    if mode is None or created:
+                        raise
+                    raise StagingPathTaken(
+                        path, "another account created it as it was cleared",
+                    ) from exc
+
+    @staticmethod
+    async def _clear_for_private(sftp, path):
+        """Remove what is at *path* before it is created owner-only.
+
+        :param sftp: the open SFTP client
+        :param str path: the remote path about to be created
+        :raise StagingPathTaken: when something is there this account may
+            not remove (another account's file in a sticky ``/tmp``) or
+            cannot (a directory)
+        """
+        try:
+            await sftp.remove(path)
+        except asyncssh.SFTPNoSuchFile:
+            return
+        except asyncssh.SFTPPermissionDenied as exc:
+            raise StagingPathTaken(
+                path, "another account holds it",
+            ) from exc
+        except asyncssh.SFTPError as exc:
+            raise StagingPathTaken(
+                path, f"something there cannot be removed ({exc})",
+            ) from exc
 
     async def upload_file(self, local_path: str, remote_path: str) -> None:
         async with self._conn.start_sftp_client() as sftp:

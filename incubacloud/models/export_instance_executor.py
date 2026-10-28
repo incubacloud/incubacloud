@@ -6,8 +6,6 @@ from pathlib import Path
 from ._odoo_versions import script_env
 from .abstract_executor import AbstractSSHExecutor
 
-_TMP_PREFIX = "/tmp/.incubacloud"
-
 
 class ExportInstanceExecutor(AbstractSSHExecutor):
     """Package the instance folder as a downloadable development copy.
@@ -35,7 +33,11 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
         return self.job.instance_id
 
     def _remote_tmp(self):
-        return f"{_TMP_PREFIX}-export-{self._inst().name}.tar.gz"
+        """Return where the archive is built: the job's own directory.
+
+        :rtype: str
+        """
+        return self._job_path("export.tar.gz")
 
     async def before_execute(self, transport):
         inst = self._inst()
@@ -51,7 +53,9 @@ class ExportInstanceExecutor(AbstractSSHExecutor):
         # through ``get_commands`` because everything after it needs the
         # archive to already exist, so the scripts are uploaded by hand
         # (``_async_entry``'s own upload happens later and then no-ops).
-        staging = f"{_TMP_PREFIX}-export-staging-{inst.name}"
+        # The copy holds the project before its secrets are stripped: in
+        # the job's own directory, which ``_upload_scripts`` creates.
+        staging = self._job_path("export-staging")
         sanitize_command = self.run_script(
             "export_sanitize.sh", [d, staging, remote_tmp],
             env=script_env(inst.odoo_version),

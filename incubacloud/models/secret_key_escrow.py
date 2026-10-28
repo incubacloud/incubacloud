@@ -31,19 +31,17 @@ class SecretKeyEscrowMixin:
     """Read, keep and ship an instance's key chain, for instance executors.
 
     Expects the executor API: ``_inst()``, ``_inst_dir()``, ``job``,
-    ``_persist()``, ``_upload_private_files()`` and ``_sys()``.
+    ``_persist()``, ``_job_path()``, ``_upload_private_files()`` and
+    ``_sys()``.
     """
 
     def _secret_key_tmp(self):
         """Return where the key file is staged on the job's host.
 
-        :return: a ``/tmp`` path namespaced by the instance
+        :return: a path in the job's own directory
         :rtype: str
         """
-        return (
-            f"/tmp/.incubacloud-{self._inst().doodba_project_name}"
-            "-incubacloud.env"
-        )
+        return self._job_path("incubacloud.env")
 
     async def _read_host_secret_key(self, transport, inst=None):
         """Return what an instance's ``incubacloud.env`` holds on a host.

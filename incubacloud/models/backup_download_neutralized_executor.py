@@ -38,10 +38,20 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         return f"__ic_neutral_{self.job.id}"
 
     def _host_tmp_dir(self):
-        return f"/tmp/.incubacloud-bkneu-{self.job.id}"
+        """Return where the source dump is staged: the job's directory.
+
+        It is production's, before neutralizing.
+
+        :rtype: str
+        """
+        return self._job_path("bkneu")
 
     def _host_tmp_archive(self):
-        return f"/tmp/.incubacloud-bkneu-{self.job.id}.zip"
+        """Return where the neutralized archive is built.
+
+        :rtype: str
+        """
+        return self._job_path("neutralized.zip")
 
     # ── hooks ────────────────────────────────────────────────────────────
 
@@ -61,6 +71,7 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         # below rejects whitespace, quotes, dollars, backticks and
         # semicolons — the only things that could break either shell.
         validate_dup_time(payload['time'])
+        await self._ensure_job_dir(transport)
 
     def get_commands(self):
         inst = self._inst()
@@ -186,6 +197,9 @@ class BackupDownloadNeutralizedExecutor(AbstractSSHExecutor):
         )
         os.close(local_fd)
         try:
+            # ``docker compose cp`` copies a link as a link, and the
+            # neutralizing Odoo runs the instance's own modules.
+            await self._check_regular_file(transport, archive)
             await transport.download_file(archive, local_tmp)
 
             self._sys("✓ Downloaded. Storing as attachment…")

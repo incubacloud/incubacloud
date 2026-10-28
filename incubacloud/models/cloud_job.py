@@ -986,6 +986,9 @@ class CloudJob(models.Model):
     _hidden_job_types = [
         "host_metrics", "docker_prune", "instance_health", "read_last_login",
         "capture_secret_key",
+        # Queued from the transaction that ends a restore, sometimes with
+        # the queues' locks held: it must wait for nothing.
+        "discard_handoff",
     ]
 
     # Job types whose failure should raise a critical alert — these
@@ -1058,6 +1061,9 @@ class CloudJob(models.Model):
         "setup_whitelist": "group_cloud_manager",
         "delete_host": "group_cloud_manager",
         "docker_prune": "group_cloud_manager",
+        # Removes a handoff on a host; only a restore that will not run
+        # queues it, with ``sudo``.
+        "discard_handoff": "group_cloud_manager",
         "instance_health": "group_cloud_manager",
         # Opens the instance's own database with its own credentials.
         # It only reads one timestamp, but the capability is the same
@@ -2809,7 +2815,7 @@ class CloudJob(models.Model):
 
         Stored encrypted and apart from the payload, so the password
         never reaches the job list, a notification or the log. Returns
-        the three values the host needs to write a netrc line.
+        the three values the host needs to log the download in.
 
         :return: ``(machine, login, password)``, or ``None``.
         """

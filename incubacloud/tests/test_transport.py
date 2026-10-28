@@ -267,9 +267,12 @@ class TestSSHTransportFileOps(BaseCase):
         self.assertEqual(sftp.open.call_count, 2)
         fh1.write.assert_called_once_with("content-a")
         fh2.write.assert_called_once_with("content-b")
-        # No mode asked: the server's default, as before.
-        attrs = sftp.open.call_args_list[0].args[2]
+        # No mode asked: the server's default, as before, over whatever
+        # is there.
+        path, flags, attrs = sftp.open.call_args_list[0].args
+        self.assertEqual(flags, "w")
         self.assertIsNone(attrs.permissions)
+        sftp.remove.assert_not_awaited()
 
     def test_a_secret_is_created_readable_by_its_owner_only(self):
         """A key staged in /tmp is 0600 from its first byte."""
@@ -280,9 +283,80 @@ class TestSSHTransportFileOps(BaseCase):
         _run(transport.upload_text_files({"/tmp/k.env": "K=v\n"}, mode=0o600))
 
         path, flags, attrs = sftp.open.call_args.args
-        self.assertEqual((path, flags), ("/tmp/k.env", "w"))
+        # Created by this call, never opened over an existing file: the
+        # server applies the mode only to a file it creates.
+        self.assertEqual((path, flags), ("/tmp/k.env", "x"))
         self.assertEqual(attrs.permissions, 0o600)
         fh.write.assert_called_once_with("K=v\n")
+
+    def test_a_secret_replaces_what_an_earlier_run_left(self):
+        """A copy left 0644 by a run before the private staging existed
+        is removed first, so the new one does not inherit its mode."""
+        transport, sftp = self._transport_with_sftp()
+        file_ctx, _fh = _make_file_ctx()
+        sftp.open = MagicMock(return_value=file_ctx)
+
+        _run(transport.upload_text_files({"/tmp/k.env": "K=v\n"}, mode=0o600))
+
+        self.assertEqual(
+            [name for name, *_ in sftp.mock_calls[:2]], ["remove", "open"],
+        )
+        sftp.remove.assert_awaited_once_with("/tmp/k.env")
+
+    def test_a_secret_with_nothing_to_replace_is_created(self):
+        """No earlier copy at the path: the removal finds nothing, and
+        the file is created all the same."""
+        transport, sftp = self._transport_with_sftp()
+        sftp.remove.side_effect = asyncssh.SFTPNoSuchFile("No such file")
+        file_ctx, fh = _make_file_ctx()
+        sftp.open = MagicMock(return_value=file_ctx)
+
+        _run(transport.upload_text_files({"/tmp/k.env": "K=v\n"}, mode=0o600))
+
+        fh.write.assert_called_once_with("K=v\n")
+
+    def test_a_path_another_account_holds_is_not_written(self):
+        """In a sticky /tmp a file of another account cannot be removed:
+        the secret is not written into it, and the error names the path
+        and says whose it is."""
+        from odoo.addons.incubacloud.models.transport import StagingPathTaken
+
+        transport, sftp = self._transport_with_sftp()
+        sftp.remove.side_effect = asyncssh.SFTPPermissionDenied("denied")
+
+        with self.assertRaises(StagingPathTaken) as caught:
+            _run(transport.upload_text_files(
+                {"/tmp/k.env": "K=v\n"}, mode=0o600,
+            ))
+        sftp.open.assert_not_called()
+        self.assertIn("/tmp/k.env", str(caught.exception))
+        self.assertIn("another account", str(caught.exception))
+        self.assertIsInstance(
+            caught.exception.__cause__, asyncssh.SFTPPermissionDenied,
+        )
+
+    def test_a_path_taken_between_removal_and_creation_is_named(self):
+        """Another account wins the race between the two: the exclusive
+        create fails, and the error says where and why."""
+        from odoo.addons.incubacloud.models.transport import StagingPathTaken
+
+        transport, sftp = self._transport_with_sftp()
+        sftp.open = MagicMock(side_effect=asyncssh.SFTPFailure("exists"))
+
+        with self.assertRaises(StagingPathTaken) as caught:
+            _run(transport.upload_text_files(
+                {"/tmp/k.env": "K=v\n"}, mode=0o600,
+            ))
+        self.assertIn("/tmp/k.env", str(caught.exception))
+        self.assertIn("another account", str(caught.exception))
+
+    def test_a_public_file_keeps_the_server_s_own_error(self):
+        """Without a mode nothing changes: the SFTP error goes up as is."""
+        transport, sftp = self._transport_with_sftp()
+        sftp.open = MagicMock(side_effect=asyncssh.SFTPPermissionDenied("no"))
+
+        with self.assertRaises(asyncssh.SFTPPermissionDenied):
+            _run(transport.upload_text_files({"/tmp/a.txt": "a"}))
 
     def test_upload_file_calls_sftp_put(self):
         transport, sftp = self._transport_with_sftp()
@@ -534,8 +608,7 @@ class TestBackupCreateAfterCommands(BaseCase):
         transport.run.assert_called_once()
         # cleanup command should reference the remote tmp path
         cleanup_cmd = transport.run.call_args[0][0]
-        self.assertIn("rm -f", cleanup_cmd)
-        self.assertIn("myinst", cleanup_cmd)
+        self.assertEqual(cleanup_cmd, f"rm -f {ex._remote_tmp()}")
 
     def test_production_does_not_download(self):
         ex = self._make_executor(environment="production")
@@ -594,7 +667,8 @@ class TestBackupCreateGetCommands(BaseCase):
         self.assertEqual(argv[0], "bash")
         self.assertTrue(argv[1].endswith("/backup_download.sh"), argv[1])
         self.assertEqual(argv[2:5], ["live-dump", "/home/myinst", "prod"])
-        self.assertEqual(argv[5], "/tmp/.incubacloud-backup-myinst.zip")
+        # Into the job's drop directory, the one the container sees.
+        self.assertEqual(argv[5], f"{ex._drop_dir()}/backup.zip")
         return env, argv
 
     def _make_executor_with_payload(self, environment, payload):
@@ -696,14 +770,16 @@ class TestRestoreInstanceVerifyBackupFile(BaseCase):
         return ex
 
     def test_verify_step_invokes_restore_verify_file(self):
-        cmds = self._make_executor().get_commands()
+        executor = self._make_executor()
+        cmds = executor.get_commands()
         label, cmd, opts = cmds[0]
         self.assertEqual(label, "Verify backup file")
         argv = shlex.split(cmd)
         self.assertTrue(argv[1].endswith("/restore.sh"), argv[1])
         self.assertEqual(argv[2], "verify-file")
         self.assertEqual(argv[3], "/home/myinst")
-        self.assertEqual(argv[4], "/tmp/incubacloud-restore-42.zip")
+        # The archive this job brings lands in its own directory.
+        self.assertEqual(argv[4], executor._job_path("restore.zip"))
         # Stop the chain on failure: skipping the rest avoids destroying
         # the live DB when we already know the upload is missing.
         self.assertEqual(opts, {"stop_on_failure": True})
@@ -773,8 +849,6 @@ class TestBackupDownloadGetCommands(BaseCase):
     ``service "backup" is not running``.
     """
 
-    ARCHIVE = "/tmp/.incubacloud-bkdl-dl-inst.zip"
-    TMPDIR = "/tmp/.incubacloud-bkdl-dl-inst"
     DIR = "/home/dl-inst"
 
     def _make_executor(self, environment, mode="dump", time="latest"):
@@ -821,11 +895,12 @@ class TestBackupDownloadGetCommands(BaseCase):
     # ── non-production: live dump on demand ───────────────────────────
 
     def test_non_prod_dump_takes_a_db_only_live_dump(self):
-        cmds = self._make_executor("staging", mode="dump").get_commands()
+        ex = self._make_executor("staging", mode="dump")
+        cmds = ex.get_commands()
         self.assertEqual(len(cmds), 1)
         self.assertEqual(cmds[0][0], "Create live backup")
         self.assertScriptCall(
-            cmds[0], "live-dump", ["prod", self.ARCHIVE, "db"],
+            cmds[0], "live-dump", ["prod", f"{ex._drop_dir()}/backup.zip", "db"],
         )
         # Stop the chain on failure so after_commands does not try to
         # download a zip that was never created — same defensive
@@ -833,10 +908,11 @@ class TestBackupDownloadGetCommands(BaseCase):
         self.assertEqual(cmds[0][2], {"stop_on_failure": True})
 
     def test_non_prod_all_includes_the_filestore(self):
-        cmds = self._make_executor("staging", mode="all").get_commands()
+        ex = self._make_executor("staging", mode="all")
+        cmds = ex.get_commands()
         self.assertEqual(len(cmds), 1)
         self.assertScriptCall(
-            cmds[0], "live-dump", ["prod", self.ARCHIVE, "all"],
+            cmds[0], "live-dump", ["prod", ex._tmp_archive(), "all"],
         )
 
     def test_the_live_dump_is_told_the_series_tool(self):
@@ -850,25 +926,30 @@ class TestBackupDownloadGetCommands(BaseCase):
     # ── production: restore from the backup store, then package ───────
 
     def test_prod_dump_restores_only_the_sql(self):
-        cmds = self._make_executor("production", mode="dump").get_commands()
+        ex = self._make_executor("production", mode="dump")
+        cmds = ex.get_commands()
         self.assertEqual(
             [c[0] for c in cmds],
             ["Restore SQL from backup", "Extract and package"],
         )
         self.assertScriptCall(cmds[0], "restore-sql", ["prod", "latest"])
+        # Packaged in the job's own directory.
         self.assertScriptCall(
-            cmds[1], "package-sql", ["prod", self.TMPDIR, self.ARCHIVE],
+            cmds[1], "package-sql",
+            ["prod", ex._job_path("bkdl"), ex._job_path("backup.zip")],
         )
 
     def test_prod_all_restores_the_whole_backup(self):
-        cmds = self._make_executor("production", mode="all").get_commands()
+        ex = self._make_executor("production", mode="all")
+        cmds = ex.get_commands()
         self.assertEqual(
             [c[0] for c in cmds],
             ["Restore full from backup", "Extract and package"],
         )
         self.assertScriptCall(cmds[0], "restore-full", ["latest"])
         self.assertScriptCall(
-            cmds[1], "package-full", ["prod", self.TMPDIR, self.ARCHIVE],
+            cmds[1], "package-full",
+            ["prod", ex._job_path("bkdl"), ex._job_path("backup.zip")],
         )
 
     def test_prod_passes_an_explicit_time_through(self):
@@ -912,18 +993,31 @@ class TestBackupDownloadBeforeExecute(BaseCase):
         ex.job.payload = {"time": time, "download_type": "dump"}
         return ex
 
+    def _transport(self):
+        """Return a host link whose commands all succeed."""
+        from odoo.addons.incubacloud.models.transport import (
+            CommandResult,
+            SSHTransport,
+        )
+
+        transport = MagicMock(spec=SSHTransport)
+        transport.run.return_value = CommandResult("", 0)
+        return transport
+
     def test_non_prod_rejects_historical_timestamp(self):
         ex = self._make_executor("staging", "2026-03-19T02:00:00")
+        transport = self._transport()
         with self.assertRaises(ValueError) as ctx:
-            _run(ex.before_execute(MagicMock()))
+            _run(ex.before_execute(transport))
         self.assertIn("historical", str(ctx.exception).lower())
+        transport.run.assert_not_called()
 
     def test_non_prod_accepts_latest(self):
         ex = self._make_executor("staging", "latest")
         # Should not raise.
-        _run(ex.before_execute(MagicMock()))
+        _run(ex.before_execute(self._transport()))
 
     def test_prod_accepts_historical_timestamp(self):
         ex = self._make_executor("production", "2026-03-19T02:00:00")
         # Should not raise — duplicity will resolve the snapshot.
-        _run(ex.before_execute(MagicMock()))
+        _run(ex.before_execute(self._transport()))

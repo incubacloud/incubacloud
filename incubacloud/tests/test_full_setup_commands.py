@@ -14,10 +14,9 @@ from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.acme_store import AcmeStorePruneMixin
 from odoo.addons.incubacloud.models.full_setup_executor import (
-    _TMP,
     FullSetupExecutor,
 )
-from odoo.addons.incubacloud.models.transport import SSHTransport
+from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
 
 
 class TestFullSetupStartsTheStackConvergently(TransactionCase):
@@ -213,20 +212,25 @@ class TestTheHostRendersItsProxyCompose(TransactionCase):
             'name': 'Full Setup',
         })
         transport = MagicMock(spec=SSHTransport)
+        transport.run.return_value = CommandResult('', 0)
+        executor = FullSetupExecutor(job, self.host)
         with patch.object(
             AcmeStorePruneMixin, '_prepare_acme_prune',
             autospec=True, return_value=None,
         ):
-            asyncio.run(FullSetupExecutor(job, self.host).before_execute(transport))
+            asyncio.run(executor.before_execute(transport))
         uploaded = {}
         for call in transport.upload_text_files.await_args_list:
             uploaded.update(call.args[0])
         # bcrypt salts every hash of the dashboard's password anew.
         salted = re.compile(r'\$\$2y\$\$12\$\$[^\s"]+')
         self.assertEqual(
-            salted.sub('<hash>', uploaded[f'{_TMP}-inverseproxy.yaml']),
+            salted.sub(
+                '<hash>', uploaded[executor._job_path('inverseproxy.yaml')],
+            ),
             salted.sub('<hash>', self.host._shipped_inverseproxy_yaml()),
         )
         self.assertEqual(
-            uploaded[f'{_TMP}-traefik.yml'], self.host._shipped_traefik_yml(),
+            uploaded[executor._job_path('traefik.yml')],
+            self.host._shipped_traefik_yml(),
         )

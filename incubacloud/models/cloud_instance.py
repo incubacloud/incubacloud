@@ -2980,7 +2980,14 @@ class CloudInstance(models.Model):
             parts, address, port = validate_restore_url(clean)
         except OutboundError as exc:
             raise UserError(_("That link cannot be used: %s.", exc)) from exc
-        job_id = self.restore_db({
+        # curl takes the login and the password as one value, split at
+        # its first colon (``_curl_config``).
+        if ":" in username:
+            raise UserError(_(
+                "That link cannot be used: its user name contains a colon, "
+                "which cannot be sent to the server."
+            ))
+        job_id = self._restore_db({
             "mode": "from_url",
             "url": clean,
             "url_display": masked_restore_url(url),
@@ -3003,6 +3010,28 @@ class CloudInstance(models.Model):
     def restore_db(self, payload):
         """Enqueue a restore_instance job with the given payload.
 
+        Every mode of ``_restore_db`` but ``from_url``: a link is asked
+        for through ``restore_from_url``, which checks it and computes
+        the address the host may dial. A link and a pin written straight
+        into this payload were never checked. Refused whatever the
+        context says, since a caller over JSON-RPC writes that too.
+
+        :param dict payload: the restore's payload
+        :return: id of the first job queued
+        :raise UserError: for a restore from a link
+        """
+        self.ensure_one()
+        self.env["cloud.security.mixin"]._check_can_manage_backups()
+        if (payload or {}).get("mode") == "from_url":
+            raise UserError(_(
+                "A restore from a link must be asked for as such, so that "
+                "the link is checked first."
+            ))
+        return self._restore_db(payload)
+
+    def _restore_db(self, payload):
+        """Enqueue a restore_instance job with the given payload.
+
         ``payload['mode']`` selects the source of the backup zip:
 
         * ``browser``  — operator uploaded a zip via /cloud/instance/<id>/restore;
@@ -3014,6 +3043,10 @@ class CloudInstance(models.Model):
                          from the DB.
         * ``rsync``    — the zip is already on the remote host at the path
                          the executor expects (operator uploaded it manually).
+        * ``ssh_upload`` — the zip came through an upload key
+                         (``grant_id``); ``expected_sha256`` is the digest
+                         the operator confirmed, and must still be the
+                         grant's.
 
         ``payload['backup_before_restore']`` requests a safety snapshot
         (backup_create + backup_download) chained before the restore.
@@ -3021,10 +3054,17 @@ class CloudInstance(models.Model):
         same "no opt-out" rule as ``restore_backup``/``move_to_host``.
         On non-production it stays opt-in, default off.
 
-        The method is exposed via JSON-RPC, so we gate it explicitly:
+        * ``from_url`` — the host downloads it; only ``restore_from_url``
+                         asks for it, with the link checked and pinned.
+
+        Its callers are exposed via JSON-RPC, so it gates them too:
         only Developer+ can trigger a restore. The downstream executor
-        also validates the ``local_path`` prefix as a defense-in-depth
-        layer (see RestoreInstanceExecutor.before_execute).
+        also validates the ``local_path`` prefix, and checks a link
+        again, as a defense-in-depth layer (see
+        RestoreInstanceExecutor.before_execute).
+
+        :param dict payload: the restore's payload
+        :return: id of the first job queued
         """
         self.ensure_one()
         self.env["cloud.security.mixin"]._check_can_manage_backups()
@@ -3045,6 +3085,16 @@ class CloudInstance(models.Model):
                 raise UserError(_(
                     "Nothing has been uploaded yet, or the upload has not "
                     "been checked. Check what arrived before restoring it."
+                ))
+            # The digest the dialog showed: another check since then —
+            # anyone holding the key may have sent another file — would
+            # otherwise have this restore take what nobody looked at.
+            if not payload.get("expected_sha256") \
+                    or payload["expected_sha256"] != grant.received_sha256:
+                raise UserError(_(
+                    "What arrived has changed since it was shown to you, or "
+                    "the restore did not say which file it means. Check what "
+                    "arrived again, then restore it."
                 ))
 
         backup_first = self.environment == "production" or bool(

@@ -58,13 +58,14 @@ HOOKS = frozenset({"on_success", "on_failure", "on_abort"})
 #: before ``execute`` clears the environment. ``on_unblocked`` runs in
 #: the transaction of whoever resolved the alert, before the job is
 #: queued again. ``on_cancelled_queued`` runs in the transaction of
-#: whoever cancelled a job that waited in its queue, and
+#: whoever cancelled a job that waited in its queue, ``on_never_run`` in
+#: the one that recorded the end of a job its chain left behind, and
 #: ``_merge_queued_payload`` in the one that queued the request it
-#: absorbs: neither job has run, so there is no job transaction to keep
-#: out of. None may call a ``HOOK_HELPERS`` method, which counts on a
-#: durable cursor.
+#: absorbs: none of those jobs has run, so there is no job transaction
+#: to keep out of. None may call a ``HOOK_HELPERS`` method, which counts
+#: on a durable cursor.
 OWN_TRANSACTION_HOOKS = frozenset({
-    "on_blocked", "on_unblocked", "on_cancelled_queued",
+    "on_blocked", "on_unblocked", "on_cancelled_queued", "on_never_run",
     "_merge_queued_payload",
 })
 

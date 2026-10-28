@@ -18,7 +18,10 @@ SCRIPT = "backup_neutralized.sh"
 JOB_ID = 99
 INSTANCE_DIR = "~/projects/demo-inst"
 NEUTRAL_DB = f"__ic_neutral_{JOB_ID}"
-HOST_TMP = f"/tmp/.incubacloud-bkneu-{JOB_ID}"
+#: The job's own directory, pinned here (it is random in a run).
+JOB_DIR = "/tmp/.incubacloud-job-0123456789abcdef"
+HOST_TMP = f"{JOB_DIR}/bkneu"
+ARCHIVE = f"{JOB_DIR}/neutralized.zip"
 
 
 def _make_executor(environment='production', time='latest',
@@ -42,6 +45,7 @@ def _make_executor(environment='production', time='latest',
 
     ex = object.__new__(BackupDownloadNeutralizedExecutor)
     ex.job = job
+    ex._job_dir_path = JOB_DIR
     ex._inst_dir = lambda i: INSTANCE_DIR
     ex._scripts_requested = False
     ex._script_overlay_cache = None
@@ -173,7 +177,7 @@ class TestNeutralizedProdWithoutFilestore(NeutralizedCase):
         self.assertScriptCall(
             _find(self.cmds, "Create neutralized backup (SQL only)"),
             "redump-sql",
-            [NEUTRAL_DB, HOST_TMP, f"{HOST_TMP}.zip"],
+            [NEUTRAL_DB, HOST_TMP, ARCHIVE],
         )
 
     def test_no_filestore_branch(self):
@@ -193,7 +197,7 @@ class TestNeutralizedProdWithFilestore(NeutralizedCase):
 
     def test_redump_includes_the_filestore(self):
         step = _find(self.cmds, "Create neutralized backup (DB + filestore)")
-        self.assertScriptCall(step, "redump-full", [NEUTRAL_DB, f"{HOST_TMP}.zip"])
+        self.assertScriptCall(step, "redump-full", [NEUTRAL_DB, ARCHIVE])
         self.assertToldTheTool(step)
 
     def test_no_sql_only_branch(self):

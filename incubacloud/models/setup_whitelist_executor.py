@@ -23,11 +23,18 @@ inline as part of a full host setup.
 import re
 
 from .ansible_executor import AnsibleExecutor
+from .cloud_instance_whitelist import _HOSTNAME_RE
 
-_WL_TMP = "/tmp/.incubacloud-whitelist.yaml"
 _WL_DIR = "~/globalwhitelist"
 _WL_PROJECT = "globalwhitelist"
 _WL_FILE = f"{_WL_DIR}/docker-compose.yaml"
+# The build Cloud 1 runs (0.3.2, 27-Oct-2026). By digest: under
+# ``latest`` a host set up later would proxy through whatever was
+# published since. Moving it is a release.
+_WL_IMAGE = (
+    "ghcr.io/tecnativa/docker-whitelist:0.3.2"
+    "@sha256:8a81192124e69f1f7ef13e639e3c7261a4497d5db35e0c2286e6ef8715db70a0"
+)
 
 # Header is a plain string (not f-string) so ${...} shell variables are kept
 # verbatim in the generated YAML.
@@ -57,13 +64,46 @@ def _hostname_to_service(hostname):
 
 
 def build_whitelist_compose(hostnames):
-    """Return docker-compose.yaml content for the given hostnames list."""
+    """Return docker-compose.yaml content for the given hostnames list.
+
+    Each name is written into the file, quoted, as it was checked —
+    trimmed: one that is not a bare hostname
+    (``cloud.host.whitelist._check_hostname``) — an entry stored before
+    that check — is refused rather than written, since a quote or a
+    line break in it would rewrite the file.
+
+    A name already written is skipped (the same name around a space).
+    Two different names that map to one service key (``a.b`` and
+    ``a-b``) would repeat it, and compose refuses the whole file: the
+    later one is written under the key suffixed ``-2``, ``-3``…, so each
+    allowed name keeps its alias.
+
+    :param hostnames: the host's whitelist entries
+    :raise ValueError: naming the first entry that is not a hostname
+    """
     content = _WL_HEADER
-    for hostname in hostnames:
-        svc = _hostname_to_service(hostname)
+    names = set()
+    keys = set()
+    for entry in hostnames:
+        hostname = (entry or "").strip()
+        if not _HOSTNAME_RE.fullmatch(hostname):
+            raise ValueError(
+                f"The host's whitelist holds {entry!r}, which is not a "
+                "hostname: correct or remove it, then set the whitelist "
+                "up again."
+            )
+        if hostname in names:
+            continue
+        names.add(hostname)
+        base = _hostname_to_service(hostname)
+        svc, n = base, 1
+        while svc in keys:
+            n += 1
+            svc = f"{base}-{n}"
+        keys.add(svc)
         content += (
             f'  "{svc}":\n'
-            f"    image: ghcr.io/tecnativa/docker-whitelist\n"
+            f"    image: {_WL_IMAGE}\n"
             f"    restart: unless-stopped\n"
             f"    networks:\n"
             f"      public:\n"

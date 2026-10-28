@@ -180,9 +180,9 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             (
                 "Install incubacloud_connect",
                 f"mkdir -p {src}/private"
-                f" && cp -r /tmp/.ic-modules-{name}/incubacloud_connect"
+                f" && cp -r {self._modules_stage_dir()}/incubacloud_connect"
                 f" {src}/private/"
-                f" && rm -rf /tmp/.ic-modules-{name}",
+                f" && rm -rf {self._modules_stage_dir()}",
             ),
             # 7. Write Odoo conf, pip.txt, apt.txt.
             (

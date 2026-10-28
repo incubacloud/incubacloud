@@ -1,8 +1,11 @@
 import asyncio
 import contextlib
 import errno
+import hashlib
+import hmac
 import logging
 import re
+import secrets
 import shlex
 import socket
 from abc import ABC, abstractmethod
@@ -174,11 +177,16 @@ def _looks_like_error(line):
 MAX_LOG_LINE_LEN = 8192
 MAX_CHUNKS_PER_JOB = 20_000
 
-# Remote directory (suffixed with the job id) where an executor uploads
-# the versioned scripts it runs. Recreated from scratch for every job
-# and removed once the command loop ends, so nothing lingers on the host
-# between runs and two concurrent jobs never share a payload.
-SCRIPT_REMOTE_ROOT = "/tmp/.incubacloud-scripts"
+# Prefix of the private working directory a job stages its files in on
+# its host: the scripts it runs, the files its steps move into place,
+# the modules it installs, the archive it restores. The rest of the name
+# is random (``AbstractExecutor._job_dir``), the directory is created
+# 0700 and only if nothing is at that path, and the job removes it when
+# it ends. Another account on the host can neither guess the name in
+# advance, nor create the directory first, nor read or replace what is
+# inside — on a host its owner shares with other accounts, a predictable
+# path in /tmp was all three.
+JOB_DIR_PREFIX = "/tmp/.incubacloud-job-"
 
 # How long a durable write waits for a row lock before giving up. The one
 # holder that keeps a lock that long is the job's own transaction, and
@@ -192,19 +200,112 @@ def _redact_tokens(text):
     return _TOKEN_RE.sub(r'https://\1', text)
 
 
-def handoff_archive_path(job_id):
-    """Return the on-host path where a ``backup_download`` job with
-    ``handoff='host'`` leaves its ZIP for the next job in the chain.
+#: Prefix of the directory a ``backup_download`` with ``handoff='host'``
+#: hands its archive over in (:func:`handoff_dir`).
+HANDOFF_PREFIX = "/tmp/.incubacloud-handoff-"
 
-    Keyed by the *producing* job's id so the consumer (``restore_instance``
-    mode ``from_host``) can recompute it from ``source_job_id`` alone, and
-    so two chains touching the same instance name can never collide.
-    Defined at module level because both executors must agree on it.
+#: Remove this account's handoffs older than a day: the archive of a
+#: chain whose restore never came for it (a production database). Run
+#: when a handoff starts and when a restore from one starts, on the
+#: job's host, and by the day's prune, best effort, sparing what a
+#: restore still waits for (:func:`handoff_sweep`). Only directories,
+#: only this account's.
+HANDOFF_SWEEP = (
+    f"find /tmp -maxdepth 1 -type d -name '{HANDOFF_PREFIX[5:]}*'"
+    ' -user "$(id -u)" -mmin +1440 -exec rm -rf {} +'
+)
 
+
+def handoff_dir(env, job_id):
+    """Return the directory a handoff of job *job_id* is handed over in.
+
+    Named with the panel's ``database.secret``: the consumer
+    (``restore_instance`` mode ``from_host``) recomputes it from
+    ``source_job_id`` alone, as before, while no account on the host can
+    tell it in advance and create it first. The producer creates it 0700
+    when it hands the archive over (``backup_download.sh handover``);
+    the restore removes it, or a cancelled chain, or the sweep a day
+    later. Module level because both executors must agree on it.
+
+    :param env: an environment to read the secret with
+    :param int job_id: id of the ``cloud.job`` that produced the archive
+    :return: absolute path on the producing job's host
+    :raise RuntimeError: when the database has no secret to name it with
+    """
+    secret = env["ir.config_parameter"].sudo().get_param("database.secret")
+    if not secret:
+        raise RuntimeError("database.secret is not set: cannot name a handoff.")
+    digest = hmac.new(
+        secret.encode(), f"handoff:{int(job_id)}".encode(), hashlib.sha256,
+    ).hexdigest()
+    return f"{HANDOFF_PREFIX}{digest[:16]}"
+
+
+def handoff_archive_path(env, job_id):
+    """Return the archive a handoff of job *job_id* leaves for the restore.
+
+    :param env: an environment to read the secret with
     :param int job_id: id of the ``cloud.job`` that produced the archive
     :return: absolute path on the producing job's host
     """
-    return f"/tmp/.incubacloud-handoff-{int(job_id)}.zip"
+    return f"{handoff_dir(env, job_id)}/archive.zip"
+
+
+def same_chain(job, source):
+    """Whether *source* is a step of the chain *job* belongs to.
+
+    A retry is in no chain: the job it retries, followed back to the
+    first, is the one that was. Read as the superuser: what decides is
+    the chain, not what the caller may read.
+
+    :param job: a ``cloud.job``
+    :param source: a ``cloud.job``
+    :rtype: bool
+    """
+    job = job.sudo()
+    seen = set()
+    while job.retry_of_id and job.id not in seen:
+        seen.add(job.id)
+        job = job.retry_of_id
+    key = job.queue_chain_key
+    return bool(key) and source.sudo().queue_chain_key == key
+
+
+def handoff_sweep(env, host, root="/tmp"):
+    """Return :data:`HANDOFF_SWEEP` for *host*, sparing awaited handoffs.
+
+    A handoff a day old is a chain whose restore never came — unless the
+    restore is still waiting its turn behind a step, a busy queue or a
+    retry: that one stays (28-oct-2026: the sweep took it). Only a
+    restore of the download's own chain counts (:func:`same_chain`), so
+    a restore queued by hand cannot keep another chain's archive on the
+    host for good.
+
+    :param env: an environment to read the jobs with
+    :param host: the ``cloud.host`` the sweep runs on
+    :param str root: the directory swept, ``/tmp`` but in tests
+    :rtype: str
+    """
+    Job = env["cloud.job"].sudo()
+    spared = set()
+    for restore in Job.search([
+        ("job_type_id.code", "=", "restore_instance"),
+        ("state", "in", Job._active_states),
+    ]):
+        payload = restore.payload or {}
+        source_id = str(payload.get("source_job_id") or "")
+        if payload.get("mode") != "from_host" or not source_id.isdigit():
+            continue
+        source = Job.browse(int(source_id)).exists()
+        if source and source.host_id.id == host.id \
+                and same_chain(restore, source):
+            spared.add(handoff_dir(env, source.id).rsplit("/", 1)[1])
+    names = "".join(f" ! -name {shlex.quote(name)}" for name in sorted(spared))
+    return (
+        f"find {shlex.quote(root)} -maxdepth 1 -type d"
+        f" -name '{HANDOFF_PREFIX[5:]}*'{names}"
+        ' -user "$(id -u)" -mmin +1440 -exec rm -rf {} +'
+    )
 
 
 def sql_escape_literal(s):
@@ -515,22 +616,19 @@ class AbstractExecutor(ABC):
                     commands = list(self.get_commands())
                     await self._upload_scripts(transport)
 
-                    try:
-                        results, skipped = await self._run_steps(
-                            transport, commands,
-                        )
-                        # Inside the try so ``after_commands`` can still
-                        # run a script, and in a finally so a failed job
-                        # cleans up after itself too.
-                        await self._dispatch_outcome(
-                            results, transport, skipped=skipped,
-                        )
-                    finally:
-                        await self._cleanup_scripts(transport)
+                    results, skipped = await self._run_steps(
+                        transport, commands,
+                    )
+                    # Before the cleanup below, so ``after_commands`` can
+                    # still run a script.
+                    await self._dispatch_outcome(
+                        results, transport, skipped=skipped,
+                    )
                 finally:
-                    # Outermost, so a secret staged by ``before_execute``
-                    # is gone even when that hook is what failed.
-                    await self._discard_private_uploads(transport)
+                    # Outermost, so what ``before_execute`` staged — a
+                    # secret, the scripts — is gone even when that hook
+                    # is what failed.
+                    await self._discard_staging(transport)
 
             logger.debug("[_async_entry] Finishing _async_entry")
         except Exception as e:
@@ -1253,7 +1351,120 @@ class AbstractExecutor(ABC):
 
     def _script_root(self):
         """Return the remote directory this job uploads its scripts to."""
-        return f"{SCRIPT_REMOTE_ROOT}-{self.job.id}"
+        return self._job_path("scripts")
+
+    #: This job's working directory on its host, once named (class
+    #: defaults, so an executor built without ``__init__`` has them).
+    _job_dir_path = None
+    _job_dir_created = False
+
+    def _job_dir(self):
+        """Return this job's private working directory on its host.
+
+        Named once per executor, from a random token: every attempt of a
+        job has its own, and nothing outside this process knows the name
+        before the directory exists. Known before the job connects, so
+        ``get_commands()`` can name what is in it at any time.
+
+        :rtype: str
+        """
+        if self._job_dir_path is None:
+            self._job_dir_path = JOB_DIR_PREFIX + secrets.token_hex(8)
+        return self._job_dir_path
+
+    def _job_path(self, name):
+        """Return the path of *name* in this job's working directory.
+
+        :param str name: a file or directory name, relative
+        :rtype: str
+        """
+        return f"{self._job_dir()}/{name}"
+
+    async def _ensure_job_dir(self, transport):
+        """Create this job's working directory on its host, once.
+
+        ``mkdir -m 700`` without ``-p``: it fails when anything at all is
+        at the path — a directory, a file or a link another account put
+        there — and otherwise creates it this account's, unreadable by
+        anyone else. Everything a job uploads goes in it.
+
+        :param transport: the job's open transport
+        :raise RuntimeError: when it could not be created
+        """
+        if self._job_dir_created:
+            return
+        directory = self._job_dir()
+        result = await transport.run(f"mkdir -m 700 {shlex.quote(directory)}")
+        if result.exit_status != 0:
+            raise RuntimeError(
+                f"Could not create this job's working directory {directory} "
+                f"on the host (exit {result.exit_status}): something is "
+                "already at that path, or /tmp cannot be written."
+            )
+        self._job_dir_created = True
+
+    _drop_dir_created = False
+
+    def _drop_dir(self):
+        """Return where a container this job runs writes what it produces.
+
+        :rtype: str
+        """
+        return self._job_path("out")
+
+    async def _ensure_drop_dir(self, transport):
+        """Create :meth:`_drop_dir` on the host, once.
+
+        A container writes as whatever user its image runs as (``odoo``,
+        ``root``), so the directory is writable by everyone — and
+        reachable by nobody but this account: it is inside the job's own
+        0700 directory. Mounted alone into the container, it is all of
+        the host's ``/tmp`` the container sees.
+
+        :param transport: the job's open transport
+        :raise RuntimeError: when it could not be created
+        """
+        await self._ensure_job_dir(transport)
+        if self._drop_dir_created:
+            return
+        drop = self._drop_dir()
+        result = await transport.run(f"mkdir -m 777 {shlex.quote(drop)}")
+        if result.exit_status != 0:
+            raise RuntimeError(
+                f"Could not create {drop} on the host "
+                f"(exit {result.exit_status})."
+            )
+        self._drop_dir_created = True
+
+    async def _check_regular_file(self, transport, path):
+        """Refuse to download *path* unless it is a regular file.
+
+        What a container left in the drop directory is downloaded by this
+        account, and the download follows a link to wherever it points: a
+        dump replaced by a link to this account's key would be shipped to
+        the panel. The container has exited by then, and nobody else can
+        reach the directory, so the answer holds until the download.
+
+        :param transport: the job's open transport
+        :param str path: the file about to be downloaded
+        :raise RuntimeError: when it is a link, or not a file at all
+        """
+        quoted = shlex.quote(path)
+        result = await transport.run(f"test -f {quoted} && ! test -L {quoted}")
+        if result.exit_status != 0:
+            raise RuntimeError(
+                f"{path} is not a regular file on the host: not downloaded."
+            )
+
+    async def _upload_files(self, transport, files):
+        """Upload files without a secret into this job's directory.
+
+        :param transport: the job's open transport
+        :param dict files: ``{remote_path: text_content}``, every path in
+            :meth:`_job_dir`
+        """
+        await self._ensure_job_dir(transport)
+        await transport.upload_text_files(files)
 
     @classmethod
     def _addon_chain(cls):
@@ -1345,10 +1556,10 @@ class AbstractExecutor(ABC):
         """Upload the queued ``scripts/`` overlay to this job's remote dir.
 
         No-op unless ``run_script()`` was called, and no-op again once
-        the upload has happened. The directory is wiped first so a
-        leftover from an interrupted run can never shadow the scripts of
-        this one, and created 0700 so the payload is unreadable by other
-        accounts on the host.
+        the upload has happened. The scripts go in the job's own
+        directory (:meth:`_job_dir`), created 0700 for this run: nothing
+        an earlier run or another account left can shadow them, and
+        nobody else can read or replace them.
 
         ``_async_entry`` calls this between ``get_commands()`` and the
         command loop. An executor that runs a script from
@@ -1366,7 +1577,8 @@ class AbstractExecutor(ABC):
             files[remote] = Path(local).read_text(encoding="utf-8")
             dirs.add(remote.rsplit("/", 1)[0])
         mkdir = " ".join(sorted(dirs))
-        result = await transport.run(f"rm -rf {root} && mkdir -p -m 700 {mkdir}")
+        await self._ensure_job_dir(transport)
+        result = await transport.run(f"mkdir -p -m 700 {mkdir}")
         if result.exit_status != 0:
             raise RuntimeError(
                 f"Could not create the remote script directory {root} "
@@ -1385,40 +1597,38 @@ class AbstractExecutor(ABC):
         """Stage secret files on the host, readable by their owner only.
 
         Created ``0600`` from the first byte, unlike
-        ``upload_text_files``'s default, and remembered: whatever a step
-        has not moved into place by the end of the job is removed by
-        :meth:`_discard_private_uploads`, so a failed job leaves no key
-        lying in ``/tmp``.
+        ``upload_text_files``'s default — a copy an earlier run left at
+        the path is replaced, not written into — and remembered: whatever
+        a step has not moved into place by the end of the job is removed
+        by :meth:`_discard_staging`, so a failed job leaves no key lying
+        in ``/tmp``. The paths are in the job's directory, which is
+        created first.
 
         :param transport: the job's open transport
         :param dict files: ``{remote_path: text_content}``
         """
-        await transport.upload_text_files(files, mode=0o600)
+        await self._ensure_job_dir(transport)
+        # Listed first: an upload that fails half-way has created the
+        # files before the one that failed, and those must go too.
         self._private_uploads = (*self._private_uploads, *files)
+        await transport.upload_text_files(files, mode=0o600)
 
-    async def _discard_private_uploads(self, transport):
-        """Remove what :meth:`_upload_private_files` staged (best effort).
+    async def _discard_staging(self, transport):
+        """Remove the job's directory and the secrets it staged (best effort).
 
-        A path a step already moved is simply not there any more. Errors
-        are suppressed for the reason :meth:`_cleanup_scripts` gives.
+        Runs in the outermost ``finally`` of the run, so a failed job
+        cleans up too. A path a step already moved is simply not there
+        any more. Suppresses its own errors: the connection may already
+        be gone, and a cleanup failure must never mask the real error
+        that is on its way up.
         """
-        if not self._private_uploads:
+        paths = list(self._private_uploads)
+        if self._job_dir_created:
+            paths.append(self._job_dir())
+        if not paths:
             return
         with contextlib.suppress(Exception):
-            await transport.run(f"rm -f {shlex.join(self._private_uploads)}")
-
-    async def _cleanup_scripts(self, transport):
-        """Remove this job's remote script directory (best effort).
-
-        Runs in the ``finally`` of the command loop, so a failed job
-        cleans up too. Suppresses its own errors: the connection may
-        already be gone, and a cleanup failure must never mask the real
-        error that is on its way up.
-        """
-        if not self._scripts_requested:
-            return
-        with contextlib.suppress(Exception):
-            await transport.run(f"rm -rf {self._script_root()}")
+            await transport.run(f"rm -rf {shlex.join(paths)}")
 
     # ===============================
     # ABSTRACT METHODS
@@ -1560,6 +1770,20 @@ class AbstractExecutor(ABC):
         request, a delete's enqueue, the dispatcher that found the
         instance gone. Writes with ``self.env``; the cancellation stands
         if it raises.
+        """
+
+    def on_never_run(self):
+        """Called when the job left its queue but will never run.
+
+        A step of a chain that a step before it ended, failed or
+        cancelled (``queue.job._end_chain_after``), or a dispatched job
+        cancelled before it started. Unlike ``on_cancelled_queued``, what
+        was written when the job was asked for stays: after a partial
+        run, recovering from it reads that (a move's markers). An
+        override only lets go of what the steps that did run left on a
+        host for this one — and never reaches a host itself: it runs in
+        the transaction that records the end, so it queues a job that
+        does. The end stands if it raises.
         """
 
     @classmethod

@@ -1,6 +1,6 @@
 """
 Tier 1 — Pure-Python unit tests for AbstractExecutor's versioned-script
-helpers (``run_script`` / ``_upload_scripts`` / ``_cleanup_scripts``).
+helpers (``run_script`` / ``_upload_scripts`` / ``_discard_staging``).
 
 These helpers are the seam the whole Phase 3 migration hangs on: every
 executor that stops interpolating bash into an f-string calls
@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 from odoo.tests.common import BaseCase
 
 from odoo.addons.incubacloud.models.abstract_executor import (
-    SCRIPT_REMOTE_ROOT,
+    JOB_DIR_PREFIX,
     AbstractExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
@@ -100,11 +100,14 @@ class TestRunScript(BaseCase):
 
     def setUp(self):
         self.executor = _make_executor(job_id=7)
-        self.root = f"{SCRIPT_REMOTE_ROOT}-7"
+        self.root = self.executor._script_root()
 
-    def test_root_is_scoped_to_the_job(self):
-        self.assertEqual(self.executor._script_root(), self.root)
-        self.assertEqual(_make_executor(job_id=8)._script_root(), f"{SCRIPT_REMOTE_ROOT}-8")
+    def test_root_is_in_the_job_s_own_directory(self):
+        """Not a name another account could guess: the job's directory,
+        random and the job's own, and another job's is another."""
+        self.assertEqual(self.root, f"{self.executor._job_dir()}/scripts")
+        self.assertTrue(self.root.startswith(JOB_DIR_PREFIX))
+        self.assertNotEqual(_make_executor(job_id=7)._script_root(), self.root)
 
     def test_returns_a_bash_command_for_the_remote_copy(self):
         self.assertEqual(
@@ -145,7 +148,7 @@ class TestScriptUpload(BaseCase):
 
     def setUp(self):
         self.executor = _make_executor(job_id=7)
-        self.root = f"{SCRIPT_REMOTE_ROOT}-7"
+        self.root = self.executor._script_root()
         self.transport = _make_transport()
 
     def test_does_nothing_when_no_script_was_requested(self):
@@ -153,14 +156,13 @@ class TestScriptUpload(BaseCase):
         self.transport.run.assert_not_called()
         self.transport.upload_text_files.assert_not_called()
 
-    def test_recreates_the_remote_directory_with_0700(self):
+    def test_creates_the_remote_directory_with_0700(self):
+        """In the job's directory, created first: a fresh one, 0700."""
         self.executor.run_script(SHARED_LIB)
         asyncio.run(self.executor._upload_scripts(self.transport))
-        command = self.transport.run.call_args.args[0]
-        self.assertTrue(
-            command.startswith(f"rm -rf {self.root} && mkdir -p -m 700 "),
-            command,
-        )
+        first, command = (c.args[0] for c in self.transport.run.call_args_list)
+        self.assertEqual(first, f"mkdir -m 700 {self.executor._job_dir()}")
+        self.assertTrue(command.startswith("mkdir -p -m 700 "), command)
         # Every directory the overlay needs is created up front, so an
         # SFTP write never lands in a missing folder.
         self.assertIn(f"{self.root}/lib", command)
@@ -192,23 +194,29 @@ class TestScriptCleanup(BaseCase):
 
     def setUp(self):
         self.executor = _make_executor(job_id=7)
-        self.root = f"{SCRIPT_REMOTE_ROOT}-7"
         self.transport = _make_transport()
 
-    def test_does_nothing_when_no_script_was_requested(self):
-        asyncio.run(self.executor._cleanup_scripts(self.transport))
+    def test_does_nothing_when_nothing_was_uploaded(self):
+        self.executor.run_script(SHARED_LIB)
+        asyncio.run(self.executor._discard_staging(self.transport))
         self.transport.run.assert_not_called()
 
     def test_removes_the_job_directory(self):
+        """The scripts go with the job's directory, as one."""
         self.executor.run_script(SHARED_LIB)
-        asyncio.run(self.executor._cleanup_scripts(self.transport))
-        self.transport.run.assert_called_once_with(f"rm -rf {self.root}")
+        asyncio.run(self.executor._upload_scripts(self.transport))
+        self.transport.run.reset_mock()
+        asyncio.run(self.executor._discard_staging(self.transport))
+        self.transport.run.assert_called_once_with(
+            f"rm -rf {self.executor._job_dir()}",
+        )
 
     def test_never_masks_the_error_it_runs_after(self):
         """Cleanup lives in a ``finally``: it must swallow its own errors."""
         self.executor.run_script(SHARED_LIB)
+        asyncio.run(self.executor._upload_scripts(self.transport))
         self.transport.run.side_effect = OSError("connection lost")
-        asyncio.run(self.executor._cleanup_scripts(self.transport))
+        asyncio.run(self.executor._discard_staging(self.transport))
 
 
 class TestScriptEnvironment(BaseCase):
@@ -216,7 +224,7 @@ class TestScriptEnvironment(BaseCase):
 
     def setUp(self):
         self.executor = _make_executor(job_id=7)
-        self.root = f"{SCRIPT_REMOTE_ROOT}-7"
+        self.root = self.executor._script_root()
 
     def test_the_environment_precedes_the_command(self):
         command = self.executor.run_script(

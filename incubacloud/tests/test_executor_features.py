@@ -378,13 +378,14 @@ class TestIncubaclouEnvInjection(BaseCase):
     def test_deploy_writes_the_panels_key_between_copier_and_ensure(self):
         """Copier creates ``.docker/``; ``ensure-secret-key`` must then
         find the panel's key there and keep it, never generate one."""
-        cmds = _make_deploy_executor().get_commands()
+        executor = _make_deploy_executor()
+        cmds = executor.get_commands()
         labels = self._labels(cmds)
         write = labels.index("Write incubacloud.env")
         self.assertGreater(write, labels.index("Deploy with copier"))
         self.assertLess(write, labels.index("Ensure incubacloud.env"))
         cmd = _find_cmd(cmds, "Write incubacloud.env")[1]
-        self.assertIn("/tmp/.incubacloud-test_proj-incubacloud.env", cmd)
+        self.assertIn(f"{executor._job_dir()}/incubacloud.env", cmd)
         self.assertIn("~/projects/test-inst/.docker/incubacloud.env", cmd)
         self.assertIn("chmod 600 ~/projects/test-inst/.docker/incubacloud.env", cmd)
 

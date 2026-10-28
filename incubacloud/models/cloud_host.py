@@ -1365,7 +1365,14 @@ class CloudHost(models.Model):
 
         async def _run():
             async with self.get_transport() as transport:
-                await transport.run(f"mkdir -p -m 700 {root}/lib")
+                # Without ``-p``: a path another account created first
+                # fails the change instead of receiving the scripts.
+                made = await transport.run(f"mkdir -m 700 {root} {root}/lib")
+                if made.exit_status != 0:
+                    raise RuntimeError(
+                        f"could not create {root}: something is already at "
+                        "that path, or /tmp cannot be written"
+                    )
                 await transport.upload_text_files(
                     {f"{root}/{rel}": text for rel, text in files.items()},
                 )

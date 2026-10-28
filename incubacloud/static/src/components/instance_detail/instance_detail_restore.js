@@ -1,6 +1,7 @@
 /** @odoo-module **/
 
 import {_t} from "@web/core/l10n/translation";
+import {rpc} from "@web/core/network/rpc";
 import {announceJob} from "../../utils/job_queue";
 
 /**
@@ -36,6 +37,9 @@ export const RestoreUploadMixin = (Base) =>
         privateKey: "",
         keyQueued: false,
         received: null,
+        // The check of what arrived is a job, which may wait in the
+        // queue: until it ends there is nothing to show or to restore.
+        checking: false,
         url: "",
         // Non-production only: production always takes a safety
         // backup first, no opt-out, so the checkbox is hidden there.
@@ -108,31 +112,82 @@ export const RestoreUploadMixin = (Base) =>
      * Name, size and digest are computed on the host. Confirming them
      * is what makes a file somebody else could have placed there
      * useless: it would not be the one being restored.
+     *
+     * The check is a job that only queues here: the grant is read once
+     * it has ended, not before (it still held the previous check's
+     * answer, and the dialog showed a file that was no longer there).
+     * Until then the last answer is forgotten, so nothing can be
+     * restored on it.
      */
     async checkUpload() {
       const d = this.state.restoreDialog;
-      if (!d?.grant) return;
+      if (!d?.grant || d.checking) return;
       d.error = null;
+      d.received = null;
+      d.checking = true;
       try {
         const jobId = await this.orm.call(
           "cloud.instance", "verify_restore_upload",
           [[this.props.instance_id], d.grant.grant_id]
         );
-        if (jobId) await announceJob(this.env.toast, jobId);
+        if (jobId) {
+          await announceJob(this.env.toast, jobId);
+          const ended = await this._untilJobEnds(jobId, d);
+          if (!ended) return;
+        }
         const [grant] = await this.orm.call(
           "cloud.restore.upload.grant", "read",
           [[d.grant.grant_id], ["received_filename", "received_bytes", "received_sha256"]]
         );
-        if (grant?.received_filename) {
-          d.received = {
-            filename: grant.received_filename,
-            bytes: grant.received_bytes,
-            sha256: grant.received_sha256,
-          };
-        }
+        // A check that found nothing usable forgets the last one: the
+        // dialog must not keep showing it.
+        d.received = grant?.received_filename
+          ? {
+              filename: grant.received_filename,
+              bytes: grant.received_bytes,
+              sha256: grant.received_sha256,
+            }
+          : null;
       } catch (e) {
         d.error = e.data?.message || e.message || _t("Could not check the upload.");
+      } finally {
+        d.checking = false;
       }
+    }
+
+    /**
+     * Wait until a job has ended, polling its state as the rest of the
+     * panel does while it waits for a job (``useSafePoll``).
+     *
+     * @param {number} jobId the job to wait for
+     * @param {object} dialog the dialog that asked: closing it, or
+     *     leaving the page, stops the wait
+     * @returns {Promise<boolean>} true once the job is done, failed or
+     *     cancelled; false if the wait was abandoned, or the job cannot
+     *     be read
+     */
+    _untilJobEnds(jobId, dialog) {
+      return new Promise((resolve) => {
+        const poll = async () => {
+          if (!this._safePoll.alive || this.state.restoreDialog !== dialog) {
+            return resolve(false);
+          }
+          try {
+            const data = await rpc("/cloud/get_job_state", {job_id: jobId});
+            if (!this._safePoll.alive || this.state.restoreDialog !== dialog) {
+              return resolve(false);
+            }
+            if (!data || data.ok === false) return resolve(false);
+            if (["done", "failed", "cancelled"].includes(data.state)) {
+              return resolve(true);
+            }
+          } catch (_e) {
+            // A dropped connection is retried on the next tick.
+          }
+          this._safePoll.schedule(poll, 1500);
+        };
+        poll();
+      });
     }
 
     /**
@@ -141,6 +196,12 @@ export const RestoreUploadMixin = (Base) =>
      * ``umask 077`` before the key file is written is not decoration:
      * ssh refuses a private key other users could read, and a file
      * created without it is exactly that.
+     *
+     * The destination is ``restore.zip``, relative: the key's ``rrsync``
+     * takes every path inside the grant's directory, an absolute one too
+     * (which then named a directory that does not exist), and a restore
+     * only takes a file whose name is one safe component — the local
+     * file's own name may have spaces.
      *
      * @returns {string} a command the operator can paste as-is.
      */
@@ -152,7 +213,7 @@ export const RestoreUploadMixin = (Base) =>
       return [
         `umask 077 && printf '%s' '${d.privateKey}' > ic-upload-key`,
         `rsync -P --inplace -e "ssh${portFlag} -i ic-upload-key" \\`,
-        `  <your-backup.zip> ${g.user}@${g.host}:${g.directory}/`,
+        `  <your-backup.zip> ${g.user}@${g.host}:restore.zip`,
         `rm -f ic-upload-key`,
       ].join("\n");
     }
@@ -270,6 +331,8 @@ export const RestoreUploadMixin = (Base) =>
               mode: "ssh_upload",
               grant_id: d.grant.grant_id,
               backup_before_restore: d.backupBeforeRestore,
+              // The file the operator saw: the server restores no other.
+              expected_sha256: d.received.sha256,
             },
           ]);
           if (jobId) await announceJob(this.env.toast, jobId);

@@ -99,9 +99,6 @@ _IC_CONNECT_MODULE = os.path.realpath(
     )
 )
 
-# Prefix for all temp files uploaded to the remote host
-_TMP_PREFIX = "/tmp/.incubacloud"
-
 # Kill switch for the pre-build requirements re-sync. Absent ⇒ enabled:
 # keeping dependencies in step with the code a rebuild ships is the
 # desired steady state, and an operator who wants the old frozen
@@ -236,8 +233,33 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         return self.job.instance_id
 
     def _tmp(self, suffix):
-        """Return a /tmp path namespaced by instance name."""
-        return f"{_TMP_PREFIX}-{self._inst().doodba_project_name}-{suffix}"
+        """Return where *suffix* is staged: in the job's own directory.
+
+        :param str suffix: the staged file's name
+        :rtype: str
+        """
+        return self._job_path(suffix)
+
+    def _modules_stage_dir(self):
+        """Return where the modules this job installs are staged.
+
+        :rtype: str
+        """
+        return self._job_path("modules")
+
+    async def _make_modules_stage_dir(self, transport):
+        """Create :meth:`_modules_stage_dir` on the host (idempotent).
+
+        :param transport: the job's open transport
+        :raise RuntimeError: when it could not be created
+        """
+        await self._ensure_job_dir(transport)
+        stage = self._modules_stage_dir()
+        result = await transport.run(f"mkdir -p -m 700 {stage}")
+        if result.exit_status != 0:
+            raise RuntimeError(
+                f"Failed to prepare staging directory {stage}: {result.stdout}"
+            )
 
     def _backup_enabled(self):
         """Whether the backup container should be provisioned for this deploy.
@@ -1091,32 +1113,33 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             default_flow_style=False,
             allow_unicode=True,
         )
-        files = {
+        # The answers hold the database, admin and SMTP passwords,
+        # repos.yaml the repositories' tokens in its URLs, and backup.env
+        # the bucket's keys: owner-only, and removed when the job ends
+        # whether or not a step got to move them.
+        private = {
             self._tmp("answers.yml"): answers_yml,
-            self._tmp("addons.yaml"): await self._addons_yaml_content(),
             self._tmp("repos.yaml"): self._repos_yaml_content(),
+        }
+        files = {
+            self._tmp("addons.yaml"): await self._addons_yaml_content(),
             self._tmp("odoo.conf"): self._conf_content(),
             self._tmp("pip.txt"): inst.pip_dependencies or "",
             self._tmp("apt.txt"): inst.apt_dependencies or "",
         }
         backup_env = self._backup_env_content()
         if backup_env is not None:
-            files[self._tmp("backup.env")] = backup_env
+            private[self._tmp("backup.env")] = backup_env
         resource_override = self._resource_override_content()
         if resource_override is not None:
             files[self._tmp("override.yml")] = resource_override
 
-        await transport.upload_text_files(files)
+        await self._upload_private_files(transport, private)
+        await self._upload_files(transport, files)
 
-        # Stage incubacloud_connect in /tmp; get_commands moves it after copier.
-        tmp_ic_parent = f"/tmp/.ic-modules-{inst.doodba_project_name}"
-        # Clean up leftovers from previous failed attempts, then recreate.
-        result = await transport.run(
-            f"rm -rf {tmp_ic_parent} && mkdir -p {tmp_ic_parent}",
-        )
-        if result.exit_status != 0:
-            raise RuntimeError(f"Failed to prepare staging directory: {result.stdout}")
-        await transport.upload_dir(_IC_CONNECT_MODULE, tmp_ic_parent)
+        # Stage incubacloud_connect; get_commands moves it after copier.
+        await self._make_modules_stage_dir(transport)
+        await transport.upload_dir(_IC_CONNECT_MODULE, self._modules_stage_dir())
 
         self._sys("✓ Configuration files uploaded.")
 
@@ -1486,9 +1509,9 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
             (
                 "Install incubacloud_connect",
                 f"mkdir -p {src}/private"
-                f" && cp -r /tmp/.ic-modules-{name}/incubacloud_connect"
+                f" && cp -r {self._modules_stage_dir()}/incubacloud_connect"
                 f" {src}/private/"
-                f" && rm -rf /tmp/.ic-modules-{name}",
+                f" && rm -rf {self._modules_stage_dir()}",
             ),
             # 6. Create conf.d (copier may not) and drop the conf file
             (

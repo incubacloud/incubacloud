@@ -86,6 +86,18 @@ teardown() {
     [[ "$(cat "$CALLS")" == *" live-dump click-odoo-backupdb --no-filestore prod /host-tmp/out.zip"* ]]
 }
 
+@test "a live dump mounts only the archive's own directory" {
+    # The job's drop directory, not the host's /tmp: the container saw
+    # every other job's staging there, and wrote the dump where any
+    # account could read it.
+    drop="$TMP/job/out"
+    run bash "$SCRIPT" live-dump "$DIR" prod "$drop/backup.zip" all
+    [ "$status" -eq 0 ]
+    [[ "$(cat "$CALLS")" == *" -v $drop:/host-tmp odoo "* ]]
+    [[ "$(cat "$CALLS")" != *"-v /tmp:/host-tmp"* ]]
+    [[ "$(cat "$CALLS")" == *" /host-tmp/backup.zip"* ]]
+}
+
 @test "a live dump uses the series' tool the panel names" {
     IC_DB_TOOL=odoo-db run bash "$SCRIPT" live-dump "$DIR" prod /tmp/out.zip all
     [ "$status" -eq 0 ]
@@ -310,4 +322,69 @@ teardown() {
     run bash "$SCRIPT" explode "$DIR" prod
     [ "$status" -eq 1 ]
     [[ "$output" == *"unknown operation"* ]]
+}
+
+# ── handover: the archive a chained restore picks up ─────────────────
+
+@test "a handover moves the archive into a new directory of its own, 0700" {
+    mkdir -p "$TMP/job/out"
+    printf 'PK' > "$TMP/job/out/backup.zip"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-x"
+    [ "$status" -eq 0 ]
+    [ "$(stat -c %a "$TMP/handoff-x")" = 700 ]
+    [ "$(cat "$TMP/handoff-x/archive.zip")" = PK ]
+    [ ! -e "$TMP/job/out/backup.zip" ]
+}
+
+@test "a handover refuses a link where the archive should be" {
+    mkdir -p "$TMP/job/out"
+    printf 'key' > "$TMP/secret"
+    ln -s "$TMP/secret" "$TMP/job/out/backup.zip"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-x"
+    [ "$status" -ne 0 ]
+    [ ! -e "$TMP/handoff-x" ]
+}
+
+@test "a handover refuses a path something else holds" {
+    mkdir -p "$TMP/job/out"
+    printf 'PK' > "$TMP/job/out/backup.zip"
+    ln -s "$TMP" "$TMP/handoff-x"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-x"
+    [ "$status" -ne 0 ]
+    [ -L "$TMP/handoff-x" ]
+    [ -e "$TMP/job/out/backup.zip" ]
+    rm -f "$TMP/handoff-x"
+    printf 'other' > "$TMP/handoff-x"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-x"
+    [ "$status" -ne 0 ]
+    [ "$(cat "$TMP/handoff-x")" = other ]
+}
+
+@test "a handover replaces what an earlier attempt of the job left" {
+    mkdir -p "$TMP/job/out" "$TMP/handoff-x"
+    printf 'old' > "$TMP/handoff-x/archive.zip"
+    printf 'PK' > "$TMP/job/out/backup.zip"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-x"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$TMP/handoff-x/archive.zip")" = PK ]
+    [ "$(stat -c %a "$TMP/handoff-x")" = 700 ]
+}
+
+@test "a handover never prints where the handoff is" {
+    # Named with the panel's secret so no other account knows it in
+    # advance; the job log is read by others than the host's account.
+    mkdir -p "$TMP/job/out"
+    printf 'PK' > "$TMP/job/out/backup.zip"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-secretname"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *secretname* ]]
+    printf 'PK' > "$TMP/job/out/backup.zip"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-secretname"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *secretname* ]]
+    rm -rf "$TMP/handoff-secretname"
+    ln -s "$TMP" "$TMP/handoff-secretname"
+    run bash "$SCRIPT" handover "$DIR" "$TMP/job/out/backup.zip" "$TMP/handoff-secretname"
+    [ "$status" -ne 0 ]
+    [[ "$output" != *secretname* ]]
 }

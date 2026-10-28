@@ -52,8 +52,14 @@ case "$op" in
     verify-file)
         ic_require_args 1 "$#" "restore.sh verify-file <dir> <remote_zip>"
         remote="$1"
-        [ -f "$remote" ] || ic_die "backup file not found at $remote"
-        ic_log "making $remote readable inside the odoo container"
+        # Its path is not printed: a handoff restored in place is named
+        # with the panel's secret, and the job log has more readers than
+        # the host's account.
+        [ -f "$remote" ] || ic_die "backup file not found"
+        # ``sudo chown`` and ``chmod`` follow a link: one in the archive's
+        # place would hand the file it names to the container's user.
+        [ ! -L "$remote" ] || ic_die "the backup file is a link: not used"
+        ic_log "making the backup file readable inside the odoo container"
         # ``--entrypoint=''`` skips doodba's addon-linking init so
         # ``id -u`` returns immediately.
         odoo_uid="$(ic_compose_run --rm --entrypoint="" odoo id -u \
@@ -67,9 +73,9 @@ case "$op" in
             "restore.sh restore-db <dir> <dbname> <remote_zip> [neutralize]"
         dbname="$1"; remote="$2"; neutralize="${3:-0}"
         if [ "$neutralize" = "1" ]; then
-            ic_log "restoring $dbname from $remote (neutralized)"
+            ic_log "restoring $dbname (neutralized)"
         else
-            ic_log "restoring $dbname from $remote"
+            ic_log "restoring $dbname"
         fi
         ic_db_load_args "$dbname" /mnt/restore.zip "$neutralize"
         ic_compose_run --rm -v "$remote:/mnt/restore.zip:ro" \

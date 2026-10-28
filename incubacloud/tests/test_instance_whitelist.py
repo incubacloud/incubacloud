@@ -32,6 +32,7 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
+from odoo.exceptions import ValidationError
 from odoo.http import Request
 from odoo.tests.common import TransactionCase
 
@@ -44,6 +45,9 @@ from odoo.addons.incubacloud.models.deploy_instance_executor import (
 )
 from odoo.addons.incubacloud.models.rebuild_instance_executor import (
     RebuildInstanceExecutor,
+)
+from odoo.addons.incubacloud.models.setup_whitelist_executor import (
+    build_whitelist_compose,
 )
 
 from ._template import pin_template
@@ -181,6 +185,111 @@ class TestAnEntryIsAHostname(_WhitelistCase):
             "hostname": "api.example.com",
         })
         self.assertTrue(entry.exists())
+
+
+class TestAHostEntryIsAHostname(_WhitelistCase):
+    """The host's list is written into the compose file of its proxies,
+    one service and one quoted alias per entry: a quote or a line break
+    in an entry rewrote that file (28-oct-2026). The same check as an
+    instance's list, on create and write only, so a database holding an
+    older entry still updates."""
+
+    _BAD = (
+        'fonts.example.com"\n    privileged: true\n    x: "',
+        "api.example.com evil.example.com",
+        "https://api.example.com/path",
+        "api.example.com\nevil.example.com",
+        "",
+    )
+
+    def test_what_is_not_a_hostname_is_refused(self):
+        for value in self._BAD:
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                self.env["cloud.host.whitelist"].create({
+                    "host_id": self.host.id, "hostname": value,
+                })
+
+    def test_nor_can_an_entry_become_one(self):
+        entry = self.env["cloud.host.whitelist"].create({
+            "host_id": self.host.id, "hostname": "api.example.com",
+        })
+        with self.assertRaises(ValidationError):
+            entry.write({"hostname": 'api.example.com" x'})
+
+    def test_a_plain_hostname_is_accepted(self):
+        entry = self.env["cloud.host.whitelist"].create({
+            "host_id": self.host.id, "hostname": "pypi.org",
+        })
+        self.assertTrue(entry.exists())
+
+    def test_an_older_entry_does_not_stop_other_writes(self):
+        """Stored before the check, it blocks nothing but its own change."""
+        entry = self.env["cloud.host.whitelist"].create({
+            "host_id": self.host.id, "hostname": "api.example.com",
+        })
+        self.env.cr.execute(
+            "UPDATE cloud_host_whitelist SET hostname = %s WHERE id = %s",
+            ("bad name", entry.id),
+        )
+        entry.invalidate_recordset(["hostname"])
+        entry.write({"sequence": 3})
+        self.assertEqual(entry.sequence, 3)
+
+    def test_the_compose_file_takes_none_of_them(self):
+        """Defence in depth: an entry stored before the check is refused
+        when the file is written, not written into it."""
+        for value in self._BAD:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                build_whitelist_compose(["pypi.org", value])
+        self.assertIn('"pypi.org"', build_whitelist_compose(["pypi.org"]))
+
+    def test_the_compose_file_writes_the_name_it_checked(self):
+        """Checked trimmed, so written trimmed: a space or a line break
+        around a name reached the file around it."""
+        for value in (" pypi.org", "pypi.org ", "pypi.org\n", "\tpypi.org"):
+            with self.subTest(value=value):
+                compose = build_whitelist_compose([value])
+                self.assertIn('          - "pypi.org"\n', compose)
+                self.assertIn('      TARGET: "pypi.org"\n', compose)
+                self.assertIn('  "pypi_org":\n', compose)
+
+
+    def test_the_same_name_twice_is_written_once(self):
+        """Trimmed, " pypi.org" and "pypi.org" are one name: written once."""
+        compose = build_whitelist_compose(["x.org", " pypi.org", "pypi.org"])
+        self.assertEqual(len(self._keys(compose)), 2)
+        self.assertEqual(compose.count('          - "pypi.org"\n'), 1)
+
+    def test_two_names_of_one_service_key_keep_both_aliases(self):
+        """a.b and a-b share a service key and compose rejects the whole
+        file at a repeated key: the second gets a suffixed key and keeps
+        its alias, so every allowed name is still reachable (I5)."""
+        hostnames = ["x.org", "a.b.com", "a-b.com", "a_b.com", "a.b-com"]
+        compose = build_whitelist_compose(hostnames)
+        keys = self._keys(compose)
+        self.assertEqual(len(keys), len(set(keys)), keys)
+        self.assertEqual(len(keys), len(hostnames))
+        services = yaml.safe_load(compose)["services"]
+        self.assertEqual(len(services), len(hostnames))
+        self.assertEqual(
+            sorted(s["environment"]["TARGET"] for s in services.values()),
+            sorted(hostnames),
+        )
+        for service in services.values():
+            self.assertEqual(
+                service["networks"]["shared"]["aliases"],
+                [service["environment"]["TARGET"]],
+            )
+        self.assertIn('  "a_b_com":\n', compose)
+        self.assertIn('  "a_b_com-2":\n', compose)
+
+    @staticmethod
+    def _keys(compose):
+        """Return the service keys written in a generated compose file."""
+        return [
+            line.strip() for line in compose.splitlines()
+            if line.startswith('  "') and line.endswith('":')
+        ]
 
 
 class TestTheSidecarsAreExpected(_WhitelistCase):

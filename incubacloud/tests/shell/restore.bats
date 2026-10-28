@@ -57,6 +57,17 @@ teardown() {
     [[ "$output" == *"backup file not found"* ]]
 }
 
+@test "verify-file never hands a link over to the odoo user" {
+    # sudo chown follows a link: an uploaded "archive" pointing at a file
+    # of the host's would give that file to the container's user.
+    printf 'root:x:0:0' > "$TMP/hostfile"
+    ln -s "$TMP/hostfile" "$TMP/link.zip"
+    run bash "$SCRIPT" verify-file "$DIR" "$TMP/link.zip"
+    [ "$status" -ne 0 ]
+    [[ "$(cat "$CALLS")" != *"sudo chown"* ]]
+    [[ "$(cat "$CALLS")" != *"sudo chmod"* ]]
+}
+
 @test "verify-file aborts if the container UID cannot be discovered" {
     cat > "$TMP/bin/docker" <<'STUB'
 #!/usr/bin/env bash
@@ -169,4 +180,19 @@ STUB
     run bash "$SCRIPT" explode "$DIR" arg
     [ "$status" -eq 1 ]
     [[ "$output" == *"unknown operation"* ]]
+}
+
+@test "verify-file and restore-db never print where the archive is" {
+    # A handoff restored in place is named with the panel's secret.
+    mkdir -p "$TMP/handoff-secretname"
+    : > "$TMP/handoff-secretname/archive.zip"
+    run bash "$SCRIPT" verify-file "$DIR" "$TMP/handoff-secretname/archive.zip"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *secretname* ]]
+    run bash "$SCRIPT" restore-db "$DIR" prod "$TMP/handoff-secretname/archive.zip" 1
+    [ "$status" -eq 0 ]
+    [[ "$output" != *secretname* ]]
+    run bash "$SCRIPT" verify-file "$DIR" "$TMP/handoff-secretname/gone.zip"
+    [ "$status" -ne 0 ]
+    [[ "$output" != *secretname* ]]
 }

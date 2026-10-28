@@ -22,8 +22,9 @@ CONFIRM_LABEL = "Confirm the retired certificates are gone"
 #: Where the store is mounted inside the proxy container.
 STORE_PATH = "/etc/traefik/acme/acme.json"
 
-#: Where the replacement is staged on the host before being fed in.
-LOCAL_PATH = "/tmp/.incubacloud-acme.json"
+#: Name of the replacement staged in the job's own directory before
+#: being fed in (``AcmeStorePruneMixin._acme_local_path``).
+LOCAL_NAME = "acme.json"
 
 _COMPOSE = (
     "cd ~/traefik && docker compose -p inverseproxy -f inverseproxy.yaml"
@@ -33,17 +34,26 @@ _COMPOSE = (
 #: honest answer: there is no store to speak of before the first start.
 READ_COMMAND = f"{_COMPOSE} exec -T proxy cat {STORE_PATH}"
 
-#: Replace the store, then drop the staged copy — it is a list of every
-#: name this host serves, and there is no reason to leave it in ``/tmp``.
-#: Written through the container's stdin rather than copied in, so the
-#: file keeps the ownership and mode it already has: Traefik refuses a
-#: store readable by anyone else and would then obtain nothing at all.
-#: Chained rather than sequenced so a failed write is still a failed
-#: step: the staged copy surviving is harmless, a silent success is not.
-WRITE_COMMAND = (
-    f"{_COMPOSE} exec -T proxy sh -c 'cat > {STORE_PATH}' < {LOCAL_PATH}"
-    f" && rm -f {LOCAL_PATH}"
-)
+
+def write_command(local_path):
+    """Return the command that replaces the store with *local_path*.
+
+    Drops the staged copy afterwards — it holds every key the proxy
+    obtained, and there is no reason to keep it. Written through the
+    container's stdin rather than copied in, so the file keeps the
+    ownership and mode it already has: Traefik refuses a store readable
+    by anyone else and would then obtain nothing at all. Chained rather
+    than sequenced so a failed write is still a failed step: the staged
+    copy surviving is harmless (the job's end removes it), a silent
+    success is not.
+
+    :param str local_path: where the replacement is staged on the host
+    :rtype: str
+    """
+    return (
+        f"{_COMPOSE} exec -T proxy sh -c 'cat > {STORE_PATH}' < {local_path}"
+        f" && rm -f {local_path}"
+    )
 
 
 async def read(transport):
@@ -81,6 +91,13 @@ class AcmeStorePruneMixin:
     #: Names retired by this run. Decided in ``before_execute``, where
     #: the store can be read, and read back when commands are built.
     _acme_retired = ()
+
+    def _acme_local_path(self):
+        """Return where this job stages the pruned store on the host.
+
+        :rtype: str
+        """
+        return self._job_path(LOCAL_NAME)
 
     async def _prepare_acme_prune(self, transport):
         """Return this host's store with the entries it no longer needs gone.
@@ -131,7 +148,10 @@ class AcmeStorePruneMixin:
         """
         if not self._acme_retired:
             return None
-        return ('Retire stored certificates', WRITE_COMMAND)
+        return (
+            'Retire stored certificates',
+            write_command(self._acme_local_path()),
+        )
 
     def _acme_confirm_step(self):
         """Return the command that reads the store back, or ``None``.

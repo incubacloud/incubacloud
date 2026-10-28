@@ -13,14 +13,14 @@ import shlex
 from . import _config_snapshot_diff as _snapshot_diff
 from . import acme_store
 from .abstract_executor import AbstractSSHExecutor
-from .full_setup_executor import _TMP
+from .full_setup_executor import ProxyStagingMixin
 
 #: Snapshot keys this job is allowed to declare applied.
 _PROXY_KEYS = {'trusted_proxy_ranges', 'block_direct_access', 'cdn_client_ca'}
 
 
 class PushTrustedProxiesExecutor(
-    acme_store.AcmeStorePruneMixin, AbstractSSHExecutor,
+    ProxyStagingMixin, acme_store.AcmeStorePruneMixin, AbstractSSHExecutor,
 ):
     """Upload the patched Traefik configuration and restart the proxy.
 
@@ -36,23 +36,7 @@ class PushTrustedProxiesExecutor(
         """Upload the rendered static and dynamic Traefik documents."""
         host = self.job.host_id
         ranges = host._effective_trusted_proxy_ranges()
-        cert, key = host._effective_tls_default()
-        files = {
-            f'{_TMP}-traefik.yml': host._shipped_traefik_yml(),
-            f'{_TMP}-config.yml': host._shipped_config_yml(),
-            f'{_TMP}-tls.yml': host._shipped_tls_default_yml(),
-            f'{_TMP}-client-auth.yml': host._shipped_tls_client_auth_yml(),
-        }
-        if cert and key:
-            files[f'{_TMP}-default.crt'] = cert
-            files[f'{_TMP}-default.key'] = key
-        client_ca = host._effective_cdn_client_ca()
-        if client_ca:
-            files[f'{_TMP}-cdn-ca.pem'] = client_ca
-        pruned = await self._prepare_acme_prune(transport)
-        if pruned:
-            files[acme_store.LOCAL_PATH] = pruned
-        await transport.upload_text_files(files)
+        await self._stage_proxy_documents(transport, host)
         self._sys(
             f'✓ Trusted proxy configuration prepared ({len(ranges)} '
             f'range{"" if len(ranges) == 1 else "s"}'
@@ -116,6 +100,42 @@ class PushTrustedProxiesExecutor(
         )
 
     def get_commands(self):
+        stage = self._job_path
+        ships_cert, ships_ca = self._proxy_ships()
+        put = 'ic_put() { mv "$1" "$2" 2>/dev/null || sudo mv "$1" "$2"; };'
+        if ships_cert:
+            install_cert = (
+                f'{put}'
+                ' mkdir -p ~/traefik/certs 2>/dev/null'
+                ' || sudo mkdir -p ~/traefik/certs;'
+                f' ic_put {stage("default.crt")} ~/traefik/certs/default.crt'
+                f' && ic_put {stage("default.key")} ~/traefik/certs/default.key'
+                ' && { chmod 600 ~/traefik/certs/default.key 2>/dev/null'
+                ' || sudo chmod 600 ~/traefik/certs/default.key; }'
+                f' && ic_put {stage("tls.yml")} ~/traefik/dynamic/tls-default.yml'
+            )
+        else:
+            install_cert = (
+                'rm -f ~/traefik/dynamic/tls-default.yml;'
+                ' rm -f ~/traefik/certs/default.crt'
+                ' ~/traefik/certs/default.key 2>/dev/null'
+                ' || sudo rm -f ~/traefik/certs/default.crt'
+                ' ~/traefik/certs/default.key'
+            )
+        if ships_ca:
+            require_ca = (
+                f'{put}'
+                f' ic_put {stage("cdn-ca.pem")} ~/traefik/certs/cdn-client-ca.pem'
+                f' && ic_put {stage("client-auth.yml")}'
+                ' ~/traefik/dynamic/tls-client-auth.yml'
+            )
+        else:
+            require_ca = (
+                'rm -f ~/traefik/dynamic/tls-client-auth.yml'
+                ' ~/traefik/certs/cdn-client-ca.pem 2>/dev/null'
+                ' || sudo rm -f ~/traefik/dynamic/tls-client-auth.yml'
+                ' ~/traefik/certs/cdn-client-ca.pem'
+            )
         commands = [
             (
                 # The static file names the dynamic *directory*, which the
@@ -132,12 +152,12 @@ class PushTrustedProxiesExecutor(
                 ' --format "{{range .Mounts}}{{.Destination}} {{end}}"'
                 ' 2>/dev/null | grep -q "/etc/traefik/dynamic "; then'
                 f' sed -i "s#^\\(\\s*\\)directory: /etc/traefik/dynamic#'
-                f'\\1filename: /etc/traefik/config.yml#" {_TMP}-traefik.yml'
+                f'\\1filename: /etc/traefik/config.yml#" {stage("traefik.yml")}'
                 ' && echo "proxy not yet set up for the dynamic directory;'
                 ' keeping the single-file provider until its next Full Setup";'
                 ' fi;'
-                f' mv {_TMP}-traefik.yml ~/traefik/traefik.yml'
-                f' && mv {_TMP}-config.yml ~/traefik/config.yml',
+                f' mv {stage("traefik.yml")} ~/traefik/traefik.yml'
+                f' && mv {stage("config.yml")} ~/traefik/config.yml',
             ),
             (
                 # The file provider reads config.yml from the dynamic
@@ -161,23 +181,9 @@ class PushTrustedProxiesExecutor(
                 # creates cannot move a file in there — measured on
                 # Tenants1, where every other step of this job
                 # succeeded. Trying the plain move first keeps a host
-                # without sudo working exactly as it did.
-                'ic_put() { mv "$1" "$2" 2>/dev/null'
-                ' || sudo mv "$1" "$2"; };'
-                ' mkdir -p ~/traefik/certs 2>/dev/null'
-                ' || sudo mkdir -p ~/traefik/certs;'
-                f' if [ -s {_TMP}-default.crt ]; then'
-                f' ic_put {_TMP}-default.crt ~/traefik/certs/default.crt'
-                f' && ic_put {_TMP}-default.key ~/traefik/certs/default.key'
-                ' && { chmod 600 ~/traefik/certs/default.key 2>/dev/null'
-                ' || sudo chmod 600 ~/traefik/certs/default.key; }'
-                f' && ic_put {_TMP}-tls.yml ~/traefik/dynamic/tls-default.yml;'
-                ' else rm -f ~/traefik/dynamic/tls-default.yml;'
-                ' rm -f ~/traefik/certs/default.crt'
-                ' ~/traefik/certs/default.key 2>/dev/null'
-                ' || sudo rm -f ~/traefik/certs/default.crt'
-                ' ~/traefik/certs/default.key;'
-                f' rm -f {_TMP}-tls.yml; fi',
+                # without sudo working exactly as it did. Which branch
+                # runs is decided by what this job staged.
+                install_cert,
             ),
         ]
         commands.append((
@@ -185,17 +191,7 @@ class PushTrustedProxiesExecutor(
             # makes the proxy require the CDN's client certificate; none
             # removes the requirement. Applied with the restart below.
             'Require the CDN client certificate',
-            'ic_put() { mv "$1" "$2" 2>/dev/null'
-            ' || sudo mv "$1" "$2"; };'
-            f' if [ -s {_TMP}-cdn-ca.pem ]; then'
-            f' ic_put {_TMP}-cdn-ca.pem ~/traefik/certs/cdn-client-ca.pem'
-            f' && ic_put {_TMP}-client-auth.yml'
-            ' ~/traefik/dynamic/tls-client-auth.yml;'
-            ' else rm -f ~/traefik/dynamic/tls-client-auth.yml'
-            ' ~/traefik/certs/cdn-client-ca.pem 2>/dev/null'
-            ' || sudo rm -f ~/traefik/dynamic/tls-client-auth.yml'
-            ' ~/traefik/certs/cdn-client-ca.pem;'
-            f' rm -f {_TMP}-client-auth.yml; fi',
+            require_ca,
         ))
         prune = self._acme_prune_step()
         if prune:
