@@ -15,12 +15,15 @@ list and probes the names is ``sync_direct_path``.
 """
 import ipaddress
 import logging
+import re
 from datetime import timedelta
 
 import yaml
 
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
+
+from .cloud_host import strip_marked_blocks
 
 _logger = logging.getLogger(__name__)
 
@@ -70,6 +73,225 @@ def sorted_networks(entries):
     :rtype: list
     """
     return sorted(set(entries), key=ipaddress.ip_network)
+
+
+#: The DNS token's file on the host (``~/traefik/secrets``) and in the proxy.
+DIRECT_TOKEN_NAME = "cf-dns-api-token"
+DIRECT_TOKEN_IN_PROXY = f"/etc/traefik/secrets/{DIRECT_TOKEN_NAME}"
+
+_LETSENCRYPT_RE = re.compile(
+    r"^(?P<indent>[ \t]+)letsencrypt:[ \t]*\n"
+    r"(?P<body>(?:(?P=indent)[ \t]+[^\n]*(?:\n|$)|[ \t]*\n)*)",
+    re.MULTILINE,
+)
+
+
+def letsencrypt_block_span(text):
+    """Return where the ``letsencrypt`` resolver's body is in *text*.
+
+    :param str text: a ``traefik.yml``.
+    :return: ``(start, end)`` offsets of the lines under the resolver's
+        name, or None when there is no such resolver.
+    :rtype: tuple | None
+    """
+    match = _LETSENCRYPT_RE.search(text or "")
+    return (match.start("body"), match.end("body")) if match else None
+
+
+def _letsencrypt_value(text, key):
+    """Return *key*'s value in the ``letsencrypt`` resolver, or ''.
+
+    A commented line (``#caServer: ...``, as every production host has
+    it) is no value: the line has to start with the key.
+
+    :param str text: a ``traefik.yml``.
+    :param str key: ``email`` or ``caServer``.
+    :rtype: str
+    """
+    span = letsencrypt_block_span(text)
+    if not span:
+        return ""
+    body = text[span[0]:span[1]]
+    match = re.search(
+        rf'^[ \t]+{key}:[ \t]*"?([^"\n#]*?)"?[ \t]*$', body, re.MULTILINE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _direct_entrypoint_lines(port):
+    """Return the ``direct`` entrypoint, one line each, without indentation.
+
+    No ``forwardedHeaders``: Traefik then drops every ``X-Forwarded-*``
+    and ``X-Real-Ip`` it is sent and writes the connecting address. No
+    TLS options either: the two routers allowed on the port name theirs,
+    and options on the entrypoint would clash with those of the routers
+    that listen everywhere.
+
+    :param int port: the direct port.
+    :rtype: list
+    """
+    return [
+        f"direct:  {DIRECT_MARK}",
+        f'  address: ":{int(port)}"',
+        "  http:",
+        "    tls: {}",
+        "    middlewares:",
+        "      - direct-peers@file",
+        "      - direct-strip@file",
+        "      - direct-ratelimit@file",
+        "  transport:",
+        "    respondingTimeouts:",
+        "      readTimeout: 30s",
+        "      writeTimeout: 60s",
+        "      idleTimeout: 90s",
+        "  http2:",
+        "    maxConcurrentStreams: 50",
+    ]
+
+
+def _direct_resolver_lines(text):
+    """Return the ``direct-dns`` resolver, one line each, without indentation.
+
+    The ``letsencrypt`` resolver's email (Traefik 2.11 registers a new
+    ACME account at every start when it is empty) and its ``caServer``
+    when that line is not commented: it is how QA asks staging.
+
+    :param str text: the ``traefik.yml`` it goes into.
+    :rtype: list
+    """
+    email = _letsencrypt_value(text, "email")
+    ca_server = _letsencrypt_value(text, "caServer")
+    lines = [f"direct-dns:  {DIRECT_MARK}", "  acme:"]
+    if email:
+        lines.append(f'    email: "{email}"')
+    lines.append('    storage: "/etc/traefik/acme/acme.json"')
+    if ca_server:
+        lines.append(f'    caServer: "{ca_server}"')
+    lines += [
+        "    dnsChallenge:",
+        "      provider: cloudflare",
+        "      resolvers:",
+        '        - "1.1.1.1:53"',
+        '        - "8.8.8.8:53"',
+    ]
+    return lines
+
+
+def patch_traefik_yml_direct(traefik_yml, port):
+    """Return ``traefik.yml`` with the direct entrypoint and its resolver.
+
+    Replaces what an earlier render added (``DIRECT_MARK``); a *port* of
+    0 only removes it. The entrypoint goes first under ``entryPoints``,
+    the resolver first under ``certificatesResolvers``, indented as the
+    file indents its own.
+
+    :param str traefik_yml: the static configuration rendered so far.
+    :param int port: the host's direct port, 0 for none.
+    :rtype: str
+    """
+    text = strip_marked_blocks(traefik_yml or "", DIRECT_MARK)
+    if not (text and port):
+        return text
+    entry = re.search(r"^entryPoints:[ \t]*\n(?P<indent>[ \t]+)\S", text, re.MULTILINE)
+    if not entry:
+        return text
+    indent = entry.group("indent")
+    at = entry.start("indent")
+    text = text[:at] + "".join(
+        f"{indent}{line}\n" for line in _direct_entrypoint_lines(port)
+    ) + text[at:]
+    lines = _direct_resolver_lines(text)
+    resolvers = re.search(
+        r"^certificatesResolvers:[ \t]*\n(?P<indent>[ \t]+)\S", text, re.MULTILINE,
+    )
+    if resolvers:
+        indent = resolvers.group("indent")
+        at = resolvers.start("indent")
+        return text[:at] + "".join(f"{indent}{line}\n" for line in lines) + text[at:]
+    tail = "" if text.endswith("\n") else "\n"
+    return (
+        text + tail + f"certificatesResolvers:  {DIRECT_MARK}\n"
+        + "".join(f"  {line}\n" for line in lines)
+    )
+
+
+def _add_proxy_environment(text, key, value):
+    """Return *text* with ``key: value`` in the ``proxy`` service's environment.
+
+    Under the service's own ``environment`` when it has one (a second key
+    of that name is a compose file Docker refuses), after its ``image``
+    otherwise.
+
+    :param str text: a compose file.
+    :rtype: str
+    """
+    service = re.search(
+        r"^(?P<indent>[ \t]+)proxy:[ \t]*\n(?P<child>[ \t]+)\S", text, re.MULTILINE,
+    )
+    if not service:
+        return text
+    child = service.group("child")
+    start = service.start("child")
+    end = len(text)
+    for line in re.finditer(r"^(?P<i>[ \t]*)\S", text[start:], re.MULTILINE):
+        if len(line.group("i")) < len(child):
+            end = start + line.start()
+            break
+    block = text[start:end]
+    existing = re.search(
+        rf"^{re.escape(child)}environment:[ \t]*\n", block, re.MULTILINE,
+    )
+    if existing:
+        at = start + existing.end()
+        listed = re.match(r"[ \t]*- ", block[existing.end():])
+        item = f"- {key}={value}" if listed else f"{key}: {value}"
+        return text[:at] + f"{child}  {item}  {DIRECT_MARK}\n" + text[at:]
+    image = re.search(rf"^{re.escape(child)}image:[^\n]*\n", block, re.MULTILINE)
+    at = start + (image.end() if image else 0)
+    return (
+        text[:at] + f"{child}environment:  {DIRECT_MARK}\n"
+        + f"{child}  {key}: {value}\n" + text[at:]
+    )
+
+
+def patch_inverseproxy_direct(content, port, with_token):
+    """Return the proxy's compose file with the direct port and the DNS token.
+
+    The port on IPv4 only (the names have no AAAA). The token as a file
+    mounted read-only and named in ``CF_DNS_API_TOKEN_FILE``: its value is
+    never in this file, on a command line or in a job's log.
+
+    :param str content: the compose file rendered so far.
+    :param int port: the host's direct port, 0 for none.
+    :param bool with_token: mount the DNS token.
+    :rtype: str
+    """
+    text = strip_marked_blocks(content or "", DIRECT_MARK)
+    if not text:
+        return text
+    if port:
+        text = re.sub(
+            r'^(?P<indent>[ \t]+)- "443:443"[^\n]*\n',
+            lambda m: (
+                f'{m.group(0)}{m.group("indent")}- "0.0.0.0:{int(port)}:{int(port)}"'
+                f"  {DIRECT_MARK}\n"
+            ),
+            text, count=1, flags=re.MULTILINE,
+        )
+    if with_token:
+        text = re.sub(
+            r"^(?P<indent>[ \t]+)- \./traefik\.yml:/etc/traefik/traefik\.yml:ro"
+            r"[^\n]*\n",
+            lambda m: (
+                f"{m.group(0)}{m.group('indent')}- ./secrets:/etc/traefik/secrets:ro"
+                f"  {DIRECT_MARK}\n"
+            ),
+            text, count=1, flags=re.MULTILINE,
+        )
+        text = _add_proxy_environment(
+            text, "CF_DNS_API_TOKEN_FILE", DIRECT_TOKEN_IN_PROXY,
+        )
+    return text
 
 
 class CloudHost(models.Model):
@@ -320,3 +542,51 @@ class CloudHost(models.Model):
         }
         body = yaml.safe_dump(document, sort_keys=False, default_flow_style=False)
         return "# Auto-generated by IncubaCloud. Do not edit by hand.\n" + body
+
+    def _shipped_traefik_yml(self):
+        """Return the static file, with the direct entrypoint when there is a port.
+
+        :rtype: str
+        """
+        return patch_traefik_yml_direct(
+            super()._shipped_traefik_yml(), self.direct_port,
+        )
+
+    def _shipped_inverseproxy_yaml(self):
+        """Return the proxy's compose file, with the direct port and the token.
+
+        :rtype: str
+        """
+        return patch_inverseproxy_direct(
+            super()._shipped_inverseproxy_yaml(),
+            self.direct_port,
+            self._needs_dns01() and self._has_dns01_token(),
+        )
+
+    def _asks_wildcard_by_dns(self):
+        """Whether this host asks for a wildcard certificate by DNS challenge.
+
+        Never in core. The SaaS layer answers for its catch-all host.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        return False
+
+    def _needs_dns01(self):
+        """Whether this host's proxy needs the DNS token.
+
+        For the direct names' certificates, or for a wildcard.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        return bool(self.direct_port) or self._asks_wildcard_by_dns()
+
+    def _has_dns01_token(self):
+        """Whether the DNS token for certificates is stored.
+
+        :rtype: bool
+        """
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        return bool(settings.acme_dns_cloudflare_token)
