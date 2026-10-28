@@ -65,3 +65,130 @@ ANTHROPIC_TOOL_USE = {
 def anthropic_error(kind, message):
     """Return an error body of Anthropic's: ``{"type": "error", "error": {…}}``."""
     return {"type": "error", "error": {"type": kind, "message": message}}
+
+
+#: GET https://api.openai.com/v1/models
+OPENAI_MODELS = {
+    "object": "list",
+    "data": [
+        {"id": "gpt-5.1", "object": "model", "owned_by": "openai"},
+        {"id": "text-embedding-3-large", "object": "model", "owned_by": "openai"},
+        {"id": "o4-mini", "object": "model", "owned_by": "openai"},
+        {"id": "gpt-4o-realtime-preview", "object": "model", "owned_by": "openai"},
+    ],
+}
+
+#: POST /v1/chat/completions, asking for a tool.
+OPENAI_TOOL_CALLS = {
+    "id": "chatcmpl-1",
+    "object": "chat.completion",
+    "model": "gpt-5.1",
+    "choices": [
+        {
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "get_project",
+                            "arguments": '{"project_id": 4}',
+                        },
+                    }
+                ],
+            },
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 1000,
+        "completion_tokens": 20,
+        "prompt_tokens_details": {"cached_tokens": 600, "cache_write_tokens": 100},
+    },
+}
+
+OPENAI_CONTEXT_ERROR = {
+    "error": {
+        "message": "This model's maximum context length is 128000 tokens.",
+        "type": "invalid_request_error",
+        "code": "context_length_exceeded",
+    }
+}
+OPENAI_QUOTA_ERROR = {
+    "error": {
+        "message": "You exceeded your current quota.",
+        "type": "insufficient_quota",
+        "code": "insufficient_quota",
+    }
+}
+
+#: GET https://openrouter.ai/api/v1/key: the key OpenRouter knows (its
+#: listing of models answers without one).
+OPENROUTER_KEY = {"data": {"label": "sk-or-v1-abc...", "limit": None, "usage": 0}}
+#: POST /api/v1/chat/completions: a 200 that carries an error of the model's
+#: provider instead of an answer.
+OPENROUTER_ERROR_IN_200 = {
+    "id": "gen-1",
+    "model": "anthropic/claude-opus-5.5",
+    "choices": [
+        {
+            "index": 0,
+            "finish_reason": "error",
+            "message": {"role": "assistant", "content": ""},
+            "error": {"code": 502, "message": "Upstream provider error"},
+        }
+    ],
+}
+
+#: POST /api/v1/chat/completions: a 200 whose choice a guardrail refused, after
+#: the provider read (and billed) the prompt.
+OPENROUTER_POLICY_IN_200 = {
+    "id": "gen-2",
+    "model": "anthropic/claude-opus-5.5",
+    "choices": [
+        {
+            "index": 0,
+            "finish_reason": "error",
+            "message": {"role": "assistant", "content": ""},
+            "error": {
+                "code": 403,
+                "message": "Request blocked",
+                "metadata": {"error_type": "content_policy_violation"},
+            },
+        }
+    ],
+    "usage": {"prompt_tokens": 120, "completion_tokens": 0},
+}
+
+#: GET https://openrouter.ai/api/v1/models
+OPENROUTER_MODELS = {
+    "data": [
+        {
+            "id": "anthropic/claude-opus-5.5",
+            "name": "Anthropic: Claude Opus 5.5",
+            "supported_parameters": ["tools", "tool_choice", "max_tokens"],
+            "pricing": {"prompt": "0.000004", "completion": "0.00002"},
+        },
+        {
+            "id": "some/model-without-tools",
+            "name": "No tools",
+            "supported_parameters": ["max_tokens"],
+            "pricing": {"prompt": "0.000001", "completion": "0.000001"},
+        },
+        {
+            "id": "openrouter/auto",
+            "name": "Auto Router",
+            "supported_parameters": ["tools", "max_tokens"],
+            "pricing": {"prompt": "-1", "completion": "-1"},
+        },
+        {
+            "id": "someone/router",
+            "name": "A router of someone else's",
+            "supported_parameters": ["tools"],
+            "pricing": {"prompt": "-1", "completion": "-1"},
+        },
+    ]
+}

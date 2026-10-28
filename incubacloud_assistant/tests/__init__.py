@@ -5,3 +5,4 @@ from . import test_pricing
 from . import test_connector_base
 from . import test_sources
 from . import test_connector_anthropic
+from . import test_connector_openai
