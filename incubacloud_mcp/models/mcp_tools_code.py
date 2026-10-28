@@ -203,10 +203,19 @@ def _repo_key(url):
     return owner.lower(), name.lower()
 
 
+def _is_repo_segment(value):
+    """Return whether *value* may be a GitHub owner or repository name.
+
+    Letters, digits, dots, hyphens and underscores, and never ``.`` or
+    ``..``: quoted, those still climb the API's path.
+    """
+    return bool(_REPO_NAME_RE.match(value or "")) and value not in (".", "..")
+
+
 def _check_repo_path(path):
     """Refuse a path a commit or a read must not use.
 
-    Not empty, relative, without ``..``, backslashes or NUL, at most 300
+    Not empty, relative, without ``.`` or ``..``, backslashes or NUL, at most 300
     characters, no ``.git`` folder at any depth and nothing under
     ``.github/``, in any case: a workflow runs with the repository's
     secrets.
@@ -222,6 +231,7 @@ def _check_repo_path(path):
         or "\\" in path
         or "\x00" in path
         or ".." in parts
+        or "." in parts
         or "" in parts
         or parts[0].lower() == ".github"
         or ".git" in (part.lower() for part in parts)
@@ -257,15 +267,18 @@ class McpToolsCode(models.AbstractModel):
         :raises UserError: when it is not one
         """
         try:
-            return _parse_github_repo_path(url)
-        except ValueError as exc:
+            owner, name = _parse_github_repo_path(url)
+        except ValueError:
+            owner = name = ""
+        if not (_is_repo_segment(owner) and _is_repo_segment(name)):
             raise UserError(
                 self.env._(
                     "%s is not a GitHub repository address "
                     "(https://github.com/<owner>/<name>).",
                     quoted(url),
                 )
-            ) from exc
+            )
+        return owner, name
 
     @api.model
     def _authorized_repo(self, url, write=False):
@@ -557,6 +570,20 @@ class McpToolsCode(models.AbstractModel):
         return lines.instance_id.filtered("active")
 
     @api.model
+    def _seen_names(self, instances):
+        """Return the quoted names of *instances* if the user reads them all, else "".
+
+        *instances* were found past the record rules: an approval names
+        them only when none of them is hidden from the user.
+        """
+        seen = instances.with_env(self.env).filtered(
+            lambda inst: inst.has_access("read")
+        )
+        if seen != instances:
+            return ""
+        return ", ".join(quoted(inst.name) for inst in seen)
+
+    @api.model
     def _branch_exists(self, owner, name, branch):
         """Return whether *branch* exists; when nobody can tell, that it does.
 
@@ -597,13 +624,25 @@ class McpToolsCode(models.AbstractModel):
         }
         production = self._production_fed_by(args["url"], branch)
         if production:
-            text = self.env._(
-                "Write %(count)s file(s) to branch %(branch)s of %(repo)s in one "
-                "commit (%(paths)s). Production %(names)s deploys from this branch: "
-                "this reaches production, at once when it rebuilds on every push, "
-                "otherwise at its next rebuild.",
-                names=", ".join(quoted(inst.name) for inst in production),
-                **what,
+            names = self._seen_names(production)
+            text = (
+                self.env._(
+                    "Write %(count)s file(s) to branch %(branch)s of %(repo)s in one "
+                    "commit (%(paths)s). Production %(names)s deploys from this "
+                    "branch: this reaches production, at once when it rebuilds on "
+                    "every push, otherwise at its next rebuild.",
+                    names=names,
+                    **what,
+                )
+                if names
+                else self.env._(
+                    "Write %(count)s file(s) to branch %(branch)s of %(repo)s in one "
+                    "commit (%(paths)s). A production instance, one you may not see "
+                    "in the panel, deploys from this branch: this reaches production, "
+                    "at once when it rebuilds on every push, otherwise at its next "
+                    "rebuild.",
+                    **what,
+                )
             )
             if args["public"]:
                 text += " " + self.env._(
@@ -724,11 +763,19 @@ class McpToolsCode(models.AbstractModel):
         }
         previews = self._previews_for(args["url"])
         if previews:
+            names = self._seen_names(previews)
+            if not names:
+                return self.env._(
+                    "Open a pull request from branch %(branch)s in %(repo)s. The "
+                    "panel then creates a preview staging of a production instance, "
+                    "one you may not see in the panel, with a copy of its data.",
+                    **what,
+                )
             return self.env._(
                 "Open a pull request from branch %(branch)s in %(repo)s. The panel "
                 "then creates a preview staging of production %(names)s, with a "
                 "copy of its data.",
-                names=", ".join(quoted(inst.name) for inst in previews),
+                names=names,
                 **what,
             )
         if args["public"]:
@@ -879,11 +926,19 @@ class McpToolsCode(models.AbstractModel):
     @api.model
     def _tool_repo_create(self, args):
         """Create the repository with the PAT, then connect it."""
-        if not _REPO_NAME_RE.match(args["name"]):
+        if not _is_repo_segment(args["name"]):
             raise UserError(
                 self.env._(
                     "A repository's name holds letters, digits, dots, hyphens and "
                     "underscores only."
+                )
+            )
+        owner = (args.get("owner") or "").strip()
+        if owner and not _is_repo_segment(owner):
+            raise UserError(
+                self.env._(
+                    "%s is not the name of a GitHub account or organization.",
+                    quoted(owner),
                 )
             )
         self._check_can_connect(args["project_id"])
