@@ -67,6 +67,38 @@ def _read_traefik_template(filename):
         return ""
 
 
+def strip_marked_blocks(text, mark):
+    """Remove every line carrying *mark*, with the lines nested under it.
+
+    A marked line takes the lines indented deeper than it, so a mapping
+    added in one piece disappears whole. A blank line ends a block:
+    nothing written with a mark contains one.
+
+    :param str text: a YAML document (Traefik or compose).
+    :param str mark: the comment the render put on its lines.
+    :rtype: str
+    """
+    if not text or mark not in text:
+        return text
+    lines = text.splitlines(keepends=True)
+    kept = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if mark not in line:
+            kept.append(line)
+            index += 1
+            continue
+        indent = len(line) - len(line.lstrip())
+        index += 1
+        while index < len(lines) and lines[index].strip():
+            nested = len(lines[index]) - len(lines[index].lstrip())
+            if nested <= indent:
+                break
+            index += 1
+    return "".join(kept)
+
+
 def _ssh_allow_entries(raw):
     """Split an ``allowed_ssh_ips`` value into its entries.
 
@@ -3014,25 +3046,7 @@ class CloudHost(models.Model):
         :return: the document without any marked block
         :rtype: str
         """
-        if not text or CloudHost._TRUSTED_PROXY_MARK not in text:
-            return text
-        lines = text.splitlines(keepends=True)
-        kept = []
-        index = 0
-        while index < len(lines):
-            line = lines[index]
-            if CloudHost._TRUSTED_PROXY_MARK not in line:
-                kept.append(line)
-                index += 1
-                continue
-            indent = len(line) - len(line.lstrip())
-            index += 1
-            while index < len(lines) and lines[index].strip():
-                nested = len(lines[index]) - len(lines[index].lstrip())
-                if nested <= indent:
-                    break
-                index += 1
-        return "".join(kept)
+        return strip_marked_blocks(text, CloudHost._TRUSTED_PROXY_MARK)
 
     @staticmethod
     def _patch_traefik_yml_trusted_proxies(
