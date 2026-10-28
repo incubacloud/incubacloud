@@ -58,7 +58,7 @@ class CloudInstanceWhitelist(models.Model):
         :raises ValidationError: when an entry could not be a hostname
         """
         for entry in self:
-            if not _HOSTNAME_RE.match((entry.hostname or '').strip()):
+            if not _HOSTNAME_RE.fullmatch((entry.hostname or '').strip()):
                 raise ValidationError(
                     _(
                         "'%(value)s' is not a hostname. Write it as "

@@ -104,7 +104,7 @@ class CloudInstanceDomain(models.Model):
                 ('redirect_to', rec.redirect_to),
             ):
                 v = (value or '').strip().lower()
-                if v and not _HOSTNAME_RE.match(v):
+                if v and not _HOSTNAME_RE.fullmatch(v):
                     raise ValidationError(_(
                         "Invalid %(field)s '%(value)s'. Use lowercase letters, "
                         "digits, dots and hyphens only; each label must "

@@ -117,12 +117,12 @@ def is_safe_git_ref(value):
         return False
     if '..' in value:
         return False
-    return bool(_GIT_REF_RE.match(value))
+    return bool(_GIT_REF_RE.fullmatch(value))
 
 
 def is_safe_git_sha(value):
     """Return True if ``value`` is a syntactically safe git commit SHA."""
-    return isinstance(value, str) and bool(_GIT_SHA_RE.match(value))
+    return isinstance(value, str) and bool(_GIT_SHA_RE.fullmatch(value))
 
 
 def is_safe_repo_url(value):

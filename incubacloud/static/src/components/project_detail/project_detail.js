@@ -147,6 +147,40 @@ export class ProjectDetail extends Component {
     static components = { TagSelector, RepoEditor, IcConfirmDialog, IcModal, RlSelect };
 
     get isCreate() { return !this.props.project_id; }
+
+    /**
+     * Whether the backup destination can not be chosen in the form: it is a
+     * Developer's or an Administrator's choice, as the server holds it.
+     *
+     * @returns {boolean}
+     */
+    get backupBackendLocked() {
+        return !this.env.permissions?.can_manage_backups;
+    }
+
+    /**
+     * Whether the page offers to delete the project: an Administrator's
+     * action, as the server holds it (``_check_can_delete_project``).
+     *
+     * @returns {boolean}
+     */
+    get canDeleteProject() {
+        return !!this.env.permissions?.can_delete_project;
+    }
+
+    /**
+     * Whether an archived instance is offered to be revived. Reviving
+     * deploys it and restores its copy, and restoring is a Developer's:
+     * the server refuses the restore below one.
+     *
+     * @returns {boolean}
+     */
+    get canReviveArchived() {
+        return !!(
+            this.env.permissions?.can_deploy &&
+            this.env.permissions?.can_manage_backups
+        );
+    }
     get odooVersions() { return this.state.odooVersions; }
 
     /**

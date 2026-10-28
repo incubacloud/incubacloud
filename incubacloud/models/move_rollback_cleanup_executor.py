@@ -179,7 +179,9 @@ class MoveRollbackCleanupExecutor(DeleteInstanceExecutor):
         inst = self.job.instance_id
         if inst.exists():
             target = inst.move_target_host_id
-            inst.write({
+            # With ``sudo``: the markers are the platform's
+            # (``cloud.instance._check_guarded_vals``).
+            inst.sudo().write({
                 'move_origin_host_id': False,
                 'move_target_host_id': False,
                 'move_chain_job_ids': False,

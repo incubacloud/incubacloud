@@ -1517,20 +1517,24 @@ class CrudMixin:
     def cloud_revive_instance(self, instance_id, host_id=None):
         """Bring an archived instance back and restore its copy.
 
-        Gated as a deploy, not as a read: this builds an instance on a
-        host and restores a database into it. ``browse`` without sudo on
-        purpose, so the record rules that scope instances still apply —
-        the archived flag hides a record from lists, it does not make it
-        anyone's to revive.
+        Gated as a deploy and a restore, as the panel offers it: this
+        builds an instance on a host and restores a database into it.
+        ``browse`` without sudo on purpose, so the record rules that
+        scope instances still apply — the archived flag hides a record
+        from lists, it does not make it anyone's to revive. ``revive``
+        un-archives the record before it queues the jobs: a refusal after
+        that rolls back to the savepoint, so the record stays archived.
         """
         self._sec()._check_can_deploy()
+        self._sec()._check_can_manage_backups()
         inst = request.env['cloud.instance'].with_context(
             active_test=False,
         ).browse(instance_id)
         if not inst.exists():
             return {'ok': False, 'error': _('Instance not found')}
         try:
-            job_ids = inst.revive(host_id=host_id)
+            with request.env.cr.savepoint():
+                job_ids = inst.revive(host_id=host_id)
         except UserError as exc:
             return {'ok': False, 'error': str(exc)}
         return {'ok': True, 'job_ids': job_ids}
@@ -2259,7 +2263,7 @@ class CrudMixin:
         }
 
     _SAVE_INSTANCE_ALLOWED = {
-        'name', 'environment', 'host_id',
+        'name', 'host_id',
         'odoo_version', 'odoo_commit_sha',
         'odoo_initial_lang', 'odoo_admin_password',
         'odoo_proxy',
@@ -2285,6 +2289,18 @@ class CrudMixin:
         repos = vals.pop('repos', None)
         domains = vals.pop('domains', None)
         whitelist = vals.pop('whitelist', None)
+        # The form sends the environment back as it is; a change, which
+        # an agent may ask for through ``update_instance``, is refused
+        # with its reason rather than dropped without a word: it is
+        # chosen when the instance is created
+        # (``cloud.instance._check_guarded_vals``).
+        environment = vals.pop('environment', None)
+        if environment and environment != inst.environment:
+            return {'ok': False, 'error': _(
+                "The environment of an instance is chosen when it is created "
+                "and cannot be changed. For another staging or production, "
+                "create a new instance."
+            )}
         safe = {
             k: v for k, v in vals.items()
             if k in self._SAVE_INSTANCE_ALLOWED

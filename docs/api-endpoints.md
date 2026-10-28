@@ -129,7 +129,7 @@ Two JSON-RPC routes cover the archives that never pass through the panel: `cloud
 
 | Path | Gate | Description |
 |---|---|---|
-| `/cloud/get_backup_backends` | record rules | List S3 backends (no secrets, truncation-capped). |
+| `/cloud/get_backup_backends` | manager; below, names only | List S3 backends (no secrets, truncation-capped). Below a manager, the backends' ids and names alone, for the forms that choose one; their bucket, path and endpoint stay a manager's. |
 | `/cloud/get_backup_backend` | manage settings | Backend detail (never returns `s3_secret_access_key` / `passphrase`). |
 | `/cloud/create_backup_backend` | manage settings | Create backend; passphrase and secret auto-generated if omitted. |
 | `/cloud/save_backup_backend` | manage settings | Update backend; empty secret fields preserve the stored value. |
@@ -172,7 +172,7 @@ The caller must be in `group_cloud_developer`, the pair must be whitelisted, **a
 | `/cloud/get_audit_log` | record rules | Paginated, filterable audit log (`instance_id` or `host_id`, `q`, `action_filter`, `date_from/to`, `offset`, `limit`). |
 | `/cloud/purge_audit_logs` | manager | Purge audit rows older than the retention window. |
 
-There are **no** dedicated `/cloud/*` routes for job history, log chunks or cancel/retry. The SPA calls `cloud.job` model methods through the standard ORM RPC instead: `load_history` (paginated history), `get_host_jobs`, `enqueue(host_id, instance_id, job_type_code)` (host-level actions such as `host_probe` and `full_setup`; role-gated server-side), `retry_job` and `cancel_job` (a job waiting in its queue is cancelled at once, by whoever may ask for a job of its type). The job log terminal page consumes chunks over WebSocket with an HTTP polling fallback (see [Static pages](#static-pages-and-public-http-endpoints)).
+There are **no** dedicated `/cloud/*` routes for job history, log chunks or cancel/retry. The SPA calls `cloud.job` model methods through the standard ORM RPC instead: `load_history` (paginated history), `get_host_jobs`, `enqueue(host_id, instance_id, job_type_code)` (host-level actions such as `host_probe` and `full_setup`; role-gated server-side), `retry_job` and `cancel_job` (role-gated server-side like `enqueue`: in any state, by whoever may ask for a job of its type and for every step of its chain the cancellation ends; a job waiting in its queue is cancelled at once). The job log terminal page consumes chunks over WebSocket with an HTTP polling fallback (see [Static pages](#static-pages-and-public-http-endpoints)).
 
 ## Notification preferences
 

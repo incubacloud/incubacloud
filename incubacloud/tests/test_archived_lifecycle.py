@@ -15,9 +15,9 @@ pin is that the record either tells the truth or refuses.
 from unittest.mock import MagicMock, patch
 
 from odoo import fields
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.http import Request
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, new_test_user, tagged
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 
@@ -277,6 +277,86 @@ class TestRevive(_ArchivedBase):
         with self.assertRaises(UserError):
             inst.revive()
 
+
+
+@tagged("-at_install", "post_install")
+class TestReviveIsADevelopers(_ArchivedBase):
+    """Reviving deploys an instance and restores its copy, and restoring
+    is a Developer's: below one it is refused before anything is
+    written, and what the route starts and cannot finish is undone.
+
+    After every module is installed: the person asking needs a partner,
+    and a module installed after this one may add a column to it that
+    only its own defaults fill.
+    """
+
+    def _member(self, login, group):
+        """A member of the project with the panel role *group*."""
+        user = new_test_user(
+            self.env, login=login,
+            groups=f"base.group_user,incubacloud.{group}",
+        )
+        self.project.member_ids = [(4, user.id)]
+        return user
+
+    def _route(self, user, instance_id):
+        """Call ``/cloud/revive_instance`` as *user*, the way JSON-RPC would."""
+        controller = _routes_crud.CrudMixin()
+        controller._sec = lambda: self.env(user=user)["cloud.security.mixin"]
+        fake_req = MagicMock(spec=Request)
+        fake_req.env = self.env(user=user)
+        with patch.object(_routes_crud, "request", fake_req):
+            return controller.cloud_revive_instance(instance_id)
+
+    def _refused(self, attempt):
+        """Assert *attempt* raises ``AccessError``, with no savepoint around it.
+
+        ``assertRaises`` rolls back to a savepoint of its own, which would
+        hide a write the refused call made before it was refused.
+
+        :param attempt: callable making the call under test
+        """
+        try:
+            attempt()
+        except AccessError:
+            return
+        self.fail("AccessError not raised")
+
+    def _assert_still_archived(self, inst):
+        """Assert *inst* is archived as it was, read from the database."""
+        self.env.invalidate_all()
+        self.assertFalse(inst.active, "a refused revive un-archived it")
+        self.assertTrue(inst.archived_at)
+
+    def test_a_consultant_does_not_revive(self):
+        """Refused before the record is un-archived, not by the chain."""
+        consultant = self._member("ar-consultant", "group_cloud_consultant")
+        inst = self._archive()
+        with self._measuring():
+            self._refused(
+                inst.with_user(consultant).with_context(active_test=False).revive,
+            )
+        self._assert_still_archived(inst)
+
+    def test_the_route_refuses_a_consultant(self):
+        """The route asks for the role the panel shows the button to."""
+        consultant = self._member("ar-consultant-route", "group_cloud_consultant")
+        inst = self._archive()
+        with self._measuring():
+            self._refused(lambda: self._route(consultant, inst.id))
+        self._assert_still_archived(inst)
+
+    def test_a_chain_the_route_cannot_queue_leaves_it_archived(self):
+        """A refusal after the un-archiving does not keep it."""
+        developer = self._member("ar-developer", "group_cloud_developer")
+        inst = self._archive()
+        with self._measuring(), patch.object(
+            type(self.env["cloud.job"]), "enqueue_chain",
+            autospec=True, side_effect=UserError("refused"),
+        ):
+            res = self._route(developer, inst.id)
+        self.assertFalse(res["ok"])
+        self._assert_still_archived(inst)
 
 class TestArchivedNameIsReserved(_ArchivedBase):
     """The constraint already refuses it; this is about saying why.

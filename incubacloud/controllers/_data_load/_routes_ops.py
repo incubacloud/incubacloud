@@ -1099,7 +1099,7 @@ class OpsMixin:
         yaml_file = "prod.yaml" if inst.environment == "production" else "test.yaml"
         tail = max(1, min(int(lines), 2000))
         # sanitize service name to prevent injection (alphanumeric, dash, underscore)
-        if not re.match(r"^[a-zA-Z0-9_-]+$", service):
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", service):
             return {"ok": False, "error": _("Invalid service name")}
 
         if service == "odoo":

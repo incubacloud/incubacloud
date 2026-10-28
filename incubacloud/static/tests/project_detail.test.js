@@ -493,3 +493,40 @@ describe("ProjectDetail — method existence", () => {
         expect(typeof ProjectDetail.prototype.confirmPipResolve).toBe("function");
     });
 });
+
+describe("ProjectDetail — what the form offers is what the server takes", () => {
+    test("only who manages backups chooses where they are kept", () => {
+        const comp = Object.create(ProjectDetail.prototype);
+        comp.env = { permissions: { can_manage_backups: true } };
+        expect(comp.backupBackendLocked).toBe(false);
+        comp.env = { permissions: { can_manage_backups: false } };
+        expect(comp.backupBackendLocked).toBe(true);
+        comp.env = {};
+        expect(comp.backupBackendLocked).toBe(true);
+    });
+});
+
+describe("ProjectDetail — what the page offers is what the server takes", () => {
+    /**
+     * A project page as the template reads it, for a reader with *permissions*.
+     *
+     * @param {object} permissions the reader's ``env.permissions``
+     * @returns {ProjectDetail}
+     */
+    function page(permissions) {
+        const comp = Object.create(ProjectDetail.prototype);
+        comp.env = { permissions };
+        return comp;
+    }
+
+    test("only a manager is offered to delete the project", () => {
+        expect(page({ can_delete_project: true }).canDeleteProject).toBe(true);
+        expect(page({ can_delete_project: false }).canDeleteProject).toBe(false);
+        expect(page({}).canDeleteProject).toBe(false);
+    });
+
+    test("reviving restores a copy, so it is offered to who manages backups", () => {
+        expect(page({ can_deploy: true, can_manage_backups: true }).canReviveArchived).toBe(true);
+        expect(page({ can_deploy: true, can_manage_backups: false }).canReviveArchived).toBe(false);
+    });
+});

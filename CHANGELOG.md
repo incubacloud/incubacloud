@@ -191,6 +191,34 @@ with an older core — publish this core first.
   a stop stops the live odoo. `_is_a_move_step` also follows the
   `graph_uuid` of the step's queue.job when it has no chain key.
 
+- **Every role cancels a dispatched job.** A job dispatched but not
+  started was cancelled through its queue.job with the caller's rights,
+  which no role of the panel has: Cancel answered "not allowed to access
+  Queue Job", and a manager's move rollback left that step pending,
+  silently. The queue.job is now cancelled with `sudo`, after the role
+  gate and the write check.
+
+- **Consultants and project managers create stagings again, and every
+  role opens the forms that choose a backup backend.** A new staging
+  takes the host's egress whitelist as its own list, and below Developer
+  the host's entries are not readable: creating a staging failed for a
+  consultant or a project manager, and so did deploying one. The host's
+  list is read with `sudo`; only its hostnames are taken.
+  `/cloud/get_backup_backends` answered managers alone, so the forms of
+  a new instance, a new project and a project's settings failed to open
+  below one: below a manager it now names the backends and nothing else,
+  as the project page does, and their bucket, path and endpoint stay a
+  manager's (SEC-009). The Backups tab is offered to whoever may manage
+  backups instead of answering everybody else with the server's refusal,
+  and the project page shows its delete buttons to whoever may delete a
+  project (`can_delete_project`).
+
+- **Whoever adds a domain or a repository can remove it.** A consultant
+  adds an instance's domains, a developer its repositories and a project
+  manager the project's, but removing one was a manager's (`unlink`): a
+  save of the form that dropped one failed. Each of those roles now
+  removes what it adds, in the projects it is a member of.
+
 ### Security
 
 - **A job's credential is the server's alone.** `cloud.job.secret_payload`
@@ -227,6 +255,119 @@ with an older core — publish this core first.
   confirmed, also across a template upgrade. What earlier rebuilds
   committed stays in their history; no flow of the panel copies an
   instance's `.git` off its host (an export leaves it out).
+- **A job, and what cancelling it ends, is stopped only by whoever may
+  ask for it.** `cancel_job` checked the role gate of enqueue
+  (`_check_job_type_allowed`) only for a job waiting in its queue, and
+  only on the job pressed: a dispatched, running or blocked one needed
+  write access alone, and cancelling the head of a chain ended the steps
+  after it unchecked. A consultant stopped a restore of their project's
+  production after its dropdb, or its delete, or aborted a manager's
+  move by stopping its first step; a project manager or developer, who
+  write every job, stopped any host's hardening. The gate now applies in
+  every state, to the job and to every step its cancellation ends
+  (`_ended_with`), and one the caller may not ask for refuses the whole
+  cancellation before anything ends; what a role may ask for, it still
+  stops.
+
+- **Deleting, archiving or removing an instance no longer ends work its
+  asker may not stop.** Enqueuing `delete_instance` empties the
+  instance's queue, archiving it has the dispatcher cancel what waits
+  there, and unlinking its record cancels it at once — each job with the
+  rest of its chain, wherever that waits — and none of them asked
+  whether the caller could stop that work: a consultant who may delete a
+  staging cancelled, by deleting it or archiving it, a developer's
+  restore or a manager's move waiting on it, and could then cancel their
+  own delete or bring the instance back. Each of the three now holds the
+  caller, for every job it would end and the steps that end with it, to
+  the gate `cancel_job` holds them to (`_check_may_end_waiting`), and
+  refuses whole before anything ends, naming the job. A delete's own end
+  archives or removes the record as the platform: what was asked for
+  after it waits on an instance being removed. Superuser, the cron bot
+  and managers clear as before. A refusal while a move is rolled back is
+  raised, no longer taken for a step already ended.
+
+- **A move's markers, and what decides a teardown or a purge, are no
+  longer a member's to write.** `move_origin_host_id`,
+  `move_target_host_id`, `move_chain_job_ids` and
+  `move_rollback_in_progress` had no guard: a consultant wrote on their
+  staging a chain naming a production restore waiting elsewhere and a
+  target host of their choosing, and the watchdog, as the cron bot,
+  cancelled that restore and queued the rollback's cleanup — `compose
+  down -v` and `rm -rf` — on that host; the same markers opened any host
+  to their chain's steps. Only the platform writes them now
+  (`cloud.instance._check_guarded_vals`; `move_to_host`, the rollback,
+  the watchdog and the move's executors with `sudo`), and a move's chain
+  is only its instance's jobs. The same guard keeps to the platform a
+  pull request preview's identity — the GitHub webhook rebuilt with the
+  request's branch, and deleted on close, any instance a member stamped
+  with it, production included — its comment id, and the removal and
+  purge stamps; and keeps to an administrator an instance's directory on
+  its host and the place of its copy, which a consultant's own delete
+  removed or emptied wherever they pointed, and a project's remote
+  folder, which names its instances' directories. Past draft, an
+  instance's host is an administrator's too — its stack is there and its
+  waiting jobs follow it, and Move to host moves both — and where an
+  instance's or a project's backups are kept is a developer's choice, as
+  backups are. Creating an instance already past draft, as an import
+  does, is an administrator's. None of these fields is copied with an
+  instance any more.
+
+- **An instance's environment is chosen when it is created, and nobody
+  changes it afterwards.** `environment` had no guard, and it decides
+  who may delete an instance, whether its egress is filtered and, on a
+  customer's panel, whether it takes a seat of the plan: a consultant
+  relabelled a production as staging and deleted it, or a staging
+  holding a copy of production as production to lift its egress filter,
+  and a panel's owner relabelled a production as staging to free its
+  seat while it went on serving. A change is now refused to everyone but
+  the platform, administrators included
+  (`cloud.instance._check_guarded_vals`), and `/cloud/save_instance` —
+  which the panel's form and the MCP's `update_instance` call — says why
+  instead of dropping it. Creating a staging or a production is
+  unchanged.
+
+- **No project lives in a directory the platform keeps on every host.**
+  A project named "Traefik" had the folder `traefik`, so an instance of
+  it named "dynamic" lived in `~/traefik/dynamic`, and its deploy or its
+  delete removed the proxy's routes and certificates for the whole host.
+  A project's remote folder — given, or derived from its name — may no
+  longer be `traefik`, `globalwhitelist`, `incubacloud`, `observability`
+  or `observability-central`, for anyone, the platform included
+  (`RESERVED_REMOTE_FOLDERS`); the SaaS layer refuses those names as
+  tenant slugs at sign-up.
+
+- **A remote folder is one project's.** Nothing made it unique, and two
+  projects with one folder removed, overwrote or moved onto each other's
+  instance directories. A unique index over `lower(remote_folder)` now
+  holds it. A folder derived from the name takes the first free one of
+  `<slug>`, `<slug>-2`, `<slug>-3`… (a create that loses the race for
+  one takes the next); a folder chosen that another project holds is
+  refused without naming that project; and renaming a project that has
+  no folder chooses one, checked as choosing it. The 1.0.200 pre-migrate
+  stops the upgrade, naming them, if two projects already share a folder
+  whatever its case: Odoo would only log a warning and leave the index
+  out. Production has none.
+
+- **Only an administrator deletes an archived instance, and only a
+  developer revives one.** `cloud.instance.delete_archived` is public,
+  and for an archived instance without a copy it removed the record with
+  `sudo`: through `call_kw` a consultant deleted an archived production
+  that way, past the role check and the unlink's guard. It now asks for
+  the administrator's role, as its route did; the platform's own callers
+  keep it. Reviving deploys an instance and restores its copy, and
+  restoring is a developer's: `revive` and its route now ask for it
+  before anything is written, and the route runs it in a savepoint, so a
+  refusal after the record was un-archived leaves it archived.
+
+- **Every value that reaches a shell is checked whole.** The validators
+  of an instance's name, a remote folder or directory, a database
+  identifier, a service, a git ref or SHA, a host name, a log archive, a
+  mail id, a container id and a few more used `re.match` with patterns
+  ending in `$`, which also accepts a final line break: such a value
+  passed, and reached the commands run on the hosts as two lines, `rm
+  -rf` of an instance's directory among them. They now match the whole
+  value (`fullmatch`), and the delete passes the instance's directory to
+  `rm -rf` as one quoted argument (`"$HOME"/'…'`).
 
 ## [1.0.199] — 2026-10-27
 

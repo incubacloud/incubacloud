@@ -1,3 +1,5 @@
+import shlex
+
 from .abstract_executor import AbstractSSHExecutor
 from .host_build_lock import HostBuildLockMixin
 
@@ -268,11 +270,15 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             ),
             # 3. Remove the instance directory (idempotent). Left inline
             #    on purpose: a lone ``rm -rf`` is not an operation worth
-            #    a versioned script, and unquoted it lets the remote
-            #    shell expand the ``~`` in the path.
+            #    a versioned script. The path is quoted but for its
+            #    leading ``~/``, written ``"$HOME"/`` so the remote
+            #    shell still resolves the home and nothing else.
             (
                 "Remove instance directory",
-                f"rm -rf {d}",
+                "rm -rf " + (
+                    '"$HOME"/' + shlex.quote(d[2:]) if d.startswith("~/")
+                    else shlex.quote(d)
+                ),
             ),
         ]
 
@@ -323,7 +329,7 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
             # its deferred unlink went with the rolled-back transaction.
             # Arm it again and touch nothing else: the host is clean and
             # its labels were refreshed by that run.
-            self._unlink_after_job_commit(inst)
+            self._unlink_after_job_commit(inst, sudo=True)
             return
         # A clean run closes whatever a previous attempt complained
         # about; leaving them lit would keep an operator chasing a
@@ -338,9 +344,13 @@ class DeleteInstanceExecutor(HostBuildLockMixin, AbstractSSHExecutor):
         keep = self._keeps_the_record()
         # The unlink is the one thing the hook must not do itself: it
         # would cascade onto this job's row and cost the job its commit.
+        # It runs as the platform, as the archiving does: this delete was
+        # held, when it was asked for, to what waited then, and what was
+        # asked for since waits on an instance being removed
+        # (``cloud.job._check_may_end_waiting``).
         inst._finalize_removal(keep, unlink=False)
         if not keep:
-            self._unlink_after_job_commit(inst)
+            self._unlink_after_job_commit(inst, sudo=True)
         if host:
             host.refresh_observability_labels(reason="instance removed")
 

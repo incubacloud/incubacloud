@@ -131,7 +131,7 @@ def validate_wildcard_domain(value, *, check_internal=False, reserved=()):
             "characters.",
         )
     labels = bare.split(".")
-    if len(labels) < 2 or not all(_LABEL_RE.match(label) for label in labels):
+    if len(labels) < 2 or not all(_LABEL_RE.fullmatch(label) for label in labels):
         raise InvalidHostname(
             "shape",
             "A wildcard domain must be a valid DNS hostname "
@@ -175,4 +175,4 @@ def is_host_address(value):
     labels = name.split(".")
     if all(label.isdigit() for label in labels):
         return False
-    return len(name) <= 253 and all(_LABEL_RE.match(label) for label in labels)
+    return len(name) <= 253 and all(_LABEL_RE.fullmatch(label) for label in labels)

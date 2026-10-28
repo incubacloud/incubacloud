@@ -2198,7 +2198,7 @@
               value="state.form.host_id"
               options="hostOptions"
               emptyLabel="state.autoassignEnabled ? 'Auto (recommended)' : '— select host —'"
-              disabled="(!isCreate and state.inst.deployed)"
+              disabled="hostLocked"
               onChange="(value) => { this.onHostSelect({ target: { value: value } }); validator.touch('host_id'); }"
               ariaLabel="'Host'"
             />
@@ -2405,6 +2405,7 @@
                         <RlSelect
               value="state.form.backup_backend_id"
               options="backupBackendOptions"
+              disabled="backupBackendLocked"
               emptyLabel.translate="— Use project/global default —"
               onChange="(value) => this.onBackupBackendSelect({ target: { value: value } })"
             />

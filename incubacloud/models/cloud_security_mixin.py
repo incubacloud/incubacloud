@@ -156,6 +156,9 @@ class CloudSecurityMixin(models.AbstractModel):
             'can_export': is_at_least['developer'],
             'can_clone_to_staging': is_at_least['developer'],
             'can_delete_production': is_at_least['manager'],
+            # ``_check_can_delete_project``: the project page shows its
+            # delete buttons by it.
+            'can_delete_project': is_at_least['manager'],
             'can_connect_as': is_at_least['user'],
             'can_connect_production': is_at_least['developer'],
             'can_connect_production_admin': is_at_least['manager'],

@@ -88,7 +88,7 @@
                             <!-- Same trash as the instance header, so
                                  deleting does not mean scrolling to the
                                  footer of a long form. -->
-                            <t t-if="!isCreate">
+                            <t t-if="!isCreate and canDeleteProject">
                                 <div class="rl-pactions">
                                     <button class="rl-iconbtn danger"
                                             title="Delete"
@@ -223,6 +223,7 @@
                                         <label>Backup Destination <span class="rl-opt">— only for production</span></label>
                                         <RlSelect options="backupBackendOptions"
                                                   value="state.form.backup_backend_id"
+                                                  disabled="backupBackendLocked"
                                                   emptyLabel.translate="— Use global default —"
                                                   onChange="(value) => this.onBackendChange({ target: { value: value } })"/>
                                     </div>
@@ -395,7 +396,7 @@
                                                     </t>
                                                 </div>
                                                 <div class="ic-archived-actions">
-                                                    <t t-if="env.permissions?.can_deploy">
+                                                    <t t-if="canReviveArchived">
                                                         <button class="rl-btn rl-btn-sm"
                                                                 t-att-disabled="!canRevive(inst)"
                                                                 t-att-title="canRevive(inst) ? 'Deploy it again and restore its copy' : 'There is no copy left to restore'"
@@ -475,7 +476,7 @@
                             <t t-else="">
                                 <span class="rl-ff-hint"/>
                             </t>
-                            <t t-if="!isCreate">
+                            <t t-if="!isCreate and canDeleteProject">
                                 <button class="rl-btn rl-btn-danger" t-on-click="deleteProject">
                                     <t t-out="env.icon('trash', 15)"/> Delete
                                 </button>

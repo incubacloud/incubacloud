@@ -65,7 +65,7 @@ def is_safe_mail_id(value):
     :param value: candidate id coming from the browser
     :return: bool
     """
-    return bool(isinstance(value, str) and _MAIL_ID_RE.match(value))
+    return bool(isinstance(value, str) and _MAIL_ID_RE.fullmatch(value))
 
 
 def clamp_limit(limit):

@@ -74,7 +74,9 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         inst = self._inst()
         target = self.job.host_id
         origin = inst.move_origin_host_id
-        inst.write({
+        # With ``sudo``: the markers are the platform's
+        # (``cloud.instance._check_guarded_vals``).
+        inst.sudo().write({
             'host_id': target.id,
             'status': 'ok',
             **inst._running_confirmed_vals(),
@@ -129,7 +131,8 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
         if str(self.job.id) not in (inst.move_chain_job_ids or "").split(","):
             return
         target = inst.move_target_host_id
-        inst.write({
+        # With ``sudo``: the markers are the platform's.
+        inst.sudo().write({
             "move_origin_host_id": False,
             "move_target_host_id": False,
             "move_chain_job_ids": False,

@@ -712,6 +712,1050 @@ class TestOnlyThePlatform(_QueueCase):
         self.assertFalse(blocked.blocked_alert_id)
         self.assertEqual(blocked.state, "queued")
 
+    def test_a_job_under_way_is_stopped_only_by_whoever_may_ask_for_its_type(self):
+        """``cancel_job`` holds a dispatched, running or blocked job to the
+        gate of its type, as it holds a waiting one: a consultant does not
+        stop a restore a developer asked for, nor the delete of production,
+        a developer does not stop that delete, nor a project manager a
+        host's hardening."""
+        consultant = self._consultant("queue-stop-consultant")
+        developer = self._consultant(
+            "queue-stop-developer", "incubacloud.group_cloud_developer",
+        )
+        pm = self._consultant(
+            "queue-stop-pm", "incubacloud.group_cloud_project_manager",
+        )
+        prod = self._instance("queue-stop-prod", environment="production")
+        pending = self._enqueue(
+            "backup_restore", inst=self._instance("queue-stop-staging"),
+        )
+        self.assertEqual(pending.state, "pending")
+        alert = self.env["cloud.alert"].sudo().raise_alert(
+            "addon_conflict", "two repositories define web_x",
+            level="critical", instance=prod,
+        )
+        delete = self._job("delete_instance", inst=prod)
+        for user, job, state in (
+            (consultant, self._job("backup_restore", inst=prod), "started"),
+            (consultant, pending, "pending"),
+            (
+                consultant,
+                self._job(
+                    "backup_restore", state=False, inst=prod,
+                    blocked_alert_id=alert.id,
+                ),
+                False,
+            ),
+            (consultant, delete, "started"),
+            (developer, delete, "started"),
+            (pm, self._job("host_hardening", inst=False), "started"),
+        ):
+            with self.subTest(
+                user=user.login, job=job.job_type_id.code, state=state,
+            ):
+                # The role gate's refusal, not one of an access right the
+                # path happens to need on the way.
+                with self.assertRaisesRegex(AccessError, "group_cloud_"):
+                    job.with_user(user).cancel_job()
+                self.assertEqual(job.state, state)
+
+    def test_what_a_role_may_ask_for_it_still_stops_in_any_state(self):
+        """The stop buttons of the instance and host pages keep working: a
+        consultant stops their restart dispatched or running, and a manager
+        without superuser rights a host's hardening.
+
+        Neither may read ``queue.job``: a request of the panel starts with
+        nothing of it in the cache, and the dispatched job is stopped
+        through its queue.job."""
+        consultant = self._consultant("queue-stop-own")
+        manager = self._consultant(
+            "queue-stop-manager", "incubacloud.group_cloud_manager",
+        )
+        pending = self._enqueue("restart_instance")
+        self.assertEqual(pending.state, "pending")
+        self.env.invalidate_all()
+        pending.with_user(consultant).cancel_job()
+        self.assertEqual(pending.state, "cancelled")
+        running = self._job("restart_instance")
+        running.with_user(consultant).cancel_job()
+        self.assertEqual(running.state, "cancelled")
+        hardening = self._job("host_hardening", inst=False)
+        hardening.with_user(manager).cancel_job()
+        self.assertEqual(hardening.state, "cancelled")
+
+    def test_a_manager_without_superuser_rights_rolls_back_a_running_move(self):
+        """``rollback_move`` stops the dispatched and running steps through
+        ``cancel_job`` as the manager who asks, and every type of a move is
+        theirs to ask for. ``_cancel_move_chain`` swallows a ``UserError``,
+        and so an ``AccessError``: only the steps' state tells."""
+        manager = self._consultant(
+            "queue-stop-move", "incubacloud.group_cloud_manager",
+        )
+        target = self.env["cloud.host"].create({
+            "name": "queue-stop-target",
+            "ip_address": "10.0.0.84",
+            "user": "ubuntu",
+            "wildcard_domain": "stop.example.com",
+        })
+        prod = self._instance("queue-stop-move", environment="production")
+        steps = self._enqueue("stop_instance", inst=prod)
+        self.assertEqual(steps.state, "pending")
+        steps |= self._job("restore_instance", inst=prod, host=target)
+        steps |= self._job("move_cutover", inst=prod, host=target)
+        prod.write({
+            "move_origin_host_id": self.host.id,
+            "move_target_host_id": target.id,
+            "move_chain_job_ids": ",".join(str(job_id) for job_id in steps.ids),
+        })
+        self.env.invalidate_all()
+        prod.with_user(manager).rollback_move()
+        self.assertEqual(set(steps.mapped("state")), {"cancelled"})
+
+    def _platform_chain(self, inst, *codes):
+        """``enqueue_chain`` *codes* on *inst*, as the platform asks for one.
+
+        :param inst: the ``cloud.instance`` every step acts on
+        :param codes: the job types of the steps, in order
+        :return: the steps, in order
+        """
+        return self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": inst.id, "job_type_code": code}
+            for code in codes
+        ]))
+
+    def test_a_cancellation_ending_a_step_above_the_caller_ends_nothing(self):
+        """What a cancellation ends besides the job — the rest of its chain —
+        is held to the same gate: a consultant who stops the restart heading
+        a chain whose next step is a restore, dispatched or running, or the
+        stop heading a move still waiting in the queue, ends nothing."""
+        consultant = self._consultant("queue-stop-chain")
+        dispatched = self._platform_chain(
+            self.inst, "restart_instance", "backup_restore",
+        )
+        self.assertEqual(
+            dispatched.mapped("state"), ["pending", "wait_dependencies"],
+        )
+        running = self._platform_chain(
+            self._instance("queue-stop-chain-run"),
+            "restart_instance", "backup_restore",
+        )
+        running[0].queue_job_id.write({"state": "started"})
+        self.assertEqual(running.mapped("state"), ["started", "wait_dependencies"])
+        busy = self._instance("queue-stop-chain-busy")
+        self._job("rebuild_instance", inst=busy)
+        move = self._platform_chain(busy, "stop_instance", "move_cutover")
+        self.assertEqual(move.mapped("state"), ["queued", "queued"])
+        for steps in (dispatched, running, move):
+            states = steps.mapped("state")
+            with self.subTest(states=states):
+                self.env.invalidate_all()
+                # The refusal names the step the caller may not stop.
+                with self.assertRaisesRegex(
+                    AccessError,
+                    rf"would also end job #{steps[1].id}, .*'group_cloud_",
+                ):
+                    steps[0].with_user(consultant).cancel_job()
+                self.assertEqual(steps.mapped("state"), states)
+
+    def test_whoever_may_ask_for_every_step_still_ends_the_chain(self):
+        """A consultant's own chain, every step theirs to ask for, still
+        ends whole when they stop its head, dispatched or waiting."""
+        consultant = self._consultant("queue-stop-own-chain")
+        dispatched = self._platform_chain(
+            self.inst, "restart_instance", "stop_instance",
+        )
+        self.assertEqual(
+            dispatched.mapped("state"), ["pending", "wait_dependencies"],
+        )
+        busy = self._instance("queue-stop-own-chain-busy")
+        self._job("rebuild_instance", inst=busy)
+        waiting = self._platform_chain(busy, "stop_instance", "start_instance")
+        self.assertEqual(waiting.mapped("state"), ["queued", "queued"])
+        for steps in (dispatched, waiting):
+            with self.subTest(states=steps.mapped("state")):
+                self.env.invalidate_all()
+                steps[0].with_user(consultant).cancel_job()
+                self.assertEqual(set(steps.mapped("state")), {"cancelled"})
+
+    def test_a_manager_and_the_watchdog_still_end_a_dispatched_move(self):
+        """``rollback_move`` as a manager without superuser rights, and the
+        watchdog's ``_do_rollback_move`` as the cron bot its scheduled
+        action runs as, still end the whole of a dispatched move chain,
+        whose steps are a manager's to ask for."""
+        manager = self._consultant(
+            "queue-stop-move-chain", "incubacloud.group_cloud_manager",
+        )
+        bot = self.env["res.users"]._get_cron_bot()
+        self.assertTrue(bot)
+        target = self.env["cloud.host"].create({
+            "name": "queue-stop-chain-target",
+            "ip_address": "10.0.0.85",
+            "user": "ubuntu",
+            "wildcard_domain": "stop-chain.example.com",
+        })
+        Instance = self.env["cloud.instance"]
+        for name, rollback in (
+            ("queue-stop-move-manager", lambda inst: inst.with_user(manager).rollback_move()),
+            ("queue-stop-move-watchdog", lambda inst: inst.with_user(bot)._do_rollback_move()),
+        ):
+            with self.subTest(name=name):
+                inst = self._instance(name)
+                steps = self._platform_chain(
+                    inst, "stop_instance", "restore_instance", "move_cutover",
+                )
+                self.assertEqual(
+                    steps.mapped("state"),
+                    ["pending", "wait_dependencies", "wait_dependencies"],
+                )
+                inst.write({
+                    "move_origin_host_id": self.host.id,
+                    "move_target_host_id": target.id,
+                    "move_chain_job_ids": ",".join(str(i) for i in steps.ids),
+                })
+                self.env.invalidate_all()
+                rollback(Instance.browse(inst.id))
+                self.assertEqual(set(steps.mapped("state")), {"cancelled"})
+
+    def test_stopping_the_last_step_of_a_running_chain_ends_it_alone(self):
+        """Dispatched, a step ends only the steps after it: a consultant
+        stops the restart waiting behind a restore that runs, and the
+        restore runs on."""
+        consultant = self._consultant("queue-stop-tail")
+        chain = self._platform_chain(self.inst, "backup_restore", "restart_instance")
+        chain[0].queue_job_id.write({"state": "started"})
+        self.assertEqual(chain.mapped("state"), ["started", "wait_dependencies"])
+        self.env.invalidate_all()
+        chain[1].with_user(consultant).cancel_job()
+        self.assertEqual(chain.mapped("state"), ["started", "cancelled"])
+
+    def test_stopping_a_step_of_a_waiting_chain_would_end_all_of_it(self):
+        """Waiting, a chain is cancelled whole: stopping its restart would
+        end the restore before it, which the consultant may not stop."""
+        consultant = self._consultant("queue-stop-whole")
+        self._job("rebuild_instance")
+        chain = self._platform_chain(self.inst, "backup_restore", "restart_instance")
+        self.assertEqual(chain.mapped("state"), ["queued", "queued"])
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(
+            AccessError,
+            rf"would also end job #{chain[0].id}, .*'group_cloud_developer'",
+        ):
+            chain[1].with_user(consultant).cancel_job()
+        self.assertEqual(chain.mapped("state"), ["queued", "queued"])
+
+    def test_a_refusal_ending_a_move_is_not_taken_for_a_step_already_ended(self):
+        """``_cancel_move_chain`` skips a step an earlier one's cancellation
+        already ended (``UserError``); an ``AccessError``, a subclass of it,
+        is a refusal and is raised: the move was not stopped."""
+        consultant = self._consultant("queue-stop-move-refused")
+        steps = self._platform_chain(self.inst, "stop_instance", "move_cutover")
+        self.assertEqual(steps.mapped("state"), ["pending", "wait_dependencies"])
+        self.inst.move_chain_job_ids = ",".join(str(i) for i in steps.ids)
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(AccessError, "'group_cloud_manager'"):
+            self.inst.with_user(consultant)._cancel_move_chain()
+        self.assertEqual(steps.mapped("state"), ["pending", "wait_dependencies"])
+
+    def test_a_consultant_neither_deletes_nor_archives_over_work_above_them(self):
+        """Deleting an instance empties its queue, and archiving it ends at
+        dispatch what waits there: a consultant may do neither while a
+        developer's restore, or a manager's move, waits on the staging. No
+        delete is asked for, nothing waiting ends, the staging stays."""
+        consultant = self._consultant("queue-clear-consultant")
+        Job = self.Job.with_user(consultant)
+        for codes in (("backup_restore",), ("stop_instance", "move_cutover")):
+            inst = self._instance(f"queue-clear-{codes[-1].replace('_', '-')}")
+            self._job("rebuild_instance", inst=inst)
+            waiting = self._platform_chain(inst, *codes)
+            self.assertEqual(set(waiting.mapped("state")), {"queued"})
+            for label, attempt in (
+                ("delete", lambda inst=inst: Job.enqueue(
+                    self.host.id, inst.id, "delete_instance",
+                )),
+                ("archive", lambda inst=inst: inst.with_user(consultant).write(
+                    {"active": False},
+                )),
+            ):
+                with self.subTest(codes=codes, attempt=label):
+                    jobs_before = self.Job.search_count(
+                        [("instance_id", "=", inst.id)],
+                    )
+                    self.env.invalidate_all()
+                    with self.assertRaisesRegex(
+                        AccessError,
+                        rf"{inst.name} has work waiting .*job #{waiting[-1].id}, "
+                        r".*'group_cloud_",
+                    ):
+                        attempt()
+                    self.assertEqual(set(waiting.mapped("state")), {"queued"})
+                    self.assertEqual(
+                        self.Job.search_count([("instance_id", "=", inst.id)]),
+                        jobs_before,
+                    )
+                    self.assertTrue(inst.active)
+
+    def test_a_consultant_does_not_remove_a_draft_over_work_above_them(self):
+        """Removing an instance's record ends what waits on it, too: not
+        while a developer's restore upload waits on the draft."""
+        consultant = self._consultant("queue-unlink-consultant")
+        draft = self._instance("queue-unlink-draft", state="draft")
+        self._job("backup_create", inst=draft)
+        grant = self._enqueue("grant_restore_upload_key", inst=draft)
+        self.assertEqual(grant.state, "queued")
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(
+            AccessError, rf"has work waiting .*job #{grant.id}, .*'group_cloud_",
+        ):
+            draft.with_user(consultant).unlink()
+        self.assertTrue(draft.exists())
+        self.assertEqual(grant.state, "queued")
+
+    def test_a_consultant_still_deletes_archives_and_removes_over_their_work(self):
+        """What waits is the consultant's to stop: their delete empties the
+        queue, their archive and their removal go through."""
+        consultant = self._consultant("queue-clear-own")
+        Job = self.Job.with_user(consultant)
+        for label in ("delete", "archive", "remove"):
+            with self.subTest(attempt=label):
+                inst = self._instance(
+                    f"queue-clear-own-{label}",
+                    state="draft" if label == "remove" else "deployed",
+                )
+                self._job("rebuild_instance", inst=inst)
+                restart = self.Job.browse(
+                    Job.enqueue(self.host.id, inst.id, "restart_instance"),
+                )
+                self.assertEqual(restart.state, "queued")
+                self.env.invalidate_all()
+                if label == "delete":
+                    delete = self.Job.browse(
+                        Job.enqueue(self.host.id, inst.id, "delete_instance"),
+                    )
+                    self.assertEqual(delete.state, "queued")
+                    self.assertEqual(restart.state, "cancelled")
+                elif label == "archive":
+                    inst.with_user(consultant).write({"active": False})
+                    self.assertFalse(inst.active)
+                else:
+                    inst.with_user(consultant).unlink()
+                    self.assertFalse(inst.exists())
+                    self.assertEqual(restart.state, "cancelled")
+
+    def test_a_manager_and_the_cron_bot_still_clear_whatever_waits(self):
+        """A manager's delete empties the queue whole, a developer's restore
+        and a move chain included, and the cron bot still archives."""
+        manager = self._consultant(
+            "queue-clear-manager", "incubacloud.group_cloud_manager",
+        )
+        bot = self.env["res.users"]._get_cron_bot()
+        inst = self._instance("queue-clear-manager")
+        self._job("rebuild_instance", inst=inst)
+        waiting = self._platform_chain(inst, "backup_restore")
+        waiting |= self._platform_chain(inst, "stop_instance", "move_cutover")
+        self.env.invalidate_all()
+        delete = self.Job.browse(self.Job.with_user(manager).enqueue(
+            self.host.id, inst.id, "delete_instance",
+        ))
+        self.assertEqual(delete.state, "queued")
+        self.assertEqual(set(waiting.mapped("state")), {"cancelled"})
+        archived = self._instance("queue-clear-bot")
+        self._job("rebuild_instance", inst=archived)
+        restore = self._platform_chain(archived, "backup_restore")
+        self.env.invalidate_all()
+        archived.with_user(bot).write({"active": False})
+        self.assertFalse(archived.active)
+        self.assertEqual(restore.state, "queued")
+
+    def _end_delete(self, job):
+        """Run *job*'s ``on_success`` as its executor does, then the unlink it arms.
+
+        The test's cursor never commits, so what the hook arms for after
+        the commit (``_unlink_after_job_commit``) is gathered on callbacks
+        of its own and run once the hook is done.
+
+        :param job: a ``delete_instance`` job, in the environment it runs in
+        """
+        ex = DeleteInstanceExecutor(job_record=job, host_record=job.host_id)
+        cr = job.env.cr
+        original = cr.postcommit
+        cr.postcommit = Callbacks()
+        try:
+            with patch.object(
+                type(self.host), "refresh_observability_labels", autospec=True,
+            ):
+                asyncio.run(ex.on_success({}))
+            job.env.flush_all()
+            cr.postcommit.run()
+        finally:
+            cr.postcommit = original
+
+    def test_a_consultants_delete_still_ends_over_what_was_asked_after_it(self):
+        """What waits behind a delete was asked for on an instance being
+        removed: the delete's own end archives the record, or removes it,
+        as the platform completing what was authorised when it was asked
+        for — whatever waits behind it."""
+        consultant = self._consultant("queue-clear-end")
+        backend = self.env["cloud.backup.backend"].create({
+            "name": "queue-clear-end", "backend_type": "s3",
+            "s3_bucket": "queue-clear-end",
+        })
+        for keep in (True, False):
+            with self.subTest(keep_in_panel=keep):
+                inst = self._instance(f"queue-clear-end-{'keep' if keep else 'remove'}")
+                inst.backup_backend_id = backend
+                delete = self._job(
+                    "delete_instance", inst=inst, payload={"keep_in_panel": keep},
+                )
+                restore = self._platform_chain(inst, "backup_restore")
+                self.assertEqual(restore.state, "queued")
+                self._end_delete(delete.with_user(consultant))
+                self.env.invalidate_all()
+                record = self.env["cloud.instance"].with_context(
+                    active_test=False,
+                ).browse(inst.id)
+                if keep:
+                    self.assertFalse(record.active)
+                    # Its copy's place, frozen as the platform's.
+                    self.assertTrue(record.custom_backup_dst)
+                else:
+                    self.assertFalse(record.exists())
+                    self.assertEqual(restore.state, "cancelled")
+
+    def test_stopping_the_last_of_three_running_steps_ends_it_alone(self):
+        """Only what comes after a step ends with it: the consultant stops
+        the third step of a running chain, and the restore before it,
+        theirs to stop or not, waits on."""
+        consultant = self._consultant("queue-stop-tail3")
+        chain = self._platform_chain(
+            self.inst, "restart_instance", "backup_restore", "start_instance",
+        )
+        chain[0].queue_job_id.write({"state": "started"})
+        self.assertEqual(
+            chain.mapped("state"),
+            ["started", "wait_dependencies", "wait_dependencies"],
+        )
+        self.env.invalidate_all()
+        chain[2].with_user(consultant).cancel_job()
+        self.assertEqual(
+            chain.mapped("state"), ["started", "wait_dependencies", "cancelled"],
+        )
+
+    def test_archiving_ignores_what_runs_on_archived_instances(self):
+        """The dispatcher leaves a job meant for archived instances to run
+        (``_runs_on_archived``), so archiving does not end it and is not
+        held to it: a consultant archives over a manager's purge."""
+        consultant = self._consultant("queue-archive-purge")
+        inst = self._instance("queue-archive-purge")
+        self._job("rebuild_instance", inst=inst)
+        purge = self._platform_chain(inst, "purge_archived_backups")
+        self.assertEqual(purge.state, "queued")
+        self.env.invalidate_all()
+        inst.with_user(consultant).write({"active": False})
+        self.assertFalse(inst.active)
+        self.assertEqual(purge.state, "queued")
+
+    def _target_host(self, name):
+        """Another host, ready to take an instance, named *name*."""
+        return self.env["cloud.host"].create({
+            "name": name,
+            "ip_address": "10.0.0.86",
+            "user": "ubuntu",
+            "wildcard_domain": f"{name}.example.com",
+            "status": "compatible",
+            "traefik_deployed": True,
+        })
+
+    def test_a_consultant_writes_none_of_a_moves_markers(self):
+        """A move's markers say which jobs a rollback and the watchdog
+        cancel and on which host the cleanup runs: only the platform writes
+        them, neither a write nor a create of a consultant does."""
+        consultant = self._consultant("queue-markers")
+        other = self._target_host("queue-markers")
+        for vals in (
+            {"move_origin_host_id": self.host.id},
+            {"move_target_host_id": other.id},
+            {"move_chain_job_ids": "1"},
+            {"move_rollback_in_progress": True},
+        ):
+            with self.subTest(vals=vals):
+                self.env.invalidate_all()
+                with self.assertRaisesRegex(AccessError, "panel's own actions"):
+                    self.inst.with_user(consultant).write(vals)
+                with self.assertRaisesRegex(AccessError, "panel's own actions"):
+                    self.env["cloud.instance"].with_user(consultant).create({
+                        "name": "queue-markers-new",
+                        "project_id": self.project.id,
+                        "host_id": self.host.id,
+                    } | vals)
+        self.assertFalse(self.inst.move_origin_host_id)
+        self.assertFalse(self.inst.move_target_host_id)
+        self.assertFalse(self.inst.move_chain_job_ids)
+
+    def test_the_watchdog_ends_only_the_moves_own_jobs(self):
+        """Markers that name another instance's job, as forged ones would,
+        cancel nothing of it: a move's chain is its instance's jobs."""
+        bot = self.env["res.users"]._get_cron_bot()
+        prod = self._instance("queue-markers-prod", environment="production")
+        self._job("rebuild_instance", inst=prod)
+        victim = self._platform_chain(prod, "backup_restore")
+        self.assertEqual(victim.state, "queued")
+        self.inst.write({
+            "move_origin_host_id": self.host.id,
+            "move_target_host_id": self._target_host("queue-markers-wd").id,
+            "move_chain_job_ids": str(victim.id),
+        })
+        self.assertFalse(self.inst._get_move_chain_jobs())
+        self.env.invalidate_all()
+        self.env["cloud.instance"].with_user(bot).cron_recover_stuck_moves()
+        self.assertEqual(victim.state, "queued")
+
+    def test_a_managers_move_and_its_steps_still_write_the_markers(self):
+        """``move_to_host`` asked by a manager without superuser rights sets
+        the markers, and the cutover and the rollback's cleanup, run as that
+        manager, clear them."""
+        manager = self._consultant(
+            "queue-markers-manager", "incubacloud.group_cloud_manager",
+        )
+        target = self._target_host("queue-markers-move")
+        Instance = self.env["cloud.instance"]
+        for step, executor_cls in (
+            ("move_cutover", MoveCutoverExecutor),
+            ("move_rollback_cleanup", MoveRollbackCleanupExecutor),
+        ):
+            with self.subTest(step=step):
+                inst = self._instance(f"queue-markers-{step.replace('_', '-')}")
+                self.env.invalidate_all()
+                Instance.with_user(manager).browse(inst.id).move_to_host(target)
+                self.assertEqual(inst.move_origin_host_id, self.host)
+                self.assertEqual(inst.move_target_host_id, target)
+                chain = inst._get_move_chain_jobs()
+                self.assertTrue(chain)
+                self.assertEqual(chain.instance_id, inst)
+                job = chain.filtered(lambda j, step=step: j.job_type_id.code == step)
+                if not job:
+                    # The rollback's cleanup is not a step of the move.
+                    inst.sudo().move_rollback_in_progress = True
+                    job = self._job(step, inst=inst, host=target)
+                ex = executor_cls(
+                    job_record=job.with_user(manager), host_record=target,
+                )
+                with patch.object(
+                    type(self.host), "refresh_observability_labels", autospec=True,
+                ):
+                    asyncio.run(ex.on_success({}))
+                self.env.invalidate_all()
+                self.assertFalse(inst.move_origin_host_id)
+                self.assertFalse(inst.move_target_host_id)
+                self.assertFalse(inst.move_chain_job_ids)
+
+    def test_an_instances_environment_is_chosen_once(self):
+        """Whether an instance is production decides who may delete it,
+        whether its egress is filtered and, on a customer's panel, whether
+        it takes a seat of the plan: it is chosen when the instance is
+        created, and nobody changes it afterwards, a manager no more than a
+        consultant — a production relabelled staging was deleted, or freed
+        its seat while it went on serving. The platform still may; saved as
+        it is, it is no change, and creating a production is as before."""
+        consultant = self._consultant("queue-env")
+        manager = self._consultant("queue-env-manager", "incubacloud.group_cloud_manager")
+        prod = self._instance("queue-env-prod", environment="production")
+        for user in (consultant, manager):
+            for inst, env in ((prod, "staging"), (self.inst, "production")):
+                with self.subTest(user=user.login, instance=inst.name, environment=env):
+                    before = inst.environment
+                    self.env.invalidate_all()
+                    with self.assertRaisesRegex(
+                        AccessError, "chosen when it is created and cannot be changed",
+                    ):
+                        inst.with_user(user).write({"environment": env})
+                    self.assertEqual(inst.environment, before)
+        self.inst.with_user(consultant).write({"environment": "staging"})
+        with self.assertRaises(AccessError):
+            self.Job.with_user(consultant).enqueue(
+                self.host.id, prod.id, "delete_instance",
+            )
+        other = self.env["cloud.project"].create({"name": "Queue env other"})
+        created = self.env["cloud.instance"].with_user(manager).create({
+            "name": "queue-env-new", "project_id": other.id,
+            "environment": "production",
+        })
+        self.assertEqual(created.environment, "production")
+        prod.write({"environment": "staging"})
+        self.assertEqual(prod.environment, "staging")
+
+    def test_what_decides_a_teardown_or_a_purge_is_not_a_consultants(self):
+        """The directory a teardown removes, the place a purge empties, a
+        pull request's preview the webhook deletes on close, and the stamps
+        a removal and a purge go by: a consultant writes none of them; a
+        manager sets the first two, and reviving still clears the stamps."""
+        consultant = self._consultant("queue-guarded")
+        manager = self._consultant(
+            "queue-guarded-manager", "incubacloud.group_cloud_manager",
+        )
+        now = fields.Datetime.now()
+        for vals, refusal in (
+            ({"custom_remote_dir": "~/other/production"}, "Only an Administrator"),
+            ({"custom_backup_dst": "s3://other/production"}, "Only an Administrator"),
+            ({"pr_number": 7}, "panel's own actions"),
+            ({"pr_repo": "acme/odoo"}, "panel's own actions"),
+            ({"pr_head_branch": "feature"}, "panel's own actions"),
+            ({"pr_comment_id": 5}, "panel's own actions"),
+            ({"removal_finalized": True}, "panel's own actions"),
+            ({"archived_at": now}, "panel's own actions"),
+            ({"purge_cutoff_at": now}, "panel's own actions"),
+        ):
+            with self.subTest(vals=vals):
+                self.env.invalidate_all()
+                with self.assertRaisesRegex(AccessError, refusal):
+                    self.inst.with_user(consultant).write(vals)
+        self.assertFalse(self.inst.custom_remote_dir)
+        self.assertFalse(self.inst.pr_number)
+        self.assertFalse(self.inst.removal_finalized)
+        self.inst.with_user(consultant).write(
+            {"archived_at": False, "purge_cutoff_at": False},
+        )
+        self.inst.with_user(manager).write(
+            {"custom_backup_dst": "s3://queue/guarded"},
+        )
+        self.assertEqual(self.inst.custom_backup_dst, "s3://queue/guarded")
+
+    def test_only_a_manager_renames_a_projects_remote_folder(self):
+        """A project's instances live in directories named after its remote
+        folder: renamed to another project's, a teardown would remove that
+        project's instances. A consultant may not rename it."""
+        consultant = self._consultant("queue-folder")
+        manager = self._consultant(
+            "queue-folder-manager", "incubacloud.group_cloud_manager",
+        )
+        before = self.project.remote_folder
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(AccessError, "remote folder"):
+            self.project.with_user(consultant).write({"remote_folder": "other"})
+        self.assertEqual(self.project.remote_folder, before)
+        self.project.with_user(consultant).write({"remote_folder": before})
+        self.project.with_user(manager).write({"remote_folder": "queue-renamed"})
+        self.assertEqual(self.project.remote_folder, "queue-renamed")
+
+    def test_only_a_manager_changes_the_host_of_an_instance_past_draft(self):
+        """Past draft, an instance's stack is on its host, and the jobs
+        waiting on it follow its host: changing it without moving the stack
+        is ``move_to_host``'s, a manager's. A draft is anyone's to place,
+        and a host saved as it is changes nothing."""
+        consultant = self._consultant("queue-host")
+        manager = self._consultant("queue-host-manager", "incubacloud.group_cloud_manager")
+        other = self._target_host("queue-host-other")
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(
+            AccessError, rf"Only an Administrator may change the host of {self.inst.name}",
+        ):
+            self.inst.with_user(consultant).write({"host_id": other.id})
+        self.assertEqual(self.inst.host_id, self.host)
+        self.inst.with_user(consultant).write({"host_id": self.host.id})
+        draft = self._instance("queue-host-draft", state="draft")
+        draft.with_user(consultant).write({"host_id": other.id})
+        self.assertEqual(draft.host_id, other)
+        self.inst.with_user(manager).write({"host_id": other.id})
+        self.assertEqual(self.inst.host_id, other)
+
+    def test_only_a_developer_chooses_where_backups_are_kept(self):
+        """Backups are a developer's: a consultant or a project manager
+        chooses neither an instance's backup backend nor a project's, on a
+        write or a create; saved as it is, or empty on a new project, it is
+        no choice."""
+        consultant = self._consultant("queue-backup")
+        pm = self._consultant("queue-backup-pm", "incubacloud.group_cloud_project_manager")
+        developer = self._consultant("queue-backup-dev", "incubacloud.group_cloud_developer")
+        backend = self.env["cloud.backup.backend"].create({
+            "name": "queue-backup", "backend_type": "s3", "s3_bucket": "queue-backup",
+        })
+        refusal = "Only a Developer or an Administrator may choose where backups"
+        for label, attempt in (
+            ("instance", lambda: self.inst.with_user(consultant).write(
+                {"backup_backend_id": backend.id},
+            )),
+            ("project", lambda: self.project.with_user(pm).write(
+                {"backup_backend_id": backend.id},
+            )),
+            ("new instance", lambda: self.env["cloud.instance"].with_user(consultant).create({
+                "name": "queue-backup-new", "project_id": self.project.id,
+                "backup_backend_id": backend.id,
+            })),
+            ("new project", lambda: self.env["cloud.project"].with_user(pm).create({
+                "name": "Queue backup new", "backup_backend_id": backend.id,
+            })),
+        ):
+            with self.subTest(attempt=label):
+                self.env.invalidate_all()
+                with self.assertRaisesRegex(AccessError, refusal):
+                    attempt()
+        self.assertFalse(self.inst.backup_backend_id)
+        self.assertFalse(self.project.backup_backend_id)
+        self.inst.with_user(consultant).write({"backup_backend_id": None})
+        self.project.with_user(pm).write({"backup_backend_id": False})
+        self.env["cloud.project"].with_user(pm).create(
+            {"name": "Queue backup empty", "backup_backend_id": None},
+        )
+        self.inst.with_user(developer).write({"backup_backend_id": backend.id})
+        self.project.with_user(developer).write({"backup_backend_id": backend.id})
+        self.assertEqual(self.inst.backup_backend_id, backend)
+        self.assertEqual(self.project.backup_backend_id, backend)
+
+    def test_no_project_lives_in_a_platform_directory(self):
+        """A project's instances live in ``~/<remote folder>/<name>``, and
+        the platform keeps its own files in a few directories of the same
+        home: a project named after one would deploy into, and tear down,
+        the proxy's routes and certificates. No one may create or rename a
+        project into one, by its folder or by the name it is derived from;
+        a name that only starts like one is fine."""
+        pm = self._consultant("queue-folder-pm", "incubacloud.group_cloud_project_manager")
+        Project = self.env["cloud.project"]
+        for label, attempt in (
+            ("derived", lambda: Project.with_user(pm).create({"name": "Traefik"})),
+            ("explicit", lambda: Project.with_user(pm).create(
+                {"name": "Certs", "remote_folder": "traefik"},
+            )),
+            ("platform", lambda: Project.create({"name": "Observability central"})),
+            ("renamed", lambda: self.project.write({"remote_folder": "globalwhitelist"})),
+            ("re-derived", lambda: self.project.write(
+                {"remote_folder": False, "name": "Incubacloud"},
+            )),
+        ):
+            with self.subTest(attempt=label):
+                with self.assertRaisesRegex(ValidationError, "reserved for the platform"):
+                    attempt()
+        self.assertNotIn(self.project.remote_folder, ("globalwhitelist", "incubacloud"))
+        shop = Project.with_user(pm).create({"name": "Traefik Shop"})
+        self.assertEqual(shop.remote_folder, "traefik-shop")
+
+    def test_a_folder_or_a_name_ending_in_a_blank_is_refused(self):
+        """A project's remote folder and an instance's name are path
+        segments of the commands run on the host: the whole value has to
+        have their shape, a line break or a blank at its end included,
+        and a reserved folder with one is refused as malformed."""
+        Project = self.env["cloud.project"]
+        Instance = self.env["cloud.instance"]
+        draft = self._instance("queue-blank-draft", state="draft")
+        for blank in ("\n", "\r", "\t", " "):
+            for label, attempt in (
+                ("new folder", lambda: Project.create(
+                    {"name": "Queue blank", "remote_folder": "queue-blank" + blank},
+                )),
+                ("reserved folder", lambda: Project.create(
+                    {"name": "Queue blank", "remote_folder": "traefik" + blank},
+                )),
+                ("folder", lambda: self.project.write(
+                    {"remote_folder": "queue-blank" + blank},
+                )),
+                ("new instance", lambda: Instance.create({
+                    "name": "queue-blank" + blank, "project_id": self.project.id,
+                    "environment": "staging",
+                })),
+                ("instance", lambda: draft.write({"name": "queue-blank" + blank})),
+            ):
+                with self.subTest(blank=blank, attempt=label):
+                    # ``assertRaises``, not ``assertRaisesRegex``: Odoo's
+                    # rolls back to a savepoint what the refused call wrote.
+                    with self.assertRaises(ValidationError) as caught:
+                        attempt()
+                    self.assertIn("is invalid", str(caught.exception))
+        self.assertEqual(self.project.remote_folder, "queue")
+        self.assertEqual(draft.name, "queue-blank-draft")
+
+    def test_renaming_a_project_without_a_folder_chooses_its_folder(self):
+        """A project without a remote folder takes one derived from its
+        name when it is renamed: that is choosing its folder, refused as
+        an explicit choice is — below an administrator, and into a
+        platform directory. A project that has one keeps it."""
+        consultant = self._consultant("queue-derive")
+        manager = self._consultant(
+            "queue-derive-manager", "incubacloud.group_cloud_manager",
+        )
+        bare = self.env["cloud.project"].create({
+            "name": "Queue bare", "remote_folder": False,
+            "member_ids": [(4, consultant.id)],
+        })
+        self.assertFalse(bare.remote_folder)
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(AccessError, "remote folder"):
+            bare.with_user(consultant).write({"name": "Queue"})
+        with self.assertRaisesRegex(ValidationError, "reserved for the platform"):
+            bare.with_user(manager).write({"name": "Traefik"})
+        self.env.invalidate_all()
+        self.assertFalse(bare.remote_folder)
+        self.project.with_user(consultant).write({"name": "Queue renamed"})
+        self.assertEqual(self.project.remote_folder, "queue")
+        (self.project | bare).with_user(manager).write({"name": "Queue derived"})
+        self.assertEqual(self.project.remote_folder, "queue")
+        self.assertEqual(bare.remote_folder, "queue-derived")
+
+    def test_no_project_takes_another_projects_folder(self):
+        """A project's instances live in ``~/<remote folder>/<name>``: two
+        projects with one folder would tear down, and deploy into, each
+        other's directories. A folder is refused whatever the way it is
+        chosen — created or written — and whatever its case; a project the
+        caller cannot see holds its folder as well. A folder derived from
+        a name is no choice: it takes a number instead (see
+        ``test_a_name_in_use_takes_a_numbered_folder``). Folders that
+        differ stay free, any number of projects may have none, and a
+        project keeps its own."""
+        pm = self._consultant("queue-uniq-pm", "incubacloud.group_cloud_project_manager")
+        Project = self.env["cloud.project"]
+        other = Project.create({"name": "Queue other"})
+        bare = Project.create({"name": "Queue bare", "remote_folder": False})
+        self.assertEqual(other.remote_folder, "queue-other")
+        self.assertFalse(bare.remote_folder)
+        for label, attempt in (
+            ("created", lambda: Project.create(
+                {"name": "Queue twin", "remote_folder": "queue"},
+            )),
+            ("created, upper case", lambda: Project.create(
+                {"name": "Queue twin", "remote_folder": "QUEUE"},
+            )),
+            ("written", lambda: other.write({"remote_folder": "queue"})),
+            ("written, upper case", lambda: other.write({"remote_folder": "Queue"})),
+            ("emptied", lambda: other.write(
+                {"remote_folder": False, "name": "Queue"},
+            )),
+            ("one the caller cannot see", lambda: Project.with_user(pm).create(
+                {"name": "Queue sneaky", "remote_folder": "queue"},
+            )),
+        ):
+            with self.subTest(attempt=label):
+                with self.assertRaises(ValidationError) as caught:
+                    attempt()
+                self.assertRegex(
+                    str(caught.exception), "is already used by another project|is invalid",
+                )
+        # The message says what is wrong: the folder is taken.
+        with self.assertRaisesRegex(ValidationError, "'queue' is already used by another project"):
+            Project.create({"name": "Queue twin", "remote_folder": "queue"})
+        # Nothing was kept.
+        self.assertEqual(other.remote_folder, "queue-other")
+        self.assertFalse(bare.remote_folder)
+        self.assertEqual(self.project.remote_folder, "queue")
+        # The database holds it too, whatever the case: a write that skips
+        # the ORM's check meets the index.
+        with self.assertRaises(IntegrityError), mute_logger("odoo.sql_db"), self.env.cr.savepoint():
+            self.env.cr.execute(
+                "UPDATE cloud_project SET remote_folder = 'QUEUE' WHERE id = %s",
+                [other.id],
+            )
+        # What is free stays free.
+        free = Project.create({"name": "Queue free"})
+        self.assertEqual(free.remote_folder, "queue-free")
+        other.write({"remote_folder": "queue-other-2"})
+        bare.write({"name": "Queue bare renamed"})
+        self.assertEqual(bare.remote_folder, "queue-bare-renamed")
+        self.assertTrue(Project.create({"name": "Queue none", "remote_folder": False}))
+        self.assertTrue(Project.create({"name": "Queue none too", "remote_folder": False}))
+        # Saving a project with its own folder is no change.
+        self.project.write({"remote_folder": "queue", "name": "Queue kept"})
+        self.assertEqual(self.project.remote_folder, "queue")
+
+    def test_a_name_in_use_takes_a_numbered_folder(self):
+        """The folder derived from a name is the name's, not a choice: a
+        project named like another one takes the first free number after
+        it — ``queue``, ``queue-2``, ``queue-3`` — at a create and at the
+        rename of a project without a folder, whatever the case of the
+        name and whoever holds the folder. A folder chosen is refused when
+        taken, as it was, and a derived one a platform directory is
+        refused, not numbered: the name itself is what is reserved."""
+        pm = self._consultant("queue-num-pm", "incubacloud.group_cloud_project_manager")
+        manager = self._consultant(
+            "queue-num-manager", "incubacloud.group_cloud_manager",
+        )
+        Project = self.env["cloud.project"]
+        # ``self.project`` is already "Queue" and holds ``queue``.
+        second = Project.create({"name": "Queue"})
+        third = Project.with_user(pm).create({"name": "QUEUE"})
+        self.assertEqual(
+            [self.project.remote_folder, second.remote_folder, third.remote_folder],
+            ["queue", "queue-2", "queue-3"],
+        )
+        # A gap is filled: the first free number, not the last plus one.
+        second.write({"remote_folder": "queue-two"})
+        self.assertEqual(Project.create({"name": "Queue"}).remote_folder, "queue-2")
+        # Several in one call, each its own.
+        batch = Project.create([{"name": "Batch"}, {"name": "Batch"}, {"name": "Batch"}])
+        self.assertEqual(batch.mapped("remote_folder"), ["batch", "batch-2", "batch-3"])
+        # A rename that derives the folder numbers it too, for one project
+        # and for several at once; the Administrator's gate is as it was.
+        bare = Project.create({"name": "Bare one", "remote_folder": False})
+        bare_too = Project.create({"name": "Bare two", "remote_folder": False})
+        consultant = self._consultant("queue-num-consultant")
+        bare.member_ids = [(4, consultant.id)]
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(AccessError, "remote folder"):
+            bare.with_user(consultant).write({"name": "Queue"})
+        self.assertFalse(bare.remote_folder)
+        bare.with_user(manager).write({"name": "Queue"})
+        self.assertEqual(bare.remote_folder, "queue-4")
+        (bare_too | Project.create({"name": "Bare three", "remote_folder": False})).with_user(
+            manager,
+        ).write({"name": "Queue"})
+        self.assertEqual(
+            sorted(Project.search([("name", "=ilike", "queue")]).mapped("remote_folder")),
+            ["queue", "queue-2", "queue-3", "queue-4", "queue-5", "queue-6", "queue-two"],
+        )
+        # A chosen folder is not numbered.
+        for label, attempt in (
+            ("created", lambda: Project.create({"name": "Mine", "remote_folder": "queue"})),
+            ("written", lambda: second.write({"remote_folder": "queue-4"})),
+        ):
+            with self.subTest(attempt=label):
+                with self.assertRaisesRegex(ValidationError, "is already used by another project"):
+                    attempt()
+        # A reserved name is refused, not numbered, taken or not.
+        reserved = Project.create({"name": "Bare reserved", "remote_folder": False})
+        for label, attempt in (
+            ("created", lambda: Project.create({"name": "Traefik"})),
+            ("renamed", lambda: reserved.with_user(manager).write({"name": "Traefik"})),
+        ):
+            with self.subTest(attempt=label):
+                with self.assertRaisesRegex(ValidationError, "reserved for the platform"):
+                    attempt()
+        self.assertFalse(Project.search([("remote_folder", "=like", "traefik%")]))
+
+    def test_a_create_that_loses_the_race_for_a_folder_takes_the_next(self):
+        """Two requests creating the same name in one moment both see the
+        folder free; the later one meets the unique index, and its create
+        is tried again with the next number. A violation of anything else
+        is not swallowed."""
+        Project = self.env["cloud.project"]
+        real_free = type(Project)._remote_folder_is_taken
+        stale = {"queue-race"}
+
+        def blind(model, folder):
+            """What a transaction that began before the winner committed sees."""
+            return folder not in stale and real_free(model, folder)
+
+        winner = Project.create({"name": "Queue race"})
+        self.assertEqual(winner.remote_folder, "queue-race")
+        with patch.object(type(Project), "_remote_folder_is_taken", autospec=True, side_effect=blind):
+            loser = Project.create({"name": "Queue race"})
+        self.assertEqual(loser.remote_folder, "queue-race-2")
+        self.assertEqual(winner.remote_folder, "queue-race")
+        # Anything else that breaks the insert goes up.
+        with mute_logger("odoo.sql_db"), self.assertRaises(IntegrityError):
+            Project.create({"name": "Queue race other", "backup_backend_id": 999999999})
+
+    def test_only_a_manager_deletes_an_archived_instance(self):
+        """``delete_archived`` is public, and without a copy it removes the
+        record with ``sudo``: through ``call_kw`` a consultant removed an
+        archived production that way. It is a manager's, as its route is."""
+        consultant = self._consultant("queue-archdel")
+        manager = self._consultant("queue-archdel-manager", "incubacloud.group_cloud_manager")
+        Instance = self.env["cloud.instance"].with_context(active_test=False)
+        prod = self._instance("queue-archdel", environment="production", state="draft")
+        prod.active = False
+        self.env.invalidate_all()
+        with self.assertRaises(AccessError):
+            Instance.with_user(consultant).browse(prod.id).delete_archived()
+        self.assertTrue(Instance.browse(prod.id).exists())
+        self.assertEqual(Instance.with_user(manager).browse(prod.id).delete_archived(), [])
+        self.assertFalse(Instance.browse(prod.id).exists())
+
+    def test_only_a_manager_creates_an_instance_past_draft(self):
+        """Seeding ``state`` at creation is how a running instance is
+        imported, a manager's; a consultant's new record, already deployed
+        on any host, skipped every check of a deploy."""
+        consultant = self._consultant("queue-seed")
+        manager = self._consultant("queue-seed-manager", "incubacloud.group_cloud_manager")
+        Instance = self.env["cloud.instance"]
+        with self.assertRaisesRegex(AccessError, "already past draft"):
+            Instance.with_user(consultant).create({
+                "name": "queue-seed", "project_id": self.project.id,
+                "state": "deployed",
+            })
+        Instance.with_user(consultant).create({
+            "name": "queue-seed-draft", "project_id": self.project.id,
+            "state": "draft",
+        })
+        made = Instance.with_user(manager).create({
+            "name": "queue-seed-imported", "project_id": self.project.id,
+            "state": "deployed",
+        })
+        self.assertEqual(made.state, "deployed")
+
+    def test_consultants_and_project_managers_create_stagings(self):
+        """A staging is born with its host's egress list, which neither a
+        consultant nor a project manager may read: creating one failed for
+        both once nothing of the host was in the cache, and so did the
+        deploy of one whose own list was empty. The list is read for them,
+        and copied, as before."""
+        consultant = self._consultant("queue-mk-c")
+        pm = self._consultant("queue-mk-pm", "incubacloud.group_cloud_project_manager")
+        self.env["cloud.host.whitelist"].create(
+            {"host_id": self.host.id, "hostname": "queue.example.org"},
+        )
+        published = self.host.whitelist_ids.mapped("hostname")
+        self.assertIn("queue.example.org", published)
+        for user in (consultant, pm):
+            with self.subTest(user=user.login):
+                self.env.invalidate_all()
+                made = self.env["cloud.instance"].with_user(user).create({
+                    "name": f"queue-mk-{user.login.rsplit('-', 1)[-1]}",
+                    "project_id": self.project.id,
+                    "host_id": self.host.id,
+                })
+                self.assertEqual(made.sudo().whitelist_ids.mapped("hostname"), published)
+                made.sudo().whitelist_ids.unlink()
+                self.env.invalidate_all()
+                # Template v10 closes a staging's egress with a gatekeeper,
+                # which an empty list of its own leaves to the host's.
+                self.assertEqual(
+                    made.with_user(user)._egress_whitelist(template_ref="v10.0.8"),
+                    published,
+                )
+
+    def test_the_instance_guards_hold_through_the_projects_commands(self):
+        """A project's ``instance_ids`` commands create and write instances
+        through their own ``create`` and ``write``: what a consultant may
+        not write on an instance, they may not write through its project."""
+        consultant = self._consultant("queue-commands")
+        Project = self.project.with_user(consultant)
+        for label, command, refusal in (
+            ("write a marker", (1, self.inst.id, {"move_origin_host_id": self.host.id}),
+             "panel's own actions"),
+            ("write the environment", (1, self.inst.id, {"environment": "production"}),
+             "chosen when it is created"),
+            ("create a preview", (0, 0, {"name": "queue-cmd-pr", "pr_number": 9}),
+             "panel's own actions"),
+            ("create a running one", (0, 0, {"name": "queue-cmd-run", "state": "deployed"}),
+             "already past draft"),
+        ):
+            with self.subTest(command=label):
+                self.env.invalidate_all()
+                with self.assertRaisesRegex(AccessError, refusal):
+                    Project.write({"instance_ids": [command]})
+        self.assertFalse(self.inst.move_origin_host_id)
+        self.assertEqual(self.inst.environment, "staging")
+        self.assertFalse(self.env["cloud.instance"].search(
+            [("name", "in", ("queue-cmd-pr", "queue-cmd-run"))],
+        ))
+
+    def test_a_consultant_cannot_claim_another_projects_domain(self):
+        """A hostname is one instance's, also across projects a consultant
+        cannot see: claimed by their staging on the same host, the proxy
+        would send that instance's visitors to it."""
+        consultant = self._consultant("queue-domain")
+        other_project = self.env["cloud.project"].create({"name": "Queue other"})
+        other = self.env["cloud.instance"].create({
+            "name": "queue-domain-other",
+            "project_id": other_project.id,
+            "host_id": self.host.id,
+            "environment": "production",
+            "state": "deployed",
+        })
+        self.env["cloud.instance.domain"].create({
+            "instance_id": other.id, "hostname": "shop.queue-example.com",
+        })
+        self.env.invalidate_all()
+        with self.assertRaisesRegex(ValidationError, "already used"):
+            self.env["cloud.instance.domain"].with_user(consultant).create({
+                "instance_id": self.inst.id, "hostname": "shop.queue-example.com",
+            })
+
     def test_the_mirror_of_a_queue_job_ended_without_superuser_rights(self):
         """A queue.job written outside ``sudo`` (one of 1.0.197) still moves its job."""
         consultant = self._consultant(
@@ -2655,3 +3699,116 @@ class TestWhatOnlyTheServerCalls(HttpCase):
         answer = self._call("load_jobs", [self.job.id])
         self.assertNotIn("error", answer)
         self.assertEqual(answer["result"][0]["id"], self.job.id)
+
+
+@tagged("-at_install", "post_install")
+class TestTheEnvironmentIsNotSavedLater(HttpCase):
+    """``/cloud/save_instance`` says why an environment is not changed.
+
+    The panel's form sends the instance's environment back on every save,
+    and the MCP's ``update_instance`` hands an agent's values to the same
+    route: a change is refused with its reason, as ``{"ok": False}``,
+    which both show, rather than dropped without a word.
+    """
+
+    def setUp(self):
+        """A staging in draft, and a manager signed in to the panel."""
+        super().setUp()
+        project = self.env["cloud.project"].create({"name": "Env route"})
+        self.inst = self.env["cloud.instance"].create({
+            "name": "env-route",
+            "project_id": project.id,
+            "environment": "staging",
+            "state": "draft",
+        })
+        new_test_user(
+            self.env, login="env-manager", password="env-manager",
+            groups="base.group_user,incubacloud.group_cloud_manager",
+        )
+        self.authenticate("env-manager", "env-manager")
+
+    def _save(self, vals):
+        """Save *vals* on the staging through ``/cloud/save_instance``.
+
+        :param dict vals: what the form or an agent sends
+        :returns: the route's answer
+        """
+        payload = {
+            "jsonrpc": "2.0", "method": "call", "id": 1,
+            "params": {"instance_id": self.inst.id, "vals": vals},
+        }
+        return self.url_open(
+            "/cloud/save_instance",
+            data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        ).json()["result"]
+
+    def test_a_change_is_refused_with_its_reason(self):
+        """Asked to make the staging production, the route says no, and why."""
+        answer = self._save({"environment": "production"})
+        self.assertFalse(answer["ok"])
+        self.assertIn("chosen when it is created", answer["error"])
+        self.inst.invalidate_recordset()
+        self.assertEqual(self.inst.environment, "staging")
+
+    def test_the_form_saving_it_as_it_is_still_saves(self):
+        """The form's save, with the environment as it is, goes through."""
+        answer = self._save({"environment": "staging", "autopurge_exempt": True})
+        self.assertTrue(answer["ok"])
+        self.inst.invalidate_recordset()
+        self.assertTrue(self.inst.autopurge_exempt)
+
+
+@tagged("-at_install", "post_install")
+class TestEveryRoleNamesTheBackupBackends(HttpCase):
+    """The forms that create an instance or a project, and a project's
+    settings, load the backup backends from ``/cloud/get_backup_backends``.
+
+    It answered managers alone, so below them the panel failed to open a
+    new instance's form, a new project's and a project's settings. Below a
+    manager it now names them — what ``/cloud/get_project_full`` already
+    tells a member — and their bucket, path and endpoint stay a manager's.
+    """
+
+    def setUp(self):
+        """A backend, and a consultant and a manager of the panel."""
+        super().setUp()
+        self.env["cloud.backup.backend"].create({
+            "name": "Roles S3", "backend_type": "s3", "s3_bucket": "roles-secret-bucket",
+        })
+        for login, group in (
+            ("roles-consultant", "incubacloud.group_cloud_consultant"),
+            ("roles-manager", "incubacloud.group_cloud_manager"),
+        ):
+            new_test_user(
+                self.env, login=login, password=login,
+                groups=f"base.group_user,{group}",
+            )
+
+    def _backends(self, login):
+        """``/cloud/get_backup_backends`` as *login*.
+
+        :param str login: who asks
+        :returns: the JSON-RPC answer
+        """
+        self.authenticate(login, login)
+        payload = {"jsonrpc": "2.0", "method": "call", "id": 1, "params": {}}
+        return self.url_open(
+            "/cloud/get_backup_backends",
+            data=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        ).json()
+
+    def test_a_consultant_gets_the_names_and_nothing_else(self):
+        """Named for the forms, without the bucket."""
+        answer = self._backends("roles-consultant")
+        self.assertNotIn("error", answer)
+        item = next(i for i in answer["result"]["items"] if i["name"] == "Roles S3")
+        self.assertEqual(set(item), {"id", "name"})
+        self.assertNotIn("roles-secret-bucket", json.dumps(answer))
+
+    def test_a_manager_still_gets_the_whole_list(self):
+        """The manager's list, for the backends page, is as it was."""
+        answer = self._backends("roles-manager")
+        item = next(i for i in answer["result"]["items"] if i["name"] == "Roles S3")
+        self.assertEqual(item["s3_bucket"], "roles-secret-bucket")

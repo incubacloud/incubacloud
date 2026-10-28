@@ -66,7 +66,7 @@ class TerminalController(TerminalProxyMixin, http.Controller):
         Returns ``{ok, session_id, instance_name, service}`` on success.
         """
         request.env['cloud.security.mixin']._check_can_use_terminal()
-        if not _VALID_SERVICE_RE.match(service):
+        if not _VALID_SERVICE_RE.fullmatch(service):
             return {'ok': False, 'error': _('Invalid service name')}
 
         # Rate-limit (P1.22) — per-user and per-instance, unchanged

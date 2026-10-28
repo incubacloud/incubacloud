@@ -3,11 +3,10 @@ import hashlib
 import json
 import logging
 import re
-from contextlib import suppress
 from datetime import timedelta
 
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 from ..github.client import GitHubAppClient
 from ..github.http_utils import HTTPBudget
@@ -89,6 +88,28 @@ _REMOTE_DIR_RE = re.compile(r"^(~/|/)?[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*/?$")
 # must keep them free of any character bash or psql could misinterpret.
 # 1-63 chars, lowercase letter or underscore start, then alnum + '_'.
 _PG_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+
+#: What only the platform writes on an instance (``_check_guarded_vals``).
+#: A move's markers say which jobs a rollback and the watchdog cancel and
+#: on which host the cleanup removes a copy; a pull request's identity is
+#: what the GitHub webhook rebuilds and deletes by when the request changes
+#: or closes; ``removal_finalized`` tells a teardown there is nothing left
+#: to remove. ``move_to_host``, the rollback, the watchdog, the move's
+#: executors, the webhook and the teardown write them with ``sudo``.
+_PLATFORM_FIELDS = frozenset({
+    "move_origin_host_id", "move_target_host_id", "move_chain_job_ids",
+    "move_rollback_in_progress", "pr_number", "pr_repo", "pr_head_branch",
+    "pr_comment_id", "removal_finalized",
+})
+
+#: When an instance was archived and up to when its purge deletes: set by
+#: the platform alone, and cleared by a revive.
+_PLATFORM_STAMPS = frozenset({"archived_at", "purge_cutoff_at"})
+
+#: Where an instance lives on its host and where its copy is kept: the
+#: directory a teardown removes and the place a purge empties. An
+#: administrator's to set, as an import does.
+_MANAGER_FIELDS = frozenset({"custom_remote_dir", "custom_backup_dst"})
 
 
 class CloudInstance(models.Model):
@@ -261,6 +282,7 @@ class CloudInstance(models.Model):
     )
     custom_remote_dir = fields.Char(
         string="Custom Remote Directory",
+        copy=False,
         help="Override for the remote directory path. "
         "When set, used instead of the computed ~/project/instance path. "
         "Set automatically when importing existing instances.",
@@ -285,16 +307,19 @@ class CloudInstance(models.Model):
     # ── PR preview fields ────────────────────────────────────────────────────
     pr_number = fields.Integer(
         string="PR Number",
+        copy=False,
         index=True,
         help="GitHub PR number that created this instance. "
         "When set, this instance is a PR preview — auto-destroyed on PR close.",
     )
     pr_repo = fields.Char(
         string="PR Repository",
+        copy=False,
         help="Full repository name (owner/repo) of the PR.",
     )
     pr_head_branch = fields.Char(
         string="PR Branch",
+        copy=False,
         help="Head branch of the PR.",
     )
     pr_comment_id = BigInteger(
@@ -580,6 +605,7 @@ class CloudInstance(models.Model):
     )
     custom_backup_dst = fields.Char(
         string="Custom Backup Path",
+        copy=False,
         help="Override for the backup destination path. "
         "When set, used instead of the computed path. "
         "Set automatically when importing existing instances.",
@@ -1087,6 +1113,7 @@ class CloudInstance(models.Model):
         )
 
     def write(self, vals):
+        self._check_guarded_vals(vals)
         # The lifecycle is a state machine, so ``state`` is written by
         # _transition() alone. Refusing the direct write here is what
         # keeps the map from being quietly bypassed later.
@@ -1108,6 +1135,18 @@ class CloudInstance(models.Model):
                     "_transition() instead of writing it."
                 )
             )
+        # Archived, an instance has what waits on it cancelled when its
+        # turn comes (``cloud.job._entry_verdict``): held to what its
+        # delete would be held to for what waits there.
+        if "active" in vals and not vals["active"] and not self.env.su:
+            Job = self.env["cloud.job"]
+            for inst in self.filtered("active"):
+                Job._check_may_end_waiting(
+                    Job._queued_on((inst.id, None)).filtered(
+                        lambda job: not Job._runs_on_archived(job),
+                    ),
+                    inst,
+                )
         # Drop empty password values so existing stored passwords are preserved
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
@@ -1203,7 +1242,10 @@ class CloudInstance(models.Model):
             _odoo_versions.pinned_template_ref(self.env)
             if template_ref is None else template_ref
         ):
-            entries = self.host_id.whitelist_ids
+            # With ``sudo``, as at creation: the deploy runs as whoever
+            # asked for it, and the hostnames only end up in the copier
+            # answer of the staging's own gatekeeper.
+            entries = self.host_id.sudo().whitelist_ids
         seen = []
         for entry in entries:
             host = (entry.hostname or "").strip()
@@ -1741,10 +1783,15 @@ class CloudInstance(models.Model):
         :param host_id: host to redeploy on; defaults to the archived
             ``host_id``.
         :return: list of the enqueued job ids.
+        :raises AccessError: below a Developer: reviving restores the
+            copy, and restoring is a Developer's. Checked before anything
+            is written, as the panel offers it.
         :raises UserError: if the instance is not archived, has no
             frozen copy, or that copy is not there any more.
         """
         self.ensure_one()
+        self._check_can_deploy()
+        self._check_can_manage_backups()
         if self.active:
             raise UserError(_("This instance is not archived."))
         if not self.custom_backup_dst:
@@ -2159,8 +2206,12 @@ class CloudInstance(models.Model):
         if self.move_origin_host_id:
             raise UserError(_("A move is already in progress for this instance."))
 
-        self.move_origin_host_id = source.id
-        self.move_target_host_id = target_host.id
+        # The platform's markers (``_PLATFORM_FIELDS``), the caller's
+        # role checked above.
+        self.sudo().write({
+            "move_origin_host_id": source.id,
+            "move_target_host_id": target_host.id,
+        })
 
         pre = self._move_pre_steps(source)
         cut = self._move_cut_steps(target_host)
@@ -2221,7 +2272,7 @@ class CloudInstance(models.Model):
             },
         ]
         job_ids = self.env["cloud.job"].enqueue_chain(steps)
-        self.move_chain_job_ids = ",".join(str(jid) for jid in job_ids)
+        self.sudo().move_chain_job_ids = ",".join(str(jid) for jid in job_ids)
         return {"ok": True, "job_id": job_ids[0]}
 
     def rollback_move(self):
@@ -2271,7 +2322,7 @@ class CloudInstance(models.Model):
         cleared the markers): nothing on any host needs recovering.
 
         Shared by ``rollback_move`` (gated on ACL) and the unattended
-        ``cron_recover_stuck_moves`` watchdog (runs via sudo).
+        ``cron_recover_stuck_moves`` watchdog (runs as the cron bot).
         """
         self.ensure_one()
         origin = self.move_origin_host_id
@@ -2288,7 +2339,13 @@ class CloudInstance(models.Model):
 
     def _get_move_chain_jobs(self):
         """Return ``cloud.job`` records of the current move chain, ordered
-        by step (same order as ``move_chain_job_ids``)."""
+        by step (same order as ``move_chain_job_ids``).
+
+        Only this instance's jobs: every step of a move acts on the
+        instance that moves, on either host, and a rollback or the
+        watchdog cancels what this returns — never another instance's job
+        the markers might name.
+        """
         self.ensure_one()
         if not self.move_chain_job_ids:
             return self.env["cloud.job"]
@@ -2299,7 +2356,9 @@ class CloudInstance(models.Model):
                 ids.append(int(part))
         if not ids:
             return self.env["cloud.job"]
-        jobs = self.env["cloud.job"].browse(ids).exists()
+        jobs = self.env["cloud.job"].search([
+            ("id", "in", ids), ("instance_id", "=", self.id),
+        ])
         # Preserve original step order.
         id_to_pos = {jid: i for i, jid in enumerate(ids)}
         return jobs.sorted(key=lambda j: id_to_pos.get(j.id, 9999))
@@ -2317,7 +2376,9 @@ class CloudInstance(models.Model):
 
         Which steps are still active is read from the column once, up
         front; a step that an earlier one's cancellation already took
-        with it refuses (``UserError``), which is ignored.
+        with it refuses (``UserError``), which is ignored. An
+        ``AccessError``, a subclass of it, is a refusal of the caller's
+        role and is raised: the move was not stopped.
         """
         chain_jobs = self._get_move_chain_jobs()
         if not chain_jobs:
@@ -2330,8 +2391,14 @@ class CloudInstance(models.Model):
         active_ids = {row[0] for row in self.env.cr.fetchall()}
         active = chain_jobs.filtered(lambda j: j.id in active_ids)
         for job in active:
-            with suppress(UserError):
+            try:
                 job.cancel_job()
+            except AccessError:
+                # A subclass of ``UserError``, but a refusal: the move
+                # was not stopped.
+                raise
+            except UserError:
+                continue
 
     def _enqueue_rollback_jobs(self):
         """Enqueue the two recovery jobs after a cancelled move.
@@ -2356,7 +2423,7 @@ class CloudInstance(models.Model):
         """
         target = self.move_target_host_id
         origin = self.move_origin_host_id
-        self.move_rollback_in_progress = True
+        self.sudo().move_rollback_in_progress = True
         Job = self.env["cloud.job"].sudo()
         Job.enqueue(
             origin.id,
@@ -2418,7 +2485,8 @@ class CloudInstance(models.Model):
             else:
                 result = client.post_issue_comment(owner, repo, self.pr_number, body)
                 if result.get("id"):
-                    self.write({"pr_comment_id": result["id"]})
+                    # The platform's field (``_PLATFORM_FIELDS``).
+                    self.sudo().write({"pr_comment_id": result["id"]})
         except Exception:
             _logger.exception("PR comment update failed for %s", self.name)
 
@@ -2433,7 +2501,7 @@ class CloudInstance(models.Model):
         client = GitHubAppClient(creds)
         try:
             client.delete_issue_comment(owner, repo, self.pr_comment_id)
-            self.write({"pr_comment_id": 0})
+            self.sudo().write({"pr_comment_id": 0})
         except Exception:
             _logger.exception("PR comment delete failed for %s", self.name)
 
@@ -2716,8 +2784,12 @@ class CloudInstance(models.Model):
         :return: list of enqueued job ids, empty when it unlinked here.
         :raises UserError: if the instance is not archived, or has a
             chain but no host left to purge it from.
+        :raises AccessError: for a caller below Administrator, as the
+            route it serves: public, it is reachable through ``call_kw``,
+            and the branch without a copy unlinks with ``sudo``.
         """
         self.ensure_one()
+        self.env["cloud.security.mixin"]._check_cloud_group("group_cloud_manager")
         if self.active:
             raise UserError(_("This instance is not archived."))
         if not self.custom_backup_dst:
@@ -2774,7 +2846,10 @@ class CloudInstance(models.Model):
         computed = self.instance_backup_dst
         if not computed:
             return
-        self.write({"custom_backup_dst": computed})
+        # As the platform: the copy's place is an administrator's field
+        # (``_MANAGER_FIELDS``), frozen here at the end of a teardown that
+        # was authorised when it was asked for.
+        self.sudo().write({"custom_backup_dst": computed})
         _logger.info(
             "instance %s archived: backup path frozen at %s",
             self.name, computed,
@@ -3449,7 +3524,7 @@ class CloudInstance(models.Model):
             origin = inst.move_origin_host_id
             if inst.move_rollback_in_progress:
                 target = inst.move_target_host_id
-                inst.write(
+                inst.sudo().write(
                     {
                         "move_origin_host_id": False,
                         "move_target_host_id": False,
@@ -3564,6 +3639,91 @@ class CloudInstance(models.Model):
         "postgres_password",
     )
 
+    def _check_guarded_vals(self, vals):
+        """Refuse what decides a teardown, a purge or a move to whom may not set it.
+
+        A consultant writes their project's instances, production ones
+        included, and some fields are not theirs to choose: what only the
+        platform writes (``_PLATFORM_FIELDS``, and ``_PLATFORM_STAMPS``
+        unless cleared, as a revive does), what only an administrator sets
+        (``_MANAGER_FIELDS``), and the host of an instance past draft,
+        whose stack is there and whose waiting jobs follow it
+        (``move_to_host`` moves both). Where backups are kept is a
+        developer's, as backups are, and creating an instance already past
+        draft — an import — an administrator's.
+
+        Whether an instance is production is chosen when it is created
+        and changed by nobody afterwards, an administrator included: it
+        decides who may delete the instance, whether its egress is
+        filtered and, on a customer's panel, whether it takes a seat of
+        the plan — relabelled staging, a production was deleted, or freed
+        its seat while it went on serving as one. Only the platform still
+        may.
+
+        :param dict vals: the values of the create, or of the write of
+            ``self``
+        :raises AccessError: naming the fields, or the instance whose
+            environment would change, or that would move to another host
+        """
+        if self.env.su:
+            return
+        names = sorted(
+            _PLATFORM_FIELDS.intersection(vals)
+            | {name for name in _PLATFORM_STAMPS if vals.get(name)}
+        )
+        if names:
+            raise AccessError(_(
+                "These fields of an instance are set by the panel's own "
+                "actions and cannot be written directly: %(fields)s.",
+                fields=", ".join(names),
+            ))
+        if "environment" in vals and any(
+            inst.environment != vals["environment"] for inst in self
+        ):
+            raise AccessError(_(
+                "The environment of an instance is chosen when it is created "
+                "and cannot be changed. For another staging or production, "
+                "create a new instance.",
+            ))
+        if self._has_cloud_group("group_cloud_manager"):
+            return
+        # Seeding ``state`` at creation is how a running instance is
+        # imported: a new record already deployed, on any host, would skip
+        # every check a deploy makes.
+        if not self and vals.get("state", "draft") != "draft":
+            raise AccessError(_(
+                "Only an Administrator may create an instance already past "
+                "draft, as an import does.",
+            ))
+        if "backup_backend_id" in vals and not self._has_cloud_group(
+            "group_cloud_developer",
+        ):
+            backend = vals["backup_backend_id"] or False
+            if any(inst.backup_backend_id.id != backend for inst in self) or (
+                not self and backend
+            ):
+                raise AccessError(_(
+                    "Only a Developer or an Administrator may choose where "
+                    "backups are kept.",
+                ))
+        names = sorted(_MANAGER_FIELDS.intersection(vals))
+        if names:
+            raise AccessError(_(
+                "Only an Administrator may set these fields of an instance: "
+                "%(fields)s.",
+                fields=", ".join(names),
+            ))
+        if "host_id" in vals:
+            host = vals["host_id"] or False
+            for inst in self:
+                if inst.state != "draft" and inst.host_id.id != host:
+                    raise AccessError(_(
+                        "Only an Administrator may change the host of "
+                        "%(instance)s once it has left draft; to move it, "
+                        "use Move to host.",
+                        instance=inst.name,
+                    ))
+
     # ── Validation: name + custom_remote_dir fluye a shell en executors ───
     # Un valor con shell metachars (; | & $ ` " ' space \ etc.) permite
     # command injection via SSH en el host remoto. El regex estricto es la
@@ -3572,7 +3732,7 @@ class CloudInstance(models.Model):
     @api.constrains("name")
     def _check_name_shell_safe(self):
         for inst in self:
-            if not _INSTANCE_NAME_RE.match(inst.name or ""):
+            if not _INSTANCE_NAME_RE.fullmatch(inst.name or ""):
                 raise ValidationError(
                     _(
                         "Instance name '%(name)s' is invalid. It must start with "
@@ -3588,7 +3748,7 @@ class CloudInstance(models.Model):
             v = inst.custom_remote_dir
             if not v:
                 continue
-            if not _REMOTE_DIR_RE.match(v) or ".." in v.split("/"):
+            if not _REMOTE_DIR_RE.fullmatch(v) or ".." in v.split("/"):
                 raise ValidationError(
                     _(
                         "Custom remote directory '%(path)s' is invalid. Use only "
@@ -3606,7 +3766,7 @@ class CloudInstance(models.Model):
                 ("postgres_username", "PostgreSQL user"),
             ):
                 v = inst[fname]
-                if v and not _PG_IDENT_RE.match(v):
+                if v and not _PG_IDENT_RE.fullmatch(v):
                     raise ValidationError(
                         _(
                             "%(label)s '%(value)s' is invalid. Use a valid "
@@ -3696,6 +3856,7 @@ class CloudInstance(models.Model):
                     )
 
     def unlink(self):
+        Job = self.env["cloud.job"]
         for inst in self:
             self._check_can_delete_instance(inst)
             if inst.state == "deployed":
@@ -3719,6 +3880,14 @@ class CloudInstance(models.Model):
                         state=inst.state,
                     )
                 )
+            # What waits on it is cancelled with the record, below: held
+            # to what its delete would be held to for what waits there.
+            Job._check_may_end_waiting(
+                Job.sudo().search([
+                    ("instance_id", "=", inst.id), ("state", "=", "queued"),
+                ]),
+                inst,
+            )
             self.env["cloud.audit.log"].sudo().create(
                 {
                     "action": "Instance deleted",
@@ -3730,7 +3899,6 @@ class CloudInstance(models.Model):
         # What still waited in the queues of these instances would have
         # run on records that are about to go: cancelled now, with their
         # executors' undo, rather than found gone at dispatch.
-        Job = self.env["cloud.job"]
         waiting = Job.sudo().search([
             ("instance_id", "in", self.ids), ("state", "=", "queued"),
         ])
@@ -3788,7 +3956,7 @@ class CloudInstance(models.Model):
             if unlink:
                 self.unlink()
             else:
-                self.write({"removal_finalized": True})
+                self.sudo().write({"removal_finalized": True})
             return
         # Archived: out of the daily operation, into the archived view.
         # Done last so a failure above leaves the record where an
@@ -3811,7 +3979,12 @@ class CloudInstance(models.Model):
         # so the last check's services and status would be shown for
         # ever (11-oct-2026: "db" and "smtp" in green, "error", on an
         # instance whose containers had been removed).
-        self.with_context(ic_archive_instance=True).write({
+        #
+        # As the platform: the delete that ends here was held, when it
+        # was asked for, to what waited then; what was asked for since
+        # waits on an instance being removed
+        # (``cloud.job._check_may_end_waiting``).
+        self.sudo().with_context(ic_archive_instance=True).write({
             "active": False,
             "archived_at": fields.Datetime.now(),
             "service_states": False,
@@ -3867,6 +4040,7 @@ class CloudInstance(models.Model):
     def create(self, vals_list):
         self._check_can_create_instance()
         for vals in vals_list:
+            self._check_guarded_vals(vals)
             # Seeding ``state`` on create is legal (that is how an
             # already-running instance is imported), but ``deployed`` is
             # derived: Odoo would accept it here and then quietly
@@ -3961,9 +4135,13 @@ class CloudInstance(models.Model):
             #
             # Production is skipped: its answer is always [] and a row
             # nobody reads is a row somebody will eventually believe.
+            # The host's list is read with ``sudo``: below Developer the
+            # host's egress entries are not readable, and a consultant's
+            # staging failed to be created. Only the hostnames are taken,
+            # and they become the staging's own list, theirs to read.
             if inst.environment != "production" and not inst.whitelist_ids:
                 seed = (
-                    inst.host_id.whitelist_ids.mapped("hostname")
+                    inst.host_id.sudo().whitelist_ids.mapped("hostname")
                     or DEFAULT_WHITELIST.copy()
                 )
                 Whitelist.create([

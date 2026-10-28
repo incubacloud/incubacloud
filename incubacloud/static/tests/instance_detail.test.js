@@ -871,3 +871,57 @@ describe("InstanceDetail — connect-as gate", () => {
         expect(comp.canConnectAsTarget({ is_admin: true })).toBe(false);
     });
 });
+
+describe("InstanceDetail — what the form offers is what the server takes", () => {
+    /**
+     * A detail page as the template reads it.
+     *
+     * @param {object} opts
+     * @param {number} [opts.instanceId] the instance shown, none on create
+     * @param {string} [opts.state] its lifecycle state
+     * @param {object} [opts.permissions] the reader's ``env.permissions``
+     * @returns {InstanceDetail}
+     */
+    function page({ instanceId = 7, state = "draft", permissions = {} } = {}) {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.props = { instance_id: instanceId };
+        comp.env = { permissions };
+        comp.state = { inst: { state } };
+        return comp;
+    }
+
+    test("past draft, the host is moved, not chosen", () => {
+        for (const state of ["deploying", "deployed", "deleting"]) {
+            expect(page({ state }).hostLocked).toBe(true);
+        }
+    });
+
+    test("a draft, or a new instance, has its host chosen", () => {
+        expect(page({ state: "draft" }).hostLocked).toBe(false);
+        expect(page({ instanceId: undefined, state: undefined }).hostLocked).toBe(false);
+    });
+
+    test("only who manages backups chooses where they are kept", () => {
+        expect(page({ permissions: { can_manage_backups: true } }).backupBackendLocked).toBe(false);
+        expect(page({ permissions: { can_manage_backups: false } }).backupBackendLocked).toBe(true);
+        expect(page({ permissions: {} }).backupBackendLocked).toBe(true);
+    });
+});
+
+describe("InstanceDetail — the backups tab is for who manages backups", () => {
+    test("a deployed instance shows it to a developer, not to a consultant", () => {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.state = { inst: { deployed: true } };
+        comp.env = { permissions: { can_manage_backups: true } };
+        expect(comp.canShowBackups).toBe(true);
+        comp.env = { permissions: { can_manage_backups: false } };
+        expect(comp.canShowBackups).toBe(false);
+    });
+
+    test("an instance not deployed shows it to nobody", () => {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.state = { inst: { deployed: false } };
+        comp.env = { permissions: { can_manage_backups: true } };
+        expect(comp.canShowBackups).toBe(false);
+    });
+});

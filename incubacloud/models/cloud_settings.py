@@ -793,7 +793,7 @@ class CloudSettings(models.Model):
         """
         for rec in self:
             size = rec.container_log_max_size or ""
-            if not _CONTAINER_LOG_MAX_SIZE_RE.match(size):
+            if not _CONTAINER_LOG_MAX_SIZE_RE.fullmatch(size):
                 raise ValidationError(
                     _(
                         "Container log max size must be a positive integer "
@@ -916,7 +916,7 @@ class CloudSettings(models.Model):
         """
         for settings in self:
             name = settings.metrics_central_public_host or ''
-            if name and ('.' not in name or not _HOSTNAME_RE.match(name)):
+            if name and ('.' not in name or not _HOSTNAME_RE.fullmatch(name)):
                 raise ValidationError(_(
                     "%(name)s is not a host name. Write the name alone, for "
                     "example metrics.example.com: no https:// and no path.",
