@@ -219,6 +219,20 @@ with an older core — publish this core first.
   save of the form that dropped one failed. Each of those roles now
   removes what it adds, in the projects it is a member of.
 
+- **An archived host is never chosen, and never revived onto.**
+  `select_best_host` left `active` to `active_test`, so a caller running
+  with it off — a script, or code reached from an archived record —
+  could place an instance on an archived host; it now asks for `active`
+  itself. `revive` deployed onto the archived instance's host even when
+  that host had been archived since; it now refuses, naming the host,
+  and asks for another, as its dialog does.
+
+- **An import that no host could take says so.** With automatic
+  assignment on and no host to give it, the GitHub import created the
+  instance without one and reported success; it still does, and the
+  dialog now says the instance has no host and needs one before
+  deploying.
+
 ### Security
 
 - **A job's credential is the server's alone.** `cloud.job.secret_payload`

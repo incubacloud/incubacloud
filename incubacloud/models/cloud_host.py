@@ -441,6 +441,10 @@ class CloudHost(models.Model):
         to keep free and paid tenants on separate hardware.
         """
         domain = [
+            # Spelled out, not left to ``active_test``: a caller reached
+            # from an archived record's environment, or a script, runs
+            # with it off, and an archived host takes nothing.
+            ("active", "=", True),
             ("status", "=", "compatible"),
             ("traefik_deployed", "=", True),
             ("exclude_from_autoassign", "=", False),

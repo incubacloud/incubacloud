@@ -240,6 +240,37 @@ class TestGitHubImportTransactions(TransactionCase):
         self.assertIn("requests==2.32.0", project.pip_dependencies)
         self.assertEqual(instance.project_id, project)
 
+    def test_an_instance_no_host_takes_comes_without_one_and_says_so(self):
+        """Automatic assignment on and no host to give it: the import is
+        not refused — the dialog has no host to pick — the instance is
+        created without one, and the answer says so."""
+        self.env["cloud.host"].search([]).write(
+            {"exclude_from_autoassign": True},
+        )
+        self.env["ir.config_parameter"].sudo().set_param(
+            "incubacloud.host_autoassign", "1",
+        )
+        inspected = {
+            "ok": True,
+            "repo_name": "hostless-demo",
+            "repo_type": "simple",
+            "repos_data": [],
+            "copier": {},
+            "pip_deps": "",
+            "apt_deps": "",
+            "odoo_conf": "",
+            "odoo_version": "19.0",
+            "submodules": [],
+        }
+        # ``odoo.http.request`` too: the message is translated, and the
+        # translation reads the controller's ``env`` from it.
+        with patch.object(routes, "request", self.request), \
+                patch.object(odoo_http, "request", self.request):
+            result = self.controller._create_bounded_github_import(inspected)
+        instance = self.env["cloud.instance"].browse(result["instance_id"])
+        self.assertFalse(instance.host_id)
+        self.assertTrue(result.get("host_warning"))
+
     def test_creation_deadline_rolls_back_partial_records(self):
         """An expired local deadline inside the savepoint leaves no project."""
         request_patch, facade_patch, http_patch, clients_patch = (

@@ -274,6 +274,16 @@ class TestSelectBestHost(TransactionCase):
         best = self.env['cloud.host'].select_best_host(3.75, 3.75)
         self.assertEqual(best, self.host_b)
 
+    def test_an_archived_host_is_never_chosen(self):
+        """Not even with ``active_test`` off, which an archived record's
+        environment or a script carries: the placement decides what is
+        eligible, not the context it was called from."""
+        self.host_a.active = False
+        best = self.env['cloud.host'].with_context(
+            active_test=False,
+        ).select_best_host(3.75, 3.75)
+        self.assertEqual(best, self.host_b)
+
 
 # ── Fase 5: Auto-assign in create_instance controller logic ──────────────────
 

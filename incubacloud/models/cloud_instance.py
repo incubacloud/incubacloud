@@ -1787,7 +1787,8 @@ class CloudInstance(models.Model):
             copy, and restoring is a Developer's. Checked before anything
             is written, as the panel offers it.
         :raises UserError: if the instance is not archived, has no
-            frozen copy, or that copy is not there any more.
+            frozen copy, or that copy is not there any more, or if the
+            host is archived.
         """
         self.ensure_one()
         self._check_can_deploy()
@@ -1820,6 +1821,17 @@ class CloudInstance(models.Model):
         )
         if not target_host.exists():
             raise UserError(_("Pick a host to revive this instance on."))
+        # The host it was archived from may be archived itself by now,
+        # and the dialog offers only live ones. Read here, not left to
+        # ``active_test``: the route browses this record with it off.
+        if not target_host.active:
+            raise UserError(
+                _(
+                    "Host %(host)s is archived. Pick another host to "
+                    "revive this instance on.",
+                    host=target_host.name,
+                )
+            )
         # Un-archive before enqueuing: the jobs address the instance by
         # id and every downstream query filters on ``active``, so a
         # still-archived record would have its own deploy skip it.

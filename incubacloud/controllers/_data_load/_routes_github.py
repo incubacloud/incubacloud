@@ -900,6 +900,10 @@ class GitHubMixin:
             request.env['ir.config_parameter'].sudo()
             .get_param('incubacloud.host_autoassign', '0') == '1'
         )
+        # The dialog has no host to pick: with none to give it, the
+        # instance comes without one, and the answer says so rather than
+        # leaving the import to look placed.
+        host_warning = ''
         if autoassign:
             cpus, ram = request.env['cloud.instance']._compute_instance_resources(
                 instance_values,
@@ -907,6 +911,12 @@ class GitHubMixin:
             best_host = request.env['cloud.host'].select_best_host(cpus, ram)
             if best_host:
                 instance_values['host_id'] = best_host.id
+            else:
+                host_warning = _(
+                    'No host could take this instance automatically, so it '
+                    'was created without one. Choose its host before '
+                    'deploying it.'
+                )
         _check_budget()
         instance = request.env['cloud.instance'].create(instance_values)
         _check_budget()
@@ -922,6 +932,8 @@ class GitHubMixin:
             result['sha_warning'] = _translate_inspection_warning(
                 inspected['sha_warning'],
             )
+        if host_warning:
+            result['host_warning'] = host_warning
         # Here, where the repositories came from, rather than at the
         # first deploy: the import is where the customer can still make
         # sense of a module two of them define. Only within the import's
