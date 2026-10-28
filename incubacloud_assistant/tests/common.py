@@ -130,7 +130,12 @@ class EngineMixin(AssistantMixin):
         engine = self.env["incubacloud.assistant.engine"].with_user(owner)
         if job_uuid:
             engine = engine.with_context(job_uuid=job_uuid)
-        with self.enter_registry_test_mode():
+        # A tool binds a request of its own (the runner's, the user's): the
+        # test framework would refuse the cursors of a request without its cookie.
+        with (
+            patch.object(self, "http_request_allow_all", True),
+            self.enter_registry_test_mode(),
+        ):
             engine._step(conversation.with_user(owner))
         conversation.invalidate_recordset()
 

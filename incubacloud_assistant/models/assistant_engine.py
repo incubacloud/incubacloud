@@ -21,16 +21,23 @@ import time
 from contextlib import contextmanager
 
 from odoo import api, models
+from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
+
+from odoo.addons.incubacloud_mcp.protocol.errors import McpError
 
 from .. import pricing
 from ..connectors import connector_for
 from ..connectors.base import ChatRequest, ProviderError, ToolCall, Turn, same_model
+from ..request_scope import call_context, tool_request
 from .assistant_prompt import system_prompt
+from .assistant_tools import THIRD_PARTY_READS
 
 _logger = logging.getLogger(__name__)
 
 #: Seconds between attempts when the provider is busy or down.
 RETRY_DELAYS = (2, 8, 30)
+#: Tries of a write of the step's that meets a concurrent change.
+WRITE_TRIES = 5
 #: Characters of a job's log the model reads when it ends.
 JOB_LOG_CHARS = 8000
 #: Pauses go through here, so that tests patch them out.
@@ -588,10 +595,285 @@ class AssistantEngine(models.AbstractModel):
                 conv._answer_call(call.id, call.name, text, is_error=True)
 
     @api.model
+    def _progress(self, conversation_id, name):
+        """Tell the person's panels which tool runs now."""
+        with self._durable() as env:
+            conv = self._conversation_in(env, conversation_id)
+            if conv:
+                label = env["incubacloud.assistant.message"]._label(name)
+                conv._notify({"kind": "progress", "label": f"{label}…"})
+
+    @api.model
+    def _stop_requested(self, conversation_id):
+        """Return whether the person pressed Stop (or the conversation is gone)."""
+        with self._durable() as env:
+            conv = self._conversation_in(env, conversation_id)
+            return not conv or conv.stop_requested
+
+    @api.model
     def _run_calls(self, conversation_id, calls):
-        """Run the model's calls; completed in task 15."""
-        self._refuse_calls(conversation_id, calls, "Not run yet.")
+        """Run the calls in order, then queue the next step, or stop where it waits.
+
+        A card leaves the calls after it open: they run once the person
+        answers. A job answers the calls after it with "not run": the
+        model asks again once it ends.
+        """
+        for index, call in enumerate(calls):
+            if self._stop_requested(conversation_id):
+                with self._durable() as env:
+                    conv = self._conversation_in(env, conversation_id)
+                    if conv:
+                        conv._close_open_calls("Not run: the person stopped the task.")
+                        conv._halt(
+                            "stopped", env._("Stopped. What was done stays as it is.")
+                        )
+                return
+            self._progress(conversation_id, call.name)
+            outcome = self._execute(conversation_id, call)
+            if outcome == "job":
+                self._refuse_calls(
+                    conversation_id,
+                    calls[index + 1 :],
+                    "Not run: the task waits for the job first. Ask again once it "
+                    "ends.",
+                )
+            if outcome in ("card", "job", "gone"):
+                return
         self._next(conversation_id)
+
+    @api.model
+    def _execute(self, conversation_id, call):
+        """Run one call, then record what it answered; return what the task does next.
+
+        ``"next"``: answered; ``"card"``: a card waits; ``"job"``: the task
+        waits for a job; ``"gone"``: the conversation was deleted.
+
+        First the call is marked as running, on a cursor of its own
+        (``running_call_id``): a worker that dies between the tool and its
+        answer leaves the mark, and the step that finds it answers "outcome
+        unknown" instead of running the tool again. The tool runs in a
+        transaction of its own that writes nothing of the conversation, so
+        the person writing or pressing Stop meanwhile does not make it fail;
+        a concurrency error there is never retried (the tool may have acted
+        outside the database: a command, a commit) and the model is told.
+        The mark and the answer only write the database: those are tried
+        again (:meth:`_retried`).
+        """
+        started = self._retried(lambda: self._mark_running(conversation_id, call))
+        if started == "gone":
+            return "gone"
+        if started == "unknown":
+            outcome = {
+                "text": "Outcome unknown: the panel stopped while this ran. Read the "
+                "state again before trying once more.",
+                "is_error": True,
+            }
+            return self._retried(
+                lambda: self._record_call(conversation_id, call, outcome)
+            )
+        try:
+            with self._durable() as env:
+                outcome = env["incubacloud.assistant.engine"]._run_tool(
+                    conversation_id, call
+                )
+        except PG_CONCURRENCY_EXCEPTIONS_TO_RETRY:
+            _logger.warning(
+                "assistant: %s of conversation %s met a concurrent change",
+                call.name,
+                conversation_id,
+            )
+            outcome = {
+                "text": "Not confirmed: the panel met a change made at the same time "
+                "and undid what it wrote. Read the state again before trying once "
+                "more: something outside the panel may have run.",
+                "is_error": True,
+            }
+        return self._retried(lambda: self._record_call(conversation_id, call, outcome))
+
+    @api.model
+    def _mark_running(self, conversation_id, call):
+        """Mark *call* as running; return ``"run"``, ``"unknown"`` or ``"gone"``.
+
+        ``"unknown"``: the mark of this very call is there already, left by a
+        step that died while it ran.
+        """
+        with self._durable() as env:
+            conv = self._conversation_in(env, conversation_id)
+            if not conv:
+                return "gone"
+            if conv.running_call_id == call.id:
+                return "unknown"
+            conv.sudo().running_call_id = call.id
+            return "run"
+
+    @api.model
+    def _retried(self, write):
+        """Run *write*, which only writes the database, again after a concurrency
+        error: the person wrote or pressed Stop at the same time.
+
+        :param write: a function of no arguments, with a cursor of its own
+        """
+        for attempt in range(WRITE_TRIES):
+            try:
+                return write()
+            except PG_CONCURRENCY_EXCEPTIONS_TO_RETRY:
+                if attempt == WRITE_TRIES - 1:
+                    raise
+                _sleep(0.2 * (attempt + 1))
+        return None
+
+    @api.model
+    def _run_tool(self, conversation_id, call):
+        """Run *call* in this environment's transaction; return what it answered.
+
+        The assistant's own tools run here; the MCP's run through
+        ``_tools_call`` inside a request of the user's own, as an agent's
+        call does: role, arguments, secrets, confirmation, savepoint, audit.
+        Nothing of the conversation is written here.
+
+        :return: ``{"gone": True}``, ``{"card": {approval_id, message,
+            production}}`` or ``{"text", "is_error", "job_id", "tainted"}``
+        """
+        if not self._conversation_in(self.env, conversation_id):
+            return {"gone": True}
+        Tools = self.env["incubacloud.assistant.tools"]
+        local = Tools._local_spec(call.name)
+        if local:
+            if not Tools._allowed(local):
+                return {
+                    "text": "The person's role does not allow this tool.",
+                    "is_error": True,
+                }
+            text, is_error = Tools._run_local(local, call.arguments)
+            return {"text": text, "is_error": is_error}
+        spec = self.env["incubacloud.mcp.catalog"]._spec(call.name)
+        if spec is None or not Tools._allowed(spec):
+            return {
+                "text": f"Unknown tool, or one the person's role does not allow: "
+                f"{call.name}.",
+                "is_error": True,
+            }
+        ctx = call_context(self.env.uid, conversation_id)
+        with tool_request(self.env, ctx.via()):
+            try:
+                result = self.env["incubacloud.mcp.server"]._tools_call(
+                    {"name": call.name, "arguments": call.arguments}, ctx
+                )
+            except McpError as error:
+                result = {
+                    "content": [{"type": "text", "text": error.message}],
+                    "isError": True,
+                }
+        if isinstance(result, dict) and result.get("assistant_confirmation"):
+            return {
+                "card": {
+                    "approval_id": result["assistant_confirmation"],
+                    "message": result.get("message") or "",
+                    "production": Tools._acts_on_production(spec, call.arguments),
+                }
+            }
+        text = "\n".join(
+            part.get("text") or ""
+            for part in result.get("content") or []
+            if isinstance(part, dict)
+        )
+        is_error = bool(result.get("isError"))
+        return {
+            "text": text,
+            "is_error": is_error,
+            "job_id": self._job_of(spec, text, is_error).id,
+            # Logs, files, mail, a command's output: others write them.
+            "tainted": (spec.untrusted or spec.name in THIRD_PARTY_READS)
+            and not is_error,
+        }
+
+    @api.model
+    def _record_call(self, conversation_id, call, outcome):
+        """Record what a call answered, on its own cursor; return what comes next."""
+        with self._durable() as env:
+            conv = self._conversation_in(env, conversation_id)
+            if not conv or outcome.get("gone"):
+                return "gone"
+            conv.sudo().running_call_id = False
+            card = outcome.get("card")
+            if card:
+                conv._add_message(
+                    {
+                        "role": "card",
+                        "content": card["message"],
+                        "approval_id": card["approval_id"],
+                        "card_state": "pending",
+                        "tool_call_id": call.id,
+                        "tool_name": call.name,
+                        "production": card["production"],
+                    }
+                )
+                conv._halt("waiting_confirmation", "")
+                return "card"
+            conv._answer_call(call.id, call.name, outcome["text"], outcome["is_error"])
+            if outcome.get("tainted"):
+                conv.sudo().tainted = True
+            job = env["cloud.job"].sudo().browse(outcome.get("job_id") or []).exists()
+            if job and job.state not in job._terminal_states:
+                conv.sudo().waiting_job_id = job.id
+                conv._halt("waiting_job", "", unread=False)
+                return "job"
+            return "next"
+
+    @api.model
+    def _job_of(self, spec, text, is_error):
+        """Return the job a tool that enqueues answered, or an empty recordset."""
+        Job = self.env["cloud.job"].sudo()
+        if is_error or not spec.enqueues:
+            return Job
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return Job
+        job_id = data.get("job_id") if isinstance(data, dict) else None
+        if not isinstance(job_id, int) or isinstance(job_id, bool):
+            return Job
+        return Job.browse(job_id).exists()
+
+    @api.model
+    def _job_ended(self, conversation, job, state):
+        """A job the task waited for ended: tell the model how, and go on.
+
+        Called from ``cloud.job._after_job_terminal``, in the transaction that
+        records the end, by whoever recorded it: the conversation and the
+        job's log are read as the conversation's owner.
+        """
+        conv = conversation.sudo()
+        owner = conv.user_id
+        conv = conv.with_user(owner).with_context(lang=conv.lang or owner.lang)
+        conv._add_message(
+            {"role": "job", "content": self._job_outcome(job.with_user(owner), state)}
+        )
+        # A job's log is written by the code it ran: content others write.
+        conv.sudo().write({"waiting_job_id": False, "tainted": True})
+        conv._enqueue_step()
+
+    @api.model
+    def _job_outcome(self, job, state):
+        """Return how *job* ended, for the model: state, error, its log's last lines."""
+        if not job:
+            return "The job the task waited for is gone: read the state with the tools."
+        sudo = job.sudo()
+        lines = [f"Job {job.id} ({sudo.name}) ended: {state}."]
+        if state == "failed":
+            error = sudo._failure_excerpt(sudo.queue_job_id.exc_message)
+            if error:
+                lines.append(f"Error: {error}")
+        chunks = job.env["cloud.job.log.chunk"].search(
+            [("job_id", "=", job.id)], order="id desc", limit=5
+        )
+        tail = "\n".join(chunk.content or "" for chunk in reversed(chunks))[
+            -JOB_LOG_CHARS:
+        ]
+        if tail:
+            lines += ["Last lines of its log:", tail]
+        text = "\n".join(lines)
+        return job.env["incubacloud.mcp.secrets"]._scrubber().text(text)
 
     @api.model
     def _summarize(self, conversation_id, connector, model, config):
