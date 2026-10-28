@@ -144,7 +144,7 @@ class TestTheSettingsKeepTheState(TransactionCase):
         """
         self.env.flush_all()
         result = self.settings._direct_probe_apply(
-            _PREFIX, dict(outcome, cert_expires=cert, detail="x"),
+            _PREFIX, outcome | {"cert_expires": cert, "detail": "x"},
         )
         self.env.invalidate_all()
         return result

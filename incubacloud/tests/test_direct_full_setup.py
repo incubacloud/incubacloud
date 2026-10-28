@@ -107,8 +107,7 @@ class TestFullSetupWithADirectPort(_DirectSetupCase):
         )
 
     def test_a_busy_port_fails_the_job_and_says_who_holds_it(self):
-        executor = self._executor(FullSetupExecutor, "full_setup")
-        errors = executor.parse_results({
+        errors = self._executor(FullSetupExecutor, "full_setup").parse_results({
             "check:os": {"stdout": "Linux", "exit_status": 0},
             "Check the direct port": {
                 "stdout": "IC_DIRECT_PORT_BUSY container incubacloud-central-grafana-1",
