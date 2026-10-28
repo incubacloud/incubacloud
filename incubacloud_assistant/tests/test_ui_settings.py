@@ -17,7 +17,9 @@ from .common import KEY, MODELS, AssistantMixin
 _LIMIT = "Monthly limit per user (EUR)"
 _KEY_FIELD = "Provider key"
 _ON = "Assistant on"
+#: The box and the Terms of a tenant panel, as incubacloud_tenant answers them.
 _TERMS = "I accept section 12A (AI features) of the Terms of Service"
+_TERMS_URL = "https://www.incubacloud.io/terms"
 
 
 @tagged("post_install", "-at_install")
@@ -91,9 +93,24 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
         """,
         )
 
+    def _tenant_terms(self):
+        """Answer the box and the Terms a tenant panel has (incubacloud_tenant)."""
+        Settings = type(self.env["cloud.settings"])
+        for name, value in (
+            ("_assistant_terms_label", _TERMS),
+            ("_assistant_terms_url", _TERMS_URL),
+        ):
+            patcher = patch.object(Settings, name, autospec=True, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_switching_on_needs_section_12a(self):
-        """The switch waits for the box; saved, the tab says who accepted and when."""
+        """A tenant panel: the switch waits for the box; the Terms are a link.
+
+        Saved, the tab says who accepted, when, and the version.
+        """
         self._configure(enabled=False, terms=False)
+        self._tenant_terms()
         Settings = type(self.env["cloud.settings"])
         with patch.object(
             Settings,
@@ -108,6 +125,11 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
                 if (!on.disabled) {{
                     throw new Error("the switch goes on without the box");
                 }}
+                const link = await until("the link to the Terms", () =>
+                    document.querySelector('.ic-asst-settings a[href="{_TERMS_URL}"]'));
+                if (!getComputedStyle(link).textDecorationLine.includes("underline")) {{
+                    throw new Error("the link to the Terms does not look like one");
+                }}
                 (await field("{_TERMS}")).click();
                 await until("the switch to be free", () => !on.disabled);
                 on.click();
@@ -115,6 +137,9 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
                 await expectAllSaved();
                 await until("the acceptance shown", () => document.body.textContent
                     .includes("Section 12A of the Terms accepted on"));
+                if (!document.body.textContent.includes("(terms of 2026-11-01)")) {{
+                    throw new Error("the line does not name the version");
+                }}
                 expectHidden("{_TERMS}");
             """,
             )
@@ -124,12 +149,47 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
         self.assertIn("settings-tabs-admin", settings.assistant_terms_accepted_by)
         self.assertEqual(settings.assistant_terms_version, "2026-11-01")
 
+    def test_a_self_hosted_panel_asks_an_acknowledgement_and_links_nowhere(self):
+        """No Terms of IncubaCloud's on core alone: another box, and no link."""
+        if self.env["ir.module.module"].search_count(
+            [("name", "=", "incubacloud_tenant"), ("state", "=", "installed")]
+        ):
+            self.skipTest("a tenant panel has IncubaCloud's Terms (incubacloud_tenant)")
+        self._configure(enabled=False, terms=False)
+        label = self.env["cloud.settings"]._assistant_terms_label()
+        self._in_settings(
+            "assistant",
+            f"""
+            const box = await field("{label}");
+            const tab = document.querySelector(".ic-asst-settings");
+            if (tab.querySelector("a")) {{
+                throw new Error("a self-hosted panel links somewhere: "
+                    + tab.querySelector("a").href);
+            }}
+            if (tab.textContent.includes("12A") || tab.textContent.includes("Terms")) {{
+                throw new Error("a self-hosted panel names IncubaCloud's Terms");
+            }}
+            const on = await field("{_ON}");
+            box.click();
+            await until("the switch to be free", () => !on.disabled);
+            on.click();
+            await save();
+            await expectAllSaved();
+            await until("the acknowledgement shown", () => tab.textContent
+                .includes("Last switched on, with the box ticked, on"));
+        """,
+        )
+        self.env.invalidate_all()
+        settings = self.env["cloud.settings"]._get_system()
+        self.assertTrue(settings.assistant_enabled)
+        self.assertFalse(settings.assistant_terms_version)
+
     def test_the_acceptance_line_needs_no_version(self):
         """A panel that records none (self-hosted) shows who and when, no version."""
         self._in_settings(
             "assistant",
             """
-            const said = "Section 12A of the Terms accepted on";
+            const said = "Last switched on, with the box ticked, on";
             const line = await until("the acceptance line", () => [
                 ...document.querySelectorAll(".ic-asst-settings p"),
             ].find((p) => p.textContent.includes(said)));
@@ -137,14 +197,19 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
             if (!text.includes("Test (asis-test)") || !text.includes("127.0.0.1")) {
                 throw new Error("the line misses who or from where: " + text);
             }
-            if (text.includes("terms of")) {
-                throw new Error("the line names a version there is none of: " + text);
+            if (text.includes("terms of") || text.includes("12A")) {
+                throw new Error("the line names Terms there are none of: " + text);
             }
         """,
         )
 
     def test_another_provider_empties_the_models_and_needs_its_key(self):
-        """Its models are asked for again, and saved with the key typed with it."""
+        """Its models are asked for again, and saved with the key typed with it.
+
+        Meanwhile the switch is off and cannot go on: saved, switching on
+        asks for the box again.
+        """
+        label = self.env["cloud.settings"]._assistant_terms_label()
         self._in_settings(
             "assistant",
             f"""
@@ -154,9 +219,14 @@ class TestAssistantSettingsTab(AssistantMixin, SettingsInBrowser, HttpCase):
             select.dispatchEvent(new Event("change", {{ bubbles: true }}));
             await until("the models to go", () => document.body.textContent.includes(
                 "Save the provider's key to read its models."));
+            const on = await field("{_ON}");
+            if (on.checked || !on.disabled) {{
+                throw new Error("the switch stays on, or can be, with no models");
+            }}
             await type("{_KEY_FIELD}", "sk-openai-typed-0007");
             await save();
             await expectAllSaved();
+            await until("the box asked for again", () => shownRow("{label}"));
         """,
         )
         self.env.invalidate_all()

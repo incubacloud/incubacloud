@@ -145,6 +145,50 @@ class TestSettingsRoutes(AssistantMixin, HttpCase):
         self.dev.invalidate_recordset()
         self.assertFalse(self.dev.sudo().assistant_notice_at)
 
+    def test_a_new_provider_switches_it_off_until_switched_on_again(self):
+        """No models to use: off, and on again asks for the box, as any switch-on.
+
+        The switch unchanged in the form is not sent: the save alone puts it
+        off. In one save, models chosen with the new provider and the switch
+        sent, the box is asked for.
+        """
+        new = {"provider": "openai", "api_key": "sk-openai-0004"}
+        chosen = {
+            "allowed_models": ["claude-opus-5-5"],
+            "default_model": "claude-opus-5-5",
+        }
+        Settings = type(self.env["cloud.settings"])
+        with patch.object(
+            Settings,
+            "_assistant_record_terms_acceptance",
+            autospec=True,
+            side_effect=lambda _settings, acceptance: {**acceptance, "v": ""},
+        ) as hook:
+            result, _error, _text = self._rpc(
+                self.manager.login, "save_settings", vals=new
+            )
+            self.assertTrue(result["ok"], result)
+            self.assertFalse(self.env["cloud.settings"]._assistant_config().enabled)
+            self._configure(users=[self.dev])
+            result, _error, _text = self._rpc(
+                self.manager.login,
+                "save_settings",
+                vals={**new, **chosen, "enabled": True},
+            )
+            self.assertFalse(result["ok"])
+            self.assertEqual(
+                self.env["cloud.settings"]._assistant_config().provider, "anthropic"
+            )
+            result, _error, _text = self._rpc(
+                self.manager.login,
+                "save_settings",
+                vals={**new, **chosen, "enabled": True, "accept_ai_terms": True},
+            )
+            self.assertTrue(result["ok"], result)
+            hook.assert_called_once()
+        config = self.env["cloud.settings"]._assistant_config()
+        self.assertEqual((config.provider, config.enabled), ("openai", True))
+
     def test_the_key_is_not_read_through_the_orm_either(self):
         """A manager reads the settings by RPC, never the key's field."""
         self.authenticate(self.manager.login, self.manager.login)

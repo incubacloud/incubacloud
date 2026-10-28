@@ -178,6 +178,8 @@ class AssistantSettingsRoutes(http.Controller):
             "step_cap": config.step_cap,
             "blocked": Settings._assistant_blocked_reason(),
             "terms_acceptance": Settings._assistant_terms_acceptance(),
+            "terms_label": Settings._assistant_terms_label(),
+            "terms_url": Settings._assistant_terms_url(),
         }
 
     @http.route("/cloud/assistant/save_settings", type="jsonrpc", auth="user")
@@ -189,7 +191,9 @@ class AssistantSettingsRoutes(http.Controller):
         model allowed: its listing is another. Switching on needs a key, a
         default model and allowed models. With a monthly limit, the default
         model must have a known price. A new provider shows everyone the
-        first-use notice again: it names the provider.
+        first-use notice again: it names the provider. It also switches the
+        assistant off: switching it on again asks for the box, as any
+        switch-on.
         """
         self._check()
         try:
@@ -228,6 +232,8 @@ class AssistantSettingsRoutes(http.Controller):
     def _provider_and_key(self, vals, config, provider, key):
         """Return ``(fields, the provider's listing)`` for the provider and the key.
 
+        A new provider has no model allowed yet: the assistant goes off.
+
         :raises _Refusal: for an unknown provider, a new provider without
             its key, or a key the provider refuses
         """
@@ -250,6 +256,7 @@ class AssistantSettingsRoutes(http.Controller):
                 assistant_models_at=False,
                 assistant_allowed_models="[]",
                 assistant_default_model=False,
+                assistant_enabled=False,
             )
             items = []
         if clearing:
@@ -339,8 +346,9 @@ class AssistantSettingsRoutes(http.Controller):
     def _switch(vals, key, allowed, default, write):
         """Check switching the assistant on or off with what the save leaves.
 
-        Switching it on (it was off) needs section 12A of the Terms accepted
-        in the same save, recorded last of all (:meth:`_terms_accepted`).
+        Switching it on (it was off, or the save changes the provider) needs
+        the box ticked in the same save, recorded last of all
+        (:meth:`_terms_accepted`).
 
         :raises _Refusal: on a database that blocks it, without a key,
             allowed models and a default model, or without the acceptance
@@ -359,30 +367,34 @@ class AssistantSettingsRoutes(http.Controller):
                     "model before switching it on."
                 )
             )
-        if vals["enabled"] and not Settings._assistant_config().enabled:
+        was_on = Settings._assistant_config().enabled
+        if vals["enabled"] and (not was_on or "assistant_provider" in write):
             write.update(AssistantSettingsRoutes._terms_accepted(vals))
         write["assistant_enabled"] = bool(vals["enabled"])
 
     @staticmethod
     def _terms_accepted(vals):
-        """Record the manager's acceptance of section 12A; return its fields.
+        """Record the manager's ticked box; return its fields.
 
-        The box (``accept_ai_terms``) must be ``True`` itself. The hook
-        records it (on a tenant panel, IncubaCloud first, which answers the
-        version); a refusal of the hook is the save's.
+        The box (``accept_ai_terms``) must be ``True`` itself: section 12A
+        of the Terms on a tenant panel, an acknowledgement on core alone
+        (``cloud.settings._assistant_terms_label``). The hook records it (on
+        a tenant panel, IncubaCloud first, which answers the version); a
+        refusal of the hook is the save's.
 
         :raises _Refusal: without the box, or when it could not be recorded
         """
+        Settings = request.env["cloud.settings"]
         if vals.get("accept_ai_terms") is not True:
             raise _Refusal(
                 _(
-                    "Accept section 12A (AI features) of the Terms of Service to "
-                    "switch the assistant on."
+                    'Tick "%s" to switch the assistant on.',
+                    Settings._assistant_terms_label(),
                 )
             )
         user = request.env.user
         try:
-            kept = request.env["cloud.settings"]._assistant_record_terms_acceptance(
+            kept = Settings._assistant_record_terms_acceptance(
                 {
                     "at": fields.Datetime.now(),
                     "ip": client_ip(),

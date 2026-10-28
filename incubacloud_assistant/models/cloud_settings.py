@@ -254,6 +254,33 @@ class CloudSettings(models.Model):
         }
 
     @api.model
+    def _assistant_terms_label(self):
+        """Return the box a manager ticks to switch the assistant on, translated.
+
+        Core alone has no Terms of IncubaCloud's to accept: a self-hosted
+        panel acknowledges what the assistant does. A tenant panel
+        overrides it with section 12A of the Terms (incubacloud_tenant).
+        The refusal without the box quotes it.
+
+        :rtype: str
+        """
+        return self.env._(
+            "I understand that what the assistant reads is sent to my AI provider, "
+            "and that it can make mistakes"
+        )
+
+    @api.model
+    def _assistant_terms_url(self):
+        """Return the address of the Terms the box accepts, or "" for none.
+
+        Empty on core alone: the tab links nowhere. A tenant panel
+        overrides it with the platform's Terms (incubacloud_tenant).
+
+        :rtype: str
+        """
+        return ""
+
+    @api.model
     def _assistant_record_terms_acceptance(self, acceptance):
         """Record a manager's acceptance of section 12A; return what to keep.
 

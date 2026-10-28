@@ -25,27 +25,30 @@ Every user the assistant serves uses this one key, each with their own role.
 
 **Changing the provider.** A key belongs to one provider, so type the new
 provider's key in the same save. The models are the new provider's: the allowed
-models and the default one start empty and the assistant goes off. Choose them, tick
-**Assistant on** and save. Everyone sees the first-use notice again, now naming the
-new provider.
+models and the default one start empty and the assistant goes off: **Assistant on**
+cannot be ticked until the new key is saved. Choose the models, then switch it on
+as the first time, box included, and save. Everyone sees the first-use notice
+again, now naming the new provider.
 
 ## Switching it on
 
-**Assistant on** needs a key, at least one allowed model and a default model. It
-also needs you to tick **I accept section 12A (AI features) of the Terms of
-Service** — the Terms say what is sent to the AI provider, who pays for it, and
-which actions wait for confirmation. The box is asked **each time** the assistant is
-switched on, and not again while it stays on. The panel records the date, who
-accepted and from which address, and shows it under the form: *Section 12A of the
-Terms accepted on … by … from …*.
+**Assistant on** needs a key, at least one allowed model and a default model, and a
+box ticked with it. The box is asked **each time** the assistant is switched on, and
+not again while it stays on. The panel records the date, who ticked it and from
+which address, and shows it under the form.
 
 !!! info "IncubaCloud SaaS"
-    IncubaCloud records your acceptance on your account first, with the version of
-    the Terms, and the panel shows it. If it could not be recorded, the assistant
-    stays off and the panel says so; try again later.
+    The box is **I accept section 12A (AI features) of the Terms of Service**, with
+    a link to the Terms: they say what is sent to the AI provider, who pays for it,
+    and which actions wait for confirmation. IncubaCloud records your acceptance on
+    your account first, with the version of the Terms, and the panel shows it:
+    *Section 12A of the Terms accepted on … by … from … (terms of …)*. If it could
+    not be recorded, the assistant stays off and the panel says so; try again later.
 
-On a self-hosted panel the acceptance is recorded in the panel only, without a
-version of the Terms.
+On a self-hosted panel there are no IncubaCloud Terms to accept. The box is **I
+understand that what the assistant reads is sent to my AI provider, and that it can
+make mistakes**, with no link. It is recorded in the panel only, without a version:
+*Last switched on, with the box ticked, on … by … from …*.
 
 ## Models
 

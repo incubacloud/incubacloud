@@ -179,15 +179,27 @@ next step's check and says so. On IncubaCloud's own master the assistant is bloc
 `incubacloud_saas_manager` sets `incubacloud_assistant.blocked`, `_assistant_available_for`
 is false and `save_settings` refuses to switch it on.
 
-## Switching it on: section 12A
+## Switching it on: the box, or section 12A
 
 `save_settings` moves the assistant from off to on only with `accept_ai_terms: true` in
-the same save: the box «I accept section 12A (AI features) of the Terms of Service»,
-asked each time it is switched on. `cloud.settings._assistant_record_terms_acceptance`
-records it before anything is written; on core alone it keeps it in four system-only
-fields (date, version, user, address) with the version empty; a tenant panel overrides it so that
-IncubaCloud records it on the customer's contact first and answers the version
-(`incubacloud_tenant`). `_assistant_available_for` requires that an acceptance exists.
+the same save: a box asked each time it is switched on. A new provider puts it off
+(no model is allowed yet), so switching on again asks for the box too, also in the
+same save as the provider. Three hooks of `cloud.settings` make the box what the
+panel has to accept:
+
+| Hook | Core alone (self-hosted) | Tenant panel (`incubacloud_tenant`) |
+| --- | --- | --- |
+| `_assistant_terms_label()` | «I understand that what the assistant reads is sent to my AI provider, and that it can make mistakes» | «I accept section 12A (AI features) of the Terms of Service» |
+| `_assistant_terms_url()` | `""`: no link | The platform's Terms |
+| `_assistant_record_terms_acceptance(acceptance)` | Kept in the panel, version empty | IncubaCloud records it on the customer's contact first and answers the version |
+
+`get_settings` answers `terms_label` and `terms_url`; the tab shows the link only when
+there is an address, and the refusal without the box quotes the label. The record is
+four system-only fields (date, version, user, address). The tab's line under the form
+names section 12A and the version when there is one, and otherwise says only when,
+who and from where. A self-hosted panel has no contract with IncubaCloud: it never
+links or names its Terms. `_assistant_available_for` requires that an acceptance
+exists.
 
 The assistant's settings fields are written only by the routes (`save_settings`,
 the model refresh), never through the ORM by a manager.
