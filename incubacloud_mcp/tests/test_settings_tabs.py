@@ -16,12 +16,16 @@ from odoo.tests import HttpCase, tagged
 
 from odoo.addons.incubacloud.tests.test_settings_tabs import SettingsInBrowser
 
+from .common import StandalonePanelMixin
+
 #: The issuer typed in the Agents tab.
 ISSUER = "https://login.example.test"
 
 
 @tagged("post_install", "-at_install")
-class TestMcpSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
+class TestMcpSettingsTabsKeepTheirEdits(
+    StandalonePanelMixin, SettingsInBrowser, HttpCase
+):
     """The Agents tab and the agents' limit, edited and saved from elsewhere."""
 
     _ISSUER = "Agents' OAuth issuer"

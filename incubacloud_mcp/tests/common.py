@@ -3,6 +3,7 @@
 import json
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
@@ -294,6 +295,42 @@ SECRETS = (
     WEBHOOK_SECRET,
     GITHUB_KEY_LINE,
 )
+
+
+class StandalonePanelMixin:
+    """Run the test as a panel nobody manages from above.
+
+    A layer over core (the tenant's) may say the issuer and the resource
+    URL are set by the platform and hide the observability settings. The
+    tests of a panel that edits them itself say what they are about: this
+    holds the panel to that whatever is installed, and changes nothing
+    where nothing is. The tests of the managed panel patch the other way
+    inside their own body (:meth:`_managed_panel`).
+    """
+
+    def setUp(self):
+        """Hold ``_mcp_settings_managed`` to False for the test."""
+        super().setUp()
+        self._managed = self.startPatcher(
+            patch.object(
+                type(self.env["cloud.settings"]),
+                "_mcp_settings_managed",
+                autospec=True,
+                return_value=False,
+            )
+        )
+
+    @contextmanager
+    def _managed_panel(self):
+        """Run the block as a panel whose issuer and URL are set from above.
+
+        Not a second patch: the mixin's already stands in for the method.
+        """
+        self._managed.return_value = True
+        try:
+            yield
+        finally:
+            self._managed.return_value = False
 
 
 class PanelFixtureMixin:

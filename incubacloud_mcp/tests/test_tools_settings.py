@@ -8,7 +8,13 @@ from odoo.http import request
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase
 
-from .common import FORM_CAPABILITIES, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
+from .common import (
+    FORM_CAPABILITIES,
+    McpHttpMixin,
+    McpUsersMixin,
+    PanelFixtureMixin,
+    StandalonePanelMixin,
+)
 
 
 class _ApprovalProbe(http.Controller):
@@ -22,7 +28,9 @@ class _ApprovalProbe(http.Controller):
 
 
 @tagged("post_install", "-at_install")
-class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
+class TestSettingsTools(
+    StandalonePanelMixin, PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
+):
     """The MCP's settings routes, get_settings and update_settings."""
 
     def setUp(self):
@@ -73,12 +81,7 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
         self.assertTrue(saved["result"]["ok"])
         self.assertEqual(self.settings.rate_limit_mcp_user_per_min, 30)
         self.assertEqual(self.settings.mcp_oauth_issuer, "https://idp.example.test")
-        with patch.object(
-            type(self.env["cloud.settings"]),
-            "_mcp_settings_managed",
-            autospec=True,
-            return_value=True,
-        ):
+        with self._managed_panel():
             refused = self._session_rpc(
                 "/cloud/mcp/save_settings",
                 {"vals": {"mcp_oauth_issuer": "https://other.example.test"}},
@@ -261,18 +264,28 @@ class TestSettingsTools(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase
             "metrics_retention_days": (self.settings.metrics_retention_days or 0) + 7
         }
         self.authenticate("mcp-set-mgr", "mcp-set-mgr")
-        self.assertIsNone(self._approval_text("general", values))
         Dispatch = type(self.env["incubacloud.mcp.dispatch"])
         original = Dispatch._call
 
-        def hidden(dispatch, path, params):
-            """Answer get_config as a tenant panel does: observability hidden."""
-            result = original(dispatch, path, params)
-            if path == "/cloud/get_config":
-                result["features"]["observability"]["configure"] = False
-            return result
+        def observability(configure):
+            """Answer get_config with observability editable here or not.
 
-        with patch.object(Dispatch, "_call", autospec=True, side_effect=hidden):
+            Said either way, so a layer that hides it by itself (the
+            tenant's) changes neither half of the test.
+            """
+
+            def answer(dispatch, path, params):
+                """The panel's answer, with the one axis set."""
+                result = original(dispatch, path, params)
+                if path == "/cloud/get_config":
+                    result["features"]["observability"]["configure"] = configure
+                return result
+
+            return patch.object(Dispatch, "_call", autospec=True, side_effect=answer)
+
+        with observability(True):
+            self.assertIsNone(self._approval_text("general", values))
+        with observability(False):
             text = self._approval_text("general", values)
         self.assertIn("metrics_retention_days", text)
 
