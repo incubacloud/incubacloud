@@ -351,6 +351,33 @@ class TestHostShipsWhatItDeclares(TransactionCase):
         self.assertIn("trusted-proxies-only@file", referenced)
         self.assertIn("trusted-proxies-only", dynamic["http"]["middlewares"])
 
+    def test_a_copy_stored_on_every_interface_ships_its_metrics_off_shared(self):
+        """Hosts stored before keep ``":8082"``; what they ship is bound.
+
+        On every interface the metrics entrypoint answered on
+        ``inverseproxy_shared`` too, where every instance on the host
+        reads the routers and request counts of the others. The stored
+        copy is not rewritten behind the operator: the render binds it,
+        and Full Setup and the proxy push both upload the render.
+        """
+        self.host.write({
+            "traefik_yml": self.host.traefik_yml.replace(
+                '"proxy.inverseproxy_public:8082"', '":8082"',
+            ),
+            "trusted_proxy_ranges": "\n".join(EDGE),
+        })
+        static = yaml.safe_load(self.host._shipped_traefik_yml())
+        self.assertEqual(
+            static["entryPoints"]["metrics"],
+            {"address": "proxy.inverseproxy_public:8082"},
+        )
+        # Must not change: the visitors' entrypoints keep their ranges.
+        self.assertEqual(
+            static["entryPoints"]["https"]["forwardedHeaders"]["trustedIPs"],
+            EDGE,
+        )
+        self.assertIn('address: ":8082"', self.host.traefik_yml)
+
     def test_refusing_direct_access_alone_changes_nothing(self):
         self.host.block_direct_access = True
         self.assertEqual(

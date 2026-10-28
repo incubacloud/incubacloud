@@ -444,12 +444,25 @@ check. Its error-log scraping now has a better source in the access logs.
 
 - **Traefik metrics need the config, and reach vmagent over docker.**
   Traefik exposes them on its `metrics` entrypoint (`:8082`). vmagent
-  scrapes it **by service name over Traefik's own network**
-  (`inverseproxy_shared`), not through a published host port: publishing
+  scrapes it **by service name over Traefik's `public` network**
+  (`inverseproxy_public`), not through a published host port: publishing
   on `127.0.0.1` is unreachable from a container, and publishing on
   `0.0.0.0` would expose instance names and domains on any host that is
-  not hardened. The scrape job is only generated when that network
-  exists, so a host without Traefik does not sit at `up=0` forever.
+  not hardened. Not over `inverseproxy_shared`: every instance on the
+  host joins that one, so the entrypoint is bound to the proxy's address
+  on `public` (`proxy.inverseproxy_public:8082`) and vmagent listens on
+  its own loopback (`-httpListenAddr=127.0.0.1:8429`) — on `shared`, any
+  instance could read the other instances' traffic, and push series
+  vmagent would forward under the host's credential. The scrape job is
+  only generated when that network exists, so a host without Traefik does
+  not sit at `up=0` forever.
+  **That name has to resolve, or the proxy does not start at all**:
+  Traefik looks an entrypoint's address up once, at start-up, and exits
+  when the lookup fails (measured on v2.11). Docker answers it from the
+  compose project `inverseproxy`, its service `proxy` and its network
+  `public`, which is how Full Setup starts the proxy. A self-hosted
+  `inverseproxy.yaml` edited by hand must keep all three; one that renames
+  or drops any of them stops every site on the host on the next restart.
   Existing hosts get the Traefik config retrofitted into their stored
   template on upgrade (a minimal merge that leaves customised templates
   alone), but it only reaches the host on the next *Setup Host* run.

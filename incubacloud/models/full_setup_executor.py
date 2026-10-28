@@ -121,6 +121,47 @@ def _build_inverseproxy(content, wildcard_domain, panel_password):
     return content
 
 
+#: The proxy as its own ``public`` network knows it. Docker's resolver
+#: answers ``<service>.<network>`` with the container's address on that
+#: one network, so an entrypoint bound to this name listens there and on
+#: no other interface of the proxy — not on ``shared``, which every
+#: instance on the host joins. ``public`` is the proxy's only network with
+#: a way out, the one Docker publishes its ports through, so a port
+#: published on the host's loopback still reaches it; the metrics agent
+#: joins it and nothing else does. The project and network are the ones
+#: Full Setup starts the proxy under. The name has to resolve: Traefik
+#: refuses to start at all when an entrypoint's address does not
+#: (measured on v2.11).
+PROXY_PUBLIC_HOST = "proxy.inverseproxy_public"
+
+
+def _bind_to_proxy_public_network(content, entrypoint):
+    """Return ``traefik.yml`` with *entrypoint* on the ``public`` network.
+
+    Rewrites the entrypoint's address while it is the every-interface
+    form (``":<port>"`` or ``"0.0.0.0:<port>"``) and keeps its port. An
+    address a host chose itself is left as it is, and so is a document
+    without that entrypoint. Idempotent.
+
+    :param str content: a ``traefik.yml`` document.
+    :param str entrypoint: the entrypoint's name, e.g. ``metrics``.
+    :return: the document, rebound where it applies.
+    :rtype: str
+    """
+    if not content:
+        return content
+    return re.sub(
+        rf'^([ \t]+{re.escape(entrypoint)}:[ \t]*\n[ \t]+address:[ \t]*)'
+        r'"?(?:0\.0\.0\.0)?:(\d+)"?[ \t]*$',
+        lambda match: (
+            f'{match.group(1)}"{PROXY_PUBLIC_HOST}:{match.group(2)}"'
+        ),
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
+
+
 class ProxyStagingMixin:
     """Stage the host's Traefik documents, for Full Setup and the push.
 

@@ -21,10 +21,14 @@ providers:
 #   level: DEBUG
 
 entryPoints:
-  # Prometheus metrics, published on loopback only (see inverseproxy.yaml)
-  # so the local vmagent can scrape it and nothing else can.
+  # Prometheus metrics, for the local vmagent. On the proxy's address on
+  # its ``public`` network, which vmagent joins and no instance does: on
+  # ":8082" every instance on ``shared`` could read the routers and
+  # request counts of all the others. The loopback port inverseproxy.yaml
+  # publishes reaches it too. The name has to resolve, or the proxy does
+  # not start: keep the ``public`` network and the ``proxy`` service.
   metrics:
-    address: ":8082"
+    address: "proxy.inverseproxy_public:8082"
   http:
     address: ":80"
     http:

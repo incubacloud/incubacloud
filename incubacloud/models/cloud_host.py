@@ -2747,14 +2747,26 @@ class CloudHost(models.Model):
         Executors render through here instead of reading the field, so a
         host whose trusted ranges moved ships the new ones on its next run
         without the stored copy ever being rewritten behind the operator.
+        The metrics entrypoint is bound to the proxy's ``public`` network
+        the same way, so a copy stored on every interface stops answering
+        the instances on ``shared``.
 
         :rtype: str
         """
         self.ensure_one()
+        # Imported here, like ``_build_inverseproxy`` below: the executor
+        # module pulls in the whole executor stack.
+        from .full_setup_executor import _bind_to_proxy_public_network
+
         ranges = self._effective_trusted_proxy_ranges()
-        return self._patch_traefik_yml_trusted_proxies(
-            self._patch_traefik_yml_dynamic_directory(self.traefik_yml or ""),
-            ranges, self.block_direct_access,
+        return _bind_to_proxy_public_network(
+            self._patch_traefik_yml_trusted_proxies(
+                self._patch_traefik_yml_dynamic_directory(
+                    self.traefik_yml or "",
+                ),
+                ranges, self.block_direct_access,
+            ),
+            "metrics",
         )
 
     def _shipped_config_yml(self):
