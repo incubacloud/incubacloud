@@ -1099,6 +1099,7 @@
                                 </div>
                                 <div class="ic-confirm-actions">
                                     <button class="ic-confirm-btn-cancel"
+                                            t-att-disabled="state.restoreDialog.checking"
                                             t-on-click="() => this.checkUpload()">Check what arrived</button>
                                 </div>
                                 <t t-if="state.restoreDialog.received">
@@ -1144,7 +1145,7 @@
           >Cancel</button>
                             <button
             class="ic-confirm-btn-ok"
-            t-att-disabled="state.restoreDialog.uploading"
+            t-att-disabled="state.restoreDialog.uploading or state.restoreDialog.checking"
             t-on-click="doRestore"
           >
                                 <t t-if="state.restoreDialog.uploading">

@@ -165,8 +165,13 @@ class TestADeployShipsThePanelsKey(_EscrowCase):
 
     def test_a_first_deploy_ships_the_panel_s_key_and_reads_no_host(self):
         transport = _transport()
-        asyncio.run(self._deploy()._ship_secret_key(transport))
-        transport.run.assert_not_awaited()
+        executor = self._deploy()
+        asyncio.run(executor._ship_secret_key(transport))
+        # Nothing read: the host only gets the job's directory.
+        self.assertEqual(
+            [c.args[0] for c in transport.run.await_args_list],
+            [f"mkdir -m 700 {executor._job_dir()}"],
+        )
         self.assertEqual(
             self._staged(transport), _env_file(self.inst.secret_key),
         )
@@ -178,10 +183,11 @@ class TestADeployShipsThePanelsKey(_EscrowCase):
         kept = self.inst.secret_key
         transport = _transport(_env_file(K1))
         asyncio.run(self._deploy()._ship_secret_key(transport))
-        command = transport.run.await_args.args[0]
-        self.assertIn(
-            f"{self.inst.get_remote_dir()}/.docker/incubacloud.env", command,
-        )
+        commands = [c.args[0] for c in transport.run.await_args_list]
+        self.assertTrue([
+            c for c in commands
+            if f"{self.inst.get_remote_dir()}/.docker/incubacloud.env" in c
+        ], commands)
         self.assertEqual(self.stored(self.inst, "secret_key"), f"{K1},{kept}")
         self.assertEqual(self._staged(transport), _env_file(f"{K1},{kept}"))
 
@@ -199,9 +205,14 @@ class TestADeployShipsThePanelsKey(_EscrowCase):
             self.assertEqual(host, self.host)
             yield origin
 
+        executor = self._deploy(host=self.other)
         with patch.object(type(self.host), "get_transport", _open):
-            asyncio.run(self._deploy(host=self.other)._ship_secret_key(target))
-        target.run.assert_not_awaited()
+            asyncio.run(executor._ship_secret_key(target))
+        # Nothing read on the target: it only gets the job's directory.
+        self.assertEqual(
+            [c.args[0] for c in target.run.await_args_list],
+            [f"mkdir -m 700 {executor._job_dir()}"],
+        )
         self.assertEqual(self.stored(self.inst, "secret_key"), K2)
         self.assertEqual(self._staged(target), _env_file(K2))
 
@@ -236,11 +247,11 @@ class TestADeployShipsThePanelsKey(_EscrowCase):
         transport = _transport()
         executor = self._deploy()
         asyncio.run(executor._ship_secret_key(transport))
-        asyncio.run(executor._discard_private_uploads(transport))
+        asyncio.run(executor._discard_staging(transport))
         self.assertEqual(
             transport.run.await_args.args[0],
-            f"rm -f /tmp/.incubacloud-{self.inst.doodba_project_name}"
-            "-incubacloud.env",
+            f"rm -rf {executor._job_dir()}/incubacloud.env"
+            f" {executor._job_dir()}",
         )
 
 

@@ -233,6 +233,20 @@ with an older core — publish this core first.
   dialog now says the instance has no host and needs one before
   deploying.
 
+- **An upload key works, and the restore dialog shows what arrived.**
+  The key's `authorized_keys` line was written between double quotes,
+  and the shell split it at the quotes the line holds: sshd accepted
+  none of the pieces, and no upload through a key could start (28
+  October). It is written as one quoted word, and the revocation also
+  removes the pieces an earlier install left. The command the dialog
+  shows sends the file as `restore.zip`, a path inside the key's
+  directory; it named an absolute path that did not exist there. And the
+  check of what arrived is a job, which may wait in the queue: the
+  dialog read the grant at once and showed the previous check's file,
+  one the uploader may have replaced since. It now shows the check's
+  answer once its job has ended, and closing the dialog abandons the
+  wait.
+
 ### Security
 
 - **A job's credential is the server's alone.** `cloud.job.secret_payload`
@@ -382,6 +396,120 @@ with an older core — publish this core first.
   -rf` of an instance's directory among them. They now match the whole
   value (`fullmatch`), and the delete passes the instance's directory to
   `rm -rf` as one quoted argument (`"$HOME"/'…'`).
+
+- **Every job stages its files in a directory of its own, secrets
+  owner-only.** Scripts, copier answers, `repos.yaml` (the repositories'
+  tokens), `backup.env`, the modules a deploy installs, the TLS key and
+  certificate store, the proxy's compose file (the dashboard's password
+  hash), the archived-backup purge's environment, a restore's archive,
+  and the manual backups, backup downloads, neutralized copies and
+  exports went to fixed paths in `/tmp`, 0644: readable by every account
+  on the host, left there by a run that ended early, and on a host
+  shared with other accounts open to whoever created the path first — a
+  script the job then ran, the modules it installed, a certificate the
+  proxy job installed because a shell found a file where it looked. A
+  job now creates `/tmp/.incubacloud-job-<random>` with `mkdir -m 700`
+  (refused if anything is there), stages everything in it, creates
+  secrets 0600 (exclusive create, replacing what an earlier run left,
+  naming the path when another account holds it) and removes it when the
+  run ends, failure included. A container writes only into the job's
+  `out/` subdirectory, mounted alone — the dump's container mounted the
+  whole of `/tmp` — and a file is downloaded only if it is a regular
+  file, not a link a container left to be followed. Full Setup and the
+  proxy push decide from what they uploaded whether to install or remove
+  the default certificate and the CDN authority. `repos.yaml` and the
+  proxy's compose file end 0600 where they are moved. The SSH allowlist
+  change creates its directory without `-p` and checks it.
+
+- **A backup handed over for a restore is named with the panel's secret,
+  and goes when the restore will not come.** A `backup_download` that
+  hands its archive to the restore after it — a production database —
+  left it at `/tmp/.incubacloud-handoff-<job id>.zip`, a name anybody on
+  the host could tell, and create first, in advance. It now goes in a
+  0700 directory named with an HMAC of `database.secret`
+  (`handoff_dir`), which the restore recomputes. A chain cancelled
+  before its restore ran had the archive stay for good: the step that
+  will never run now lets go of it (`on_never_run`, which queues
+  `discard_handoff` on the download's host), and a handoff a day old
+  whose restore is not waiting in its own chain is swept by the next
+  download, restore or daily prune on that host. The restore no longer
+  prints the archive's path in the job log.
+
+- **An upload key writes only into its own directory.** Its forced
+  command was `rrsync -wo`: one session could store a link to any
+  directory of the account, and the next write through it —
+  `authorized_keys` among them, a shell as the account the panel
+  connects as (root on the platform's hosts). It is now `rrsync -wo
+  -munge -no-del`: a link arrives munged and leads nowhere, and nothing
+  sent can be deleted by a later session. Only the rrsync of rsync 3.2.4
+  and later knows both options, so the key is installed only where that
+  one is, and the grant is closed otherwise, saying why (an older rsync,
+  none, or an account that cannot install it without a password). The
+  grant's directory is created only under a `/tmp/incubacloud-restore`
+  this account owns, 0700; the check of what arrived lists only regular
+  files whose name is one safe component (`SAFE_UPLOAD_NAME`), and the
+  restore copies that file into the job's own directory and checks it
+  again against the digest the dialog showed. A job acts only on a grant
+  of its own instance and host, of the shape the panel gave it
+  (`_check_job`). People read grants, never write them: the panel writes
+  them with `sudo`, and below project manager a record rule shows only
+  the grants of one's projects' instances. The 1.0.200 post-migrate
+  closes every grant an older release left open, through the daily
+  sweep.
+
+- **A restore from a link fetches the name it checked, runs nothing its
+  link carries, and an upload key's archive does not stay on the host.**
+  The password of a link was written into the download's command line,
+  inside single quotes, as a netrc line: readable in `ps` by every
+  account on the host, and a quote in it ended the quoting. It now
+  reaches the host as a curl configuration file created 0600 in the
+  job's directory; the link and every other argument are passed as
+  quoted words, with `--proto` keeping curl to the link's schemes; and
+  `restore_db` refuses a link, which only `restore_from_url` checks (the
+  restore job checks it again). A user name with a colon is refused,
+  since curl splits the value at its first one. A link whose host name
+  is not plain ASCII is refused, with the advice to write its punycode
+  form (`xn--…`): Python (IDNA2003) and the hosts' curl (IDNA2008) could
+  turn it into different ASCII names, so the name checked and pinned was
+  not the one curl dialled, and curl then looked it up by itself. curl
+  now gets the link rebuilt from the name checked (`curl_url`), so the
+  `--resolve` pin always matches it, and reads nothing the host
+  configured (`-q`, `--noproxy '*'`). `-C -` is gone: each attempt
+  downloads into a directory of its own, so it never resumed anything. A
+  restore through an upload key revokes the key and keeps the grant's
+  directory for a retry; nothing removed it afterwards, and the archive
+  — a customer's database — stayed in `/tmp/incubacloud-restore/` for
+  good. The daily grant sweep now revokes a consumed grant three days
+  after its restore, directory and all, and the daily sweep of `/tmp`
+  (`docker_prune`) removes this account's grant directories three days
+  old, under a root of its own, for a host where that job never ran. And
+  the restore names the SHA-256 the dialog showed (`expected_sha256`):
+  the panel and the restore job both refuse it if a later check recorded
+  another file. A restore through a key asked for before this version,
+  or its retry, names none and is refused: ask for a new key.
+
+- **What releases before this one left in `/tmp` is swept.** The daily
+  prune (`docker_prune`, and the maintenance playbook) removes this
+  account's files and directories a day old under the fixed names
+  earlier releases used — copier answers, `repos.yaml`, `backup.env`,
+  dumps, exports, the proxy's staging, the scripts' directories — also
+  root's and the odoo container's user's (uid 1000), through `sudo -n`
+  when the account is not root; a job's directory three days old, whose
+  worker died; and handoffs nobody waits for.
+
+- **A host's whitelist proxies run a pinned build, and a hostname cannot
+  rewrite their compose file.** The compose file `setup_whitelist` and
+  Full Setup write named `ghcr.io/tecnativa/docker-whitelist` with no
+  tag, so each host ran whatever `latest` was when it was set up. It is
+  now 0.3.2 by digest (`_WL_IMAGE`), the build Cloud 1 runs; a host's
+  next whitelist setup recreates its proxies on it. Each of the host's
+  entries becomes a service and a quoted alias in that file, and nothing
+  checked them: a quote or a line break in one rewrote it. An entry must
+  be a bare hostname, as an instance's must
+  (`cloud.host.whitelist._check_hostname`), the file refuses one stored
+  before the check, and two names that map to the same service key no
+  longer make compose refuse the whole file: the later one takes `-2`,
+  `-3`…
 
 ## [1.0.199] — 2026-10-27
 

@@ -219,6 +219,32 @@
             ]"/>
         </record>
 
+        <!-- ── cloud.restore.upload.grant ─────────────────────────── -->
+
+        <record id="rule_restore_upload_grant_member" model="ir.rule">
+            <field name="name">Restore Upload Grant: members only</field>
+            <field name="model_id" ref="model_cloud_restore_upload_grant"/>
+            <!--
+                A grant holds a token, a fingerprint and what arrived
+                through it: it is read where its instance is. The panel
+                writes grants with sudo; people only read them.
+            -->
+            <field name="domain_force">[('instance_id.project_id.member_ids', 'in', [user.id])]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_user')),
+                (4, ref('group_cloud_consultant')),
+            ]"/>
+        </record>
+
+        <record id="rule_restore_upload_grant_all" model="ir.rule">
+            <field name="name">Restore Upload Grant: all (PM+)</field>
+            <field name="model_id" ref="model_cloud_restore_upload_grant"/>
+            <field name="domain_force">[(1, '=', 1)]</field>
+            <field name="groups" eval="[
+                (4, ref('group_cloud_project_manager')),
+            ]"/>
+        </record>
+
         <!-- ── cloud.instance.domain ──────────────────────────────── -->
 
         <record id="rule_instance_domain_member" model="ir.rule">

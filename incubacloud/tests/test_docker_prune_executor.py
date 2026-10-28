@@ -20,6 +20,10 @@ what occupies disk avoids the choice, so the tests below pin the absence
 of ``system prune`` as hard as they pin the label.
 """
 import os
+import subprocess
+import tempfile
+import time
+from pathlib import Path
 from unittest.mock import patch
 
 import yaml
@@ -27,6 +31,8 @@ import yaml
 from odoo.modules.module import get_module_path
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models import docker_prune_executor
+from odoo.addons.incubacloud.models.abstract_executor import HANDOFF_SWEEP
 from odoo.addons.incubacloud.models.docker_prune_executor import (
     NETWORK_ALERT_CODE,
     PROTECT_LABEL,
@@ -110,10 +116,27 @@ class TestDockerPruneProtectFilter(TransactionCase):
         )
 
     def test_executor_feeds_the_label_to_the_playbook(self):
-        """The value that actually runs comes from ``PROTECT_LABEL``."""
-        executor = DockerPruneExecutor.__new__(DockerPruneExecutor)
+        """The values that actually run come from ``PROTECT_LABEL`` and
+        the host's sweep: ``TMP_SWEEP`` while no restore waits there."""
+        host = self.env["cloud.host"].create({
+            "name": "prune-host", "ip_address": "198.51.100.71",
+            "user": "root", "wildcard_domain": "prune.example.com",
+        })
+        job = self.env["cloud.job"].create({
+            "name": "docker_prune", "host_id": host.id,
+            "job_type_id": self.env.ref("incubacloud.docker_prune").id,
+        })
+        executor = DockerPruneExecutor(job, host)
         self.assertEqual(
-            executor.get_extra_vars(), {"ic_protect_label": PROTECT_LABEL},
+            executor.get_extra_vars(),
+            {
+                "ic_protect_label": PROTECT_LABEL,
+                "ic_tmp_sweep": docker_prune_executor.tmp_sweep(self.env, host),
+            },
+        )
+        self.assertEqual(
+            docker_prune_executor.tmp_sweep(self.env, host),
+            docker_prune_executor.TMP_SWEEP,
         )
 
     def test_playbook_inventories_survivors(self):
@@ -144,6 +167,341 @@ class TestDockerPruneProtectFilter(TransactionCase):
         self.assertIn("ic_containers_after", exported)
         self.assertIn("ic_prune_stdout", exported)
         self.assertIn("ic_networks_after", exported)
+
+
+class TestTheDailySweepOfTmp(TransactionCase):
+    """The day's prune also sweeps this account's leftovers in /tmp.
+
+    A handoff whose restore never came holds a production database; it
+    was swept only when another handoff or restore started on the same
+    host, which may never happen (28-oct-2026). And releases before
+    1.0.200 left archives and copier answers at fixed names, 0644, when
+    a job ended early: they are this account's, and they go too.
+    """
+
+    def _play(self):
+        """Return the parsed maintenance playbook (single play)."""
+        path = os.path.join(
+            get_module_path("incubacloud"),
+            "ansible", "playbooks", "host_maintenance.yml",
+        )
+        with open(path, encoding="utf-8") as fh:
+            return yaml.safe_load(fh)[0]
+
+    def test_the_play_sweeps_first_and_never_fails_on_it(self):
+        """Before the prune, so a prune that fails still swept; a sweep
+        that cannot finish leaves the rest for the next day."""
+        tasks = self._play()["tasks"]
+        sweeps = [
+            index for index, task in enumerate(tasks)
+            if task.get("ansible.builtin.shell", {}).get("cmd")
+            == "{{ ic_tmp_sweep }}"
+        ]
+        self.assertEqual(len(sweeps), 1)
+        prune = next(
+            index for index, task in enumerate(tasks) if "loop" in task
+        )
+        self.assertLess(sweeps[0], prune)
+        self.assertIs(tasks[sweeps[0]]["failed_when"], False)
+        self.assertIs(tasks[sweeps[0]].get("become", False), False)
+
+    def test_playbook_default_matches_the_python_constant(self):
+        """Standalone runs sweep exactly what a job run sweeps."""
+        self.assertEqual(
+            self._play()["vars"]["ic_tmp_sweep"],
+            docker_prune_executor.TMP_SWEEP,
+        )
+
+    def test_only_this_account_s_and_only_a_day_old(self):
+        """Handoffs as the jobs sweep them, and the older releases' names,
+        both by this account's uid and never through a link."""
+        sweep = docker_prune_executor.TMP_SWEEP
+        self.assertTrue(sweep.startswith(HANDOFF_SWEEP + "; "))
+        legacy = docker_prune_executor.legacy_tmp_sweep()
+        jobs = docker_prune_executor.job_dir_sweep()
+        uploads = docker_prune_executor.upload_dir_sweep()
+        self.assertTrue(sweep.endswith(f"{legacy}; {jobs}; {uploads}"))
+        for part in (HANDOFF_SWEEP, legacy, jobs, uploads):
+            self.assertIn('-user "$(id -u)"', part)
+            self.assertIn("-mmin +", part)
+            self.assertNotIn(" -L ", part)
+            self.assertNotIn("-follow", part)
+        self.assertIn("-mmin +1440", legacy)
+        self.assertIn("-maxdepth 1", legacy)
+
+    def test_what_others_left_goes_through_a_privileged_pass(self):
+        """What the account cannot remove: root's (before a hardening
+        moved the panel to an operator account) and uid 1000's, the odoo
+        container's, which wrote the live dumps and exports (I4). Root
+        runs it directly, no search; an operator asks ``sudo -n`` only
+        after a search it can do itself found something, so a host
+        without sudoers reports no incident each day (M-a). The same
+        names and age as its own pass, and it never fails."""
+        legacy = docker_prune_executor.legacy_tmp_sweep()
+        own, _sep, privileged = legacy.partition("; if ")
+        self.assertIn(r"\( -user 0 -o -user 1000 \)", privileged)
+        self.assertTrue(
+            privileged.startswith('[ "$(id -u)" = 0 ]; then find /tmp'),
+            privileged,
+        )
+        direct, _sep, probe = privileged.partition("; elif ")
+        self.assertNotIn("sudo", direct)
+        self.assertTrue(probe.startswith("find /tmp"), probe)
+        self.assertIn("-print -quit 2>/dev/null | grep -q .; then sudo -n find", probe)
+        self.assertTrue(privileged.endswith("fi 2>/dev/null || true"), privileged)
+        self.assertEqual(probe.count("sudo"), 1)
+        self.assertEqual(
+            direct[direct.index("-mmin"):direct.index("-exec")],
+            own[own.index("-mmin"):own.index("-exec")],
+        )
+
+    def _run_legacy_sweep(self, root, uid, sudo_exit=None):
+        """Run the legacy sweep over *root* as an account with *uid*.
+
+        ``id -u`` answers *uid* and ``sudo`` is a stub that logs how it
+        was called and, if *sudo_exit* is None, runs its command (after
+        its ``-n``) as the test's own account (a real one would be root).
+
+        :return: the sweep's exit status and the stub's calls
+        """
+        bin_dir = Path(root).parent / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        log = Path(root).parent / "sudo.log"
+        (bin_dir / "id").write_text(
+            f"#!/bin/sh\necho {uid}\n", encoding="utf-8",
+        )
+        failing = (
+            "" if sudo_exit is None
+            else f"echo 'not in sudoers' >&2; exit {sudo_exit}\n"
+        )
+        (bin_dir / "sudo").write_text(
+            f'#!/bin/sh\necho "$*" >> {log}\n{failing}shift\nexec "$@"\n',
+            encoding="utf-8",
+        )
+        for stub in ("id", "sudo"):
+            (bin_dir / stub).chmod(0o755)
+        done = subprocess.run(
+            ["sh", "-c", docker_prune_executor.legacy_tmp_sweep(str(root))],
+            check=False, capture_output=True, text=True,
+            env=os.environ | {"PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        )
+        calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        return done, calls
+
+    def _old_leftover(self, root):
+        """Create a day-old live dump in *root*, owned by the test's account."""
+        dump = Path(root, ".incubacloud-backup-prod.zip")
+        dump.write_text("x", encoding="utf-8")
+        old = time.time() - 2 * 86400
+        os.utime(dump, (old, old))
+        return dump
+
+    def test_lab_the_odoo_containers_dump_goes_for_an_account_that_is_not_its_owner(self):
+        """A live dump the odoo container wrote (uid 1000) is neither the
+        operator's nor root's: it goes through ``sudo -n`` for an operator
+        account, and directly, no ``sudo``, for root (I4)."""
+        if os.getuid() not in (0, 1000):
+            self.skipTest("needs a test account that is uid 0 or 1000")
+        for uid, expected_calls in ((1001, 1), (0, 0)):
+            with self.subTest(account_uid=uid), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp, "tmp")
+                root.mkdir()
+                dump = self._old_leftover(root)
+                done, calls = self._run_legacy_sweep(root, uid)
+                self.assertEqual(done.returncode, 0)
+                self.assertFalse(dump.exists())
+                self.assertEqual(len(calls), expected_calls, calls)
+
+    def test_lab_no_sudo_when_there_is_nothing_to_sweep(self):
+        """A host without sudoers must not see ``sudo`` each day: the
+        search the account makes itself finds nothing, so it never asks
+        (M-a). What is not old, or not named like them, does not count."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "tmp")
+            root.mkdir()
+            Path(root, ".incubacloud-backup-today.zip").write_text(
+                "x", encoding="utf-8",
+            )
+            unrelated = Path(root, "unrelated.zip")
+            unrelated.write_text("x", encoding="utf-8")
+            old = time.time() - 2 * 86400
+            os.utime(unrelated, (old, old))
+            done, calls = self._run_legacy_sweep(root, 1001)
+            self.assertEqual(done.returncode, 0)
+            self.assertEqual(calls, [])
+            self.assertEqual(done.stderr, "")
+
+    def test_lab_a_refused_sudo_does_not_fail_the_sweep(self):
+        """Without sudoers the privileged pass is refused: the sweep
+        still ends well, quietly, and what it could not remove stays."""
+        if os.getuid() not in (0, 1000):
+            self.skipTest("needs a test account that is uid 0 or 1000")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "tmp")
+            root.mkdir()
+            dump = self._old_leftover(root)
+            done, calls = self._run_legacy_sweep(root, 1001, sudo_exit=1)
+            self.assertEqual(done.returncode, 0)
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(dump.exists())
+            self.assertEqual(done.stderr, "")
+
+    def test_a_job_directory_a_dead_worker_left_goes_after_three_days(self):
+        """A job removes its own directory; one whose worker died does
+        not. Three days: no job runs that long (a step's commands stop
+        after an hour, a download from a link after a day)."""
+        jobs = docker_prune_executor.job_dir_sweep()
+        self.assertIn("-type d -name '.incubacloud-job-*'", jobs)
+        self.assertIn("-mmin +4320", jobs)
+
+    def test_an_upload_a_restore_left_goes_after_three_days(self):
+        """What an upload key's directory still holds once its restore is
+        over: the panel revokes the grant three days on, directory and
+        all; this is for the host where that job never ran. This
+        account's grant directories only, under a root of its own."""
+        uploads = docker_prune_executor.upload_dir_sweep()
+        self.assertIn("find /tmp/incubacloud-restore -mindepth 1 -maxdepth 1"
+                      " -type d", uploads)
+        self.assertIn(f"-name '{'[0-9a-f]' * 16}'", uploads)
+        self.assertIn("-mmin +4320", uploads)
+        self.assertIn('[ ! -h /tmp/incubacloud-restore ]', uploads)
+        self.assertIn('[ -O /tmp/incubacloud-restore ]', uploads)
+        self.assertNotIn("sudo", uploads)
+
+    def test_lab_only_this_account_s_old_uploads_go(self):
+        """Real directories: a grant's three days old goes, links in it
+        and all, and nothing they point at; a newer one, another name, a
+        link in the root, and a root that is itself a link stay."""
+        older = time.time() - 4 * 86400
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "incubacloud-restore")
+            outside = Path(tmp, "outside")
+            root.mkdir(mode=0o700)
+            outside.mkdir()
+            (outside / "hostfile").write_text("keep", encoding="utf-8")
+            gone = root / "0123456789abcdef"
+            fresh = root / "fedcba9876543210"
+            other = root / "not-a-grant-dir1"
+            for directory in (gone, fresh, other):
+                directory.mkdir()
+                (directory / "restore.zip").write_text("x", encoding="utf-8")
+            (gone / "h").symlink_to(outside / "hostfile")
+            (gone / "d").symlink_to(outside)
+            link = root / "00000000000000aa"
+            link.symlink_to(outside)
+            for path in (gone, other):
+                os.utime(path, (older, older))
+            os.utime(link, (older, older), follow_symlinks=False)
+            done = subprocess.run(
+                ["sh", "-c", docker_prune_executor.upload_dir_sweep(str(root))],
+                check=False,
+            )
+            self.assertEqual(done.returncode, 0)
+            self.assertEqual(
+                sorted(path.name for path in root.iterdir()),
+                sorted([fresh.name, other.name, link.name]),
+            )
+            self.assertEqual(
+                (outside / "hostfile").read_text(encoding="utf-8"), "keep",
+            )
+            # A root that is a link leads elsewhere: nothing is read there.
+            moved = Path(tmp, "moved")
+            root.rename(moved)
+            root.symlink_to(moved)
+            os.utime(moved / other.name, (older, older))
+            (moved / "aaaaaaaaaaaaaaaa").mkdir()
+            os.utime(moved / "aaaaaaaaaaaaaaaa", (older, older))
+            done = subprocess.run(
+                ["sh", "-c", docker_prune_executor.upload_dir_sweep(str(root))],
+                check=False,
+            )
+            self.assertEqual(done.returncode, 0)
+            self.assertTrue((moved / "aaaaaaaaaaaaaaaa").exists())
+            # And none at all is nothing to do.
+            root.unlink()
+            done = subprocess.run(
+                ["sh", "-c", docker_prune_executor.upload_dir_sweep(str(root))],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual((done.returncode, done.stderr), (0, ""))
+
+    def test_lab_the_leftovers_go_and_nothing_else(self):
+        """Real files: what older releases left a day ago goes; what is
+        newer, what a job of this release holds, a link and what it points
+        at stay."""
+        old = time.time() - 2 * 86400
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, "tmp")
+            outside = Path(tmp, "outside")
+            gone = [
+                ".incubacloud-handoff-123.zip", ".incubacloud-backup-prod.zip",
+                ".incubacloud-bkdl-prod.zip", ".incubacloud-bkneu-77.zip",
+                ".incubacloud-export-prod.tar.gz",
+                ".incubacloud-shop-answers.yml",
+                ".incubacloud-shop-repos.yaml",
+                ".incubacloud-shop-backup.env",
+                ".incubacloud-shop-incubacloud.env",
+                # The deploy's other files, the proxy's keys and the ACME
+                # store, the whitelist, the SaaS layer's (I4, 28-oct-2026).
+                ".incubacloud-shop-addons.yaml", ".incubacloud-shop-odoo.conf",
+                ".incubacloud-shop-pip.txt", ".incubacloud-shop-apt.txt",
+                ".incubacloud-shop-override.yml",
+                ".incubacloud-shop-extra-env_smtp.env",
+                ".incubacloud-acme.json", ".incubacloud-traefik-default.key",
+                ".incubacloud-traefik-cdn-ca.pem",
+                ".incubacloud-whitelist.yaml",
+                ".incubacloud-github-webhook.yml",
+                ".icfree-shop-20261001T000000.zip",
+                ".icfree-shop-db-20261001T000000.tar.gz",
+                ".ic-sablier-theme.html", ".ic-sablier-restart.conf",
+            ]
+            gone_dirs = [
+                ".incubacloud-bkdl-prod", ".incubacloud-bkneu-77",
+                ".incubacloud-export-staging-prod",
+                ".incubacloud-archived-purge-9",
+                ".incubacloud-scripts-1234", ".ic-modules-shop",
+                ".ic-sablier-dynamic",
+                ".incubacloud-job-fedcba9876543210",
+            ]
+            kept = [".incubacloud-backup-today.zip", "unrelated.zip"]
+            kept_dirs = [
+                ".incubacloud-job-0123456789abcdef",
+                ".incubacloud-handoff-0123456789abcdef",
+                ".incubacloud-allowlist-0123456789ab",
+            ]
+            links = [".incubacloud-bkneu-link", ".incubacloud-backup-l.zip"]
+            root.mkdir()
+            outside.mkdir()
+            for name in gone + kept:
+                (root / name).write_text("x", encoding="utf-8")
+            for name in gone_dirs + kept_dirs:
+                (root / name).mkdir()
+                (root / name / "dump.sql").write_text("x", encoding="utf-8")
+            (outside / "hostfile").write_text("keep", encoding="utf-8")
+            (root / links[0]).symlink_to(outside)
+            (root / links[1]).symlink_to(outside / "hostfile")
+            for name in gone + gone_dirs + kept_dirs + ["unrelated.zip"]:
+                os.utime(root / name, (old, old))
+            # A dead worker's, three days and more: gone.
+            older = time.time() - 4 * 86400
+            os.utime(root / ".incubacloud-job-fedcba9876543210", (older, older))
+            for name in links:
+                os.utime(root / name, (old, old), follow_symlinks=False)
+            done = subprocess.run(
+                ["sh", "-c", "; ".join([
+                    docker_prune_executor.legacy_tmp_sweep(str(root)),
+                    docker_prune_executor.job_dir_sweep(str(root)),
+                ])],
+                check=False,
+            )
+            self.assertEqual(done.returncode, 0)
+            self.assertEqual(
+                sorted(path.name for path in root.iterdir()),
+                sorted(kept + kept_dirs + links),
+            )
+            self.assertEqual(
+                (outside / "hostfile").read_text(encoding="utf-8"), "keep",
+            )
 
 
 class TestPruneSummary(TransactionCase):

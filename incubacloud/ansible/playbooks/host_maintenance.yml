@@ -1,6 +1,7 @@
 ---
 # Reclaim disk on a host by pruning unused Docker resources. Driven by
-# DockerPruneExecutor (a recurring cron job).
+# DockerPruneExecutor (a recurring cron job), which also sweeps /tmp of
+# what the panel's account left there.
 #
 # The reclaimed-space line is exported back to the panel so the job log
 # shows how much was freed.
@@ -16,8 +17,91 @@
     # with the same constant; the default keeps the playbook runnable
     # standalone with identical semantics.
     ic_protect_label: "incubacloud.protect=1"
+    # This account's leftovers in /tmp: handoffs a day old whose restore
+    # never came (a production database each), what releases before
+    # 1.0.200 left at fixed names (root's and the odoo container's too:
+    # uid 1000, the live dumps; a pass through ``sudo -n`` only when a
+    # search finds something), the directories of jobs
+    # whose worker died, three days old, and the grant directories of
+    # upload keys under /tmp/incubacloud-restore, three days old too, in
+    # a root of this account's (``upload_dir_sweep``). DockerPruneExecutor passes the
+    # same command (``TMP_SWEEP``), sparing the handoffs a restore still
+    # waits for (``tmp_sweep``).
+    ic_tmp_sweep: >-
+      find /tmp -maxdepth 1 -type d -name '.incubacloud-handoff-*' -user "$(id
+      -u)" -mmin +1440 -exec rm -rf {} +; find /tmp -mindepth 1 -maxdepth 1 -user
+      "$(id -u)" -mmin +1440 \( -type f -o -type d \) \( -name
+      '.incubacloud-handoff-*.zip' -o -name '.incubacloud-backup-*.zip' -o -name
+      '.incubacloud-bkdl-*' -o -name '.incubacloud-bkneu-*' -o -name
+      '.incubacloud-export-*' -o -name '.incubacloud-archived-purge-*' -o -name
+      '.incubacloud-*-answers.yml' -o -name '.incubacloud-*-addons.yaml' -o -name
+      '.incubacloud-*-repos.yaml' -o -name '.incubacloud-*-odoo.conf' -o -name
+      '.incubacloud-*-pip.txt' -o -name '.incubacloud-*-apt.txt' -o -name
+      '.incubacloud-*-override.yml' -o -name '.incubacloud-*-extra-*' -o -name
+      '.incubacloud-*-backup.env' -o -name '.incubacloud-*-incubacloud.env' -o
+      -name .incubacloud-acme.json -o -name '.incubacloud-traefik-*' -o -name
+      .incubacloud-whitelist.yaml -o -name .incubacloud-github-webhook.yml -o
+      -name '.incubacloud-scripts-*' -o -name '.icfree-*' -o -name '.ic-modules-*'
+      -o -name '.ic-sablier*' \) -exec rm -rf {} +; if [ "$(id -u)" = 0 ]; then
+      find /tmp -mindepth 1 -maxdepth 1 \( -user 0 -o -user 1000 \) -mmin +1440 \(
+      -type f -o -type d \) \( -name '.incubacloud-handoff-*.zip' -o -name
+      '.incubacloud-backup-*.zip' -o -name '.incubacloud-bkdl-*' -o -name
+      '.incubacloud-bkneu-*' -o -name '.incubacloud-export-*' -o -name
+      '.incubacloud-archived-purge-*' -o -name '.incubacloud-*-answers.yml' -o
+      -name '.incubacloud-*-addons.yaml' -o -name '.incubacloud-*-repos.yaml' -o
+      -name '.incubacloud-*-odoo.conf' -o -name '.incubacloud-*-pip.txt' -o -name
+      '.incubacloud-*-apt.txt' -o -name '.incubacloud-*-override.yml' -o -name
+      '.incubacloud-*-extra-*' -o -name '.incubacloud-*-backup.env' -o -name
+      '.incubacloud-*-incubacloud.env' -o -name .incubacloud-acme.json -o -name
+      '.incubacloud-traefik-*' -o -name .incubacloud-whitelist.yaml -o -name
+      .incubacloud-github-webhook.yml -o -name '.incubacloud-scripts-*' -o -name
+      '.icfree-*' -o -name '.ic-modules-*' -o -name '.ic-sablier*' \) -exec rm -rf
+      {} +; elif find /tmp -mindepth 1 -maxdepth 1 \( -user 0 -o -user 1000 \)
+      -mmin +1440 \( -type f -o -type d \) \( -name '.incubacloud-handoff-*.zip'
+      -o -name '.incubacloud-backup-*.zip' -o -name '.incubacloud-bkdl-*' -o -name
+      '.incubacloud-bkneu-*' -o -name '.incubacloud-export-*' -o -name
+      '.incubacloud-archived-purge-*' -o -name '.incubacloud-*-answers.yml' -o
+      -name '.incubacloud-*-addons.yaml' -o -name '.incubacloud-*-repos.yaml' -o
+      -name '.incubacloud-*-odoo.conf' -o -name '.incubacloud-*-pip.txt' -o -name
+      '.incubacloud-*-apt.txt' -o -name '.incubacloud-*-override.yml' -o -name
+      '.incubacloud-*-extra-*' -o -name '.incubacloud-*-backup.env' -o -name
+      '.incubacloud-*-incubacloud.env' -o -name .incubacloud-acme.json -o -name
+      '.incubacloud-traefik-*' -o -name .incubacloud-whitelist.yaml -o -name
+      .incubacloud-github-webhook.yml -o -name '.incubacloud-scripts-*' -o -name
+      '.icfree-*' -o -name '.ic-modules-*' -o -name '.ic-sablier*' \) -print -quit
+      2>/dev/null | grep -q .; then sudo -n find /tmp -mindepth 1 -maxdepth 1 \(
+      -user 0 -o -user 1000 \) -mmin +1440 \( -type f -o -type d \) \( -name
+      '.incubacloud-handoff-*.zip' -o -name '.incubacloud-backup-*.zip' -o -name
+      '.incubacloud-bkdl-*' -o -name '.incubacloud-bkneu-*' -o -name
+      '.incubacloud-export-*' -o -name '.incubacloud-archived-purge-*' -o -name
+      '.incubacloud-*-answers.yml' -o -name '.incubacloud-*-addons.yaml' -o -name
+      '.incubacloud-*-repos.yaml' -o -name '.incubacloud-*-odoo.conf' -o -name
+      '.incubacloud-*-pip.txt' -o -name '.incubacloud-*-apt.txt' -o -name
+      '.incubacloud-*-override.yml' -o -name '.incubacloud-*-extra-*' -o -name
+      '.incubacloud-*-backup.env' -o -name '.incubacloud-*-incubacloud.env' -o
+      -name .incubacloud-acme.json -o -name '.incubacloud-traefik-*' -o -name
+      .incubacloud-whitelist.yaml -o -name .incubacloud-github-webhook.yml -o
+      -name '.incubacloud-scripts-*' -o -name '.icfree-*' -o -name '.ic-modules-*'
+      -o -name '.ic-sablier*' \) -exec rm -rf {} +; fi 2>/dev/null || true; find
+      /tmp -mindepth 1 -maxdepth 1 -type d -name '.incubacloud-job-*' -user "$(id
+      -u)" -mmin +4320 -exec rm -rf {} +; { [ -d /tmp/incubacloud-restore ] && [ !
+      -h /tmp/incubacloud-restore ] && [ -O /tmp/incubacloud-restore ] && find
+      /tmp/incubacloud-restore -mindepth 1 -maxdepth 1 -type d -name
+      '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+      -user "$(id -u)" -mmin +4320 -exec rm -rf {} +; } || true
 
   tasks:
+    # First, so a prune that fails has still swept; as the account the
+    # panel connects as, never through a link (see ``TMP_SWEEP``). A
+    # sweep that cannot remove everything leaves the rest for the next
+    # day: it never fails the play. A shell: the command needs ``$(id -u)``
+    # and two ``find`` in a row, which the linter cannot see in a variable.
+    - name: Sweep this account's leftovers in /tmp  # noqa: command-instead-of-shell
+      ansible.builtin.shell:
+        cmd: "{{ ic_tmp_sweep }}"
+      changed_when: false
+      failed_when: false
+
     # Deliberately NOT ``docker system prune``: that prunes networks
     # too, and a project's network cannot be protected the way its
     # containers are. Labelling the network changes its definition, so

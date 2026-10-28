@@ -11,6 +11,7 @@ Facts are injected straight into ``_facts`` (what ``playbook_facts()``
 returns), the same way the old executor tests fed a ``results`` dict:
 no host, no ansible-runner.
 """
+import re
 from unittest.mock import MagicMock
 
 from odoo.tests.common import TransactionCase
@@ -218,3 +219,15 @@ class TestSetupWhitelistExtraVars(HostStateCase):
         compose = ex.get_extra_vars()["ic_whitelist_compose"]
         self.assertIn("a.example.com", compose)
         self.assertIn("b.example.com", compose)
+
+    def test_every_proxy_runs_the_pinned_build(self):
+        """By digest, never ``latest``: a host set up later must proxy
+        through the build the others run, not whatever was published."""
+        compose = build_whitelist_compose(["a.example.com", "b.example.com"])
+        images = re.findall(r"^    image: (\S+)$", compose, re.MULTILINE)
+        self.assertEqual(len(images), 2)
+        for image in images:
+            self.assertRegex(
+                image,
+                r"^ghcr\.io/tecnativa/docker-whitelist:[0-9.]+@sha256:[0-9a-f]{64}$",
+            )

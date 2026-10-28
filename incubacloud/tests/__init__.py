@@ -204,3 +204,4 @@ from . import test_blocked_and_aborted_jobs
 from . import test_frontend_suite
 from . import test_oneoff_containers
 from . import test_settings_tabs
+from . import test_private_staging

@@ -1,6 +1,9 @@
 import re
+import shlex
 
+from .abstract_executor import HANDOFF_SWEEP, JOB_DIR_PREFIX, handoff_sweep
 from .ansible_executor import AnsibleExecutor
+from .cloud_restore_upload_grant import UPLOAD_ROOT, USED_GRANT_DAYS
 
 # Docker label that opts a resource out of the prune. Stamped by
 # ``DeployInstanceExecutor._resource_override_content`` on every
@@ -34,6 +37,154 @@ _REQUIRED_SERVICES = ("odoo", "db")
 # different: the containers are still there, they simply cannot attach
 # to anything, so the stack has to be recreated rather than restored.
 NETWORK_ALERT_CODE = "prune_swept_network"
+
+#: What releases before 1.0.200 named, at /tmp, the files a job staged or
+#: built and the directories it worked in: archives of customers'
+#: databases, a deploy's copier answers, configuration and secrets, a
+#: purge's bucket keys, the proxy's private keys and certificate store,
+#: the scripts a job ran, and the SaaS layer's tenant dumps and files.
+#: Created 0644 and left there by a job that ended early.
+_LEGACY_TMP_NAMES = (
+    ".incubacloud-handoff-*.zip",
+    ".incubacloud-backup-*.zip",
+    ".incubacloud-bkdl-*",
+    ".incubacloud-bkneu-*",
+    ".incubacloud-export-*",
+    ".incubacloud-archived-purge-*",
+    ".incubacloud-*-answers.yml",
+    ".incubacloud-*-addons.yaml",
+    ".incubacloud-*-repos.yaml",
+    ".incubacloud-*-odoo.conf",
+    ".incubacloud-*-pip.txt",
+    ".incubacloud-*-apt.txt",
+    ".incubacloud-*-override.yml",
+    ".incubacloud-*-extra-*",
+    ".incubacloud-*-backup.env",
+    ".incubacloud-*-incubacloud.env",
+    ".incubacloud-acme.json",
+    ".incubacloud-traefik-*",
+    ".incubacloud-whitelist.yaml",
+    ".incubacloud-github-webhook.yml",
+    ".incubacloud-scripts-*",
+    ".icfree-*",
+    ".ic-modules-*",
+    ".ic-sablier*",
+)
+
+#: How old a job's directory must be before the day's sweep takes it:
+#: a job removes its own, and one whose worker died does not. No job
+#: runs this long — a step's command stops after an hour, a download
+#: from a link after a day.
+_JOB_DIR_AGE_MINUTES = 3 * 24 * 60
+
+
+def legacy_tmp_sweep(root="/tmp"):
+    """Return the command that removes older releases' leftovers in *root*.
+
+    Files and directories under those names right in *root*, a day old,
+    first this account's (``-user``): ``find`` follows no link, a link
+    is neither a file nor a directory to it, and ``rm -rf`` does not
+    follow one inside a directory either. Nothing this release creates
+    is named like them.
+
+    Then the privileged pass, for what the account cannot remove: root's
+    (before a hardening moves the panel to an operator account it
+    connected as root) and uid 1000's, the odoo container's, which wrote
+    the live dumps and exports at those names through its ``/tmp``
+    mount (``instance_logs.sh``) and is not the operator on a platform
+    host (root) or on a VPS whose operator has another uid. Without
+    root the pass asks ``sudo -n``, and only after a search the account
+    can do itself found something: a host without sudoers would
+    otherwise report an incident, and mail root, every day. Where the
+    account is root it runs directly, with no search. It never fails
+    the play. After its first run on a host it finds nothing.
+
+    :param str root: the directory to sweep, ``/tmp`` but in tests
+    :rtype: str
+    """
+    names = " -o ".join(
+        f"-name {shlex.quote(name)}" for name in _LEGACY_TMP_NAMES
+    )
+    match = (
+        "-mmin +1440 \\( -type f -o -type d \\)"
+        f" \\( {names} \\)"
+    )
+    where = f"find {shlex.quote(root)} -mindepth 1 -maxdepth 1"
+    others = "\\( -user 0 -o -user 1000 \\)"
+    remove = f"{where} {others} {match} -exec rm -rf {{}} +"
+    return (
+        f'{where} -user "$(id -u)" {match} -exec rm -rf {{}} +;'
+        f' if [ "$(id -u)" = 0 ]; then {remove};'
+        f" elif {where} {others} {match} -print -quit 2>/dev/null"
+        f" | grep -q .; then sudo -n {remove};"
+        " fi 2>/dev/null || true"
+    )
+
+
+def job_dir_sweep(root="/tmp"):
+    """Return the command that removes the job directories a dead worker
+    left in *root*: this account's, three days old (``JOB_DIR_PREFIX``).
+
+    :param str root: the directory to sweep, ``/tmp`` but in tests
+    :rtype: str
+    """
+    return (
+        f"find {shlex.quote(root)} -mindepth 1 -maxdepth 1 -type d"
+        f" -name '{JOB_DIR_PREFIX[5:]}*' -user \"$(id -u)\""
+        f" -mmin +{_JOB_DIR_AGE_MINUTES} -exec rm -rf {{}} +"
+    )
+
+
+def upload_dir_sweep(root=UPLOAD_ROOT):
+    """Return the command that removes old upload keys' directories.
+
+    The panel revokes a consumed grant ``USED_GRANT_DAYS`` after its
+    restore, directory and all (``cloud.restore.upload.grant``); this is
+    the safety net for a host where that job never ran. Only directories
+    named as a grant's token, this account's and that old, right under
+    a root that is this account's own directory and not a link — in a
+    root another account owns, a name could be swapped for a link
+    between the search and the removal. ``find`` follows no link, and
+    ``rm -rf`` none inside a directory either.
+
+    :param str root: the grants' root, ``UPLOAD_ROOT`` but in tests
+    :rtype: str
+    """
+    quoted = shlex.quote(root)
+    token = "[0-9a-f]" * 16
+    return (
+        f"{{ [ -d {quoted} ] && [ ! -h {quoted} ] && [ -O {quoted} ]"
+        f" && find {quoted} -mindepth 1 -maxdepth 1 -type d"
+        f" -name '{token}' -user \"$(id -u)\""
+        f" -mmin +{USED_GRANT_DAYS * 24 * 60} -exec rm -rf {{}} +; }}"
+        " || true"
+    )
+
+
+def tmp_sweep(env, host):
+    """Return the day's sweep of /tmp for *host*.
+
+    Its handoffs a day old but those a restore still waits for
+    (``handoff_sweep``), older releases' leftovers, the directories of
+    jobs whose worker died, and what upload keys left three days ago
+    (``upload_dir_sweep``).
+
+    :param env: an environment to read the jobs with
+    :param host: the ``cloud.host`` it runs on
+    :rtype: str
+    """
+    return (
+        f"{handoff_sweep(env, host)}; {legacy_tmp_sweep()}; {job_dir_sweep()};"
+        f" {upload_dir_sweep()}"
+    )
+
+
+#: The day's sweep of /tmp as a playbook run alone has it: with no panel
+#: to ask, it spares no handoff (``tmp_sweep``).
+TMP_SWEEP = (
+    f"{HANDOFF_SWEEP}; {legacy_tmp_sweep()}; {job_dir_sweep()};"
+    f" {upload_dir_sweep()}"
+)
 
 # Docker prints sizes with SI units (``12.86GB``, ``938.4kB``, ``0B``).
 _SIZE_UNITS = {"b": 1, "kb": 10 ** 3, "mb": 10 ** 6, "gb": 10 ** 9,
@@ -90,13 +241,18 @@ class DockerPruneExecutor(AnsibleExecutor):
     _playbook = "playbooks/host_maintenance.yml"
 
     def get_extra_vars(self):
-        """Hand the playbook the label whose resources must be spared.
+        """Hand the playbook the label to spare and the sweep of /tmp.
 
-        Passing it (rather than letting the playbook's own default
+        Passing them (rather than letting the playbook's own defaults
         stand) keeps this module the single source of truth for the
-        label, shared with whatever stamps it onto its containers.
+        label, shared with whatever stamps it onto its containers, and
+        for the sweep, whose handoff part the jobs run too and which
+        spares the handoffs a restore still waits for on this host.
         """
-        return {"ic_protect_label": PROTECT_LABEL}
+        return {
+            "ic_protect_label": PROTECT_LABEL,
+            "ic_tmp_sweep": tmp_sweep(self.env, self.job.host_id),
+        }
 
     async def before_execute(self, transport):
         self._sys("Starting Docker cleanup...")

@@ -254,6 +254,13 @@
             <field name="priority_tier">low</field>
         </record>
 
+        <record id="discard_handoff" model="cloud.job.type">
+            <field name="name">Discard Handed-over Backup</field>
+            <field name="code">discard_handoff</field>
+            <field name="apply_to">host</field>
+            <field name="description">Removes from the host the backup a download handed over for a restore that will no longer run.</field>
+        </record>
+
         <record id="backup_list" model="cloud.job.type">
             <field name="name">List Backups</field>
             <field name="code">backup_list</field>

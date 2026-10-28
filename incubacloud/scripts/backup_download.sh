@@ -7,17 +7,32 @@
 #   backup_download.sh package-sql  <dir> <dbname> <tmpdir> <archive>
 #   backup_download.sh restore-full <dir> <time>
 #   backup_download.sh package-full <dir> <dbname> <tmpdir> <archive>
+#   backup_download.sh handover     <dir> <archive> <handoff_dir>
 #
 # Two families, because the two environments store backups differently:
 #
 #   * live-dump — non-production has no snapshot history, so the only
 #     meaningful "backup" is a dump of the current DB taken on demand.
-#     /tmp is bind-mounted so the ZIP lands straight on the host.
+#     The archive's own directory is bind-mounted so the ZIP lands
+#     straight on the host — the job's drop directory, never the whole
+#     of /tmp: the container would see every other job's staging there,
+#     and leave the dump where any account on the host could read it.
 #     ``running`` refuses a stopped database instead of starting it.
 #   * restore-* / package-* — production restores the requested
 #     timestamp from duplicity inside the ``backup`` container, then
 #     copies it out and zips it. Split in two steps so the job log shows
 #     the slow restore and the packaging separately.
+#
+# ``handover`` leaves the archive a job built in its own directory for
+# the next job of its chain (a restore): it moves it into <handoff_dir>,
+# created here 0700 — a name the panel derives from its secret, so no
+# other account on the host knows it in advance. Only a regular file is
+# handed over, never a link a container left, and only into a directory
+# this call creates. One an earlier attempt of the same job left is this
+# account's own and is replaced; anything else at the path refuses. What
+# it prints never names <handoff_dir>: the job log is read by more people
+# than the host's account. It is in this step's command line while the
+# step runs, for ``ps`` to show to whoever is on the host then.
 #
 # <time> is 'latest' for "most recent" (duplicity's default, no --time
 # flag) or a duplicity timestamp already validated panel-side by
@@ -129,7 +144,8 @@ case "$op" in
         ic_db_dump_args "$dbname" "/host-tmp/$(basename "$archive")" "$scope"
         # A one-off, so out of Traefik and Sablier (see ic_compose_run):
         # visitors keep reaching the live odoo while the dump runs.
-        ic_compose_run --rm "${run_opts[@]}" -v /tmp:/host-tmp odoo \
+        ic_compose_run --rm "${run_opts[@]}" \
+            -v "$(dirname "$archive"):/host-tmp" odoo \
             "${wait_db[@]}" "${IC_DB_ARGS[@]}"
         ;;
 
@@ -185,6 +201,27 @@ case "$op" in
             zip -r "$archive" dump.sql filestore
         )
         rm -rf "$tmpdir"
+        ;;
+
+    handover)
+        ic_require_args 2 "$#" \
+            "backup_download.sh handover <dir> <archive> <handoff_dir>"
+        archive="$1"; handoff="$2"
+        if [ ! -f "$archive" ] || [ -L "$archive" ]; then
+            ic_die "no regular archive to hand over at $archive"
+        fi
+        if [ -e "$handoff" ] || [ -L "$handoff" ]; then
+            if [ -d "$handoff" ] && [ ! -L "$handoff" ] && [ -O "$handoff" ]; then
+                ic_log "replacing what an earlier attempt of this job handed over"
+                rm -rf "$handoff"
+            else
+                ic_die "the handoff's directory is already taken: nothing handed over"
+            fi
+        fi
+        mkdir -m 700 "$handoff" 2>/dev/null \
+            || ic_die "could not create the handoff's directory"
+        mv "$archive" "$handoff/archive.zip"
+        ic_log "archive handed over"
         ;;
 
     *)

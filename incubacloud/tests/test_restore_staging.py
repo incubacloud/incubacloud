@@ -28,7 +28,7 @@ from odoo.tests.common import BaseCase, TransactionCase
 from odoo.tools import config
 
 from .. import restore_staging
-from ..models.transport import SSHTransport
+from ..models.transport import CommandResult, SSHTransport
 from ..restore_staging import (
     is_staged_upload,
     new_upload_path,
@@ -270,6 +270,7 @@ class TestExecutorConsumesTheStagedUpload(_RestoreExecutorMixin,
         path = self._staged_archive()
         ex = self._executor(path)
         transport = create_autospec(SSHTransport, instance=True)
+        transport.run.return_value = CommandResult('', 0)
 
         asyncio.run(ex.before_execute(transport))
 
@@ -290,6 +291,7 @@ class TestExecutorConsumesTheStagedUpload(_RestoreExecutorMixin,
         path = self._staged_archive()
         ex = self._executor(path)
         transport = create_autospec(SSHTransport, instance=True)
+        transport.run.return_value = CommandResult('', 0)
         transport.upload_file.side_effect = OSError('host unreachable')
 
         with self.assertRaises(OSError):

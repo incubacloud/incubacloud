@@ -3,6 +3,7 @@ import logging
 from odoo import _, fields, models
 
 from .abstract_executor import BLOCKED_BY_ALERT, CANCELLED_WHILE_RUNNING
+from .registry import executor_registry
 
 _logger = logging.getLogger(__name__)
 
@@ -188,6 +189,15 @@ class QueueJob(models.Model):
             if new_state not in _TERMINAL:
                 continue
 
+            # Cancelled dispatched before it started (``cancel_job`` →
+            # ``button_cancelled``): it never runs, so its executor lets
+            # go of what was left on a host for it. One stopped while it
+            # ran arrives with ``ic_cancelled_while_running``.
+            if new_state == "cancelled" and not self.env.context.get(
+                "ic_cancelled_while_running",
+            ):
+                self._let_go_for_jobs_never_run(cjob)
+
             # A job that failed or was cancelled — stopped while it ran,
             # or cancelled dispatched before it started (``cancel_job`` →
             # ``button_cancelled``, whose own cancel of the next steps is
@@ -274,7 +284,9 @@ class QueueJob(models.Model):
         commits. Not their executor's ``on_cancelled_queued``: that undoes
         what was written when the chain was asked for, which after a
         partial run is what recovering from it needs (a move's markers,
-        which ``rollback_move`` reads).
+        which ``rollback_move`` reads). Their ``on_never_run`` instead,
+        which lets go of what the steps that ran left on a host for them
+        (a restore's handoff).
 
         :param cjob: the ``cloud.job`` that just failed or was cancelled
         :param qjob: its ``queue.job``, in a graph
@@ -320,7 +332,30 @@ class QueueJob(models.Model):
             for step in steps
         ])
         steps._run_after_terminal('cancelled')
+        self._let_go_for_jobs_never_run(steps)
         Job._schedule_dispatch(Job._queue_scopes_of(steps))
+
+    def _let_go_for_jobs_never_run(self, jobs):
+        """Give each of *jobs*' executors its ``on_never_run``; never raises.
+
+        In a savepoint, logged: the end of a job stands whatever the hook
+        does, as with ``on_cancelled_queued``.
+
+        :param jobs: ``cloud.job`` records that will never run
+        """
+        for job in jobs.sudo():
+            executor_cls = executor_registry.get(job.job_type_id.code)
+            if not executor_cls:
+                continue
+            try:
+                with self.env.cr.savepoint():
+                    executor_cls(
+                        job_record=job, host_record=job.host_id,
+                    ).on_never_run()
+            except Exception:  # the end stands
+                _logger.warning(
+                    "Job %s: on_never_run raised.", job.id, exc_info=True,
+                )
 
     def _seal_autopurge_clock(self, cjob):
         """Count a finished job as somebody having used the instance.

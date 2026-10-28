@@ -33,13 +33,12 @@ from . import acme_store
 from .abstract_executor import AbstractSSHExecutor
 from .setup_whitelist_executor import (
     build_whitelist_compose,
-    _WL_TMP, _WL_DIR, _WL_FILE, _WL_PROJECT,
+    _WL_DIR, _WL_FILE, _WL_PROJECT,
 )
 
 _logger = logging.getLogger(__name__)
 
 MIN_DISK_GB = 10
-_TMP = "/tmp/.incubacloud-traefik"
 _BIN = 'PATH="$HOME/.local/bin:$PATH"'
 
 
@@ -122,8 +121,77 @@ def _build_inverseproxy(content, wildcard_domain, panel_password):
     return content
 
 
+class ProxyStagingMixin:
+    """Stage the host's Traefik documents, for Full Setup and the push.
+
+    Everything goes in the job's own directory. Whether the default
+    certificate and the CDN's authority are installed or removed is
+    decided here, from what this job uploads — never from what a shell
+    finds at a path, which another account could have put there.
+    """
+
+    #: Whether this run stages the host's certificate pair, and the CDN's
+    #: client authority. ``None`` until ``_stage_proxy_documents`` ran.
+    _ships_default_cert = None
+    _ships_cdn_ca = None
+
+    async def _stage_proxy_documents(self, transport, host, private=None):
+        """Upload the documents both jobs install, secrets owner-only.
+
+        The private key travels with its certificate, and the pruned
+        store holds every key the proxy obtained: created 0600, and
+        removed when the job ends whether or not a step moved them.
+
+        :param transport: the job's open transport
+        :param host: the ``cloud.host`` they are rendered for
+        :param dict private: more secret files to stage the same way,
+            ``{remote_path: text}``
+        """
+        cert, key = host._effective_tls_default()
+        files = {
+            self._job_path("traefik.yml"): host._shipped_traefik_yml(),
+            self._job_path("config.yml"): host._shipped_config_yml(),
+            self._job_path("tls.yml"): host._shipped_tls_default_yml(),
+            self._job_path("client-auth.yml"):
+                host._shipped_tls_client_auth_yml(),
+        }
+        private = dict(private or {})
+        self._ships_default_cert = bool(cert and key)
+        if self._ships_default_cert:
+            private[self._job_path("default.crt")] = cert
+            private[self._job_path("default.key")] = key
+        client_ca = host._effective_cdn_client_ca()
+        self._ships_cdn_ca = bool(client_ca)
+        if client_ca:
+            files[self._job_path("cdn-ca.pem")] = client_ca
+        pruned = await self._prepare_acme_prune(transport)
+        if pruned:
+            private[self._acme_local_path()] = pruned
+        await self._upload_files(transport, files)
+        if private:
+            await self._upload_private_files(transport, private)
+
+    def _proxy_ships(self):
+        """Return whether this run installs the certificate and the authority.
+
+        What ``_stage_proxy_documents`` uploaded; for commands built
+        without it (a preview), what the host would ship.
+
+        :return: ``(default certificate, CDN client authority)``
+        :rtype: tuple
+        """
+        host = self.job.host_id
+        cert = self._ships_default_cert
+        if cert is None:
+            cert = all(host._effective_tls_default())
+        ca = self._ships_cdn_ca
+        if ca is None:
+            ca = bool(host._effective_cdn_client_ca())
+        return cert, ca
+
+
 class FullSetupExecutor(
-    acme_store.AcmeStorePruneMixin, AbstractSSHExecutor,
+    ProxyStagingMixin, acme_store.AcmeStorePruneMixin, AbstractSSHExecutor,
 ):
     _job_type = "full_setup"
 
@@ -148,24 +216,13 @@ class FullSetupExecutor(
         # declares a proxy in front of it ships the matching Traefik
         # settings here, and they have to be interlocked — the static
         # file may name a middleware the dynamic file must define.
-        cert, key = host._effective_tls_default()
-        files = {
-            f"{_TMP}-inverseproxy.yaml": inverseproxy,
-            f"{_TMP}-traefik.yml":       host._shipped_traefik_yml(),
-            f"{_TMP}-config.yml":        host._shipped_config_yml(),
-            f"{_TMP}-tls.yml":           host._shipped_tls_default_yml(),
-            f"{_TMP}-client-auth.yml":   host._shipped_tls_client_auth_yml(),
-        }
-        if cert and key:
-            files[f"{_TMP}-default.crt"] = cert
-            files[f"{_TMP}-default.key"] = key
-        client_ca = host._effective_cdn_client_ca()
-        if client_ca:
-            files[f"{_TMP}-cdn-ca.pem"] = client_ca
-        pruned = await self._prepare_acme_prune(transport)
-        if pruned:
-            files[acme_store.LOCAL_PATH] = pruned
-        await transport.upload_text_files(files)
+        # The compose file is owner-only too: it holds the dashboard's
+        # password hash (and whatever credentials a module adds to the
+        # proxy's environment). Moved, it stays 0600.
+        await self._stage_proxy_documents(
+            transport, host,
+            private={self._job_path("inverseproxy.yaml"): inverseproxy},
+        )
         self._sys("✓ Traefik configuration files uploaded.")
 
         # Upload whitelist compose file (Phase 4)
@@ -175,12 +232,40 @@ class FullSetupExecutor(
             f"Preparing whitelist compose file"
             f" ({n} entr{'y' if n == 1 else 'ies'})…"
         )
-        await transport.upload_text_files(
-            {_WL_TMP: build_whitelist_compose(hostnames)},
+        await self._upload_files(
+            transport,
+            {self._job_path("whitelist.yaml"): build_whitelist_compose(hostnames)},
         )
         self._sys("✓ Whitelist compose file uploaded.")
 
     def get_commands(self):
+        stage = self._job_path
+        ships_cert, ships_ca = self._proxy_ships()
+        if ships_cert:
+            install_cert = (
+                "mkdir -p ~/traefik/certs ~/traefik/dynamic"
+                f" && mv {stage('default.crt')} ~/traefik/certs/default.crt"
+                f" && mv {stage('default.key')} ~/traefik/certs/default.key"
+                " && chmod 600 ~/traefik/certs/default.key"
+                f" && mv {stage('tls.yml')} ~/traefik/dynamic/tls-default.yml"
+            )
+        else:
+            install_cert = (
+                "mkdir -p ~/traefik/certs ~/traefik/dynamic"
+                " && rm -f ~/traefik/dynamic/tls-default.yml"
+                " ~/traefik/certs/default.crt ~/traefik/certs/default.key"
+            )
+        if ships_ca:
+            require_ca = (
+                f"mv {stage('cdn-ca.pem')} ~/traefik/certs/cdn-client-ca.pem"
+                f" && mv {stage('client-auth.yml')}"
+                " ~/traefik/dynamic/tls-client-auth.yml"
+            )
+        else:
+            require_ca = (
+                "rm -f ~/traefik/dynamic/tls-client-auth.yml"
+                " ~/traefik/certs/cdn-client-ca.pem"
+            )
         commands = [
             # ── Phase 1: compatibility ────────────────────────────────
             ("check:os",   "uname -s"),
@@ -195,10 +280,10 @@ class FullSetupExecutor(
             ),
             (
                 "Move traefik config files",
-                f"mv {_TMP}-inverseproxy.yaml"
+                f"mv {stage('inverseproxy.yaml')}"
                 " ~/traefik/inverseproxy.yaml"
-                f" && mv {_TMP}-traefik.yml ~/traefik/traefik.yml"
-                f" && mv {_TMP}-config.yml ~/traefik/config.yml",
+                f" && mv {stage('traefik.yml')} ~/traefik/traefik.yml"
+                f" && mv {stage('config.yml')} ~/traefik/config.yml",
             ),
             (
                 # The file provider reads one directory, and config.yml
@@ -213,17 +298,10 @@ class FullSetupExecutor(
                 # Same interlock as the proxy-settings push: a host with
                 # its own certificate serves it as the default, one
                 # without has the document removed rather than left
-                # pointing at files that are not there.
+                # pointing at files that are not there. Which one is
+                # decided by what this job staged.
                 "Install the default certificate",
-                "mkdir -p ~/traefik/certs ~/traefik/dynamic;"
-                f" if [ -s {_TMP}-default.crt ]; then"
-                f" mv {_TMP}-default.crt ~/traefik/certs/default.crt"
-                f" && mv {_TMP}-default.key ~/traefik/certs/default.key"
-                " && chmod 600 ~/traefik/certs/default.key"
-                f" && mv {_TMP}-tls.yml ~/traefik/dynamic/tls-default.yml;"
-                " else rm -f ~/traefik/dynamic/tls-default.yml"
-                " ~/traefik/certs/default.crt ~/traefik/certs/default.key;"
-                f" rm -f {_TMP}-tls.yml; fi",
+                install_cert,
             ),
             (
                 # Same shape as the default certificate: a host given an
@@ -231,13 +309,7 @@ class FullSetupExecutor(
                 # without has the document removed, so nothing asks a
                 # visitor for a certificate it does not have.
                 "Require the CDN client certificate",
-                f"if [ -s {_TMP}-cdn-ca.pem ]; then"
-                f" mv {_TMP}-cdn-ca.pem ~/traefik/certs/cdn-client-ca.pem"
-                f" && mv {_TMP}-client-auth.yml"
-                " ~/traefik/dynamic/tls-client-auth.yml;"
-                " else rm -f ~/traefik/dynamic/tls-client-auth.yml"
-                " ~/traefik/certs/cdn-client-ca.pem;"
-                f" rm -f {_TMP}-client-auth.yml; fi",
+                require_ca,
             ),
             (
                 # Before the proxy starts: it writes its access log into
@@ -268,7 +340,7 @@ class FullSetupExecutor(
             ),
             (
                 "Install whitelist compose file",
-                f"mv {_WL_TMP} {_WL_FILE}",
+                f"mv {stage('whitelist.yaml')} {_WL_FILE}",
             ),
             (
                 "Start whitelist services",

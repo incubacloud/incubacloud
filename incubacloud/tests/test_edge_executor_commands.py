@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 from odoo.tests.common import TransactionCase
 
 from ..models import acme_store
-from ..models.full_setup_executor import _TMP, FullSetupExecutor
+from ..models.full_setup_executor import FullSetupExecutor
 from ..models.push_trusted_proxies_executor import PushTrustedProxiesExecutor
 from ..models.transport import CommandResult, SSHTransport
 
@@ -94,7 +94,11 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
         self.assertIn('docker inspect inverseproxy-proxy-1', move)
         self.assertIn('/etc/traefik/dynamic ', move)
         self.assertIn('filename: /etc/traefik/config.yml', move)
-        self.assertIn(f'mv {_TMP}-traefik.yml ~/traefik/traefik.yml', move)
+        self.assertRegex(
+            move,
+            r'mv /tmp/\.incubacloud-job-[0-9a-f]+/traefik\.yml'
+            r' ~/traefik/traefik\.yml',
+        )
 
     def test_the_dynamic_copy_is_refreshed(self):
         # The file provider reads config.yml from the dynamic directory
@@ -121,13 +125,20 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
 
     _INSTALL = "Install the default certificate"
 
+    def _give_certificate(self):
+        """Give the fixture host a certificate pair of its own."""
+        cert, key = make_pair(("*.edge-exec.example.com",))
+        self.host.write({"tls_default_cert": cert, "tls_default_key": key})
+
     def test_the_certificate_lands_in_the_traefik_store(self):
+        self._give_certificate()
         command = self._cmds()[self._INSTALL]
         self.assertIn("~/traefik/certs/default.crt", command)
         self.assertIn("~/traefik/certs/default.key", command)
 
     def test_the_plain_move_is_tried_before_reaching_for_sudo(self):
         """A host without sudo has to keep working exactly as it did."""
+        self._give_certificate()
         command = self._cmds()[self._INSTALL]
         plain = command.index('mv "$1" "$2" 2>/dev/null')
         escalated = command.index('sudo mv "$1" "$2"')
@@ -135,12 +146,16 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
 
     def test_every_write_into_that_directory_can_escalate(self):
         """Creating it, both moves, the mode, and the removal."""
+        self._give_certificate()
         command = self._cmds()[self._INSTALL]
         self.assertIn("|| sudo mkdir -p ~/traefik/certs", command)
         self.assertIn("|| sudo chmod 600 ~/traefik/certs/default.key", command)
+        self.host.write({"tls_default_cert": False, "tls_default_key": False})
+        command = self._cmds()[self._INSTALL]
         self.assertIn("|| sudo rm -f ~/traefik/certs/default.crt", command)
 
     def test_the_private_key_is_owner_only(self):
+        self._give_certificate()
         self.assertIn(
             "chmod 600 ~/traefik/certs/default.key",
             self._cmds()[self._INSTALL],
@@ -151,7 +166,8 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
         every handshake with a throwaway certificate."""
         command = self._cmds()[self._INSTALL]
         self.assertIn("rm -f ~/traefik/dynamic/tls-default.yml", command)
-        self.assertIn("~/traefik/certs/default.crt", command.split("else")[1])
+        self.assertIn("rm -f ~/traefik/certs/default.crt", command)
+        self.assertNotIn("ic_put", command)
 
     # ── The firewall has to believe the same list as the proxy ───────
     #
@@ -256,11 +272,16 @@ class AcmePruneCase(EdgeExecutorCase):
         """
         executor = self._executor(cls, code)
         transport = MagicMock(spec=SSHTransport)
-        transport.run.return_value = CommandResult(
-            stdout=stored, exit_status=exit_status,
+        transport.run.side_effect = lambda command, *_a, **_kw: (
+            CommandResult(stdout=stored, exit_status=exit_status)
+            if command == acme_store.READ_COMMAND
+            else CommandResult(stdout="", exit_status=0)
         )
         asyncio.run(executor.before_execute(transport))
-        return executor, transport.upload_text_files.call_args[0][0]
+        files = {}
+        for call in transport.upload_text_files.await_args_list:
+            files.update(call.args[0])
+        return executor, files
 
 
 class TestRetiringStoredCertificates(AcmePruneCase):
@@ -273,9 +294,9 @@ class TestRetiringStoredCertificates(AcmePruneCase):
 
     def test_a_covered_name_is_staged_out_of_the_store(self):
         executor, files = self._run(STORE_WITH_COVERED)
-        self.assertIn(acme_store.LOCAL_PATH, files)
+        self.assertIn(executor._acme_local_path(), files)
         self.assertNotIn("a.edge-exec.example.com",
-                         files[acme_store.LOCAL_PATH])
+                         files[executor._acme_local_path()])
 
     def test_the_step_runs_before_the_proxy_restarts(self):
         """A restart is what makes the proxy forget them; doing it the
@@ -288,14 +309,14 @@ class TestRetiringStoredCertificates(AcmePruneCase):
 
     def test_nothing_to_retire_stages_nothing_and_adds_no_step(self):
         executor, files = self._run(STORE_WITHOUT_COVERED)
-        self.assertNotIn(acme_store.LOCAL_PATH, files)
+        self.assertNotIn(executor._acme_local_path(), files)
         self.assertNotIn(self._STEP, dict(executor.get_commands()))
 
     def test_a_store_that_cannot_be_read_is_left_alone(self):
         """A proxy that is not running answers nothing. Writing a store
         built from that would cost every certificate on it."""
         executor, files = self._run("", exit_status=1)
-        self.assertNotIn(acme_store.LOCAL_PATH, files)
+        self.assertNotIn(executor._acme_local_path(), files)
         self.assertNotIn(self._STEP, dict(executor.get_commands()))
 
     def test_a_host_with_no_certificate_of_its_own_retires_nothing(self):
@@ -303,14 +324,14 @@ class TestRetiringStoredCertificates(AcmePruneCase):
         the name answered by a throwaway."""
         self.host.write({"tls_default_cert": False, "tls_default_key": False})
         executor, files = self._run(STORE_WITH_COVERED)
-        self.assertNotIn(acme_store.LOCAL_PATH, files)
+        self.assertNotIn(executor._acme_local_path(), files)
         self.assertNotIn(self._STEP, dict(executor.get_commands()))
 
     def test_the_certificate_is_still_installed_alongside(self):
         """The two halves ship together or the host serves neither."""
         _, files = self._run(STORE_WITH_COVERED)
         self.assertTrue(
-            [path for path in files if path.endswith("-default.crt")],
+            [path for path in files if path.endswith("/default.crt")],
         )
 
 
@@ -318,26 +339,28 @@ class TestTheWriteKeepsTheStoreUsable(EdgeExecutorCase):
     """Traefik refuses a store any other account can read, and then
     obtains nothing at all — silently."""
 
+    _LOCAL = "/tmp/.incubacloud-job-0123456789abcdef/acme.json"
+
     def test_it_writes_through_the_existing_file(self):
         # ``cat >`` keeps the mode the file already has; moving a new
         # file over it would not.
         self.assertIn("sh -c 'cat > /etc/traefik/acme/acme.json'",
-                      acme_store.WRITE_COMMAND)
+                      acme_store.write_command(self._LOCAL))
 
     def test_it_reaches_the_store_through_the_container(self):
         """It lives in a named volume, not on the host filesystem."""
-        self.assertIn("exec -T proxy", acme_store.WRITE_COMMAND)
+        self.assertIn("exec -T proxy", acme_store.write_command(self._LOCAL))
         self.assertIn("exec -T proxy", acme_store.READ_COMMAND)
 
     def test_the_staged_copy_does_not_survive_a_success(self):
-        self.assertIn(f"rm -f {acme_store.LOCAL_PATH}",
-                      acme_store.WRITE_COMMAND)
+        self.assertIn(f"rm -f {self._LOCAL}",
+                      acme_store.write_command(self._LOCAL))
 
     def test_a_failed_write_is_still_a_failed_step(self):
         """Sequenced with ``;`` the removal's exit status would mask it,
         and the host would report a prune that never happened."""
-        self.assertIn(f"&& rm -f {acme_store.LOCAL_PATH}",
-                      acme_store.WRITE_COMMAND)
+        self.assertIn(f"&& rm -f {self._LOCAL}",
+                      acme_store.write_command(self._LOCAL))
 
 
 class TestFullSetupConverges(AcmePruneCase):
@@ -359,7 +382,7 @@ class TestFullSetupConverges(AcmePruneCase):
         executor, files = self._prepared(
             FullSetupExecutor, "full_setup", "", exit_status=1,
         )
-        self.assertNotIn(acme_store.LOCAL_PATH, files)
+        self.assertNotIn(executor._acme_local_path(), files)
         self.assertNotIn(self._STEP, dict(executor.get_commands()))
 
 

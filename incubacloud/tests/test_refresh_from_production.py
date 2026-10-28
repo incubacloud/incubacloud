@@ -24,11 +24,12 @@ covered by ``tests/shell/restore.bats``.
 
 import shlex
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from odoo.exceptions import AccessError, UserError
 from odoo.tests.common import BaseCase, TransactionCase
 
+from ..models.transport import CommandResult, SSHTransport
 from .test_cloud_job import _run_after_commit
 from .test_cloud_security import CloudSecurityBase
 
@@ -574,8 +575,11 @@ class TestBackupDownloadLive(BaseCase):
 class TestBackupDownloadValidation(BaseCase):
 
     def _run_before_execute(self, ex):
+        """Run *ex*'s checks against a host link whose commands succeed."""
         import asyncio
-        return asyncio.run(ex.before_execute(None))
+        transport = MagicMock(spec=SSHTransport)
+        transport.run.return_value = CommandResult("", 0)
+        return asyncio.run(ex.before_execute(transport))
 
     def test_non_production_accepts_live(self):
         ex = _make_download_executor(environment="staging", time="live")

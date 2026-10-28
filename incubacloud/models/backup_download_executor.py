@@ -7,7 +7,8 @@ from pathlib import Path
 from ._odoo_versions import script_env
 from .abstract_executor import (
     AbstractSSHExecutor,
-    handoff_archive_path,
+    handoff_dir,
+    handoff_sweep,
     validate_dup_time,
 )
 
@@ -25,9 +26,9 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
     Non-production: there is no historical snapshot store, so the only
     supported times are ``'latest'`` and ``'live'`` (synonyms there) and
     the executor takes a live dump of the current DB via
-    ``click-odoo-backupdb`` running in the ``odoo`` container (with
-    ``/tmp`` bind-mounted so the ZIP lands directly on the host — same
-    pattern as ``BackupCreateExecutor``).
+    ``click-odoo-backupdb`` running in the ``odoo`` container (with the
+    job's drop directory bind-mounted so the ZIP lands directly on the
+    host — same pattern as ``BackupCreateExecutor``).
 
     Payload:
         time: duplicity timestamp, 'latest', or 'live' (on-demand dump)
@@ -52,16 +53,58 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         restore instead of attaching it (payload ``handoff='host'``)."""
         return (self.job.payload or {}).get('handoff') == 'host'
 
+    def _live(self):
+        """Whether this download is a dump of the database as it runs.
+
+        :rtype: bool
+        """
+        return (
+            self._inst().environment != 'production'
+            or (self.job.payload or {}).get('time') == 'live'
+        )
+
     def _tmp_dir(self):
-        return f"/tmp/.incubacloud-bkdl-{self._inst().name}"
+        """Return where a restored backup is packaged: the job's directory.
+
+        :rtype: str
+        """
+        return self._job_path("bkdl")
 
     def _tmp_archive(self):
-        # Handoff archives are keyed by job id — the consumer recomputes
-        # the path from ``source_job_id`` alone, and a concurrent user
-        # download on the same instance can never overwrite them.
-        if self._handoff():
-            return handoff_archive_path(self.job.id)
-        return f"/tmp/.incubacloud-bkdl-{self._inst().name}.zip"
+        """Return where the archive is built: in the job's own directory.
+
+        Its drop directory when a container writes it. A handoff's too:
+        only at the end is it handed over (``_handover_step``).
+
+        :rtype: str
+        """
+        if self._live():
+            return f"{self._drop_dir()}/backup.zip"
+        return self._job_path("backup.zip")
+
+    def _handover_step(self):
+        """Return the step that hands a handoff's archive over, or ().
+
+        Into :func:`handoff_dir`, which the restore recomputes from this
+        job's id and which outlives this job's own directory. Last, and
+        stopping the run when it fails: a restore must never find an
+        archive that was not handed over whole.
+
+        :rtype: tuple
+        """
+        if not self._handoff():
+            return ()
+        return ((
+            "Hand the archive over",
+            self.run_script(
+                "backup_download.sh",
+                [
+                    "handover", self._inst_dir(self._inst()),
+                    self._tmp_archive(), handoff_dir(self.env, self.job.id),
+                ],
+            ),
+            {"stop_on_failure": True},
+        ),)
 
     async def before_execute(self, transport):
         inst = self._inst()
@@ -94,6 +137,17 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                 " backups; only time='latest' or time='live' (a dump of"
                 " the current state) is supported."
             )
+        if self._handoff():
+            # What chains that never reached their restore left: a day
+            # old, this account's, best effort.
+            with suppress(Exception):
+                await transport.run(handoff_sweep(self.env, self.job.host_id))
+        if self._live():
+            # The dump's container writes there.
+            await self._ensure_drop_dir(transport)
+        else:
+            # Restored and packaged in the job's directory.
+            await self._ensure_job_dir(transport)
 
     def get_commands(self):
         inst = self._inst()
@@ -104,8 +158,8 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         dbname = inst.postgres_dbname or 'prod'
         archive = self._tmp_archive()
 
-        # Live dump via click-odoo-backupdb directly into the host's
-        # /tmp (one step, no separate ``cp`` needed).  Same binary
+        # Live dump via click-odoo-backupdb directly into the job's drop
+        # directory (one step, no separate ``cp`` needed).  Same binary
         # handles both filestore modes via --filestore / --no-filestore
         # so we keep a single codepath.  The binary writes a ZIP that
         # already matches the layout expected by ``_download_zip``.
@@ -127,6 +181,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                     ),
                     {"stop_on_failure": True},
                 ),
+                *self._handover_step(),
             ]
 
         tmp_dir = self._tmp_dir()
@@ -148,6 +203,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                         ["package-sql", d, dbname, tmp_dir, archive],
                     ),
                 ),
+                *self._handover_step(),
             ]
 
         # mode == 'all': full restore (DB + filestore)
@@ -165,6 +221,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
                     ["package-full", d, dbname, tmp_dir, archive],
                 ),
             ),
+            *self._handover_step(),
         ]
 
     def parse_results(self, results):
@@ -176,14 +233,60 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
 
     async def after_commands(self, transport, results):
         if self._handoff():
+            if not self._handoff_awaited():
+                # Its restore was cancelled while this ran: the removal
+                # that cancellation queued found nothing to remove yet.
+                # Best effort, like the sweep: the archive is already
+                # on the host, and a connection lost right here must not
+                # fail a job that did its work; the day's sweep takes it.
+                removed = False
+                with suppress(Exception):
+                    await transport.run(
+                        f"rm -rf {handoff_dir(self.env, self.job.id)}"
+                    )
+                    removed = True
+                self._sys(
+                    "The restore this backup was for will not run: the "
+                    "backup was removed from the host."
+                    if removed else
+                    "The restore this backup was for will not run: the "
+                    "backup could not be removed from the host now; the "
+                    "day's sweep takes it."
+                )
+                return
             # The chained restore consumes (and removes) the archive
-            # where it lies; nothing crosses the wire here.
-            self._sys(
-                "✓ Backup staged on the host for the next job "
-                f"({self._tmp_archive()})."
-            )
+            # where it lies; nothing crosses the wire here. Its path is
+            # not written to the log: no other account should learn it.
+            self._sys("✓ Backup handed over on the host for the next job.")
             return
         await self._download_zip(transport)
+
+    def _handoff_awaited(self):
+        """Whether a restore may still come for this job's handoff.
+
+        Read on a cursor of its own: the restore is cancelled in another
+        transaction, after this job's started. Only the restores of this
+        job's chain that name it count; when there are none — a handoff
+        asked for outside a chain — there is no telling, and the
+        day-old sweep decides.
+
+        :rtype: bool
+        """
+        with self._durable_env() as env:
+            job = env["cloud.job"].sudo().browse(self.job.id).exists()
+            if not job.queue_chain_key:
+                return True
+            restores = job.search([
+                ("queue_chain_key", "=", job.queue_chain_key),
+                ("job_type_id.code", "=", "restore_instance"),
+            ]).filtered(lambda r: str(
+                (r.payload or {}).get("source_job_id")
+            ) == str(job.id))
+            if not restores:
+                return True
+            return any(
+                r.state in job._active_states for r in restores
+            )
 
     async def _download_zip(self, transport):
         """Download the packaged ZIP via SFTP → ir.attachment."""
@@ -207,6 +310,7 @@ class BackupDownloadExecutor(AbstractSSHExecutor):
         )
         os.close(local_fd)
         try:
+            await self._check_regular_file(transport, archive)
             await transport.download_file(archive, local_tmp)
 
             self._sys("✓ Downloaded. Storing as attachment…")

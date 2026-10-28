@@ -31,7 +31,11 @@ class BackupCreateExecutor(AbstractSSHExecutor):
         return self._inst().environment == 'production'
 
     def _remote_tmp(self):
-        return f"/tmp/.incubacloud-backup-{self._inst().name}.zip"
+        """Return where the dump lands: the job's drop directory.
+
+        :rtype: str
+        """
+        return f"{self._drop_dir()}/backup.zip"
 
     async def before_execute(self, transport):
         inst = self._inst()
@@ -39,6 +43,9 @@ class BackupCreateExecutor(AbstractSSHExecutor):
             raise ValueError("backup_create job has no instance_id")
         if not inst.deployed:
             raise ValueError("Instance is not deployed.")
+        if not self._is_production():
+            # The dump's container writes there.
+            await self._ensure_drop_dir(transport)
 
     def get_commands(self):
         inst = self._inst()
@@ -54,9 +61,9 @@ class BackupCreateExecutor(AbstractSSHExecutor):
             ]
 
         # Non-production: the series' dump tool in a transient ``run
-        # --rm`` container with /tmp bind-mounted, so the ZIP lands
-        # directly on the host at ``remote_tmp`` and a separate ``docker
-        # compose cp`` step is unnecessary. ``run --rm`` (as opposed to
+        # --rm`` container with the job's drop directory bind-mounted, so
+        # the ZIP lands directly on the host at ``remote_tmp`` and a
+        # separate ``docker compose cp`` step is unnecessary. ``run --rm`` (as opposed to
         # ``exec``) also works when the odoo service is stopped — e.g.
         # after a failed restore left the instance in error state but the
         # operator still wants to grab a backup of the current DB before
@@ -112,6 +119,7 @@ class BackupCreateExecutor(AbstractSSHExecutor):
         )
         os.close(local_fd)
         try:
+            await self._check_regular_file(transport, remote_tmp)
             await transport.download_file(remote_tmp, local_tmp)
 
             self._sys("✓ Downloaded. Storing as attachment…")

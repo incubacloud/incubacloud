@@ -66,13 +66,9 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         # archived, so every default read would come back empty.
         return self.job.with_context(active_test=False).instance_id
 
-    def _env_dir(self):
-        """Per-job directory that holds the environment file."""
-        return f"/tmp/.incubacloud-archived-purge-{self.job.id}"
-
     def _env_path(self):
-        """Remote path of the uploaded environment file."""
-        return f"{self._env_dir()}/env"
+        """Remote path of the uploaded environment file, in the job's directory."""
+        return self._job_path("purge.env")
 
     def _env_content(self):
         """Render the environment the ephemeral container needs.
@@ -108,25 +104,20 @@ class PurgeArchivedBackupsExecutor(AbstractSSHExecutor):
         return "\n".join(lines) + "\n"
 
     async def before_execute(self, transport):
-        """Create a private directory, then put the environment in it.
+        """Put the environment in the job's own directory, owner-only.
 
         Uploaded rather than passed as arguments: an argument is visible
         in ``ps`` to every account on the host for as long as the
         container runs, and this one carries the destination's
-        credentials.
-
-        The directory is made 0700 *before* the file exists, because
-        SFTP writes it with the default mask and there is no moment when
-        a world-readable copy should be reachable — not even the
-        milliseconds a later ``chmod`` would leave open. The script
-        removes both on its way out, failure included.
+        credentials. Created 0600 in the job's directory (0700, named at
+        random, created by this job): no moment when another account
+        could read it, and no directory of another account to land in —
+        the per-job name this used, ``install -d`` unchecked, was one
+        anybody could create first. The script removes the file on its
+        way out, and the job its directory, failure included.
         """
-        await transport.execute(
-            f"install -d -m 700 {self._env_dir()}",
-            self.on_stdout, self.on_stderr,
-        )
-        await transport.upload_text_files(
-            {self._env_path(): self._env_content()},
+        await self._upload_private_files(
+            transport, {self._env_path(): self._env_content()},
         )
 
     def get_commands(self):

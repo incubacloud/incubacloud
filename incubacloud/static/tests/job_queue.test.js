@@ -368,6 +368,7 @@ describe("job queue — every button that enqueues says what became of its job",
         24: { ok: true, job_id: 24, state: "queued", job_type: "Move Rollback Cleanup", queued_behind: false },
         25: { ok: true, job_id: 25, state: "queued", job_type: "Grant Restore Upload Key", queued_behind: "Rebuild Instance" },
         26: { ok: true, job_id: 26, state: "pending", job_type: "Grant Restore Upload Key", queued_behind: false },
+        27: { ok: true, job_id: 27, state: "pending", job_type: "Restore Instance", queued_behind: false },
     };
 
     /** ``/cloud/get_job_state`` as the server answers it here. */
@@ -494,6 +495,130 @@ describe("job queue — every button that enqueues says what became of its job",
         await comp.requestUploadKey();
         expect(comp.toast.shown()).toEqual([["success", "Started: Grant Restore Upload Key"]]);
         expect(comp.state.restoreDialog.keyQueued).toBe(false);
+    });
+
+    /**
+     * Let every promise chain that can advance do so.
+     *
+     * @returns {Promise<void>}
+     */
+    async function settle() {
+        for (let i = 0; i < 30; i++) await Promise.resolve();
+    }
+
+    /**
+     * An InstanceDetail stand-in whose SSH dialog holds a check of the
+     * upload from before, and whose ``verify_restore_upload`` job *jobId*
+     * ends only when the test says so.
+     *
+     * @param {object} host what the host reports, and in which state the
+     *     check job is (both change as the test goes on)
+     * @returns {object} the stand-in, with ``reads`` (how many times the
+     *     grant was read) and ``ticks`` (the polls waiting to run)
+     */
+    function checking(host) {
+        answering({
+            "/cloud/get_job_state": () => ({
+                ok: true, state: host.jobState, job_type: "Verify Restore Upload",
+                queued_behind: false,
+            }),
+        });
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.toast = toastService();
+        comp.env = { toast: comp.toast };
+        comp.props = { instance_id: 3 };
+        comp.reads = 0;
+        comp.ticks = [];
+        comp._safePoll = { alive: true, schedule: (fn) => comp.ticks.push(fn) };
+        comp.orm = {
+            call: (model, method) => {
+                if (method === "verify_restore_upload") return Promise.resolve(30);
+                comp.reads += 1;
+                return Promise.resolve([host.grant]);
+            },
+        };
+        comp.state = {
+            restoreDialog: {
+                grant: { grant_id: 4 }, checking: false, error: null,
+                received: { filename: "restore.zip", bytes: 10, sha256: "old" },
+            },
+        };
+        return comp;
+    }
+
+    test("a check of the upload shows nothing until its job has ended", async () => {
+        const host = { jobState: "started", grant: { received_filename: false } };
+        const comp = checking(host);
+        const dialog = comp.state.restoreDialog;
+        const done = comp.checkUpload();
+        await settle();
+        // The job still runs: the file from the last check is not shown
+        // nor restorable, and the grant was not read yet.
+        expect(dialog.received).toBe(null);
+        expect(dialog.checking).toBe(true);
+        expect(comp.reads).toBe(0);
+        expect(comp.ticks.length).toBe(1);
+        host.jobState = "done";
+        comp.ticks.shift()();
+        await done;
+        expect(comp.reads).toBe(1);
+        expect(dialog.received).toBe(null);
+        expect(dialog.checking).toBe(false);
+    });
+
+    test("what the finished check found is what the dialog shows", async () => {
+        const host = {
+            jobState: "done",
+            grant: { received_filename: "restore.zip", received_bytes: 20, received_sha256: "new" },
+        };
+        const comp = checking(host);
+        await comp.checkUpload();
+        expect(comp.state.restoreDialog.received).toEqual(
+            { filename: "restore.zip", bytes: 20, sha256: "new" },
+        );
+        expect(comp.state.restoreDialog.checking).toBe(false);
+    });
+
+    test("closing the dialog while the check waits abandons the wait", async () => {
+        const host = { jobState: "queued", grant: { received_filename: "restore.zip" } };
+        const comp = checking(host);
+        const done = comp.checkUpload();
+        await settle();
+        comp.state.restoreDialog = null;
+        host.jobState = "done";
+        comp.ticks.shift()();
+        await done;
+        expect(comp.reads).toBe(0);
+    });
+
+    test("a restore through the key names the digest the dialog showed", async () => {
+        const comp = Object.create(InstanceDetail.prototype);
+        comp.toast = toastService();
+        comp.env = { toast: comp.toast };
+        comp.props = { instance_id: 3 };
+        const calls = [];
+        comp.orm = {
+            call: (...args) => {
+                calls.push(args);
+                return Promise.resolve(27);
+            },
+        };
+        comp.state = {
+            restoreDialog: {
+                mode: "ssh", uploading: false, error: null, backupBeforeRestore: false,
+                grant: { grant_id: 4 },
+                received: { filename: "restore.zip", bytes: 20, sha256: "seen" },
+            },
+        };
+        await comp.doRestore();
+        expect(calls).toEqual([[
+            "cloud.instance", "restore_db",
+            [[3], {
+                mode: "ssh_upload", grant_id: 4, backup_before_restore: false,
+                expected_sha256: "seen",
+            }],
+        ]]);
+        expect(comp.state.restoreDialog).toBe(null);
     });
 
     test("a rollback of a move that had not started says it is undone", async () => {
