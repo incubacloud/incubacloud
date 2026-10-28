@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Settings: an Assistant tab after the MCP's Agents tab, kept mounted once
+         opened, as core's tabs are (``openedTabs`` in settings.js). -->
+    <t t-inherit="incubacloud.Settings" t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('rl-tabs')]/button[last()]" position="after">
+            <button t-att-class="state.tab === 'assistant' ? 'rl-tab active' : 'rl-tab'"
+                    t-on-click="() => this.setTab('assistant')">Assistant</button>
+        </xpath>
+        <xpath expr="//t[@t-if=&quot;state.tab === 'github'&quot;]" position="after">
+            <div t-if="state.openedTabs.assistant" t-att-hidden="state.tab !== 'assistant'">
+                <AssistantSettingsTab/>
+            </div>
+        </xpath>
+    </t>
+
+</templates>
