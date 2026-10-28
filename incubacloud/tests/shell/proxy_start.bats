@@ -5,7 +5,10 @@
 # first time when STUB_UP_FAIL is set, as a port already taken does. The
 # proxy's state is ``running`` unless STUB_EXITED is set, which makes it
 # ``exited`` until the previous files come back (a Traefik that stops on
-# a static file it cannot parse).
+# a static file it cannot parse). With STUB_LOOPING the container looks
+# ``running`` at every check but its restart count grows with each
+# ``restart`` and each check, as a Traefik in a restart loop does, until
+# the previous files come back.
 
 setup() {
     SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/proxy_start.sh"
@@ -25,6 +28,15 @@ case "$*" in
             exit 1
         fi ;;
     *" ps -q proxy") echo "abc123" ;;
+    "inspect "*RestartCount*)
+        if [ -n "${STUB_LOOPING:-}" ] \
+            && ! grep -q '^old' "$IC_TRAEFIK_DIR/traefik.yml"; then
+            n="$(cat "$CALLS.count" 2>/dev/null || echo 0)"
+            echo $((n + 1)) > "$CALLS.count"
+            echo "$n"
+        else
+            echo 0
+        fi ;;
     "inspect "*)
         if [ -n "${STUB_EXITED:-}" ] \
             && ! grep -q '^old' "$IC_TRAEFIK_DIR/traefik.yml"; then
@@ -99,4 +111,16 @@ new_files() {
     done
     [ "$(grep -c ' up -d --remove-orphans' "$CALLS")" -eq 2 ]
     [[ "$output" == *"started and stopped"* ]]
+}
+
+@test "a proxy that looks running but keeps restarting puts the old files back" {
+    bash "$SCRIPT" keep
+    new_files
+    STUB_LOOPING=1 run bash "$SCRIPT" start
+    [ "$status" -ne 0 ]
+    for f in inverseproxy.yaml traefik.yml config.yml; do
+        [ "$(cat "$IC_TRAEFIK_DIR/$f")" = "old $f" ]
+    done
+    [ "$(grep -c ' up -d --remove-orphans' "$CALLS")" -eq 2 ]
+    [[ "$output" == *"restarting"* ]]
 }
