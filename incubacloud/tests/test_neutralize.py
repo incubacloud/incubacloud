@@ -212,6 +212,8 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
         "cloud_settings.grafana_base_url": "read only while metrics are on",
         "cloud_settings.metrics_central_url": "read only while metrics are on",
         "cloud_settings.metrics_remote_write_url": "read only while metrics are on",
+        "cloud_host.metrics_agents_write_url":
+            "the URL a host's agents were installed with: compared, never called",
     }
 
     def _secret_columns(self):
@@ -402,3 +404,32 @@ class TestNeutralize(NeutralizeInventory, TransactionCase):
             " WHERE id = %s", (console.id,),
         )
         self.assertEqual(cr.fetchone(), ("closed", True))
+
+    def test_the_direct_path_leaves_nothing_in_the_copy(self):
+        """No DNS token, no direct name, and no probe date of production's."""
+        settings = self.env["cloud.settings"]._get_system()
+        settings.write({
+            "acme_dns_cloudflare_token": "cf-token",
+            "metrics_central_direct_host": "direct.metrics.example.test",
+        })
+        ICP = self.env["ir.config_parameter"].sudo()
+        ICP.set_param(
+            "incubacloud.direct_checked_at.metrics_central_direct",
+            "2026-10-28 10:00:00",
+        )
+        ICP.set_param(
+            "incubacloud.direct_checked_at.metrics_read_ok", "2026-10-28 10:00:00",
+        )
+        self.env.flush_all()
+        neutralize_database(self.env.cr)
+        cr = self.env.cr
+        cr.execute(
+            "SELECT acme_dns_cloudflare_token, metrics_central_direct_host"
+            " FROM cloud_settings",
+        )
+        self.assertEqual(cr.fetchall(), [(None, None)] * cr.rowcount)
+        cr.execute(
+            "SELECT count(*) FROM ir_config_parameter"
+            " WHERE key LIKE 'incubacloud.direct_checked_at.%'",
+        )
+        self.assertEqual(cr.fetchone(), (0,))

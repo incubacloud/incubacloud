@@ -2,9 +2,14 @@
 # It ships in the module, and that host's deploy installs it from the
 # release it deploys: an edit here reaches the host with its release.
 #
-# Publishes the shared observability central for agents and browsers that
-# do NOT live on this host (today: the tenants on Tenants1). A separate
-# file: a bad edit here is rejected by Traefik and the rest keeps serving.
+# Publishes the shared observability central, through the CDN, for
+# browsers and for the hosts of customers (bring-your-own). The platform's
+# own hosts, the servers customers rent from the platform and the
+# tenants' panels reach it under its direct name instead, which the
+# central's deployment publishes on the host's direct entrypoint
+# (`metrics_central_direct_host`); nothing here answers on that
+# entrypoint, because every router names `https`. A separate file: a bad
+# edit here is rejected by Traefik and the rest keeps serving.
 #
 # Two backends on the Docker bridge (verified reachable from a container
 # on this host, 2026-08-10): vmauth on :8428 (the account boundary for
