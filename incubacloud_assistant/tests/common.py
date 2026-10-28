@@ -2,6 +2,8 @@
 
 import json
 
+from odoo import fields
+
 from odoo.addons.incubacloud_mcp.tests.common import McpUsersMixin, PanelFixtureMixin
 
 from ..models.cloud_settings import BLOCKED_PARAM
@@ -40,11 +42,14 @@ class AssistantMixin(McpUsersMixin, PanelFixtureMixin):
         step_cap=30,
         enabled=True,
         key=KEY,
+        terms=True,
     ):
         """Switch the assistant on for *users*; return the settings.
 
         The parameter that blocks it (IncubaCloud's own panel) goes: these
         tests try the module itself, in every mode its CI installs it.
+
+        *terms*: section 12A accepted, as switching it on in Settings leaves it.
         """
         self.env["ir.config_parameter"].sudo().set_param(BLOCKED_PARAM, False)
         settings = self.env["cloud.settings"]._get_system()
@@ -59,6 +64,12 @@ class AssistantMixin(McpUsersMixin, PanelFixtureMixin):
                 "assistant_user_ids": [(6, 0, [user.id for user in users])],
                 "assistant_monthly_limit": limit,
                 "assistant_step_cap": step_cap,
+                "assistant_terms_accepted_on": fields.Datetime.now()
+                if terms
+                else False,
+                "assistant_terms_version": False,
+                "assistant_terms_accepted_by": "Test (asis-test)" if terms else False,
+                "assistant_terms_accepted_ip": "127.0.0.1" if terms else False,
             }
         )
         # The secret filter reads the ciphertexts with SQL: they must be there.

@@ -47,6 +47,8 @@ class AssistantConfig:
     #: Euros per month, the same for every user; 0 is no limit.
     monthly_limit: float
     step_cap: int
+    #: Section 12A of the Terms accepted: without it nobody has the assistant.
+    terms_accepted: bool = False
 
     def listing(self, model_id):
         """Return the listing's entry of *model_id*, or None."""
@@ -105,6 +107,39 @@ class CloudSettings(models.Model):
         "whether to go on. Zero or less: 30.",
     )
 
+    # Section 12A of the Terms, accepted on switching the assistant on (28-oct).
+    # The system's: a manager writes the settings through the ORM, never these.
+    assistant_terms_accepted_on = fields.Datetime(
+        string="AI terms accepted on",
+        readonly=True,
+        copy=False,
+        groups="base.group_system",
+        help="When a manager last switched the assistant on and accepted section 12A "
+        "(AI features) of the Terms.",
+    )
+    assistant_terms_version = fields.Char(
+        string="AI terms version",
+        readonly=True,
+        copy=False,
+        groups="base.group_system",
+        help="The version of the Terms accepted, as IncubaCloud recorded it. Empty on "
+        "a panel IncubaCloud does not record it for.",
+    )
+    assistant_terms_accepted_by = fields.Char(
+        string="AI terms accepted by",
+        readonly=True,
+        copy=False,
+        groups="base.group_system",
+        help="The manager who accepted them: name and login.",
+    )
+    assistant_terms_accepted_ip = fields.Char(
+        string="AI terms accepted from",
+        readonly=True,
+        copy=False,
+        groups="base.group_system",
+        help="The address the acceptance came from.",
+    )
+
     @api.model
     def _assistant_config(self):
         """Return the assistant's settings.
@@ -130,6 +165,7 @@ class CloudSettings(models.Model):
             step_cap=settings.assistant_step_cap
             if settings.assistant_step_cap > 0
             else DEFAULT_STEP_CAP,
+            terms_accepted=bool(settings.assistant_terms_accepted_on),
         )
 
     @api.model
@@ -156,12 +192,50 @@ class CloudSettings(models.Model):
         return self.env["ir.config_parameter"].sudo().get_param(BLOCKED_PARAM) or ""
 
     @api.model
+    def _assistant_terms_acceptance(self):
+        """Return the last acceptance of section 12A kept here, or None.
+
+        :return: ``{accepted_on, version, user, ip}``, the date in UTC as Odoo
+            writes it
+        :rtype: dict | None
+        """
+        settings = self._get_system()
+        if not settings.assistant_terms_accepted_on:
+            return None
+        return {
+            "accepted_on": fields.Datetime.to_string(
+                settings.assistant_terms_accepted_on
+            ),
+            "version": settings.assistant_terms_version or "",
+            "user": settings.assistant_terms_accepted_by or "",
+            "ip": settings.assistant_terms_accepted_ip or "",
+        }
+
+    @api.model
+    def _assistant_record_terms_acceptance(self, acceptance):
+        """Record a manager's acceptance of section 12A; return what to keep.
+
+        Called on switching the assistant on, before anything is written. A
+        tenant panel overrides it to have IncubaCloud record it on the
+        customer's contact first (incubacloud_tenant). Here nothing outside
+        the panel knows the Terms: the acceptance stays on the panel, with
+        no version.
+
+        :param dict acceptance: ``at`` (UTC datetime), ``ip`` and ``user``
+        :return: the same keys and ``v``, the version of the Terms accepted
+        :rtype: dict
+        :raises UserError: when it could not be recorded; the assistant stays off
+        """
+        return {**acceptance, "v": ""}
+
+    @api.model
     def _assistant_available_for(self, user):
         """Return whether *user* may use the assistant now.
 
         On, with a key and a default model, and *user* among those the
-        manager chose (an active internal user); never on a database that
-        blocks it (:data:`BLOCKED_PARAM`).
+        manager chose (an active internal user), and section 12A of the Terms
+        accepted when it was switched on; never on a database that blocks it
+        (:data:`BLOCKED_PARAM`).
         """
         config = self._assistant_config()
         return bool(
@@ -169,6 +243,7 @@ class CloudSettings(models.Model):
             and config.enabled
             and config.has_key
             and config.default_model
+            and config.terms_accepted
             and user.id in config.user_ids
             and user.active
             and not user.share
