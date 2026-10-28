@@ -173,7 +173,7 @@ def _capped_search(Model, domain=None, order=None, limit=None):
 def _is_safe_remote_path(p):
     if not isinstance(p, str) or not p:
         return False
-    if not _BROWSE_PATH_RE.match(p):
+    if not _BROWSE_PATH_RE.fullmatch(p):
         return False
     return all(seg != '..' for seg in p.split('/'))
 
@@ -260,7 +260,7 @@ def is_safe_log_archive(name):
     :param name: candidate file name coming from the browser
     :return: bool
     """
-    return bool(isinstance(name, str) and _LOG_ARCHIVE_RE.match(name))
+    return bool(isinstance(name, str) and _LOG_ARCHIVE_RE.fullmatch(name))
 
 
 def odoo_log_live_command(inst_dir, yaml_file, lines):

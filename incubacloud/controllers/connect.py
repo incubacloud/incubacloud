@@ -108,7 +108,7 @@ async def _get_container_id(conn, inst_dir, yaml_file):
     )
     cid = (result.stdout or '').strip()
     # Validate: Docker container IDs are hex strings (short 12-char or full 64-char)
-    if not _CONTAINER_ID_RE.match(cid):
+    if not _CONTAINER_ID_RE.fullmatch(cid):
         return ''
     return cid
 

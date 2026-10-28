@@ -22,7 +22,9 @@ export const BackupsMixin = (Base) =>
 
     get canShowBackups() {
       const inst = this.state.inst;
-      return !!(inst && inst.deployed);
+      // Listing, taking and restoring backups are a Developer's: below
+      // one, the tab only answered with the server's refusal.
+      return !!(inst && inst.deployed && this.env.permissions?.can_manage_backups);
     }
 
     get isProductionBackup() {

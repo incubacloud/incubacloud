@@ -23,6 +23,7 @@ What these pin, in order of how badly each would hurt:
     clean run clears them.
 """
 import asyncio
+import shlex
 from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase
@@ -139,6 +140,25 @@ class TestPurgeStepPlacement(_PurgeBase):
         self.assertLess(
             labels.index(PURGE_LABEL), labels.index(_TEARDOWN_FIRST_STEP),
         )
+
+    def test_the_directory_removed_is_one_quoted_argument(self):
+        """The instance directory reaches ``rm -rf`` as a single argument,
+        whatever it holds, and a path under the home still resolves to
+        the account's home."""
+        for path, expected in (
+            ("~/pg-proj/pg-inst", "$HOME/pg-proj/pg-inst"),
+            ("~/pg-proj\nx/pg-inst", "$HOME/pg-proj\nx/pg-inst"),
+            ("/srv/pg inst", "/srv/pg inst"),
+        ):
+            with self.subTest(path=path), patch.object(
+                DeleteInstanceExecutor, "_inst_dir",
+                autospec=True, return_value=path,
+            ):
+                steps = self._executor(self._job()).get_commands()
+                command = next(
+                    s[1] for s in steps if s[0] == "Remove instance directory"
+                )
+                self.assertEqual(shlex.split(command), ["rm", "-rf", expected])
 
     def test_a_failed_purge_aborts_the_teardown(self):
         """Without this the objects are stranded: the teardown destroys

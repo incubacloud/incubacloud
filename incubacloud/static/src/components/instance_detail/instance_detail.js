@@ -219,6 +219,29 @@ export class InstanceDetail extends JobsMixin(
     return !this.props.instance_id;
   }
 
+  /**
+   * Whether the host can no longer be chosen in the form. Past draft the
+   * instance's stack is on its host and its waiting jobs follow it: the
+   * server takes a change from an administrator only, and "Move to host"
+   * moves both.
+   *
+   * @returns {boolean}
+   */
+  get hostLocked() {
+    return !this.isCreate && this.state.inst?.state !== "draft";
+  }
+
+  /**
+   * Whether the backup backend can not be chosen in the form: where
+   * backups are kept is a Developer's or an Administrator's choice, as
+   * the server holds it.
+   *
+   * @returns {boolean}
+   */
+  get backupBackendLocked() {
+    return !this.env.permissions?.can_manage_backups;
+  }
+
   /** Rows per page for the server-paginated lists (backups, audit log). */
   get pageSize() {
     return 20;
@@ -821,10 +844,6 @@ export class InstanceDetail extends JobsMixin(
 
   onPgSelect(ev) {
     this.state.form.postgres_version = ev.target.value;
-  }
-
-  onEnvSelect(ev) {
-    this.state.form.environment = ev.target.value;
   }
 
   // ── Domain management ──────────────────────────────────────────────

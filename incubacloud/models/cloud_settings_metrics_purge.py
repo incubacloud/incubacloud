@@ -85,7 +85,7 @@ def series_selector(account, instance_id=None, host_id=None, whole_account=False
     :raises ValueError: without an account, with a malformed value, or
         unless exactly one target is named.
     """
-    if not isinstance(account, str) or not _SAFE_VALUE.match(account):
+    if not isinstance(account, str) or not _SAFE_VALUE.fullmatch(account):
         raise ValueError(
             f"Refusing a series selector without a valid account: {account!r}"
         )

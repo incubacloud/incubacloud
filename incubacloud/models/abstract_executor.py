@@ -243,7 +243,7 @@ def validate_dup_time(raw):
 
     Returns the value unchanged on success so callers can chain.
     """
-    if not isinstance(raw, str) or not DUP_TIME_RE.match(raw):
+    if not isinstance(raw, str) or not DUP_TIME_RE.fullmatch(raw):
         raise ValueError(
             f"Invalid 'time' value: {raw!r}. Expected 'latest', 'live', "
             f"'now', a relative offset like '12h_ago', or an ISO 8601 "
@@ -812,7 +812,9 @@ class AbstractExecutor(ABC):
         turning a finished job into a failed one after the fact.
 
         :param inst: the ``cloud.instance`` to remove.
-        :param sudo: unlink as superuser, for callers that did before.
+        :param sudo: unlink as superuser: the platform completing a
+            removal authorised when it was asked for (a delete's, an
+            archived instance's purge).
         """
         job_env = self.job.env
         registry = job_env.registry
@@ -1334,7 +1336,7 @@ class AbstractExecutor(ABC):
         if quoted:
             command = f"{command} {quoted}"
         for key, value in (env or {}).items():
-            if not _ENV_NAME_RE.match(key):
+            if not _ENV_NAME_RE.fullmatch(key):
                 raise ValueError(f"not an environment variable name: {key!r}")
             command = f"{key}={shlex.quote(str(value))} {command}"
         return command

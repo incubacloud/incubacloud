@@ -220,6 +220,17 @@ class TestCloudSecurityMixin(CloudSecurityBase):
         self.assertFalse(perms['can_manage_hosts'])
         self.assertFalse(perms['can_delete_production'])
 
+    def test_only_a_manager_is_offered_to_delete_a_project(self):
+        """The project page shows its delete buttons by this flag, and only
+        a manager may delete a project (``_check_can_delete_project``)."""
+        for user, allowed in (
+            (self.consultant, False), (self.pm, False),
+            (self.developer, False), (self.manager, True),
+        ):
+            with self.subTest(user=user.login):
+                perms = self.env['cloud.project'].with_user(user)._get_user_permissions()
+                self.assertEqual(perms['can_delete_project'], allowed)
+
     def test_permissions_manager(self):
         perms = self.env['cloud.project'].with_user(self.manager)._get_user_permissions()
         self.assertEqual(perms['role'], 'manager')
@@ -800,13 +811,195 @@ class TestSec009ControllerRedaction(CloudSecurityBase):
 
     # -- backup backend list -----------------------------------------------
 
-    def test_backup_backends_list_denied_below_manager(self):
+    def test_backup_backends_list_names_only_below_manager(self):
+        """The forms that choose a backend load the list below a manager
+        too; it names the backends and carries none of their metadata."""
         for user in (self.consultant, self.developer):
-            with self.subTest(user=user.login), self._with(user), \
-                    self.assertRaises(AccessError):
-                self.ctrl.cloud_get_backup_backends()
+            with self.subTest(user=user.login), self._with(user):
+                data = self.ctrl.cloud_get_backup_backends()
+                item = next(b for b in data['items'] if b['id'] == self.backend.id)
+                self.assertEqual(set(item), {'id', 'name'})
+
+    def test_backup_backends_list_below_manager_says_when_it_is_cut(self):
+        """Below a manager the list is capped as a manager's is, and its
+        total and truncation say so."""
+        self.env['cloud.backup.backend'].create({
+            'name': 'CR Backend 2', 'backend_type': 's3', 's3_bucket': 'cr-bucket-2',
+        })
+        count = self.env['cloud.backup.backend'].search_count([])
+        cap = 'odoo.addons.incubacloud.controllers._data_load._helpers._LIST_MAX'
+        with self._with(self.consultant), self._patch(cap, 1):
+            data = self.ctrl.cloud_get_backup_backends()
+        self.assertEqual(len(data['items']), 1)
+        self.assertEqual(data['total'], count)
+        self.assertTrue(data['truncated'])
+        self.assertEqual(data['limit'], 1)
 
     def test_backup_backends_list_allowed_for_manager(self):
         with self._with(self.manager):
             data = self.ctrl.cloud_get_backup_backends()
         self.assertIn(self.backend.id, [b['id'] for b in data['items']])
+
+
+class TestWhoAddsMayRemove(CloudSecurityBase):
+    """Whoever can add a domain or a repository can remove it.
+
+    The panel shows the remove button to the role that adds the row;
+    saving used to fail with an access error because the ACL had no
+    unlink for that role. Checked on the models and through the two
+    save routes, the way the master and the tenant panels call them.
+    """
+
+    REPO_URL = 'https://github.com/OCA/server-tools.git'
+
+    def setUp(self):
+        super().setUp()
+        self.stakeholder = self._create_user('rm_stakeholder', 'group_cloud_user')
+        self.consultant = self._create_user('rm_consultant', 'group_cloud_consultant')
+        self.pm = self._create_user('rm_pm', 'group_cloud_project_manager')
+        self.developer = self._create_user('rm_developer', 'group_cloud_developer')
+        self.project = self._create_project(
+            'Remove Project',
+            members=[self.stakeholder, self.consultant],
+        )
+        self.other_project = self._create_project('Remove Other Project')
+
+    def _domain(self, project, hostname):
+        """Create a domain on a new staging instance of *project*."""
+        inst = self._create_instance(project, name=hostname.split('.')[0])
+        return self.env['cloud.instance.domain'].create({
+            'instance_id': inst.id, 'hostname': hostname,
+        })
+
+    def _instance_repo(self, project, name):
+        """Create a repo row on a new staging instance of *project*."""
+        inst = self._create_instance(project, name=name)
+        return self.env['cloud.instance.repo'].with_context(
+            skip_apply_requirements=True,
+        ).create({
+            'instance_id': inst.id, 'url': self.REPO_URL, 'branch': '12.0',
+        })
+
+    def _project_repo(self, project):
+        """Create a repo row on *project*."""
+        return self.env['cloud.project.repo'].with_context(
+            skip_apply_requirements=True,
+        ).create({
+            'project_id': project.id, 'url': self.REPO_URL, 'branch': '12.0',
+        })
+
+    def _route(self, user, route, record_id, vals):
+        """Call a save route as *user*, with ``request`` bound to their env."""
+        from unittest.mock import MagicMock, patch
+        from odoo.http import Request
+        from odoo.addons.incubacloud.controllers._data_load import _routes_crud
+        fake = MagicMock(spec=Request)
+        fake.env = self.env(user=user)
+        controller = _routes_crud.CrudMixin()
+        controller._sec = lambda: fake.env['cloud.security.mixin']
+        with patch.object(_routes_crud, 'request', fake):
+            return getattr(controller, route)(record_id, vals)
+
+    # -- models ------------------------------------------------------------
+
+    def test_consultant_removes_a_domain_of_a_member_project(self):
+        domain = self._domain(self.project, 'rm-a.example.com')
+        domain.with_user(self.consultant).unlink()
+        self.assertFalse(domain.exists())
+
+    def test_developer_removes_an_instance_repo(self):
+        repo = self._instance_repo(self.project, 'rm-repo-dev')
+        repo.with_user(self.developer).unlink()
+        self.assertFalse(repo.exists())
+
+    def test_pm_removes_a_project_repo(self):
+        repo = self._project_repo(self.project)
+        repo.with_user(self.pm).unlink()
+        self.assertFalse(repo.exists())
+
+    def test_higher_roles_inherit_the_removal(self):
+        for user in (self.pm, self.developer):
+            with self.subTest(user=user.login, model='domain'):
+                domain = self._domain(self.project, f'rm-u{user.id}.example.com')
+                domain.with_user(user).unlink()
+                self.assertFalse(domain.exists())
+        repo = self._project_repo(self.project)
+        repo.with_user(self.developer).unlink()
+        self.assertFalse(repo.exists())
+
+    def test_stakeholder_cannot_remove_any_of_them(self):
+        rows = (
+            self._domain(self.project, 'rm-s.example.com'),
+            self._instance_repo(self.project, 'rm-repo-s'),
+            self._project_repo(self.project),
+        )
+        for row in rows:
+            with self.subTest(model=row._name), self.assertRaises(AccessError):
+                row.with_user(self.stakeholder).unlink()
+            self.assertTrue(row.exists())
+
+    def test_roles_below_the_adder_still_cannot_remove(self):
+        """Only the role that adds the row removes it."""
+        with self.assertRaises(AccessError):
+            self._instance_repo(self.project, 'rm-repo-c').with_user(
+                self.consultant).unlink()
+        with self.assertRaises(AccessError):
+            self._project_repo(self.project).with_user(self.consultant).unlink()
+
+    def test_consultant_cannot_remove_a_domain_of_another_project(self):
+        domain = self._domain(self.other_project, 'rm-o.example.com')
+        with self.assertRaises(AccessError):
+            domain.with_user(self.consultant).unlink()
+        self.assertTrue(domain.exists())
+
+    # -- the save routes ---------------------------------------------------
+
+    def test_consultant_saving_an_instance_removes_its_domain(self):
+        domain = self._domain(self.project, 'rm-route.example.com')
+        answer = self._route(
+            self.consultant, 'cloud_save_instance',
+            domain.instance_id.id, {'domains': []},
+        )
+        self.assertTrue(answer.get('ok'), answer)
+        self.assertFalse(domain.exists())
+
+    def test_developer_saving_an_instance_removes_its_repo(self):
+        repo = self._instance_repo(self.project, 'rm-route-repo')
+        answer = self._route(
+            self.developer, 'cloud_save_instance',
+            repo.instance_id.id, {'repos': []},
+        )
+        self.assertTrue(answer.get('ok'), answer)
+        self.assertFalse(repo.exists())
+
+    def test_pm_saving_a_project_removes_its_repo(self):
+        repo = self._project_repo(self.project)
+        answer = self._route(
+            self.pm, 'cloud_save_project', self.project.id, {'repos': []},
+        )
+        self.assertTrue(answer.get('ok'), answer)
+        self.assertFalse(repo.exists())
+
+    def test_stakeholder_cannot_save_either(self):
+        domain = self._domain(self.project, 'rm-sr.example.com')
+        repo = self._project_repo(self.project)
+        with self.assertRaises(AccessError):
+            self._route(
+                self.stakeholder, 'cloud_save_instance',
+                domain.instance_id.id, {'domains': []},
+            )
+        with self.assertRaises(AccessError):
+            self._route(
+                self.stakeholder, 'cloud_save_project',
+                self.project.id, {'repos': []},
+            )
+        self.assertTrue(domain.exists() and repo.exists())
+
+    def test_consultant_cannot_save_an_instance_of_another_project(self):
+        domain = self._domain(self.other_project, 'rm-or.example.com')
+        with self.assertRaises(AccessError):
+            self._route(
+                self.consultant, 'cloud_save_instance',
+                domain.instance_id.id, {'domains': []},
+            )
+        self.assertTrue(domain.exists())

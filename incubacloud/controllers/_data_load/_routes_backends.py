@@ -48,9 +48,24 @@ class BackendsMixin:
 
     @http.route(["/cloud/get_backup_backends"], type="jsonrpc", auth="user")
     def cloud_get_backup_backends(self):
-        # Manager-gated like every other backend endpoint: the list leaks
-        # bucket / endpoint / backup_dst metadata that the ACL alone would
-        # expose to any stakeholder (SEC-009).
+        # The forms that choose a backend — a new instance's, a new
+        # project's, a project's settings — load it from here, and failed
+        # to open below a manager. Below one, the backends are named and
+        # nothing else, as ``/cloud/get_project_full`` names them to a
+        # member: their bucket, path and endpoint stay a manager's, as
+        # every other backend endpoint keeps them (SEC-009).
+        if not self._sec()._has_cloud_group('group_cloud_manager'):
+            self._sec()._check_cloud_group('group_cloud_user')
+            backends, total, truncated, limit = _capped_search(
+                request.env["cloud.backup.backend"],
+                order="name",
+            )
+            return {
+                "items": [{"id": b.id, "name": b.name} for b in backends],
+                "total": total,
+                "truncated": truncated,
+                "limit": limit,
+            }
         self._sec()._check_can_manage_settings()
         backends, total, truncated, limit = _capped_search(
             request.env["cloud.backup.backend"],

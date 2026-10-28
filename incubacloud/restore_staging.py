@@ -83,7 +83,7 @@ def upload_id_of(path):
         return ""
     stem = name[: -len(_SUFFIX)]
     _, _, token = stem.rpartition("_")
-    return token if _TOKEN_RE.match(token) else ""
+    return token if _TOKEN_RE.fullmatch(token) else ""
 
 
 def path_for_upload(instance_id, upload_id):
@@ -98,7 +98,7 @@ def path_for_upload(instance_id, upload_id):
     :param upload_id: token returned when the upload began.
     :return: ``Path``, or ``None`` when the token is malformed.
     """
-    if not upload_id or not _TOKEN_RE.match(str(upload_id)):
+    if not upload_id or not _TOKEN_RE.fullmatch(str(upload_id)):
         return None
     return staging_dir() / (
         f"{_name_prefix(instance_id)}{upload_id}{_SUFFIX}"

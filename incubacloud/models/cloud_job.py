@@ -536,9 +536,14 @@ class CloudJob(models.Model):
                 # Blocking locks on the chains' other queues are fine
                 # here: PostgreSQL detects a deadlock and Odoo retries
                 # the request. What waits is what this snapshot sees
-                # (see the docstring).
+                # (see the docstring). The caller must be able to stop
+                # all of it, chains included, or nothing ends.
+                waiting = self._queued_on(scope)
+                self._check_may_end_waiting(
+                    waiting, self.env["cloud.instance"].browse(int(instance_id)),
+                )
                 self._cancel_queued(
-                    self._queued_on(scope),
+                    waiting,
                     _("Cancelled: the instance was asked to be deleted."),
                 )
             existing = self._check_queue_admission(
@@ -2979,12 +2984,20 @@ class CloudJob(models.Model):
     def cancel_job(self):
         """Cancel an active job.
 
+        The caller must be someone who may ask for a job of its type
+        (``_check_job_type_allowed``), in whatever state it is — a restore
+        of production stopped half-way, after its database was dropped, is
+        no smaller a thing than one started — and for every other job the
+        cancellation ends with it (``_ended_with``): the rest of a chain
+        waiting in the queue, or the steps waiting on a dispatched or
+        running one. One of them they may not ask for, or cannot read,
+        refuses the whole cancellation before anything ends, naming it:
+        stopping the stop that heads a manager's move would end the move.
+
         A job waiting in its queue (``queued``) is cancelled on the spot,
-        its chain with it: no executor runs, nothing reaches a host, and
-        whoever may ask for a job of its type may take it out
-        (``_check_job_type_allowed``). A job that waits for an alert is
-        not running and not queued: cancelling it only stops resolving
-        the alert from dispatching it.
+        its chain with it: no executor runs, nothing reaches a host. A job
+        that waits for an alert is not running and not queued: cancelling
+        it only stops resolving the alert from dispatching it.
 
         A dispatched job that has not started yet is cancelled through
         the queue.job so the runner skips it entirely
@@ -2997,18 +3010,27 @@ class CloudJob(models.Model):
 
         Every way needs the caller's write access to the job. What is
         written on the job itself is written with ``sudo``: ``state`` is
-        one of the queue's fields (``_check_queue_control_vals``).
+        one of the queue's fields (``_check_queue_control_vals``). The
+        queue.job is cancelled with ``sudo`` too: no role of the panel
+        reads ``queue.job``.
         """
         self.ensure_one()
+        job, reason = self._first_unstoppable(self | self._ended_with())
+        if job and job.id == self.id:
+            raise AccessError(reason)
+        if job:
+            raise AccessError(_(
+                "Cancelling this job would also end job #%(job)s, %(type)s. "
+                "%(reason)s",
+                job=job.id,
+                type=job.job_type_id.name,
+                reason=reason,
+            ))
         if self.blocked_alert_id:
             self.check_access("write")
             self.sudo().write({"state": "cancelled", "blocked_alert_id": False})
             return
         if self.state == "queued":
-            self._check_job_type_allowed(
-                self.job_type_id.code,
-                self.instance_id.id if self.instance_id else None,
-            )
             self.check_access("write")
             self._cancel_queued(
                 self,
@@ -3021,7 +3043,105 @@ class CloudJob(models.Model):
         if self.state == "started" or not self.queue_job_id:
             self.sudo().write({"state": "cancelled"})
         else:
-            self.queue_job_id.button_cancelled()
+            self.queue_job_id.sudo().button_cancelled()
+
+    def _ended_with(self):
+        """Return the other jobs that cancelling this one ends.
+
+        Read before anything ends, as the cancellation goes on to end
+        them: a job waiting in its queue takes the rest of its chain with
+        it (``_cancel_queued``), and a dispatched or running one the steps
+        waiting on it in its queue_job graph, which
+        ``queue.job._end_chain_after`` ends once the cancellation of its
+        queue.job is stored or, for a job that runs, once it stops. A job
+        that waits for an alert, or that is in no chain, ends nothing
+        else.
+
+        :return: the ``cloud.job`` records, with ``sudo``
+        """
+        self.ensure_one()
+        job = self.sudo()
+        if job.blocked_alert_id:
+            return job.browse()
+        if job.state == "queued":
+            if not job.queue_chain_key:
+                return job.browse()
+            return job.search([
+                ("queue_chain_key", "=", job.queue_chain_key),
+                ("state", "=", "queued"),
+                ("id", "!=", job.id),
+            ])
+        graph = job.queue_job_id.graph_uuid
+        if not graph:
+            return job.browse()
+        return job.search([
+            ("queue_job_id.graph_uuid", "=", graph),
+            ("state", "=", "wait_dependencies"),
+            ("id", ">", job.id),
+        ])
+
+    @api.model
+    def _first_unstoppable(self, jobs):
+        """Return the first of *jobs* the caller may not end, and why.
+
+        A caller may end a job they may read and whose type they may ask
+        for (``_check_job_type_allowed``): what ``cancel_job`` holds them
+        to, and what deleting, archiving or removing an instance holds
+        them to for what waits on it (``_check_may_end_waiting``).
+
+        :param jobs: ``cloud.job`` records in any environment, in the
+            order to judge them
+        :return: ``(job, reason)``, the job with ``sudo`` and the text of
+            the refusal, or ``(None, None)`` when they may end them all
+        """
+        if self.env.su:
+            return None, None
+        for job in jobs.sudo():
+            try:
+                job.with_env(self.env).check_access("read")
+                self._check_job_type_allowed(
+                    job.job_type_id.code,
+                    job.instance_id.id if job.instance_id else None,
+                )
+            except AccessError as exc:
+                return job, exc.args[0]
+        return None, None
+
+    @api.model
+    def _check_may_end_waiting(self, waiting, instance):
+        """Refuse ending what waits on *instance* to whom may not stop it.
+
+        Deleting an instance empties its queue (``enqueue``), archiving it
+        has the dispatcher cancel what waits there (``_entry_verdict``),
+        and removing its record cancels it at once
+        (``cloud.instance.unlink``): each job with the rest of its chain
+        (``_ended_with``), wherever that waits. A consultant who may
+        delete a staging must not end that way a restore a developer
+        asked for, nor a manager's move: the caller is held, for each of
+        them, to what ``cancel_job`` would hold them to, and one they may
+        not stop refuses the whole action before anything ends.
+
+        :param waiting: the ``cloud.job`` records waiting on *instance*
+            that the action would end
+        :param instance: the ``cloud.instance``, named in the refusal
+        :raises AccessError: naming the first job they may not stop
+        """
+        if self.env.su:
+            return
+        ended = waiting.sudo()
+        for job in waiting.sudo():
+            ended |= job._ended_with()
+        job, reason = self._first_unstoppable(ended)
+        if job:
+            raise AccessError(_(
+                "%(instance)s has work waiting that your role cannot stop: "
+                "job #%(job)s, %(type)s. %(reason)s",
+                instance=instance.sudo().name,
+                job=job.id,
+                type=job.job_type_id.name,
+                reason=reason,
+            ))
+
     def _retry_root(self):
         """Return the job this one retries first, following its retries back.
 
