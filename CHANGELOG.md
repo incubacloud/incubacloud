@@ -52,6 +52,19 @@ with an older core — publish this core first.
   while core loads alone (its tests, a migration), and a rule on a field
   the model lacks fails every read of every alert.
 
+### Changed
+
+- **The panel, the GitHub setup page and the user guide load no font
+  from Google.** The panel's three families (Space Grotesk, Hanken
+  Grotesk, JetBrains Mono) are served by the module from `static/fonts/`
+  with their licences, the GitHub setup page uses them too instead of
+  Inter, and a visitor's browser no longer contacts
+  `fonts.googleapis.com` or `fonts.gstatic.com`. The user guide builds
+  with mkdocs' `privacy` plugin, which downloads its fonts and external
+  files at build time, and no longer names a `repo_url`, whose script
+  asked `api.github.com` for the repository's stars from every visitor's
+  browser.
+
 ### Fixed
 
 - **What is typed on a Settings tab survives a visit to another tab,
