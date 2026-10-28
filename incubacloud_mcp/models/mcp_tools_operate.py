@@ -76,7 +76,7 @@ TOOLS = (
     ToolSpec(
         "revive_instance",
         "Bring an archived instance back, on its server or another.",
-        _CONSULTANT,
+        _DEVELOPER,
         obj(
             {"instance_id": _INSTANCE, "host_id": record_id("Another server.")},
             required=("instance_id",),

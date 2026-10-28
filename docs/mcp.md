@@ -113,11 +113,11 @@ role check's message. Operations that queue a job answer at once with its
 | `panel_overview`, `search`, `list_projects`, `get_project`, `list_instances`, `get_instance`, `list_hosts`, `get_job`, `list_alerts`, `get_pitr` (bridge) | stakeholder | | |
 | `instance_login_link` | stakeholder (the connect route decides per instance and user) | | for the link |
 | `compare_config`, `github_repo_info` | consultant | | |
-| `update_project`, `import_project`, `create_instance`, `update_instance`, `keep_staging`, `revive_instance`, `deploy_instance`, `rebuild_instance`, `resolve_conflict`, `apply_config`, `dismiss_alerts`, `freeze_repos`, `manage_tags` | consultant | | |
+| `update_project`, `import_project`, `create_instance`, `update_instance`, `keep_staging`, `deploy_instance`, `rebuild_instance`, `resolve_conflict`, `apply_config`, `dismiss_alerts`, `freeze_repos`, `manage_tags` | consultant | | |
 | `delete_instance` | consultant (production: manager) | yes | always |
 | `create_project` | project manager | | |
 | `get_monitoring`, `list_backups`, `read_access_log`, `read_logs`, `staging_mailbox` | developer | | |
-| `clone_to_staging`, `create_backup`, `clear_staging_mailbox` | developer | | |
+| `revive_instance`, `clone_to_staging`, `create_backup`, `clear_staging_mailbox` | developer | | |
 | `run_command` | developer | | on production, each command |
 | `download_backup` | developer | | for the link |
 | `restore_backup`, `refresh_staging` | developer | yes | always |
