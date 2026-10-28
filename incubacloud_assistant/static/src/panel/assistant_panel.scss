@@ -1,0 +1,266 @@
+// The assistant's side panel: fixed at the right, over the page, without a
+// backdrop, so the person keeps working while it answers. Painted with the
+// panel's --rl-* tokens only, so both themes hold.
+
+.ic-asst-panel {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-end: 0;
+    // Interpolated: libsass would evaluate a bare min() as its own and fail on
+    // the mixed units, taking the whole bundle down (toast_container.scss).
+    inline-size: #{"min(440px, 100vw)"};
+    // Over the page, under its dialogs: the confirmation dialog and the
+    // slide-over sit at 1000, modals at 1050.
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    background: var(--rl-surf);
+    border-inline-start: 1px solid var(--rl-line);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.25);
+    color: var(--rl-fg);
+    font-size: 13px;
+}
+
+.ic-asst-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-block-end: 1px solid var(--rl-line);
+
+    .ic-asst-title {
+        font-size: 15px;
+        margin: 0;
+        color: var(--rl-fg);
+    }
+
+    .ic-asst-usage {
+        margin-inline-start: auto;
+        color: var(--rl-muted);
+    }
+}
+
+.ic-asst-notice {
+    padding: 16px;
+    line-height: 1.6;
+    color: var(--rl-fg2);
+    overflow-y: auto;
+
+    .ic-asst-notice-title {
+        font-size: 14px;
+        margin: 0 0 8px;
+        color: var(--rl-fg);
+    }
+}
+
+.ic-asst-error {
+    margin: 8px 14px;
+    color: var(--rl-red-text);
+}
+
+.ic-asst-body {
+    flex: 1;
+    min-block-size: 0;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+// The chat: the messages scroll, the footer stays at the bottom.
+.ic-asst-chat {
+    overflow: hidden;
+
+    .ic-asst-messages {
+        flex: 1;
+        min-block-size: 0;
+        overflow-y: auto;
+    }
+
+    .ic-asst-foot {
+        flex-shrink: 0;
+    }
+}
+
+.ic-asst-convs {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    li {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .ic-asst-conv {
+        flex: 1;
+        text-align: start;
+        padding: 8px;
+        background: none;
+        border: 0;
+        border-radius: var(--rl-rsm);
+        color: var(--rl-fg);
+
+        &:hover {
+            background: var(--rl-line);
+        }
+    }
+}
+
+.ic-asst-dot {
+    display: inline-block;
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    background: var(--rl-green);
+    margin-inline-end: 6px;
+}
+
+.ic-asst-messages {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ic-asst-msg {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 8px 10px;
+    border-radius: var(--rl-r);
+    line-height: 1.5;
+
+    &--user {
+        align-self: flex-end;
+        background: var(--rl-line);
+    }
+
+    // Only the hosts the server lists are links: they look like links.
+    a {
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+}
+
+.ic-asst-step {
+    color: var(--rl-muted);
+    font-size: 12px;
+
+    &--error {
+        color: var(--rl-amber-text);
+    }
+}
+
+.ic-asst-notice-line {
+    color: var(--rl-fg2);
+
+    &--error {
+        color: var(--rl-red-text);
+    }
+}
+
+.ic-asst-card {
+    border: 1px solid var(--rl-line);
+    border-radius: var(--rl-r);
+    padding: 10px;
+
+    .ic-asst-card-prod {
+        color: var(--rl-amber-ink);
+        background: var(--rl-amber-soft);
+        padding: 4px 8px;
+        border-radius: var(--rl-rsm);
+        margin: 0 0 8px;
+    }
+
+    .ic-asst-card-actions {
+        display: flex;
+        gap: 8px;
+    }
+}
+
+.ic-asst-state {
+    color: var(--rl-muted);
+    margin: 0;
+}
+
+.ic-asst-foot {
+    border-block-start: 1px solid var(--rl-line);
+    padding-block-start: 10px;
+
+    // The fixed label: always in sight next to the message field.
+    .ic-asst-ai-label {
+        margin: 0 0 6px;
+        font-size: 12px;
+        line-height: 1.4;
+        color: var(--rl-muted);
+    }
+
+    .ic-asst-input {
+        inline-size: 100%;
+        resize: vertical;
+    }
+
+    .ic-asst-foot-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-block-start: 6px;
+    }
+}
+
+// The model picker above the chat.
+.ic-asst-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+
+    label {
+        font-family: var(--rl-fm);
+        font-size: 10.5px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--rl-muted);
+    }
+
+    select {
+        flex: 1;
+        min-inline-size: 0;
+    }
+}
+
+.ic-asst-panel {
+    select,
+    textarea {
+        background: var(--rl-bg);
+        border: 1px solid var(--rl-line2);
+        border-radius: var(--rl-rsm);
+        padding: 7px 10px;
+        color: var(--rl-fg);
+        font-family: var(--rl-fb);
+        font-size: 13px;
+        outline: none;
+
+        &:focus {
+            border-color: var(--rl-green);
+            box-shadow: 0 0 0 3px var(--rl-green-soft);
+        }
+    }
+
+    textarea {
+        font-size: 13.5px;
+    }
+}
+
+.ic-asst-muted {
+    color: var(--rl-muted);
+}
+
+.ic-asst-new {
+    align-self: flex-start;
+}

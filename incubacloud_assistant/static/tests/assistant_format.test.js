@@ -4,11 +4,14 @@ import {
     LINK_HOSTS,
     buttonView,
     cardStateLabel,
+    chatLabel,
     linkify,
     mergeEvent,
     messageView,
     modelOptions,
     noticeText,
+    noticeTitle,
+    providerWording,
     roleLabel,
     screenContext,
     settingsChanges,
@@ -151,9 +154,27 @@ describe("assistant_format", () => {
                 screenContext({ route: "instance_detail", params: { project_id: 3, instance_id: 8, x: "y" } })
             ).toEqual({ route: "instance_detail", project_id: 3, instance_id: 8 });
         });
-        test("the notice names the provider", () => {
-            expect(noticeText("Anthropic")).toInclude("Anthropic");
-            expect(noticeText("Anthropic")).toInclude("30 days");
+        test("the first-use notice is the approved text and names the provider", () => {
+            expect(noticeTitle()).toBe("Before you use the assistant");
+            const text = noticeText("Anthropic");
+            expect(text).toInclude("The assistant is an AI, not a person");
+            expect(text).toInclude("is sent to Anthropic, the provider of your panel's AI key");
+            expect(text).toInclude("each one is deleted 30 days after its last activity.");
+        });
+        test("the fixed label next to the message field is the approved text", () => {
+            expect(chatLabel("Google Gemini")).toBe(
+                "You are chatting with an AI, not a person. It can make mistakes. " +
+                    "Your messages and what it reads are sent to Google Gemini."
+            );
+        });
+        test("with OpenRouter the notices also name the company behind the model", () => {
+            expect(providerWording({ provider: "anthropic", provider_label: "Anthropic" })).toBe(
+                "Anthropic"
+            );
+            expect(providerWording({ provider: "openrouter", provider_label: "OpenRouter" })).toBe(
+                "OpenRouter and the company behind the selected model"
+            );
+            expect(providerWording(undefined)).toBe("");
         });
         test("settings: only what changed, the key only when typed", () => {
             const loaded = {

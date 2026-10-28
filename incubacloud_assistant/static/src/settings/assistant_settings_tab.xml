@@ -105,7 +105,7 @@
                     untested one.
                 </p>
                 <p t-if="state.notice" class="rl-tabnote" role="alert" t-esc="state.notice.text"/>
-                <table class="ic-asst-models">
+                <table class="rl-table ic-asst-models">
                     <thead><tr><th>Allowed</th><th>Default</th><th>Model</th><th/></tr></thead>
                     <tbody>
                         <tr t-foreach="modelRows" t-as="model" t-key="model.id">
@@ -148,7 +148,7 @@
 
             <div class="rl-saas-fsec">Usage</div>
             <p class="rl-tabnote" t-if="!usageRows.length">Nobody has used the assistant yet.</p>
-            <table t-else="" class="ic-asst-usage">
+            <table t-else="" class="rl-table ic-asst-usage">
                 <thead><tr><th>Month</th><th>User</th><th>Tokens</th><th>Cost (approx.)</th></tr></thead>
                 <tbody>
                     <tr t-foreach="usageRows" t-as="row" t-key="row.month + '-' + row.user_id">

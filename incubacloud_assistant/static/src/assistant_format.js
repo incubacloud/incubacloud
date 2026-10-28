@@ -189,12 +189,41 @@ export function linkify(text, hosts = LINK_HOSTS) {
     return parts;
 }
 
-/** The first-use notice: what goes to the provider, and how long it is kept. */
-export function noticeText(providerLabel) {
+/**
+ * The provider as the notices name it. OpenRouter forwards what it receives to
+ * the company of the model chosen, so the notices say so.
+ */
+export function providerWording(status) {
+    if (!status?.provider_label) {
+        return "";
+    }
+    if (status.provider === "openrouter") {
+        return String(_t("OpenRouter and the company behind the selected model"));
+    }
+    return status.provider_label;
+}
+
+/** The first-use notice's title. */
+export function noticeTitle() {
+    return String(_t("Before you use the assistant"));
+}
+
+/** The first-use notice: an AI, what goes to the provider, and how long it is kept. */
+export function noticeText(provider) {
     return String(
         _t(
-            "What the assistant reads to help you — your messages, the screen you have open and the results of what it does, logs and code included — is sent to %(provider)s, the AI provider this panel uses. Do not write passwords or keys in the chat. Your conversations are kept 30 days and only you can read them.",
-            { provider: providerLabel }
+            "The assistant is an AI, not a person, and it can make mistakes: check its answers and its changes before you rely on them. What you write and what it reads in the panel (logs, settings, code) is sent to %(provider)s, the provider of your panel's AI key, under your organisation's contract with it. Actions that delete data, deploy to production or change sensitive settings wait for your confirmation. Only you can see your conversations, and each one is deleted 30 days after its last activity.",
+            { provider }
+        )
+    );
+}
+
+/** The fixed label next to the message field: an AI, and where the messages go. */
+export function chatLabel(provider) {
+    return String(
+        _t(
+            "You are chatting with an AI, not a person. It can make mistakes. Your messages and what it reads are sent to %(provider)s.",
+            { provider }
         )
     );
 }
