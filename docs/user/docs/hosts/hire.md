@@ -54,6 +54,9 @@ Provisioning takes a couple of minutes end to end:
 
 When the job ends in green, the host shows up in your list, ready for deploys.
 
+**Monitoring.** The server sends its metrics to the platform on port 9443. If you
+restrict its outbound traffic, allow that port.
+
 ## Cancellation
 
 Open the host, and delete/release it from the host actions. Billing stops with

@@ -65,6 +65,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.200] — direct path, unreleased
+
+Publish this core before `incubacloud_saas_manager` and before
+`incubacloud_tenant`: both call what it adds. Nothing changes until a host is
+given a direct port and the central a direct name; the update re-applies no agent and
+marks no host pending.
+
+### Added
+
+- **A direct entrypoint per host** (`cloud.host.direct_port`, applied by Full Setup): a
+  port of its own for the platform's traffic, with a Let's Encrypt certificate by DNS-01
+  (`acme_dns_cloudflare_token`, a root-only file on the host), no trust in forwarded
+  headers, a per-source rate limit and an allowlist in nftables (`ic_direct_v4`) and in
+  Traefik (`direct-peers`). Full Setup checks the port is free first and never leaves
+  the proxy down.
+- **`sync_direct_path`**: applies the list without restarting Traefik, reads it back,
+  and probes the direct names the host publishes; queued when a host comes or goes and
+  at least hourly.
+- **The central's direct name** (`metrics_central_direct_host`), published by the
+  central's deployment on the direct entrypoint, with a probe state (`direct_path_down`,
+  `direct_certificate_expiring`).
+- **Per-host agent URL**: each host's agents are offered the direct name, try it from
+  the host and fall back to the remote-write URL (`direct_path_unreachable_from_host`);
+  the reconciliation re-applies them when the path changes, and re-applies a host gone
+  quiet.
+
+### Changed
+
+- The DNS token travels as a file named in `CF_DNS_API_TOKEN_FILE`, never in the compose
+  file.
+- The dates of the last probe of each direct name and of the last good read of the
+  central are system parameters (`incubacloud.direct_checked_at.*`), not columns of the
+  settings row; a neutralized copy forgets them, the DNS token and the central's direct
+  name.
+
+---
+
 ## [1.0.200] — 2026-10-27
 
 Ships with `incubacloud_saas_manager` 1.178, as always: its Settings

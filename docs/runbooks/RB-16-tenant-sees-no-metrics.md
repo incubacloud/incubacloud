@@ -54,6 +54,11 @@ but no data yet, install failed and retrying, or not enrolled.
   growing delay, and raises an alert once failures persist. Read the job
   log before intervening.
 
+Check on the host page the URL the agents write to and, for a rented server,
+the panel's `incubacloud.metrics.direct_*` parameters. A server that went
+quiet while the direct path works is re-applied after 20 minutes and falls
+back to the public path if it cannot reach it ([RB-24](RB-24-direct-path.md)).
+
 ## 4. Is data arriving?
 
 From the central host, with the **operator** credential (not the
