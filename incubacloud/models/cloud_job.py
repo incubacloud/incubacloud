@@ -1058,6 +1058,8 @@ class CloudJob(models.Model):
         # Rewrites what the host's proxy does with every request that
         # reaches it, so it sits with the other host-level operations.
         "push_trusted_proxies": "group_cloud_manager",
+        # Rewrites who the host's direct port admits, in its firewall.
+        "sync_direct_path": "group_cloud_manager",
         "setup_whitelist": "group_cloud_manager",
         "delete_host": "group_cloud_manager",
         "docker_prune": "group_cloud_manager",

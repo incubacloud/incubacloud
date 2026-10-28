@@ -659,3 +659,45 @@ class CloudHost(models.Model):
             cron = self.env.ref(xmlid, raise_if_not_found=False)
             if cron:
                 cron.sudo()._trigger()
+
+    def _direct_published_names(self):
+        """Return the direct names this host serves, and how to check each.
+
+        Core: the central's, on the central's host. The SaaS layer adds
+        the panel's own name on the host whose address is the panel's.
+
+        :return: ``[{"prefix", "name", "checks"}]``, checks as
+            ``direct_probe.sh`` takes them.
+        :rtype: list
+        """
+        self.ensure_one()
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        name = (settings.metrics_central_direct_host or "").strip().lower()
+        if not (name and settings.metrics_central_host_id == self):
+            return []
+        return [{
+            "prefix": "metrics_central_direct",
+            "name": name,
+            "checks": ["POST:/w/api/v1/write:401", "GET:/flags:403"],
+        }]
+
+    def _enqueue_direct_sync(self, reason, chained=False):
+        """Queue ``sync_direct_path`` on this host, swallowing failures.
+
+        :param str reason: for the log.
+        :param bool chained: called from a job of this host that is still
+            running: the sync belongs to it and goes to the head of the
+            queue.
+        :return: the job id, or False.
+        """
+        self.ensure_one()
+        try:
+            return self.env["cloud.job"].sudo().enqueue(
+                self.id, False, "sync_direct_path", bypass_running_check=chained,
+            )
+        except Exception as exc:  # noqa: BLE001 — never fail the caller
+            _logger.warning(
+                "[direct] could not queue the direct list on %s (%s): %s",
+                self.name, reason, exc,
+            )
+            return False

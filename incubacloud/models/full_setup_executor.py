@@ -606,6 +606,11 @@ class FullSetupExecutor(
             **host._applied_config_vals(),
         })
         self._chain_observability()
+        if host.direct_port:
+            # The list and the probes of the port this run published, at
+            # the head of the queue: it is part of this setup.
+            if host._enqueue_direct_sync("host setup", chained=True):
+                self._sys("Queued the direct list for this host.")
 
     def _chain_observability(self):
         """Queue the metrics agents for a freshly prepared host.

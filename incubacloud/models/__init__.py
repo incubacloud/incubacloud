@@ -58,6 +58,7 @@ from . import deploy_instance_executor
 from . import setup_whitelist_executor
 from . import full_setup_executor
 from . import push_trusted_proxies_executor
+from . import sync_direct_path_executor
 from . import delete_instance_executor
 from . import purge_archived_executor
 from . import delete_host_executor
