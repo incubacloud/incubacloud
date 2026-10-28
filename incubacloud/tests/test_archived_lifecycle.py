@@ -277,6 +277,25 @@ class TestRevive(_ArchivedBase):
         with self.assertRaises(UserError):
             inst.revive()
 
+    def test_an_archived_host_is_not_revived_onto(self):
+        """The host it was archived from may be archived itself since.
+        The dialog offers only live hosts; a caller that names none, or
+        names an archived one, is told to pick another instead of being
+        handed a deploy to a host that is gone. The route browses the
+        instance with ``active_test`` off, and so does this."""
+        inst = self._archive()
+        self.host.active = False
+        Job = type(self.env["cloud.job"])
+        for host_id in (None, self.host.id):
+            with self.subTest(host_id=host_id), self._measuring(), \
+                    patch.object(Job, "enqueue_chain", autospec=True) as chain:
+                with self.assertRaisesRegex(UserError, "is archived"):
+                    inst.with_context(active_test=False).revive(
+                        host_id=host_id,
+                    )
+                chain.assert_not_called()
+            self.assertFalse(inst.active)
+
 
 
 @tagged("-at_install", "post_install")
