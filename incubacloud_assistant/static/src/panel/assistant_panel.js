@@ -64,21 +64,28 @@ export class AssistantPanel extends Component {
         this.locale = (user.lang || "en_US").replace("_", "-");
         this.bus = useService("bus_service");
         this._onEvent = (payload) => this.onEvent(payload);
-        this._onKey = (ev) => {
-            if (ev.key === "Escape") {
-                ev.preventDefault();
-                this.props.onClose();
-            }
-        };
+        this.panelRef = useRef("panel");
         onWillStart(() => this.loadConversations());
         onMounted(() => {
             this.bus.subscribe("cloud_assistant", this._onEvent);
-            document.addEventListener("keydown", this._onKey);
+            // Keyboard and screen reader users land in the panel they opened.
+            this.panelRef.el?.focus();
         });
-        onWillUnmount(() => {
-            this.bus.unsubscribe("cloud_assistant", this._onEvent);
-            document.removeEventListener("keydown", this._onKey);
-        });
+        onWillUnmount(() => this.bus.unsubscribe("cloud_assistant", this._onEvent));
+    }
+
+    /**
+     * Esc closes the panel when the focus is in it. Pressed elsewhere (a
+     * dialog over it, the page behind), it is not the panel's.
+     *
+     * @param {KeyboardEvent} ev the key pressed inside the panel
+     */
+    onKeydown(ev) {
+        if (ev.key === "Escape") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.props.onClose();
+        }
     }
 
     /** Run *call*; show its error in the panel instead of throwing. */

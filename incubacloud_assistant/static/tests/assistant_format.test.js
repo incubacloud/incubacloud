@@ -118,13 +118,23 @@ describe("assistant_format", () => {
         test("only known hosts are links: any other address stays text", () => {
             const hosts = [...LINK_HOSTS, "apps.acme.test"];
             const parts = linkify(
-                "Open https://staging.apps.acme.test or https://evil.example/x?d=1",
+                "Open https://apps.acme.test/web or https://evil.example/x?d=1",
                 hosts
             );
             expect(parts.filter((part) => part.url).map((part) => part.url)).toEqual([
-                "https://staging.apps.acme.test",
+                "https://apps.acme.test/web",
             ]);
             expect(parts.map((part) => part.text).join("")).toInclude("https://evil.example/x?d=1");
+        });
+        test("each host by its own name: a subdomain of one is no link", () => {
+            const hosts = [...LINK_HOSTS, "apps.acme.test"];
+            const parts = linkify(
+                "See https://x.apps.acme.test, https://gist.github.com/a and https://github.com/b",
+                hosts
+            );
+            expect(parts.filter((part) => part.url).map((part) => part.url)).toEqual([
+                "https://github.com/b",
+            ]);
         });
     });
 

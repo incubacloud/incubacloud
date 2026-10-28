@@ -206,7 +206,11 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
         self.assertIsNone(Tools._extra_confirmation(spec, {}))
 
     def test_a_project_or_instance_out_of_reach_is_never_described(self):
-        """Neither its name nor its repositories: the call fails before a card."""
+        """Neither its name nor its repositories: the call fails before a card.
+
+        One that does not exist fails with the same error: the answer never
+        tells whether an id exists.
+        """
         outsider = self._cloud_user("asis-tools-b1", group="group_cloud_consultant")
         self.project.sudo().with_context(skip_apply_requirements=True).repo_ids = [
             (0, 0, {"url": "https://github.com/acme/secret-addons", "branch": "19.0"})
@@ -226,16 +230,22 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
                 with self.assertRaises(AccessError) as caught:
                     Tools._extra_confirmation(spec, args)
                 text = str(caught.exception)
+                refused = text
                 self.assertNotIn(record.name, text)
                 self.assertNotIn("secret-addons", text)
                 with self.assertRaises(AccessError):
                     Confirm._gate(spec, args, call_context(outsider.id, 43), {})
         self.assertEqual(Approval.search_count([]), before)
-        missing = Tools._extra_confirmation(
-            Catalog._spec("update_project"),
-            {"project_id": 999_999_999, "vals": {"repos": []}},
-        )
-        self.assertIn("999999999", missing)
+        for name, key in (
+            ("update_project", "project_id"),
+            ("update_instance", "instance_id"),
+            ("clear_staging_mailbox", "instance_id"),
+        ):
+            with self.subTest(missing=name), self.assertRaises(AccessError) as caught:
+                Tools._extra_confirmation(
+                    Catalog._spec(name), {key: 999_999_999, "vals": {"repos": []}}
+                )
+            self.assertEqual(str(caught.exception), refused)
 
     def test_the_assistant_gets_a_card_bound_to_its_conversation(self):
         """A card, not a link; approved, used once by that conversation only.

@@ -12,6 +12,11 @@
     // Over the page, under its dialogs: the confirmation dialog and the
     // slide-over sit at 1000, modals at 1050.
     z-index: 999;
+    // Focused on opening so the keyboard starts in it; a container, not a
+    // control, so no ring.
+    &:focus {
+        outline: none;
+    }
     display: flex;
     flex-direction: column;
     background: var(--rl-surf);

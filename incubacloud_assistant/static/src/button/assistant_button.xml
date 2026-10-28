@@ -4,13 +4,13 @@
 <t t-name="incubacloud_assistant.AssistantButton">
     <t t-if="view.visible">
         <button class="ic-header-icon-btn ic-asst-btn" t-on-click="toggle"
-                title="Assistant" aria-label="Assistant"
+                t-ref="button" title="Assistant" aria-label="Assistant"
                 t-att-aria-expanded="state.open ? 'true' : 'false'">
             <i class="fa fa-comments-o" aria-hidden="true"/>
             <span t-if="view.badge" class="ic-header-alert-badge" t-esc="view.badge"/>
         </button>
         <AssistantPanel t-if="state.open" status="state.status"
-                        onClose="() => { state.open = false; }"
+                        onClose="() => this.close()"
                         onChange="() => this.refresh()"/>
     </t>
 </t>
