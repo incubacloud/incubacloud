@@ -137,3 +137,11 @@ class TestOperateTools(
             self.key, "create_project", {"vals": {"name": "x"}}
         )
         self.assertIn("group_cloud_project_manager", result["content"][0]["text"])
+
+    def test_reviving_is_not_a_consultant_s(self):
+        """revive_instance is refused to a consultant, as the panel's revive is:
+        it restores the archived copy, and restoring is a developer's."""
+        result = self._assert_refused_by_role(
+            self.key, "revive_instance", {"instance_id": self.staging.id}
+        )
+        self.assertIn("group_cloud_developer", result["content"][0]["text"])
