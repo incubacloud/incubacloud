@@ -482,6 +482,19 @@
                   elements = { {{ ic_effective_allowlist_v6 }} }
                   {% endif %}
               }
+              {% if (ic_direct_port | default(0) | int) > 0 %}
+              # Who may open the direct port (cloud.host.direct_port): the
+              # platform's own addresses, as sync_direct_path last applied
+              # them. direct_allowlist.sh changes the set without Ansible,
+              # as ssh_allowlist.sh does the SSH one; rendered here so a
+              # host hardened again keeps it.
+              set ic_direct_v4 {
+                  type ipv4_addr
+                  flags interval
+                  auto-merge
+                  elements = { {{ ic_direct_allowlist }} }
+              }
+              {% endif %}
               {% if ic_http_allowed_ranges | default('') | trim %}
               # Named sets rather than the ranges written straight into
               # the rule below. Both accept the same traffic, but only a
@@ -592,6 +605,17 @@
                   {% set _over = 'limit rate over ' ~ _rate ~ '/second burst ' ~ _burst ~ ' packets' %}
                   {{ _new_redirected }} meter ic_http_conn4 { ip saddr {{ _over }} } counter drop
                   {{ _new_redirected }} meter ic_http_conn6 { ip6 saddr {{ _over }} } counter drop
+                  {% endif %}
+                  {% if (ic_direct_port | default(0) | int) > 0 %}
+                  # The direct port: only the set above, at most 20 new
+                  # connections a second per source (one Traefik serves
+                  # this port and 443), and no IPv6 (the direct names have
+                  # no AAAA). direct_allowlist.sh finds these rules by
+                  # their comment and replaces them when the port moves.
+                  {% set _direct = 'meta l4proto tcp ct state new ct status dnat ct original proto-dst ' ~ (ic_direct_port | int) %}
+                  {{ _direct }} ip saddr != @ic_direct_v4 counter drop comment "ic-direct"
+                  {{ _direct }} meter ic_direct_conn4 { ip saddr limit rate over 20/second burst 50 packets } counter drop comment "ic-direct"
+                  meta nfproto ipv6 {{ _direct }} counter drop comment "ic-direct"
                   {% endif %}
               }
               chain output {

@@ -39,6 +39,13 @@ CDN_V4_ONLY = {
     "ic_http_allowed_ranges_v6": "",
 }
 
+#: A host with a direct port (plan-trafico-interno-directo): its set and
+#: its three forward rules, alone and behind the CDN.
+DIRECT_PORT = {
+    "ic_direct_port": 9443,
+    "ic_direct_allowlist": "10.0.0.0/8, 46.4.0.20/32, 127.0.0.0/8",
+}
+
 
 def _connection(address):
     """Return ``ic_ssh_connection`` as the play registers it, from *address*.
@@ -81,6 +88,8 @@ VARIANTS = {
     "cdn": CDN,
     "cdn_rate": CDN | {"ic_http_conn_rate": 50},
     "cdn_v4_only": CDN_V4_ONLY,
+    "open_direct_port": DIRECT_PORT,
+    "cdn_direct_port": CDN | DIRECT_PORT,
 }
 
 

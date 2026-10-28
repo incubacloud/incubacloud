@@ -760,6 +760,45 @@ class TestHardeningPreflight(TransactionCase):
         self.assertLess(forward.index(self._FWD_ACCEPT4), drop)
         self.assertLess(forward.index(self._FWD_ACCEPT6), drop)
 
+    # ── the direct port ────────────────────────────────────────────────
+    _DIRECT = {
+        "ic_direct_port": 9443,
+        "ic_direct_allowlist": "10.0.0.0/8, 46.4.0.20/32, 127.0.0.0/8",
+    }
+
+    def test_a_host_without_a_direct_port_names_nothing_of_it(self):
+        for extra in ({}, self._CDN):
+            with self.subTest(cdn=bool(extra)):
+                self.assertNotIn("ic_direct", self._render_ruleset(**extra))
+
+    def test_the_direct_set_carries_the_list_in_force(self):
+        active = "\n".join(
+            self._active_lines(self._render_ruleset(**self._DIRECT)),
+        )
+        self.assertIn("set ic_direct_v4 {", active)
+        self.assertIn("auto-merge", active)
+        self.assertIn(
+            "elements = { 10.0.0.0/8, 46.4.0.20/32, 127.0.0.0/8 }", active,
+        )
+
+    def test_three_rules_judge_the_direct_port_in_forward(self):
+        forward = self._forward_chain(
+            self._render_ruleset(**(self._CDN | self._DIRECT)),
+        )
+        direct = [l for l in forward if 'comment "ic-direct"' in l]
+        self.assertEqual(len(direct), 3)
+        self.assertIn(
+            "proto-dst 9443 ip saddr != @ic_direct_v4 counter drop", direct[0],
+        )
+        self.assertIn(
+            "meter ic_direct_conn4 { ip saddr limit rate over 20/second"
+            " burst 50 packets }",
+            direct[1],
+        )
+        self.assertTrue(direct[2].startswith("meta nfproto ipv6 meta l4proto tcp"))
+        # After the CDN's own verdicts, which they do not touch.
+        self.assertLess(forward.index(self._FWD_DROP), forward.index(direct[0]))
+
     def test_only_the_first_packet_of_a_redirected_connection_is_judged(self):
         """Every allowlist rule in forward carries all four guards.
 
@@ -924,6 +963,10 @@ class TestHardeningExecutorWiring(TransactionCase):
         host.http_conn_rate = host_attrs.get("http_conn_rate", 0)
         host.behind_cdn = host_attrs.get("behind_cdn", False)
         host.block_direct_access = host_attrs.get("block_direct_access", False)
+        host.direct_port_shipped = host_attrs.get("direct_port_shipped", 0)
+        host.direct_allowlist_shipped = host_attrs.get(
+            "direct_allowlist_shipped", "",
+        )
         host._effective_trusted_proxy_ranges.return_value = host_attrs.get(
             "trusted_proxy_ranges", [],
         )
@@ -962,6 +1005,18 @@ class TestHardeningExecutorWiring(TransactionCase):
         self.assertEqual(ev["ic_hardened_user"], "ubuntu")
         self.assertEqual(ev["ic_ssh_port"], 2222)
         self.assertFalse(ex._needs_user_creation)
+
+    def test_a_host_without_a_direct_port_gets_no_direct_vars(self):
+        ev = self._make().get_extra_vars()
+        self.assertNotIn("ic_direct_port", ev)
+
+    def test_the_direct_port_and_its_list_reach_the_playbook(self):
+        ev = self._make(
+            direct_port_shipped=9443,
+            direct_allowlist_shipped="10.0.0.0/8\n46.4.0.20/32",
+        ).get_extra_vars()
+        self.assertEqual(ev["ic_direct_port"], 9443)
+        self.assertEqual(ev["ic_direct_allowlist"], "10.0.0.0/8, 46.4.0.20/32")
 
     def test_extra_vars_carries_the_http_conn_rate(self):
         """The per-host conn-rate cap reaches the playbook as set, 0 included."""
