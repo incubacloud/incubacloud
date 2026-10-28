@@ -306,6 +306,10 @@ class CloudSettings(models.Model):
             self._direct_note_checked("metrics_central_direct", False)
         for name in filter(None, old_names):
             self._direct_forget_alerts(name)
+        if renamed:
+            host = self._get_system().metrics_central_host_id
+            if host and host.direct_port_shipped:
+                host._enqueue_direct_sync("central's direct name changed")
         moved = renamed or any(
             rec.metrics_central_direct_state != old_states[rec.id]
             for rec in self if rec.id in old_states

@@ -47,6 +47,13 @@ DIRECT_DYNAMIC_FILE = "~/traefik/dynamic/direct.yml"
 #: Hetzner hands a released address to someone else within hours.
 _ABSENT_FOR = timedelta(hours=24)
 
+#: How long the list in force may lag behind before it is said aloud.
+_STALE_AFTER = timedelta(minutes=30)
+
+#: How old the last good sync may be before the cron runs it anyway: it
+#: puts back what a reboot or an old re-hardening took, and probes again.
+_RESYNC_EVERY = timedelta(hours=1)
+
 
 def global_ipv4(value):
     """Return *value* as a global IPv4 address, or ''.
@@ -701,3 +708,89 @@ class CloudHost(models.Model):
                 self.name, reason, exc,
             )
             return False
+
+    @api.model
+    def _direct_sync_targets(self):
+        """Return the hosts whose proxy publishes a direct port.
+
+        :rtype: cloud.host
+        """
+        return self.sudo().search([
+            ("active", "=", True), ("direct_port_shipped", ">", 0),
+        ])
+
+    @api.model
+    def _direct_sync_everywhere(self, reason):
+        """Queue the direct list on every host that publishes a direct port.
+
+        :param str reason: for the log.
+        """
+        for host in self._direct_sync_targets():
+            host._enqueue_direct_sync(reason)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """A host born with a global address joins the direct list at once."""
+        hosts = super().create(vals_list)
+        if any(global_ipv4(host.sudo().ip_address) for host in hosts):
+            self._direct_sync_everywhere("host created")
+        return hosts
+
+    def write(self, vals):
+        """A new address or an archived host moves the direct list.
+
+        And the public-path switch re-applies what runs on the host.
+        """
+        result = super().write(vals)
+        if {"ip_address", "active"} & set(vals):
+            self.env["cloud.host"]._direct_sync_everywhere(
+                "host address or state changed",
+            )
+        if "direct_path_opt_out" in vals:
+            self.env["cloud.host"]._direct_path_changed(
+                "public path switched on a host",
+            )
+        return result
+
+    def unlink(self):
+        """A deleted host leaves the direct list at once."""
+        result = super().unlink()
+        self.env["cloud.host"]._direct_sync_everywhere("host deleted")
+        return result
+
+    @api.model
+    def _cron_sync_direct_path(self):
+        """Keep every direct port's list applied, and its names probed.
+
+        Queues the job on a host whose list in force differs from the one
+        it should have, or whose last good run is over an hour old (about
+        24 runs a day per publishing host, like ``host_probe``). A list
+        behind for over 30 minutes raises ``direct_allowlist_stale``; in
+        step again, it is closed.
+        """
+        now = fields.Datetime.now()
+        desired = self._direct_peers_entries()
+        Alert = self.env["cloud.alert"].sudo()
+        for host in self._direct_sync_targets():
+            shipped = (host.direct_allowlist_shipped or "").split()
+            behind = shipped != desired
+            if not behind:
+                if host.direct_allowlist_stale_since:
+                    host.write({"direct_allowlist_stale_since": False})
+                Alert.resolve_alert("direct_allowlist_stale", host=host)
+            elif not host.direct_allowlist_stale_since:
+                host.write({"direct_allowlist_stale_since": now})
+            elif now - host.direct_allowlist_stale_since > _STALE_AFTER:
+                Alert.raise_alert(
+                    "direct_allowlist_stale",
+                    _(
+                        "The direct path's list on %(host)s is behind: "
+                        "%(n)s address(es) not admitted yet use the public "
+                        "path.",
+                        host=host.name, n=len(set(desired) - set(shipped)),
+                    ),
+                    host=host,
+                )
+            synced = host.direct_allowlist_synced_at
+            if behind or not synced or now - synced >= _RESYNC_EVERY:
+                host._enqueue_direct_sync("direct list cron")

@@ -213,3 +213,4 @@ from . import test_direct_rendering
 from . import test_direct_full_setup
 from . import test_direct_probe_state
 from . import test_direct_sync_job
+from . import test_direct_triggers
