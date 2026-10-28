@@ -44,14 +44,16 @@ _PUBLIC = {
 }
 _BEFORE = {
     "none": {},
-    "public_acme": dict(
-        _PUBLIC, ic_public_tls="acme", ic_public_forwarded=False,
-        ic_operator_sources=["127.0.0.1/32", "198.51.100.7/32"],
-    ),
-    "public_default_forwarded": dict(
-        _PUBLIC, ic_public_tls="default", ic_public_forwarded=True,
-        ic_operator_sources=["127.0.0.1/32"],
-    ),
+    "public_acme": _PUBLIC | {
+        "ic_public_tls": "acme",
+        "ic_public_forwarded": False,
+        "ic_operator_sources": ["127.0.0.1/32", "198.51.100.7/32"],
+    },
+    "public_default_forwarded": _PUBLIC | {
+        "ic_public_tls": "default",
+        "ic_public_forwarded": True,
+        "ic_operator_sources": ["127.0.0.1/32"],
+    },
 }
 
 
