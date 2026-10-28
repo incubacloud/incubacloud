@@ -13,6 +13,10 @@ from odoo.tests.common import HttpCase, TransactionCase
 
 from .common import PG_PASSWORD, McpHttpMixin, McpUsersMixin, PanelFixtureMixin
 
+#: Read tools that reach GitHub rather than a route of the panel; what they
+#: answer is masked like any answer (test_tools_code.py checks it).
+NO_ROUTE_READS = frozenset({"repo_read"})
+
 
 def declaring_addons(endpoint):
     """Return the addons whose classes define the method behind *endpoint*.
@@ -173,7 +177,7 @@ class TestNoReadToolLeaks(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCa
         specs = [
             spec
             for spec in self.env["incubacloud.mcp.catalog"]._tool_specs()
-            if spec.read_only
+            if spec.read_only and spec.name not in NO_ROUTE_READS
         ]
         self.assertTrue(specs)
         Dispatch = type(self.env["incubacloud.mcp.dispatch"])

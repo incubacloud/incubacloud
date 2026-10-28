@@ -1,3 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_incubacloud_mcp_approval_system,incubacloud.mcp.approval system,model_incubacloud_mcp_approval,base.group_system,1,0,0,0
 access_incubacloud_mcp_download_system,incubacloud.mcp.download system,model_incubacloud_mcp_download,base.group_system,1,0,0,0
+access_incubacloud_mcp_agent_branch_system,incubacloud.mcp.agent.branch system,model_incubacloud_mcp_agent_branch,base.group_system,1,0,0,0
