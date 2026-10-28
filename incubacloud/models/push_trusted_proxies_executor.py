@@ -13,7 +13,8 @@ import shlex
 from . import _config_snapshot_diff as _snapshot_diff
 from . import acme_store
 from .abstract_executor import AbstractSSHExecutor
-from .full_setup_executor import ProxyStagingMixin
+from .cloud_host_direct import install_dns_token_command
+from .full_setup_executor import _TOKEN_STAGED, ProxyStagingMixin
 
 #: Snapshot keys this job is allowed to declare applied.
 _PROXY_KEYS = {'trusted_proxy_ranges', 'block_direct_access', 'cdn_client_ca'}
@@ -36,7 +37,14 @@ class PushTrustedProxiesExecutor(
         """Upload the rendered static and dynamic Traefik documents."""
         host = self.job.host_id
         ranges = host._effective_trusted_proxy_ranges()
-        await self._stage_proxy_documents(transport, host)
+        private = {}
+        if host._needs_dns01() and host._has_dns01_token():
+            # Same file as Full Setup's, for a rotated token (RB-24).
+            private[self._job_path(_TOKEN_STAGED)] = (
+                self.env['cloud.settings'].sudo()._get_system()
+                .acme_dns_cloudflare_token
+            )
+        await self._stage_proxy_documents(transport, host, private=private)
         self._sys(
             f'✓ Trusted proxy configuration prepared ({len(ranges)} '
             f'range{"" if len(ranges) == 1 else "s"}'
@@ -211,6 +219,10 @@ class PushTrustedProxiesExecutor(
             # removes the requirement. Applied with the restart below.
             'Require the CDN client certificate',
             require_ca,
+        ))
+        commands.append((
+            'Install the DNS token',
+            install_dns_token_command(stage(_TOKEN_STAGED)),
         ))
         prune = self._acme_prune_step()
         if prune:
