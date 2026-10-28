@@ -8,6 +8,7 @@ how a host kept serving a container long after the file dropped it.
 """
 import asyncio
 import re
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase
@@ -17,6 +18,10 @@ from odoo.addons.incubacloud.models.full_setup_executor import (
     FullSetupExecutor,
 )
 from odoo.addons.incubacloud.models.transport import CommandResult, SSHTransport
+
+_PROXY_START = (
+    Path(__file__).resolve().parents[1] / "scripts" / "proxy_start.sh"
+)
 
 
 class TestFullSetupStartsTheStackConvergently(TransactionCase):
@@ -45,13 +50,14 @@ class TestFullSetupStartsTheStackConvergently(TransactionCase):
 
     def test_start_traefik_removes_orphans(self):
         cmd = self._commands()['Start Traefik']
-        self.assertIn('--remove-orphans', cmd)
+        self.assertIn('proxy_start.sh start', cmd)
+        self.assertIn('up -d --remove-orphans', _PROXY_START.read_text())
 
     def test_start_traefik_still_targets_the_inverseproxy_project(self):
         """The orphan sweep must stay scoped to this compose project."""
-        cmd = self._commands()['Start Traefik']
-        self.assertIn('-p inverseproxy', cmd)
-        self.assertIn('inverseproxy.yaml', cmd)
+        self.assertIn(
+            '-p inverseproxy -f inverseproxy.yaml', _PROXY_START.read_text(),
+        )
 
     def test_config_is_copied_into_the_dynamic_directory_before_the_proxy_starts(self):
         """The file provider reads one directory; the middlewares every

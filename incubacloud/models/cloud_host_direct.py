@@ -16,6 +16,7 @@ list and probes the names is ``sync_direct_path``.
 import ipaddress
 import logging
 import re
+import shlex
 from datetime import timedelta
 
 import yaml
@@ -292,6 +293,47 @@ def patch_inverseproxy_direct(content, port, with_token):
             text, "CF_DNS_API_TOKEN_FILE", DIRECT_TOKEN_IN_PROXY,
         )
     return text
+
+
+def install_direct_yml_command(staged):
+    """Return the shell that puts a staged ``direct.yml`` in place.
+
+    Only when it changed, and atomically: copied next to the watched
+    directory first, then renamed into it, because Traefik's file watcher
+    reads a half-written file as it finds it.
+
+    :param str staged: where the job uploaded the document.
+    :rtype: str
+    """
+    quoted = shlex.quote(staged)
+    return (
+        "mkdir -p ~/traefik/dynamic"
+        f" && if cmp -s {quoted} {DIRECT_DYNAMIC_FILE};"
+        " then echo 'direct.yml unchanged';"
+        f" else cp {quoted} ~/traefik/.direct.yml.new"
+        f" && mv -f ~/traefik/.direct.yml.new {DIRECT_DYNAMIC_FILE}"
+        " && echo 'direct.yml updated'; fi"
+        f"; rc=$?; rm -f {quoted}; exit $rc"
+    )
+
+
+def install_dns_token_command(staged):
+    """Return the shell that puts the staged DNS token where the proxy reads it.
+
+    A host that does not need the token gets the file removed: it exists
+    only while something on the host asks for a certificate by DNS-01.
+
+    :param str staged: where the job uploaded the token (0600), or would
+        have.
+    :rtype: str
+    """
+    quoted = shlex.quote(staged)
+    target = f"~/traefik/secrets/{DIRECT_TOKEN_NAME}"
+    return (
+        "mkdir -p ~/traefik/secrets && chmod 700 ~/traefik/secrets"
+        f" && if [ -s {quoted} ]; then mv {quoted} {target}"
+        f" && chmod 600 {target}; else rm -f {target}; fi"
+    )
 
 
 class CloudHost(models.Model):

@@ -29,8 +29,16 @@ import re
 
 import bcrypt as _bcrypt
 
+from odoo import _
+
 from . import acme_store
 from .abstract_executor import AbstractSSHExecutor
+from .cloud_host_direct import (
+    DIRECT_DYNAMIC_FILE,
+    DIRECT_TOKEN_NAME,
+    install_direct_yml_command,
+    install_dns_token_command,
+)
 from .setup_whitelist_executor import (
     build_whitelist_compose,
     _WL_DIR, _WL_FILE, _WL_PROJECT,
@@ -40,6 +48,11 @@ _logger = logging.getLogger(__name__)
 
 MIN_DISK_GB = 10
 _BIN = 'PATH="$HOME/.local/bin:$PATH"'
+
+#: Names, in the job's own directory (``_job_path``), of the direct list and
+#: the DNS token Full Setup and the sync job stage.
+_DIRECT_STAGED = "direct.yml"
+_TOKEN_STAGED = DIRECT_TOKEN_NAME
 
 
 # ── Tool verification (Phase 2) ───────────────────────────────────────
@@ -253,6 +266,15 @@ class FullSetupExecutor(
         # Upload Traefik config files (Phase 3)
         self._sys("Preparing Traefik configuration files...")
         inverseproxy = host._shipped_inverseproxy_yaml()
+        private = {self._job_path("inverseproxy.yaml"): inverseproxy}
+        if host._needs_dns01() and host._has_dns01_token():
+            # A file only its owner reads, from the first byte, removed by
+            # the job if no step moves it: the token is never in the
+            # compose file, on a command line or in this log.
+            private[self._job_path(_TOKEN_STAGED)] = (
+                self.env["cloud.settings"].sudo()._get_system()
+                .acme_dns_cloudflare_token
+            )
         # Rendered, not read straight from the fields: a host that
         # declares a proxy in front of it ships the matching Traefik
         # settings here, and they have to be interlocked — the static
@@ -260,11 +282,17 @@ class FullSetupExecutor(
         # The compose file is owner-only too: it holds the dashboard's
         # password hash (and whatever credentials a module adds to the
         # proxy's environment). Moved, it stays 0600.
-        await self._stage_proxy_documents(
-            transport, host,
-            private={self._job_path("inverseproxy.yaml"): inverseproxy},
-        )
+        await self._stage_proxy_documents(transport, host, private=private)
+        if host.direct_port:
+            # Read by the entrypoint's middlewares from the first start:
+            # without it the port serves nothing at all (fail closed).
+            await self._upload_files(
+                transport,
+                {self._job_path(_DIRECT_STAGED): host._shipped_direct_yml()},
+            )
         self._sys("✓ Traefik configuration files uploaded.")
+        if self._job_path(_TOKEN_STAGED) in private:
+            self._sys("✓ DNS token for certificates staged.")
 
         # Upload whitelist compose file (Phase 4)
         hostnames = host.whitelist_ids.mapped("hostname")
@@ -307,6 +335,35 @@ class FullSetupExecutor(
                 "rm -f ~/traefik/dynamic/tls-client-auth.yml"
                 " ~/traefik/certs/cdn-client-ca.pem"
             )
+        host = self._host()
+        # A direct port taken by anything else makes Docker refuse the
+        # recreated proxy: checked before a single file is replaced.
+        direct_check = [(
+            "Check the direct port",
+            self.run_script("direct_port_check.sh", [str(host.direct_port)]),
+            {"stop_on_failure": True},
+        )] if host.direct_port else []
+        if host.direct_port:
+            direct_steps = [(
+                "Install the direct list for Traefik",
+                install_direct_yml_command(stage(_DIRECT_STAGED)),
+            )]
+        elif host.direct_port_shipped:
+            direct_steps = [
+                (
+                    "Remove the direct list for Traefik",
+                    f"rm -f {DIRECT_DYNAMIC_FILE}",
+                ),
+                (
+                    "Clear the direct path",
+                    self.run_script(
+                        "direct_allowlist.sh",
+                        ["clear", str(host.direct_port_shipped)],
+                    ),
+                ),
+            ]
+        else:
+            direct_steps = []
         commands = [
             # ── Phase 1: compatibility ────────────────────────────────
             ("check:os",   "uname -s"),
@@ -315,9 +372,16 @@ class FullSetupExecutor(
             ("Install host tools", self.run_script("full_setup_install.sh")),
         ] + VERIFY_COMMANDS + [
             # ── Phase 3: Traefik ──────────────────────────────────────
+            *direct_check,
             (
                 "Create traefik directory",
                 "mkdir -p ~/traefik",
+            ),
+            (
+                # What the proxy runs with now, to come back to if Docker
+                # refuses what this run installs.
+                "Keep the running proxy files",
+                self.run_script("proxy_start.sh", ["keep"]),
             ),
             (
                 "Move traefik config files",
@@ -353,6 +417,11 @@ class FullSetupExecutor(
                 require_ca,
             ),
             (
+                "Install the DNS token",
+                install_dns_token_command(stage(_TOKEN_STAGED)),
+            ),
+            *direct_steps,
+            (
                 # Before the proxy starts: it writes its access log into
                 # this directory through a bind mount, and the rotation
                 # (30 days) is what keeps that file from filling the disk.
@@ -367,12 +436,11 @@ class FullSetupExecutor(
                 # half-convergent — the primary host kept serving a
                 # Sablier container long after the file stopped
                 # declaring it. Scoped to the ``inverseproxy`` project,
-                # so nothing else on the host is touched.
-                "cd ~/traefik && docker compose"
-                " -p inverseproxy -f inverseproxy.yaml up -d"
-                " --remove-orphans"
-                " && docker compose -p inverseproxy"
-                " -f inverseproxy.yaml restart proxy",
+                # so nothing else on the host is touched. And when Docker
+                # refuses the new files, the previous three go back and
+                # the proxy starts with them: the proxy serves the whole
+                # host (proxy_start.sh).
+                self.run_script("proxy_start.sh", ["start"]),
             ),
             # ── Phase 4: Whitelist ────────────────────────────────────
             (
@@ -409,6 +477,20 @@ class FullSetupExecutor(
 
     def parse_results(self, results):
         errors = []
+
+        check = results.get("Check the direct port")
+        if check is not None and check.get("exit_status", 1) != 0:
+            # The run stopped there: the proxy and its files are untouched.
+            host = self._host()
+            who = (check.get("stdout") or "").replace(
+                "IC_DIRECT_PORT_BUSY", "",
+            ).strip()
+            message = _(
+                "Port %(port)s is already in use on %(host)s; choose another "
+                "direct port.",
+                port=host.direct_port, host=host.name,
+            )
+            return [f"{message} ({who})" if who else message]
 
         # ── Phase 1: OS ───────────────────────────────────────────────
         os_out = (
@@ -495,6 +577,11 @@ class FullSetupExecutor(
             self._sys(f"✗ {problem}")
         errors += acme
 
+        if results.get("Clear the direct path", {}).get("exit_status", 0) != 0:
+            # Nothing listens on the port any more; rules left behind only
+            # drop what would find nothing.
+            self._sys("⚠ The direct path's firewall rules could not be removed.")
+
         return errors
 
     async def on_success(self, results):
@@ -508,6 +595,8 @@ class FullSetupExecutor(
         host.write({
             'status': 'compatible',
             'traefik_deployed': True,
+            # What the compose file this run started publishes.
+            'direct_port_shipped': host.direct_port or 0,
             # This run shipped the rendered Traefik configuration, so the
             # host is now running the proxy posture the panel intends.
             'trusted_proxies_shipped':
