@@ -4,9 +4,11 @@ site_url: https://docs.incubacloud.io/
 site_author: IncubaCloud
 copyright: Copyright &copy; IncubaCloud
 
-repo_url: https://github.com/incubacloud/incubacloud
-repo_name: incubacloud/incubacloud
-edit_uri: edit/19.0/docs/user/docs/
+# No repo_url: with a GitHub address the theme's script asks api.github.com for
+# the repository's stars and forks from every visitor's browser, and it has no
+# option to turn that off. The "edit this page" link is a full address, and the
+# repository stays one click away in the footer (extra.social).
+edit_uri: https://github.com/incubacloud/incubacloud/edit/19.0/docs/user/docs/
 
 theme:
   name: material
@@ -52,8 +54,6 @@ theme:
     - search.share
     - search.suggest
     - toc.follow
-  icon:
-    repo: fontawesome/brands/github
 
 extra:
   social:
@@ -93,6 +93,9 @@ markdown_extensions:
 
 plugins:
   - search
+  # Downloads the fonts and any external file at build time and serves them
+  # from this site: a visitor's browser never contacts Google.
+  - privacy
 
 nav:
   - Home: index.md

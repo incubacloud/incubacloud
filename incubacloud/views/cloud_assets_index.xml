@@ -16,10 +16,9 @@
              (Resize text). Users must be able to zoom the panel. -->
         <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-        <!-- Relay fonts: Space Grotesk (display) + Hanken Grotesk (UI) + JetBrains Mono (data) -->
-        <link rel="preconnect" href="https://fonts.googleapis.com"/>
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=Hanken+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap"/>
+        <!-- Relay fonts: Space Grotesk (display) + Hanken Grotesk (UI) + JetBrains Mono (data),
+             served by this module, never by Google. -->
+        <link rel="stylesheet" href="/incubacloud/static/fonts/fonts.css"/>
 
         <style> body { background: #0c100e; } </style>
 
