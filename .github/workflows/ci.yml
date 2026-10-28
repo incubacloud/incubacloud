@@ -183,12 +183,17 @@ jobs:
         # Bumping all three in-place lines CI up with what the runtime
         # doodba image pins (requirements.txt, audited by pip-audit).
         #
+        # requests goes with urllib3: the image's 2.25.1 wants urllib3
+        # 1.x, and with 2.x it cannot send a chunked body at all
+        # (``getresponse(buffering=True)`` → ``ResponseNotReady``). 2.31.0
+        # is the doodba image's.
+        #
         # openupgradelib: transitive dependency of OCA ``queue_job``,
         # which now declares it in ``external_dependencies``. Without it
         # ``oca_init_test_database`` fails to install queue_job. Not
         # pinned/audited — pip-audit excludes it (git URL in pip.txt)
         # and it never executes in our tests.
-        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib' 'joserfc==1.6.8'
+        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'requests==2.31.0' 'openupgradelib' 'joserfc==1.6.8'
 
       - name: Fetch OCA dependencies
         run: |
@@ -273,7 +278,7 @@ jobs:
 
       - name: Install extra dependencies
         # Same pins as the test job (see rationale there).
-        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'openupgradelib' 'joserfc==1.6.8'
+        run: pip install --upgrade 'asyncssh==2.24.0' 'boto3==1.42.91' 'PyYAML==6.0.3' 'bcrypt==5.0.0' 'pyopenssl>=25.3' 'urllib3>=2.0,<2.3' 'requests==2.31.0' 'openupgradelib' 'joserfc==1.6.8'
 
       - name: Fetch OCA dependencies
         run: |
