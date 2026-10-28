@@ -726,12 +726,16 @@ class TestInstallingItInOdoo(
         self.assertEqual(straight_in.remote_addr, NEIGHBOUR)
 
     def test_a_range_that_covers_private_addresses_is_pointed_out(self):
-        """Global as a whole, ``0.0.0.0/0`` still spans every private
-        network; nothing private is believed from it, but the list is
-        almost certainly not what was meant."""
+        """Global as a whole, ``128.0.0.0/1`` still spans 172.16.0.0/12
+        and 192.168.0.0/16; nothing private is believed from it, but the
+        list is almost certainly not what was meant.
+
+        Not ``0.0.0.0/0``: whether that one is global changed with
+        CPython's fix for CVE-2024-4032, which the Python 3.10 of the CI
+        image lacks; ``128.0.0.0/1`` is global on both sides of it."""
         with self.assertLogs(LOGGER, "WARNING") as logged:
             self.assertTrue(real_ip.install(
-                self._config(trusted="0.0.0.0/0", proxy=PROXY), self.http,
+                self._config(trusted="128.0.0.0/1", proxy=PROXY), self.http,
             ))
         self.assertIn("overlap", logged.output[0])
         request = self._apply(_environ(remote=NEIGHBOUR, chain=FORGED,
