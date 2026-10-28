@@ -542,6 +542,22 @@ with an older core — publish this core first.
   longer make compose refuse the whole file: the later one takes `-2`,
   `-3`…
 
+- **An instance can no longer read the proxy's metrics, nor feed the
+  host's metrics agent.** Traefik's metrics entrypoint listened on
+  `:8082`, every interface of the proxy, `inverseproxy_shared` included,
+  which every instance on the host joins: any instance could read the
+  routers and request counts of all the others. vmagent joined that
+  network to scrape it and listened on `:8429` of every interface: any
+  instance could push series it forwarded to the central under the
+  host's credential. The entrypoint is now bound to the proxy's address
+  on its `public` network (`proxy.inverseproxy_public:8082`,
+  `PROXY_PUBLIC_HOST`), the agent scrapes it there and listens on its
+  own loopback. A host takes it with its next Full Setup or proxy push
+  (a stored `traefik.yml` is rebound as it is shipped) and its next
+  install of the observability agents. Traefik does not start when that
+  name does not resolve: a self-hosted `inverseproxy.yaml` must keep the
+  project `inverseproxy`, the service `proxy` and the network `public`.
+
 ## [1.0.199] — 2026-10-27
 
 ### Fixed

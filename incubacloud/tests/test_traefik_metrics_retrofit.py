@@ -9,7 +9,11 @@ and never a regeneration.
 These pin the three properties that matter: it adds what is missing, it
 is idempotent, and it does not clobber a customised template.
 """
-from odoo.tests.common import TransactionCase
+import yaml
+
+from odoo.tests.common import BaseCase, TransactionCase
+
+from ..models.cloud_host import _read_traefik_template
 
 
 _SEED_TRAEFIK = """\
@@ -228,3 +232,82 @@ class TestTraefikSecurityHeadersRetrofit(TransactionCase):
     def test_handles_an_empty_template(self):
         self.assertFalse(self.Host._add_traefik_security_headers(""))
         self.assertFalse(self.Host._add_traefik_security_headers(False))
+
+
+_STORED_TRAEFIK = """\
+entryPoints:
+  # Prometheus metrics, published on loopback only (see inverseproxy.yaml)
+  # so the local vmagent can scrape it and nothing else can.
+  metrics:
+    address: ":8082"
+  http:
+    address: ":80"
+  https:
+    address: ":443"
+
+api:
+  dashboard: true
+
+# Auto-added by IncubaCloud: per-router HTTP metrics.
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addRoutersLabels: true
+"""
+
+
+class TestTheMetricsStayOffTheInstancesNetwork(BaseCase):
+    """Traefik's metrics answer on the proxy's ``public`` network only.
+
+    ``":8082"`` listens on every interface of the proxy's container,
+    ``inverseproxy_shared`` included, and every instance on the host
+    joins that network: any of them could read the routers, services and
+    request counts of all the others. Bound to the proxy's address on
+    ``public``, the entrypoint is out of their reach, while the port
+    published on the host's loopback and vmagent, which joins ``public``,
+    still get there. Measured on Traefik v2.11 and Docker 29: a container
+    on ``shared`` is refused, one on ``public`` and the host's loopback
+    get their 200.
+    """
+
+    def _bind(self, content):
+        """Run the rendering helper under test on *content*."""
+        from ..models.full_setup_executor import _bind_to_proxy_public_network
+
+        return _bind_to_proxy_public_network(content, "metrics")
+
+    def test_the_entrypoint_listens_on_the_proxy_public_address(self):
+        out = yaml.safe_load(self._bind(_STORED_TRAEFIK))
+        self.assertEqual(
+            out["entryPoints"]["metrics"]["address"],
+            "proxy.inverseproxy_public:8082",
+        )
+
+    def test_is_idempotent(self):
+        once = self._bind(_STORED_TRAEFIK)
+        self.assertEqual(self._bind(once), once)
+
+    def test_an_address_of_the_hosts_own_is_left_alone(self):
+        own = _STORED_TRAEFIK.replace('":8082"', '"10.0.0.5:9182"')
+        self.assertEqual(self._bind(own), own)
+
+    def test_the_other_entrypoints_and_the_metrics_block_do_not_move(self):
+        """Must not change: the visitors' entrypoints and the exporter."""
+        before = yaml.safe_load(_STORED_TRAEFIK)
+        after = yaml.safe_load(self._bind(_STORED_TRAEFIK))
+        self.assertEqual(after["entryPoints"]["http"], before["entryPoints"]["http"])
+        self.assertEqual(after["entryPoints"]["https"], before["entryPoints"]["https"])
+        self.assertEqual(after["metrics"], before["metrics"])
+        self.assertEqual(after["api"], before["api"])
+
+    def test_a_template_without_the_entrypoint_is_returned_as_is(self):
+        plain = "entryPoints:\n  http:\n    address: \":80\"\n"
+        self.assertEqual(self._bind(plain), plain)
+        self.assertFalse(self._bind(""))
+
+    def test_a_new_host_starts_with_it(self):
+        seed = yaml.safe_load(_read_traefik_template("traefik.yml"))
+        self.assertEqual(
+            seed["entryPoints"]["metrics"]["address"],
+            "proxy.inverseproxy_public:8082",
+        )

@@ -21,6 +21,7 @@ import pathlib
 import re
 from xml.etree import ElementTree
 
+import jinja2
 import yaml
 
 from odoo import fields
@@ -1372,3 +1373,129 @@ class TestStaleOrganisationsAreDeleted(BaseCase):
             "Leave the admin session in the default organisation"
         ]["ansible.builtin.uri"]
         self.assertTrue(switch["url"].endswith("/gadmin/api/user/using/1"))
+
+
+class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
+    """The host's tenants share ``inverseproxy_shared``; the agents must not.
+
+    That network is flat: every instance's Odoo, the warm spares and the
+    proxy see each other on it. vmagent used to join it to scrape
+    Traefik, and listened on ``:8429`` there, so any process running in
+    an instance could push series that vmagent forwards to the central
+    under the host's own credential — activity that never happened,
+    enough to keep an idle instance from being suspended. Nothing reads
+    vmagent's port from another container, so it listens on its own
+    loopback, and it reaches Traefik over the proxy's ``public`` network,
+    which no instance joins.
+    """
+
+    _PLAYBOOK = _ROOT / "ansible" / "playbooks" / "host_observability.yml"
+
+    def _play(self):
+        """Return the playbook's only play, as Ansible parses it."""
+        return yaml.safe_load(self._PLAYBOOK.read_text())[0]
+
+    def _task(self, name):
+        """Return the task called *name*, failing if it was renamed."""
+        for task in self._play()["tasks"]:
+            if task.get("name") == name:
+                return task
+        self.fail(f"the task {name!r} was renamed or removed")
+
+    def _render(self, name, **variables):
+        """Render the file one ``copy`` task writes, as Ansible renders it.
+
+        :param str name: the task's name.
+        :param variables: the play's variables to override.
+        :return: the rendered file, parsed.
+        :rtype: dict
+        """
+        values = dict(self._play()["vars"])
+        values.update(
+            ic_obs_dir="/home/ops/observability",
+            ic_remote_write_url="https://metrics.example.test/w/api/v1/write",
+            ic_remote_write_user="acct",
+            ic_logs_write_url="",
+            ic_host_name="host-a",
+            ic_host_id="7",
+            ic_account="acct",
+            ic_instances=[],
+            ic_has_traefik=True,
+        )
+        values.update(variables)
+        content = self._task(name)["ansible.builtin.copy"]["content"]
+        # Ansible's own defaults: trim_blocks on, lstrip_blocks off.
+        return yaml.safe_load(jinja2.Environment(  # nosec B701 — renders YAML as Ansible does, never HTML
+            trim_blocks=True, undefined=jinja2.StrictUndefined,
+        ).from_string(content).render(**values))
+
+    def _vmagent(self, **variables):
+        """Return vmagent's service in the agents' compose file."""
+        compose = self._render("Write the agents compose file", **variables)
+        return compose, compose["services"]["vmagent"]
+
+    def test_vmagent_listens_on_its_own_loopback_only(self):
+        _compose, vmagent = self._vmagent()
+        self.assertIn("-httpListenAddr=127.0.0.1:8429", vmagent["command"])
+
+    def test_vmagent_reaches_traefik_over_the_proxy_own_network(self):
+        compose, vmagent = self._vmagent()
+        self.assertEqual(vmagent["networks"], ["default", "traefik"])
+        self.assertEqual(
+            compose["networks"]["traefik"],
+            {"external": True, "name": "inverseproxy_public"},
+        )
+
+    def test_no_agent_joins_the_instances_network(self):
+        compose, _vmagent = self._vmagent()
+        self.assertNotIn(
+            "inverseproxy_shared", yaml.safe_dump(compose),
+            "an agent on the instances' network is reachable from every "
+            "instance on the host",
+        )
+
+    def test_the_scrape_is_enabled_by_the_network_it_uses(self):
+        """Detected on the network vmagent joins, not on another one."""
+        detect = self._task("Detect whether Traefik runs on this host")
+        self.assertEqual(
+            detect["ansible.builtin.command"],
+            "docker network inspect inverseproxy_public",
+        )
+
+    def test_a_host_without_traefik_joins_no_proxy_network(self):
+        """Must not change: an external network that does not exist
+        stops the whole stack from starting."""
+        compose, vmagent = self._vmagent(ic_has_traefik=False)
+        self.assertEqual(vmagent["networks"], ["default"])
+        self.assertNotIn("traefik", compose["networks"])
+
+    def test_traefik_is_still_scraped_by_its_service_name(self):
+        """Must not change: the target and the job name are what the
+        relabelling and every Traefik panel are keyed on."""
+        scrape = self._render("Write the vmagent scrape configuration")
+        jobs = {job["job_name"]: job for job in scrape["scrape_configs"]}
+        self.assertEqual(
+            jobs["traefik"]["static_configs"], [{"targets": ["proxy:8082"]}],
+        )
+        self.assertNotIn(
+            "traefik",
+            {
+                job["job_name"]
+                for job in self._render(
+                    "Write the vmagent scrape configuration",
+                    ic_has_traefik=False,
+                )["scrape_configs"]
+            },
+        )
+
+    def test_vmagent_still_pushes_with_the_host_credential(self):
+        """Must not change: the remote write and its credential file."""
+        _compose, vmagent = self._vmagent()
+        self.assertIn(
+            "-remoteWrite.url=https://metrics.example.test/w/api/v1/write",
+            vmagent["command"],
+        )
+        self.assertIn(
+            "-remoteWrite.basicAuth.passwordFile=/etc/remote_write_token",
+            vmagent["command"],
+        )

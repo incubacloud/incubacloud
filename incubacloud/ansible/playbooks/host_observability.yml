@@ -56,8 +56,12 @@
       # container (a container's loopback is its own), and publishing on
       # 0.0.0.0 would expose instance names and domains to the internet
       # on any host that is not hardened. Joining Traefik's own docker
-      # network and scraping it by service name avoids both.
-      ansible.builtin.command: docker network inspect inverseproxy_shared
+      # network and scraping it by service name avoids both. Its
+      # ``public`` network, never ``shared``: every instance on the host
+      # joins ``shared``, so an agent there is within reach of all of
+      # them, and the proxy answers its metrics on ``public`` alone
+      # (``full_setup_executor.PROXY_PUBLIC_HOST``).
+      ansible.builtin.command: docker network inspect inverseproxy_public
       register: ic_traefik_net
       changed_when: false
       failed_when: false
@@ -133,7 +137,7 @@
                 - targets: ["node-exporter:9100"]
 
           {% if ic_has_traefik %}
-            # Scraped over Traefik's own docker network, by service name.
+            # Scraped over the proxy's ``public`` network, by service name.
             # This is where per-instance HTTP rates/latencies come from,
             # with no agent inside the instances. Only emitted when
             # Traefik is actually on this host: a job pointing at nothing
@@ -401,6 +405,12 @@
                 - traefik
           {% endif %}
               command:
+                # Its own loopback only. On ``:8429`` of every interface it
+                # took series from anything that reached it and forwarded
+                # them to the central under this host's credential — an
+                # instance's visits that never happened, for one. Nothing
+                # reads this port from another container: agents push.
+                - '-httpListenAddr=127.0.0.1:8429'
                 - '-promscrape.config=/etc/scrape.yml'
                 - '-remoteWrite.url={{ ic_remote_write_url }}'
                 # Basic auth, not bearer: single-node VictoriaMetrics
@@ -427,7 +437,7 @@
           {% if ic_has_traefik %}
             traefik:
               external: true
-              name: inverseproxy_shared
+              name: inverseproxy_public
           {% endif %}
       register: ic_agents_compose
 
