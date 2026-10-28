@@ -144,6 +144,52 @@ with an older core — publish this core first.
   offered a window that no longer existed and asked for a new base only
   hours later. An empty listing now clears both; a listing that failed
   leaves them as they were. `incubacloud_pitr` 1.0.8.
+- **A move's rollback no longer tears down the instance it was meant to
+  bring back.** When a move fails before its cutover, the rollback
+  starts the instance again on its source and queues
+  `move_rollback_cleanup` for the target, to remove the half-built copy
+  there (`docker compose down -v` and `rm -rf` of its directory). Since
+  1.0.198 the queue sends a lone job, when its turn comes, to the host
+  its instance lives on, so that a move made while it waited is followed
+  (`_entry_verdict`). The cleanup was such a job, and the instance still
+  lived on its source: on 28 October it ran there and removed the live
+  stack, its database volume and its directory (instance 2807, restored
+  from its backup of 27 October). A job aimed at a host on purpose now
+  says so (`_pinned_to_host`) and keeps that host, in its retries too:
+  the rollback's cleanup, the cutover, the removal of the old copy after
+  a move, and the upload keys' jobs. Before it connects, the cleanup
+  refuses a host the instance lives on, a host that is not the target of
+  the move being rolled back, and any rollback but the one that queued
+  it (the payload names its chain); it reads the instance again after
+  each wait, and once more before it removes anything. The removal of
+  the old copy refuses the host the instance lives on or is moving to,
+  and a cutover refuses a move that is being rolled back or is over. A
+  refused job fails without reaching a host; the watchdog ends the
+  rollback and says the target may need cleaning by hand. Before
+  deploying, check that no instance has a rollback in progress
+  (`move_rollback_in_progress`): a cleanup queued by an older release
+  names no chain and is refused.
+
+- **The Retry of a move's step no longer acts on the wrong host.** A
+  retry is a lone job, and it followed the instance. Retried while the
+  move went on or was being rolled back, a step aimed at the target ran
+  on the source, by then the only live copy — a restore put back the
+  dump taken before the rollback over the live database, a stop stopped
+  the live odoo — while the steps after it had already ended "Not run".
+  Retried once the move was over, a step acted on wherever the instance
+  lived then. The Retry of a move's step is now refused while a move of
+  the instance is in progress or being rolled back, and once it is over
+  unless the step is aimed at its host on purpose (the removal of the
+  old copy), which keeps that host (`_check_retry_of_a_move_step`). A
+  retry is judged by the job it retries, followed back to the first.
+
+- **The Retry of a move's step queued before 23 October is refused
+  too.** A move's step is told by the chain it belongs to, which has a
+  cutover: `queue_chain_key`, which steps queued before 23-oct-2026 lack
+  (they were a queue_job graph). Such a step was taken for a lone job
+  and its Retry followed the instance to the host it lives on now, where
+  a stop stops the live odoo. `_is_a_move_step` also follows the
+  `graph_uuid` of the step's queue.job when it has no chain key.
 
 ### Security
 

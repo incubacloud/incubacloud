@@ -2365,11 +2365,18 @@ class CloudInstance(models.Model):
             payload={"move_rollback": True},
             bypass_running_check=True,
         )
+        # The chain it rolls back names the rollback: the cleanup tears
+        # down the target only while that rollback is under way
+        # (``MoveRollbackCleanupExecutor._refusal``), not once a later
+        # move to the same host set the markers again.
         return Job.enqueue(
             target.id,
             self.id,
             "move_rollback_cleanup",
-            payload={"move_rollback": True},
+            payload={
+                "move_rollback": True,
+                "move_chain_job_ids": self.move_chain_job_ids or "",
+            },
             bypass_running_check=True,
         )
 

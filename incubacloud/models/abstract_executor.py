@@ -336,6 +336,16 @@ class AbstractExecutor(ABC):
     # its instance no longer exists.
     _runs_on_archived_instance = False
 
+    # Whether the job runs on the host it was asked for, wherever its
+    # instance lives when it starts. The queue sends a lone waiting job
+    # to its instance's host (``cloud.job._entry_verdict``), so a move
+    # between queueing and dispatch is followed. A job aimed at another
+    # host on purpose — the half-built copy of a move being rolled back,
+    # the old copy after a cutover, an upload grant's host — sets this,
+    # and keeps that host, in its retries too: sent where the instance
+    # lived, the rollback's teardown removed the live copy (28-oct-2026).
+    _pinned_to_host = False
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         if cls._job_type:
