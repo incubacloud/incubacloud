@@ -72,6 +72,16 @@ msgstr "%(first)s y %(count)s más"
 
 #. module: incubacloud
 #. odoo-python
+#: code:addons/incubacloud/models/cloud_host_direct.py:0
+msgid ""
+"%(host)s does not reach the direct path (%(reason)s); its agents use the "
+"public path."
+msgstr ""
+"%(host)s no llega al camino directo (%(reason)s); sus agentes usan el camino"
+" público."
+
+#. module: incubacloud
+#. odoo-python
 #: code:addons/incubacloud/models/cloud_job.py:0
 msgid ""
 "%(instance)s has work waiting that your role cannot stop: job #%(job)s, "
@@ -104,6 +114,16 @@ msgstr ""
 "host desde el que borrarla. Asigne un host a la instancia y vuelva a "
 "intentarlo: borrar solo la ficha dejaría la copia atrás sin nada que apunte "
 "a ella."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_direct.py:0
+msgid ""
+"%(name)s is covered by the host's default certificate; use a two-level name,"
+" for example direct.metrics.example.com"
+msgstr ""
+"%(name)s lo cubre el certificado por defecto del host; use un nombre de dos "
+"niveles, por ejemplo direct.metrics.example.com"
 
 #. module: incubacloud
 #. odoo-python
@@ -671,6 +691,18 @@ msgstr ""
 
 #. module: incubacloud
 #. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "A token is stored. Leave blank to keep it."
+msgstr "Hay un token guardado. Déjelo en blanco para conservarlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "API token"
+msgstr "Token de API"
+
+#. module: incubacloud
+#. odoo-javascript
 #: code:addons/incubacloud/static/src/components/backup_backend_detail/backup_backend_detail.xml:0
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_backup_backend__s3_access_key_id
 msgid "Access Key ID"
@@ -806,6 +838,16 @@ msgstr ""
 "del central, que es lo correcto mientras el panel corre allí."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_allowlist_shipped
+msgid ""
+"Addresses the host admits on its direct port, in nftables and in Traefik, "
+"one per line, as the last good sync_direct_path applied them."
+msgstr ""
+"Direcciones que el host admite en su puerto directo, en nftables y en "
+"Traefik, una por línea, tal como las aplicó el último sync_direct_path "
+"correcto."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/job_history/job_history.xml:0
 msgid "Admin"
@@ -838,6 +880,13 @@ msgstr "Administrador — requiere Gerente"
 #: model:res.groups,name:incubacloud.group_cloud_manager
 msgid "Administrator"
 msgstr "Administrador"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_allowlist_shipped
+msgid "Admitted on the direct port"
+msgstr "Admitidos en el puerto directo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -891,6 +940,13 @@ msgstr ""
 "Los agentes de cada host empujan métricas a una pila central; el panel las "
 "consulta para evaluar las reglas de alerta y embebe los paneles. Todos los "
 "hosts se enrolan automáticamente — no hay nada que instalar a mano."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_agents_write_url
+msgid "Agents write to"
+msgstr "Los agentes escriben en"
 
 #. module: incubacloud
 #: model:ir.model,name:incubacloud.model_cloud_alert_policy
@@ -1175,6 +1231,17 @@ msgstr ""
 "endurecido en un puerto rotado, lista de permitidos de nftables, fail2ban, "
 "sysctl, unattended-upgrades, demonio de Docker, journald, auditd) y "
 "desactiva el SSH de root solo tras comprobar que el nuevo acceso funciona."
+
+#. module: incubacloud
+#: model:cloud.job.type,description:incubacloud.sync_direct_path
+msgid ""
+"Applies the list of platform addresses admitted on the host's direct port, "
+"in nftables and in Traefik, reads it back, and probes the direct names the "
+"host publishes. Never restarts the proxy."
+msgstr ""
+"Aplica la lista de direcciones de la plataforma admitidas en el puerto "
+"directo del host, en nftables y en Traefik, la lee de vuelta y comprueba los"
+" nombres directos que publica el host. Nunca reinicia el proxy."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -2137,6 +2204,23 @@ msgstr "Cc"
 #. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_host
+msgid "Central's direct name"
+msgstr "Nombre directo del central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_checked_at
+msgid "Central's direct name last probed"
+msgstr "Último sondeo del nombre directo del central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_state
+msgid "Central's direct name state"
+msgstr "Estado del nombre directo del central"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid "Central's public name"
 msgstr "Nombre público del central"
 
@@ -2514,6 +2598,19 @@ msgstr "Mixin de seguridad Cloud"
 #: model:ir.model,name:incubacloud.model_cloud_tag
 msgid "Cloud Tag"
 msgstr "Etiqueta Cloud"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__acme_dns_cloudflare_token
+msgid ""
+"Cloudflare API token that may only read the zone and edit its DNS. Traefik "
+"asks Let's Encrypt for the direct names' certificates with it (DNS-01). "
+"Written to each host that needs it as a root-only file, never in its compose"
+" file. Stored encrypted."
+msgstr ""
+"Token de API de Cloudflare que solo puede leer la zona y editar su DNS. "
+"Traefik lo usa para pedir a Let's Encrypt los certificados de los nombres "
+"directos (DNS-01). Se escribe en cada host que lo necesita como un fichero "
+"legible solo por root, nunca en su fichero compose. Se guarda cifrado."
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_alert__code
@@ -3454,6 +3551,13 @@ msgid "DB only"
 msgstr "Solo BD"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__acme_dns_cloudflare_token
+msgid "DNS token for direct certificates (Cloudflare)"
+msgstr "Token de DNS para los certificados directos (Cloudflare)"
+
+#. module: incubacloud
 #: model_terms:ir.ui.view,arch_db:incubacloud.mail_cloud_digest
 msgid "Daily cloud digest"
 msgstr "Resumen diario de la nube"
@@ -3957,10 +4061,57 @@ msgid "Developer"
 msgstr "Desarrollador"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_reach_urls
+msgid "Direct URLs that answered"
+msgstr "URL directas que respondieron"
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
 msgid "Direct access"
 msgstr "Acceso directo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_allowlist_synced_at
+msgid "Direct list applied at"
+msgstr "Lista directa aplicada el"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_allowlist_stale_since
+msgid "Direct list behind since"
+msgstr "Lista directa atrasada desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_reach_failures
+msgid "Direct path failures in a row"
+msgstr "Fallos seguidos del camino directo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_refused_at
+msgid "Direct path last refused"
+msgstr "Último rechazo del camino directo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_reach_at
+msgid "Direct path last tried"
+msgstr "Última prueba del camino directo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_reach_ok
+msgid "Direct path reached from the host"
+msgstr "Camino directo alcanzado desde el host"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_port
+msgid "Direct port"
+msgstr "Puerto directo"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_port_shipped
+msgid "Direct port applied"
+msgstr "Puerto directo aplicado"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -5014,6 +5165,17 @@ msgid "Failed to trust SSH host key."
 msgstr "Falló al confiar en la clave SSH del host."
 
 #. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_settings__metrics_central_direct_state__failing
+msgid "Failing"
+msgstr "Fallando"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Failing since %s"
+msgstr "Falla desde %s"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_job_type__failure_holds_queue
 msgid "Failure Holds the Queue"
 msgstr "Un fallo retiene la cola"
@@ -5252,6 +5414,20 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance_backup__attachment_id
 msgid "For non-production backups: the ZIP attachment (2h TTL)."
 msgstr "Para backups no productivos: el adjunto ZIP (TTL de 2h)."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"For the platform's own servers, on the direct port of the\n"
+"                                central's host, without the CDN. Two levels under the zone,\n"
+"                                DNS only, no IPv6 record. Empty: every agent writes to the\n"
+"                                remote-write URL."
+msgstr ""
+"Para los servidores propios de la plataforma, en el puerto directo del\n"
+"                                host del central, sin la CDN. Dos niveles bajo la zona,\n"
+"                                solo DNS, sin registro IPv6. Vacío: cada agente escribe en la\n"
+"                                URL de remote-write."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__usage_ratio
@@ -7490,6 +7666,17 @@ msgid "Last measured:"
 msgstr "Última medición:"
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_read_ok_at
+msgid ""
+"Last time a PromQL read of the central answered. Says the central is up, not"
+" that its direct port is. Kept in a system parameter, not in this row: it "
+"moves at every pass."
+msgstr ""
+"Última vez que respondió una lectura PromQL del central. Indica que el "
+"central funciona, no que lo haga su puerto directo. Se guarda en un "
+"parámetro del sistema, no en esta fila: cambia en cada pasada."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__running_confirmed_at
 msgid ""
 "Last time a job that brought the instance's odoo up confirmed it running. "
@@ -8079,6 +8266,36 @@ msgid "Metrics"
 msgstr "Métricas"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_cert_expires
+msgid "Metrics Central Direct Cert Expires"
+msgstr "Caducidad del certificado del nombre directo del central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_dns_bad
+msgid "Metrics Central Direct Dns Bad"
+msgstr "DNS incorrecto del nombre directo del central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_error
+msgid "Metrics Central Direct Error"
+msgstr "Error del nombre directo del central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_failing_since
+msgid "Metrics Central Direct Failing Since"
+msgstr "Fallo del nombre directo del central desde"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_failures
+msgid "Metrics Central Direct Failures"
+msgstr "Fallos del nombre directo del central"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_central_direct_successes
+msgid "Metrics Central Direct Successes"
+msgstr "Aciertos del nombre directo del central"
+
+#. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_account
 msgid "Metrics account"
 msgstr "Cuenta de métricas"
@@ -8116,6 +8333,11 @@ msgstr "Credencial de métricas"
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_delete_auth_key
 msgid "Metrics deletion key"
 msgstr "Clave de borrado de métricas"
+
+#. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_settings__metrics_read_ok_at
+msgid "Metrics last read"
+msgstr "Última lectura de métricas"
 
 #. module: incubacloud
 #: model:ir.model.fields,field_description:incubacloud.field_cloud_host__metrics_last_seen
@@ -8352,6 +8574,19 @@ msgstr "El nombre y la versión de Odoo son obligatorios."
 #: code:addons/incubacloud/controllers/_data_load/_routes_ops.py:0
 msgid "Name is required"
 msgstr "El nombre es requerido"
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_direct_host
+msgid ""
+"Name under which the platform's own servers reach the central on its host's "
+"direct port, without the CDN, e.g. direct.metrics.example.com: two levels "
+"under the zone, DNS only, no AAAA. Empty: every agent writes to the remote-"
+"write URL."
+msgstr ""
+"Nombre con el que los servidores propios de la plataforma llegan al central "
+"por el puerto directo de su host, sin la CDN, p. ej. "
+"direct.metrics.example.com: dos niveles bajo la zona, solo DNS, sin registro"
+" AAAA. Vacío: cada agente escribe en la URL de remote-write."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_restore_upload_grant__token
@@ -10039,10 +10274,39 @@ msgid "Port"
 msgstr "Puerto"
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/full_setup_executor.py:0
+msgid ""
+"Port %(port)s is already in use on %(host)s; choose another direct port."
+msgstr ""
+"El puerto %(port)s ya está en uso en %(host)s; elija otro puerto directo."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_direct.py:0
+msgid ""
+"Port %(port)s is used by the platform on this host; choose another (for "
+"example 9443)."
+msgstr ""
+"El puerto %(port)s lo usa la plataforma en este host; elija otro (por "
+"ejemplo 9443)."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/host_detail/host_detail.js:0
 msgid "Port is required"
 msgstr "El puerto es obligatorio"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_port
+msgid ""
+"Port the platform's own servers use to reach this host without the CDN. "
+"Applied by Full Setup."
+msgstr ""
+"Puerto por el que los servidores de la plataforma llegan a este host sin la "
+"CDN. Lo aplica la configuración completa."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12544,6 +12808,11 @@ msgid "Subject"
 msgstr "Asunto"
 
 #. module: incubacloud
+#: model:cloud.job.type,name:incubacloud.sync_direct_path
+msgid "Sync Direct Path"
+msgstr "Sincronizar camino directo"
+
+#. module: incubacloud
 #: model:cloud.job.type,name:incubacloud.sync_metrics_accounts
 msgid "Sync Metrics Accounts"
 msgstr "Sincronizar cuentas de métricas"
@@ -12553,6 +12822,11 @@ msgstr "Sincronizar cuentas de métricas"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail_sync.js:0
 msgid "Sync failed."
 msgstr "Falló la sincronización."
+
+#. module: incubacloud
+#: model:ir.actions.server,name:incubacloud.cron_sync_direct_path_ir_actions_server
+msgid "Sync the direct path's list"
+msgstr "Sincronizar la lista del camino directo"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -12872,6 +13146,15 @@ msgid "The SSH host key is not trusted yet."
 msgstr "La clave SSH del host aún no es de confianza."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__metrics_agents_write_url
+msgid ""
+"The URL this host's agents were installed with. Empty: installed before the "
+"direct path, with the remote-write URL in Settings."
+msgstr ""
+"La URL con la que se instalaron los agentes de este host. Vacío: instalados "
+"antes del camino directo, con la URL de remote-write de la configuración."
+
+#. module: incubacloud
 #. odoo-python
 #: code:addons/incubacloud/controllers/connect.py:0
 msgid "The Telegram bot token can be %(max)s characters at most."
@@ -12900,6 +13183,22 @@ msgstr ""
 "antes de reintentarlo."
 
 #. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/observability_central_executor.py:0
+msgid ""
+"The central's host has no direct port applied. Set the port on the host and "
+"press Full Setup."
+msgstr ""
+"El host del central no tiene puerto directo aplicado. Indique el puerto en "
+"el host y pulse «Configuración completa»."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_direct.py:0
+msgid "The certificate of the direct path %(name)s expires on %(date)s."
+msgstr "El certificado del camino directo %(name)s caduca el %(date)s."
+
+#. module: incubacloud
 #. odoo-javascript
 #: code:addons/incubacloud/static/src/components/settings/settings.xml:0
 msgid ""
@@ -12908,6 +13207,40 @@ msgid ""
 msgstr ""
 "El backend de respaldo por defecto que se usa para las instancias de producción cuando\n"
 "                        no se selecciona un backend específico a nivel de proyecto o instancia."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_reach_urls
+msgid "The direct URLs this host's last agents install reached, one per line."
+msgstr ""
+"Las URL directas a las que llegó la última instalación de agentes de este "
+"host, una por línea."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_settings_direct.py:0
+msgid ""
+"The direct path %(name)s does not answer (%(layer)s). Hosts and panels are "
+"back on the public path."
+msgstr ""
+"El camino directo %(name)s no responde (%(layer)s). Los hosts y los paneles "
+"han vuelto al camino público."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/cloud_host_direct.py:0
+msgid ""
+"The direct path's list on %(host)s is behind: %(n)s address(es) not admitted"
+" yet use the public path."
+msgstr ""
+"La lista del camino directo de %(host)s va por detrás: %(n)s dirección(es) "
+"aún no admitidas usan el camino público."
+
+#. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_port_shipped
+msgid "The direct port the last Full Setup published on the proxy. 0: none."
+msgstr ""
+"El puerto directo que publicó en el proxy la última configuración completa. "
+"0: ninguno."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__stack_template_ref
@@ -13112,6 +13445,12 @@ msgstr ""
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__port
 msgid "The port to connect to the cloud host."
 msgstr "El puerto para conectar al host cloud."
+
+#. module: incubacloud
+#. odoo-python
+#: code:addons/incubacloud/models/sync_direct_path_executor.py:0
+msgid "The previous direct list stays in force on this host."
+msgstr "La lista directa anterior sigue vigente en este host."
 
 #. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_host__trusted_proxies_shipped
@@ -13407,6 +13746,17 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml:0
 msgid "This host runs"
 msgstr "Este host ejecuta"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,help:incubacloud.field_cloud_host__direct_path_opt_out
+msgid ""
+"This host's agents, and the panels that run on it, keep going through the "
+"CDN."
+msgstr ""
+"Los agentes de este host, y los paneles que corren en él, siguen pasando por"
+" la CDN."
 
 #. module: incubacloud
 #. odoo-javascript
@@ -14324,6 +14674,13 @@ msgid "Use project values"
 msgstr "Usar valores de proyecto"
 
 #. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/host_detail/host_detail.xml:0
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_path_opt_out
+msgid "Use the public path"
+msgstr "Usar el camino público"
+
+#. module: incubacloud
 #: model:ir.model.fields.selection,name:incubacloud.selection__cloud_restore_upload_grant__state__used
 msgid "Used"
 msgstr "Usada"
@@ -14896,6 +15253,15 @@ msgstr ""
 "todo su periodo de aviso."
 
 #. module: incubacloud
+#: model:ir.model.fields,help:incubacloud.field_cloud_settings__metrics_central_direct_checked_at
+msgid ""
+"When the name was last probed. Kept in a system parameter, not in this row: "
+"it moves at every probe."
+msgstr ""
+"Cuándo se sondeó el nombre por última vez. Se guarda en un parámetro del "
+"sistema, no en esta fila: cambia en cada sondeo."
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_instance__archived_at
 msgid ""
 "When this instance was archived. A field of its own and not ``write_date``, "
@@ -15063,6 +15429,11 @@ msgid "Who may delete series on the central"
 msgstr "Quién puede borrar series en el central"
 
 #. module: incubacloud
+#: model:ir.model.fields,field_description:incubacloud.field_cloud_host__direct_reach_reason
+msgid "Why the direct path is not used"
+msgstr "Por qué no se usa el camino directo"
+
+#. module: incubacloud
 #: model:ir.model.fields,help:incubacloud.field_cloud_alert_policy__note
 msgid ""
 "Why this code is a measurement and what one lone reading would have cost."
@@ -15136,6 +15507,17 @@ msgstr ""
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "Without filestore"
 msgstr "Sin filestore"
+
+#. module: incubacloud
+#: model:ir.model.fields.selection,name:incubacloud.selection__cloud_settings__metrics_central_direct_state__ok
+msgid "Working"
+msgstr "Funcionando"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.js:0
+msgid "Working, certificate valid until %s"
+msgstr "Funciona, certificado válido hasta %s"
 
 #. module: incubacloud
 #. odoo-javascript
@@ -15233,6 +15615,18 @@ msgid ""
 "Your address could not be confirmed. Close this dialog and open it again."
 msgstr ""
 "No se pudo confirmar su dirección. Cierre este diálogo y vuelva a abrirlo."
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid ""
+"Zone read and DNS edit on the zone only, limited to this\n"
+"                                panel's address. Written to each host that needs it as a\n"
+"                                root-only file."
+msgstr ""
+"Lectura de la zona y edición de su DNS solamente, limitado a la\n"
+"                                dirección de este panel. Se escribe en cada host que lo necesita\n"
+"                                como un fichero legible solo por root."
 
 #. module: incubacloud
 #. odoo-python
@@ -15454,6 +15848,12 @@ msgstr "df -h"
 #: code:addons/incubacloud/static/src/components/instance_detail/instance_detail.xml:0
 msgid "differs"
 msgstr "difiere"
+
+#. module: incubacloud
+#. odoo-javascript
+#: code:addons/incubacloud/static/src/components/settings/settings.xml:0
+msgid "direct.metrics.example.com"
+msgstr "direct.metrics.example.com"
 
 #. module: incubacloud
 #. odoo-javascript
