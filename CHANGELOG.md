@@ -88,8 +88,13 @@ marks no host pending.
   file.
 - The dates of the last probe of each direct name and of the last good read of the
   central are system parameters (`incubacloud.direct_checked_at.*`), not columns of the
-  settings row; a neutralized copy forgets them, the DNS token and the central's direct
-  name.
+  settings row, read and written with SQL: `set_param` would empty every worker's
+  caches at each probe and each pass of the specs cron. A neutralized copy forgets them,
+  the DNS token and the central's direct name.
+- Changing the remote-write URL in Settings now re-applies the agents of every installed
+  host at the next reconciliation (every 15 minutes): each host's recorded URL is
+  compared with the one it should have. Before, hosts kept the old URL until their
+  agents were applied again by hand.
 
 ---
 

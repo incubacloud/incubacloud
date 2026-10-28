@@ -690,9 +690,9 @@
                                 A token is stored. Leave blank to keep it.
                             </div>
                             <div class="rl-th">
-                                Zone read and DNS edit on the zone only, limited to this
-                                panel's address. Written to each host that needs it as a
-                                root-only file.
+                                Zone read and DNS edit on the zone only, limited to the
+                                addresses of the hosts that publish a direct name. Written to
+                                each host that needs it as a root-only file.
                             </div>
                         </div>
 
