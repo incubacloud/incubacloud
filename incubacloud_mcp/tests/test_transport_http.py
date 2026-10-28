@@ -203,7 +203,13 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(response.status_code, 411, response.text)
 
     def test_a_message_nested_past_32_levels_is_refused(self):
-        """Valid JSON nested 2 000 levels deep is -32600; 20 levels are fine."""
+        """Valid JSON nested 200 levels deep is -32600; 20 levels are fine.
+
+        200 is past MAX_DEPTH and within the parser's stack on every
+        Python: on 3.10 that stack is the recursion limit, about a
+        thousand, so 2 000 levels would be past it, -32700, as
+        ``test_a_body_too_big_or_too_deep_is_refused`` pins.
+        """
         body = json.dumps(
             {
                 "jsonrpc": "2.0",
@@ -216,7 +222,7 @@ class TestTheEndpoint(JwtMixin, McpUsersMixin, McpHttpMixin, HttpCase):
             }
         )
         headers = {"MCP-Protocol-Version": MODERN, "Mcp-Method": "server/discover"}
-        for depth, status in ((20, 200), (2000, 400)):
+        for depth, status in ((20, 200), (200, 400)):
             with self.subTest(depth=depth):
                 nested = "[" * depth + "]" * depth
                 raw = body.replace('"x": 0', f'"x": {nested}')
