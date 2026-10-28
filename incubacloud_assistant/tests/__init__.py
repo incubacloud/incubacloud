@@ -11,3 +11,4 @@ from . import test_frontend_suite
 from . import test_routes_chat
 from . import test_routes_settings
 from . import test_terms_acceptance
+from . import test_tools
