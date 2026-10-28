@@ -3,6 +3,7 @@
 import json
 from unittest.mock import patch
 
+from odoo.exceptions import AccessError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
@@ -197,6 +198,45 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
         self.assertIn("a production instance", card)
         self.assertNotIn(self.production.name, card)
 
+    def test_dismissing_every_alert_asks_one_alert_does_not(self):
+        """Every alert the user sees may be production's: a card says so."""
+        Tools = self.env["incubacloud.assistant.tools"].with_user(self.consultant)
+        spec = self.env["incubacloud.mcp.catalog"]._spec("dismiss_alerts")
+        self.assertIn("production", Tools._extra_confirmation(spec, {"all": True}))
+        self.assertIsNone(Tools._extra_confirmation(spec, {}))
+
+    def test_a_project_or_instance_out_of_reach_is_never_described(self):
+        """Neither its name nor its repositories: the call fails before a card."""
+        outsider = self._cloud_user("asis-tools-b1", group="group_cloud_consultant")
+        self.project.sudo().with_context(skip_apply_requirements=True).repo_ids = [
+            (0, 0, {"url": "https://github.com/acme/secret-addons", "branch": "19.0"})
+        ]
+        Tools = self.env["incubacloud.assistant.tools"].with_user(outsider)
+        Confirm = self.env["incubacloud.mcp.confirm"].with_user(outsider)
+        Approval = self.env["incubacloud.mcp.approval"].sudo()
+        Catalog = self.env["incubacloud.mcp.catalog"]
+        before = Approval.search_count([])
+        for name, args, record in (
+            ("update_project", {"project_id": self.project.id}, self.project),
+            ("update_instance", {"instance_id": self.production.id}, self.production),
+        ):
+            spec = Catalog._spec(name)
+            args = {**args, "vals": {"repos": []}}
+            with self.subTest(name):
+                with self.assertRaises(AccessError) as caught:
+                    Tools._extra_confirmation(spec, args)
+                text = str(caught.exception)
+                self.assertNotIn(record.name, text)
+                self.assertNotIn("secret-addons", text)
+                with self.assertRaises(AccessError):
+                    Confirm._gate(spec, args, call_context(outsider.id, 43), {})
+        self.assertEqual(Approval.search_count([]), before)
+        missing = Tools._extra_confirmation(
+            Catalog._spec("update_project"),
+            {"project_id": 999_999_999, "vals": {"repos": []}},
+        )
+        self.assertIn("999999999", missing)
+
     def test_the_assistant_gets_a_card_bound_to_its_conversation(self):
         """A card, not a link; approved, used once by that conversation only.
 
@@ -222,6 +262,54 @@ class TestAssistantTools(AssistantMixin, TransactionCase):
             approval.invalidate_recordset()
             self.assertEqual(approval.state, "used")
             self.assertIn("assistant_confirmation", Confirm._gate(spec, args, ctx, {}))
+
+    def test_an_approval_never_covers_production_it_did_not_name(self):
+        """Approved for a server with a staging only; production came: a new card."""
+        host = self.env["cloud.host"].create(
+            {
+                "name": "asis-host-2",
+                "ip_address": "10.0.0.91",
+                "user": "root",
+                "wildcard_domain": "asis2.example.com",
+                "login_type": "password",
+                "password": "asis-host-2-password",
+            }
+        )
+        Instance = self.env["cloud.instance"]
+        Instance.create(
+            {
+                "name": "asis-host-2-staging",
+                "project_id": self.project.id,
+                "host_id": host.id,
+                "environment": "staging",
+            }
+        )
+        Confirm = self.env["incubacloud.mcp.confirm"].with_user(self.manager)
+        spec = self.env["incubacloud.mcp.catalog"]._spec("harden_host")
+        args = {"host_id": host.id}
+        ctx = call_context(self.manager.id, 44)
+        with self.enter_registry_test_mode():
+            stop = Confirm._gate(spec, args, ctx, {})
+            approval = self.env["incubacloud.mcp.approval"].browse(
+                stop["assistant_confirmation"]
+            )
+            self.assertTrue(approval._decide(True))
+            other = self.env["cloud.project"].create(
+                {"name": "Asis Other", "remote_folder": "asisother"}
+            )
+            production = Instance.create(
+                {
+                    "name": "asis-host-2-prod",
+                    "project_id": other.id,
+                    "host_id": host.id,
+                    "environment": "production",
+                }
+            )
+            again = Confirm._gate(spec, args, ctx, {})
+            self.assertIn("assistant_confirmation", again)
+            self.assertIn(production.name, again["message"])
+            approval.invalidate_recordset()
+            self.assertEqual(approval.state, "approved")
 
     def test_an_agent_outside_keeps_the_mcp_s_rules(self):
         """The assistant's own rules (production) never reach an external agent."""

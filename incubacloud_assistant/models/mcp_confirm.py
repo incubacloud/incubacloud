@@ -5,7 +5,8 @@ For a call of the assistant (its context names :data:`ASSISTANT_VERSION`,
 which no MCP client can: the version of a client's request is checked
 against the protocol's before any context exists) the answer is a card:
 the MCP's confirmation and the assistant's own rules, one approval bound to
-the user, the conversation, the tool and the arguments, ten minutes, once.
+the user, the conversation, the tool, the arguments and whether production
+is reached, ten minutes, once.
 The model has no tool that approves; the card is answered by the person's
 own request (``incubacloud.assistant.message._confirm_card``).
 """
@@ -46,7 +47,12 @@ class McpConfirm(models.AbstractModel):
         ]
         if not texts:
             return None
-        digest = fingerprint(spec.name, args)
+        # Bound to whether production is reached too: an approval given
+        # while it was not never covers the call once it is.
+        reaches = self.env["incubacloud.assistant.tools"]._acts_on_production(
+            spec, args
+        )
+        digest = fingerprint(spec.name, {"arguments": args, "production": reaches})
         Approval = self.env["incubacloud.mcp.approval"]
         approved = Approval._find_approved(spec.name, digest, ctx.principal.client)
         if approved and approved._consume("approved"):
