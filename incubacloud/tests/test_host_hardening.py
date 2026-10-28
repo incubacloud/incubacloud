@@ -476,8 +476,8 @@ class TestHardeningPreflight(TransactionCase):
     def _active_lines(rendered):
         """Rendered lines that are directives, not comments or blanks."""
         return [
-            l for l in rendered.splitlines()
-            if l.strip() and not l.strip().startswith("#")
+            line for line in rendered.splitlines()
+            if line.strip() and not line.strip().startswith("#")
         ]
 
     _CDN = {
