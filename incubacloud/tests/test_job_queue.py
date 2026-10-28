@@ -25,10 +25,15 @@ import re
 from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
+from psycopg2 import IntegrityError
+
 from odoo import fields, http
-from odoo.exceptions import AccessError, UserError
+from odoo.exceptions import AccessError, UserError, ValidationError
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase, new_test_user
+from odoo.tools import mute_logger
+
+from odoo.tools.misc import Callbacks
 
 from odoo.addons.queue_job.exception import JobError
 from odoo.addons.queue_job.job import Job as QueueJob
@@ -41,13 +46,15 @@ from ..models.abstract_executor import (
     AbstractExecutor,
 )
 from ..models.cloud_job import QUEUE_MAX_WAITING
+from ..models.delete_instance_executor import DeleteInstanceExecutor
 from ..models.instance_health_executor import InstanceHealthExecutor
 from ..models.move_cutover_executor import MoveCutoverExecutor
+from ..models.move_rollback_cleanup_executor import MoveRollbackCleanupExecutor
 from ..models.rebuild_instance_executor import RebuildInstanceExecutor
 from ..models.registry import executor_registry
 from ..models.restart_instance_executor import RestartInstanceExecutor
 from ..models.restore_instance_executor import RestoreInstanceExecutor
-from ..models.transport import SSHTransport
+from ..models.transport import CommandResult, SSHTransport
 from .test_cloud_job import _run_after_commit
 
 #: An id no job of the test's transaction has: what a fresh read returns
@@ -1261,6 +1268,50 @@ class TestCancellation(_QueueCase):
         self.assertEqual(restart.state, "pending")
         self.assertEqual(restart.host_id, other)
 
+    def test_a_waiting_job_aimed_at_its_host_keeps_it_when_the_instance_moves(self):
+        """The old copy's teardown after a move is aimed at the old host on
+        purpose: sent where the instance lives now, it removed the live
+        copy (28-oct-2026). A restart waiting beside it still follows the
+        instance."""
+        other = self.env["cloud.host"].create({
+            "name": "queue-host-3",
+            "ip_address": "10.0.0.84",
+            "user": "ubuntu",
+            "wildcard_domain": "queue3.example.com",
+        })
+        rebuild = self._job("rebuild_instance")
+        restart = self._enqueue("restart_instance")
+        teardown = self._enqueue("move_cleanup_source")
+        self.inst.host_id = other
+        rebuild.write({"state": "done"})
+        _run_after_commit(self.env)
+        self.assertEqual(restart.state, "pending")
+        self.assertEqual(restart.host_id, other)
+        self.assertEqual(teardown.state, "queued")
+        self._end(restart)
+        _run_after_commit(self.env)
+        self.assertEqual(teardown.state, "pending")
+        self.assertEqual(teardown.host_id, self.host)
+
+    def test_the_types_aimed_at_a_host_say_so(self):
+        """What tears down or reaches a copy on a host named on purpose (a
+        move's, an upload grant's) keeps that host; what acts on the
+        instance wherever it lives follows it."""
+        for code in (
+            "move_rollback_cleanup", "move_cleanup_source", "move_cutover",
+            "grant_restore_upload_key", "verify_restore_upload",
+            "revoke_restore_upload_key",
+        ):
+            with self.subTest(code=code):
+                self.assertTrue(self.Job._pinned_to_host(self._job(code)))
+        for code in (
+            "delete_instance", "restart_instance", "start_instance",
+            "stop_instance", "restore_instance", "deploy_instance",
+            "backup_download", "purge_archived_backups",
+        ):
+            with self.subTest(code=code):
+                self.assertFalse(self.Job._pinned_to_host(self._job(code)))
+
 
 class TestSweep(_QueueCase):
 
@@ -1741,6 +1792,276 @@ class TestMoves(_QueueCase):
     def test_a_cutover_that_fails_holds_the_queue(self):
         """The instance still lives on the source: the move did not happen."""
         self._assert_a_failure_before_the_cutover_holds_the_queue("move_cutover")
+
+    # ── The rollback tears down the target, never the source (28-oct-2026) ──
+
+    def _connections(self, job):
+        """Run *job* as the runner would, its SSH answered here.
+
+        :return: ``[(host, command)]``, every command the executor sent,
+            in order, with the host it connected to
+        """
+        ran = []
+        Host = type(self.env["cloud.host"])
+
+        @contextlib.asynccontextmanager
+        async def connect(host):
+            """A connection to *host* that records what it is sent and says 0."""
+            transport = MagicMock(spec=SSHTransport)
+
+            def answer(command, *_args, **_kwargs):
+                """Record *command* on *host*; answer as a command that worked."""
+                ran.append((host, command))
+                return CommandResult("", 0)
+
+            transport.execute.side_effect = answer
+            transport.run.side_effect = answer
+            yield transport
+
+        with patch.object(Host, "get_transport", autospec=True, side_effect=connect):
+            job.execute()
+        return ran
+
+    def _fail_the_move_at(self, code):
+        """Start the move, end its steps before *code*, fail *code* as the runner."""
+        chain = self._move_chain()
+        failing = chain.filtered(lambda job: job.job_type_id.code == code)
+        for step in chain[:list(chain).index(failing)]:
+            self._end(step)
+        self._fail_as_the_runner(failing)
+
+    def _assert_the_rollback_spares_the_source(self):
+        """Serve the rollback the move left queued and run its teardown.
+
+        The start goes to the source and the teardown to the target, and
+        nothing reaches the source but the start.
+        """
+        start, cleanup = self._rollback_jobs()
+        self.assertEqual(start.job_type_id.code, "start_instance")
+        _run_after_commit(self.env)
+        self.assertEqual((start.state, start.host_id), ("pending", self.host))
+        self._end(start)
+        _run_after_commit(self.env)
+        self.assertEqual(cleanup.state, "pending")
+        self.assertEqual(cleanup.host_id, self.target)
+        ran = self._connections(cleanup)
+        self.assertEqual({host for host, _command in ran}, {self.target})
+        commands = [command for _host, command in ran]
+        self.assertTrue(any(
+            "compose_op.sh" in command and command.endswith(" down")
+            for command in commands
+        ), commands)
+        self.assertIn(
+            'rm -rf "$HOME"/' + self.inst.get_remote_dir().removeprefix("~/"),
+            commands,
+        )
+        self.assertEqual(self.inst.host_id, self.host)
+        self.assertFalse(self.inst.move_origin_host_id)
+
+    def test_a_rollback_tears_down_the_target_and_never_the_source(self):
+        """Its cleanup waited in the instance's queue aimed at the target,
+        and the dispatcher sent it where the instance lived: the source,
+        whose copy it removed (instance 2807, 28-oct-2026)."""
+        self._fail_the_move_at("restore_instance")
+        result = self.inst.rollback_move()
+        self.assertEqual(result["job_id"], self._rollback_jobs()[1].id)
+        self._assert_the_rollback_spares_the_source()
+
+    def test_the_watchdog_tears_down_the_target_and_never_the_source(self):
+        """The stuck-move watchdog queues the same rollback every five minutes."""
+        self._fail_the_move_at("restore_instance")
+        self.env["cloud.instance"].cron_recover_stuck_moves()
+        self._assert_the_rollback_spares_the_source()
+
+    def test_the_retry_of_a_source_cleanup_after_the_cutover_stays_on_the_source(self):
+        """Sent where the instance lives now, it would remove the live copy."""
+        self.inst.host_id = self.target
+        cleanup, _alert = self._failed_with_alert("move_cleanup_source")
+        self.assertEqual(cleanup.host_id, self.host)
+        retry = self.Job.browse(cleanup.retry_job())
+        _run_after_commit(self.env)
+        self.assertEqual(retry.state, "pending")
+        self.assertEqual(retry.host_id, self.host)
+
+    def _end_the_move(self):
+        """Clear the markers, as the cutover's success or a finished rollback does."""
+        self.inst.write({
+            "move_origin_host_id": False,
+            "move_target_host_id": False,
+            "move_chain_job_ids": False,
+            "move_rollback_in_progress": False,
+        })
+
+    def test_the_retry_of_a_move_step_is_refused_once_the_move_ended(self):
+        """A generic step retried alone follows the instance: a restore would
+        restore the source from its own dump, a stop would stop its odoo."""
+        self._fail_the_move_at("restore_instance")
+        failed = self.inst._get_move_chain_jobs().filtered(
+            lambda job: job.job_type_id.code == "restore_instance",
+        )
+        self.assertEqual(failed.state, "failed")
+        self._end_the_move()
+        with self.assertRaisesRegex(UserError, "no longer in progress"):
+            failed.retry_job()
+        self.assertFalse(self.Job.search([("retry_of_id", "=", failed.id)]))
+
+    def test_the_retry_of_a_move_step_is_refused_after_a_rollback(self):
+        """The same once the rollback cleared the markers."""
+        chain = self._move_chain()
+        # The destination's odoo is stopped first, then the source's.
+        stops = chain.filtered(lambda job: job.job_type_id.code == "stop_instance")
+        failed = stops[0]
+        for step in chain[:list(chain).index(failed)]:
+            self._end(step)
+        self._fail_as_the_runner(failed)
+        self.assertEqual(failed.state, "failed")
+        self.assertEqual(failed.host_id, self.target)
+        self.inst.rollback_move()
+        self._end_the_move()
+        with self.assertRaisesRegex(UserError, "no longer in progress"):
+            failed.retry_job()
+
+    def test_the_retry_of_a_retry_of_a_move_step_is_refused_too(self):
+        """A retry is a lone job: the move it came from is looked up through
+        what it retries."""
+        self._fail_the_move_at("restore_instance")
+        failed = self.inst._get_move_chain_jobs().filtered(
+            lambda job: job.job_type_id.code == "restore_instance",
+        )
+        # A retry from before Retry was refused while the move went on.
+        retry = self._job(
+            "restore_instance", state="failed", host=failed.host_id,
+            retry_of_id=failed.id, payload=failed.payload,
+        )
+        self._end_the_move()
+        with self.assertRaisesRegex(UserError, "no longer in progress"):
+            retry.retry_job()
+
+    def test_the_retry_of_a_step_of_a_move_queued_the_old_way_is_refused(self):
+        """Before 23-oct-2026 a chain had no ``queue_chain_key``: it was a
+        queue_job graph, known by ``graph_uuid``. Its steps are still moves:
+        a stop retried alone would stop the odoo of the host the instance
+        lives on."""
+        chain = self._move_chain()
+        failed = chain.filtered(
+            lambda job: job.job_type_id.code == "stop_instance",
+        )[0]
+        for step in chain[:list(chain).index(failed)]:
+            self._end(step)
+        self._fail_as_the_runner(failed)
+        self.assertEqual(failed.state, "failed")
+        self.assertTrue(failed.queue_job_id.graph_uuid)
+        chain.write({"queue_chain_key": False})
+        self.assertTrue(self.Job._is_a_move_step(failed))
+        self._end_the_move()
+        with self.assertRaisesRegex(UserError, "no longer in progress"):
+            failed.retry_job()
+        self.assertFalse(self.Job.search([("retry_of_id", "=", failed.id)]))
+
+    def test_a_job_with_neither_chain_key_nor_graph_is_not_a_move_step(self):
+        """The normal retry stays as it was."""
+        lone = self._job("restore_instance", state="failed", host=self.host)
+        self.assertFalse(lone.queue_chain_key)
+        self.assertFalse(self.Job._is_a_move_step(lone))
+
+    def test_the_retry_of_a_step_of_an_earlier_move_is_refused_in_a_new_one(self):
+        """Only the steps of the move under way may be retried."""
+        self._fail_the_move_at("restore_instance")
+        old = self.inst._get_move_chain_jobs().filtered(
+            lambda job: job.job_type_id.code == "restore_instance",
+        )
+        self._end_the_move()
+        self.inst.move_to_host(self.target)
+        self.assertTrue(self.inst.move_origin_host_id)
+        with self.assertRaisesRegex(UserError, "no longer in progress"):
+            old.retry_job()
+
+    def _assert_the_retry_is_refused_while_the_move_goes_on(self, failed):
+        """Retry of *failed* is refused, and no retry is queued.
+
+        :param failed: a failed step of the move under way, or being
+            rolled back
+        """
+        with self.assertRaisesRegex(UserError, "Roll back move"):
+            failed.retry_job()
+        self.assertFalse(self.Job.search([("retry_of_id", "=", failed.id)]))
+
+    def test_the_retry_of_a_move_step_is_refused_while_the_move_goes_on(self):
+        """Its retry is a lone job: it followed the instance to the source,
+        where a restore aimed at the target restored the dump over the only
+        live copy. The steps after it ended «Not run»: run alone, it does
+        not resume the move."""
+        self._fail_the_move_at("restore_instance")
+        failed = self.inst._get_move_chain_jobs().filtered(
+            lambda job: job.job_type_id.code == "restore_instance",
+        )
+        self.assertEqual(failed.host_id, self.target)
+        self._assert_the_retry_is_refused_while_the_move_goes_on(failed)
+
+    def _assert_the_retry_is_refused_during_the_rollback(self, code):
+        """Fail the move at its *code* step, roll it back, and retry the step.
+
+        The source is started again and takes writes: a retried stop aimed
+        at the target would stop it, a restore would overwrite it.
+        """
+        self._fail_the_move_at(code)
+        failed = self.inst._get_move_chain_jobs().filtered(
+            lambda job: job.job_type_id.code == code,
+        )
+        self.inst.rollback_move()
+        self.assertTrue(self.inst.move_rollback_in_progress)
+        self._assert_the_retry_is_refused_while_the_move_goes_on(failed)
+
+    def test_the_retry_of_a_restore_is_refused_during_the_rollback(self):
+        """The restore aimed at the target, sent to the live source."""
+        self._assert_the_retry_is_refused_during_the_rollback("restore_instance")
+
+    def test_the_retry_of_a_cutover_is_refused_during_the_rollback(self):
+        """A step aimed at its host on purpose is refused too: the
+        rollback is what runs now."""
+        self._assert_the_retry_is_refused_during_the_rollback("move_cutover")
+
+    def test_a_retried_move_step_keeps_its_host(self):
+        """Should a retry of a move's step ever be queued — a retry of a
+        retry included — it runs where the step was asked for, never where
+        the instance lives."""
+        self._fail_the_move_at("restore_instance")
+        failed = self.inst._get_move_chain_jobs().filtered(
+            lambda job: job.job_type_id.code == "restore_instance",
+        )
+        self._job_failed_alert(failed).write({"state": "dismissed"})
+        retry = self._job(
+            "restore_instance", state="failed", host=failed.host_id,
+            retry_of_id=failed.id, payload=failed.payload,
+        )
+        again = self._job(
+            "restore_instance", state="queued", host=failed.host_id,
+            retry_of_id=retry.id, payload=failed.payload, queue_head=True,
+        )
+        self.assertEqual(self.inst.host_id, self.host)
+        self.Job._dispatch_next(self.inst.id, None)
+        self.assertEqual((again.state, again.host_id), ("pending", self.target))
+
+    def test_the_retry_of_jobs_outside_a_move_is_unchanged(self):
+        """A lone restore, or a step of another chain, retried on an instance
+        that moved before, runs as it always did."""
+        self._fail_the_move_at("restore_instance")
+        self._end_the_move()
+        lone, _alert = self._failed_with_alert("restore_instance")
+        retry = self.Job.browse(lone.retry_job())
+        self.assertEqual(retry.retry_of_id, lone)
+        self.assertEqual(retry.state, "queued")
+        other = self._instance("queue-other")
+        first, second = self.Job.browse(self.Job.enqueue_chain([
+            {"host_id": self.host.id, "instance_id": other.id,
+             "job_type_code": "stop_instance"},
+            {"host_id": self.host.id, "instance_id": other.id,
+             "job_type_code": "start_instance"},
+        ]))
+        self._fail_as_the_runner(first)
+        self.assertEqual(first.state, "failed")
+        again = self.Job.browse(first.retry_job())
+        self.assertEqual(again.retry_of_id, first)
 
 
 class TestTheStoredName(_QueueCase):

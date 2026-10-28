@@ -254,8 +254,22 @@ class TestTeardownsShareTheHostLock(_HostLockBase):
             MoveRollbackCleanupExecutor,
         )
 
-        executor = self._delete_executor(MoveRollbackCleanupExecutor)
-        cr = self._hold_lock(self.host.id)
+        # It runs on the target of a move being rolled back, and only there.
+        target = self.env['cloud.host'].create({
+            'name': 'Build Lock Target',
+            'ip_address': '10.0.0.22',
+            'user': 'ubuntu',
+            'wildcard_domain': 'buildlock-target.example.com',
+        })
+        self.instance.write({
+            'move_origin_host_id': self.host.id,
+            'move_target_host_id': target.id,
+            'move_chain_job_ids': '1',
+            'move_rollback_in_progress': True,
+        })
+        executor = self._delete_executor(MoveRollbackCleanupExecutor, host=target)
+        executor.job.payload = {'move_rollback': True, 'move_chain_job_ids': '1'}
+        cr = self._hold_lock(target.id)
         try:
             executor.pre_run_checks()  # must not raise
         finally:
@@ -267,6 +281,13 @@ class TestTeardownsShareTheHostLock(_HostLockBase):
         nothing, so it contends like any other teardown."""
         from ..models.move_cutover_executor import MoveCleanupSourceExecutor
 
+        # The instance moved away: the old copy is the one it removes.
+        self.instance.host_id = self.env['cloud.host'].create({
+            'name': 'Build Lock New Host',
+            'ip_address': '10.0.0.23',
+            'user': 'ubuntu',
+            'wildcard_domain': 'buildlock-new.example.com',
+        })
         executor = self._delete_executor(MoveCleanupSourceExecutor)
         cr = self._hold_lock(self.host.id)
         try:

@@ -1703,8 +1703,10 @@ class CloudJob(models.Model):
         meant for archived instances (``_runs_on_archived``), is cancelled
         with a note and the next one is looked at; a lone job goes where its
         instance is now, so a move between queueing and dispatch is
-        followed (the steps of a chain keep the hosts they were given:
-        a move's steps name both hosts on purpose). A chain that waits
+        followed, unless its type runs on the host it was asked for
+        (``_pinned_to_host``: a move's teardowns and cutover, an upload
+        grant's jobs) or it retries a step of a move. The steps of a chain keep the hosts they were
+        given: a move's steps name both hosts on purpose. A chain that waits
         in other queues too starts only when it is first in all of them
         and every target is free; until then this queue waits for it.
 
@@ -1761,7 +1763,15 @@ class CloudJob(models.Model):
             return "cancelled"
         if len(entry) == 1 and not entry.queue_chain_key:
             inst = entry.instance_id
-            if inst and inst.host_id and entry.host_id != inst.host_id:
+            if (
+                inst and inst.host_id and entry.host_id != inst.host_id
+                and not self._pinned_to_host(entry)
+                # A retry of a move's step keeps the host the step was
+                # given, as the step did in its chain. Retry refuses them
+                # (``_check_retry_of_a_move_step``); this holds whatever
+                # queued one.
+                and not self._is_a_move_step(entry._retry_root())
+            ):
                 entry.host_id = inst.host_id
             return "start"
         chain_key = entry[:1].queue_chain_key
@@ -1786,6 +1796,21 @@ class CloudJob(models.Model):
         """
         executor_cls = executor_registry.get(job.job_type_id.code)
         return bool(getattr(executor_cls, "_runs_on_archived_instance", False))
+
+    @api.model
+    def _pinned_to_host(self, job):
+        """Whether *job* runs on the host it was asked for.
+
+        A lone job waiting in its queue goes, when it starts, where its
+        instance lives then (``_entry_verdict``); such a job does not, nor
+        does its retry, which copies its host (``retry_job``). Declared by
+        the executor (``AbstractExecutor._pinned_to_host``).
+
+        :param job: a ``cloud.job`` record
+        :rtype: bool
+        """
+        executor_cls = executor_registry.get(job.job_type_id.code)
+        return bool(getattr(executor_cls, "_pinned_to_host", False))
 
     @api.model
     def _dispatch_entry(self, entry):
@@ -2997,6 +3022,93 @@ class CloudJob(models.Model):
             self.sudo().write({"state": "cancelled"})
         else:
             self.queue_job_id.button_cancelled()
+    def _retry_root(self):
+        """Return the job this one retries first, following its retries back.
+
+        A retry is a lone job: the chain it came from is known only
+        through what it retries.
+
+        :return: the ``cloud.job`` at the start of the line of retries,
+            with ``sudo`` (this job itself when it retries nothing)
+        """
+        self.ensure_one()
+        job = self.sudo()
+        seen = set()
+        while job.retry_of_id and job.id not in seen:
+            seen.add(job.id)
+            job = job.retry_of_id
+        return job
+
+    @api.model
+    def _is_a_move_step(self, job):
+        """Whether *job* is a step of a move's chain: one with a cutover.
+
+        A chain is known by ``queue_chain_key``. The steps queued before
+        23-oct-2026 have none: they were a queue_job graph, known by the
+        ``graph_uuid`` of their queue.job, and are looked up through that.
+
+        :param job: a ``cloud.job`` record, the first of its retries
+            (``_retry_root``)
+        :rtype: bool
+        """
+        job = job.sudo()
+        if job.queue_chain_key:
+            return bool(job.search_count([
+                ("queue_chain_key", "=", job.queue_chain_key),
+                ("job_type_id.code", "=", "move_cutover"),
+            ]))
+        graph = job.queue_job_id.graph_uuid
+        if not graph:
+            return False
+        return bool(job.search_count([
+            ("queue_job_id.graph_uuid", "=", graph),
+            ("job_type_id.code", "=", "move_cutover"),
+        ]))
+
+    def _check_retry_of_a_move_step(self):
+        """Refuse the retry of a step of a move, unless nothing can go wrong.
+
+        A retry is a lone job and follows its instance (``_entry_verdict``).
+        A generic step of a move's chain (a restore, a stop) retried once
+        the move ended or was rolled back would act on the host the
+        instance lives on then: restore it from its own dump, stop its
+        odoo. Retried while the move goes on or is being rolled back, a
+        step aimed at the target went to the source, by then the only
+        live copy, and the steps after it had ended «Not run»: it does not
+        resume the move either. The chain of the move is known by its
+        cutover; the move under way, by the markers on the instance, whose
+        chain lists the step. A retry is looked up through what it
+        retries. Only a step aimed at its host on purpose
+        (``_pinned_to_host``: the teardown of the old copy) is retried,
+        once no move of the instance is under way, and on that host.
+
+        :raises UserError: the job is a step of a move that is no longer
+            in progress, or a move of the instance is in progress or
+            being rolled back
+        """
+        self.ensure_one()
+        job = self._retry_root()
+        if not self._is_a_move_step(job):
+            return
+        inst = job.instance_id
+        current = bool(inst.move_origin_host_id) and str(job.id) in (
+            inst.move_chain_job_ids or ""
+        ).split(",")
+        if not current and not self._pinned_to_host(self):
+            raise UserError(_(
+                "This job belongs to a move that is no longer in progress, so "
+                "it cannot be retried: it would act on the wrong host. If you "
+                "still need the move, start it again."
+            ))
+        if inst.move_origin_host_id or inst.move_rollback_in_progress:
+            raise UserError(_(
+                "A move of this instance is in progress or being rolled back, "
+                "so a step of a move cannot be retried now: run alone, it "
+                "would act on the wrong host, and the steps after it would "
+                "not run. Let the rollback finish, or use “Roll back move” if "
+                "the move failed; then start the move again if you still "
+                "need it."
+            ))
 
     def retry_job(self):
         self.ensure_one()
@@ -3017,6 +3129,7 @@ class CloudJob(models.Model):
             self.job_type_id.code,
             self.instance_id.id if self.instance_id else None,
         )
+        self._check_retry_of_a_move_step()
         scope = self._scope_of()
         self._lock_scopes({scope})
         # In this snapshot, or committed since by another request: two

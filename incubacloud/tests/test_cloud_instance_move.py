@@ -15,6 +15,12 @@ from unittest.mock import MagicMock, patch
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.queue_job.exception import JobError
+
+from ..models.abstract_executor import JobRefused
+from ..models.registry import executor_registry
+from ..models.transport import SSHTransport
+
 
 class TestInstanceMove(TransactionCase):
 
@@ -505,6 +511,184 @@ class TestInstanceMove(TransactionCase):
             ]),
             0,
         )
+
+    # ── The move's own jobs refuse a host that is not theirs ───────────
+
+    def _executor(self, code, host, payload=None):
+        """The executor the runner builds for a *code* job on *host*.
+
+        :param payload: the job's payload, if any
+        """
+        job = self.env['cloud.job'].create({
+            'host_id': host.id,
+            'instance_id': self.inst.id,
+            'job_type_id': self.env['cloud.job.type'].search(
+                [('code', '=', code)], limit=1,
+            ).id,
+            'name': code,
+            'payload': payload or False,
+        })
+        return executor_registry.get(code)(job, host)
+
+    def _rollback_cleanup(self, host, chain='1,2,3'):
+        """The executor of a rollback's cleanup on *host*, queued for *chain*.
+
+        :param chain: the ``move_chain_job_ids`` of the move it rolled back
+        """
+        return self._executor('move_rollback_cleanup', host, payload={
+            'move_rollback': True, 'move_chain_job_ids': chain,
+        })
+
+    def _rolling_back(self, chain='1,2,3'):
+        """Mark the instance as rolling back its move of *chain* to the target."""
+        self.inst.write({
+            'move_origin_host_id': self.source.id,
+            'move_target_host_id': self.target.id,
+            'move_chain_job_ids': chain,
+            'move_rollback_in_progress': True,
+        })
+
+    def _third_host(self):
+        """A host the move has nothing to do with."""
+        return self.env['cloud.host'].create({
+            'name': 'other', 'ip_address': '10.0.0.3', 'port': 22,
+            'user': 'root', 'login_type': 'ssh_key',
+            'wildcard_domain': 'other.example.com',
+        })
+
+    def test_the_rollback_cleanup_runs_on_the_moves_target_alone(self):
+        """On the source it removed the live copy (28-oct-2026)."""
+        self._rolling_back()
+        self._rollback_cleanup(self.target).pre_run_checks()
+        for host in (self.source, self._third_host()):
+            with self.subTest(host=host.name), self.assertRaises(JobRefused):
+                self._rollback_cleanup(host).pre_run_checks()
+
+    def test_the_rollback_cleanup_refuses_without_a_rollback_in_progress(self):
+        """A failed cleanup retried later, with the markers of a new move to
+        the same target set: it would wait for that move, then remove its
+        copy and its markers."""
+        self.inst.write({
+            'move_origin_host_id': self.source.id,
+            'move_target_host_id': self.target.id,
+            'move_chain_job_ids': '1,2,3',
+        })
+        with self.assertRaisesRegex(JobRefused, 'no rollback'):
+            self._rollback_cleanup(self.target).pre_run_checks()
+
+    def test_the_rollback_cleanup_of_an_earlier_rollback_is_refused(self):
+        """Only the cleanup the rollback under way queued removes its target."""
+        self._rolling_back(chain='4,5,6')
+        with self.assertRaisesRegex(JobRefused, 'earlier rollback'):
+            self._rollback_cleanup(self.target, chain='1,2,3').pre_run_checks()
+        with self.assertRaisesRegex(JobRefused, 'earlier rollback'):
+            self._executor(
+                'move_rollback_cleanup', self.target,
+                payload={'move_rollback': True},
+            ).pre_run_checks()
+        self._rollback_cleanup(self.target, chain='4,5,6').pre_run_checks()
+
+    def test_the_rollback_cleanup_reads_the_markers_again_after_its_wait(self):
+        """Waited out, it went on «anyway»: by then the rollback may have
+        ended and a new move begun."""
+        self.registry_enter_test_mode()
+        self._rolling_back()
+        executor = self._rollback_cleanup(self.target)
+        executor.pre_run_checks()
+        self.inst.move_rollback_in_progress = False
+        executor.MOVE_CHAIN_TERMINAL_TIMEOUT = 0
+        # What the cleanup reads on a cursor of its own is in the database.
+        self.env.flush_all()
+        transport = MagicMock(spec=SSHTransport)
+        with self.assertRaisesRegex(JobRefused, 'no rollback'):
+            asyncio.run(executor.before_execute(transport))
+
+    def test_the_rollback_cleanup_refuses_once_the_move_is_over(self):
+        """Cut over, the target is where the instance lives; undone, the
+        markers that named it are gone."""
+        self.inst.write({
+            'host_id': self.target.id,
+            'move_origin_host_id': self.source.id,
+            'move_target_host_id': self.target.id,
+        })
+        with self.assertRaises(JobRefused):
+            self._executor('move_rollback_cleanup', self.target).pre_run_checks()
+        self.inst.write({
+            'host_id': self.source.id,
+            'move_origin_host_id': False,
+            'move_target_host_id': False,
+        })
+        with self.assertRaises(JobRefused):
+            self._executor('move_rollback_cleanup', self.target).pre_run_checks()
+
+    def test_a_refused_rollback_cleanup_reaches_no_host(self):
+        """Refused before it connects: nothing at all runs on the source."""
+        # The refusal is logged on cursors of their own, riding on the
+        # test's transaction only in this mode.
+        self.registry_enter_test_mode()
+        self.inst.write({
+            'move_origin_host_id': self.source.id,
+            'move_target_host_id': self.target.id,
+            'move_rollback_in_progress': True,
+        })
+        job = self._executor('move_rollback_cleanup', self.source).job
+        Host = type(self.env['cloud.host'])
+        with patch.object(Host, 'get_transport', autospec=True) as connect, \
+                self.assertRaises(JobError):
+            job.execute()
+        connect.assert_not_called()
+        self.assertTrue(self.inst.move_origin_host_id)
+
+    def test_the_source_cleanup_never_runs_where_the_instance_lives(self):
+        """Before the cutover the source is still the instance's host;
+        after it, the old source is the one to clean and the new host is
+        not."""
+        self.inst.write({
+            'move_origin_host_id': self.source.id,
+            'move_target_host_id': self.target.id,
+        })
+        with self.assertRaises(JobRefused):
+            self._executor('move_cleanup_source', self.source).pre_run_checks()
+        self.inst.write({
+            'host_id': self.target.id,
+            'move_origin_host_id': False,
+            'move_target_host_id': False,
+        })
+        self._executor('move_cleanup_source', self.source).pre_run_checks()
+        with self.assertRaises(JobRefused):
+            self._executor('move_cleanup_source', self.target).pre_run_checks()
+
+    def test_the_source_cleanup_spares_the_host_a_new_move_goes_to(self):
+        """Moved away and now moving back: the old cleanup's host is the
+        new move's target, being built."""
+        self.inst.write({
+            'host_id': self.target.id,
+            'move_origin_host_id': self.target.id,
+            'move_target_host_id': self.source.id,
+        })
+        with self.assertRaises(JobRefused):
+            self._executor('move_cleanup_source', self.source).pre_run_checks()
+
+    def test_the_cutover_belongs_to_the_move_in_progress(self):
+        """Retried once the move was undone, it handed the instance to a
+        copy of the data taken before the rollback."""
+        self.inst.write({
+            'move_origin_host_id': self.source.id,
+            'move_target_host_id': self.target.id,
+        })
+        self._executor('move_cutover', self.target).pre_run_checks()
+        with self.assertRaises(JobRefused):
+            self._executor('move_cutover', self._third_host()).pre_run_checks()
+        self.inst.move_rollback_in_progress = True
+        with self.assertRaises(JobRefused):
+            self._executor('move_cutover', self.target).pre_run_checks()
+        self.inst.write({
+            'move_origin_host_id': False,
+            'move_target_host_id': False,
+            'move_rollback_in_progress': False,
+        })
+        with self.assertRaises(JobRefused):
+            self._executor('move_cutover', self.target).pre_run_checks()
 
     def test_cron_move_stuck_alert_only_when_no_rollback_in_progress(self):
         """move_stuck alert is only created when the cron triggers

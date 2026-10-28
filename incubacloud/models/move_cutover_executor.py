@@ -1,4 +1,4 @@
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import AbstractSSHExecutor, JobRefused
 from .delete_instance_executor import DeleteInstanceExecutor
 
 
@@ -21,8 +21,36 @@ class MoveCutoverExecutor(AbstractSSHExecutor):
     # the cutover (and aborting the whole move) on the first one.
     _retry_on_connection_loss = True
 
+    # The move's target, named on purpose: a retry sent where the
+    # instance lives would check the source and cut over to it.
+    _pinned_to_host = True
+
     def _inst(self):
         return self.job.instance_id
+
+    def pre_run_checks(self):
+        """Refuse a cutover that no longer belongs to a move in progress.
+
+        It hands the instance to the copy on the job's host. Only the
+        target of the move under way may have it — or the host it lives
+        on already, for a run that queue_job repeats after its success.
+        Being rolled back, or once undone, the move is over: a retry of
+        its cutover would hand the instance to a copy of the data taken
+        before the rollback.
+
+        :raises JobRefused: when the move it belongs to is over
+        """
+        inst = self._inst()
+        host = self.job.host_id
+        if inst and inst.move_rollback_in_progress:
+            raise JobRefused(
+                "Refused: the move this cutover belongs to is being rolled back."
+            )
+        if inst and host != inst.host_id and host != inst.move_target_host_id:
+            raise JobRefused(
+                f"Refused: no move of this instance to {host.name} is in progress."
+            )
+        super().pre_run_checks()
 
     def get_commands(self):
         inst = self._inst()
@@ -125,6 +153,35 @@ class MoveCleanupSourceExecutor(DeleteInstanceExecutor):
     # touches the abandoned copy only, so it must not move the record's
     # lifecycle state.
     _owns_instance_lifecycle = False
+
+    # The old host, named on purpose: a retry sent where the instance
+    # lives now would remove the live copy.
+    _pinned_to_host = True
+
+    def pre_run_checks(self):
+        """Refuse the host the instance lives on, or the one it moves to.
+
+        Before the teardown's own checks and before connecting: a refused
+        cleanup reaches no host. Before the cutover the source is still
+        the instance's host; once moved back, the old source may be the
+        target of the new move, being built.
+
+        :raises JobRefused: when the job's host holds a copy in use
+        """
+        inst = self._inst()
+        host = self.job.host_id
+        if inst and host == inst.host_id:
+            raise JobRefused(
+                f"Refused: the instance lives on {host.name}. This cleanup "
+                "only removes the copy a finished move left on its old host."
+            )
+        if inst and host == inst.move_target_host_id:
+            raise JobRefused(
+                f"Refused: the instance is moving to {host.name}. This "
+                "cleanup only removes the copy a finished move left on its "
+                "old host."
+            )
+        super().pre_run_checks()
 
     async def on_success(self, results):
         self._sys("✓ Old host copy removed after move.")
