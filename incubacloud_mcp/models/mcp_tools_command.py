@@ -312,11 +312,12 @@ class McpToolsCommand(models.AbstractModel):
         # command started, the server could not be reached in time (the
         # connection's or the login's own timeout). Anything else answers
         # {'ok': False}: the command may have run, and its audit row,
-        # already committed, says so.
+        # already committed, says so. Both names: before Python 3.11,
+        # asyncio's timeout is not the socket's (ETIMEDOUT).
         try:
             exit_code = run_async(_run())
             timed_out = exit_code in _TIMED_OUT
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             if not started:
                 return {
                     "ok": False,
