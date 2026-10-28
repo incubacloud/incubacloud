@@ -1,16 +1,10 @@
 name: Docs
 
+# Run by hand only, until 1.0.200 is deployed: the guide describes that
+# release (Agency's own server, prices without VAT), and a push to 19.0
+# published it at docs.incubacloud.io before production ran it. Put the
+# push trigger back on deploy day.
 on:
-  push:
-    branches: ["19.0"]
-    paths:
-      - "docs/user/**"
-      - ".github/workflows/docs.yml"
-  pull_request:
-    branches: ["19.0"]
-    paths:
-      - "docs/user/**"
-      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 # CN-010: Deny all permissions by default; grant per-job.
@@ -51,7 +45,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/19.0'
+    if: github.ref == 'refs/heads/19.0'
     runs-on: ubuntu-latest
     permissions:
       contents: write
