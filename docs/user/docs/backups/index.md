@@ -29,11 +29,11 @@ A manual backup of a production instance runs the same job as the nightly one,
 into the same bucket, and expires under the same rules.
 
 !!! info "IncubaCloud SaaS: the backup days in your plan"
-    The backup days in your [plan](../billing/index.md#plans) — 7 on Starter, 14
-    on Professional, 30 on Business, none on Free — are for the backups we take
-    of your **control plane**, the panel at `<subdomain>.incubacloud.io`. They do
-    not change how long your instances' backups are kept: that is always the
-    retention of their backend.
+    The backup days in your [plan](../billing/index.md#plans) — 7 on Starter,
+    30 on Professional, Business and Agency, none on Free — are for the backups
+    we take of your **control plane**, the panel at
+    `<subdomain>.incubacloud.io`. They do not change how long your instances'
+    backups are kept: that is always the retention of their backend.
 
 ## What happens to backups when an instance ends
 

@@ -10,14 +10,15 @@ and reaching your own IncubaCloud control plane.
 ## 1. Pick a plan
 
 Open [the pricing page](https://www.incubacloud.io/pricing) and click the button on
-the plan that matches your stage. There are four:
+the plan that matches your stage. There are five:
 
 | Plan | Best for | What you get |
 | --- | --- | --- |
 | **Free** | Looking around | 1 host, 1 instance; the control plane sleeps when idle and has no automatic backups |
 | **Starter** | Freelancers & solo devs | 3 hosts, 5 instances, 7-day control plane backups |
-| **Professional** | Small businesses | 10 hosts, 20 instances, 14-day control plane backups |
-| **Business** | Agencies & mid-size companies | 25 hosts, 50 instances, 30-day control plane backups |
+| **Professional** | Small businesses | 10 hosts, 20 instances, 30-day control plane backups |
+| **Business** | Mid-size companies & growing teams | 25 hosts, 50 instances, 30-day control plane backups |
+| **Agency** | Agencies running Odoo for many clients | 100 hosts, 150 instances, 30-day control plane backups, its own server for your control plane (ready within 1 business day) |
 
 The backup days are for the backups we take of your control plane. Your
 instances' backups go to the backup backend you set up, and keep its retention —

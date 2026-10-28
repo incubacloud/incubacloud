@@ -64,8 +64,10 @@ not need to have a key of your own:
 
 1. Click **Give me an upload key**. We generate a key pair, install the public
    half on the host, and show you the private half **once**.
-2. Copy the command shown and run it. It writes the key with private
-   permissions, sends your file, and removes the key afterwards.
+2. Copy the command shown, put your file's name in place of
+   `<your-backup.zip>` and run it. It writes the key with private
+   permissions, sends your file as `restore.zip`, and removes the key
+   afterwards.
 3. Click **Check what arrived**. The host reports the name, the size and the
    SHA-256 of the file it actually received — check it is yours.
 4. Click **Import**.
@@ -113,8 +115,9 @@ For in-place restore:
     restore there.
 
 ??? note "The upload key expired before I finished"
-    Ask for another one — they are single-use and cost nothing. If the previous
-    upload got part of the way, the command resumes rather than starting over.
+    Ask for another one — they are single-use and cost nothing. Each key writes
+    into a directory of its own, so the new command starts the upload from the
+    beginning: what the previous key got across is not reused.
 
 ??? note "The link was refused"
     We only fetch from `https`, `sftp` and `ftp`, and only from an address that

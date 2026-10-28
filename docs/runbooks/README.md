@@ -35,6 +35,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-22](RB-22-rotate-smtp-relay-credential.md) | Rotate the SMTP relay credential | critical | The shared `notifications@` password leaked, or scheduled rotation |
 | [RB-23](RB-23-continuous-recovery.md) | Continuous recovery: alerts, a stuck restore, a moved instance | critical | `pitr_failing`, `pitr_archive_lagging`, `pitr_base_missing`; a restore that never ended |
 | [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
+| [RB-26](RB-26-agency-own-server.md) | Agency: its own server | planned | A tenant signs up for or changes to Agency; an Agency tenant downgrades or is deleted |
 
 ## Conventions
 
