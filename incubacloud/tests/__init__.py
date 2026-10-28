@@ -208,3 +208,4 @@ from . import test_host_posture
 from . import test_hardening_failure_alert
 from . import test_private_staging
 from . import test_direct_host_fields
+from . import test_direct_allowlist
