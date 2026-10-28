@@ -27,6 +27,11 @@
     # Where access logs are pushed. Empty disables collection entirely
     # rather than starting a collector that pushes into the void.
     ic_logs_write_url: ""
+    # The direct path (plan-trafico-interno-directo), when the panel offers
+    # it: the URLs and what to try first. Empty: the URLs above, as before.
+    ic_direct_write_url: ""
+    ic_direct_logs_write_url: ""
+    ic_direct_probes: []
     ic_remote_write_token: ""
     # User half of the credential, and the account this panel writes as.
     # The central overwrites the label from whoever authenticates, so
@@ -69,6 +74,50 @@
     - name: Note whether the Traefik scrape applies
       ansible.builtin.set_fact:
         ic_has_traefik: "{{ ic_traefik_net.rc == 0 }}"
+
+    - name: Try the direct path from this host
+      # The central's probe runs from the central's host and cannot see
+      # this host's way out: a customer's server that blocks the port, or
+      # a firewall in between, is only seen from here. Each check is what
+      # the panel expects without a credential (vmauth's 401, a JWKS's
+      # 200), with the system's roots: a certificate nobody trusts fails.
+      ansible.builtin.uri:
+        url: "{{ item.url }}"
+        method: "{{ item.method }}"
+        status_code: ["{{ item.status }}"]
+        validate_certs: true
+        timeout: 10
+      loop: "{{ ic_direct_probes }}"
+      register: ic_direct_tries
+      failed_when: false
+      changed_when: false
+      when: ic_direct_write_url | length > 0
+
+    - name: Note what the direct path answered
+      ansible.builtin.set_fact:
+        ic_direct_report: >-
+          [{% for r in ic_direct_tries.results | default([]) %}{"url": {{ r.item.url |
+          default('') | to_json }}, "status": {{ r.status | default(-1) | int }}, "msg": {{
+          (r.msg | default('') | string)[:300] | to_json }}}{{ "," if not loop.last else ""
+          }}{% endfor %}]
+
+    - name: Choose where the agents write
+      # Every check answered as expected, or the public URLs. What was
+      # pending in vmagent's queue for the other URL stays behind.
+      ansible.builtin.set_fact:
+        ic_direct_ok: >-
+          {{ (ic_direct_write_url | length > 0)
+             and (((ic_direct_report | from_json) if ic_direct_report is string else
+          ic_direct_report)
+                  | map(attribute='status') | map('int') | list)
+                 == (ic_direct_probes | map(attribute='status') | map('int') | list) }}
+
+    - name: Name the URLs the agents use
+      ansible.builtin.set_fact:
+        ic_write_url:
+          "{{ ic_direct_write_url if (ic_direct_ok | bool) else ic_remote_write_url }}"
+        ic_logs_url:
+          "{{ ic_direct_logs_write_url if (ic_direct_ok | bool) else ic_logs_write_url }}"
 
     - name: Create the observability directories
       ansible.builtin.file:
@@ -242,7 +291,7 @@
       # sudo from the journal, auditd and fail2ban from their files. The
       # central keeps them 90 days (``log_type="security"``), and this
       # host's credential can add lines there but never delete them.
-      when: ic_logs_write_url | length > 0
+      when: ic_logs_url | length > 0
       ansible.builtin.copy:
         dest: "{{ ic_obs_dir }}/promtail.yaml"
         mode: "0644"
@@ -253,7 +302,7 @@
           positions:
             filename: /var/lib/promtail/positions.yaml
           clients:
-            - url: {{ ic_logs_write_url }}
+            - url: {{ ic_logs_url }}
               basic_auth:
                 username: {{ ic_remote_write_user }}
                 password_file: /etc/remote_write_token
@@ -371,7 +420,7 @@
                 - /var/lib/docker/:/var/lib/docker:ro
                 - /dev/disk/:/dev/disk:ro
 
-          {% if ic_logs_write_url %}
+          {% if ic_logs_url %}
             promtail:
               image: {{ ic_promtail_image }}
               restart: unless-stopped
@@ -412,7 +461,7 @@
                 # reads this port from another container: agents push.
                 - '-httpListenAddr=127.0.0.1:8429'
                 - '-promscrape.config=/etc/scrape.yml'
-                - '-remoteWrite.url={{ ic_remote_write_url }}'
+                - '-remoteWrite.url={{ ic_write_url }}'
                 # Basic auth, not bearer: single-node VictoriaMetrics
                 # only knows how to check -httpAuth.*, so a bearer token
                 # was accepted-and-ignored by the central and authorised
@@ -518,6 +567,17 @@
       when: ic_scrape_cfg is changed and ic_agents_compose is not changed
       changed_when: true
 
+    - name: Restart promtail when its configuration changed
+      # Same reason as vmagent's: a new push URL alone does not recreate
+      # the container, and promtail reads its file at start only.
+      ansible.builtin.command:
+        cmd:
+          docker compose -p incubacloud-observability -f docker-compose.yaml restart
+          promtail
+        chdir: "{{ ic_obs_dir }}"
+      when: ic_promtail_cfg is changed and ic_agents_compose is not changed
+      changed_when: true
+
     - name: Wait for the agents to report healthy
       ansible.builtin.command:
         cmd: docker compose -p incubacloud-observability -f docker-compose.yaml ps --format '{% raw %}{{.Service}} {{.State}}{% endraw %}'
@@ -531,3 +591,7 @@
         data:
           ic_agents_running: "{{ ic_agents_ps.stdout_lines | select('search', 'running') | list | length }}"
           ic_instances_labelled: "{{ ic_instances | length }}"
+          ic_write_url_installed: "{{ ic_write_url }}"
+          ic_direct_report:
+            "{{ ic_direct_report if ic_direct_report is string else (ic_direct_report | to_json)
+            }}"

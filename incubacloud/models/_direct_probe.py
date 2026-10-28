@@ -13,6 +13,7 @@ complete probe -- the job's, which reads DNS -- clears that. From
 a flapping name changes state at most twice in half an hour.
 """
 import ipaddress
+import json
 from datetime import datetime, timedelta
 
 #: The states, as ``cloud.settings`` stores them.
@@ -192,3 +193,58 @@ def covered(entries):
     except TypeError as exc:
         # IPv4 and IPv6 in one list: the set is IPv4 only.
         raise ValueError("entries of different address families") from exc
+
+
+def reach_report(raw, probes):
+    """Pair what the host's try answered with the checks the panel asked for.
+
+    :param raw: the playbook's ``ic_direct_report``, a JSON list (or the
+        list itself) of ``{"url", "status", "msg"}``.
+    :param list probes: ``cloud.host._direct_reach_probes`` as sent.
+    :return: one ``{"url", "prefix", "expected", "status", "msg"}`` per
+        probe; a probe with no answer counts as status -1.
+    :rtype: list
+    """
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = []
+    answers = raw if isinstance(raw, list) else []
+    report = []
+    for index, probe in enumerate(probes):
+        answer = answers[index] if index < len(answers) else {}
+        if not isinstance(answer, dict):
+            answer = {}
+        try:
+            status = int(answer.get("status", -1))
+        except (TypeError, ValueError):
+            status = -1
+        report.append({
+            "url": probe["url"],
+            "prefix": probe["prefix"],
+            "expected": int(probe["status"]),
+            "status": status,
+            "msg": str(answer.get("msg") or ""),
+        })
+    return report
+
+
+def reach_reason(answer):
+    """Say in a word why one of a host's tries of the direct path failed.
+
+    :param dict answer: one entry of ``reach_report``.
+    :return: ``dns``, ``tls``, ``connection`` or ``answered <status>``.
+    :rtype: str
+    """
+    message = answer.get("msg", "").lower()
+    if any(text in message for text in (
+        "name or service not known", "temporary failure in name resolution",
+        "nodename nor servname",
+    )):
+        return "dns"
+    if "certificate" in message or "ssl" in message:
+        return "tls"
+    if answer.get("status", -1) == -1:
+        return "connection"
+    return f"answered {answer['status']}"

@@ -641,7 +641,7 @@ class TestSecurityLogsAndTheAccessLogFile(ObservabilityExecutorCase):
             v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes")
         )
         return yaml.safe_load(env.from_string(content).render(
-            ic_logs_write_url="https://m.example.com/lw/loki/api/v1/push",
+            ic_logs_url="https://m.example.com/lw/loki/api/v1/push",
             ic_remote_write_user="acct", ic_host_name="host-x",
             ic_ship_security_logs=ship,
         ))
