@@ -32,6 +32,10 @@ A host that holds a default certificate of its own (**Hosts → <host> →
 Traefik → Default certificate**) keeps it: the zone certificate is never
 handed to it. Clear that field for the host to take the zone's.
 
+Names on the direct entrypoint are not served with the origin certificate:
+they are DNS-only and get theirs from Let's Encrypt
+([RB-24](RB-24-direct-path.md)).
+
 ## The one prerequisite
 
 The API token already configured for DNS needs one more permission:

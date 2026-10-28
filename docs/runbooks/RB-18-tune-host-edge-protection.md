@@ -27,6 +27,7 @@ full model. This runbook is how you tune each layer.
 | Login limit (Traefik) | host `config.yml`, `loginlimit` middleware, one login router per instance | 20/min, burst 10 per IP, POSTs to the login endpoints | **yes** (file is watched) |
 | Web-login ban (fail2ban) | `host_hardening.yml`, jail `incubacloud-weblogin` | 10 failures in 10 min → 1 h, 80/443 only; off behind a CDN | no (re-run hardening) |
 | CDN client certificate (Traefik) | `dynamic/tls-client-auth.yml` | off — needs `behind_cdn` + `block_direct_access` + an authority | yes (proxy-settings push) |
+| Direct allowlist (nftables + Traefik) | `direct_allowlist.sh`, `dynamic/direct.yml` | only with `direct_port` | yes (`sync_direct_path`, no restart) — [RB-24](RB-24-direct-path.md) |
 | App counters (`cloud.rate.limit`) | `cloud.settings` | see RB-04 | yes — [RB-04](RB-04-tune-rate-limits.md) |
 
 ---

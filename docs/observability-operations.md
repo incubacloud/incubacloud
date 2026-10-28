@@ -180,25 +180,27 @@ below is only for a central next to the panel.
 
 1. Add the new server as a host, **not** behind the CDN (the central
    needs a certificate of its own and Cloudflare's bot challenge drops
-   `vmagent`), and prepare it with Full Setup.
+   `vmagent`), and prepare it with Full Setup, with a **direct port** on it if
+   the central has a direct name.
 2. Point a DNS-only A record, `metrics.<domain>` for example, at it.
-3. In Settings → Monitoring → *Advanced…*, fill in **Central's public
+3. Point the direct name's A record at it too (DNS-only, no AAAA). If the DNS
+   token is restricted to client addresses, add the new host's.
+4. In Settings → Monitoring → *Advanced…*, fill in **Central's public
    name** with that name and **Who may delete series on the central**
    with the panel's public address (`/32`). Empty **Grafana base URL** if
    it pointed at the old central, so the deployment fills in the new one.
-4. Re-run *Enable observability* against the new host. When the job
+5. Re-run *Enable observability* against the new host. When the job
    answers, the panel's query URL, the agents' remote-write URL and (if
    it was empty) the Grafana base URL point at the new name.
-5. Register Grafana as an OIDC client again: its redirect is the new
+6. Register Grafana as an OIDC client again: its redirect is the new
    Grafana URL.
-6. Hosts enrolled before the move keep pushing to the old URL until
-   their agents are re-applied: run `install_observability` on each, or
-   wait for the reconciliation cron.
-7. Remove `metrics-gateway.yml` from the old host's Traefik and
+7. Hosts enrolled before the move are re-applied on their own once the new
+   central's host has applied the list and its direct name answers.
+8. Remove `metrics-gateway.yml` from the old host's Traefik and
    decommission the old stack.
 
 Historical series are not migrated by this procedure. If you need them,
-copy the VictoriaMetrics data volume across before step 4 — otherwise
+copy the VictoriaMetrics data volume across before step 5 — otherwise
 expect the dashboards to start from the moment of the switch.
 
 What the deployment publishes under the name is what the hand-written
@@ -309,6 +311,10 @@ the first live deploy):
 | **Metrics backend URL** | the panel (PromQL queries) | `…/r` (the panel appends `/api/v1/query`) | inside the **panel** container |
 | **Remote-write URL** | `vmagent` on every host | `…/w/api/v1/write` | inside the **agent** container, on each host |
 
+The remote-write URL is the fallback: each host's agents use the central's direct
+name when it applies to them (see _The direct path_), and the host page shows the
+URL its agents were installed with.
+
 The endpoint travels *in* the URL, after the account prefix (`/w/`,
 `/r/`), because vmauth strips the prefix and appends the rest — a bare
 `/w/` would not reach `/api/v1/write`. The log endpoint is derived from
@@ -360,10 +366,44 @@ Then set the tenant-facing URLs in Settings to
 `https://metrics.<domain>/w/api/v1/write` and
 `https://metrics.<domain>/r`.
 
-If the metrics hostname is proxied by Cloudflare (orange-cloud), a bot
-challenge on the ingest path can silently drop `vmagent`. If ingestion
-misbehaves, make the record a grey-cloud (DNS-only) A record straight to
-the host.
+Behind a CDN, a bot challenge on the ingest path can silently drop `vmagent`.
+Machines that are yours should not go through it: give the central a direct name
+(next section). The CDN-fronted name stays for browsers and for hosts you do not
+run.
+
+## The direct path (machines only)
+
+A host can open a **direct entrypoint** (`cloud.host.direct_port`, applied by Full
+Setup): a port of its own, never 443, with a certificate from Let's Encrypt obtained
+by DNS-01 (`acme_dns_cloudflare_token`, written to the host as a root-only file), no
+trust in forwarded headers, a per-source rate limit and an allowlist enforced twice
+— in nftables (`ic_direct_v4`) and in Traefik (`direct-peers`). The list is the
+panel's own hosts plus what an upper layer adds, pushed by `sync_direct_path`
+whenever a host comes or goes and at least hourly, without restarting Traefik. The
+port also caps new connections per source and has its own timeouts: one Traefik
+serves it and 443. A catch-all router at priority 10000 answers 403 to anything
+without a router of its own above it, so routers that listen on every entrypoint
+stay invisible there.
+
+With **Central's direct name** set, the central's deployment publishes
+`/w/ /r/ /lw/ /lr/` on that entrypoint. A host's agents are offered the direct name
+when the name answers (the job probes it from the central's host), the host's own
+address is on the list the central's host has applied, and the host is not marked
+_Use the public path_. The agents' install then tries it from the host itself and
+falls back to the remote-write URL in Settings if it gets no answer; a host that
+fell back is not offered the direct name again for six hours. A change in any of
+these re-applies the agents of the hosts it affects, at once and again every 15
+minutes.
+
+Two failed probes in a row (one, if the name resolves to another address or has an
+IPv6 record) put every host back on the public path and raise `direct_path_down`;
+two good ones, and no sooner than 30 minutes, bring them back. The job probes at
+least hourly; an upper layer may probe more often. A host whose metrics stop
+arriving while the path is up is re-applied after 20 minutes, which tests again from
+the host. Changing the URL leaves whatever vmagent still had queued for the old one
+behind. A certificate with less than 21 days left raises
+`direct_certificate_expiring`. When it goes wrong, see
+[RB-24](runbooks/RB-24-direct-path.md).
 
 ## cAdvisor version requirement (do not pin it back)
 

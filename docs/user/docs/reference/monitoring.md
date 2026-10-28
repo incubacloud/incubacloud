@@ -65,7 +65,8 @@ The endpoints and credentials are filled in for you.
 If you have hosts other than the one running the central, they need a
 public HTTPS address to push to; set it under *Advanced*. The local
 address the button fills in is only reachable from the central's own
-host.
+host. Or give the central a direct name and its host a direct port: your
+hosts then push to it without a CDN in between, on a port only they may open.
 
 ## What is not here yet
 

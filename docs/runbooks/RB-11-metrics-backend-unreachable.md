@@ -66,6 +66,10 @@ If in doubt, press **Enable observability** in Settings again. It is
 idempotent, rebuilds the stack from the declared state, and re-applies
 the account list and Grafana organisations along the way.
 
+If `direct_path_down` is active too, the central is fine and the direct
+entrypoint is not: hosts are back on the public path; follow
+[RB-24](RB-24-direct-path.md).
+
 ## 3. The central is up but the panel cannot reach it
 
 - Check **Settings → Advanced → Query URL**. Co-located it should be the
