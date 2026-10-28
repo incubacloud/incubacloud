@@ -1,0 +1,1839 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* incubacloud_assistant
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 19.0\n"
+"Report-Msgid-Bugs-To: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "%(provider)s answered: %(message)s"
+msgstr "%(provider)s respondió: %(message)s"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "%(spent)s of %(limit)s this month"
+msgstr "%(spent)s de %(limit)s este mes"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "%(spent)s this month"
+msgstr "%(spent)s este mes"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "%s is busy. Try again in a moment."
+msgstr "%s está ocupado. Inténtelo de nuevo en un momento."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "%s is not answering. Try again in a moment."
+msgstr "%s no responde. Inténtelo de nuevo en un momento."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "%s refused this key."
+msgstr "%s rechazó esta clave."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "%s says the account has no credit left."
+msgstr "%s indica que la cuenta se ha quedado sin crédito."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "(beta)"
+msgstr "(beta)"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "(some costs unknown)"
+msgstr "(algunos costes se desconocen)"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"* Includes calls of models whose price is not known: only their tokens "
+"count."
+msgstr ""
+"* Incluye llamadas de modelos cuyo precio no se conoce: solo cuentan sus "
+"tokens."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "A job ended"
+msgstr "Terminó un trabajo"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_provider
+msgid "AI provider"
+msgstr "Proveedor de IA"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_api_key
+msgid "AI provider key"
+msgstr "Clave del proveedor de IA"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_terms_accepted_by
+msgid "AI terms accepted by"
+msgstr "Términos de IA aceptados por"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_terms_accepted_ip
+msgid "AI terms accepted from"
+msgstr "Términos de IA aceptados desde"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_terms_accepted_on
+msgid "AI terms accepted on"
+msgstr "Términos de IA aceptados el"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_terms_version
+msgid "AI terms version"
+msgstr "Versión de los términos de IA"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_mcp_approval
+msgid "Agent action awaiting a person's approval"
+msgstr "Acción de un agente pendiente de aprobación"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Allow only models the provider lists."
+msgstr "Permita solo modelos que el proveedor lista."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Allowed"
+msgstr "Permitido"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_allowed_models
+msgid "Allowed models"
+msgstr "Modelos permitidos"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"An AI assistant inside the panel, with your own AI provider key. It acts\n"
+"                with the role of each user who uses it, and asks them before anything\n"
+"                destructive, sensitive or on production. What it reads is sent to the\n"
+"                provider you choose."
+msgstr ""
+"Un asistente de IA dentro del panel, con su propia clave de un proveedor de "
+"IA. Actúa con el rol de cada usuario que lo usa y le pregunta antes de hacer"
+" algo destructivo, sensible o en producción. Lo que lee se envía al "
+"proveedor que usted elija."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__cloud_settings__assistant_provider__anthropic
+msgid "Anthropic"
+msgstr "Anthropic"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__approval_id
+msgid "Approval"
+msgstr "Aprobación"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_mcp_confirm
+msgid "Approval of agents' sensitive actions"
+msgstr "Aprobación de las acciones sensibles de los agentes"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__ask_continue
+msgid "Ask Continue"
+msgstr "Preguntar si continuar"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Ask the assistant…"
+msgstr "Pregunte al asistente…"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_templates.xml:0
+#: code:addons/incubacloud_assistant/static/src/button/assistant_button.xml:0
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__role__assistant
+msgid "Assistant"
+msgstr "Asistente"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_assistant_conversation
+msgid "Assistant conversation"
+msgstr "Conversación del asistente"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_assistant_message
+msgid "Assistant message"
+msgstr "Mensaje del asistente"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_res_users__assistant_notice_at
+msgid "Assistant notice accepted at"
+msgstr "Aviso del asistente aceptado el"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_enabled
+msgid "Assistant on"
+msgstr "Asistente activado"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_assistant_usage
+msgid "Assistant usage per user and month"
+msgstr "Uso del asistente por usuario y mes"
+
+#. module: incubacloud_assistant
+#: model:ir.actions.server,name:incubacloud_assistant.cron_assistant_purge_ir_actions_server
+msgid "Assistant: delete conversations idle for 30 days"
+msgstr "Asistente: eliminar las conversaciones inactivas durante 30 días"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Back"
+msgstr "Atrás"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Before you use the assistant"
+msgstr "Antes de usar el asistente"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__cache_read_tokens
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__cache_read_tokens
+msgid "Cache Read Tokens"
+msgstr "Tokens de lectura de caché"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__cache_write_tokens
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__cache_write_tokens
+msgid "Cache Write Tokens"
+msgstr "Tokens de escritura de caché"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__step_count
+msgid "Calls to the model in this task."
+msgstr "Llamadas al modelo en esta tarea."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_step_cap
+msgid ""
+"Calls to the model one task may make before it stops and asks whether to go "
+"on. Zero or less: 30."
+msgstr ""
+"Llamadas al modelo que puede hacer una tarea antes de detenerse y preguntar "
+"si continúa. Cero o menos: 30."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Cancel"
+msgstr "Cancelar"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__card_state__cancelled
+msgid "Cancelled"
+msgstr "Cancelado"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__card_state
+msgid "Card State"
+msgstr "Estado de la tarjeta"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_mcp_approval__channel__assistant
+msgid "Card in the panel's assistant"
+msgstr "Tarjeta en el asistente del panel"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "Change it in Settings → Assistant."
+msgstr "Cámbiela en Configuración → Asistente."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid ""
+"Change the repositories of instance %(instance)s: it adds %(added)s, removes"
+" %(removed)s and moves %(moved)s. Its next deploy uses them."
+msgstr ""
+"Cambiar los repositorios de la instancia %(instance)s: añade %(added)s, "
+"quita %(removed)s y traslada %(moved)s. Su próximo despliegue los usa."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid ""
+"Change the repositories of project %(project)s: it adds %(added)s, removes "
+"%(removed)s and moves %(moved)s. Instances created from the project "
+"afterwards use the new list."
+msgstr ""
+"Cambiar los repositorios del proyecto %(project)s: añade %(added)s, quita "
+"%(removed)s y traslada %(moved)s. Las instancias que se creen después desde "
+"el proyecto usan la nueva lista."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_approval__channel
+msgid "Channel"
+msgstr "Canal"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Choose users of the panel with a role."
+msgstr "Elija usuarios del panel con un rol."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Close"
+msgstr "Cerrar"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Confirm"
+msgstr "Confirmar"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__role__card
+msgid "Confirmation"
+msgstr "Confirmación"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__card_state__confirmed
+msgid "Confirmed"
+msgstr "Confirmado"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Connecting the repository"
+msgstr "Conectando el repositorio"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Consultant"
+msgstr "Consultor"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__content
+msgid "Content"
+msgstr "Contenido"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__context_note
+msgid "Context Note"
+msgstr "Nota de contexto"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.js:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__conversation_id
+msgid "Conversation"
+msgstr "Conversación"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__cost
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__cost
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__cost
+msgid "Cost"
+msgstr "Coste"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Cost (approx.)"
+msgstr "Coste (aprox.)"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__cost_known
+msgid "Cost Known"
+msgstr "Coste conocido"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__cost_unknown
+msgid "Cost Unknown"
+msgstr "Coste desconocido"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid ""
+"Create a production instance. It takes CPU, memory and disk on the server."
+msgstr ""
+"Crear una instancia de producción. Ocupa CPU, memoria y disco del servidor."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid "Create the instance %s. It takes CPU, memory and disk on the server."
+msgstr "Crear la instancia %s. Ocupa CPU, memoria y disco del servidor."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__create_uid
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__create_uid
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__create_uid
+msgid "Created by"
+msgstr "Creado por"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__create_date
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__create_date
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__create_date
+msgid "Created on"
+msgstr "Creado el"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Creating the branch"
+msgstr "Creando la rama"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Creating the repository"
+msgstr "Creando el repositorio"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Creating the staging"
+msgstr "Creando el staging"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Default"
+msgstr "Predeterminado"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_default_model
+msgid "Default model"
+msgstr "Modelo predeterminado"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Delete"
+msgstr "Eliminar"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Delete it"
+msgstr "Eliminarla"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Deploying"
+msgstr "Desplegando"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Developer"
+msgstr "Desarrollador"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid ""
+"Dismiss every alert you see in the panel, those of production instances "
+"included."
+msgstr ""
+"Descartar todas las alertas que usted ve en el panel, incluidas las de las "
+"instancias de producción."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_job__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_engine__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_tools__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_approval__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_catalog__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_confirm__display_name
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_res_users__display_name
+msgid "Display Name"
+msgstr "Nombre para mostrar"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid ""
+"Empty the mailbox of staging %s: the mail it caught is deleted for good."
+msgstr ""
+"Vaciar el buzón del staging %s: el correo que recogió se borra "
+"definitivamente."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_conversation__state__error
+msgid "Error"
+msgstr "Error"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__cost
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_usage__cost
+msgid "Euros, approximately."
+msgstr "Euros, aproximadamente."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__card_state__expired
+msgid "Expired"
+msgstr "Caducado"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid "Failed to load the assistant's settings."
+msgstr "No se pudo cargar la configuración del asistente."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__in_context
+msgid "False once summarized away."
+msgstr "Falso una vez que se resume."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Go on"
+msgstr "Continuar"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.js:0
+msgid "Go on."
+msgstr "Continúe."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__cloud_settings__assistant_provider__google
+msgid "Google Gemini"
+msgstr "Google Gemini"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "I have taken %s steps on this task. Shall I go on?"
+msgstr "He dado %s pasos en esta tarea. ¿Continúo?"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "I understand"
+msgstr "Entendido"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/cloud_settings.py:0
+msgid ""
+"I understand that what the assistant reads is sent to my AI provider, and "
+"that it can make mistakes"
+msgstr ""
+"Entiendo que lo que el asistente lee se envía a mi proveedor de IA, y que "
+"puede equivocarse"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_job__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_engine__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_tools__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_approval__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_catalog__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_mcp_confirm__id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_res_users__id
+msgid "ID"
+msgstr "ID"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_conversation__state__idle
+msgid "Idle"
+msgstr "Inactiva"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__in_context
+msgid "In Context"
+msgstr "En el contexto"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_cloud_settings
+msgid "IncubaCloud Settings"
+msgstr "Ajustes de IncubaCloud"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__input_tokens
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__input_tokens
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__input_tokens
+msgid "Input Tokens"
+msgstr "Tokens de entrada"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__is_error
+msgid "Is Error"
+msgstr "Es error"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid "It does not exist, or you cannot see it in the panel."
+msgstr "No existe, o usted no la ve en el panel."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_usage__month
+msgid "Its first day."
+msgstr "Su primer día."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_allowed_models
+msgid "JSON list of model ids."
+msgstr "Lista JSON de ids de modelos."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__raw_content
+msgid "JSON: the provider's own answer, sent back as it came."
+msgstr "JSON: la respuesta del propio proveedor, devuelta tal como llegó."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__tool_calls
+msgid "JSON: the tools the model asked for."
+msgstr "JSON: las herramientas que pidió el modelo."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__job_uuid
+msgid "Job Uuid"
+msgstr "UUID del trabajo"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_cloud_job
+msgid "Job executed remotely on a host"
+msgstr "Trabajo ejecutado remotamente en un host"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__role__job
+msgid "Job result"
+msgstr "Resultado del trabajo"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__lang
+msgid "Lang"
+msgstr "Idioma"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__last_activity
+msgid "Last Activity"
+msgstr "Última actividad"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__write_uid
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__write_uid
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__write_uid
+msgid "Last Updated by"
+msgstr "Última actualización por"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__write_date
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__write_date
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__write_date
+msgid "Last Updated on"
+msgstr "Última actualización el"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid ""
+"Last switched on, with the box ticked, on %(date)s by %(user)s from %(ip)s."
+msgstr ""
+"Activado por última vez, con la casilla marcada, el %(date)s por %(user)s "
+"desde %(ip)s."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Loading…"
+msgstr "Cargando…"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Looking at the panel"
+msgstr "Mirando el panel"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Manager"
+msgstr "Gerente"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__message_ids
+msgid "Message"
+msgstr "Mensaje"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__model_id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__model_id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__model
+msgid "Model"
+msgstr "Modelo"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Models"
+msgstr "Modelos"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_models_at
+msgid "Models read at"
+msgstr "Modelos leídos el"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__month
+msgid "Month"
+msgstr "Mes"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_monthly_limit
+msgid "Monthly limit per user (EUR)"
+msgstr "Límite mensual por usuario (EUR)"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__name
+msgid "Name"
+msgstr "Nombre"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "New"
+msgstr "Nueva"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "New conversation"
+msgstr "Nueva conversación"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Nobody has used the assistant yet."
+msgstr "Nadie ha usado todavía el asistente."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Not usable with a monthly limit"
+msgstr "No se puede usar con un límite mensual"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__role__notice
+msgid "Notice"
+msgstr "Aviso"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Off, nobody can ask the assistant anything. The button stays for whoever\n"
+"                has conversations, to read or delete them until they expire, 30 days after\n"
+"                their last message."
+msgstr ""
+"Apagado, nadie puede pedirle nada al asistente. El botón sigue para quien "
+"tenga conversaciones, para leerlas o eliminarlas hasta que caduquen, 30 días"
+" después de su último mensaje."
+
+#. module: incubacloud_assistant
+#: model:ir.model.constraint,message:incubacloud_assistant.constraint_incubacloud_assistant_usage_user_month_model
+msgid "One row per user, month and model."
+msgstr "Una fila por usuario, mes y modelo."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Only the users chosen here see the assistant."
+msgstr "Solo los usuarios elegidos aquí ven el asistente."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__cloud_settings__assistant_provider__openai
+msgid "OpenAI"
+msgstr "OpenAI"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__cloud_settings__assistant_provider__openrouter
+msgid "OpenRouter"
+msgstr "OpenRouter"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "OpenRouter and the company behind the selected model"
+msgstr "OpenRouter y la empresa del modelo elegido"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Opening the pull request"
+msgstr "Abriendo el pull request"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__output_tokens
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__output_tokens
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__output_tokens
+msgid "Output Tokens"
+msgstr "Tokens de salida"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__pending
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__card_state__pending
+msgid "Pending"
+msgstr "Pendiente"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__role__user
+msgid "Person"
+msgstr "Persona"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__sequence
+msgid "Place in the model's context; 0 while pending."
+msgstr "Lugar en el contexto del modelo; 0 mientras está pendiente."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Price unknown"
+msgstr "Precio desconocido"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__production
+msgid "Production"
+msgstr "Producción"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Project manager"
+msgstr "Gerente de proyecto"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__provider
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__provider
+msgid "Provider"
+msgstr "Proveedor"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Provider key"
+msgstr "Clave del proveedor"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_models
+msgid "Provider's models"
+msgstr "Modelos del proveedor"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__raw_content
+msgid "Raw Content"
+msgstr "Contenido sin procesar"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__raw_provider
+msgid "Raw Provider"
+msgstr "Proveedor sin procesar"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "Read first what the assistant sends to the AI provider."
+msgstr "Lea primero lo que el asistente envía al proveedor de IA."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Read the Terms"
+msgstr "Leer los Términos del servicio"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Reading the documentation"
+msgstr "Leyendo la documentación"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Reading the job"
+msgstr "Leyendo el trabajo"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Reading the logs"
+msgstr "Leyendo los logs"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Reading the panel's code"
+msgstr "Leyendo el código del panel"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Reading the repository"
+msgstr "Leyendo el repositorio"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Rebuilding"
+msgstr "Reconstruyendo"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Recommended"
+msgstr "Recomendado"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Recommended: tested with the panel's tools. Untested ones may fail at\n"
+"                    writing modules."
+msgstr ""
+"Recomendado: probado con las herramientas del panel. Los no probados pueden "
+"fallar al escribir módulos."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Remove the key"
+msgstr "Quitar la clave"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Retry"
+msgstr "Reintentar"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__role
+msgid "Role"
+msgstr "Rol"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid "Run %(tool)s with %(arguments)s."
+msgstr "Ejecutar %(tool)s con %(arguments)s."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Running %s"
+msgstr "Ejecutando %s"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__running_call_id
+msgid "Running Call"
+msgstr "Llamada en curso"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Save the provider's key to read its models."
+msgstr "Guarde la clave del proveedor para leer sus modelos."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid "Saved — type to replace it"
+msgstr "Guardada — escriba para reemplazarla"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Searching the panel's code"
+msgstr "Buscando en el código del panel"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid ""
+"Section 12A of the Terms accepted on %(date)s by %(user)s from %(ip)s (terms"
+" of %(version)s)."
+msgstr ""
+"Sección 12 bis de los Términos aceptada el %(date)s por %(user)s desde "
+"%(ip)s (términos de %(version)s)."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Send"
+msgstr "Enviar"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__sequence
+msgid "Sequence"
+msgstr "Secuencia"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Set the provider's key first."
+msgstr "Guarde primero la clave del proveedor."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid ""
+"Set the provider's key, the allowed models and a default model before "
+"switching it on."
+msgstr ""
+"Guarde la clave del proveedor, los modelos permitidos y un modelo "
+"predeterminado antes de encenderlo."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__tainted
+msgid ""
+"Since the person's last message the task read content others can write "
+"(logs, files, mail): every change asks for a card."
+msgstr ""
+"Desde el último mensaje de la persona, la tarea leyó contenido que otros "
+"pueden escribir (logs, archivos, correo): cada cambio pide una tarjeta."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid ""
+"Since your last message the assistant read content other people can write "
+"(logs, files, mail, a command's output): check that this is what you asked "
+"for."
+msgstr ""
+"Desde su último mensaje, el asistente leyó contenido que otras personas "
+"pueden escribir (logs, archivos, correo, la salida de un comando): compruebe"
+" que es lo que usted pidió."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__cost_unknown
+msgid "Some call used a model whose price is not known."
+msgstr "Alguna llamada usó un modelo cuyo precio no se conoce."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Something went wrong"
+msgstr "Algo salió mal"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Stakeholder"
+msgstr "Interesado"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__state
+msgid "State"
+msgstr "Estado"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__step_count
+msgid "Step Count"
+msgstr "Número de pasos"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__step_started_at
+msgid "Step Started At"
+msgstr "Paso iniciado el"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_assistant_engine
+msgid "Steps of the assistant's tasks"
+msgstr "Pasos de las tareas del asistente"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_step_cap
+msgid "Steps per task"
+msgstr "Pasos por tarea"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Steps per task go from 1 to 200."
+msgstr "Los pasos por tarea van de 1 a 200."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Stop"
+msgstr "Detener"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__stop_requested
+msgid "Stop Requested"
+msgstr "Detención solicitada"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_conversation__state__stopped
+msgid "Stopped"
+msgstr "Detenido"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_conversation.py:0
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "Stopped. What was done stays as it is."
+msgstr "Detenido. Lo que se hizo queda como está."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__summary
+msgid "Summary"
+msgstr "Resumen"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Switching the assistant on needs section 12A of the Terms accepted, each\n"
+"                time: what is sent to the AI provider, who pays for it, and which actions\n"
+"                wait for confirmation."
+msgstr ""
+"Encender el asistente exige aceptar la sección 12 bis de los Términos del "
+"servicio, cada vez: lo que se envía al proveedor de IA, quién lo paga y qué "
+"acciones esperan confirmación."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"Switching the assistant on needs the box above ticked, each time. The\n"
+"                panel records when, by whom and from which address."
+msgstr ""
+"Encender el asistente exige marcar la casilla de arriba, cada vez. El panel "
+"registra cuándo, quién y desde qué dirección."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__tainted
+msgid "Tainted"
+msgstr "Contaminada"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "Tell a manager of the panel."
+msgstr "Avise a un gerente del panel."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The AI provider answered with another model (%(answered)s) than the one "
+"allowed (%(model)s). Its answer was set aside. Retry, or tell a manager of "
+"the panel."
+msgstr ""
+"El proveedor de IA respondió con otro modelo (%(answered)s) distinto del "
+"permitido (%(model)s). Su respuesta se apartó. Reintente o avise a un "
+"gerente del panel."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The AI provider declined this request. Put it another way, or ask something "
+"else."
+msgstr ""
+"El proveedor de IA rechazó esta petición. Exprésela de otra manera o "
+"pregunte otra cosa."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "The AI provider is busy. Retry in a moment."
+msgstr "El proveedor de IA está ocupado. Reintente en un momento."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "The AI provider is not answering. Retry in a moment."
+msgstr "El proveedor de IA no responde. Reintente en un momento."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "The AI provider refused the panel's key."
+msgstr "El proveedor de IA rechazó la clave del panel."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "The AI provider refused the request: %s"
+msgstr "El proveedor de IA rechazó la petición: %s"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The AI provider's account has no credit left. A manager can check it on the "
+"provider's site."
+msgstr ""
+"La cuenta del proveedor de IA se ha quedado sin crédito. Un gerente puede "
+"comprobarlo en el sitio del proveedor."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_terms_accepted_ip
+msgid "The address the acceptance came from."
+msgstr "La dirección desde la que llegó la aceptación."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The answer was cut at the output limit before it said anything. Retry, or "
+"ask for less at once."
+msgstr ""
+"La respuesta se cortó en el límite de salida antes de decir nada. Reintente "
+"o pida menos de una vez."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid ""
+"The assistant is an AI, not a person, and it can make mistakes: check its "
+"answers and its changes before you rely on them. What you write and what it "
+"reads in the panel (logs, settings, code) is sent to %(provider)s, the "
+"provider of your panel's AI key, under your organisation's contract with it."
+" Actions that delete data, deploy to production or change sensitive settings"
+" wait for your confirmation. Only you can see your conversations, and each "
+"one is deleted 30 days after its last activity."
+msgstr ""
+"El asistente es una IA, no una persona, y puede equivocarse: revise sus "
+"respuestas y sus cambios antes de darlos por buenos. Lo que usted escribe y "
+"lo que el asistente lee en el panel (logs, ajustes, código) se envía a "
+"%(provider)s, el proveedor de la clave de IA de su panel, bajo el contrato "
+"de su organización con él. Las acciones que borran datos, despliegan en "
+"producción o cambian ajustes sensibles esperan su confirmación. Solo usted "
+"ve sus conversaciones, y cada una se borra 30 días después de su última "
+"actividad."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "The assistant is not available to you."
+msgstr "El asistente no está disponible para usted."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid ""
+"The assistant is off for you. Your conversations stay here to read or\n"
+"                    delete until they expire, 30 days after their last message."
+msgstr ""
+"El asistente está apagado para usted. Sus conversaciones se quedan aquí para"
+" leerlas o eliminarlas hasta que caduquen, 30 días después de su último "
+"mensaje."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "The assistant is off for you: this conversation is kept to read."
+msgstr ""
+"El asistente está apagado para usted: esta conversación se conserva para "
+"leerla."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The assistant is off, or you may no longer use it. This conversation is "
+"kept."
+msgstr ""
+"El asistente está apagado, o usted ya no puede usarlo. Esta conversación se "
+"conserva."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_enabled
+msgid "The assistant shows, for the users chosen, only while this is on."
+msgstr ""
+"El asistente se muestra, a los usuarios elegidos, solo mientras esto esté "
+"activado."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The assistant stopped because of an error. Retry to go on; what was done "
+"stays."
+msgstr ""
+"El asistente se detuvo por un error. Reintente para continuar; lo que se "
+"hizo se conserva."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_conversation.py:0
+msgid "The assistant stopped unexpectedly. Retry to go on."
+msgstr "El asistente se detuvo de forma inesperada. Reintente para continuar."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/cloud_settings.py:0
+msgid "The assistant's settings change in Settings → Assistant only."
+msgstr ""
+"Los ajustes del asistente solo se cambian en Configuración → Asistente."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__production
+msgid "The card acts on production."
+msgstr "La tarjeta actúa sobre producción."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid ""
+"The default model has no known price, and a monthly limit is set: the "
+"assistant could not count what it costs. Pick a default model with a known "
+"price, or set the limit to 0."
+msgstr ""
+"El modelo predeterminado no tiene un precio conocido y hay un límite "
+"mensual: el asistente no podría contar lo que cuesta. Elija un modelo "
+"predeterminado con precio conocido, o ponga el límite en 0."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "The default model must be one of the allowed models."
+msgstr "El modelo predeterminado debe ser uno de los modelos permitidos."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_terms_accepted_by
+msgid "The manager who accepted them: name and login."
+msgstr "El gerente que los aceptó: nombre y login."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The model %s has no known price, and this panel has a monthly limit: the "
+"assistant cannot count what it costs. A manager can remove the limit or "
+"allow a model with a known price in Settings → Assistant."
+msgstr ""
+"El modelo %s no tiene un precio conocido y este panel tiene un límite "
+"mensual: el asistente no puede contar lo que cuesta. Un gerente puede quitar"
+" el límite o permitir un modelo con precio conocido en Configuración → "
+"Asistente."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "The monthly limit is a number of euros, 0 or more."
+msgstr "El límite mensual es un número de euros, 0 o más."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"The monthly limit is the same for every user: each one may spend up to it\n"
+"                in a month, and Usage below shows what each one spent. 0 is no limit. A\n"
+"                task that reaches its steps stops and asks whether to go on; a user who\n"
+"                reaches the limit waits for next month."
+msgstr ""
+"El límite mensual es el mismo para cada usuario: cada uno puede gastar hasta"
+" él en un mes, y Uso, más abajo, muestra lo que gastó cada uno. 0 es sin "
+"límite. Una tarea que llega a su número de pasos se detiene y pregunta si "
+"continúa; un usuario que llega al límite espera al mes siguiente."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "The panel cannot use this AI provider or model."
+msgstr "El panel no puede usar este proveedor de IA o este modelo."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid ""
+"The panel could not reach %s. Check that this server can open the provider's"
+" address: a panel without internet access cannot use the assistant."
+msgstr ""
+"El panel no pudo conectar con %s. Compruebe que este servidor puede abrir la"
+" dirección del proveedor: un panel sin acceso a internet no puede usar el "
+"asistente."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"The panel could not reach the AI provider. Check that this server can open "
+"the provider's address."
+msgstr ""
+"El panel no pudo conectar con el proveedor de IA. Compruebe que este "
+"servidor puede abrir la dirección del proveedor."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.js:0
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.js:0
+msgid "The panel could not reach the assistant. Try again."
+msgstr "El panel no pudo conectar con el asistente. Inténtelo de nuevo."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__pending
+msgid "The person wrote it while a step ran: it waits."
+msgstr "La persona lo escribió mientras corría un paso: queda en espera."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_api_key
+msgid "The provider's API key. Stored encrypted; never shown again."
+msgstr ""
+"La clave API del proveedor. Se guarda cifrada; no se vuelve a mostrar."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_models
+msgid "The provider's listing as last read with the key (JSON)."
+msgstr ""
+"El listado del proveedor tal como se leyó por última vez con la clave "
+"(JSON)."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__job_uuid
+msgid "The queue job of the step in course."
+msgstr "El trabajo de la cola del paso en curso."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_monthly_limit
+msgid ""
+"The same for every user: what each one's conversations may cost per month, "
+"approximately. Zero: no limit. With a limit, models whose price is not known"
+" cannot be used."
+msgstr ""
+"El mismo para cada usuario: lo que pueden costar al mes las conversaciones "
+"de cada uno, aproximadamente. Cero: sin límite. Con límite, no se pueden "
+"usar los modelos cuyo precio no se conoce."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__running_call_id
+msgid ""
+"The tool call that runs now. Left behind by a step that died, its outcome is"
+" unknown: the next step says so instead of running it again."
+msgstr ""
+"La llamada a una herramienta que corre ahora. Si la deja un paso que murió, "
+"su resultado se desconoce: el paso siguiente lo dice en vez de ejecutarla de"
+" nuevo."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_terms_version
+msgid ""
+"The version of the Terms accepted, as IncubaCloud recorded it. Empty on a "
+"panel IncubaCloud does not record it for."
+msgstr ""
+"La versión de los Términos aceptada, tal como la registró IncubaCloud. Vacía"
+" en un panel para el que IncubaCloud no la registra."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "Thinking…"
+msgstr "Pensando…"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid "This acts on a production instance, one you may not see in the panel."
+msgstr ""
+"Esto actúa sobre una instancia de producción, una que quizá usted no vea en "
+"el panel."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid "This acts on the production instance %s."
+msgstr "Esto actúa sobre la instancia de producción %s."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "This changes production."
+msgstr "Esto cambia producción."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "This confirmation does not exist."
+msgstr "Esta confirmación no existe."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "This confirmation expired. The assistant was told."
+msgstr "Esta confirmación caducó. Se avisó al asistente."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "This confirmation is closed."
+msgstr "Esta confirmación está cerrada."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "This confirmation is not yours."
+msgstr "Esta confirmación no es suya."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "This conversation does not exist."
+msgstr "Esta conversación no existe."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "This conversation got long: I summarized its first part to go on."
+msgstr "Esta conversación se alargó: resumí su primera parte para continuar."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "This conversation is not yours."
+msgstr "Esta conversación no es suya."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "This conversation is too long, even summarized. Start a new one."
+msgstr ""
+"Esta conversación es demasiado larga, incluso resumida. Empiece una nueva."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid "This conversation now uses %s: the model it used is no longer allowed."
+msgstr ""
+"Esta conversación ahora usa %s: el modelo que usaba ya no está permitido."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid ""
+"This model has no known price, and this panel has a monthly limit: it cannot"
+" be used. A manager can remove the limit or allow a model with a known "
+"price."
+msgstr ""
+"Este modelo no tiene un precio conocido y este panel tiene un límite "
+"mensual: no se puede usar. Un gerente puede quitar el límite o permitir un "
+"modelo con precio conocido."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "This model is not allowed on this panel."
+msgstr "Este modelo no está permitido en este panel."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Tick \"%s\" to switch the assistant on."
+msgstr "Marque \"%s\" para encender el asistente."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Tokens"
+msgstr "Tokens"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_usage__unpriced_tokens
+msgid "Tokens of calls whose price is not known."
+msgstr "Tokens de llamadas cuyo precio no se conoce."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_message__role__tool
+msgid "Tool"
+msgstr "Herramienta"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__tool_call_id
+msgid "Tool Call"
+msgstr "Llamada a herramienta"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__tool_calls
+msgid "Tool Calls"
+msgstr "Llamadas a herramientas"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_message__tool_name
+msgid "Tool Name"
+msgstr "Nombre de la herramienta"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_mcp_catalog
+msgid "Tools agents may call, and the routes they may not"
+msgstr "Herramientas que pueden llamar los agentes, y rutas que no"
+
+#. module: incubacloud_assistant
+#: model:ir.model,name:incubacloud_assistant.model_incubacloud_assistant_tools
+msgid "Tools the assistant offers the model"
+msgstr "Herramientas que el asistente ofrece al modelo"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid ""
+"Type the new provider's key with it: the panel never sends one provider's "
+"key to another."
+msgstr ""
+"Escriba con él la clave del nuevo proveedor: el panel nunca envía la clave "
+"de un proveedor a otro."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Unknown AI provider."
+msgstr "Proveedor de IA desconocido."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant_settings.py:0
+msgid "Unknown setting(s): %s"
+msgstr "Ajustes desconocidos: %s"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__unpriced_tokens
+msgid "Unpriced Tokens"
+msgstr "Tokens sin precio"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__unread
+msgid "Unread"
+msgstr "Sin leer"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Untested"
+msgstr "Sin probar"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Update the list"
+msgstr "Actualizar la lista"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Usage"
+msgstr "Uso"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+#: model:ir.model,name:incubacloud_assistant.model_res_users
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__user_id
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_usage__user_id
+msgid "User"
+msgstr "Usuario"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid "Users"
+msgstr "Usuarios"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_cloud_settings__assistant_user_ids
+msgid "Users of the assistant"
+msgstr "Usuarios del asistente"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,field_description:incubacloud_assistant.field_incubacloud_assistant_conversation__waiting_job_id
+msgid "Waiting Job"
+msgstr "Trabajo en espera"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_conversation__state__waiting_confirmation
+msgid "Waiting for a confirmation"
+msgstr "Esperando una confirmación"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_conversation__state__waiting_job
+msgid "Waiting for a job"
+msgstr "Esperando un trabajo"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Waiting for a job…"
+msgstr "Esperando un trabajo…"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Waiting for your confirmation"
+msgstr "Esperando su confirmación"
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_conversation__summary
+msgid "What the earlier part of the conversation said, summarized."
+msgstr "Lo que decía la parte anterior de la conversación, resumido."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_incubacloud_assistant_message__context_note
+msgid "What the person had open."
+msgstr "Lo que la persona tenía abierto."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields,help:incubacloud_assistant.field_cloud_settings__assistant_terms_accepted_on
+msgid ""
+"When a manager last switched the assistant on and accepted section 12A (AI "
+"features) of the Terms."
+msgstr ""
+"Cuándo un gerente encendió por última vez el asistente y aceptó la sección "
+"12 bis (Funciones de IA) de los Términos del servicio."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/settings/assistant_settings_tab.xml:0
+msgid ""
+"With a monthly limit, a model whose price is unknown cannot be used: the\n"
+"                    assistant could not count what it costs. Without a limit it can, as an\n"
+"                    untested one."
+msgstr ""
+"Con un límite mensual, no se puede usar un modelo cuyo precio se desconoce: "
+"el asistente no podría contar lo que cuesta. Sin límite sí se puede, como "
+"uno sin probar."
+
+#. module: incubacloud_assistant
+#: model:ir.model.fields.selection,name:incubacloud_assistant.selection__incubacloud_assistant_conversation__state__working
+msgid "Working"
+msgstr "Trabajando"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid "Working…"
+msgstr "Trabajando…"
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+#: code:addons/incubacloud_assistant/models/assistant_conversation.py:0
+msgid "Write a message first."
+msgstr "Escriba primero un mensaje."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_message.py:0
+msgid "Writing the module"
+msgstr "Escribiendo el módulo"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/assistant_format.js:0
+msgid ""
+"You are chatting with an AI, not a person. It can make mistakes. Your "
+"messages and what it reads are sent to %(provider)s."
+msgstr ""
+"Está conversando con una IA, no con una persona. Puede equivocarse. Sus "
+"mensajes y lo que el asistente lee se envían a %(provider)s."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/controllers/assistant.py:0
+msgid "You are writing too fast. Try again in a minute."
+msgstr "Está escribiendo demasiado rápido. Inténtelo de nuevo en un minuto."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_engine.py:0
+msgid ""
+"You reached your monthly limit of %(limit)s €. The assistant goes on next "
+"month, or when a manager raises the limit."
+msgstr ""
+"Ha alcanzado su límite mensual de %(limit)s €. El asistente continúa el mes "
+"siguiente, o cuando un gerente suba el límite."
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "Your conversations of the last 30 days show here."
+msgstr "Aquí aparecen sus conversaciones de los últimos 30 días."
+
+#. module: incubacloud_assistant
+#. odoo-python
+#: code:addons/incubacloud_assistant/models/assistant_tools.py:0
+msgid "nothing"
+msgstr "nada"
+
+#. module: incubacloud_assistant
+#. odoo-javascript
+#: code:addons/incubacloud_assistant/static/src/panel/assistant_panel.xml:0
+msgid "· queued"
+msgstr "· en cola"
