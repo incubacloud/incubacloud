@@ -218,3 +218,4 @@ from . import test_direct_agents
 from . import test_direct_convergence
 from . import test_direct_migration
 from . import test_direct_identity
+from . import test_direct_settings_screen

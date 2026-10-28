@@ -874,6 +874,17 @@ class CrudMixin:
                 host._effective_trusted_proxy_ranges(),
             'trusted_proxy_source': host._trusted_proxy_source(),
             'trusted_proxies_shipped': host.trusted_proxies_shipped or '',
+            # The direct entrypoint: the port, the list it admits, and the
+            # URL the host's agents were installed with and why.
+            'direct_port': host.direct_port or 0,
+            'direct_port_shipped': host.direct_port_shipped or 0,
+            'direct_path_opt_out': host.direct_path_opt_out,
+            'direct_allowlist_shipped': (
+                host.direct_allowlist_shipped or ''
+            ).split(),
+            'direct_allowlist_pending': host._direct_allowlist_pending(),
+            'metrics_agents_write_url': host.metrics_agents_write_url or '',
+            'direct_reach_reason': host.direct_reach_reason or '',
             'allocated_cpus': round(host.allocated_cpus, 2),
             'allocated_ram_gb': round(host.allocated_ram_gb, 2),
             'available_cpus': round(host.available_cpus, 2),
@@ -900,7 +911,7 @@ class CrudMixin:
         'traefik_config_yml', 'traefik_inverseproxy_yaml', 'traefik_yml',
         'exclude_from_autoassign', 'http_conn_rate',
         'trusted_proxy_ranges', 'block_direct_access', 'behind_cdn',
-        'cdn_client_ca',
+        'cdn_client_ca', 'direct_port', 'direct_path_opt_out',
         # The key is write-only: the model ignores an empty one, so a
         # save that does not paste a new key keeps the stored one.
         'tls_default_cert', 'tls_default_key',
@@ -1781,6 +1792,18 @@ class CrudMixin:
                 settings.metrics_central_public_host or '',
             'metrics_central_operator_sources':
                 settings.metrics_central_operator_sources or '',
+            'metrics_central_direct_host':
+                settings.metrics_central_direct_host or '',
+            'metrics_central_direct': {
+                'state': settings.metrics_central_direct_state or 'unknown',
+                'checked_at': settings.metrics_central_direct_checked_at or '',
+                'failing_since':
+                    settings.metrics_central_direct_failing_since or '',
+                'cert_expires':
+                    settings.metrics_central_direct_cert_expires or '',
+            },
+            # Write-only, as the remote-write token above.
+            'has_acme_dns_token': bool(settings.acme_dns_cloudflare_token),
             # ── Edge ───────────────────────────────────────────────────
             # The override plus what actually applies and where it comes
             # from, because the field alone says nothing about the list
@@ -1807,6 +1830,7 @@ class CrudMixin:
         trusted_proxy_ranges=None, metrics_central_public_host=None,
         metrics_central_operator_sources=None,
         metrics_ship_security_logs=None,
+        metrics_central_direct_host=None, acme_dns_cloudflare_token=None,
     ):
         self._sec()._check_can_manage_hosts()
         # Coerce numeric inputs through try/except so a non-numeric
@@ -1953,6 +1977,10 @@ class CrudMixin:
             metrics_vals['metrics_remote_write_token'] = (
                 metrics_remote_write_token.strip()
             )
+        if (acme_dns_cloudflare_token or '').strip():
+            metrics_vals['acme_dns_cloudflare_token'] = (
+                acme_dns_cloudflare_token.strip()
+            )
         if metrics_vals:
             request.env['cloud.settings'].sudo()._get().write(metrics_vals)
 
@@ -1965,6 +1993,10 @@ class CrudMixin:
         if metrics_central_public_host is not None:
             central_vals['metrics_central_public_host'] = (
                 str(metrics_central_public_host or '').strip().lower()
+            )
+        if metrics_central_direct_host is not None:
+            central_vals['metrics_central_direct_host'] = (
+                str(metrics_central_direct_host or '').strip().lower()
             )
         if metrics_central_operator_sources is not None:
             central_vals['metrics_central_operator_sources'] = str(

@@ -505,6 +505,41 @@
                                         With direct access refused, also require every TLS connection to present a client certificate signed by this authority. The CDN's addresses are shared by all its customers; only your zone's certificate tells your traffic apart. Leave empty to accept any connection the firewall lets in. Applied by Full Setup or Push Trusted Proxy Settings.
                                     </span>
                                 </div>
+                                <t t-if="env.features?.observability?.configure !== false">
+                                    <div class="rl-frow rl-full">
+                                        <label for="host-direct-port">Direct port</label>
+                                        <input id="host-direct-port" type="number" min="0" step="1"
+                                               placeholder="9443"
+                                               t-att-value="state.form.direct_port"
+                                               t-on-input="(ev) => this.onInput('direct_port', ev)"/>
+                                        <span class="ic-form-note">
+                                            Port the platform's own servers use to reach this host without the CDN. Applied by Full Setup.
+                                            <t t-if="directPortPending"><strong>Not applied yet.</strong></t>
+                                        </span>
+                                    </div>
+                                    <div class="rl-frow rl-full">
+                                        <label>Use the public path</label>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input id="host-direct-opt-out" type="checkbox"
+                                                   t-att-checked="state.form.direct_path_opt_out"
+                                                   t-on-change="(ev) => { this.state.form.direct_path_opt_out = ev.target.checked; }"/>
+                                            <span>This host's agents, and the panels that run on it, keep going through the CDN.</span>
+                                        </div>
+                                    </div>
+                                    <div class="rl-frow rl-full" t-if="state.directPortShipped">
+                                        <label>Admitted on the direct port</label>
+                                        <div><code t-esc="state.directAllowlist.join(', ')"/></div>
+                                        <span class="ic-form-note" t-if="state.directAllowlistPending">
+                                            <strong>pending</strong>
+                                        </span>
+                                    </div>
+                                    <div class="rl-frow rl-full" t-if="state.agentsWriteUrl">
+                                        <label>Agents write to</label>
+                                        <div><code t-esc="state.agentsWriteUrl"/></div>
+                                        <span class="ic-form-note" t-if="state.directReachReason"
+                                              t-esc="state.directReachReason"/>
+                                    </div>
+                                </t>
                             </div>
                         </t>
 

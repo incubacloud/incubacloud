@@ -757,6 +757,17 @@ class CloudHost(models.Model):
             "prefix": "metrics_central_direct",
         }]
 
+    def _direct_allowlist_pending(self):
+        """Whether the list in force on this host lags the one it should have.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        if not self.direct_port_shipped:
+            return False
+        shipped = (self.direct_allowlist_shipped or "").split()
+        return shipped != self._direct_peers_entries()
+
     def _direct_untried_probes(self):
         """Return the direct checks on offer that this host's last install never tried.
 
