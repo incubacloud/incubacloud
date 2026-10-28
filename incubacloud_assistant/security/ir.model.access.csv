@@ -1,0 +1,4 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_assistant_conversation_user,assistant conversation user,model_incubacloud_assistant_conversation,base.group_user,1,0,0,1
+access_assistant_message_user,assistant message user,model_incubacloud_assistant_message,base.group_user,1,0,0,0
+access_assistant_usage_system,assistant usage system,model_incubacloud_assistant_usage,base.group_system,1,0,0,0

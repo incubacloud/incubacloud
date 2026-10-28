@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- The channel of the steps. Without its line in the Odoo conf its jobs
+             run in root's share; queue_job's autovacuum needs the record. -->
+        <record id="channel_assistant" model="queue.job.channel">
+            <field name="name">assistant</field>
+            <field name="parent_id" ref="queue_job.channel_root"/>
+        </record>
+
+        <record id="cron_assistant_purge" model="ir.cron">
+            <field name="name">Assistant: delete conversations idle for 30 days</field>
+            <field name="model_id" ref="model_incubacloud_assistant_conversation"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_purge()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>
