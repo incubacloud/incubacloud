@@ -256,6 +256,28 @@ with an older core — publish this core first.
   answer once its job has ended, and closing the dialog abandons the
   wait.
 
+- **The visitor's address behind the CDN is the visitor's.**
+  `CF-Connecting-IP` was believed only on a connection from Cloudflare,
+  which never happens with Traefik in between, so the master and every
+  tenant panel recorded Cloudflare's edges (sessions, device log, login
+  lock-out). It is now believed when the connection to Odoo is Traefik's
+  — named by the new `x_real_ip_proxy` option, which a panel's deploy
+  writes (`inverseproxy-proxy-1.`) and the master's configuration
+  carries — and Traefik was reached from a public address in the CDN's
+  ranges; any other caller has its `X-Forwarded-For` replaced by its own
+  address, so nothing else on Odoo's network can choose the address it
+  is recorded as. Private ranges in the CDN's list are ignored. If the
+  proxy's name stops resolving, its last address is kept for five
+  minutes; a name that never resolved, or past that, falls back to
+  taking any private address for the proxy rather than recording every
+  visitor as the proxy, and is asked again every five seconds. Not
+  resolving is a warning at start-up — the job runner, off Traefik's
+  network, logs only that — and an error when proxied traffic finds the
+  fallback in use (RB-25). The master needs its image and its
+  configuration together, then odoo and its job runner restarted; a
+  tenant's panel gets the option with its next deploy, rebuild or plan
+  change.
+
 ### Security
 
 - **A job's credential is the server's alone.** `cloud.job.secret_payload`
