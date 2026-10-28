@@ -79,7 +79,6 @@ _UNASKED = frozenset(
         "rebuild_instance",
         "keep_staging",
         "create_backup",
-        "clear_staging_mailbox",
         "dismiss_alerts",
         "manage_tags",
         "repo_create_branch",
@@ -325,24 +324,55 @@ class AssistantTools(models.AbstractModel):
                 "Create the instance %s. It takes CPU, memory and disk on the server.",
                 quoted(name),
             )
+        if spec.name == "dismiss_alerts" and args.get("all"):
+            # Every alert the user sees: production's too, unnamed here.
+            return self.env._(
+                "Dismiss every alert you see in the panel, those of production "
+                "instances included."
+            )
+        if spec.name == "clear_staging_mailbox":
+            instance = self._readable("cloud.instance", args.get("instance_id"))
+            return self.env._(
+                "Empty the mailbox of staging %s: the mail it caught is deleted for "
+                "good.",
+                quoted(instance.name or args.get("instance_id")),
+            )
         if spec.name == "update_project" and isinstance(vals.get("repos"), list):
-            project = self.env["cloud.project"].sudo().browse(args.get("project_id"))
+            project = self._readable("cloud.project", args.get("project_id"))
             return self.env._(
                 "Change the repositories of project %(project)s: it adds %(added)s, "
                 "removes %(removed)s and moves %(moved)s. Instances created from the "
                 "project afterwards use the new list.",
-                project=quoted(project.exists().name or args.get("project_id")),
-                **self._repos_change(project.exists().repo_ids, vals["repos"]),
+                project=quoted(project.name or args.get("project_id")),
+                **self._repos_change(project.repo_ids, vals["repos"]),
             )
         if spec.name == "update_instance" and isinstance(vals.get("repos"), list):
-            instance = self.env["cloud.instance"].sudo().browse(args.get("instance_id"))
+            instance = self._readable("cloud.instance", args.get("instance_id"))
             return self.env._(
                 "Change the repositories of instance %(instance)s: it adds %(added)s, "
                 "removes %(removed)s and moves %(moved)s. Its next deploy uses them.",
-                instance=quoted(instance.exists().name or args.get("instance_id")),
-                **self._repos_change(instance.exists().repo_ids, vals["repos"]),
+                instance=quoted(instance.name or args.get("instance_id")),
+                **self._repos_change(instance.repo_ids, vals["repos"]),
             )
         return None
+
+    @api.model
+    def _readable(self, model, record_id):
+        """Return the record of *model* the call names, read as the user.
+
+        Empty when there is none, so the card says the id and the route
+        answers that it is not found.
+
+        :raises AccessError: when it exists and the user may not read it,
+            as the route would: the card never describes it
+        """
+        ids = _ids(record_id)
+        record = self.env[model].browse(ids[:1]).exists()
+        if record and not record.has_access("read"):
+            raise AccessError(
+                self.env._("It does not exist, or you cannot see it in the panel.")
+            )
+        return record
 
     @api.model
     def _extra_confirmation(self, spec, args, tainted=False):
