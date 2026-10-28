@@ -63,4 +63,15 @@
         <field name="confirm_window">172800</field>
         <field name="note">Read once a day; one unreachable host is not a lost key.</field>
     </record>
+
+    <!-- The hourly posture check (``cloud_host_posture``) connected
+         straight to a host said to admit only its trusted proxies, and
+         something let it in. Asked again the next hour before anyone is
+         told, like every reading taken over the network. -->
+    <record id="alert_policy_host_origin_open" model="cloud.alert.policy">
+        <field name="code">host_origin_open</field>
+        <field name="confirm_after">2</field>
+        <field name="confirm_window">10800</field>
+        <field name="note">Direct connection from the panel every hour; told once two runs in a row got in.</field>
+    </record>
 </odoo>

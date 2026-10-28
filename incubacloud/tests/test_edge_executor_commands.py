@@ -8,6 +8,9 @@ unfiltered, so removal has to happen whether or not anything replaces it.
 """
 import asyncio
 import json
+import pathlib
+import subprocess
+import tempfile
 from unittest.mock import MagicMock
 
 from odoo.tests.common import TransactionCase
@@ -20,6 +23,31 @@ from ..models.transport import CommandResult, SSHTransport
 from ._certs import make_pair
 
 EDGE_PROXY = ["198.51.100.0/24"]
+
+#: ``nft`` as a host has it, for the firewall step: it says whether each
+#: CDN set exists (``HAS_V4``/``HAS_V6``), refuses a document naming a
+#: set the host lacks, as nft does, or any document at all when
+#: ``APPLY_FAILS`` is set, and keeps what it applied in ``$APPLIED``.
+NFT_STUB = """#!/bin/sh
+case "$*" in
+    "list set inet filter ic_cdn_v4") test -n "$HAS_V4"; exit $? ;;
+    "list set inet filter ic_cdn_v6") test -n "$HAS_V6"; exit $? ;;
+    "-f -")
+        doc="$(cat)"
+        if [ -n "$APPLY_FAILS" ]; then
+            echo "Error: Could not process rule: Operation not permitted" >&2
+            exit 1
+        fi
+        if [ -z "$HAS_V6" ] && printf %s "$doc" | grep -q ic_cdn_v6; then
+            echo "Error: Could not process rule: No such file or directory" >&2
+            exit 1
+        fi
+        printf '%s\\n' "$doc" > "$APPLIED"
+        exit 0 ;;
+esac
+echo "unexpected nft $*" >&2
+exit 2
+"""
 
 
 def _store(main):
@@ -240,6 +268,114 @@ class TestTrustedProxyCommands(EdgeExecutorCase):
         self.assertLess(
             labels.index("Restart Traefik"), labels.index(self._FIREWALL),
         )
+
+    def _run_firewall_step(self, v4_set=True, v6_set=True, apply_fails=False):
+        """Run the firewall step against ``NFT_STUB``, as the host would.
+
+        :param bool v4_set: whether the host has ``ic_cdn_v4``
+        :param bool v6_set: whether the host has ``ic_cdn_v6``
+        :param bool apply_fails: whether nft refuses whatever it is given
+        :return: the step's exit status, what it printed, and the
+            document nft applied (``None`` when it applied nothing)
+        :rtype: tuple
+        """
+        command = self._cmds()[self._FIREWALL]
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = pathlib.Path(tmp, "bin")
+            bin_dir.mkdir()
+            (bin_dir / "sudo").write_text('#!/bin/sh\nexec "$@"\n')
+            (bin_dir / "nft").write_text(NFT_STUB)
+            for stub in bin_dir.iterdir():
+                stub.chmod(0o755)
+            applied = pathlib.Path(tmp, "applied")
+            run = subprocess.run(
+                ["bash", "-c", command],
+                env={
+                    "PATH": f"{bin_dir}:/usr/bin:/bin",
+                    "APPLIED": str(applied),
+                    "HAS_V4": "1" if v4_set else "",
+                    "HAS_V6": "1" if v6_set else "",
+                    "APPLY_FAILS": "1" if apply_fails else "",
+                },
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+            return (
+                run.returncode,
+                run.stdout + run.stderr,
+                applied.read_text() if applied.exists() else None,
+            )
+
+    def test_a_host_with_both_sets_gets_both_in_one_go(self):
+        """Both families in one document, so one transaction."""
+        self._filtering_host()
+        status, output, applied = self._run_firewall_step()
+        self.assertEqual(status, 0)
+        self.assertEqual(applied, (
+            "flush set inet filter ic_cdn_v4\n"
+            "add element inet filter ic_cdn_v4 { 203.0.113.0/24 }\n"
+            "flush set inet filter ic_cdn_v6\n"
+            "add element inet filter ic_cdn_v6 { 2001:db8::/32 }\n"
+        ))
+        self.assertIn("firewall allowlist refreshed", output)
+
+    def test_a_host_without_the_ipv6_set_still_gets_its_ipv4_ranges(self):
+        """Hardened while the ranges had no IPv6: nft refuses a document
+        naming a set the host lacks, and the IPv4 refresh went down with
+        it. The IPv6 ranges wait for the next hardening, which creates
+        the set and its rules, and the job says so."""
+        self._filtering_host()
+        status, output, applied = self._run_firewall_step(v6_set=False)
+        self.assertEqual(status, 0)
+        self.assertEqual(applied, (
+            "flush set inet filter ic_cdn_v4\n"
+            "add element inet filter ic_cdn_v4 { 203.0.113.0/24 }\n"
+        ))
+        self.assertIn("firewall allowlist refreshed", output)
+        self.assertIn("no IPv6 allowlist set on this host", output)
+
+    def test_ipv6_ranges_gone_empty_the_ipv6_set(self):
+        """The proxy no longer trusts them; the firewall must not either,
+        as a hardening run would render no IPv6 set at all."""
+        self._filtering_host(ranges="203.0.113.0/24")
+        status, output, applied = self._run_firewall_step()
+        self.assertEqual(status, 0)
+        self.assertIn("flush set inet filter ic_cdn_v6\n", applied)
+        self.assertNotIn("add element inet filter ic_cdn_v6", applied)
+        self.assertNotIn("no IPv6 allowlist set", output)
+
+    def test_an_ipv4_only_host_is_refreshed_without_a_word_on_ipv6(self):
+        """No IPv6 range and no IPv6 set: nothing to wait for, nothing said."""
+        self._filtering_host(ranges="203.0.113.0/24")
+        status, output, applied = self._run_firewall_step(v6_set=False)
+        self.assertEqual(status, 0)
+        self.assertEqual(applied, (
+            "flush set inet filter ic_cdn_v4\n"
+            "add element inet filter ic_cdn_v4 { 203.0.113.0/24 }\n"
+        ))
+        self.assertNotIn("IPv6", output)
+
+    def test_a_host_without_the_ipv4_set_is_still_left_alone(self):
+        """Hardened before the sets existed: its inlined ranges keep
+        working until the next hardening, and the step says so."""
+        self._filtering_host()
+        status, output, applied = self._run_firewall_step(
+            v4_set=False, v6_set=False,
+        )
+        self.assertEqual(status, 0)
+        self.assertIsNone(applied)
+        self.assertIn("no allowlist set on this host", output)
+
+    def test_a_refused_document_fails_the_step(self):
+        """The job must not report a refresh nft did not take, and the
+        IPv6 warning printed before it stays in the log."""
+        self._filtering_host()
+        status, output, applied = self._run_firewall_step(
+            v6_set=False, apply_fails=True,
+        )
+        self.assertNotEqual(status, 0)
+        self.assertIsNone(applied)
+        self.assertNotIn("refreshed", output)
+        self.assertIn("no IPv6 allowlist set on this host", output)
 
 
 class AcmePruneCase(EdgeExecutorCase):

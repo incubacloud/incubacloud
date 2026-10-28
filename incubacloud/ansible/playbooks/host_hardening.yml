@@ -369,16 +369,31 @@
       failed_when: false
       become: false
 
+    # Also split by address family, as the firewall keeps it: a set
+    # holds one type of address and nft refuses any other. An operator's
+    # IPv6 address in the list stopped a production host's run at the
+    # ruleset check (27-oct-2026). The catch-all the panel sends when it
+    # knows no operator address (0.0.0.0/0) opens IPv6 too (::/0):
+    # reachable rather than everyone locked out, whichever family they
+    # come from. Plain Jinja, so CI's renderer evaluates this very task.
     - name: Build the effective SSH allowlist
       ansible.builtin.set_fact:
-        ic_effective_allowlist: >-
-          {{ ((ssh_allowlist | default('')).split(',')
-              | map('trim') | reject('equalto', '') | list
-              + ic_control_ip) | unique | join(', ') }}
+        ic_effective_allowlist: "{{ ic_ssh_entries | join(', ') }}"
+        ic_effective_allowlist_v4: >-
+          {% for ip in ic_ssh_entries if ':' not in ip %}{{ ip }}{{ '' if loop.last else ', ' }}{% endfor %}
+        ic_effective_allowlist_v6: >-
+          {% for ip in ic_ssh_v6_catchall + ic_ssh_entries if ':' in ip %}{{ ip }}{{ '' if loop.last else ', ' }}{% endfor %}
       vars:
         ic_control_ip: >-
           {{ [(ic_ssh_connection.stdout | default('')).split(' ') | first]
              if (ic_ssh_connection.stdout | default('') | trim) else [] }}
+        ic_ssh_entries: >-
+          {{ ((ssh_allowlist | default('')).split(',')
+              | map('trim') | reject('equalto', '') | list
+              + ic_control_ip) | unique | list }}
+        ic_ssh_v6_catchall: >-
+          {{ ['::/0'] if ('0.0.0.0/0' in ic_ssh_entries
+                          and '::/0' not in ic_ssh_entries) else [] }}
 
     # The firewall allowlist degrades to 0.0.0.0/0 when no operator IP is
     # known, deliberately: locking every operator out is worse than a
@@ -400,7 +415,8 @@
       ansible.builtin.debug:
         msg: >-
           SSH allowlist for port {{ ssh_port }}:
-          {{ ic_effective_allowlist }}
+          IPv4 {{ ic_effective_allowlist_v4 or 'none' }};
+          IPv6 {{ ic_effective_allowlist_v6 or 'none' }}
           (configured: {{ ssh_allowlist }})
 
     # Rendered to a staging file, parsed there, and only then installed
@@ -446,11 +462,25 @@
               # (18-oct-2026). ``auto-merge`` lets overlapping entries
               # (a catch-all next to an address) load: the script always
               # replaces the whole set, never one element.
+              # One set per address family (the lists are split where
+              # they are built, "Build the effective SSH allowlist"). A
+              # family with no address keeps its set, empty, so its rule
+              # loads and the script can fill it.
               set ic_ssh_allow {
                   type ipv4_addr
                   flags interval
                   auto-merge
-                  elements = { {{ ic_effective_allowlist }} }
+                  {% if ic_effective_allowlist_v4 %}
+                  elements = { {{ ic_effective_allowlist_v4 }} }
+                  {% endif %}
+              }
+              set ic_ssh_allow6 {
+                  type ipv6_addr
+                  flags interval
+                  auto-merge
+                  {% if ic_effective_allowlist_v6 %}
+                  elements = { {{ ic_effective_allowlist_v6 }} }
+                  {% endif %}
               }
               {% if ic_http_allowed_ranges | default('') | trim %}
               # Named sets rather than the ranges written straight into
@@ -484,6 +514,7 @@
                   meta l4proto icmp limit rate 10/second accept
                   meta l4proto ipv6-icmp limit rate 10/second accept
                   tcp dport {{ ssh_port }} ip saddr @ic_ssh_allow accept
+                  tcp dport {{ ssh_port }} ip6 saddr @ic_ssh_allow6 accept
                   {% if ic_http_allowed_ranges | default('') | trim %}
                   # The host is reached through a CDN, so its origin has
                   # no business answering anyone else. This rule covers
@@ -896,9 +927,13 @@
           ic_new_ssh_port: "{{ ssh_port }}"
           # What the firewall actually allows — includes the address this
           # play connected from, which may differ from the configured
-          # allowlist. The panel logs it so a stale ``allowed_ssh_ips`` is
-          # visible instead of silently locking someone out later.
-          ic_effective_allowlist: "{{ ic_effective_allowlist }}"
+          # allowlist, and the IPv6 catch-all. The panel logs it so a
+          # stale ``allowed_ssh_ips`` is visible instead of silently
+          # locking someone out later. A family with no address templates
+          # to nothing (``None``), which ``select`` leaves out.
+          ic_effective_allowlist: >-
+            {{ [ic_effective_allowlist_v4, ic_effective_allowlist_v6]
+               | select | join(', ') }}
 
   handlers:
     # Bounce services only when their config changed. Handlers run at the

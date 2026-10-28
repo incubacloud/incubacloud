@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hashlib
+import ipaddress
 import json
 import logging
 import re
@@ -13,15 +14,19 @@ import yaml
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
-from odoo.tools import file_open
+from odoo.tools import config, file_open
 
 from ..net.hostname import (
     InvalidHostname,
     is_host_address,
     validate_wildcard_domain,
 )
-from ..net import tls_names
-from ..net.trusted_proxies import invalid_ranges, parse_ranges
+from ..net import real_ip, tls_names
+from ..net.trusted_proxies import (
+    invalid_ranges,
+    networks as proxy_networks,
+    parse_ranges,
+)
 from . import _config_snapshot_diff as _snapshot_diff
 from ._concurrency import read_committed_cursor
 from .cloud_host_whitelist import DEFAULT_WHITELIST
@@ -60,6 +65,105 @@ def _read_traefik_template(filename):
     except Exception as e:
         _logger.warning("Could not read Traefik template %s: %s", filename, e)
         return ""
+
+
+def _ssh_allow_entries(raw):
+    """Split an ``allowed_ssh_ips`` value into its entries.
+
+    Commas separate, as the field says; spaces and line breaks are read
+    as separators too, so a list pasted either way is taken whole.
+
+    :param raw: the field's value, or ``False``
+    :rtype: list
+    """
+    return [entry for entry in re.split(r"[,\s]+", raw or "") if entry]
+
+
+def _ssh_source_network(entry):
+    """Return the network an ``allowed_ssh_ips`` entry names, if nft can take it.
+
+    An IPv4-mapped IPv6 entry (``::ffff:203.0.113.7``) is its IPv4
+    network: the packets it stands for arrive over IPv4, and in the IPv6
+    set it would never match. An IPv6 address with a zone
+    (``fe80::1%eth0``) names an interface of the machine it was written
+    on, and nft refuses it.
+
+    :param str entry: one entry of the list
+    :return: the network, or ``None`` when the entry is not one
+    :rtype: ipaddress.IPv4Network | ipaddress.IPv6Network | None
+    """
+    try:
+        network = ipaddress.ip_network(entry, strict=False)
+    except ValueError:
+        return None
+    address = network.network_address
+    if getattr(address, "scope_id", None):
+        return None
+    mapped = getattr(address, "ipv4_mapped", None)
+    if mapped is not None:
+        return ipaddress.ip_network(f"{mapped}/{network.prefixlen - 96}")
+    return network
+
+
+def _normalize_ssh_source(entry):
+    """Return *entry* in the one form the panel keeps and sends.
+
+    An address compressed (``2001:0db8::7`` is ``2001:db8::7``), alone
+    also when written as a network of one (``/32``, ``/128``); a wider
+    network with its prefix and its host bits cleared. The host's
+    ``ssh_allowlist.sh`` compares entries as text, so the same address
+    written two ways must not reach it: ``remove 203.0.113.7`` left
+    ``203.0.113.7/32`` admitting it.
+
+    :param str entry: one entry of the list
+    :return: the entry normalised, or unchanged when it is neither an
+        address nor a network (``_check_allowed_ssh_ips`` names it)
+    :rtype: str
+    """
+    network = _ssh_source_network(entry)
+    if network is None:
+        return entry
+    if network.prefixlen == network.max_prefixlen:
+        return str(network.network_address)
+    return network.with_prefixlen
+
+
+def _normalize_ssh_allowlist(raw):
+    """Return the ``allowed_ssh_ips`` value *raw* in the form it is kept.
+
+    Each entry normalised (:func:`_normalize_ssh_source`) and kept once,
+    in the order written, joined by commas as the playbook reads it.
+
+    :param str raw: the value about to be stored
+    :rtype: str
+    """
+    entries = [_normalize_ssh_source(entry) for entry in _ssh_allow_entries(raw)]
+    return ", ".join(dict.fromkeys(entries))
+
+
+def _ssh_address(raw):
+    """Return the IP address *raw* names, in the form the SSH list keeps.
+
+    An IPv4-mapped IPv6 address (``::ffff:203.0.113.7``) is its IPv4
+    address, as in :func:`_ssh_source_network`: the connection it stands
+    for arrives over IPv4. One with a zone (``fe80::1%eth0``) names an
+    interface of some machine, and is nobody's address.
+
+    :param raw: an address as a request or a host's record carries it
+    :return: the address, or ``None`` when *raw* is not one (a host name,
+        ``'unknown'``, nothing)
+    :rtype: ipaddress.IPv4Address | ipaddress.IPv6Address | None
+    """
+    try:
+        address = ipaddress.ip_address(str(raw or "").strip())
+    except ValueError:
+        return None
+    mapped = getattr(address, "ipv4_mapped", None)
+    if mapped is not None:
+        return mapped
+    if getattr(address, "scope_id", None):
+        return None
+    return address
 
 
 class CloudHost(models.Model):
@@ -214,6 +318,29 @@ class CloudHost(models.Model):
         readonly=True,
         copy=False,
     )
+    # What the last successful run applied, written by its ``on_success``
+    # and compared hourly with what the panel wants now
+    # (``cloud_host_posture``): a run applies the recipe of its day and
+    # the posture of its moment, and nothing re-runs it by itself.
+    hardening_recipe = fields.Char(
+        string="Hardening Recipe",
+        readonly=True,
+        copy=False,
+        help="Fingerprint of the hardening recipe the last successful run "
+             "applied. Compared with the recipe this panel ships, so a host "
+             "hardened with an older one is reported rather than assumed "
+             "current. Empty on a host hardened before it was recorded.",
+    )
+    hardening_cdn_only = fields.Boolean(
+        string="Firewall Admits Only Trusted Proxies",
+        readonly=True,
+        copy=False,
+        help="Whether the last successful hardening run let ports 80 and "
+             "443 in only from the trusted proxy ranges. That firewall half "
+             "of refusing direct traffic lands only with a hardening run, "
+             "so it can disagree with the setting that asks for it until "
+             "the hardening is re-applied.",
+    )
     auto_security_updates = fields.Boolean(
         string="Auto Security Updates",
         default=True,
@@ -225,9 +352,9 @@ class CloudHost(models.Model):
         string="Allowed SSH IPs",
         groups="incubacloud.group_cloud_manager",
         help="Comma-separated IPs/CIDRs allowed to SSH in addition to the "
-             "operator IP (prefilled from the request that triggers "
-             "hardening). Edit and re-run hardening to push the change to "
-             "the host (idempotent — updates the in-host nftables allowlist).",
+             "panel's own address. Edit and re-run hardening to push the "
+             "change to the host (idempotent — updates the in-host nftables "
+             "allowlist).",
     )
 
     http_conn_rate = fields.Integer(
@@ -937,6 +1064,31 @@ class CloudHost(models.Model):
                     )
                 )
 
+    @api.constrains("allowed_ssh_ips")
+    def _check_allowed_ssh_ips(self):
+        """Refuse an SSH allowlist entry that is not an address or network.
+
+        Each entry goes into an nft set on the host, by the hardening
+        playbook and by ``ssh_allowlist.sh``: one nft cannot read stops
+        a hardening run at its ruleset check, after sshd has already
+        moved. Checked when the list is written, so a value stored
+        before this check does not keep the host from being saved.
+
+        :raise ValidationError: naming the entries that are neither
+        """
+        for host in self:
+            bad = [
+                entry for entry in _ssh_allow_entries(host.allowed_ssh_ips)
+                if _ssh_source_network(entry) is None
+            ]
+            if bad:
+                raise ValidationError(_(
+                    "These are not IP addresses or networks: %(entries)s. "
+                    "Separate the entries with commas, for example "
+                    "203.0.113.7, 198.51.100.0/24 or 2001:db8::/32.",
+                    entries=", ".join(bad),
+                ))
+
     @api.constrains("wildcard_domain")
     def _check_wildcard_domain(self):
         """Refuse a wildcard domain that is not a DNS hostname.
@@ -1318,6 +1470,209 @@ class CloudHost(models.Model):
         parts.append(f"{self.user}@{self.ip_address}")
         return " ".join(parts)
 
+    # ── Who can open SSH once the host is hardened ─────────────────────
+
+    def _hardening_panel_ip(self):
+        """Return the address this panel opens SSH on this host from.
+
+        The address every layer's hardening executor seeds the SSH list
+        with (``_operator_ip``), and the one the hardening dialog names.
+        Core knows none: it reaches a host from its way out to the
+        internet, or from its LAN, which only the host sees, run by run.
+        ``''`` here, and the hardening admits what ``allowed_ssh_ips``
+        holds besides the address the run connects from, any address when
+        the list is empty. A layer that knows its address overrides this.
+
+        :return: an address or a network, or ``''``
+        :rtype: str
+        """
+        return ""
+
+    def _ssh_closed_by_foreign_edge(self):
+        """Return whether a firewall this panel does not govern closes SSH.
+
+        Core governs whatever filters its hosts (the hardening's own
+        rules). A layer whose hosts sit behind somebody else's firewall
+        overrides this, and the hardening dialog then offers none of the
+        asker's addresses: that edge would refuse it whatever the host
+        allowed.
+
+        :rtype: bool
+        """
+        return False
+
+    def _ssh_proxy_networks(self):
+        """Return the networks of the proxies in front of this panel.
+
+        Those Settings declares (``_effective_trusted_proxy_ranges`` of
+        ``cloud.settings``) and the CDN's of the Odoo configuration
+        (``x_real_ip_trusted``, read by ``net/real_ip``). An address in
+        one of them is a hop of the request, not whoever sent it: a
+        request ``real_ip`` did not correct, with no CDN header or through
+        a proxy that is not ours.
+
+        :rtype: list
+        """
+        ranges = self.env["cloud.settings"]._effective_trusted_proxy_ranges()
+        return proxy_networks(ranges) + real_ip.parse_networks(
+            config.get(real_ip.TRUSTED_OPTION),
+        )
+
+    def _ssh_usable_source(self, address, host_address):
+        """Return whether *address* may be offered as the asker's own.
+
+        A public address (``is_global``, never multicast); on a host given
+        by an address that is not public, a host on a LAN, also one that
+        is not public, but never loopback, link-local or unspecified. And
+        never one inside a proxy in front of this panel
+        (:meth:`_ssh_proxy_networks`).
+
+        :param address: the asker's address (:func:`_ssh_address`)
+        :param host_address: this host's address, or ``None`` when it is
+            given by name
+        :rtype: bool
+        """
+        if address.is_multicast:
+            return False
+        if not address.is_global:
+            on_lan = host_address is not None and not host_address.is_global
+            if not on_lan or (
+                address.is_loopback
+                or address.is_link_local
+                or address.is_unspecified
+            ):
+                return False
+        return not any(
+            address in network for network in self._ssh_proxy_networks()
+        )
+
+    def _ssh_access_preview(self, person):
+        """Say who will be able to open SSH on this host once it is hardened.
+
+        What the hardening dialog shows, worked out here so that the
+        dialog and ``/cloud/apply_host_hardening`` judge alike. The state
+        is the first that holds:
+
+        * ``edge``: a firewall this panel does not govern closes SSH
+          (:meth:`_ssh_closed_by_foreign_edge`);
+        * ``open``: no address of the panel (:meth:`_hardening_panel_ip`)
+          and an empty list, or ``0.0.0.0/0`` in the list: any address;
+        * ``panel_only``: the panel's address and an empty list;
+        * ``list``: the panel, when it has an address, and the list.
+
+        The list leaves out the entries equal to the panel's address (a
+        moved tenant panel keeps its own there). An entry stored before
+        ``_check_allowed_ssh_ips`` that is no address is shown as written
+        and counts for nothing.
+
+        In ``panel_only`` and ``list`` the asker's address is judged too:
+        ``offer`` it; ``allowed``, inside the panel's address or an entry;
+        ``unknown``, not an address, not usable
+        (:meth:`_ssh_usable_source`); or ``family``, of the other family
+        than a host given by its address, whose SSH it could not reach.
+
+        :param str person: the asker's address, as ``client_ip()`` gives it
+        :return: ``state``, ``panel_ip``, ``entries`` (list), ``person``
+            (``''`` in the other states), ``person_ip`` (compressed, for
+            ``offer``, ``allowed`` and ``family``), and ``person_family``
+            and ``host_family`` (``IPv4`` or ``IPv6``, for ``family``)
+        :rtype: dict
+        """
+        self.ensure_one()
+        panel = (self._hardening_panel_ip() or "").strip()
+        panel_network = _ssh_source_network(panel) if panel else None
+        entries = [
+            entry for entry in _ssh_allow_entries(self.allowed_ssh_ips)
+            if panel_network is None
+            or _ssh_source_network(entry) != panel_network
+        ]
+        entry_networks = [
+            network for network in map(_ssh_source_network, entries)
+            if network is not None
+        ]
+        if self._ssh_closed_by_foreign_edge():
+            state = "edge"
+        elif (not panel and not entries) or (
+            ipaddress.ip_network("0.0.0.0/0") in entry_networks
+        ):
+            state = "open"
+        elif not entries:
+            state = "panel_only"
+        else:
+            state = "list"
+        preview = {
+            "state": state,
+            "panel_ip": _normalize_ssh_source(panel) if panel else "",
+            "entries": entries,
+            "person": "",
+            "person_ip": "",
+            "person_family": "",
+            "host_family": "",
+        }
+        if state not in ("panel_only", "list"):
+            return preview
+        address = _ssh_address(person)
+        host_address = _ssh_address(self.ip_address)
+        if address is None or not self._ssh_usable_source(
+            address, host_address,
+        ):
+            preview["person"] = "unknown"
+            return preview
+        preview["person_ip"] = str(address)
+        if host_address is not None and host_address.version != address.version:
+            preview.update(
+                person="family",
+                person_family=f"IPv{address.version}",
+                host_family=f"IPv{host_address.version}",
+            )
+        elif any(
+            address in network
+            for network in (panel_network, *entry_networks)
+            if network is not None
+        ):
+            preview["person"] = "allowed"
+        else:
+            preview["person"] = "offer"
+        return preview
+
+    def _allow_asker_ssh(self, sent, person):
+        """Add the asker's own address to ``allowed_ssh_ips``.
+
+        *sent* is the address the hardening dialog showed and the asker
+        ticked. It is added only when it is the address the request comes
+        from and the dialog could offer it (:meth:`_ssh_access_preview`),
+        compared as addresses, at the end of the list. Written through
+        ``write``, which normalises and checks the whole list: an entry
+        stored before that check that is no address stops the addition,
+        named.
+
+        :param str sent: the address the dialog sent
+        :param str person: the asker's address, as ``client_ip()`` gives it
+        :return: the list as stored
+        :rtype: str
+        :raise UserError: when *sent* is not the asker's address, or the
+            dialog could not offer it
+        :raise ValidationError: when the list holds an entry that is no
+            address or network
+        """
+        self.ensure_one()
+        preview = self._ssh_access_preview(person)
+        address = _ssh_address(sent)
+        if (
+            preview["person"] != "offer"
+            or address is None
+            or address != ipaddress.ip_address(preview["person_ip"])
+        ):
+            raise UserError(_(
+                "Your address could not be confirmed. Close this dialog and "
+                "open it again."
+            ))
+        current = (self.allowed_ssh_ips or "").strip()
+        self.write({
+            "allowed_ssh_ips": f"{current}, {address}" if current else str(address),
+        })
+        return self.allowed_ssh_ips
+
     #: The line ``ssh_allowlist.sh`` ends with, naming the resulting list.
     _SSH_ALLOW_RE = re.compile(r"^IC_SSH_ALLOW (.+)$", re.MULTILINE)
 
@@ -1339,7 +1694,7 @@ class CloudHost(models.Model):
         change there, and ``None`` is returned.
 
         :param str op: ``add`` or ``remove``
-        :param ips: IPv4 addresses or networks
+        :param ips: IPv4 or IPv6 addresses or networks
         :return: the list the host now allows, as the script printed it,
             or ``None`` for a host that was never hardened
         :rtype: str | None
@@ -1348,7 +1703,13 @@ class CloudHost(models.Model):
         self.ensure_one()
         if op not in ("add", "remove"):
             raise UserError(_("Unknown allowlist operation: %s", op))
-        ips = [ip.strip() for ip in ips or () if ip and ip.strip()]
+        # In the form the host holds them: the script compares entries as
+        # text. One that is not an address is passed as written, quoted,
+        # and the script refuses it.
+        ips = [
+            _normalize_ssh_source(ip.strip()) for ip in ips or ()
+            if ip and ip.strip()
+        ]
         if not ips:
             raise UserError(_("No address given."))
         if not self.hardened:
@@ -1476,6 +1837,10 @@ class CloudHost(models.Model):
             for field, filename in self._TRAEFIK_TEMPLATE_FIELDS.items():
                 if field in vals and not vals[field]:
                     vals[field] = _read_traefik_template(filename)
+            if vals.get("allowed_ssh_ips"):
+                vals["allowed_ssh_ips"] = _normalize_ssh_allowlist(
+                    vals["allowed_ssh_ips"],
+                )
         hosts = super().create(vals_list)
         for host in hosts:
             if not host.whitelist_ids:
@@ -1575,6 +1940,10 @@ class CloudHost(models.Model):
         for field in self._PASSWORD_FIELDS:
             if field in vals and not vals[field]:
                 del vals[field]
+        if vals.get("allowed_ssh_ips"):
+            vals["allowed_ssh_ips"] = _normalize_ssh_allowlist(
+                vals["allowed_ssh_ips"],
+            )
         # The default certificate's key is never echoed to the panel, so
         # an empty one on a save means "untouched", not "remove". Removing
         # is clearing the certificate, which takes the key with it — a

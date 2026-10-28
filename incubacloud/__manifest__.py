@@ -45,6 +45,7 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "data/rotate_secrets_cron.xml",
         "data/github_event_purge_cron.xml",
         "data/github_webhook_silence_cron.xml",
+        "data/host_posture_cron.xml",
         "data/rate_limit_gc_cron.xml",
         "data/job_duration_cron.xml",
         "data/job_purge_cron.xml",
@@ -132,6 +133,8 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             "incubacloud/static/src/toast/**/*.js",
             "incubacloud/static/src/store/**/*.js",
             "incubacloud/static/src/components/**/*.js",
+            # The templates of the components a test mounts.
+            "incubacloud/static/src/components/host_hardening_modal/host_hardening_modal.xml",
             "incubacloud/static/src/app/app.js",
             "incubacloud/static/tests/**/*.test.js",
         ],

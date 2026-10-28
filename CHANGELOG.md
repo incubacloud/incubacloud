@@ -18,6 +18,40 @@ exists only from this version on: a saas newer than this core fails to
 build its styles. Neither the image nor a tenant may get the new saas
 with an older core — publish this core first.
 
+### Added
+
+- **A host said to refuse direct traffic is checked, hourly, and so is
+  its hardening.** `block_direct_access` closes the proxy at the next
+  Full Setup or proxy push, but the firewall only at the next hardening
+  run, which nothing starts by itself: a host that joined a pool after
+  its hardening, or whose box was ticked by hand, said "closed" while
+  its origin answered anybody, and no host had taken the hardening
+  changes made since 15 October. `cron_check_host_posture`
+  (`cloud_host_posture.py`) now raises `host_origin_open` when the
+  panel, connecting straight to a host behind a CDN that refuses direct
+  traffic, is let in on 443 or 80 for a name the host serves (confirmed
+  over two runs; a dropped connection counts as closed only once the
+  same name answers through the CDN, so a panel whose own way out drops
+  everything reads no host as closed), and `host_hardening_outdated`
+  when the last successful hardening of a host — now recorded in
+  `hardening_recipe`, a fingerprint of the playbook without its
+  comments, and `hardening_cdn_only` — is an older recipe or another
+  posture than its settings ask for. Both say who can act and how;
+  neither re-runs anything, and both clear themselves. Every host
+  hardened before this version reads as outdated until its hardening is
+  re-applied. The 1.0.200 post-migrate hands the new cron to the cron
+  bot.
+
+- **A panel can list an alert without announcing it.**
+  `cloud.alert._silent_alert_codes()` names the codes that reach nobody
+  — not the mail, not the external channels, not the daily digest — and
+  still show in the Alerts list, the bell and the host's card. Core
+  silences nothing; the tenant module lists `host_hardening_outdated`
+  that way. `cloud.alert.for_provider` is declared in core, which never
+  sets it: the tenant module's record rule on it is in the database
+  while core loads alone (its tests, a migration), and a rule on a field
+  the model lacks fails every read of every alert.
+
 ### Fixed
 
 - **What is typed on a Settings tab survives a visit to another tab,
@@ -277,6 +311,46 @@ with an older core — publish this core first.
   configuration together, then odoo and its job runner restarted; a
   tenant's panel gets the option with its next deploy, rebuild or plan
   change.
+
+- **A failed hardening is one alert.** It left `hardening_failed`
+  (critical, "check the job log") and `job_failed` (what failed) side by
+  side for the same run (host 2412, 27 October). `hardening_failed` now
+  says what failed, and `job_failed` is not raised while it is open: an
+  executor names its own failure alert (`_failure_alert_code`), honoured
+  by `_create_job_failed_alert` for a job type whose failure does not
+  hold its queue, as it already was for a critical conflict alert.
+
+- **Hardening takes an SSH allowlist with an IPv6 address in it.** The
+  play put the whole list in one IPv4 set (`ic_ssh_allow`), and nft
+  refuses an IPv6 address there: host 2412, whose `allowed_ssh_ips` the
+  operator's browser had filled with its IPv6 address, stopped at the
+  ruleset check on 27 October (nothing applied; its firewall stayed as
+  it was). The list is now split by family: IPv6 goes to
+  `ic_ssh_allow6`, with its own `ip6 saddr` rule; a family with no
+  address keeps its set, empty; and the catch-all the panel sends when
+  it knows no operator address (`0.0.0.0/0`) opens IPv6 too (`::/0`).
+  `ssh_allowlist.sh` takes IPv6 addresses and splits the list the same
+  way; on a host hardened before this version, its first change adds the
+  IPv6 set and rule, live and in `/etc/nftables.conf`. `allowed_ssh_ips`
+  refuses an entry that is no address or network, and keeps each one in
+  a single form (an address compressed, alone also when written as a
+  network of one; an IPv4-mapped address as its IPv4), since the script
+  compares entries as text. The firewall CI job parses an IPv6 list and
+  a mixed one with every supported OS's nft.
+
+- **The hardening dialog no longer runs a count into the words after
+  it** ("interrupt 2running instances", "This host runs 2production
+  instances"), and its production gate is one sentence to translate:
+  "Type" was a term of its own, the noun of every type column, and
+  Spanish read "Tipo <host> para confirmar:".
+
+- **A proxy push refreshes the firewall's IPv4 ranges on a host without
+  the IPv6 set.** The IPv6 lines went in the same nft document, and nft
+  refuses a whole document that names a set the host lacks (one hardened
+  while the ranges had no IPv6). They now join it only where the set
+  exists; elsewhere the step says the IPv6 ranges wait for the next
+  hardening. Where the set exists and the ranges no longer have IPv6, it
+  is emptied.
 
 ### Security
 
@@ -557,6 +631,26 @@ with an older core — publish this core first.
   install of the observability agents. Traefik does not start when that
   name does not resolve: a self-hosted `inverseproxy.yaml` must keep the
   project `inverseproxy`, the service `proxy` and the network `public`.
+
+- **Nothing joins a host's SSH allowlist by itself, and the hardening
+  dialog says who will be able to open SSH.** The SaaS manager filled an
+  empty `allowed_ssh_ips` with the address of the browser that asked for
+  the hardening, unannounced (`_before_host_hardening`, now gone from
+  core and saas): an IPv6 a host reached over IPv4 could not use (host
+  2412, 27 October), and on Tenants1 an address of Cloudflare's.
+  `/cloud/preflight_host_hardening` now returns `ssh_access`
+  (`cloud.host._ssh_access_preview`) — open to any address, only this
+  panel's server, this panel's server and the list, or closed by an edge
+  this panel does not govern (a tenant's VPS bought from IncubaCloud) —
+  and the dialog says it in every mode. It offers the asker's own
+  address with an unticked "Also allow my IP" only when that address is
+  public (or of the host's LAN), not a proxy this panel believes
+  (Settings or `x_real_ip_trusted`) and of the host's address family,
+  and says why otherwise. `/cloud/apply_host_hardening` takes it as
+  `allow_ip`, checks it against the address it sees itself and adds it
+  in the savepoint that queues the jobs; without it the list is left
+  alone. The panel's own address is `cloud.host._hardening_panel_ip()`
+  (none in core), which the SaaS layers' executors read.
 
 ## [1.0.199] — 2026-10-27
 

@@ -114,6 +114,14 @@ class CloudAlert(models.Model):
              "one, provider alerts are taken to the provider instead of "
              "paging the operator about something they cannot touch.",
     )
+    #: Set by a layer that hands provider alerts over (the tenant module,
+    #: whose global record rule on it hides them from the panel's users);
+    #: core never sets it. Declared here because that rule is in the
+    #: database while core loads alone -- its at_install tests, a
+    #: migration or a ``<function>`` of core or pitr that raises an
+    #: alert -- and a rule on a field the model lacks fails every read of
+    #: every alert.
+    for_provider = fields.Boolean(readonly=True, copy=False, index=True)
     state = fields.Selection(
         [("active", "Active"), ("dismissed", "Dismissed")],
         default="active",
@@ -576,6 +584,24 @@ class CloudAlert(models.Model):
         """
         return False
 
+    @api.model
+    def _silent_alert_codes(self):
+        """Codes of the alerts this panel lists but announces to nobody.
+
+        Every way out of the panel asks: :meth:`_alert_user_eligible`,
+        which the mail and the external channels share at an alert's
+        opening, its turning critical and its resolution, and the daily
+        digest (``res.users._send_cloud_digest_for``). The panel itself
+        -- the Alerts list, the bell's count, the host's card, the bus --
+        does not. Core announces every alert: an empty set. A layer whose
+        panel only lists one adds its code (the tenant module, for an
+        outdated hardening).
+
+        :returns: the codes of the alerts nobody is told about
+        :rtype: frozenset
+        """
+        return frozenset()
+
     def write(self, vals):
         # The alerts this write closes, to stamp how and when. A close
         # that does not say how is the platform's (an executor, a cron,
@@ -698,8 +724,11 @@ class CloudAlert(models.Model):
         Encapsulates the notification-level + channel-toggle logic so the
         email and external paths stay in sync. ``failures`` lets through
         failed jobs and alerts that are, or have been, critical;
-        ``failures_warnings`` and ``all`` let every alert through.
+        ``failures_warnings`` and ``all`` let every alert through. A code
+        in :meth:`_silent_alert_codes` reaches nobody, whatever the level.
         """
+        if self.code in self._silent_alert_codes():
+            return False
         if user.cloud_notification_level == "none":
             return False
         if channel == "email" and not user.cloud_email_enabled:

@@ -202,6 +202,87 @@ Consequences to know before enabling it:
   platform does this — the health probe uses loopback — but a custom
   add-on might.
 
+### The panel checks that it is closed, and that the hardening is current
+
+Ticking `block_direct_access` changes the proxy at the next Full Setup
+or proxy push, but the firewall only at the next hardening run, and
+nothing starts one by itself. The hourly cron *Alert When a Host Is Not
+as Closed or as Hardened as Set* (`cron_check_host_posture`,
+`models/cloud_host_posture.py`) says when the two disagree:
+
+- **`host_origin_open`** (warning, after two runs in a row): a host with
+  `behind_cdn` and `block_direct_access`, its proxy deployed, let a
+  direct connection from the panel in — the panel's own
+  `curl --resolve <name>:443:<ip>`, then `:80`, for the primary domain
+  of one of its instances (its address when it serves none). The
+  message names the port and what answered; Traefik's `403` counts, it
+  means the firewall half is missing. Fix: check that the host's
+  **Applied to this host** ranges are there, **Re-apply Hardening**,
+  then **Push Trusted Proxy Settings**. It clears on the first run whose
+  connections are left unanswered until the wait runs out while the
+  same name answers through the CDN on 443 — the control that keeps a
+  panel unable to reach anything directly from reading every host as
+  closed. A refused connection (the proxy restarting, or down), an
+  unreachable address, a drop while the CDN is out of reach from the
+  panel, or a drop at a host that serves no name yet decides nothing
+  that run.
+- **`host_hardening_outdated`** (warning, at once): a host hardened from
+  the panel whose last successful run (`hardening_recipe`,
+  `hardening_cdn_only`) disagrees with what is wanted now. The message
+  names the case: hardened before the panel recorded it (every host
+  hardened before this check existed), set closed after its hardening
+  (a host joining a pool after it, or the box ticked by hand), opened
+  after it, or an older recipe — a change to the playbook other than in
+  its comment lines. Fix: **Re-apply Hardening**; its success clears it.
+
+Neither re-applies anything: re-running hardening touches a live host,
+and that stays a decision. To check by hand, from outside the CDN:
+
+```bash
+$ curl -sk -o /dev/null -w '%{http_code}\n' --connect-timeout 10 \
+    --resolve <name>:443:<ip> https://<name>/        # closed: 000
+$ curl -s -o /dev/null -w '%{http_code}\n' --connect-timeout 10 \
+    --resolve <name>:80:<ip> http://<name>/          # closed: 000
+$ curl -s -o /dev/null -w '%{http_code}\n' --connect-timeout 10 \
+    https://<name>/                                  # through the CDN: answers
+```
+
+A closed origin prints `000` only after the full ten seconds; an
+immediate `000` (refused, unreachable) says nothing either way.
+
+**What the probe costs.** A closed host makes the panel wait out its
+timeout: 5 s on 443, 5 s on 80, then the control through the CDN —
+about 10.5 s per closed host when the CDN answers at once, up to 15 s
+when it does not. Hosts are probed one after another, in a single cron
+run, and Odoo kills a cron that outlives its real-time limit and rolls
+back what it recorded, so the check never completes. With multiple
+workers, the default `limit_time_real_cron = -1` gives the cron
+`limit_time_real` (120 s by default), so from about a dozen closed
+hosts the run is killed every hour. Set `limit_time_real_cron = 0` (no
+limit) there. With
+`workers = 0`, `0` falls back to `limit_time_real`: give
+`limit_time_real_cron` a positive value of at least 15 s per host
+behind the CDN refusing direct traffic, plus a margin.
+
+**A host the control cannot vouch for.** A drop is read as closed only
+once the same name answers through the CDN, so a host that serves no
+name yet (no instance with a domain), or whose name the panel cannot
+reach through the CDN, gets no reading from it: an alert raised while
+it was open stays up after it is closed. Check it by hand with the
+three commands above and, once it is closed, dismiss the alert: the
+**Alerts** icon in the panel header, then **Dismiss** on the alert's
+card (Consultant or above; it is dismissed for every user), or a
+JSON-RPC call to `/cloud/dismiss_alert` with its `alert_id`. It comes
+back only after two new sightings in a row, like a new one.
+
+**What the probe assumes.** That the panel reaches the hosts' public
+addresses by the same way its lookups of the instances' names reach
+the CDN. A panel with split DNS for the instances' zone, or whose
+egress admits only the CDN's ranges, has the control answer while its
+own network drops the direct connections, and reads every host as
+closed. Run the panel with plain egress to the internet, or check the
+hosts by hand from outside.
+
 ---
 
 ## Login limit and web-login ban
@@ -291,4 +372,7 @@ network. Hetzner and OVH include this free and automatically; it is
   (the idempotent retrofit onto existing hosts).
 - [`ansible/playbooks/host_hardening.yml`](../../incubacloud/ansible/playbooks/host_hardening.yml)
   — the gated nftables conn-rate meter.
+- [`models/cloud_host_posture.py`](../../incubacloud/models/cloud_host_posture.py)
+  — the hourly check behind `host_origin_open` and
+  `host_hardening_outdated`.
 - [RB-04](RB-04-tune-rate-limits.md) — the application-level counters.

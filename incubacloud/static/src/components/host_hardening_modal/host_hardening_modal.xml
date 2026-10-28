@@ -52,6 +52,29 @@
                             and skip steps that already match.
                         </p>
 
+                        <div t-if="sshAccess"
+                             t-att-class="'rl-sevban ic-hm-ssh ' + sshAccessLevel">
+                            <span class="rl-si2"><t t-out="env.icon('key', 18)"/></span>
+                            <div>
+                                <strong>Who can open SSH.</strong> <t t-esc="sshAccessText"/>
+                                <t t-if="showAllowMyIp">
+                                    <label class="ic-hm-allow-ip">
+                                        <input type="checkbox"
+                                               class="ic-hm-allow-ip-input"
+                                               t-model="state.allowMyIp"
+                                               t-att-disabled="state.submitting || null"/>
+                                        <span t-esc="allowMyIpLabel"/>
+                                    </label>
+                                    <p class="ic-hm-ssh-note">
+                                        It is added to this server's allowed SSH IPs
+                                        and kept on later runs.
+                                    </p>
+                                </t>
+                                <p t-elif="sshPersonNote" class="ic-hm-ssh-note"
+                                   t-esc="sshPersonNote"/>
+                            </div>
+                        </div>
+
                         <t t-if="keyUntrusted">
                             <div class="rl-sevban critical">
                                 <span class="rl-si2"><t t-out="env.icon('alert', 18)"/></span>
@@ -79,8 +102,8 @@
                                     <strong>Running instances may be interrupted.</strong>
                                     Restarting Docker may briefly interrupt
                                     <strong><t t-esc="state.preflight.running_instances"/></strong>
-                                    <t t-if="state.preflight.running_instances === 1">running instance.</t>
-                                    <t t-else="">running instances.</t>
+                                    <t t-if="state.preflight.running_instances === 1"> running instance.</t>
+                                    <t t-else=""> running instances.</t>
                                 </div>
                             </div>
                         </t>
@@ -123,11 +146,8 @@
                                     <p>
                                         This host runs
                                         <strong><t t-esc="state.preflight.prod_running"/></strong>
-                                        <t t-if="state.preflight.prod_running === 1">production instance.</t>
-                                        <t t-else="">production instances.</t>
-                                        Type
-                                        <code class="rl-mono"><t t-esc="props.hostName"/></code>
-                                        to confirm:
+                                        <t t-if="state.preflight.prod_running === 1"> production instance.</t>
+                                        <t t-else=""> production instances.</t> <t t-out="prodConfirmPrompt"/>
                                     </p>
                                     <div class="rl-frow ic-hm-prod-frow">
                                         <input type="text"

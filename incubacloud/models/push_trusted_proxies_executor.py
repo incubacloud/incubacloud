@@ -65,6 +65,15 @@ class PushTrustedProxiesExecutor(
         hardening run creates them; until then the inline ranges it
         already has keep working.
 
+        The IPv6 set is refreshed only where it exists: a host hardened
+        while the ranges had no IPv6 has neither the set nor the rules
+        naming it, and nft refuses a whole document that names a set the
+        host lacks -- the IPv4 refresh went down with it. Its IPv6
+        ranges wait for the next hardening run, which renders the set
+        and its rules, and the step says so. Where the set exists and
+        the ranges no longer have IPv6, it is emptied: the proxy stopped
+        trusting them, and a hardening run would render no IPv6 set.
+
         :return: a ``(label, command)`` pair, or ``None`` when this host
             has no allowlist to refresh
         :rtype: tuple | None
@@ -80,20 +89,30 @@ class PushTrustedProxiesExecutor(
         # flushing to empty would take the host off the network.
         if not v4:
             return None
-        lines = [
+        lines4 = [
             'flush set inet filter ic_cdn_v4',
             'add element inet filter ic_cdn_v4 { %s }' % ', '.join(v4),
         ]
+        lines6 = ['flush set inet filter ic_cdn_v6']
         if v6:
-            lines += [
-                'flush set inet filter ic_cdn_v6',
+            lines6.append(
                 'add element inet filter ic_cdn_v6 { %s }' % ', '.join(v6),
-            ]
-        document = shlex.quote('\n'.join(lines) + '\n')
+            )
+        document4 = shlex.quote('\n'.join(lines4) + '\n')
+        document6 = shlex.quote('\n'.join(lines6) + '\n')
+        no_v6_set = (
+            'echo "no IPv6 allowlist set on this host: its IPv6 ranges wait'
+            ' for the next hardening run"' if v6 else ':'
+        )
+        # One document, so one transaction: the IPv6 lines join it only
+        # when the host has the set they name.
         return (
             'Refresh the firewall allowlist',
             'if sudo nft list set inet filter ic_cdn_v4 >/dev/null 2>&1;'
-            ' then printf %s ' + document + ' | sudo nft -f -'
+            f' then doc={document4};'
+            ' if sudo nft list set inet filter ic_cdn_v6 >/dev/null 2>&1;'
+            f' then doc="$doc"{document6}; else {no_v6_set}; fi;'
+            ' printf %s "$doc" | sudo nft -f -'
             ' && echo "firewall allowlist refreshed";'
             ' else echo "no allowlist set on this host; the next'
             ' hardening run creates it"; fi',

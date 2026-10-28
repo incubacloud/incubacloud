@@ -27,6 +27,8 @@ from psycopg2 import sql as psql
 from odoo import fields
 from odoo.tests.common import TransactionCase, tagged
 
+from odoo.addons.incubacloud.models.cloud_alert import CloudAlert
+
 
 @tagged("post_install", "-at_install")
 class TestAlertNotifyEmail(TransactionCase):
@@ -415,6 +417,196 @@ class TestProviderAudience(TestAlertNotifyEmail):
             ("email_to", "=", user.email),
         ]))
 
+    # ── for_provider: core's field, a relaying layer's to set ─────
+    # The tenant module hides what it relays with a global record rule
+    # on ``for_provider``. That rule is in a tenant panel's database
+    # while core loads alone -- its at_install tests, a migration or a
+    # ``<function>`` of core or pitr -- and until 27-oct-2026 only the
+    # tenant declared the field: every alert raised there failed with
+    # "Invalid field cloud.alert.for_provider".
+
+    def test_core_never_marks_an_alert_for_the_provider(self):
+        """With nobody relaying, a provider alert is the operator's."""
+        with patch.object(
+            type(self.env["cloud.alert"]), "_provider_alerts_routed",
+            autospec=True, return_value=False,
+        ):
+            alert = self._alert(level="critical", audience="provider")
+        self.assertFalse(alert.for_provider)
+
+    def test_a_rule_on_the_mark_holds_with_core_alone(self):
+        """The tenant's rule, against core's model: valid, and an alert
+        raised under it reaches the operator it reached before."""
+        self.env["ir.rule"].create({
+            "name": "Alert: provider alerts belong to the provider",
+            "model_id": self.env.ref("incubacloud.model_cloud_alert").id,
+            "domain_force": "[('for_provider', '=', False)]",
+        })
+        user = self._user("mark-reader")
+        alert = self._alert(level="critical")
+        self.assertEqual(len(self._alert_mails(user.email)), 1)
+        self.assertIn(alert, self.env["cloud.alert"].with_user(user).search([]))
+
+
+@tagged("post_install", "-at_install")
+class TestSilentAlerts(TransactionCase):
+    """A code the panel's layer silences is listed, and told to nobody.
+
+    Core announces every alert: ``_silent_alert_codes`` answers an empty
+    set. A layer whose panel lists an alert without announcing it adds
+    its code there (the tenant module, for an outdated hardening), and
+    every way out of the panel asks: the mail and the external channels,
+    at the alert's opening, its turning critical and its resolution,
+    and the daily digest (``TestAlertNotifyDigest``).
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.host = self.env["cloud.host"].create(
+            {
+                "name": "alert-silent-host",
+                "ip_address": "10.0.0.63",
+                "user": "ubuntu",
+                "wildcard_domain": "alert-silent.example.com",
+            }
+        )
+        self.env["res.users"].sudo().browse(2).write(
+            {
+                "cloud_telegram_bot_token": "",
+                "cloud_telegram_chat_id": "",
+                "cloud_webhook_url": "",
+            }
+        )
+        # Told of everything, on every channel: whatever reaches nobody
+        # here reaches nobody.
+        self.user = self.env["res.users"].create({
+            "name": "silent-reader",
+            "login": "silent-reader",
+            "email": "silent-reader@example.com",
+            "group_ids": [
+                (4, self.env.ref("base.group_user").id),
+                (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
+            ],
+            "cloud_notification_level": "all",
+            "cloud_telegram_bot_token": "test-bot-token",
+            "cloud_telegram_chat_id": "123456789",
+            "cloud_webhook_url": "https://hooks.example.com/incubacloud",
+        })
+        self.Alert = self.env["cloud.alert"].sudo().with_context(
+            test_external_notify=True,
+        )
+
+    def _silencing(self, *codes):
+        """Stand in for a layer that silences *codes*.
+
+        :return: the ``patch`` context manager
+        """
+        return patch.object(
+            type(self.env["cloud.alert"]), "_silent_alert_codes",
+            autospec=True, return_value=frozenset(codes),
+        )
+
+    def _outside(self):
+        """Stand in for Telegram and the webhook.
+
+        :return: the two ``patch`` context managers, Telegram's first
+        """
+        return (
+            patch(
+                "odoo.addons.incubacloud.models.cloud_alert.safe_urlopen",
+                autospec=True,
+            ),
+            patch(
+                "odoo.addons.incubacloud.models.cloud_alert.post_json",
+                autospec=True,
+            ),
+        )
+
+    def _mails(self, subject="%"):
+        """Return the mails this test's reader received, by subject."""
+        return self.env["mail.mail"].sudo().search([
+            ("email_to", "=", self.user.email),
+            ("subject", "like", subject),
+        ])
+
+    def test_core_silences_nothing(self):
+        """Core's own answer, whatever a layer above adds to it."""
+        self.assertEqual(
+            CloudAlert._silent_alert_codes(self.env["cloud.alert"]),
+            frozenset(),
+        )
+
+    def test_a_silent_alert_is_told_to_nobody(self):
+        """Not even critical, not even to whoever asked for everything."""
+        telegram_patch, webhook_patch = self._outside()
+        with self._silencing("quiet_code"), telegram_patch as telegram, \
+                webhook_patch as webhook:
+            alert = self.Alert.raise_alert(
+                "quiet_code", "Quiet one", level="critical", host=self.host,
+            )
+        self.assertTrue(alert)
+        self.assertFalse(self._mails())
+        telegram.assert_not_called()
+        webhook.assert_not_called()
+
+    def test_turning_critical_tells_nobody_either(self):
+        """The one refresh that notifies again (``raise_alert``)."""
+        telegram_patch, webhook_patch = self._outside()
+        with self._silencing("quiet_code"), telegram_patch as telegram, \
+                webhook_patch as webhook:
+            self.Alert.raise_alert("quiet_code", "Quiet one", host=self.host)
+            alert = self.Alert.raise_alert(
+                "quiet_code", "Quiet one", level="critical", host=self.host,
+            )
+        self.assertTrue(alert.was_critical)
+        self.assertFalse(self._mails())
+        telegram.assert_not_called()
+        webhook.assert_not_called()
+
+    def test_its_resolution_is_told_to_nobody(self):
+        telegram_patch, webhook_patch = self._outside()
+        with self._silencing("quiet_code"), telegram_patch as telegram, \
+                webhook_patch as webhook:
+            alert = self.Alert.raise_alert(
+                "quiet_code", "Quiet one", level="critical", host=self.host,
+            )
+            self.Alert.resolve_alert("quiet_code", host=self.host)
+        self.assertEqual(alert.state, "dismissed")
+        self.assertFalse(self._mails())
+        telegram.assert_not_called()
+        webhook.assert_not_called()
+
+    def test_it_is_still_listed_and_broadcast(self):
+        """Silent is about announcing: the panel shows it like any other."""
+        with self._silencing("quiet_code"), patch.object(
+            type(self.env["cloud.alert"]), "_broadcast_overview",
+            autospec=True,
+        ) as broadcast:
+            alert = self.Alert.raise_alert(
+                "quiet_code", "Quiet one", level="critical", host=self.host,
+            )
+        broadcast.assert_called()
+        self.assertIn(
+            alert,
+            self.env["cloud.alert"].with_user(self.user).search([
+                ("state", "=", "active"),
+            ]),
+        )
+
+    def test_the_other_codes_are_told_as_before(self):
+        telegram_patch, webhook_patch = self._outside()
+        with self._silencing("quiet_code"), telegram_patch as telegram, \
+                webhook_patch as webhook:
+            self.Alert.raise_alert(
+                "loud_code", "Loud one", level="critical", host=self.host,
+            )
+            self.Alert.resolve_alert("loud_code", host=self.host)
+        self.assertEqual(len(self._mails("%Critical alert: Loud one")), 1)
+        self.assertEqual(len(self._mails("%Resolved: Loud one")), 1)
+        # The opening and the resolution, to this reader at least.
+        self.assertGreaterEqual(telegram.call_count, 2)
+        self.assertGreaterEqual(webhook.call_count, 2)
+
 
 @tagged("post_install", "-at_install")
 class TestAlertNotifyExternal(TransactionCase):
@@ -738,6 +930,52 @@ class TestAlertNotifyDigest(TransactionCase):
         mails = self._digest_mails("adg-fw")
         self.assertEqual(len(mails), 1)
         self.assertIn("Digest warning for adg-fw", mails.body_html)
+
+    def _silencing(self, *codes):
+        """Stand in for a layer that silences *codes*
+        (``cloud.alert._silent_alert_codes``).
+
+        :return: the ``patch`` context manager
+        """
+        return patch.object(
+            type(self.env["cloud.alert"]), "_silent_alert_codes",
+            autospec=True, return_value=frozenset(codes),
+        )
+
+    def test_a_silent_alert_stays_out_of_the_digest(self):
+        """What nobody is told at once is not told in the morning."""
+        # Records created in this transaction carry its timestamp.
+        self._user(
+            "adg-silent",
+            cloud_last_digest_at=self.env.cr.now() - timedelta(seconds=1),
+        )
+        with self._silencing("quiet_code"):
+            self._alert(
+                code="quiet_code", level="warning",
+                message="Silent digest alert",
+            )
+            self._alert(
+                code="loud_code", level="warning",
+                message="Loud digest alert",
+            )
+            self.env["res.users"]._cron_send_cloud_digest()
+        mails = self._digest_mails("adg-silent")
+        self.assertEqual(len(mails), 1)
+        self.assertIn("Loud digest alert", mails.body_html)
+        self.assertNotIn("Silent digest alert", mails.body_html)
+
+    def test_a_window_with_only_a_silent_alert_sends_no_digest(self):
+        self._user(
+            "adg-silent-only",
+            cloud_last_digest_at=self.env.cr.now() - timedelta(seconds=1),
+        )
+        with self._silencing("quiet_code"):
+            self._alert(
+                code="quiet_code", level="warning",
+                message="Silent digest alert",
+            )
+            self.env["res.users"]._cron_send_cloud_digest()
+        self.assertFalse(self._digest_mails("adg-silent-only"))
 
     def test_digest_respects_email_enabled(self):
         """C2 fix: cloud_email_enabled=False must suppress the digest

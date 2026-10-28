@@ -86,6 +86,10 @@ Before you apply it:
 - If the host has never been set up and you connect as `root`, choose
   **Hardening + Full Setup**: Full Setup then installs its tools in the new
   user's home instead of root's.
+- **Who can open SSH afterwards**: the dialog says it. A panel that knows its
+  own address allows only itself and the host's allowed SSH IPs; tick
+  **Also allow my IP** to add yours. A panel that does not know its address
+  leaves SSH open to any address, key-only.
 
 Afterwards the panel reaches the host as the operator user on the new port.
 Re-running it is safe: every step checks the host before it changes anything.

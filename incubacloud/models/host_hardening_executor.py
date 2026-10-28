@@ -21,13 +21,17 @@ firewall on the new port (a hook; no-op in core), connects as the
 hardened user on the new port, and only then flips root to ``no``. If
 that connection fails, root is left reachable and the job fails.
 """
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timezone
 
 import asyncssh
 
+from odoo.tools import file_path
+
 from .ansible_executor import AnsibleExecutor
+from .cloud_host_posture import HARDENING_OUTDATED_ALERT_CODE
 
 _logger = logging.getLogger(__name__)
 
@@ -49,6 +53,25 @@ def _pick_new_ssh_port(current_port):
     if current_port and current_port != 22:
         return current_port
     return secrets.choice(range(_SSH_PORT_MIN, _SSH_PORT_MAX + 1))
+
+
+def _recipe_fingerprint_of(text):
+    """Return the fingerprint of a hardening recipe's text.
+
+    Full-line comments -- the playbook's own and those of the files it
+    writes on the host -- and blank lines are left out: the recipe
+    explains itself at length, and rewording an explanation must not
+    make every hardened host read as behind. Everything else counts.
+
+    :param str text: the playbook's content
+    :return: the first 12 hex digits of its SHA-256
+    :rtype: str
+    """
+    lines = [
+        line.rstrip() for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:12]
 
 
 def _build_ssh_allowlist(primary_ip, extra_ips):
@@ -74,6 +97,31 @@ class HostHardeningExecutor(AnsibleExecutor):
 
     _job_type = "host_hardening"
     _playbook = "playbooks/host_hardening.yml"
+    # The alert a failed run files with what failed in it; while it is
+    # open, ``cloud.job._create_job_failed_alert`` raises no
+    # ``job_failed`` for the same job, which told the same failure twice
+    # (job 382128, 27-oct-2026).
+    _failure_alert_code = "hardening_failed"
+
+    @classmethod
+    def _recipe_fingerprint(cls):
+        """Return the fingerprint of the recipe this executor applies.
+
+        Read from the playbook a run would use: that of the most derived
+        addon shipping it, as ``_addon_overlay`` resolves it.
+
+        :return: see :func:`_recipe_fingerprint_of`; ``""`` when no addon
+            ships the playbook
+        :rtype: str
+        """
+        for addon in cls._addon_chain():
+            try:
+                path = file_path(f"{addon}/ansible/{cls._playbook}")
+            except FileNotFoundError:
+                continue
+            with open(path, encoding="utf-8") as fh:
+                return _recipe_fingerprint_of(fh.read())
+        return ""
 
     def _host(self):
         """Return the host record this job targets."""
@@ -107,17 +155,24 @@ class HostHardeningExecutor(AnsibleExecutor):
         self._ssh_allowlist = _build_ssh_allowlist(
             self._operator_ip(), host.allowed_ssh_ips,
         )
+        # Resolved once, like the rest: what the playbook is handed is
+        # what ``on_success`` records as applied, even if the flags move
+        # while the run is under way.
+        self._http_allowlist = self._http_allowlist_vars()
         self._prepared = True
 
     def _operator_ip(self):
-        """Return the primary IP to seed the allowlist with.
+        """Return the primary IP to seed the allowlist with: the panel's own.
 
-        Core knows no operator IP of its own, so it returns ``''`` and the
-        allowlist is built entirely from ``allowed_ssh_ips`` — open to any
-        address when that is empty. Downstream executors that know where
-        the panel connects from may override it.
+        The host says it (``cloud.host._hardening_panel_ip``), and the
+        hardening dialog reads the same answer to tell who will be able to
+        open SSH. Core knows no address of its own, so it is ``''`` there
+        and the allowlist is built entirely from ``allowed_ssh_ips`` —
+        open to any address when that is empty; the layers that know where
+        the panel connects from (the SaaS manager's ``core_public_ip``, a
+        tenant panel's ``tenant_public_ip``) answer on the host.
         """
-        return ""
+        return self._host()._hardening_panel_ip()
 
     def get_extra_vars(self):
         """Hand the per-host hardening values to the playbook."""
@@ -161,27 +216,26 @@ class HostHardeningExecutor(AnsibleExecutor):
             # Deliberately gated on the host also refusing direct access
             # at the proxy: enabling the firewall half on its own is how
             # a host stops answering anybody without the panel saying so.
-            **self._http_allowlist_vars(),
+            **self._http_allowlist,
         }
 
     def _http_allowlist_vars(self):
         """Return the firewall variables for a host behind a CDN.
 
         Empty — the pre-existing behaviour, 80/443 open to the world —
-        unless the host both sits behind a CDN and has been told to
-        refuse traffic that skipped it. Split by address family because
-        nftables needs ``ip saddr`` and ``ip6 saddr`` in separate rules.
+        unless the host says its hardening admits only its proxies
+        (``cloud.host._hardening_admits_only_proxies``, which the posture
+        check asks too). Split by address family because nftables needs
+        ``ip saddr`` and ``ip6 saddr`` in separate rules.
 
         :rtype: dict
         """
         host = self.job.host_id
-        if not (host.behind_cdn and host.block_direct_access):
+        if not host._hardening_admits_only_proxies():
             return {}
         ranges = host._effective_trusted_proxy_ranges()
         v4 = [r for r in ranges if ":" not in r]
         v6 = [r for r in ranges if ":" in r]
-        if not v4:
-            return {}
         return {
             "ic_http_allowed_ranges": ", ".join(ranges),
             "ic_http_allowed_ranges_v4": ", ".join(v4),
@@ -195,8 +249,7 @@ class HostHardeningExecutor(AnsibleExecutor):
         rc = results.get(self._playbook, {}).get("exit_status", 1)
         if rc != 0:
             errors.append(
-                f"Hardening playbook failed (rc={rc}) — see the log. "
-                f"Root SSH left reachable so you can recover."
+                f"Hardening playbook failed (rc={rc}) — see the log."
             )
             return errors
         port_listening = str(facts.get("ic_port_listening", "")).lower()
@@ -233,6 +286,11 @@ class HostHardeningExecutor(AnsibleExecutor):
         vals = {
             "hardened": True,
             "hardened_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            # What this run applied, which the hourly posture check
+            # compares with what the panel wants now: the recipe, and
+            # whether 80/443 were closed to all but the trusted proxies.
+            "hardening_recipe": self._recipe_fingerprint(),
+            "hardening_cdn_only": bool(self._http_allowlist),
         }
         if self._is_first_run:
             vals["port"] = self._new_port
@@ -247,19 +305,26 @@ class HostHardeningExecutor(AnsibleExecutor):
         # OpenSSH (every Ansible-backed job) reads as "host unknown".
         host._relabel_known_hosts_entry()
         self._resolve_alert("hardening_failed")
+        self._resolve_alert(HARDENING_OUTDATED_ALERT_CODE)
         self._sys(
             f"✓ Host hardened. Reachable as {self._hardened_user} on port "
             f"{self._new_port}; root SSH disabled."
         )
 
     async def on_failure(self, results, errors):
-        """Report hardening failure; root SSH remains reachable."""
+        """Report hardening failure, with what failed; root SSH remains reachable.
+
+        The one alert of the failure: it says what failed, which only
+        ``job_failed`` used to, and that one is no longer raised beside
+        it (``_failure_alert_code``).
+        """
         for err in errors:
             self._sys(f"✗ {err}")
+        detail = " ".join(errors) or "Check the job log for details."
         self._alert(
-            "hardening_failed",
-            "Host hardening failed. Check the job log for details. "
-            "Root SSH was preserved so you can recover; re-run to retry.",
+            self._failure_alert_code,
+            f"Hardening {self._host().name} failed: {detail} "
+            f"Root SSH was preserved so you can recover; re-run to retry.",
             level="critical",
         )
 

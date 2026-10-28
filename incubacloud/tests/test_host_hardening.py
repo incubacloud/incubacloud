@@ -15,8 +15,10 @@ import os
 
 from unittest.mock import MagicMock
 
+from lxml import etree
+
 from odoo.modules.module import get_module_path
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import BaseCase, TransactionCase
 
 from odoo.addons.incubacloud.models.host_hardening_executor import (
     DEFAULT_HARDENED_USER,
@@ -459,20 +461,16 @@ class TestHardeningPreflight(TransactionCase):
     def _render_ruleset(self, **extra):
         """Render the ruleset template as Ansible would, with *extra* vars.
 
-        Ansible templates the ``copy`` content with ``trim_blocks`` on, so
-        the gate around the conn-rate meter is exercised exactly as it runs
-        on a host.
+        Through the renderer CI parses the ruleset with
+        (``tests/shell/render_firewall_ruleset.py``): Ansible templates the
+        ``copy`` content with ``trim_blocks`` on, so the gate around the
+        conn-rate meter is exercised exactly as it runs on a host, and the
+        SSH lists are the facts the play's allowlist task makes of
+        ``ssh_allowlist``.
         """
-        from jinja2 import Environment
-
-        # autoescape stays off on purpose: this renders an nftables ruleset,
-        # not HTML, and escaping would corrupt tokens like ``{ 80, 443 }``.
-        env = Environment(  # nosec B701
-            trim_blocks=True, lstrip_blocks=False, autoescape=False,
-        )
-        base = {"ssh_port": 22222, "ic_effective_allowlist": "1.2.3.4"}
+        base = {"ssh_port": 22222, "ssh_allowlist": "1.2.3.4"}
         base.update(extra)
-        return env.from_string(self._ruleset_content()).render(**base)
+        return _firewall_renderer().render(base)
 
     @staticmethod
     def _active_lines(rendered):
@@ -542,6 +540,168 @@ class TestHardeningPreflight(TransactionCase):
             rendered.index("set ic_cdn_v4 {"),
             rendered.index("chain input {"),
         )
+
+    # ── the SSH allowlist, one set per address family ──────────────────
+    # A set holds one type of address and nft refuses any other: the
+    # IPv6 address an operator's browser seeded a production host's list
+    # with stopped its hardening at ``nft -c`` (27-oct-2026).
+    _SSH_MIXED = "203.0.113.7, 2001:db8::7, 198.51.100.0/24, 2001:db8:1::/48"
+
+    @staticmethod
+    def _set_block(rendered, name):
+        """Return the directives of the set *name*, up to its closing brace.
+
+        :param str rendered: a rendered ruleset
+        :param str name: the set's name
+        :return: the set's lines, stripped, comments left out
+        :rtype: list
+        """
+        lines = rendered.split(f"set {name} {{", 1)[1].splitlines()
+        body = []
+        for line in lines[1:]:
+            if line.strip() == "}":
+                return body
+            if line.strip() and not line.strip().startswith("#"):
+                body.append(line.strip())
+        raise AssertionError(f"set {name} is never closed")
+
+    def test_each_family_of_the_ssh_allowlist_has_its_own_set(self):
+        """IPv4 entries in ``ic_ssh_allow``, IPv6 in ``ic_ssh_allow6``,
+        addresses and networks alike, each set taking intervals and
+        overlapping entries."""
+        rendered = self._render_ruleset(ssh_allowlist=self._SSH_MIXED)
+        v4 = self._set_block(rendered, "ic_ssh_allow")
+        v6 = self._set_block(rendered, "ic_ssh_allow6")
+        self.assertIn("type ipv4_addr", v4)
+        self.assertIn("elements = { 203.0.113.7, 198.51.100.0/24 }", v4)
+        self.assertIn("type ipv6_addr", v6)
+        self.assertIn("elements = { 2001:db8::7, 2001:db8:1::/48 }", v6)
+        # Networks in both, and overlapping entries (a catch-all beside an
+        # address) in both.
+        for block in (v4, v6):
+            self.assertIn("flags interval", block)
+            self.assertIn("auto-merge", block)
+
+    def test_ssh_is_accepted_from_either_set(self):
+        """One rule per family, ``ip`` and ``ip6 saddr``, after the sets
+        they name."""
+        rendered = self._render_ruleset(ssh_allowlist=self._SSH_MIXED)
+        active = [l.strip() for l in self._active_lines(rendered)]
+        self.assertIn("tcp dport 22222 ip saddr @ic_ssh_allow accept", active)
+        self.assertIn("tcp dport 22222 ip6 saddr @ic_ssh_allow6 accept", active)
+        self.assertLess(
+            rendered.index("set ic_ssh_allow6 {"),
+            rendered.index("chain input {"),
+        )
+
+    def test_a_family_with_no_address_has_an_empty_set(self):
+        """Declared all the same, so the rule naming it loads and the
+        panel can fill it later (``ssh_allowlist.sh``); without an
+        ``elements`` line, which nft refuses empty."""
+        for allowlist, empty, full in (
+            ("203.0.113.7", "ic_ssh_allow6", "ic_ssh_allow"),
+            ("2001:db8::7", "ic_ssh_allow", "ic_ssh_allow6"),
+        ):
+            with self.subTest(allowlist=allowlist):
+                rendered = self._render_ruleset(ssh_allowlist=allowlist)
+                self.assertFalse(
+                    [l for l in self._set_block(rendered, empty)
+                     if l.startswith("elements")],
+                )
+                self.assertIn(
+                    f"elements = {{ {allowlist} }}",
+                    self._set_block(rendered, full),
+                )
+
+    def test_the_catch_all_opens_ssh_in_both_families(self):
+        """With no operator address known the panel sends ``0.0.0.0/0``:
+        reachable rather than everyone locked out, IPv6 included."""
+        rendered = self._render_ruleset(
+            ssh_allowlist="0.0.0.0/0, 203.0.113.7, 2001:db8::7",
+        )
+        self.assertIn(
+            "elements = { 0.0.0.0/0, 203.0.113.7 }",
+            self._set_block(rendered, "ic_ssh_allow"),
+        )
+        self.assertIn(
+            "elements = { ::/0, 2001:db8::7 }",
+            self._set_block(rendered, "ic_ssh_allow6"),
+        )
+        # A list with addresses only opens nothing more.
+        rendered = self._render_ruleset(ssh_allowlist="203.0.113.7")
+        self.assertNotIn("::/0", rendered)
+
+    def _allowlist_facts(self, ssh_allowlist, connection=""):
+        """Return the facts the play's allowlist task sets.
+
+        :param str ssh_allowlist: the configured list
+        :param str connection: the address the play connects from
+        :rtype: dict
+        """
+        renderer = _firewall_renderer()
+        variables = {"ssh_allowlist": ssh_allowlist}
+        if connection:
+            variables["ic_ssh_connection"] = renderer._connection(connection)
+        return renderer.allowlist_facts(variables)
+
+    def _task_template(self, name, path, **facts):
+        """Render the template at *path* of the task called *name*.
+
+        :param str name: the task's name
+        :param tuple path: the keys leading to the template in the task
+        :rtype: str
+        """
+        from jinja2 import Environment
+
+        tasks = self._playbook().get("tasks") or []
+        value = tasks[self._task_index(tasks, name)]
+        for key in path:
+            value = value[key]
+        return Environment(autoescape=False).from_string(value).render(  # nosec B701
+            ssh_port=22222, **facts,
+        )
+
+    def test_the_address_the_play_comes_from_joins_its_family(self):
+        """Connecting over IPv6, the play lets itself in through the IPv6
+        set."""
+        facts = self._allowlist_facts("203.0.113.7", connection="2001:db8::99")
+        self.assertEqual(facts["ic_effective_allowlist_v4"], "203.0.113.7")
+        self.assertEqual(facts["ic_effective_allowlist_v6"], "2001:db8::99")
+
+    def test_the_run_reports_what_each_family_allows(self):
+        """With no operator address the log says IPv6 is open to anyone
+        too, rather than leave ``::/0`` to the ruleset alone."""
+        facts = self._allowlist_facts("0.0.0.0/0", connection="95.217.1.126")
+        message = self._task_template(
+            "Report the effective allowlist", ("ansible.builtin.debug", "msg"),
+            ssh_allowlist="0.0.0.0/0", **facts,
+        )
+        self.assertIn("IPv4 0.0.0.0/0, 95.217.1.126", message)
+        self.assertIn("IPv6 ::/0", message)
+        facts = self._allowlist_facts("203.0.113.7")
+        message = self._task_template(
+            "Report the effective allowlist", ("ansible.builtin.debug", "msg"),
+            ssh_allowlist="203.0.113.7", **facts,
+        )
+        self.assertIn("IPv6 none", message)
+
+    def test_the_panel_is_handed_what_the_firewall_allows(self):
+        """``set_stats`` exports both families, the IPv6 catch-all
+        included."""
+        facts = self._allowlist_facts("0.0.0.0/0", connection="95.217.1.126")
+        exported = self._task_template(
+            "Export the hardening facts",
+            ("ansible.builtin.set_stats", "data", "ic_effective_allowlist"),
+            **facts,
+        )
+        self.assertEqual(exported, "0.0.0.0/0, 95.217.1.126, ::/0")
+        # A family with no address adds nothing, not "None".
+        exported = self._task_template(
+            "Export the hardening facts",
+            ("ansible.builtin.set_stats", "data", "ic_effective_allowlist"),
+            **self._allowlist_facts("203.0.113.7, 198.51.100.4"),
+        )
+        self.assertEqual(exported, "203.0.113.7, 198.51.100.4")
 
     # ── the allowlist judges the forward hook ─────────────────────────
     _FWD_ACCEPT4 = (
@@ -767,6 +927,14 @@ class TestHardeningExecutorWiring(TransactionCase):
         host._effective_trusted_proxy_ranges.return_value = host_attrs.get(
             "trusted_proxy_ranges", [],
         )
+        # Set, not left to the mock: an unset method answers a truthy
+        # MagicMock, and every host would get the CDN allowlist.
+        host._hardening_admits_only_proxies.return_value = host_attrs.get(
+            "admits_only_proxies", False,
+        )
+        # The panel's own address, as the host says it: none, as in core,
+        # unless a case gives one.
+        host._hardening_panel_ip.return_value = host_attrs.get("panel_ip", "")
 
         ex = object.__new__(HostHardeningExecutor)
         ex.env = self.env
@@ -816,6 +984,7 @@ class TestHardeningExecutorWiring(TransactionCase):
         closed = self._make(
             user="root", port=22, http_conn_rate=50, behind_cdn=True,
             block_direct_access=True, trusted_proxy_ranges=["198.51.100.0/24"],
+            admits_only_proxies=True,
         ).get_extra_vars()
         self.assertEqual(closed["ic_http_conn_rate"], 0)
 
@@ -841,6 +1010,32 @@ class TestHardeningExecutorWiring(TransactionCase):
         fronted = self._make(user="root", port=22, behind_cdn=True).get_extra_vars()
         self.assertIs(fronted["ic_behind_cdn"], True)
 
+    _CDN_KEYS = (
+        "ic_http_allowed_ranges",
+        "ic_http_allowed_ranges_v4",
+        "ic_http_allowed_ranges_v6",
+    )
+
+    def test_the_cdn_allowlist_goes_only_to_a_host_closed_to_others(self):
+        """``cloud.host._hardening_admits_only_proxies`` decides: a host
+        that answers anybody gets no allowlist, whatever ranges it
+        knows, and one closed to all but its proxies gets them by
+        family."""
+        ranges = ["198.51.100.0/24", "2001:db8::/32"]
+        open_ = self._make(
+            user="root", port=22, behind_cdn=True, trusted_proxy_ranges=ranges,
+        ).get_extra_vars()
+        for key in self._CDN_KEYS:
+            self.assertNotIn(key, open_)
+        closed = self._make(
+            user="root", port=22, behind_cdn=True, block_direct_access=True,
+            trusted_proxy_ranges=ranges, admits_only_proxies=True,
+        ).get_extra_vars()
+        self.assertEqual(
+            [closed[key] for key in self._CDN_KEYS],
+            ["198.51.100.0/24, 2001:db8::/32", "198.51.100.0/24", "2001:db8::/32"],
+        )
+
     def test_parse_results_gates_on_port_listening(self):
         """parse_results refuses to proceed unless the new port came up."""
         ex = self._make()
@@ -862,9 +1057,23 @@ class TestHardeningExecutorWiring(TransactionCase):
         self.assertIsNone(asyncio.run(ex._open_edge_firewall_port(22345)))
 
     def test_core_operator_ip_is_empty(self):
-        """Core has no cached operator IP; the allowlist is field-driven."""
-        ex = self._make()
+        """A host that knows no panel address: the allowlist is field-driven.
+
+        The address is the host's to say (``_hardening_panel_ip``, which
+        the hardening dialog reads too), so this holds whichever layers
+        are installed beside core.
+        """
+        ex = self._make(allowed_ssh_ips="")
         self.assertEqual(ex._operator_ip(), "")
+        self.assertEqual(ex.get_extra_vars()["ic_ssh_allowlist"], "0.0.0.0/0")
+
+    def test_the_operator_ip_is_the_host_s_panel_address(self):
+        """One source for the panel's address: the executor asks the host."""
+        ex = self._make(panel_ip="198.51.100.9", allowed_ssh_ips="203.0.113.7")
+        self.assertEqual(ex._operator_ip(), "198.51.100.9")
+        self.assertEqual(
+            ex.get_extra_vars()["ic_ssh_allowlist"], "198.51.100.9, 203.0.113.7",
+        )
 
     def test_registry_binding_is_hardening_executor(self):
         """'host_hardening' resolves to the core executor or a subclass.
@@ -914,6 +1123,20 @@ class TestHardeningExecutorWiring(TransactionCase):
         finally:
             executor_registry._executors.pop(code, None)
             executor_registry._overridden.discard(code)
+
+
+def _firewall_renderer():
+    """Import ``tests/shell/render_firewall_ruleset.py``, CI's renderer."""
+    path = os.path.join(
+        get_module_path("incubacloud"), "tests", "shell",
+        "render_firewall_ruleset.py",
+    )
+    spec = importlib.util.spec_from_file_location(
+        "ic_render_firewall_ruleset", path,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_conn_rate_migration():
@@ -1003,3 +1226,95 @@ class TestAuditRetention(TransactionCase):
             if t.get("name") == "Write the journald limits"
         )["ansible.builtin.copy"]["content"]
         self.assertIn("\nAudit=yes\n", content)
+
+
+class TestHardeningScreensSpacing(BaseCase):
+    """A value and the words a branch adds after it read as one sentence.
+
+    OWL drops a text node that is only whitespace with a line break in
+    it. A count in ``<strong>`` on one line and ``<t t-if="...">running
+    instances.</t>`` on the next drew "interrupt 2running instances" in
+    the hardening dialog (27-oct-2026). A ``<t>`` draws no box, so no
+    style can put the space back: it has to be in the template.
+    """
+
+    _TEMPLATES = ("host_hardening_modal", "host_detail")
+    _INLINE = {"t", "strong", "b", "em", "i", "span", "code", "a", "small"}
+
+    @classmethod
+    def _ends_in_a_word(cls, node):
+        """Whether *node* draws a value, a word or punctuation last.
+
+        :param node: an element of the template
+        :return: ``False`` when it ends in a space, an icon or a block,
+            or draws nothing
+        :rtype: bool
+        """
+        if node.tag not in cls._INLINE:
+            return False
+        value = node.get("t-esc") or node.get("t-out")
+        if value:
+            return "env.icon" not in value
+        children = [c for c in node if isinstance(c.tag, str)]
+        last_text = (children[-1].tail if children else node.text) or ""
+        if last_text.strip():
+            return not last_text[-1].isspace()
+        if children and ("\n" in last_text or not last_text):
+            return cls._ends_in_a_word(children[-1])
+        return False
+
+    def test_no_value_runs_into_the_words_after_it(self):
+        """Every pair of siblings parted by a dropped line break, where a
+        value ends and a ``<t>`` opens with a word, is reported."""
+        for name in self._TEMPLATES:
+            path = os.path.join(
+                get_module_path("incubacloud"),
+                "static", "src", "components", name, f"{name}.xml",
+            )
+            glued = []
+            for parent in etree.parse(path).iter():
+                kids = [k for k in parent if isinstance(k.tag, str)]
+                for before, branch in zip(kids, kids[1:]):
+                    gap = before.tail or ""
+                    # A gap with something in it, or a space alone on
+                    # the line, is kept.
+                    if gap.strip() or "\n" not in gap:
+                        continue
+                    if branch.tag != "t" or any(
+                        branch.get(a) is not None for a in
+                        ("t-esc", "t-out", "t-call", "t-elif", "t-else")
+                    ):
+                        continue
+                    if (branch.text or "")[:1].isalnum() and self._ends_in_a_word(before):
+                        glued.append(branch.sourceline)
+            with self.subTest(template=name):
+                self.assertFalse(
+                    glued,
+                    f"{name}.xml, lines {glued}: the text opens with no "
+                    f"space after a value, and draws glued to it",
+                )
+
+    def test_the_production_gate_asks_in_one_sentence(self):
+        """"Type <name> to confirm:" was two terms around the name, and
+        the first one, "Type", is also the noun of every type column:
+        Spanish read "Tipo <name> para confirmar:". One term with the name
+        as a placeholder lets the sentence be translated as a whole."""
+        root = get_module_path("incubacloud")
+        component = os.path.join(
+            root, "static", "src", "components", "host_hardening_modal",
+            "host_hardening_modal",
+        )
+        texts = [
+            (t or "").strip() for el in etree.parse(f"{component}.xml").iter()
+            for t in (el.text, el.tail)
+        ]
+        self.assertNotIn("Type", texts)
+        self.assertNotIn("to confirm:", texts)
+        with open(f"{component}.js", encoding="utf-8") as fh:
+            self.assertIn('_t("Type %(host)s to confirm:"', fh.read())
+        with open(os.path.join(root, "i18n", "es.po"), encoding="utf-8") as fh:
+            self.assertIn(
+                'msgid "Type %(host)s to confirm:"\n'
+                'msgstr "Escriba %(host)s para confirmar:"',
+                fh.read(),
+            )

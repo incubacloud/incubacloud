@@ -2537,6 +2537,10 @@ class CloudJob(models.Model):
             ``job_failed`` would. A ``pip_conflict`` is a warning, which
             the default notification level does not send, so its job
             still raises ``job_failed``.
+          * Jobs whose executor names its own failure alert
+            (``_failure_alert_code``, e.g. ``hardening_failed``) and has
+            it open for this job, unless the type's failure holds its
+            queue.
         """
         if cjob.job_type_id.code in self._get_hidden_job_types():
             return None
@@ -2550,6 +2554,26 @@ class CloudJob(models.Model):
             ("state", "=", "active"),
             "|", ("level", "=", "critical"), ("was_critical", "=", True),
         ], limit=1):
+            return None
+        # Same for a job type whose executor files an alert of its own
+        # for a failure, with what failed in it (``_failure_alert_code``):
+        # while that one is open, a ``job_failed`` beside it told the
+        # same failure twice (host 2412's hardening, 27-oct-2026). Not
+        # for a type whose failure holds its queue: the hold is read off
+        # ``job_failed`` (``_queue_holding_alert_codes``).
+        own_code = getattr(
+            executor_registry.get(cjob.job_type_id.code),
+            "_failure_alert_code", None,
+        )
+        if (
+            own_code
+            and not cjob.job_type_id.failure_holds_queue
+            and self.env["cloud.alert"].sudo().search_count([
+                ("job_id", "=", cjob.id),
+                ("code", "=", own_code),
+                ("state", "=", "active"),
+            ], limit=1)
+        ):
             return None
         # ``cloud.job.host_id`` is required by the schema, so every
         # row has at least one target. Defensive check kept for child

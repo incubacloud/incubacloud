@@ -45,4 +45,25 @@
     .ic-hm-prod-input {
         font-family: var(--rl-fm);
     }
+
+    /* "Who can open SSH": the asker's own address, offered or explained. */
+    .ic-hm-allow-ip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0 0;
+        font-size: 13px;
+        color: var(--rl-fg2);
+        cursor: pointer;
+
+        input {
+            margin: 0;
+        }
+    }
+
+    .ic-hm-ssh-note {
+        margin: 6px 0 0;
+        font-size: 12px;
+        color: var(--rl-muted);
+    }
 }

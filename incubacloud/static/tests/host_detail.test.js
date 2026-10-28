@@ -710,3 +710,70 @@ describe("HostDetail — hostAction", () => {
         expect(h.calls.confirm).toHaveLength(0);
     });
 });
+
+/**
+ * The SSH list the hardening dialog hands back (plan-lista-ssh-sin-relleno).
+ *
+ * Ticking "Also allow my IP" adds the address on the server. The page
+ * then holds the list in its form and in the baseline its changes are
+ * measured against, or the next save of any other field would write the
+ * old list back over it, and the page would read as unsaved (the dialog
+ * refuses to open then). ``onHardeningApplied`` and the dirty tracking
+ * are the shipped ones, on a stand-in.
+ */
+describe("HostDetail — the SSH list after a hardening", () => {
+    /**
+     * A host page stand-in with *form* loaded and saved.
+     *
+     * @param {object} form the host's form values
+     * @returns {object} the stand-in, with ``refreshes`` counted
+     */
+    function page(form) {
+        const comp = Object.create(HostDetail.prototype);
+        comp.env = {};
+        comp.refreshes = 0;
+        comp._silentRefresh = () => {
+            comp.refreshes += 1;
+        };
+        comp.state = {
+            host: { id: 7, name: "pool-1" },
+            form: { name: "pool-1", newWhitelistEntry: "", ...form },
+            selectedTags: [],
+        };
+        comp.hardeningState = { open: false, offer: false };
+        comp._snapshotForm();
+        return comp;
+    }
+
+    test("the list comes back into the form, and the page stays clean", () => {
+        const comp = page({ allowed_ssh_ips: "45.10.20.0/24" });
+        comp.onHardeningApplied([9], "45.10.20.0/24, 81.40.12.7");
+        expect(comp.state.form.allowed_ssh_ips).toBe("45.10.20.0/24, 81.40.12.7");
+        expect(comp.hasUnsavedChanges).toBe(false);
+        expect(comp.refreshes).toBe(1);
+        comp.openHardeningModal();
+        expect(comp.hardeningState.open).toBe(true);
+    });
+
+    test("an edit of another field still reads as unsaved", () => {
+        const comp = page({ allowed_ssh_ips: "", description: "" });
+        comp.state.form.description = "edited";
+        comp.onHardeningApplied([9], "81.40.12.7");
+        expect(comp.state.form.allowed_ssh_ips).toBe("81.40.12.7");
+        expect(comp.hasUnsavedChanges).toBe(true);
+        comp.state.form.description = "";
+        expect(comp.hasUnsavedChanges).toBe(false);
+    });
+
+    test("a page without the list, or an apply without one, is left as it is", () => {
+        const corePage = page({});
+        corePage.onHardeningApplied([9], "81.40.12.7");
+        expect("allowed_ssh_ips" in corePage.state.form).toBe(false);
+        expect(corePage.hasUnsavedChanges).toBe(false);
+
+        const unticked = page({ allowed_ssh_ips: "45.10.20.0/24" });
+        unticked.onHardeningApplied([9], undefined);
+        expect(unticked.state.form.allowed_ssh_ips).toBe("45.10.20.0/24");
+        expect(unticked.refreshes).toBe(1);
+    });
+});

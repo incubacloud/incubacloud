@@ -483,8 +483,28 @@ export class HostDetail extends Component {
         Object.assign(this.hardeningState, { open: false, offer: false });
     }
 
-    /** Refresh the host and its jobs once the hardening is queued. */
-    onHardeningApplied() {
+    /**
+     * Refresh the host and its jobs once the hardening is queued.
+     *
+     * When the dialog added the asker's address to the SSH list, the
+     * list as stored replaces the form's, and the saved baseline's too:
+     * the page shows it without reading as unsaved, and a later save of
+     * any other field writes it back as it is. Only where the form holds
+     * the list (the SaaS manager's Security tab); the bus-driven refresh
+     * never touches the form.
+     *
+     * @param {number[]} [jobIds] the jobs queued
+     * @param {string} [allowedSshIps] the list as stored, when it changed
+     */
+    onHardeningApplied(jobIds, allowedSshIps) {
+        if (typeof allowedSshIps === "string" && "allowed_ssh_ips" in this.state.form) {
+            this.state.form.allowed_ssh_ips = allowedSshIps;
+            if (this._savedForm) {
+                const saved = JSON.parse(this._savedForm);
+                saved.form.allowed_ssh_ips = allowedSshIps;
+                this._savedForm = JSON.stringify(saved);
+            }
+        }
         this._silentRefresh();
     }
 
