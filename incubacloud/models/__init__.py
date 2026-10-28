@@ -30,6 +30,7 @@ from . import cloud_instance_access_log
 from . import cloud_instance_metrics
 from . import cloud_host_metrics
 from . import cloud_host_observability
+from . import cloud_host_direct
 from . import cloud_host_posture
 from . import cloud_settings_metrics_purge
 from . import cloud_instance_backup
