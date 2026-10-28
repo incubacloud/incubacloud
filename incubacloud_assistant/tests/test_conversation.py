@@ -2,6 +2,7 @@
 
 import json
 from datetime import timedelta
+from unittest.mock import patch
 
 from odoo import fields
 from odoo.exceptions import AccessError
@@ -233,6 +234,30 @@ class TestConversation(AssistantMixin, TransactionCase):
         # A step touches last_activity: working for a month, it is lost.
         stuck.sudo().write({"last_activity": long_ago, "state": "working"})
         self.Conversation._cron_purge()
+        self.assertFalse(old.exists() or stuck.exists())
+        self.assertTrue(recent.exists())
+
+    def test_a_conversation_that_cannot_be_healed_keeps_none_from_the_purge(self):
+        """Healing fails for one: logged, and the old ones still go."""
+        old, recent, stuck = (self._conversation() for _i in range(3))
+        long_ago = fields.Datetime.now() - timedelta(days=31)
+        old.sudo().last_activity = long_ago
+        stuck.sudo().write({"last_activity": long_ago, "state": "working"})
+        recent.sudo().state = "waiting_job"
+        with (
+            patch.object(
+                type(self.Conversation),
+                "_heal",
+                autospec=True,
+                side_effect=AccessError("The owner lost their role."),
+            ) as heal,
+            self.assertLogs(
+                "odoo.addons.incubacloud_assistant.models.assistant_conversation",
+                "ERROR",
+            ),
+        ):
+            self.Conversation._cron_purge()
+        self.assertEqual(heal.call_count, 2)
         self.assertFalse(old.exists() or stuck.exists())
         self.assertTrue(recent.exists())
 

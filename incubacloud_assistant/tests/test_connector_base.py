@@ -27,6 +27,7 @@ class TestConnectorBase(BaseCase):
         with self.assertRaises(ProviderError) as caught:
             connector_for("acme-ai", "key")
         self.assertEqual(caught.exception.kind, "bad_request")
+        self.assertTrue(caught.exception.ours)
 
     def test_tool_answers_and_the_person_s_text_make_one_side(self):
         """After the model's turn, its tools' answers and the next text go together."""

@@ -211,6 +211,9 @@ class AssistantChat(http.Controller):
                 "ok": False,
                 "error": _("Read first what the assistant sends to the AI provider."),
             }
+        if not isinstance(text, str) or not text.strip():
+            # Before a new conversation is opened: none is left empty.
+            return {"ok": False, "error": _("Write a message first.")}
         if model_id:
             refusal = self._model_refusal(
                 request.env["cloud.settings"]._assistant_config(), model_id

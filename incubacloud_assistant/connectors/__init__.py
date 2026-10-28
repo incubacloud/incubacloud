@@ -11,5 +11,7 @@ def connector_for(provider, api_key):
     """
     cls = REGISTRY.get(provider)
     if cls is None:
-        raise ProviderError("bad_request", f"Unknown AI provider: {provider}")
+        raise ProviderError(
+            "bad_request", f"Unknown AI provider: {provider}", ours=True
+        )
     return cls(api_key)
