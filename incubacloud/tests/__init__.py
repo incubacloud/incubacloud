@@ -211,3 +211,4 @@ from . import test_direct_host_fields
 from . import test_direct_allowlist
 from . import test_direct_rendering
 from . import test_direct_full_setup
+from . import test_direct_probe_state

@@ -632,3 +632,30 @@ class CloudHost(models.Model):
         """
         settings = self.env["cloud.settings"].sudo()._get_system()
         return bool(settings.acme_dns_cloudflare_token)
+
+    @api.model
+    def _direct_convergence_crons(self):
+        """Return the crons that converge on a change of the direct path.
+
+        Core: the agents' reconciliation. The SaaS layer adds its tenants'.
+
+        :return: XML ids.
+        :rtype: list
+        """
+        return ["incubacloud.cron_reconcile_observability"]
+
+    @api.model
+    def _direct_path_changed(self, reason):
+        """Re-apply, as soon as this commits, what depends on the direct path.
+
+        The crons run in a transaction of their own, which sees what this
+        one changed; deciding here would read a state written on another
+        cursor before it is visible.
+
+        :param str reason: for the log.
+        """
+        _logger.info("[direct] %s: converging", reason)
+        for xmlid in self._direct_convergence_crons():
+            cron = self.env.ref(xmlid, raise_if_not_found=False)
+            if cron:
+                cron.sudo()._trigger()
