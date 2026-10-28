@@ -8,3 +8,4 @@ from . import test_connector_anthropic
 from . import test_connector_openai
 from . import test_connector_gemini
 from . import test_frontend_suite
+from . import test_routes_chat
