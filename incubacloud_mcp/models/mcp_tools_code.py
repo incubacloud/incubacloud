@@ -31,7 +31,7 @@ from odoo.addons.incubacloud.models._repo_requirements import (
 
 from ..github_write import GitHubWriter, path_of, segment
 from ..protocol.limits import cap_text
-from ..protocol.tool_spec import OFFSET, ToolSpec, obj, string
+from ..protocol.tool_spec import OFFSET, ToolSpec, boolean, obj, string
 from .mcp_tools import quoted
 
 _logger = logging.getLogger(__name__)
@@ -69,6 +69,73 @@ TOOLS = (
         handler="_tool_repo_read",
         read_only=True,
         untrusted=True,
+    ),
+    ToolSpec(
+        "repo_create_branch",
+        "Create a branch of a GitHub repository from another one (by default the "
+        "repository's default branch). A new branch needs no approval, unless the "
+        "repository is public; name it assistant/<short-description> unless the user "
+        "names it.",
+        _DEVELOPER,
+        obj(
+            {"url": _URL, "branch": _BRANCH, "from_branch": _BRANCH},
+            required=("url", "branch"),
+        ),
+        handler="_tool_repo_create_branch",
+        confirm="conditional",
+    ),
+    ToolSpec(
+        "repo_write_files",
+        "Write files to a branch in one commit: each file with its path and its whole "
+        "new content, or delete=true. At most 50 files and 180,000 characters in all. "
+        "Writing to a branch this user's agent did not create, to a branch a "
+        "production instance deploys from, or to a public repository asks the user "
+        "first.",
+        _DEVELOPER,
+        obj(
+            {
+                "url": _URL,
+                "branch": _BRANCH,
+                "message": string("The commit message.", max_length=500),
+                "files": {
+                    "type": "array",
+                    "description": "The files.",
+                    "items": obj(
+                        {
+                            "path": string("Path in the repository.", max_length=300),
+                            "content": string(
+                                "The whole new text.", max_length=MAX_COMMIT_CHARS
+                            ),
+                            "delete": boolean("Delete the file instead."),
+                        },
+                        required=("path",),
+                    ),
+                },
+            },
+            required=("url", "branch", "message", "files"),
+        ),
+        handler="_tool_repo_write_files",
+        confirm="conditional",
+    ),
+    ToolSpec(
+        "repo_open_pull_request",
+        "Open a pull request from a branch into another (by default the repository's "
+        "default branch); when one is open already, answer that one. In a public "
+        "repository, or when the project makes a preview of production for each pull "
+        "request, the user approves it first.",
+        _DEVELOPER,
+        obj(
+            {
+                "url": _URL,
+                "branch": _BRANCH,
+                "base": _BRANCH,
+                "title": string("The title.", max_length=200),
+                "body": string("The description.", max_length=20_000),
+            },
+            required=("url", "branch", "title"),
+        ),
+        handler="_tool_repo_open_pull_request",
+        confirm="conditional",
     ),
 )
 
@@ -323,3 +390,334 @@ class McpToolsCode(models.AbstractModel):
             "type": "file",
             **cap_text(text, args.get("offset") or 0),
         }
+
+    # ── Before the approval: the repository, and whether it is public ──────
+
+    @api.model
+    def _with_visibility(self, args):
+        """Check the repository, and bind the call to whether it is public.
+
+        ``public`` joins the arguments before the approval's fingerprint:
+        what goes to a public repository anyone reads, so the user
+        approves it. Asked with the writers, which are about to write.
+        """
+        owner, name = self._authorized_repo(args["url"], write=True)
+        about = self._with_writer(lambda writer: writer.repository(owner, name))
+        return {**args, "public": about.get("private") is not True}
+
+    @api.model
+    def _prepare_repo_create_branch(self, args):
+        """The repository is the user's; is it public."""
+        return self._with_visibility(args)
+
+    @api.model
+    def _prepare_repo_write_files(self, args):
+        """The repository is the user's; is it public."""
+        return self._with_visibility(args)
+
+    @api.model
+    def _prepare_repo_open_pull_request(self, args):
+        """The repository is the user's; is it public."""
+        return self._with_visibility(args)
+
+    @api.model
+    def _repo_label(self, url):
+        """Return ``owner/name`` of *url*, quoted for an approval."""
+        owner, name = self._repo_of(url)
+        return quoted(f"{owner}/{name}")
+
+    # ── repo_create_branch ─────────────────────────────────────────────────
+
+    @api.model
+    def _confirm_repo_create_branch(self, args):
+        """Ask before a branch in a public repository."""
+        if not args["public"]:
+            return None
+        return self.env._(
+            "Create branch %(branch)s in %(repo)s, a public repository: anyone can "
+            "see it and what is written to it.",
+            branch=quoted(args["branch"]),
+            repo=self._repo_label(args["url"]),
+        )
+
+    @api.model
+    def _tool_repo_create_branch(self, args):
+        """Create the branch from another one's head; remember it as the agent's."""
+        owner, name = self._authorized_repo(args["url"], write=True)
+        branch = args["branch"]
+        self._check_branch(branch)
+        if args.get("from_branch"):
+            self._check_branch(args["from_branch"])
+
+        def create(writer):
+            """Create it with *writer*; return the branch it came from and the sha."""
+            source = (
+                args.get("from_branch")
+                or writer.repository(owner, name)["default_branch"]
+            )
+            sha = writer.head(owner, name, source)
+            writer.create_branch(owner, name, branch, sha)
+            return source, sha
+
+        try:
+            source, sha = self._with_writer(create)
+        except GitHubAPIError as exc:
+            if exc.status_code != 422 or "already exists" not in str(exc).lower():
+                raise UserError(
+                    self.env._(
+                        "GitHub refused to create the branch (%s).", exc.status_code
+                    )
+                ) from exc
+            return {
+                "ok": False,
+                "error": self.env._(
+                    "Branch %s already exists: pick another name, or write to it "
+                    "(the user approves it first).",
+                    quoted(branch),
+                ),
+            }
+        self.env["incubacloud.mcp.agent.branch"]._remember(f"{owner}/{name}", branch)
+        return {"ok": True, "branch": branch, "from_branch": source, "sha": sha}
+
+    # ── repo_write_files ───────────────────────────────────────────────────
+
+    @api.model
+    def _production_fed_by(self, url, branch):
+        """Return the production instances that deploy from *branch* of *url*.
+
+        Every active production with a repository line on that branch,
+        however its address is spelt, frozen or not, with Auto-Rebuild or
+        not: a push deploys at once with it, and at the next rebuild or
+        unfreeze without. Read past the record rules on purpose: the
+        approval must warn about a production the user does not see.
+        """
+        key = _repo_key(url)
+        if key is None:
+            return self.env["cloud.instance"]
+        lines = (
+            self.env["cloud.instance.repo"]
+            .sudo()
+            .search(
+                [
+                    ("branch", "=", branch),
+                    ("instance_id.environment", "=", "production"),
+                ]
+            )
+            .filtered(lambda line: _repo_key(line.url) == key)
+        )
+        return lines.instance_id.filtered("active")
+
+    @api.model
+    def _branch_exists(self, owner, name, branch):
+        """Return whether *branch* exists; when nobody can tell, that it does.
+
+        A 404 says the branch is missing only from a credential that sees
+        the repository: otherwise the next credential is asked. Failing
+        closed, an unknown branch counts as one that existed (the user
+        approves the write).
+        """
+        for writer in self._writers():
+            try:
+                writer.head(owner, name, branch)
+                return True
+            except GitHubAPIError as exc:
+                if exc.status_code not in (401, 403, 404):
+                    raise
+                if exc.status_code != 404:
+                    continue
+            try:
+                writer.repository(owner, name)
+            except GitHubAPIError:
+                continue
+            return False
+        return True
+
+    @api.model
+    def _confirm_repo_write_files(self, args):
+        """Ask for production, a public repository, or a branch that existed."""
+        owner, name = self._repo_of(args["url"])
+        branch = args["branch"]
+        paths = ", ".join(quoted(item.get("path")) for item in args["files"][:10])
+        if len(args["files"]) > 10:
+            paths += self.env._(" and %s more", len(args["files"]) - 10)
+        what = {
+            "count": len(args["files"]),
+            "branch": quoted(branch),
+            "repo": quoted(f"{owner}/{name}"),
+            "paths": paths,
+        }
+        production = self._production_fed_by(args["url"], branch)
+        if production:
+            text = self.env._(
+                "Write %(count)s file(s) to branch %(branch)s of %(repo)s in one "
+                "commit (%(paths)s). Production %(names)s deploys from this branch: "
+                "this reaches production, at once when it rebuilds on every push, "
+                "otherwise at its next rebuild.",
+                names=", ".join(quoted(inst.name) for inst in production),
+                **what,
+            )
+            if args["public"]:
+                text += " " + self.env._(
+                    "It is a public repository too: anyone can read what is written."
+                )
+            return text
+        if args["public"]:
+            return self.env._(
+                "Write %(count)s file(s) to branch %(branch)s of %(repo)s in one "
+                "commit (%(paths)s). %(repo)s is a public repository: anyone can read "
+                "what is written.",
+                **what,
+            )
+        created = self.env["incubacloud.mcp.agent.branch"]._created_by_user(
+            f"{owner}/{name}", branch
+        )
+        if created or not self._branch_exists(owner, name, branch):
+            return None
+        return self.env._(
+            "Write %(count)s file(s) to the existing branch %(branch)s of %(repo)s in "
+            "one commit (%(paths)s).",
+            **what,
+        )
+
+    @api.model
+    def _tool_repo_write_files(self, args):
+        """Write the files in one commit, after checking paths, size and secrets."""
+        owner, name = self._authorized_repo(args["url"], write=True)
+        branch = args["branch"]
+        self._check_branch(branch)
+        files = args["files"]
+        if not 1 <= len(files) <= MAX_FILES:
+            raise UserError(
+                self.env._("One commit writes from 1 to %s files.", MAX_FILES)
+            )
+        if sum(len(item.get("content") or "") for item in files) > MAX_COMMIT_CHARS:
+            raise UserError(
+                self.env._(
+                    "One commit writes at most %s characters: split it in several.",
+                    MAX_COMMIT_CHARS,
+                )
+            )
+        scrubber = self.env["incubacloud.mcp.secrets"]._scrubber()
+        for item in files:
+            _check_repo_path(item["path"])
+            if not item.get("delete") and "content" not in item:
+                raise UserError(
+                    self.env._("File %s has no content.", quoted(item["path"]))
+                )
+            content = (item.get("content") or "").replace(_GIT_SSH_USER, "://")
+            if scrubber.text(content) != content:
+                raise UserError(
+                    self.env._(
+                        "File %s holds a secret of the panel: it is never written "
+                        "to a repository.",
+                        quoted(item["path"]),
+                    )
+                )
+        try:
+            commit = self._with_writer(
+                lambda writer: writer.commit_files(
+                    owner, name, branch, args["message"], files
+                )
+            )
+        except GitHubAPIError as exc:
+            raise UserError(
+                self.env._(
+                    "GitHub refused the commit (%s). If the branch moved meanwhile, "
+                    "read it again and write once more.",
+                    exc.status_code,
+                )
+            ) from exc
+        return {
+            "ok": True,
+            "branch": branch,
+            "commit": commit["sha"],
+            "url": commit.get("html_url") or "",
+            "files": [item["path"] for item in files],
+        }
+
+    # ── repo_open_pull_request ─────────────────────────────────────────────
+
+    @api.model
+    def _previews_for(self, url):
+        """Return the productions a pull request on *url* would copy to a preview.
+
+        As the pull-request webhook finds them (``cloud.github.event``): an
+        unfrozen line of a deployed production whose project makes
+        previews. Read past the record rules, as ``_production_fed_by``.
+        Without the webhook's own gate per production
+        (``_pr_preview_allowed``): a card for a preview the webhook would
+        skip is one card too many, never one missing.
+        """
+        key = _repo_key(url)
+        if key is None:
+            return self.env["cloud.instance"]
+        lines = (
+            self.env["cloud.instance.repo"]
+            .sudo()
+            .search(
+                [
+                    ("commit_sha", "in", (False, "")),
+                    ("instance_id.environment", "=", "production"),
+                    ("instance_id.deployed", "=", True),
+                    ("instance_id.project_id.pr_reviews_enabled", "=", True),
+                ]
+            )
+            .filtered(lambda line: _repo_key(line.url) == key)
+        )
+        return lines.instance_id
+
+    @api.model
+    def _confirm_repo_open_pull_request(self, args):
+        """Ask when the pull request makes a preview, or is public."""
+        what = {
+            "branch": quoted(args["branch"]),
+            "repo": self._repo_label(args["url"]),
+        }
+        previews = self._previews_for(args["url"])
+        if previews:
+            return self.env._(
+                "Open a pull request from branch %(branch)s in %(repo)s. The panel "
+                "then creates a preview staging of production %(names)s, with a "
+                "copy of its data.",
+                names=", ".join(quoted(inst.name) for inst in previews),
+                **what,
+            )
+        if args["public"]:
+            return self.env._(
+                "Open a pull request from branch %(branch)s in %(repo)s, a public "
+                "repository: anyone can read it.",
+                **what,
+            )
+        return None
+
+    @api.model
+    def _tool_repo_open_pull_request(self, args):
+        """Open the pull request, or answer the one already open."""
+        owner, name = self._authorized_repo(args["url"], write=True)
+        branch = args["branch"]
+        self._check_branch(branch)
+
+        def open_pull(writer):
+            """Open it with *writer*; answer the open one on a 422."""
+            base = args.get("base") or writer.repository(owner, name)["default_branch"]
+            try:
+                return writer.open_pull(
+                    owner, name, branch, base, args["title"], args.get("body") or ""
+                )
+            except GitHubAPIError as exc:
+                found = (
+                    writer.find_pull(owner, name, f"{owner}:{branch}")
+                    if exc.status_code == 422
+                    else None
+                )
+                if not found:
+                    raise
+                return found
+
+        try:
+            pull = self._with_writer(open_pull)
+        except GitHubAPIError as exc:
+            raise UserError(
+                self.env._("GitHub refused the pull request (%s).", exc.status_code)
+            ) from exc
+        return {"ok": True, "number": pull["number"], "url": pull["html_url"]}
