@@ -32,12 +32,13 @@ import bcrypt as _bcrypt
 from odoo import _
 
 from . import acme_store
-from .abstract_executor import AbstractSSHExecutor
+from .abstract_executor import AbstractSSHExecutor, JobRefused
 from .cloud_host_direct import (
     DIRECT_DYNAMIC_FILE,
     DIRECT_TOKEN_NAME,
     install_direct_yml_command,
     install_dns_token_command,
+    publishes_direct_port,
 )
 from .setup_whitelist_executor import (
     build_whitelist_compose,
@@ -251,6 +252,29 @@ class FullSetupExecutor(
 
     def _host(self):
         return self.job.host_id
+
+    def pre_run_checks(self):
+        """Refuse a direct port the proxy's compose file cannot publish.
+
+        The port goes in after the file's ``- "443:443"`` line. Without
+        that line the proxy would start without the port, and the run
+        would still record it as published.
+
+        :raises JobRefused: saying what to change.
+        """
+        super().pre_run_checks()
+        host = self._host()
+        port = host.direct_port
+        if port and not publishes_direct_port(
+            host._shipped_inverseproxy_yaml(), port,
+        ):
+            message = (
+                f"The proxy's compose file of {host.name} has no "
+                f'- "443:443" line to publish the direct port {port} after: '
+                "write the line that way, or set the direct port to 0."
+            )
+            self._write_system_direct(f"⚠ {message}")
+            raise JobRefused(message)
 
     async def before_execute(self, transport):
         # Mark host as 'checking' so the dashboard updates immediately
@@ -541,8 +565,20 @@ class FullSetupExecutor(
 
         # ── Phase 3: Traefik ──────────────────────────────────────────
         self._sys("Phase 3/4 — Verifying Traefik deployment...")
+        # The direct path's steps run only on some hosts: each is checked
+        # when it ran. Without the token there is no certificate, without
+        # the list the port serves nothing, without "Keep" a refused start
+        # has no files to fall back to.
+        ran = [
+            label for label in (
+                "Install the DNS token",
+                "Install the direct list for Traefik",
+                "Keep the running proxy files",
+            ) if label in results
+        ]
         for label in (
             "Create traefik directory",
+            *ran,
             "Move traefik config files",
             "Start Traefik",
         ):

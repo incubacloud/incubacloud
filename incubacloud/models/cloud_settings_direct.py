@@ -104,27 +104,58 @@ class CloudSettings(models.Model):
     def _direct_checked_at(self, prefix):
         """Return when the direct name *prefix* was last probed.
 
+        Read with SQL, as :meth:`_direct_note_checked` writes it: the
+        cached ``get_param`` would not see those writes. Nothing else
+        reads these keys.
+
         :param str prefix: ``metrics_central_direct`` (or
             ``saas_backchannel`` in the SaaS build).
         :return: a naive UTC datetime, or False before the first probe.
         :rtype: datetime | bool
         """
-        value = self.env["ir.config_parameter"].sudo().get_param(
-            _CHECKED_AT_KEY % prefix,
+        self.env["ir.config_parameter"].flush_model(["key", "value"])
+        self.env.cr.execute(
+            "SELECT value FROM ir_config_parameter WHERE key = %s",
+            [_CHECKED_AT_KEY % prefix],
         )
-        return fields.Datetime.to_datetime(value) if value else False
+        row = self.env.cr.fetchone()
+        return fields.Datetime.to_datetime(row[0]) if row and row[0] else False
 
     @api.model
     def _direct_note_checked(self, prefix, when):
         """Record when the direct name *prefix* was probed; False forgets it.
 
+        With SQL, not ``set_param``: every write through the model empties
+        the registry's ``stable`` caches on every worker (access rules,
+        record rules, templates), and this runs at every probe and at
+        every pass of the specs cron. The row is still a system parameter,
+        so a neutralized copy forgets it with the others.
+
         :param str prefix: as in :meth:`_direct_checked_at`.
         :param when: a datetime, or False for a name that starts over.
         """
-        self.env["ir.config_parameter"].sudo().set_param(
-            _CHECKED_AT_KEY % prefix,
-            fields.Datetime.to_string(when) if when else False,
-        )
+        params = self.env["ir.config_parameter"]
+        params.flush_model(["key", "value"])
+        key = _CHECKED_AT_KEY % prefix
+        if when:
+            self.env.cr.execute(
+                """
+                INSERT INTO ir_config_parameter
+                    (key, value, create_uid, create_date, write_uid, write_date)
+                VALUES (%s, %s, %s, now() at time zone 'UTC',
+                        %s, now() at time zone 'UTC')
+                ON CONFLICT (key) DO UPDATE
+                   SET value = EXCLUDED.value,
+                       write_uid = EXCLUDED.write_uid,
+                       write_date = EXCLUDED.write_date
+                """,
+                [key, fields.Datetime.to_string(when), self.env.uid, self.env.uid],
+            )
+        else:
+            self.env.cr.execute(
+                "DELETE FROM ir_config_parameter WHERE key = %s", [key],
+            )
+        params.invalidate_model(["key", "value"])
 
     @api.constrains("metrics_central_direct_host")
     def _check_metrics_central_direct_host(self):
@@ -204,6 +235,21 @@ class CloudSettings(models.Model):
         """
         return bool(self._direct_central_base())
 
+    def _direct_name_in_force(self, prefix):
+        """Whether the direct name *prefix* works, as this panel knows it.
+
+        A host's own try of a name in force that fails is the host's
+        fault (``cloud.host._record_direct_reach``). Core: the name's
+        probe says ``ok``. A layer whose panel does not probe the name
+        (a tenant's, offered the central's name by its manager) answers
+        from what it is sent instead.
+
+        :param str prefix: ``metrics_central_direct`` (or
+            ``saas_backchannel`` in the SaaS build).
+        :rtype: bool
+        """
+        return self._get_system()[f"{prefix}_state"] == "ok"
+
     def _direct_central_healthy(self):
         """Whether the central answers and its direct path is in force.
 
@@ -234,11 +280,12 @@ class CloudSettings(models.Model):
     def _direct_probe_apply(self, prefix, outcome):
         """Apply one probe *outcome* to the direct name *prefix*.
 
-        On a READ COMMITTED cursor of its own: the job and the light probe
-        write the same row and must wait for each other, not lose to each
-        other. What did not move is not written, and in a steady state
-        that is all of the settings row: only the time of the probe moves,
-        in its system parameter.
+        On a READ COMMITTED cursor of its own, with the settings row locked
+        before it is read: the job and the light probe write the same row
+        and must wait for each other, not lose to each other; the second
+        reads what the first committed. What did not move is not written,
+        and in a steady state that is all of the settings row: only the
+        time of the probe moves, in its system parameter.
 
         :param str prefix: ``metrics_central_direct`` (or
             ``saas_backchannel`` in the SaaS build).
@@ -250,6 +297,11 @@ class CloudSettings(models.Model):
         with read_committed_cursor(self.env.registry) as cr:
             env = self.env(cr=cr)
             settings = env["cloud.settings"].sudo()._get_system()
+            cr.execute(
+                "SELECT id FROM cloud_settings WHERE id = %s FOR UPDATE",
+                [settings.id],
+            )
+            settings.invalidate_recordset()
             current = {s: settings[f"{prefix}_{s}"] for s in _direct_probe.SUFFIXES}
             new = _direct_probe.advance(current, outcome, now)
             vals = {f"{prefix}_{s}": v for s, v in new.items() if v != current[s]}

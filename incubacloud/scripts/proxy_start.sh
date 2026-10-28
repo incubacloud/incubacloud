@@ -9,12 +9,14 @@
 # ``keep`` copies the running compose file, static and dynamic
 # configuration aside (``.ic-prev-*``). ``start`` brings the proxy up with
 # the new ones; when Docker refuses (a port already taken, a file it
-# cannot read), the previous three go back, the proxy comes up with them
-# and the step fails with Docker's own error. The proxy serves the whole
-# host, so Full Setup must never leave it down. A first setup has nothing
-# to fall back to and simply fails.
+# cannot read), or the proxy is not running a few seconds later (Traefik
+# exits on a static file it cannot parse, and Docker reports nothing),
+# the previous three go back, the proxy comes up with them and the step
+# fails. The proxy serves the whole host, so Full Setup must never leave
+# it down. A first setup has nothing to fall back to and simply fails.
 #
-# IC_TRAEFIK_DIR overrides ~/traefik (tests).
+# IC_TRAEFIK_DIR overrides ~/traefik and IC_PROXY_SETTLE the seconds
+# waited before the check (tests).
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -26,6 +28,14 @@ files=(inverseproxy.yaml traefik.yml config.yml)
 
 compose() {
     (cd "$dir" && docker compose -p inverseproxy -f inverseproxy.yaml "$@")
+}
+
+# Whether the proxy container is running (not exited, not restarting).
+running() {
+    local id
+    id="$(compose ps -q proxy)" || return 1
+    [ -n "$id" ] || return 1
+    [ "$(docker inspect -f '{{.State.Status}}' "$id")" = "running" ]
 }
 
 case "$1" in
@@ -41,7 +51,12 @@ case "$1" in
     start)
         status=0
         compose up -d --remove-orphans && compose restart proxy || status=$?
-        [ "$status" -eq 0 ] && exit 0
+        if [ "$status" -eq 0 ]; then
+            sleep "${IC_PROXY_SETTLE:-5}"
+            running && exit 0
+            ic_warn "the proxy started and stopped: its new files are not valid"
+            status=1
+        fi
         if [ ! -f "$dir/.ic-prev-inverseproxy.yaml" ]; then
             ic_warn "the proxy did not start and there is nothing to fall back to"
             exit "$status"

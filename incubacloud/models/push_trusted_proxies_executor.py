@@ -44,7 +44,12 @@ class PushTrustedProxiesExecutor(
                 self.env['cloud.settings'].sudo()._get_system()
                 .acme_dns_cloudflare_token
             )
-        await self._stage_proxy_documents(transport, host, private=private)
+        # The compose file stays as it is: the direct entrypoint goes on
+        # the port it publishes, not one Full Setup has yet to publish.
+        await self._stage_proxy_documents(
+            transport, host.with_context(direct_port_applied=True),
+            private=private,
+        )
         self._sys(
             f'✓ Trusted proxy configuration prepared ({len(ranges)} '
             f'range{"" if len(ranges) == 1 else "s"}'

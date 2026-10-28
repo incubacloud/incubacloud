@@ -15,7 +15,11 @@ from odoo import _, fields
 
 from . import _direct_probe
 from .abstract_executor import AbstractSSHExecutor, JobRefused
-from .cloud_host_direct import DIRECT_DYNAMIC_FILE, install_direct_yml_command
+from .cloud_host_direct import (
+    DIRECT_DYNAMIC_FILE,
+    global_ipv4,
+    install_direct_yml_command,
+)
 from .full_setup_executor import _DIRECT_STAGED
 
 #: Where the document is staged (in the job's directory); the same name
@@ -56,6 +60,16 @@ class SyncDirectPathExecutor(AbstractSSHExecutor):
         self._hosts, self._left_out = host._direct_hosts_entries()
         self._document = host._shipped_direct_yml()
         self._names = host._direct_published_names()
+        # The probe compares the name's DNS answer with this address: a
+        # host registered by name (or a private address) cannot answer it.
+        self._address = global_ipv4(host.sudo().ip_address)
+        if self._names and not self._address:
+            self._sys(
+                f"⚠ {host.name} has no global IPv4 address in the panel "
+                f"({host.sudo().ip_address}): its direct names are not probed "
+                "and stay as they are."
+            )
+            self._names = []
         await self._upload_files(
             transport, {self._job_path(_STAGED): self._document},
         )
@@ -87,7 +101,7 @@ class SyncDirectPathExecutor(AbstractSSHExecutor):
                 f"Probe {name['name']}",
                 self.run_script(
                     "direct_probe.sh",
-                    [name["name"], host.sudo().ip_address, port, *name["checks"]],
+                    [name["name"], self._address, port, *name["checks"]],
                 ),
             ))
         return commands
