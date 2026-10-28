@@ -108,7 +108,37 @@ class TestTheSyncJob(TransactionCase):
             "Apply the direct list in the firewall", labels,
         )
         said = " ".join(c.args[1] for c in sys_.call_args_list)
-        self.assertIn("no global IPv4 address", said)
+        self.assertIn("no IPv4 address", said)
+
+    def test_a_central_on_a_private_address_is_probed(self):
+        """A self-hosted core on a LAN: the list admits the private ranges,
+        so the name can answer on one."""
+        self.host = make_host(
+            self.env, "sj-lan", "10.0.0.5",
+            direct_port=9443, direct_port_shipped=9443,
+        )
+        self.settings.metrics_central_host_id = self.host
+        executor, _transport = self._executor()
+        commands = {c[0]: c[1] for c in executor.get_commands()}
+        self.assertIn(
+            "direct_probe.sh direct.metrics.example.test 10.0.0.5 9443 ",
+            commands["Probe direct.metrics.example.test"],
+        )
+
+    def test_a_central_on_an_address_nobody_answers_on_is_not_probed(self):
+        for name, ip in (("sj-zero", "0.0.0.0"), ("sj-loop", "127.0.0.1"),
+                         ("sj-link", "169.254.1.1"), ("sj-v6", "2a01:4f8::1")):
+            with self.subTest(ip=ip):
+                self.host = make_host(
+                    self.env, name, ip,
+                    direct_port=9443, direct_port_shipped=9443,
+                )
+                self.settings.metrics_central_host_id = self.host
+                executor, _transport = self._executor()
+                labels = [c[0] for c in executor.get_commands()]
+                self.assertFalse(
+                    [label for label in labels if label.startswith("Probe ")],
+                )
 
     def test_an_entry_with_shell_in_it_is_one_quoted_argument(self):
         with patch.object(
