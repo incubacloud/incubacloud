@@ -143,12 +143,17 @@ class ProviderError(Exception):
     (an answer that ended in an error after it was generated), or None.
     """
 
-    def __init__(self, kind, message, retry_after=None, usage=None, model=""):
+    def __init__(
+        self, kind, message, retry_after=None, usage=None, model="", ours=False
+    ):
         """Keep the kind (``bad_request`` when unknown), the message, the pause
         and, for a billed failure, its tokens and the model that ran.
 
         :param float retry_after: seconds the provider asked to wait, or None
         :param Usage usage: the tokens the provider billed, or None
+        :param bool ours: the panel refused before asking the provider; the
+            message is ours, in English, and the person reads a text of
+            their language instead
         """
         super().__init__(message)
         self.kind = kind if kind in ERROR_KINDS else "bad_request"
@@ -156,6 +161,7 @@ class ProviderError(Exception):
         self.retry_after = retry_after
         self.usage = usage
         self.model = model
+        self.ours = ours
 
     def billed(self, requested):
         """Return the billed failure as an answer without content, to price it."""

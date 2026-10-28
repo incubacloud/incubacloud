@@ -162,6 +162,59 @@ class TestEngineTools(EngineMixin, TransactionCase):
         self.assertIn("failed", ended.content)
         self.assertEqual(conversation.state, "working")
 
+    def test_a_job_that_ends_before_the_wait_is_recorded_wakes_the_task(self):
+        """Its hook ran too early to see the wait: the step itself goes on."""
+        job_type = self.job_type
+        Engine = type(self.env["incubacloud.assistant.engine"])
+        record_call = Engine._record_call
+
+        def fake_deploy(instance):
+            """Queue a job as deploy() does, without its preconditions."""
+            return (
+                instance.env["cloud.job"]
+                .sudo()
+                .create(
+                    {
+                        "name": "deploy",
+                        "instance_id": instance.id,
+                        "host_id": instance.host_id.id,
+                        "job_type_id": job_type.id,
+                        "state": "queued",
+                    }
+                )
+                .id
+            )
+
+        def record_then_end(engine, conversation_id, call, outcome):
+            """Record the wait; the job had ended meanwhile, unseen by its hook."""
+            result = record_call(engine, conversation_id, call, outcome)
+            self.env.cr.execute(
+                "UPDATE cloud_job SET state = 'done' WHERE id = %s",
+                (outcome["job_id"],),
+            )
+            return result
+
+        self._provider(
+            answer("", [("c1", "deploy_instance", {"instance_id": self.staging.id})])
+        )
+        conversation = self._working(self.dev)
+        with (
+            patch.object(
+                type(self.env["cloud.instance"]),
+                "deploy",
+                autospec=True,
+                side_effect=fake_deploy,
+            ),
+            patch.object(
+                Engine, "_record_call", autospec=True, side_effect=record_then_end
+            ),
+            trap_jobs(),
+        ):
+            self._step(conversation)
+        self.assertEqual(conversation.state, "working")
+        ended = conversation.message_ids.filtered(lambda m: m.role == "job")
+        self.assertIn("done", ended.content)
+
     def test_injected_instructions_in_a_log_lead_to_no_action_without_a_card(self):
         """The log says delete; the model reaches a card, never the deletion."""
         Tools = type(self.env["incubacloud.mcp.tools"])
@@ -362,6 +415,32 @@ class TestEngineTools(EngineMixin, TransactionCase):
         self.assertEqual(conversation.state, "working")
         ended = conversation.message_ids.filtered(lambda m: m.role == "job")
         self.assertIn("failed", ended.content)
+
+    def test_a_job_ends_for_an_owner_who_lost_their_roles(self):
+        """Their role no longer reads job logs: the task goes on, without the log."""
+        job = (
+            self.env["cloud.job"]
+            .sudo()
+            .create(
+                {
+                    "name": "deploy",
+                    "instance_id": self.staging.id,
+                    "host_id": self.staging.host_id.id,
+                    "job_type_id": self.job_type.id,
+                    "state": "queued",
+                }
+            )
+        )
+        with trap_jobs():
+            conversation = self._working(self.dev)
+        conversation.sudo().write({"state": "waiting_job", "waiting_job_id": job.id})
+        self.dev.sudo().group_ids = [(6, 0, [self.env.ref("base.group_user").id])]
+        with trap_jobs() as trap:
+            job.write({"state": "failed"})
+        trap.assert_jobs_count(1)
+        self.assertEqual(conversation.state, "working")
+        ended = conversation.message_ids.filtered(lambda m: m.role == "job")
+        self.assertIn("not readable", ended.content)
 
     def test_tool_answers_keep_no_secret(self):
         """What the panel's routes answer reaches the conversation masked."""

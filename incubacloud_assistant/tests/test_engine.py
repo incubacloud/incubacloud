@@ -7,6 +7,7 @@ from odoo.addons.incubacloud_mcp.tests.common import HOST_PASSWORD
 from odoo.addons.queue_job.tests.common import trap_jobs
 
 from ..connectors.base import ProviderError, Usage
+from ..models.assistant_engine import as_data
 from .common import KEY, EngineMixin, answer
 
 
@@ -169,6 +170,17 @@ class TestEngineStep(EngineMixin, TransactionCase):
                 self.assertIn(words, notice.content)
                 self.assertNotIn(KEY, notice.content)
 
+    def test_a_refusal_of_the_panel_s_own_is_said_in_the_person_s_words(self):
+        """Not the English of the panel's code: what it means, where to change it."""
+        self._provider(ProviderError("bad_request", "Unknown model.", ours=True))
+        conversation = self._working(self.manager)
+        self._step(conversation)
+        notice = conversation.message_ids[-1].content
+        self.assertEqual(conversation.state, "error")
+        self.assertNotIn("Unknown model", notice)
+        self.assertIn("cannot use this AI provider", notice)
+        self.assertIn("Settings", notice)
+
     def test_a_refusal_of_the_model_ends_the_turn(self):
         """The provider declined: said in the chat; nothing runs."""
         self._provider(answer("", stop="refusal"))
@@ -274,6 +286,15 @@ class TestEngineStep(EngineMixin, TransactionCase):
         text = self._sent(connector).turns[0].text
         self.assertTrue(text.startswith('<data source="screen">'))
         self.assertNotIn("</DATA>", text)
+
+    def test_no_spelling_of_a_closing_tag_ends_the_data_early(self):
+        """Spaces or case inside the closing tag: still broken."""
+        for closing in ("</data>", "</ data>", "< /DATA >", "<\t/\tData>"):
+            with self.subTest(closing):
+                wrapped = as_data("log", f"a {closing} b")
+                self.assertEqual(wrapped.count("</data>"), 1)
+                self.assertTrue(wrapped.endswith("</data>"))
+                self.assertNotRegex(wrapped[: -len("</data>")], r"(?i)<\s*/\s*data")
 
     def _host_password(self):
         """The host password of the panel's fixture (a secret of the database)."""

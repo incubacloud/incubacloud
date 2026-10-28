@@ -164,7 +164,7 @@ class GeminiConnector(Connector):
             change the URL's path
         """
         if not request.model or any(char in request.model for char in "/?#%"):
-            raise ProviderError("bad_request", "Unknown model.")
+            raise ProviderError("bad_request", "Unknown model.", ours=True)
         self._schemas = {tool.name: tool.schema for tool in request.tools}
         payload = {
             "systemInstruction": {"parts": [{"text": request.system}]},

@@ -219,10 +219,11 @@ class TestGeminiConnector(BaseCase):
         """No request leaves for ``../x`` or ``a?b``."""
         sent = self._answer()
         for model in ("../files", "a?key=x", "a#b"):
-            with self.subTest(model), self.assertRaises(ProviderError):
+            with self.subTest(model), self.assertRaises(ProviderError) as caught:
                 GeminiConnector(KEY).chat(
                     ChatRequest(model=model, system="", tools=(), turns=())
                 )
+            self.assertTrue(caught.exception.ours)
         sent.assert_not_called()
 
     def test_a_bad_key_is_named_as_such(self):

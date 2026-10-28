@@ -66,6 +66,17 @@ class TestChatRoutes(AssistantMixin, HttpCase):
             self.env["incubacloud.assistant.conversation"].sudo().search([])
         )
 
+    def test_an_empty_message_opens_no_conversation(self):
+        """Refused before a conversation exists: none is left empty."""
+        self._accepted(self.dev)
+        for text in ("", "   \n", None):
+            with self.subTest(text=text):
+                result, _error, _text = self._rpc(self.dev.login, "send", text=text)
+                self.assertFalse(result["ok"])
+        self.assertFalse(
+            self.env["incubacloud.assistant.conversation"].sudo().search([])
+        )
+
     def test_a_message_opens_a_conversation_and_starts_its_task(self):
         """A conversation of the person's, one step queued; a second message waits."""
         self._accepted(self.dev)

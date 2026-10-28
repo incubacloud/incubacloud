@@ -21,6 +21,7 @@ import time
 from contextlib import contextmanager
 
 from odoo import api, models
+from odoo.exceptions import AccessError
 from odoo.service.model import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
 from odoo.addons.incubacloud_mcp.protocol.errors import McpError
@@ -42,8 +43,8 @@ WRITE_TRIES = 5
 JOB_LOG_CHARS = 8000
 #: Pauses go through here, so that tests patch them out.
 _sleep = time.sleep
-#: A closing data tag, in any case.
-_CLOSING_RE = re.compile(r"</(data)", re.IGNORECASE)
+#: A closing data tag, in any case and with any spaces around its slash.
+_CLOSING_RE = re.compile(r"<\s*/\s*(data)", re.IGNORECASE)
 
 
 def as_data(source, text):
@@ -559,6 +560,12 @@ class AssistantEngine(models.AbstractModel):
                     "This conversation is too long, even summarized. Start a new one."
                 ),
             }
+            if error.ours:
+                texts["bad_request"] = (
+                    env._("The panel cannot use this AI provider or model.")
+                    + " "
+                    + where
+                )
             scrubber = env["incubacloud.mcp.secrets"]._scrubber()
             text = texts.get(error.kind) or env._(
                 "The AI provider refused the request: %s",
@@ -637,6 +644,7 @@ class AssistantEngine(models.AbstractModel):
                     "Not run: the task waits for the job first. Ask again once it "
                     "ends.",
                 )
+                self._retried(lambda: self._wake_if_ended(conversation_id))
             if outcome in ("card", "job", "gone"):
                 return
         self._next(conversation_id)
@@ -821,6 +829,23 @@ class AssistantEngine(models.AbstractModel):
             return "next"
 
     @api.model
+    def _wake_if_ended(self, conversation_id):
+        """Go on at once when the job the task now waits for already ended.
+
+        The job's hook looks for the conversations waiting for it in the
+        transaction that records its end: a job that ended before the wait
+        was committed found none. Read on a cursor of its own, after that
+        commit; the conversation's lock keeps this and the hook from both
+        waking it.
+        """
+        with self._durable() as env:
+            conv = self._conversation_in(env, conversation_id)
+            if conv:
+                conv._lock()
+                if conv.state == "waiting_job":
+                    conv._heal()
+
+    @api.model
     def _job_of(self, spec, text, is_error):
         """Return the job a tool that enqueues answered, or an empty recordset."""
         Job = self.env["cloud.job"].sudo()
@@ -864,12 +889,18 @@ class AssistantEngine(models.AbstractModel):
             error = sudo._failure_excerpt(sudo.queue_job_id.exc_message)
             if error:
                 lines.append(f"Error: {error}")
-        chunks = job.env["cloud.job.log.chunk"].search(
-            [("job_id", "=", job.id)], order="id desc", limit=5
-        )
-        tail = "\n".join(chunk.content or "" for chunk in reversed(chunks))[
-            -JOB_LOG_CHARS:
-        ]
+        try:
+            chunks = job.env["cloud.job.log.chunk"].search(
+                [("job_id", "=", job.id)], order="id desc", limit=5
+            )
+            tail = "\n".join(chunk.content or "" for chunk in reversed(chunks))[
+                -JOB_LOG_CHARS:
+            ]
+        except AccessError:
+            # The person's role no longer reads job logs: the model is told,
+            # and the conversation goes on all the same.
+            tail = ""
+            lines.append("Its log is not readable with the person's role.")
         if tail:
             lines += ["Last lines of its log:", tail]
         text = "\n".join(lines)

@@ -10,12 +10,15 @@ course to end.
 """
 
 import json
+import logging
 from datetime import timedelta
 
 from odoo import api, fields, models
 from odoo.exceptions import AccessError, UserError
 
 from odoo.addons.incubacloud_mcp.models.mcp_tools import quoted
+
+_logger = logging.getLogger(__name__)
 
 #: Days a conversation is kept after its last activity.
 RETENTION_DAYS = 30
@@ -469,8 +472,15 @@ class AssistantConversation(models.Model):
         would find no conversation.
         """
         for conversation in self.sudo().search([("state", "in", BUSY)]):
-            # A step lost, or a job that ended unseen: error, or going on.
-            conversation._heal()
+            # A step lost, or a job that ended unseen: error, or going on. One
+            # that cannot be healed never keeps the others from their purge.
+            try:
+                with self.env.cr.savepoint():
+                    conversation._heal()
+            except Exception:  # logged; the purge goes on
+                _logger.exception(
+                    "assistant: conversation %s could not be healed", conversation.id
+                )
         limit = fields.Datetime.now() - timedelta(days=RETENTION_DAYS)
         self.sudo().search([("last_activity", "<", limit)]).unlink()
 
