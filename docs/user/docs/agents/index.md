@@ -6,6 +6,11 @@ deploy, back up, clone a staging, change settings. It connects to the
 panel's **MCP address** and acts **as you**: with your role and your
 projects' access, never more.
 
+With a developer's role, an agent also works on your project's GitHub
+repository: it reads it, creates branches, commits and opens pull requests;
+writing to a branch that existed before waits for your approval. The panel has
+an assistant of its own too, inside the panel: see [Assistant](../assistant/index.md).
+
 What an agent does **not** get:
 
 - **Secrets.** Passwords, keys and tokens never reach it, and it cannot set

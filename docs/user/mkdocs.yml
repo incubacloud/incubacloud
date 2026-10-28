@@ -125,6 +125,10 @@ nav:
     - Revoke an agent: agents/revoke.md
     - Limits: agents/limits.md
     - Troubleshooting: agents/troubleshooting.md
+  - Assistant:
+    - assistant/index.md
+    - Settings: assistant/settings.md
+    - Privacy and limits: assistant/privacy-and-limits.md
   - Migrations:
     - migrations/index.md
     - From Odoo.sh: migrations/from-odoosh.md

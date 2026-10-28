@@ -251,6 +251,28 @@ Agents' endpoint and the MCP's own pages; see [`mcp.md`](mcp.md).
 | JSON | `/cloud/mcp/config` | cloud user | What *Connect an agent* shows: the MCP address, the issuer, whether API keys are accepted, the links. |
 | JSON | `/cloud/mcp/get_settings`, `/cloud/mcp/save_settings` | manage settings | The agents' issuer, the MCP address and the agents' limit; read-only where the platform sets them. |
 
+## Assistant (`incubacloud_assistant`)
+
+The assistant's chat and its settings, for the panel's own pages; the MCP excludes all of them (see [`assistant.md`](assistant.md)). All JSON-RPC, `auth="user"`. *Allowed to use the assistant*: it is on, with a key and a default model, section 12A accepted, and the user among those a manager chose. *Own*: the record belongs to the user (a record rule, also for managers); it works while the assistant is off, so a user can read and delete what they have until it expires.
+
+| Method | Path | Gate | Description |
+|---|---|---|---|
+| JSON | `/cloud/assistant/status` | cloud user | Whether the assistant is on for the user; if so the provider, the month's usage and limit, unread conversations and the allowed models (with whether each is usable); if not, how many conversations they still have. |
+| JSON | `/cloud/assistant/accept_notice` | allowed to use the assistant | The user read the first-use notice. |
+| JSON | `/cloud/assistant/conversations` | own | The conversations of the last 30 days, latest first. |
+| JSON | `/cloud/assistant/conversation` | own | One conversation and its messages; marks it read and heals a step that was lost. |
+| JSON | `/cloud/assistant/send` | allowed to use the assistant | Write in a new or an existing conversation (20 a minute per user; the notice must have been accepted). |
+| JSON | `/cloud/assistant/set_model` | allowed to use the assistant | Change the conversation's model among the allowed, usable ones. |
+| JSON | `/cloud/assistant/stop` | own | Stop the task at once if nothing runs, else at the next step's check. |
+| JSON | `/cloud/assistant/retry` | allowed to use the assistant | Go on after an error or a stop. |
+| JSON | `/cloud/assistant/confirm` | allowed to use the assistant, own | Confirm a card. Refused for any request that carries an agent's mark. |
+| JSON | `/cloud/assistant/cancel` | allowed to use the assistant, own | Cancel a card; the model is told. |
+| JSON | `/cloud/assistant/delete` | own | Stop and delete a conversation. |
+| JSON | `/cloud/assistant/get_settings` | manage settings | Provider, whether a key is set (never the key), the provider's models with their tags, the allowed and default models, the users and the chosen ones, the limits, why the assistant is blocked on this database, and the last acceptance of section 12A. |
+| JSON | `/cloud/assistant/save_settings` | manage settings | Save what changed, every value checked. A new key is tried against the provider's listing first; switching on needs a key, models, and `accept_ai_terms: true`. |
+| JSON | `/cloud/assistant/refresh_models` | manage settings | Read the provider's models again with the key kept. |
+| JSON | `/cloud/assistant/usage` | manage settings | Each user's tokens and approximate cost per month (up to 24 months). |
+
 ## Static pages and public HTTP endpoints
 
 | Method | Path | Auth | Description |

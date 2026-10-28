@@ -59,6 +59,50 @@ marks no host pending.
   the host and fall back to the remote-write URL (`direct_path_unreachable_from_host`);
   the reconciliation re-applies them when the path changes, and re-applies a host gone
   quiet.
+- **An AI assistant inside the panel (`incubacloud_assistant` 1.0.0, a new module).**
+  A button in the top bar opens a chat on the side of any page; Settings →
+  Assistant (managers) sets the AI provider — Anthropic, or OpenAI, Google Gemini
+  and OpenRouter in beta, at fixed addresses — with the customer's own key
+  (encrypted, write-only, tried before it is kept), the models allowed among the
+  provider's own list (Recommended or Untested), the users who may use it, an
+  optional monthly limit in approximate euros, the same for each user, and a cap of
+  steps per task. With a limit, a model whose price is unknown cannot be used. The
+  four providers are called over HTTP, the Anthropic API version pinned; each
+  request names only the allowed model, with no fallback, and an answer from
+  another model is set aside and audited. Switching it on needs a manager to
+  accept section 12A (AI features) of the Terms of Service, each time; the panel
+  keeps who, when and from where. A label next to the message field and a notice
+  before the first message say that it is an AI and where the messages go.
+  It answers from the user documentation and the panel's public code (core's
+  repository only, from a closed list), reads logs and jobs, operates the panel and
+  writes Odoo modules on a branch of the project's repository, tested on a staging,
+  with a pull request. Its tools are the MCP's, run in the server as the user —
+  same routes, role checks, secret filter and audit (*via agent* `Assistant
+  (conversation N)`) — plus the documentation and code searches. Every change
+  other than trying code on a staging waits for a confirmation card in the chat,
+  which only the user's browser answers, and so does anything that reaches
+  production, creating instances, changing a project's repositories and writing
+  to a branch that existed before; after the task read content others can write,
+  every change asks, the assistant's own branch included. Each task runs as queue
+  jobs (channel `root.assistant`; give it a capacity line in `[queue_job]
+  channels`, or its jobs share root's), one step at a time, and pauses while a
+  deploy runs. Conversations are kept 30 days after their last activity and read
+  only by their owner, who can still read and delete them while the assistant is
+  off. Usage is counted per user and month. See `docs/assistant.md` and the user
+  guide (`docs/user/docs/assistant/`).
+- **Code tools for agents (`incubacloud_mcp`)**: `repo_read`, `repo_create_branch`,
+  `repo_write_files`, `repo_open_pull_request`, `repo_create` and
+  `project_connect_repo`, for developers, on repositories of the user's projects
+  and instances only. Reads go through the GitHub App, the personal access token,
+  then anonymously; writes through the App and, when GitHub
+  refuses it, the token (the App the panel creates only reads, so the token
+  writes). A new branch needs no approval; writing to a branch that
+  existed before does, and the approval says when production deploys from it; so
+  do anything in a public repository and a pull request that makes a preview of
+  production.
+  Never under `.git/` or `.github/`, never a panel secret in a file. Creating a
+  repository needs the personal access token; connecting one keeps the project's
+  other repositories.
 
 ### Dependencies
 
