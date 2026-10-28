@@ -423,12 +423,23 @@ class AssistantConversation(models.Model):
         return True
 
     def _heal(self):
-        """Take a step that will never end for lost: error, and Retry.
+        """Take a step that will never end for lost: error, and Retry; and go on
+        with a task whose job ended without telling it.
 
         Lost: running for longer than :data:`STUCK_AFTER`, or its queue job
-        ended (or is gone) and nothing came after it.
+        ended (or is gone) and nothing came after it. A conversation that
+        waits for a job that ended, or is gone, missed the job's own hook
+        (``cloud.job._after_job_terminal``): it goes on as the hook would
+        have made it.
         """
         self.ensure_one()
+        if self.state == "waiting_job":
+            job = self.sudo().waiting_job_id
+            if not job or job.state in job._terminal_states:
+                self.env["incubacloud.assistant.engine"]._job_ended(
+                    self, job, job.state if job else "gone"
+                )
+            return
         if self.state != "working":
             return
         lost = bool(
