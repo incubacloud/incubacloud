@@ -1,6 +1,6 @@
 """The assistant's connectors, one per provider, behind one shape."""
 
-from . import anthropic_connector, openai_compat
+from . import anthropic_connector, gemini, openai_compat
 from .base import REGISTRY, ProviderError
 
 

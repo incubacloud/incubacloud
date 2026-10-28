@@ -192,3 +192,102 @@ OPENROUTER_MODELS = {
         },
     ]
 }
+
+
+#: GET https://generativelanguage.googleapis.com/v1beta/models
+GEMINI_MODELS = {
+    "models": [
+        {
+            "name": "models/gemini-2.5-pro",
+            "displayName": "Gemini 2.5 Pro",
+            "supportedGenerationMethods": ["generateContent", "countTokens"],
+        },
+        {
+            "name": "models/text-embedding-004",
+            "displayName": "Text Embedding 004",
+            "supportedGenerationMethods": ["embedContent"],
+        },
+        {
+            "name": "models/gemini-flash-latest",
+            "displayName": "Gemini Flash Latest",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+        {
+            "name": "models/gemini-2.5-flash-preview-tts",
+            "displayName": "Gemini 2.5 Flash TTS",
+            "supportedGenerationMethods": ["generateContent"],
+        },
+    ]
+}
+
+#: POST …/models/gemini-2.5-pro:generateContent, asking for a tool.
+GEMINI_FUNCTION_CALL = {
+    "candidates": [
+        {
+            "content": {
+                "role": "model",
+                "parts": [
+                    {"text": "Looking.", "thought": True},
+                    {
+                        "functionCall": {
+                            "name": "get_project",
+                            "args": {"project_id": 4},
+                        },
+                        "thoughtSignature": "sig-g",
+                    },
+                ],
+            },
+            "finishReason": "STOP",
+        }
+    ],
+    "usageMetadata": {
+        "promptTokenCount": 900,
+        "candidatesTokenCount": 30,
+        "thoughtsTokenCount": 70,
+        "cachedContentTokenCount": 100,
+    },
+    "modelVersion": "gemini-2.5-pro",
+}
+
+GEMINI_KEY_ERROR = {
+    "error": {
+        "code": 400,
+        "message": "API key not valid. Please pass a valid API key.",
+        "status": "INVALID_ARGUMENT",
+    }
+}
+GEMINI_EXHAUSTED = {
+    "error": {
+        "code": 429,
+        "message": "Resource has been exhausted.",
+        "status": "RESOURCE_EXHAUSTED",
+        "details": [
+            {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "7s"}
+        ],
+    }
+}
+#: POST …:generateContent of a Gemini 3 model: its calls carry an id.
+GEMINI_3_FUNCTION_CALL = {
+    "candidates": [
+        {
+            "content": {
+                "role": "model",
+                "parts": [
+                    {
+                        "functionCall": {
+                            "id": "fc_1",
+                            "name": "get_project",
+                            "args": {"project_id": 4},
+                        },
+                        "thoughtSignature": "sig-g3",
+                    }
+                ],
+            },
+            "finishReason": "STOP",
+        }
+    ],
+    "usageMetadata": {"promptTokenCount": 900, "candidatesTokenCount": 30},
+    "modelVersion": "gemini-3-pro",
+}
+#: A prompt Gemini blocked: no candidate.
+GEMINI_BLOCKED = {"promptFeedback": {"blockReason": "SAFETY"}}
