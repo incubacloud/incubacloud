@@ -59,6 +59,22 @@
             <field name="action_confirm">Traefik will restart on this host. The panel and every instance it serves will be unreachable for a few seconds, and this page may report a lost connection while it comes back.</field>
         </record>
 
+        <record id="sync_direct_path" model="cloud.job.type">
+            <field name="name">Sync Direct Path</field>
+            <field name="code">sync_direct_path</field>
+            <field name="apply_to">host</field>
+            <field name="description">Applies the list of platform addresses admitted on the host's direct port, in nftables and in Traefik, reads it back, and probes the direct names the host publishes. Never restarts the proxy.</field>
+            <!-- Shown on the host page: after changing the list by hand,
+                 or to probe a direct name now rather than at the next
+                 pass of its cron. -->
+            <field name="show_as_action">True</field>
+            <field name="action_icon">fa-exchange</field>
+            <field name="action_order">45</field>
+            <!-- The list and the probes are read when the job runs, so a
+                 waiting one covers every change queued behind it. -->
+            <field name="queue_collapse">True</field>
+        </record>
+
         <record id="start_instance" model="cloud.job.type">
             <field name="name">Start Instance</field>
             <field name="code">start_instance</field>
