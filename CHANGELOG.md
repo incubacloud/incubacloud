@@ -83,7 +83,6 @@ marks no host pending.
   what agents read (`incubacloud_mcp`), at a cost that grows with its
   length: a real secret fits well within this, and a huge one would weigh
   on every call.
-
 - The DNS token travels as a file named in `CF_DNS_API_TOKEN_FILE`, never in the compose
   file.
 - The dates of the last probe of each direct name and of the last good read of the
