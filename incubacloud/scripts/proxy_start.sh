@@ -10,7 +10,9 @@
 # configuration aside (``.ic-prev-*``). ``start`` brings the proxy up with
 # the new ones; when Docker refuses (a port already taken, a file it
 # cannot read), or the proxy is not running a few seconds later (Traefik
-# exits on a static file it cannot parse, and Docker reports nothing),
+# exits on a static file it cannot parse, and Docker reports nothing; in
+# a restart loop it also looks running between two restarts, so the
+# container's restart count must not have grown either),
 # the previous three go back, the proxy comes up with them and the step
 # fails. The proxy serves the whole host, so Full Setup must never leave
 # it down. A first setup has nothing to fall back to and simply fails.
@@ -38,6 +40,14 @@ running() {
     [ "$(docker inspect -f '{{.State.Status}}' "$id")" = "running" ]
 }
 
+# The proxy container's restart count, or '' when there is no container.
+restarts() {
+    local id
+    id="$(compose ps -q proxy)" || return 0
+    [ -n "$id" ] || return 0
+    docker inspect -f '{{.RestartCount}}' "$id" || true
+}
+
 case "$1" in
     keep)
         for f in "${files[@]}"; do
@@ -52,9 +62,14 @@ case "$1" in
         status=0
         compose up -d --remove-orphans && compose restart proxy || status=$?
         if [ "$status" -eq 0 ]; then
+            before="$(restarts)"
             sleep "${IC_PROXY_SETTLE:-5}"
-            running && exit 0
-            ic_warn "the proxy started and stopped: its new files are not valid"
+            if running; then
+                [ "$(restarts)" = "$before" ] && exit 0
+                ic_warn "the proxy keeps restarting: its new files are not valid"
+            else
+                ic_warn "the proxy started and stopped: its new files are not valid"
+            fi
             status=1
         fi
         if [ ! -f "$dir/.ic-prev-inverseproxy.yaml" ]; then
