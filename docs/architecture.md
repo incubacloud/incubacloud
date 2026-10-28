@@ -98,6 +98,11 @@ incubacloud_mcp/              # Agents (MCP): see mcp.md
 ├── protocol/                 # Pure helpers: versions, headers, signing, schema, redaction, limits
 └── static/src/               # Connect an agent, Settings → Agents, the audit's agent mark
 incubacloud_mcp_pitr/         # The continuous recovery tools (installs itself)
+incubacloud_assistant/        # The AI assistant in the panel: see assistant.md
+├── connectors/               # One per AI provider, one common shape (HTTP, no SDK)
+├── models/                   # Conversations, messages, usage, engine, tools' view, cards
+├── controllers/              # The chat's routes and Settings → Assistant's
+└── static/src/               # Top-bar button, side panel, Settings tab
 ```
 
 ---
@@ -715,6 +720,15 @@ A separate module: `POST /mcp` lets AI agents operate the panel as the user who 
 - **Secrets.** Never in, never out: keys named like an encrypted field are refused and dropped, known values masked in every text.
 - **Commands.** `run_command` and `run_host_command` are tool handlers with the terminals' controls, not routes: a route would open command execution to the SPA's cookie. One minute, kept by `timeout` inside the container; what a command leaves in the background is not stopped.
 - **Audit.** `via_client` on audit rows and jobs names the verified credential and the declared client.
+
+## Assistant (`incubacloud_assistant`)
+
+A separate module: a chat in the panel, with the customer's own AI provider key, whose tools are the MCP's. Full reference in [`assistant.md`](assistant.md); user guide in `docs/user/docs/assistant/`.
+
+- **A task is a chain of queue jobs** (channel `root.assistant`), one step each, run as the user: one call to the provider (`requests`, fixed addresses, no SDK) and the tools it asks for, each in a transaction of its own that writes nothing of the conversation.
+- **Tools as the user.** `request_scope.tool_request` binds a request of the user's own inside the job, and `incubacloud.mcp.server._tools_call` runs the tool as it runs an agent's: role, schema, secret filter, savepoint, audit (*via agent* `Assistant (conversation N)`).
+- **Confirmation cards.** `incubacloud.mcp.confirm._gate` answers the assistant's calls with a card in the chat (approval channel `assistant`) that only the person's own request answers; every change asks except trying code on a staging, and every change asks after the task read content others can write.
+- **Conversations** are private to their owner (a global record rule, managers included), kept 30 days after their last activity, and usage is counted per user, month and model.
 
 ## Frontend SPA
 

@@ -13,6 +13,11 @@ Some actions wait for you, whatever the agent asks:
   and id), whether it is an administrator and whether the instance is
   production;
 - a download link for a backup: you see the file and the instance;
+- writing to a branch of a repository that existed before the agent created it,
+  saying so when a production instance rebuilds from it; anything written to a
+  public repository; a pull request in a public repository, or in a project that
+  makes a preview of production for each pull request; creating a repository and
+  connecting one to a project;
 - a command on a **production** instance, and every command on a server:
   you see the exact command;
 - purging the audit log, and changing a security setting — the audit

@@ -119,6 +119,11 @@ role check's message. Operations that queue a job answer at once with its
 | `get_monitoring`, `list_backups`, `read_access_log`, `read_logs`, `staging_mailbox` | developer | | |
 | `revive_instance`, `clone_to_staging`, `create_backup`, `clear_staging_mailbox` | developer | | |
 | `run_command` | developer | | on production, each command |
+| `repo_read` | developer | | |
+| `repo_create_branch` | developer | | in a public repository |
+| `repo_write_files` | developer | | a branch that existed before, one a production deploys from, a public repository |
+| `repo_open_pull_request` | developer | | in a public repository, or when the project makes a preview of production for each pull request |
+| `repo_create`, `project_connect_repo` | developer | | always |
 | `download_backup` | developer | | for the link |
 | `restore_backup`, `refresh_staging` | developer | yes | always |
 | `get_host`, `get_audit_log`, `get_settings`, `browse_host_dir` | manager | | |
@@ -128,13 +133,40 @@ role check's message. Operations that queue a job answer at once with its
 | `trust_host_key`, `run_host_command` | manager | | always |
 | `delete_project`, `delete_archived_instance`, `delete_host`, `delete_backup_backend`, `move_instance`, `rollback_move`, `reset_github_app`, `purge_audit_logs`, `pitr_restore` (bridge) | manager | yes | always |
 
-Sixty-one tools with the bridge's three. Security settings of
+Sixty-seven tools with the bridge's three. Security settings of
 `update_settings` (D2): the audit retention, the trusted proxy ranges, every
 rate limit (the agents' included), the agents' issuer and the MCP address,
 and whatever `get_config` hides on that panel (observability, on a tenant).
 The approval says each value before and after; a value equal to the one held
 once normalised asks nothing. A setting the section does not have is refused
 before anyone is asked.
+
+**Code.** The six `repo_*` / `project_connect_repo` tools (developer) work on the
+project's GitHub repository, in `incubacloud.mcp.tools` (`mcp_tools_code.py`) and
+`github_write.py` (`GitHubWriter`: JSON to `api.github.com`, no redirect, capped
+answers). Reads go as every repository read of the panel does — the GitHub App, then
+the personal access token, then anonymously. Writes go through the App and, when GitHub
+refuses it, the token: the App the panel creates only reads contents, so in practice
+the token writes (`repo_create` needs the token alone, and checks first that the user
+may connect the repository to the project).
+
+- **Scope.** A tool reads only a repository of a project or an instance the user reads
+  and writes only one of a project (`_authorized_repo`, comparing `(owner, name)` in
+  lower case); `repo_create` and `project_connect_repo` add the repository to the
+  project under its canonical address.
+- **The branch rule is by user.** A new branch needs no approval: `incubacloud.mcp.agent.branch`
+  records the branches an agent created, per user, so a branch any agent of the user
+  created counts as the agent's, from another conversation or client. Writing to a
+  branch that existed before asks (one whose existence cannot be told counts as
+  existing). Whatever the branch, it asks when a production instance deploys from it
+  — with Auto-Rebuild or without, frozen or not; the approval names the instance —
+  and when the repository is public. Opening a pull request asks in a public
+  repository, and in a project that makes a preview of production for each pull
+  request (it creates a staging with a copy of production).
+- **What a commit may hold.** Never a path under `.git/` or `.github/` in any case (a
+  workflow runs with the repository's secrets), never a file with a panel secret in it
+  (`git+ssh://git@` is not one), at most 50 files and 180,000 characters in all (they
+  fit in the 256 KB of a request to `/mcp`).
 
 **Commands.** `run_command` runs one non-interactive command in the
 instance's `odoo` container with the terminal's controls (developer,
@@ -200,6 +232,7 @@ route without a policy.
 | `/cloud/github/webhook`, `/cloud/health` | Public endpoints, not an action of the user. |
 | `/cloud`, `/cloud/<path:subpath>` | The single-page application. |
 | `/cloud/mcp/approve/<token>`, `/cloud/mcp/download/<token>`, `/cloud/mcp/config` | The MCP's own pages and links. |
+| `/cloud/assistant/*` (the chat's fifteen routes, Settings → Assistant's included) | The assistant's chat and settings: the panel's own pages. See [`assistant.md`](assistant.md). |
 
 ## Approval
 
@@ -219,6 +252,12 @@ before the fingerprint, so the approval names what will run. One atomic
 state; its use is committed at once, in a transaction of its own: of two
 racing retries, one runs the action. The approval is used before the action
 runs; if the action fails, the user approves again.
+
+The assistant (`incubacloud_assistant`) adds a channel, `assistant`: a card in its chat,
+answered only by the person's own request (`/cloud/assistant/confirm` or `cancel`, which
+refuse a request that carries an agent's mark); the approval is bound to the user and the
+conversation (`assistant:<id>`), and lasts ten minutes from the yes. Its rules are in
+[`assistant.md`](assistant.md).
 
 An approval is bound to the user **and to the credential the agent called
 with**: the token's `client_id` (`client_id <id>`) or the API key itself by
