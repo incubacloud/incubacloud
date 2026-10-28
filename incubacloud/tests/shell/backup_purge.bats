@@ -61,9 +61,23 @@ _env_file() {
     # ``exec`` needs the stack up; a stopped instance must purge too.
     run bash "$PURGE" "$HOME/project/inst"
     [ "$status" -eq 0 ]
-    grep -q 'docker compose run --label traefik.enable=false --label sablier.enable=false --rm -T --entrypoint python3 backup -' \
+    grep -q 'docker compose run --label traefik.enable=false --label sablier.enable=false --rm -T --no-deps --entrypoint python3 backup -' \
         "$DOCKER_CALLS"
     ! grep -q 'compose exec' "$DOCKER_CALLS"
+}
+
+@test "purge starts nothing but its own container" {
+    # It talks to the bucket alone, with backup.env: neither ``db`` nor
+    # ``smtp`` is any of its business. Without ``--no-deps`` Compose
+    # starts the backup service's depends_on and recreates every one
+    # whose definition changed since the stack started: a live instance
+    # with a rewritten compose would get its ``db`` recreated under its
+    # workers, and keep it so if the purge then failed.
+    run bash "$PURGE" "$HOME/project/inst"
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'compose run' "$DOCKER_CALLS")" -eq 1 ]
+    grep 'compose run' "$DOCKER_CALLS" | grep -q -- ' --no-deps '
+    ! grep -Eq 'compose (start|up|restart)' "$DOCKER_CALLS"
 }
 
 @test "purge feeds the deletion program on stdin" {

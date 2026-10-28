@@ -13,7 +13,12 @@
 #
 # ``run --rm`` rather than ``exec``: it builds the container from the
 # compose definition without needing the stack up, so a stopped instance
-# purges just as well as a running one.
+# purges just as well as a running one. And ``--no-deps``: the purge
+# talks to the bucket alone, with backup.env, and needs neither ``db``
+# nor ``smtp``. Without it Compose starts the service's depends_on and
+# recreates every one whose definition changed since the stack started:
+# a live instance with a rewritten compose would get its ``db``
+# recreated under its workers, and keep it so if the purge then failed.
 #
 # duplicity cannot do this itself. ``remove-all-but-n-full`` requires
 # n>=1 and there is no command that removes the last full, so the delete
@@ -75,7 +80,7 @@ ic_log "purging backup prefix via the instance's own backup container"
 
 set +e
 ic_purge_prefix_program \
-    | ic_compose_run --rm -T --entrypoint python3 backup -
+    | ic_compose_run --rm -T --no-deps --entrypoint python3 backup -
 rc=$?
 set -e
 

@@ -233,6 +233,15 @@ with an older core — publish this core first.
   dialog now says the instance has no host and needs one before
   deploying.
 
+- **A delete's purge of the backups no longer recreates the database
+  under a live instance.** `backup_purge.sh` runs the instance's backup
+  container with `docker compose run`, which starts the service's
+  dependencies and recreates every one whose definition changed since
+  the stack started: on a live instance whose compose file had been
+  rewritten, its `db` was recreated under its workers, and stayed so
+  when the purge then failed. The purge runs with `--no-deps`: it talks
+  to the bucket alone, with `backup.env`.
+
 - **An upload key works, and the restore dialog shows what arrived.**
   The key's `authorized_keys` line was written between double quotes,
   and the shell split it at the quotes the line holds: sshd accepted
