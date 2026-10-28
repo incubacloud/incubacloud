@@ -2,7 +2,6 @@
 
 import json
 from datetime import timedelta
-from types import SimpleNamespace
 
 from odoo import fields
 from odoo.exceptions import AccessError
@@ -11,6 +10,7 @@ from odoo.tests.common import TransactionCase
 
 from odoo.addons.queue_job.tests.common import trap_jobs
 
+from ..connectors.base import Usage
 from .common import AssistantMixin
 
 
@@ -32,16 +32,6 @@ class TestConversation(AssistantMixin, TransactionCase):
         )
         self._configure(users=[self.dev, self.other, self.manager])
         self.Conversation = self.env["incubacloud.assistant.conversation"]
-
-    @staticmethod
-    def _usage(input_tokens, output_tokens):
-        """Return a call's token counts (data only, as ``connectors.base.Usage``)."""
-        return SimpleNamespace(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cache_read_tokens=0,
-            cache_write_tokens=0,
-        )
 
     def _conversation(self, user=None):
         """Open a conversation as *user* (the developer by default)."""
@@ -259,9 +249,9 @@ class TestConversation(AssistantMixin, TransactionCase):
         Usage_ = self.env["incubacloud.assistant.usage"]
         for _i in range(2):
             Usage_._add(
-                self.dev.id, "anthropic", "claude-opus-5-5", self._usage(100, 10), 0.5
+                self.dev.id, "anthropic", "claude-opus-5-5", Usage(100, 10), 0.5
             )
-        Usage_._add(self.dev.id, "anthropic", "mystery-model", self._usage(7, 3), None)
+        Usage_._add(self.dev.id, "anthropic", "mystery-model", Usage(7, 3), None)
         cost, unpriced = Usage_._month_cost(self.dev.id)
         self.assertAlmostEqual(cost, 1.0)
         self.assertTrue(unpriced)
