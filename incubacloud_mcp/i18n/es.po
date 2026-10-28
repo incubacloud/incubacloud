@@ -15,6 +15,54 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid " and %s more"
+msgstr " y %s más"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"%s is not a GitHub repository address (https://github.com/<owner>/<name>)."
+msgstr ""
+"%s no es una dirección de repositorio de GitHub "
+"(https://github.com/<propietario>/<nombre>)."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"%s is not a repository of a project or an instance you can see in the panel."
+" Connect it to a project first (project_connect_repo)."
+msgstr ""
+"%s no es un repositorio de un proyecto ni de una instancia que usted vea en "
+"el panel. Conéctelo primero a un proyecto (project_connect_repo)."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"%s is not a repository of a project you can see in the panel: the assistant "
+"writes only there. Connect it to the project first (project_connect_repo)."
+msgstr ""
+"%s no es un repositorio de un proyecto que usted vea en el panel: el "
+"asistente solo escribe ahí. Conéctelo primero al proyecto "
+"(project_connect_repo)."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "%s is not a valid branch name."
+msgstr "%s no es un nombre de rama válido."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "%s is not the name of a GitHub account or organization."
+msgstr "%s no es el nombre de una cuenta u organización de GitHub."
+
+#. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid "(Security, API Keys) and put it where the commands say"
@@ -64,6 +112,11 @@ msgid ""
 msgstr "; después, elija Continuar y Añadir."
 
 #. module: incubacloud_mcp
+#: model:ir.model.constraint,message:incubacloud_mcp.constraint_incubacloud_mcp_agent_branch_user_repository_branch
+msgid "A branch is remembered once per user."
+msgstr "Una rama se recuerda una sola vez por usuario."
+
+#. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid "A manager can correct it in Settings, on the Agents tab."
@@ -74,6 +127,26 @@ msgstr "Un gerente puede corregirla en Configuración, en la pestaña Agentes."
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid "A manager sets it in Settings, on the Agents tab."
 msgstr "Un gerente la define en Configuración, en la pestaña Agentes."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"A repository with that name already exists there: connect it with "
+"project_connect_repo, or pick another name."
+msgstr ""
+"Ya existe ahí un repositorio con ese nombre: conéctelo con "
+"project_connect_repo, o elija otro nombre."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"A repository's name holds letters, digits, dots, hyphens and underscores "
+"only."
+msgstr ""
+"El nombre de un repositorio solo admite letras, dígitos, puntos, guiones y "
+"guiones bajos."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -87,6 +160,18 @@ msgstr ""
 "trabajar en este panel por usted, con su rol y el acceso de sus proyectos. "
 "Las acciones destructivas esperan a su aprobación, y los secretos nunca les "
 "llegan."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Add %(url)s (branch %(branch)s) to the repositories of project %(project)s. "
+"Instances created from the project afterwards clone it; existing instances "
+"keep theirs."
+msgstr ""
+"Añadir %(url)s (rama %(branch)s) a los repositorios del proyecto "
+"%(project)s. Las instancias que se creen después desde el proyecto lo "
+"clonan; las existentes conservan los suyos."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -243,6 +328,26 @@ msgstr "Backend no encontrado"
 #: code:addons/incubacloud_mcp/models/mcp_tools_destructive.py:0
 msgid "Backup restore only supported for production."
 msgstr "La restauración de backup solo es compatible con producción."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__branch
+msgid "Branch"
+msgstr "Rama"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Branch %s already exists: pick another name, or write to it (the user "
+"approves it first)."
+msgstr ""
+"La rama %s ya existe: elija otro nombre, o escriba en ella (el usuario la "
+"aprueba antes)."
+
+#. module: incubacloud_mcp
+#: model:ir.model,name:incubacloud_mcp.model_incubacloud_mcp_agent_branch
+msgid "Branch an agent created for a user"
+msgstr "Rama que un agente creó para un usuario"
 
 #. module: incubacloud_mcp
 #: model:ir.model,name:incubacloud_mcp.model_incubacloud_mcp_dispatch
@@ -420,6 +525,28 @@ msgid "Could not load how to connect an agent."
 msgstr "No se ha podido cargar cómo conectar un agente."
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Create branch %(branch)s in %(repo)s, a public repository: anyone can see it"
+" and what is written to it."
+msgstr ""
+"Crear la rama %(branch)s en %(repo)s, un repositorio público: cualquiera "
+"puede verla y ver lo que se escribe en ella."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Create the %(visibility)s repository %(name)s on GitHub, in %(owner)s, with "
+"the panel's personal access token, and add it to the repositories of project"
+" %(project)s (branch main)."
+msgstr ""
+"Crear el repositorio %(visibility)s %(name)s en GitHub, en %(owner)s, con el"
+" token de acceso personal del panel, y añadirlo a los repositorios del "
+"proyecto %(project)s (rama main)."
+
+#. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_approval__create_uid
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__create_uid
 msgid "Created by"
@@ -555,6 +682,21 @@ msgid "Failed to load the agents' settings."
 msgstr "No se han podido cargar los ajustes de los agentes."
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "File %s has no content."
+msgstr "El archivo %s no tiene contenido."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"File %s holds a secret of the panel: it is never written to a repository."
+msgstr ""
+"El archivo %s contiene un secreto del panel: nunca se escribe en un "
+"repositorio."
+
+#. module: incubacloud_mcp
 #: model:ir.model.fields.selection,name:incubacloud_mcp.selection__incubacloud_mcp_approval__channel__mrtr_form
 msgid "Form in the agent's client"
 msgstr "Formulario en el cliente del agente"
@@ -568,6 +710,50 @@ msgid ""
 msgstr ""
 "Obtener un enlace de un solo uso, válido 15 minutos, para descargar %(file)s"
 " de la instancia %(instance)s."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"GitHub did not find this repository or branch with the panel's access. Check"
+" the address and the branch; to write, the panel needs a personal access "
+"token that can write to it, in Settings → GitHub."
+msgstr ""
+"GitHub no encontró este repositorio o esta rama con el acceso del panel. "
+"Compruebe la dirección y la rama; para escribir, el panel necesita un token "
+"de acceso personal que pueda escribir en él, en Configuración → GitHub."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"GitHub did not let the panel read this. Check the address and the branch, "
+"and that the panel's GitHub App or token reaches the repository."
+msgstr ""
+"GitHub no dejó que el panel lo leyera. Compruebe la dirección y la rama, y "
+"que la GitHub App o el token del panel llegue al repositorio."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"GitHub refused the commit (%s). If the branch moved meanwhile, read it again"
+" and write once more."
+msgstr ""
+"GitHub rechazó el commit (%s). Si la rama se movió entretanto, léala de "
+"nuevo y escriba otra vez."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "GitHub refused the pull request (%s)."
+msgstr "GitHub rechazó el pull request (%s)."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "GitHub refused to create the branch (%s)."
+msgstr "GitHub rechazó crear la rama (%s)."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -737,6 +923,13 @@ msgstr ""
 "id_token de su inicio de sesión único."
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "It is a public repository too: anyone can read what is written."
+msgstr ""
+"Es también un repositorio público: cualquiera puede leer lo que se escribe."
+
+#. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__job_id
 msgid "Job"
 msgstr "Tarea"
@@ -901,6 +1094,18 @@ msgid "On this panel the platform sets both."
 msgstr "En este panel los dos los fija la plataforma."
 
 #. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "One commit writes at most %s characters: split it in several."
+msgstr "Un commit escribe como máximo %s caracteres: divídalo en varios."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "One commit writes from 1 to %s files."
+msgstr "Un commit escribe de 1 a %s archivos."
+
+#. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid ""
@@ -917,6 +1122,39 @@ msgstr ""
 #: code:addons/incubacloud_mcp/models/cloud_job.py:0
 msgid "Only the platform marks a job as queued by an agent."
 msgstr "Solo la plataforma marca una tarea como encolada por un agente."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Open a pull request from branch %(branch)s in %(repo)s, a public repository:"
+" anyone can read it."
+msgstr ""
+"Abrir un pull request desde la rama %(branch)s en %(repo)s, un repositorio "
+"público: cualquiera puede leerlo."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Open a pull request from branch %(branch)s in %(repo)s. The panel then "
+"creates a preview staging of a production instance, one you may not see in "
+"the panel, with a copy of its data."
+msgstr ""
+"Abrir un pull request desde la rama %(branch)s en %(repo)s. El panel crea "
+"entonces un staging de previsualización de una instancia de producción, una "
+"que quizá usted no vea en el panel, con una copia de sus datos."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Open a pull request from branch %(branch)s in %(repo)s. The panel then "
+"creates a preview staging of production %(names)s, with a copy of its data."
+msgstr ""
+"Abrir un pull request desde la rama %(branch)s en %(repo)s. El panel crea "
+"entonces un staging de previsualización de la producción %(names)s, con una "
+"copia de sus datos."
 
 #. module: incubacloud_mcp
 #. odoo-python
@@ -966,6 +1204,11 @@ msgid ""
 msgstr ""
 "Sustituir el staging %(staging)s por una copia de %(origin)s (%(how)s, "
 "%(neutralized)s). Se pierde todo lo que hay en el staging."
+
+#. module: incubacloud_mcp
+#: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_agent_branch__repository
+msgid "Repository"
+msgstr "Repositorio"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -1199,6 +1442,18 @@ msgstr "El panel ha rechazado esta acción."
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"The panel's GitHub access cannot write to this repository. Save a personal "
+"access token that can write to it in Settings → GitHub: the panel's GitHub "
+"App only reads code."
+msgstr ""
+"El acceso del panel a GitHub no puede escribir en este repositorio. Guarde "
+"en Configuración → GitHub un token de acceso personal que pueda escribir en "
+"él: la GitHub App del panel solo lee código."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_tools_settings.py:0
 msgid "The section %(section)s has no action %(action)s."
 msgstr "La sección %(section)s no tiene la acción %(action)s."
@@ -1301,6 +1556,18 @@ msgstr ""
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid "This panel accepts API keys only. Create one in your"
 msgstr "Este panel solo acepta claves API. Cree una en sus"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"This panel's GitHub access cannot create repositories. On GitHub, use New "
+"repository (private, with a README), then ask me to connect it to the "
+"project."
+msgstr ""
+"El acceso de este panel a GitHub no puede crear repositorios. En GitHub, use"
+" New repository (privado, con un README) y pídame después que lo conecte al "
+"proyecto."
 
 #. module: incubacloud_mcp
 #. odoo-javascript
@@ -1501,6 +1768,57 @@ msgstr ""
 
 #. module: incubacloud_mcp
 #. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Write %(count)s file(s) to branch %(branch)s of %(repo)s in one commit "
+"(%(paths)s). %(repo)s is a public repository: anyone can read what is "
+"written."
+msgstr ""
+"Escribir %(count)s archivo(s) en la rama %(branch)s de %(repo)s en un solo "
+"commit (%(paths)s). %(repo)s es un repositorio público: cualquiera puede "
+"leer lo que se escribe."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Write %(count)s file(s) to branch %(branch)s of %(repo)s in one commit "
+"(%(paths)s). A production instance, one you may not see in the panel, "
+"deploys from this branch: this reaches production, at once when it rebuilds "
+"on every push, otherwise at its next rebuild."
+msgstr ""
+"Escribir %(count)s archivo(s) en la rama %(branch)s de %(repo)s en un solo "
+"commit (%(paths)s). Una instancia de producción, una que quizá usted no vea "
+"en el panel, se despliega desde esta rama: esto llega a producción, de "
+"inmediato si se reconstruye con cada push, y si no en su próxima "
+"reconstrucción."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Write %(count)s file(s) to branch %(branch)s of %(repo)s in one commit "
+"(%(paths)s). Production %(names)s deploys from this branch: this reaches "
+"production, at once when it rebuilds on every push, otherwise at its next "
+"rebuild."
+msgstr ""
+"Escribir %(count)s archivo(s) en la rama %(branch)s de %(repo)s en un solo "
+"commit (%(paths)s). La producción %(names)s se despliega desde esta rama: "
+"esto llega a producción, de inmediato si se reconstruye con cada push, y si "
+"no en su próxima reconstrucción."
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid ""
+"Write %(count)s file(s) to the existing branch %(branch)s of %(repo)s in one"
+" commit (%(paths)s)."
+msgstr ""
+"Escribir %(count)s archivo(s) en la rama existente %(branch)s de %(repo)s en"
+" un solo commit (%(paths)s)."
+
+#. module: incubacloud_mcp
+#. odoo-python
 #: code:addons/incubacloud_mcp/models/mcp_server.py:0
 msgid ""
 "Your agents made too many calls in the last minute. Wait a moment and try "
@@ -1564,10 +1882,33 @@ msgid "not neutralized"
 msgstr "sin neutralizar"
 
 #. module: incubacloud_mcp
+#: model:ir.model.fields,help:incubacloud_mcp.field_incubacloud_mcp_agent_branch__repository
+msgid "owner/name, in lower case."
+msgstr "propietario/nombre, en minúsculas."
+
+#. module: incubacloud_mcp
 #. odoo-javascript
 #: code:addons/incubacloud_mcp/static/src/connect_agent/connect_agent.xml:0
 msgid "preferences"
 msgstr "preferencias"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "private"
+msgstr "privado"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "public"
+msgstr "público"
+
+#. module: incubacloud_mcp
+#. odoo-python
+#: code:addons/incubacloud_mcp/models/mcp_tools_code.py:0
+msgid "the token's own account"
+msgstr "la cuenta propia del token"
 
 #. module: incubacloud_mcp
 #. odoo-javascript
