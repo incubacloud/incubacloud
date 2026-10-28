@@ -17,8 +17,8 @@ from . import _direct_probe
 from .abstract_executor import AbstractSSHExecutor, JobRefused
 from .cloud_host_direct import (
     DIRECT_DYNAMIC_FILE,
-    global_ipv4,
     install_direct_yml_command,
+    probe_ipv4,
 )
 from .full_setup_executor import _DIRECT_STAGED
 
@@ -61,11 +61,12 @@ class SyncDirectPathExecutor(AbstractSSHExecutor):
         self._document = host._shipped_direct_yml()
         self._names = host._direct_published_names()
         # The probe compares the name's DNS answer with this address: a
-        # host registered by name (or a private address) cannot answer it.
-        self._address = global_ipv4(host.sudo().ip_address)
+        # host registered by name (or by an IPv6 or unusable address) cannot
+        # answer it; a private address can, on a platform in a LAN.
+        self._address = probe_ipv4(host.sudo().ip_address)
         if self._names and not self._address:
             self._sys(
-                f"⚠ {host.name} has no global IPv4 address in the panel "
+                f"⚠ {host.name} has no IPv4 address to probe in the panel "
                 f"({host.sudo().ip_address}): its direct names are not probed "
                 "and stay as they are."
             )

@@ -20,6 +20,7 @@ from odoo.tests.common import TransactionCase
 from odoo.addons.incubacloud.models.cloud_host_direct import (
     DIRECT_PRIVATE_RANGES,
     global_ipv4,
+    probe_ipv4,
 )
 from odoo.addons.incubacloud.tests._direct import make_host
 
@@ -40,6 +41,15 @@ class TestTheDirectList(TransactionCase):
                       "2a01:4f8::1", "server.example.com", "", False):
             with self.subTest(value=value):
                 self.assertEqual(global_ipv4(value), "")
+
+    def test_a_probe_takes_any_ipv4_a_host_can_answer_on(self):
+        for value in ("46.4.0.1", " 10.1.2.3 ", "192.168.0.9", "100.64.0.1"):
+            with self.subTest(value=value):
+                self.assertEqual(probe_ipv4(value), value.strip())
+        for value in ("0.0.0.0", "127.0.0.1", "169.254.1.1", "224.0.0.1",
+                      "2a01:4f8::1", "server.example.com", "", False):
+            with self.subTest(value=value):
+                self.assertEqual(probe_ipv4(value), "")
 
     def test_active_hosts_by_their_own_address_and_the_private_ranges(self):
         entries = self._hosts()

@@ -84,6 +84,29 @@ def global_ipv4(value):
     return str(address)
 
 
+def probe_ipv4(value):
+    """Return *value* as an IPv4 address a probe can be sent to, or ''.
+
+    The list admits the private ranges, so a platform on a LAN (a
+    self-hosted core) answers its direct name on a private or shared
+    address: those are probed. A name, an IPv6 address, ``0.0.0.0``, a
+    loopback, link-local, multicast or reserved address cannot be what the
+    name resolves to on a host, and ``direct_probe.sh`` takes only IPv4.
+
+    :param value: an address as a host or a reservation stores it.
+    :rtype: str
+    """
+    try:
+        address = ipaddress.ip_address((value or "").strip())
+    except ValueError:
+        return ""
+    if address.version != 4 or address.is_unspecified or address.is_loopback:
+        return ""
+    if address.is_link_local or address.is_multicast or address.is_reserved:
+        return ""
+    return str(address)
+
+
 def sorted_networks(entries):
     """Return *entries* without duplicates, in address order.
 
