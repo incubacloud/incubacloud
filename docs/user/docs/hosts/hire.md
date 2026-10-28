@@ -14,7 +14,10 @@ registers it as a host ready to receive instances.
 VPS usage is billed **by the hour with a monthly cap**: in a calendar month you
 never pay more than the monthly price the catalog shows when you order, and
 short-lived servers only cost the hours they ran. The charge appears as a line on
-your subscription invoice.
+your subscription invoice. The price is Hetzner's list price excluding VAT, plus
+a management margin, the same on every plan: for the server and its IPv4
+address, by the hour at Hetzner's hourly rate with the margin, and never more in
+a month than the monthly price. VAT is added on our invoice.
 
 An ordered VPS does not use your plan's host allowance, which counts the servers
 you connect yourself, so it never adds an extra host
@@ -28,10 +31,10 @@ In your control plane, go to `/cloud/hosts` and click **Order VPS**.
 
 ### 2. Pick size and location
 
-The catalog (sizes, locations, live availability) comes straight from Hetzner,
-and its prices are the ones you will pay. Pick the size that fits your
-workload and a region close to your users — EU (Helsinki, Nuremberg,
-Falkenstein) or US (Ashburn, Hillsboro).
+The catalog (sizes, locations, live availability) comes straight from Hetzner.
+Each size shows the exact hourly and monthly price for the location you pick,
+before VAT, and that is what you will pay. Pick the size that fits your workload and a region close to your users —
+EU (Helsinki, Nuremberg, Falkenstein) or US (Ashburn, Hillsboro).
 
 ### 3. Choose the hostname
 
