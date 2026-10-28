@@ -463,3 +463,82 @@ class TestCodeTools(
         self.assertEqual((payload["number"], payload["url"]), (7, f"{REPO}/pull/7"))
         posted = [c for c in self.github.calls if c[1].endswith("/pulls")]
         self.assertEqual(posted[0][2]["base"], "main")
+
+    def test_without_a_personal_token_the_repository_is_not_created(self):
+        """With the App only, the answer says how to create it on GitHub."""
+        arguments = {"project_id": self.project.id, "name": "acme-code"}
+        result = self._confirmed_call(self.key, "repo_create", arguments)
+        self.assertTrue(result["isError"])
+        self.assertIn("New repository", result["content"][-1]["text"])
+        self.assertFalse([c for c in self.github.calls if c[1] == "/user/repos"])
+
+    def test_no_repository_is_created_for_a_project_out_of_reach(self):
+        """The project is checked before GitHub: nothing is left orphaned there."""
+        self.env["cloud.settings"]._get_system().github_pat = "ghp_panel-pat-0001"
+        result = self._confirmed_call(
+            self.key, "repo_create", {"project_id": 999_999, "name": "acme-code"}
+        )
+        self.assertTrue(result["isError"])
+        self.assertFalse([c for c in self.github.calls if c[1] == "/user/repos"])
+
+    def test_a_repository_is_created_private_and_connected_after_approval(self):
+        """Approved, it is created private and added to the project's repositories."""
+        self.env["cloud.settings"]._get_system().github_pat = "ghp_panel-pat-0001"
+        arguments = {"project_id": self.project.id, "name": "acme-code"}
+        first = self._call_tool(self.key, "repo_create", arguments, FORM_CAPABILITIES)
+        self.assertEqual(first.get("resultType"), "input_required", first)
+        message = first["inputRequests"]["confirm"]["params"]["message"]
+        self.assertIn('"acme-code"', message)
+        self.assertIn(self.project.name, message)
+        payload = self._payload(
+            self._confirmed_call(self.key, "repo_create", arguments)
+        )
+        self.assertTrue(payload["ok"], payload)
+        created = [c for c in self.github.calls if c[1] == "/user/repos"]
+        self.assertEqual(
+            created[-1][2], {"name": "acme-code", "private": True, "auto_init": True}
+        )
+        self.env.invalidate_all()
+        self.assertEqual(
+            sorted(self.project.repo_ids.mapped("url")),
+            sorted([REPO, "https://github.com/acme/acme-code"]),
+        )
+
+    def test_connecting_a_repository_asks_and_keeps_the_others(self):
+        """The project keeps its repositories and gains the new line."""
+        other = "https://github.com/acme/other"
+        payload = self._payload(
+            self._confirmed_call(
+                self.key,
+                "project_connect_repo",
+                {"project_id": self.project.id, "url": other, "branch": "main"},
+            )
+        )
+        self.assertTrue(payload.get("ok", True), payload)
+        self.env.invalidate_all()
+        self.assertEqual(
+            sorted(self.project.repo_ids.mapped("url")), sorted([REPO, other])
+        )
+
+    def test_a_repository_is_kept_under_one_address(self):
+        """Stored as https://github.com/owner/name; another spelling is the same."""
+        self._confirmed_call(
+            self.key,
+            "project_connect_repo",
+            {"project_id": self.project.id, "url": "git@github.com:acme/third.git"},
+        )
+        payload = self._payload(
+            self._confirmed_call(
+                self.key,
+                "project_connect_repo",
+                {
+                    "project_id": self.project.id,
+                    "url": "https://www.github.com/acme/third/",
+                },
+            )
+        )
+        self.assertTrue(payload["already_connected"], payload)
+        self.env.invalidate_all()
+        urls = self.project.repo_ids.mapped("url")
+        self.assertIn("https://github.com/acme/third", urls)
+        self.assertEqual(len(self.project.repo_ids), 2)
