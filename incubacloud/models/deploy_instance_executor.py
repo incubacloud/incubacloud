@@ -66,6 +66,19 @@ LOGIN_PATHS_RULE = (
 #: and the login limit must never step over it.
 LOGIN_ROUTER_PRIORITY = 15
 
+#: The container a host's Traefik runs as: Full Setup starts it with
+#: ``docker compose -p inverseproxy`` and its service is ``proxy``. A
+#: panel's Odoo shares a Docker network with it — and with every other
+#: panel on the host — so it is named in the panel's configuration as
+#: the one connection allowed to state who the visitor is
+#: (``net/real_ip``). The container's name rather than the alias
+#: ``proxy`` avoids picking the wrong container by accident; it is not
+#: what the guarantee rests on, since any compose project on the network
+#: could declare either as an alias. That rests on only the platform
+#: writing compose files onto ``inverseproxy_shared``. The final dot
+#: makes it an absolute name, never tried under a search domain.
+HOST_PROXY_CONTAINER = "inverseproxy-proxy-1."
+
 #: The command each environment's compose file gives the ``odoo``
 #: service, which the override *replaces* — so whatever the template
 #: put there has to be repeated here or it is silently lost. Verified
@@ -940,21 +953,25 @@ class DeployInstanceExecutor(SecretKeyEscrowMixin, AbstractSSHExecutor):
         if not cp.has_section("options"):
             cp.add_section("options")
         cp.set("options", "proxy_mode", "True")
-        # Which header states the visitor, and whose word to take for
-        # it. Both or neither: a header believed from anywhere is one
-        # any visitor can write. Cleared rather than left behind when
-        # the host stops declaring one, so moving an instance to a host
-        # reached directly does not leave it believing a header nobody
-        # sets.
+        # Which header states the visitor, whose word to take for it,
+        # and which container is the proxy that relays it. Together or
+        # not at all: a header believed from anywhere is one any visitor
+        # can write, and on the host's shared network "anywhere private"
+        # includes every other panel. Cleared rather than left behind
+        # when the host stops declaring one, so moving an instance to a
+        # host reached directly does not leave it believing a header
+        # nobody sets.
         host = self._inst().host_id
         header = host._effective_client_ip_header() if host else ""
         trusted = host._effective_trusted_proxy_ranges() if host else []
         if header and trusted:
             cp.set("options", real_ip.HEADER_OPTION, header)
             cp.set("options", real_ip.TRUSTED_OPTION, ", ".join(trusted))
+            cp.set("options", real_ip.PROXY_OPTION, HOST_PROXY_CONTAINER)
         else:
             cp.remove_option("options", real_ip.HEADER_OPTION)
             cp.remove_option("options", real_ip.TRUSTED_OPTION)
+            cp.remove_option("options", real_ip.PROXY_OPTION)
         out = io.StringIO()
         cp.write(out)
         return out.getvalue()

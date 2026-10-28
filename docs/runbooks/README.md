@@ -34,6 +34,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-21](RB-21-origin-certificate.md) | Issue the origin certificate for the fleet | planned | Preparing hosts to be served through the CDN, replacing the certificate |
 | [RB-22](RB-22-rotate-smtp-relay-credential.md) | Rotate the SMTP relay credential | critical | The shared `notifications@` password leaked, or scheduled rotation |
 | [RB-23](RB-23-continuous-recovery.md) | Continuous recovery: alerts, a stuck restore, a moved instance | critical | `pitr_failing`, `pitr_archive_lagging`, `pitr_base_missing`; a restore that never ended |
+| [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
 
 ## Conventions
 
