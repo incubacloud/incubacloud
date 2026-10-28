@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+<t t-name="incubacloud_assistant.AssistantPanel">
+    <aside class="ic-asst-panel" role="dialog" aria-label="Assistant">
+        <header class="ic-asst-head">
+            <button t-if="state.view === 'chat'" class="ic-slideover-btn" aria-label="Back"
+                    t-on-click="backToList"><i class="fa fa-arrow-left" aria-hidden="true"/></button>
+            <h2 class="ic-asst-title">Assistant</h2>
+            <span class="ic-asst-usage" t-esc="usage"/>
+            <button class="ic-slideover-btn" aria-label="Close" t-on-click="props.onClose">
+                <t t-out="env.icon('x', 16)"/>
+            </button>
+        </header>
+
+        <div t-if="!state.noticeAccepted" class="ic-asst-notice" role="note">
+            <h3 class="ic-asst-notice-title" t-esc="noticeTitle"/>
+            <p t-esc="notice"/>
+            <button class="rl-btn rl-btn-primary rl-btn-sm" t-on-click="acceptNotice">I understand</button>
+        </div>
+        <t t-else="">
+            <p t-if="state.error" class="ic-asst-error" role="alert" t-esc="state.error"/>
+
+            <section t-if="state.view === 'list'" class="ic-asst-body">
+                <p t-if="readOnly" class="ic-asst-muted ic-asst-off">
+                    The assistant is off for you. Your conversations stay here to read or
+                    delete until they expire, 30 days after their last message.
+                </p>
+                <button t-else="" class="rl-btn rl-btn-primary rl-btn-sm ic-asst-new"
+                        t-on-click="newConversation">
+                    New conversation
+                </button>
+                <p t-if="!state.conversations.length" class="ic-asst-muted">
+                    Your conversations of the last 30 days show here.
+                </p>
+                <ul class="ic-asst-convs">
+                    <li t-foreach="state.conversations" t-as="conv" t-key="conv.id">
+                        <button class="ic-asst-conv" t-on-click="() => this.open(conv.id)">
+                            <span t-if="conv.unread" class="ic-asst-dot" aria-label="New"/>
+                            <span class="ic-asst-conv-name" t-esc="conversationName(conv)"/>
+                        </button>
+                        <button t-if="state.deleting === conv.id"
+                                class="rl-btn rl-btn-ghost rl-btn-sm ic-asst-delete-sure"
+                                t-on-click="() => this.remove(conv.id)">Delete it</button>
+                        <button t-else="" class="ic-slideover-btn" aria-label="Delete"
+                                t-on-click="() => this.remove(conv.id)">
+                            <t t-out="env.icon('trash', 14)"/>
+                        </button>
+                    </li>
+                </ul>
+            </section>
+
+            <section t-else="" class="ic-asst-body ic-asst-chat">
+                <div t-if="!readOnly" class="ic-asst-toolbar">
+                    <label for="ic_asst_model">Model</label>
+                    <select id="ic_asst_model" t-on-change="(ev) => this.setModel(ev.target.value)">
+                        <t t-foreach="models" t-as="model" t-key="model.id">
+                            <option t-att-value="model.id" t-att-selected="model.id === state.modelId"
+                                    t-att-disabled="model.disabled">
+                                <t t-esc="model.label"/> · <t t-esc="model.tag"/>
+                            </option>
+                        </t>
+                    </select>
+                    <span t-if="state.conversation" class="ic-asst-muted">
+                        <t t-esc="state.conversation.cost_unknown ? '≈ ?' : ''"/>
+                    </span>
+                </div>
+
+                <ol class="ic-asst-messages" aria-live="polite" t-ref="messages">
+                    <t t-foreach="views" t-as="item" t-key="item.message.id">
+                        <t t-set="view" t-value="item.view"/>
+                        <li t-if="view.kind === 'user'" class="ic-asst-msg ic-asst-msg--user">
+                            <t t-esc="view.text"/>
+                            <span t-if="view.queued" class="ic-asst-muted"> · queued</span>
+                        </li>
+                        <li t-elif="view.kind === 'assistant'" class="ic-asst-msg ic-asst-msg--assistant">
+                            <t t-foreach="parts(view.text)" t-as="part" t-key="part_index">
+                                <a t-if="part.url" t-att-href="part.url" target="_blank"
+                                   rel="noopener noreferrer" t-esc="part.text"/>
+                                <t t-else="" t-esc="part.text"/>
+                            </t>
+                        </li>
+                        <li t-elif="view.kind === 'step'" t-att-class="'ic-asst-step' + (view.error ? ' ic-asst-step--error' : '')">
+                            <t t-esc="view.label"/>
+                        </li>
+                        <li t-elif="view.kind === 'notice'" t-att-class="'ic-asst-notice-line' + (view.error ? ' ic-asst-notice-line--error' : '')">
+                            <t t-esc="view.text"/>
+                            <button t-if="view.askContinue and item_last and !readOnly"
+                                    class="rl-btn rl-btn-ghost rl-btn-sm"
+                                    t-att-disabled="state.sending"
+                                    t-on-click="continueTask">Go on</button>
+                        </li>
+                        <li t-elif="view.kind === 'card'" class="ic-asst-card">
+                            <p t-if="view.production" class="ic-asst-card-prod">
+                                This changes production.
+                            </p>
+                            <p class="ic-asst-card-text" t-esc="view.text"/>
+                            <div t-if="view.open and !readOnly" class="ic-asst-card-actions">
+                                <button class="rl-btn rl-btn-primary rl-btn-sm ic-asst-confirm"
+                                        t-on-click="() => this.answerCard(view.id, true)">Confirm</button>
+                                <button class="rl-btn rl-btn-ghost rl-btn-sm ic-asst-cancel"
+                                        t-on-click="() => this.answerCard(view.id, false)">Cancel</button>
+                            </div>
+                            <p t-else="" class="ic-asst-muted" t-esc="cardState(view.state)"/>
+                        </li>
+                    </t>
+                </ol>
+
+                <p t-if="state.progress or stateInfo.label" class="ic-asst-state">
+                    <t t-esc="state.progress or stateInfo.label"/>
+                </p>
+
+                <div t-if="readOnly" class="ic-asst-muted ic-asst-off-chat">
+                    <p>The assistant is off for you: this conversation is kept to read.</p>
+                    <button t-if="stateInfo.canStop" class="rl-btn rl-btn-ghost rl-btn-sm"
+                            t-on-click="stop">Stop</button>
+                </div>
+                <footer t-else="" class="ic-asst-foot">
+                    <p class="ic-asst-ai-label" t-esc="aiLabel"/>
+                    <textarea class="ic-asst-input" rows="3" t-model="state.text"
+                              placeholder="Ask the assistant…" aria-label="Message"
+                              t-on-keydown="onInputKey"/>
+                    <div class="ic-asst-foot-actions">
+                        <button t-if="stateInfo.canStop" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-on-click="stop">Stop</button>
+                        <button t-if="stateInfo.canRetry" class="rl-btn rl-btn-ghost rl-btn-sm"
+                                t-on-click="retry">Retry</button>
+                        <button class="rl-btn rl-btn-primary rl-btn-sm ic-asst-send"
+                                t-att-disabled="state.sending" t-on-click="send">Send</button>
+                    </div>
+                </footer>
+            </section>
+        </t>
+    </aside>
+</t>
+
+</templates>

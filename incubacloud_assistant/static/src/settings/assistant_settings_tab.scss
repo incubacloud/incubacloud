@@ -1,0 +1,70 @@
+// Settings → Assistant: the tables and lists the panel's own tabs do not have.
+// Painted with the --rl-* tokens, like the rest of Settings.
+
+.ic-asst-settings {
+    // The notes under the form's grid do not touch its last row.
+    .rl-fgrid + .rl-tabnote {
+        margin-block-start: 14px;
+    }
+
+    .ic-asst-models,
+    .ic-asst-usage {
+        margin-block-end: 20px;
+
+        th,
+        td {
+            padding-inline: 0 12px;
+            vertical-align: middle;
+        }
+
+        // A model's name breaks rather than widening the page at 390.
+        td {
+            overflow-wrap: anywhere;
+        }
+
+        td:last-child {
+            white-space: normal;
+        }
+    }
+
+    // Its tags and the reason a box is disabled sit on one line, wrapping.
+    .ic-asst-tag,
+    .ic-asst-muted {
+        display: inline-block;
+        margin-block: 2px;
+    }
+
+    .ic-asst-users {
+        list-style: none;
+        margin: 0 0 20px;
+        padding: 0;
+
+        label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-block: 5px;
+            cursor: pointer;
+        }
+    }
+}
+
+.ic-asst-tag {
+    display: inline-block;
+    font-family: var(--rl-fm);
+    font-size: 10.5px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--rl-surf2);
+    color: var(--rl-muted);
+    margin-inline-end: 4px;
+
+    &--ok {
+        background: var(--rl-green-soft);
+        color: var(--rl-fg2);
+    }
+}
+
+.ic-asst-muted {
+    color: var(--rl-muted);
+}
