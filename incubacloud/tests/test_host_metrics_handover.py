@@ -16,10 +16,12 @@ host would quietly leave the pool with no alert and no log line.
 
 These tests pin both directions of that transition.
 """
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import requests
 
+from odoo import fields
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.models.host_metrics_executor import (
@@ -115,6 +117,24 @@ class TestDiskStatusFollowsMetrics(HostMetricsHandoverCase):
             self.env["cloud.host"]._cron_refresh_specs_from_metrics()
         self.settings.invalidate_recordset()
         self.assertFalse(self.settings.metrics_read_ok_at)
+
+    def test_a_pass_leaves_the_registry_caches_alone(self):
+        """The cron runs every five minutes on every panel that reads
+        metrics: stamping the read with ``set_param`` would empty the
+        ``stable`` caches of every worker each time."""
+        self._refresh_with_disk_usage(40)
+        # An older stamp: within one second the time would not move at all.
+        self.settings.metrics_read_ok_at = fields.Datetime.now() - timedelta(hours=1)
+        with patch.object(
+            type(self.env.registry), "clear_cache", autospec=True,
+        ) as clear:
+            self._refresh_with_disk_usage(40)
+        clear.assert_not_called()
+        self.settings.invalidate_recordset()
+        self.assertGreater(
+            self.settings.metrics_read_ok_at,
+            fields.Datetime.now() - timedelta(minutes=1),
+        )
 
     def test_full_disk_degrades_the_host(self):
         """Above the threshold the host must leave the placement pool."""

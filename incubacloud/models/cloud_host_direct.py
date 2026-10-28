@@ -312,6 +312,24 @@ def patch_inverseproxy_direct(content, port, with_token):
     return text
 
 
+def publishes_direct_port(compose, port):
+    """Whether *compose* publishes the direct *port* as this module adds it.
+
+    ``patch_inverseproxy_direct`` puts the port after the compose file's
+    ``- "443:443"`` line; a file that writes that line another way gets
+    nothing, and the proxy would start without the port.
+
+    :param str compose: the proxy's compose file as rendered.
+    :param int port: the direct port.
+    :rtype: bool
+    """
+    published = re.escape(f'- "0.0.0.0:{int(port)}:{int(port)}"')
+    return bool(re.search(
+        rf"^[ \t]+{published}[ \t]+{re.escape(DIRECT_MARK)}$",
+        compose or "", re.MULTILINE,
+    ))
+
+
 def install_direct_yml_command(staged):
     """Return the shell that puts a staged ``direct.yml`` in place.
 
@@ -605,11 +623,20 @@ class CloudHost(models.Model):
     def _shipped_traefik_yml(self):
         """Return the static file, with the direct entrypoint when there is a port.
 
+        The port asked for, which Full Setup publishes. A job that leaves
+        the compose file alone (the proxy-settings push) renders with
+        ``direct_port_applied`` in the context: the port the running
+        compose file publishes, or the entrypoint would listen on a port
+        nothing publishes and the firewall does not admit.
+
         :rtype: str
         """
-        return patch_traefik_yml_direct(
-            super()._shipped_traefik_yml(), self.direct_port,
+        port = (
+            self.direct_port_shipped
+            if self.env.context.get("direct_port_applied")
+            else self.direct_port
         )
+        return patch_traefik_yml_direct(super()._shipped_traefik_yml(), port)
 
     def _shipped_inverseproxy_yaml(self):
         """Return the proxy's compose file, with the direct port and the token.
@@ -867,11 +894,12 @@ class CloudHost(models.Model):
         """Keep what this host's own try of the direct path said.
 
         A good try records the URLs that answered. A failed one, while
-        every name it tried is ``ok``, is the host's: the direct path is
-        not offered again for six hours, and a second one in a row raises
+        every name it tried is in force (the settings'
+        ``_direct_name_in_force``), is the host's: the direct path is not
+        offered again for six hours, and a second one in a row raises
         ``direct_path_unreachable_from_host``. A failure while a name is
-        not ``ok`` is the central's or the panel's, not the host's: it is
-        noted as inconclusive, with no wait and no alert.
+        not in force is the central's or the panel's, not the host's: it
+        is noted as inconclusive, with no wait and no alert.
 
         :param list report: as ``_direct_probe.reach_report`` returns it.
         """
@@ -892,7 +920,7 @@ class CloudHost(models.Model):
             return
         reason = _direct_probe.reach_reason(failed[0])
         vals["direct_reach_ok"] = False
-        if any(settings[f"{a['prefix']}_state"] != "ok" for a in failed):
+        if not all(settings._direct_name_in_force(a["prefix"]) for a in failed):
             vals["direct_reach_reason"] = f"inconclusive: {reason}"
             self.sudo().write(vals)
             return

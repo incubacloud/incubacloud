@@ -90,6 +90,26 @@ class TestTheSyncJob(TransactionCase):
             commands["Probe direct.metrics.example.test"],
         )
 
+    def test_a_central_registered_by_name_is_not_probed_and_says_so(self):
+        """``direct_probe.sh`` takes an IPv4 address: a name would fail the
+        step, and with it a job whose list was applied."""
+        self.host = make_host(
+            self.env, "sj-named", "sj-named.example.com",
+            direct_port=9443, direct_port_shipped=9443,
+        )
+        self.settings.metrics_central_host_id = self.host
+        with patch.object(
+            SyncDirectPathExecutor, "_sys", autospec=True,
+        ) as sys_:
+            executor, _transport = self._executor()
+        labels = [c[0] for c in executor.get_commands()]
+        self.assertFalse([label for label in labels if label.startswith("Probe ")])
+        self.assertIn(
+            "Apply the direct list in the firewall", labels,
+        )
+        said = " ".join(c.args[1] for c in sys_.call_args_list)
+        self.assertIn("no global IPv4 address", said)
+
     def test_an_entry_with_shell_in_it_is_one_quoted_argument(self):
         with patch.object(
             type(self.host), "_direct_peers_entries", autospec=True,

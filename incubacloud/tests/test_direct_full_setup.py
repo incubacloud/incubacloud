@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.models.abstract_executor import JobRefused
 from odoo.addons.incubacloud.models.acme_store import AcmeStorePruneMixin
 from odoo.addons.incubacloud.models.full_setup_executor import (
     _DIRECT_STAGED,
@@ -118,6 +119,33 @@ class TestFullSetupWithADirectPort(_DirectSetupCase):
         self.assertIn("Port 9443 is already in use on fs-direct", errors[0])
         self.assertIn("incubacloud-central-grafana-1", errors[0])
 
+    def _good_results(self, executor):
+        """What every step of a run that went well printed."""
+        self._before(executor)
+        results = {
+            label: {"stdout": "ok", "exit_status": 0}
+            for label, *_rest in executor.get_commands()
+        }
+        results["check:os"]["stdout"] = "Linux"
+        results["check:disk"]["stdout"] = str(100 * 1024 ** 3)
+        return results
+
+    def test_a_failed_direct_step_fails_the_job(self):
+        """Without the token no certificate, without the list the port
+        serves nothing, without "Keep" a refused start cannot go back."""
+        executor = self._executor(FullSetupExecutor, "full_setup")
+        results = self._good_results(executor)
+        self.assertEqual(executor.parse_results(results), [])
+        for label in (
+            "Install the DNS token",
+            "Install the direct list for Traefik",
+            "Keep the running proxy files",
+        ):
+            with self.subTest(label=label):
+                failed = {**results, label: {"stdout": "", "exit_status": 1}}
+                errors = executor.parse_results(failed)
+                self.assertTrue([e for e in errors if label in e], errors)
+
     def test_success_records_the_port_it_published(self):
         executor = self._executor(FullSetupExecutor, "full_setup")
         with patch.object(
@@ -140,6 +168,23 @@ class TestFullSetupWithADirectPort(_DirectSetupCase):
             "rm -f ~/traefik/dynamic/direct.yml",
             commands["Remove the direct list for Traefik"],
         )
+
+
+class TestAComposeFileThatCannotPublishThePort(_DirectSetupCase):
+    """The port goes in after ``- "443:443"``; a file without it gets none."""
+
+    def test_full_setup_refuses_before_touching_the_host(self):
+        template = self.host.traefik_inverseproxy_yaml
+        self.assertIn('- "443:443"', template)
+        self.host.traefik_inverseproxy_yaml = template.replace(
+            '- "443:443"', "- 443:443",
+        )
+        executor = self._executor(FullSetupExecutor, "full_setup")
+        with self.assertRaisesRegex(JobRefused, "direct port 9443"):
+            executor.pre_run_checks()
+
+    def test_the_usual_compose_file_passes(self):
+        self._executor(FullSetupExecutor, "full_setup").pre_run_checks()
 
 
 class TestWithoutADirectPortNothingChanges(_DirectSetupCase):
@@ -171,6 +216,7 @@ class TestWithoutADirectPortNothingChanges(_DirectSetupCase):
 class TestThePushShipsTheStaticFileAndTheToken(_DirectSetupCase):
 
     def test_static_file_and_token_but_no_compose(self):
+        self.host.direct_port_shipped = 9443
         executor = self._executor(PushTrustedProxiesExecutor, "push_trusted_proxies")
         uploaded, _messages = self._before(executor)
         self.assertEqual(
@@ -183,6 +229,23 @@ class TestThePushShipsTheStaticFileAndTheToken(_DirectSetupCase):
         labels = [c[0] for c in executor.get_commands()]
         self.assertLess(
             labels.index("Install the DNS token"), labels.index("Restart Traefik"),
+        )
+
+    def test_the_entrypoint_listens_on_the_port_the_compose_publishes(self):
+        """A port changed without Full Setup: the compose still publishes
+        the old one, and the firewall admits only that one."""
+        self.host.write({"direct_port": 9444, "direct_port_shipped": 9443})
+        executor = self._executor(PushTrustedProxiesExecutor, "push_trusted_proxies")
+        uploaded, _messages = self._before(executor)
+        static = uploaded[executor._job_path("traefik.yml")][0]
+        self.assertIn('address: ":9443"', static)
+        self.assertNotIn("9444", static)
+
+    def test_before_full_setup_the_push_adds_no_entrypoint(self):
+        executor = self._executor(PushTrustedProxiesExecutor, "push_trusted_proxies")
+        uploaded, _messages = self._before(executor)
+        self.assertNotIn(
+            "direct-peers@file", uploaded[executor._job_path("traefik.yml")][0],
         )
 
     def test_the_push_leaves_the_published_port_alone(self):

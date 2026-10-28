@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from odoo import fields
 from odoo.exceptions import ValidationError
+from odoo.sql_db import Cursor
 from odoo.tests.common import BaseCase, TransactionCase
 
 from odoo.addons.incubacloud.models import _direct_probe, cloud_settings_direct
@@ -192,16 +193,57 @@ class TestTheSettingsKeepTheState(TransactionCase):
         params.set_param(key, "2026-01-01 00:00:00")
         self._apply(_OK)
         self.settings.invalidate_recordset()
-        stamp = fields.Datetime.to_datetime(params.get_param(key))
+        self.env.cr.execute(
+            "SELECT value FROM ir_config_parameter WHERE key = %s", [key],
+        )
+        stamp = fields.Datetime.to_datetime(self.env.cr.fetchone()[0])
         self.assertGreater(stamp, datetime(2026, 10, 1))
         self.assertEqual(self.settings.metrics_central_direct_checked_at, stamp)
 
+    def test_a_probe_leaves_the_registry_caches_alone(self):
+        """``set_param`` would empty the ``stable`` caches of every worker
+        at every probe (Odoo 19's ``ir.config_parameter.write``); the time
+        is written with SQL instead, and Settings still shows it."""
+        self._apply(_OK)
+        # An older stamp: within one second the time would not move at all.
+        self.settings._direct_note_checked(_PREFIX, datetime(2026, 1, 1))
+        with patch.object(
+            type(self.env.registry), "clear_cache", autospec=True,
+        ) as clear:
+            self._apply(_OK)
+        clear.assert_not_called()
+        self.assertGreater(
+            self.settings.metrics_central_direct_checked_at,
+            fields.Datetime.now() - timedelta(minutes=1),
+        )
+
     def test_it_writes_on_a_read_committed_cursor(self):
         with patch.object(
-            cloud_settings_direct, "read_committed_cursor", wraps=read_committed_cursor,
+            cloud_settings_direct, "read_committed_cursor", autospec=True,
+            side_effect=read_committed_cursor,
         ) as cursor:
             self._apply(_OK)
         cursor.assert_called_once()
+
+    def test_the_row_is_locked_before_the_state_is_read(self):
+        """Two probes at once: the second must read what the first wrote."""
+        with patch.object(
+            Cursor, "execute", autospec=True, side_effect=Cursor.execute,
+        ) as execute:
+            self._apply(_OK)
+        queries = [str(getattr(c.args[1], "code", c.args[1])) for c in
+                   execute.call_args_list]
+        lock = next(
+            (i for i, q in enumerate(queries)
+             if "cloud_settings" in q and "FOR UPDATE" in q),
+            None,
+        )
+        self.assertIsNotNone(lock, "the settings row is read without a lock")
+        read = next(
+            i for i, q in enumerate(queries)
+            if q.lstrip().startswith("SELECT") and f"{_PREFIX}_state" in q
+        )
+        self.assertLess(lock, read)
 
     def test_a_certificate_with_less_than_21_days_warns(self):
         now = fields.Datetime.now()

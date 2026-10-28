@@ -135,3 +135,54 @@ class TestAHostGoneQuiet(_ConvergenceCase):
         other.metrics_last_seen = fields.Datetime.now()
         self.env["cloud.host"]._reconcile_direct_agents()
         self.assertEqual(self._queued(), 1)
+
+
+class TestANameInForceThatThisPanelDoesNotProbe(_ConvergenceCase):
+    """A panel offered the name by someone else, as a tenant's is by its manager.
+
+    Core's own state of the name stays ``unknown`` there: nobody on that
+    panel probes it. Whether the name is in force is the layer's to say
+    (``cloud.settings._direct_name_in_force``), so a host that fails its
+    own try is refused for six hours instead of being re-applied at every
+    reconciliation with nothing to show for it.
+    """
+
+    def _refused_once(self):
+        """A failed try while another layer says the name works; then reconcile."""
+        settings_cls = type(self.settings)
+        self.settings.metrics_central_direct_state = "unknown"
+        self.host.write({
+            "metrics_agents_write_url": PUBLIC, "direct_refused_at": False,
+        })
+        with patch.object(
+            settings_cls, "_direct_name_in_force", autospec=True, return_value=True,
+        ), patch.object(
+            settings_cls, "_direct_central_write_url", autospec=True,
+            return_value=OFFER,
+        ):
+            self.assertEqual(self.host._metrics_remote_write_url(), OFFER)
+            self.host._record_direct_reach([{
+                "url": OFFER, "prefix": "metrics_central_direct",
+                "expected": 401, "status": -1, "msg": "Connection refused",
+            }])
+            self.env["cloud.host"]._reconcile_direct_agents()
+
+    def test_the_refusal_is_the_hosts_and_waits_six_hours(self):
+        self._refused_once()
+        self.assertTrue(self.host.direct_refused_at)
+        self.assertEqual(self.host.direct_reach_failures, 1)
+        self.assertEqual(self.host.direct_reach_reason, "connection")
+
+    def test_the_reconciliation_does_not_re_apply_it(self):
+        self._refused_once()
+        self.assertEqual(self._queued(), 0)
+
+    def test_core_says_in_force_from_the_probe_state(self):
+        self.settings.metrics_central_direct_state = "ok"
+        self.assertTrue(
+            self.settings._direct_name_in_force("metrics_central_direct"),
+        )
+        self.settings.metrics_central_direct_state = "unknown"
+        self.assertFalse(
+            self.settings._direct_name_in_force("metrics_central_direct"),
+        )
