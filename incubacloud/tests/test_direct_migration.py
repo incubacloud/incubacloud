@@ -12,7 +12,7 @@ from odoo.tests.common import TransactionCase
 
 from odoo.addons.incubacloud.tests._direct import make_host
 
-_VERSION = "1.0.200"
+_VERSION = "1.0.201"
 _SCRIPT = "post-direct-path.py"
 _WRITE_URL = "https://metrics.example.test/w/api/v1/write"
 
