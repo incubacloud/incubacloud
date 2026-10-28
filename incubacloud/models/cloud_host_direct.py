@@ -24,6 +24,7 @@ import yaml
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
+from . import _direct_probe
 from .cloud_host import strip_marked_blocks
 
 _logger = logging.getLogger(__name__)
@@ -49,6 +50,9 @@ _ABSENT_FOR = timedelta(hours=24)
 
 #: How long the list in force may lag behind before it is said aloud.
 _STALE_AFTER = timedelta(minutes=30)
+
+#: A host that turned the direct path down is not offered it again for this long.
+_REFUSED_FOR = timedelta(hours=6)
 
 #: How old the last good sync may be before the cron runs it anyway: it
 #: puts back what a reboot or an old re-hardening took, and probes again.
@@ -687,6 +691,115 @@ class CloudHost(models.Model):
             "name": name,
             "checks": ["POST:/w/api/v1/write:401", "GET:/flags:403"],
         }]
+
+    def _direct_recently_refused(self):
+        """Whether this host turned the direct path down in the last six hours.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        refused = self.direct_refused_at
+        return bool(refused and refused > fields.Datetime.now() - _REFUSED_FOR)
+
+    def _direct_write_offer(self):
+        """Return the direct remote-write URL to offer this host's agents, or ''.
+
+        Offered while the central's direct name works, this host's own
+        address is applied on the central's host, the host is not marked
+        "Use the public path" and it did not refuse the path in the last
+        six hours. The install still tries it from the host first.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        if self.direct_path_opt_out or self._direct_recently_refused():
+            return ""
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        url = settings._direct_central_write_url()
+        central = settings.metrics_central_host_id
+        if not url or not central._direct_admits(self.sudo().ip_address):
+            return ""
+        return url
+
+    def _metrics_remote_write_url(self):
+        """Return the URL this host's agents should be installed with.
+
+        The direct one on offer, else the remote-write URL in Settings:
+        the public path is the base and the way back.
+
+        :rtype: str
+        """
+        self.ensure_one()
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        public = (settings.metrics_remote_write_url or "").strip()
+        return self._direct_write_offer() or public
+
+    def _direct_reach_probes(self, write_url):
+        """Return what the host tries before taking the direct path.
+
+        Core: the write URL answers 401 without a credential (vmauth). The
+        SaaS layer adds the panel's direct name, which the panels on this
+        host would call.
+
+        :param str write_url: the direct URL on offer.
+        :return: ``[{"url", "method", "status", "prefix"}]``.
+        :rtype: list
+        """
+        self.ensure_one()
+        return [{
+            "url": write_url, "method": "POST", "status": 401,
+            "prefix": "metrics_central_direct",
+        }]
+
+    def _record_direct_reach(self, report):
+        """Keep what this host's own try of the direct path said.
+
+        A good try records the URLs that answered. A failed one, while
+        every name it tried is ``ok``, is the host's: the direct path is
+        not offered again for six hours, and a second one in a row raises
+        ``direct_path_unreachable_from_host``. A failure while a name is
+        not ``ok`` is the central's or the panel's, not the host's: it is
+        noted as inconclusive, with no wait and no alert.
+
+        :param list report: as ``_direct_probe.reach_report`` returns it.
+        """
+        self.ensure_one()
+        now = fields.Datetime.now()
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        Alert = self.env["cloud.alert"].sudo()
+        passed = [a["url"] for a in report if a["status"] == a["expected"]]
+        failed = [a for a in report if a["status"] != a["expected"]]
+        vals = {"direct_reach_urls": "\n".join(passed), "direct_reach_at": now}
+        if not failed:
+            vals.update(
+                direct_reach_ok=True, direct_reach_failures=0,
+                direct_reach_reason=False,
+            )
+            self.sudo().write(vals)
+            Alert.resolve_alert("direct_path_unreachable_from_host", host=self)
+            return
+        reason = _direct_probe.reach_reason(failed[0])
+        vals["direct_reach_ok"] = False
+        if any(settings[f"{a['prefix']}_state"] != "ok" for a in failed):
+            vals["direct_reach_reason"] = f"inconclusive: {reason}"
+            self.sudo().write(vals)
+            return
+        failures = (self.direct_reach_failures or 0) + 1
+        vals.update(
+            direct_reach_failures=failures, direct_refused_at=now,
+            direct_reach_reason=reason,
+        )
+        self.sudo().write(vals)
+        if failures >= 2:
+            Alert.raise_alert(
+                "direct_path_unreachable_from_host",
+                _(
+                    "%(host)s does not reach the direct path (%(reason)s); its "
+                    "agents use the public path.",
+                    host=self.name, reason=reason,
+                ),
+                host=self,
+            )
 
     def _enqueue_direct_sync(self, reason, chained=False):
         """Queue ``sync_direct_path`` on this host, swallowing failures.

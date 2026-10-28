@@ -1414,6 +1414,9 @@ class TestTheAgentsAreNotReachableFromTheInstances(BaseCase):
         values.update(
             ic_obs_dir="/home/ops/observability",
             ic_remote_write_url="https://metrics.example.test/w/api/v1/write",
+            # What the play settles on after its try of the direct path.
+            ic_write_url="https://metrics.example.test/w/api/v1/write",
+            ic_logs_url="",
             ic_remote_write_user="acct",
             ic_logs_write_url="",
             ic_host_name="host-a",

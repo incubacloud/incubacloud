@@ -15,6 +15,7 @@ import logging
 from odoo import _
 from odoo.exceptions import UserError
 
+from . import _direct_probe
 from .ansible_executor import AnsibleExecutor
 
 _logger = logging.getLogger(__name__)
@@ -113,7 +114,15 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
         :param settings: the ``cloud.settings`` singleton.
         :return: the push URL, or ''.
         """
-        base = (settings.metrics_remote_write_url or "").strip().rstrip("/")
+        return self._logs_url_for(settings.metrics_remote_write_url)
+
+    def _logs_url_for(self, write_url):
+        """Return the logs push URL that goes with *write_url*, or ''.
+
+        :param str write_url: a metrics remote-write URL.
+        :rtype: str
+        """
+        base = (write_url or "").strip().rstrip("/")
         if not base.endswith(self._METRICS_WRITE_SUFFIX):
             return ""
         root = base[: -len(self._METRICS_WRITE_SUFFIX)]
@@ -144,12 +153,23 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             f"Installing observability agents on {host.name} "
             f"({len(instances)} instance(s) to label)."
         )
+        offer = host._direct_write_offer()
+        # Kept for on_success: what the host tried is judged against them.
+        self._direct_probes = host._direct_reach_probes(offer) if offer else []
         account, token = settings._metrics_auth()
         return {
             "ic_host_id": str(host.id),
             "ic_host_name": host.name or "",
             "ic_remote_write_url": settings.metrics_remote_write_url or "",
             "ic_logs_write_url": self._logs_write_url(settings),
+            # The direct path on offer, tried from the host before any
+            # configuration is written; the URLs above are the fallback.
+            "ic_direct_write_url": offer,
+            "ic_direct_logs_write_url": self._logs_url_for(offer) if offer else "",
+            "ic_direct_probes": [
+                {"url": p["url"], "method": p["method"], "status": p["status"]}
+                for p in self._direct_probes
+            ],
             # SSH, sudo, auditd and fail2ban, besides the access log. Only
             # where the panel says so: the hosts have to be its own.
             "ic_ship_security_logs": bool(settings.metrics_ship_security_logs),
@@ -192,8 +212,26 @@ class ObservabilityAgentsExecutor(AnsibleExecutor):
             f"✓ Observability agents running. "
             f"{facts.get('ic_instances_labelled') or 0} instance(s) labelled."
         )
-        self._host()._mark_observability_installed()
+        host = self._host()
+        host._mark_observability_installed()
         self._resolve_alert("observability_agents_failed")
+        installed = str(facts.get("ic_write_url_installed") or "")
+        if installed:
+            host.sudo().write({"metrics_agents_write_url": installed})
+        probes = getattr(self, "_direct_probes", None) or []
+        if probes:
+            before = host.direct_reach_urls or ""
+            report = _direct_probe.reach_report(facts.get("ic_direct_report"), probes)
+            host._record_direct_reach(report)
+            self._sys(
+                "Direct path tried from the host: "
+                + ", ".join(f"{a['url']} → {a['status']}" for a in report)
+                + f". Agents write to {installed or 'the remote-write URL'}."
+            )
+            if (host.direct_reach_urls or "") != before:
+                self.env["cloud.host"]._direct_path_changed(
+                    f"direct URLs reached from {host.name} changed",
+                )
 
     async def on_failure(self, results, errors):
         """Record the failure so the cron retries, and alert if it persists.
