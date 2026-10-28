@@ -15,3 +15,4 @@ from . import test_tools
 from . import test_engine
 from . import test_engine_tools
 from . import test_engine_limits
+from . import test_ui_settings
