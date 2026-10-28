@@ -159,6 +159,46 @@ class TestTermsAcceptance(AssistantMixin, HttpCase):
         self._configure(users=[self.dev], terms=False)
         self.assertFalse(self.env["cloud.settings"]._assistant_available_for(self.dev))
 
+    def test_a_manager_cannot_change_the_assistant_through_the_orm(self):
+        """On, provider, models, prices, users, limit: only Settings → Assistant.
+
+        Accepted once, switched off: the switch through ``call_kw`` would
+        give it back without a new acceptance.
+        """
+        result = self._rpc(
+            "save_settings", vals={"enabled": True, "accept_ai_terms": True}
+        )
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(self._rpc("save_settings", vals={"enabled": False})["ok"])
+        mine = self._settings().with_user(self.manager)
+        priced = [{"id": "any-model", "price_in": 0.0, "price_out": 0.0}]
+        for vals in (
+            {"assistant_enabled": True},
+            {"assistant_provider": "openai"},
+            {"assistant_allowed_models": json.dumps(["any-model"])},
+            {"assistant_default_model": "any-model"},
+            {"assistant_models": json.dumps(priced)},
+            {"assistant_user_ids": [(6, 0, [self.manager.id])]},
+            {"assistant_monthly_limit": -1.0},
+            {"assistant_step_cap": 10_000},
+        ):
+            with self.subTest(vals):
+                for settings in (
+                    mine,
+                    mine.with_context(incubacloud_assistant_settings_write=True),
+                    mine.sudo(),
+                ):
+                    with self.assertRaises(AccessError):
+                        settings.write(vals)
+        with self.assertRaises(AccessError):
+            self.env["cloud.settings"].with_user(self.manager).create(
+                {"assistant_enabled": True}
+            )
+        config = self.env["cloud.settings"]._assistant_config()
+        self.assertFalse(config.enabled)
+        self.assertEqual(config.provider, "anthropic")
+        self.assertFalse(self.env["cloud.settings"]._assistant_available_for(self.dev))
+
     def test_a_manager_cannot_write_the_acceptance_through_the_orm(self):
         """The four fields are the system's: a manager's write is refused."""
         settings = self._settings().with_user(self.manager)

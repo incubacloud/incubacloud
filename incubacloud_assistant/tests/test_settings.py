@@ -69,5 +69,5 @@ class TestAssistantSettings(AssistantMixin, TransactionCase):
     def test_a_listing_that_is_not_json_reads_as_empty(self):
         """A broken listing never takes the panel down."""
         self._configure(users=[self.developer])
-        self.Settings._get_system().assistant_models = "{not json"
+        self.Settings._assistant_settings().assistant_models = "{not json"
         self.assertEqual(self.Settings._assistant_config().models, ())

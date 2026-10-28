@@ -6,6 +6,7 @@ panel without access to the provider learns it here, on save.
 """
 
 import json
+import math
 
 from odoo import _, fields, http
 from odoo.exceptions import UserError
@@ -187,7 +188,8 @@ class AssistantSettingsRoutes(http.Controller):
         key of one provider is never sent to another. It starts with no
         model allowed: its listing is another. Switching on needs a key, a
         default model and allowed models. With a monthly limit, the default
-        model must have a known price.
+        model must have a known price. A new provider shows everyone the
+        first-use notice again: it names the provider.
         """
         self._check()
         try:
@@ -195,7 +197,12 @@ class AssistantSettingsRoutes(http.Controller):
         except _Refusal as refusal:
             return _refused(str(refusal))
         if write:
-            request.env["cloud.settings"]._get_system().write(write)
+            request.env["cloud.settings"]._assistant_settings().write(write)
+        if "assistant_provider" in write:
+            # The notice names the provider: everyone reads it again.
+            request.env["res.users"].sudo().with_context(active_test=False).search(
+                [("assistant_notice_at", "!=", False)]
+            ).write({"assistant_notice_at": False})
         return {"ok": True}
 
     def _changes(self, vals):
@@ -301,7 +308,8 @@ class AssistantSettingsRoutes(http.Controller):
             write["assistant_user_ids"] = [(6, 0, ids)]
         if "monthly_limit" in vals:
             limit = _number(vals["monthly_limit"] or 0, float, -1)
-            if limit < 0:
+            # NaN passes "< 0" and no spending ever reaches it.
+            if not math.isfinite(limit) or limit < 0:
                 raise _Refusal(_("The monthly limit is a number of euros, 0 or more."))
             write["assistant_monthly_limit"] = limit
         if "step_cap" in vals:

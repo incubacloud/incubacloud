@@ -56,7 +56,7 @@ class AssistantMixin(McpUsersMixin, PanelFixtureMixin):
         *terms*: section 12A accepted, as switching it on in Settings leaves it.
         """
         self.env["ir.config_parameter"].sudo().set_param(BLOCKED_PARAM, False)
-        settings = self.env["cloud.settings"]._get_system()
+        settings = self.env["cloud.settings"]._assistant_settings()
         settings.write(
             {
                 "assistant_enabled": enabled,
