@@ -25,7 +25,10 @@ import logging
 
 import yaml
 
+from odoo import _
+
 from ..net.trusted_proxies import parse_ranges
+from .abstract_executor import JobRefused
 from .ansible_executor import AnsibleExecutor
 
 _logger = logging.getLogger(__name__)
@@ -208,6 +211,7 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         # The accounts authenticate from now on: whoever hands them out
         # hears it here, from both jobs that write the list.
         settings._metrics_accounts_shipped()
+        settings._grafana_oidc_shipped(getattr(self, "_shipped_grafana_oidc", None))
 
     def _account_url_map(self, user):
         """Return the vmauth ``url_map`` for one account.
@@ -338,6 +342,34 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
         })
         return yaml.safe_dump({"users": users}, sort_keys=False)
 
+    def pre_run_checks(self):
+        """Refuse to publish the central's direct name on a host without a port.
+
+        The router would name an entrypoint the host's proxy does not have.
+
+        :raises JobRefused: saying what to do.
+        """
+        super().pre_run_checks()
+        problem = self._direct_port_problem()
+        if problem:
+            self._write_system_direct(f"⚠ {problem}")
+            raise JobRefused(problem)
+
+    def _direct_port_problem(self):
+        """Return why this run cannot publish the central's direct name, or ''.
+
+        :rtype: str
+        """
+        settings = self.env["cloud.settings"].sudo()._get_system()
+        if not (settings.metrics_central_direct_host or "").strip():
+            return ""
+        if self._host().direct_port_shipped:
+            return ""
+        return _(
+            "The central's host has no direct port applied. Set the port on "
+            "the host and press Full Setup."
+        )
+
     def get_extra_vars(self):
         """Hand retention, credentials and Grafana auth to the playbook."""
         settings = self.env["cloud.settings"].sudo()._get_system()
@@ -362,6 +394,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             f"admin:{admin_password}".encode()
         ).decode()
         public = self._public_endpoint(settings)
+        # What Grafana is told here is what the SaaS layer records as in
+        # force (``_grafana_oidc_shipped``) once the run succeeds.
+        self._shipped_grafana_oidc = settings._grafana_oidc(accounts)
         return {
             "ic_retention_days": settings.metrics_retention_days or 90,
             # The whole vmauth access-control list in one document: the
@@ -401,13 +436,18 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
             "ic_public_tls": public["tls"] if public else "",
             "ic_public_forwarded": public["forwarded"] if public else False,
             "ic_operator_sources": public["operator_sources"] if public else [],
+            # The central's direct name, for the platform's own servers on
+            # the host's direct entrypoint. Empty publishes nothing more.
+            "ic_direct_host": (
+                settings.metrics_central_direct_host or ""
+            ).strip().lower(),
             "ic_grafana_frame_ancestors": public["frame_ancestors"] if public else "",
             # Filled by the SaaS layer once Grafana is registered as an
             # OIDC client (see the manager's override). Empty here means
             # "no identity provider available", which is the self-hosted
             # case: the playbook falls back to trusting a header set by
             # the panel's own reverse proxy.
-            "ic_grafana_oidc": settings._grafana_oidc(accounts),
+            "ic_grafana_oidc": self._shipped_grafana_oidc,
         }
 
     def _public_endpoint(self, settings):
@@ -516,6 +556,9 @@ class ObservabilityCentralExecutor(AnsibleExecutor):
                 )
         settings.write(vals)
         self._record_shipped_accounts()
+        if (settings.metrics_central_direct_host or "").strip():
+            # Probe the name now rather than at the cron's next pass.
+            self._host()._enqueue_direct_sync("central deployed", chained=True)
 
         self._sys(
             f"✓ Metrics central is up and observability is enabled "

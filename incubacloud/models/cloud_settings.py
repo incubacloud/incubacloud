@@ -482,6 +482,17 @@ class CloudSettings(models.Model):
         reconciliation.
         """
 
+    def _grafana_oidc_shipped(self, oidc):
+        """React to Grafana's SSO settings being in force on the central.
+
+        Called by the central's deployment and by the account sync with
+        what they handed Grafana (``_grafana_oidc``), on the job's durable
+        cursor. Core has nothing to keep; the SaaS layer records the token
+        URL in force, so its reconciliation sees when Grafana is behind.
+
+        :param oidc: the settings sent, ``{}`` or None when none were.
+        """
+
     def _grafana_oidc(self, accounts):
         """Return the OIDC settings Grafana should authenticate with.
 

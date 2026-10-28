@@ -36,6 +36,13 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
     _job_type = "sync_metrics_accounts"
     _playbook = "playbooks/metrics_acl_sync.yml"
 
+    def _direct_port_problem(self):
+        """Never refused for the direct name: the account sync publishes nothing.
+
+        :rtype: str
+        """
+        return ""
+
     def get_extra_vars(self):
         """Hand the whole document, and only the new accounts, to Ansible.
 
@@ -69,6 +76,7 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
         grafana_admin_basic = base64.b64encode(
             f"admin:{admin_password}".encode()
         ).decode()
+        self._shipped_grafana_oidc = settings._grafana_oidc(accounts)
         return {
             # The deletion key must travel whenever it exists — the
             # document replaces the file, so leaving it out here would
@@ -92,7 +100,7 @@ class MetricsAclSyncExecutor(ObservabilityCentralExecutor):
             # just the new ones: it replaces the setting rather than
             # adding to it, so a partial map would strand everyone
             # missing from it in Grafana's default organisation.
-            "ic_grafana_oidc": settings._grafana_oidc(accounts),
+            "ic_grafana_oidc": self._shipped_grafana_oidc,
         }
 
     def parse_results(self, results):

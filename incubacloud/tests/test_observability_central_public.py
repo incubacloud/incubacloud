@@ -9,6 +9,7 @@ gateway of a co-located central), and the panel and every agent are
 pointed at it.
 """
 import asyncio
+import pathlib
 from unittest.mock import MagicMock, patch
 
 import jinja2
@@ -19,6 +20,10 @@ from odoo.http import Request
 from odoo.tests.common import BaseCase, TransactionCase
 
 from odoo.addons.incubacloud.controllers._data_load import _routes_crud
+from odoo.addons.incubacloud.models.abstract_executor import JobRefused
+from odoo.addons.incubacloud.models.metrics_acl_sync_executor import (
+    MetricsAclSyncExecutor,
+)
 from odoo.addons.incubacloud.models.observability_central_executor import (
     ObservabilityCentralExecutor,
 )
@@ -31,6 +36,23 @@ from odoo.addons.incubacloud.tests.test_observability_wiring import (
 
 PUBLIC = "metrics-central.example.test"
 ACCOUNT_PREFIXES = {"/w/", "/r/", "/lw/", "/lr/"}
+DIRECT = "direct.metrics-central.example.test"
+_FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures" / "central_compose"
+_PUBLIC = {
+    "ic_public_host": PUBLIC,
+    "ic_grafana_frame_ancestors": "https://panel.example.test",
+}
+_BEFORE = {
+    "none": {},
+    "public_acme": dict(
+        _PUBLIC, ic_public_tls="acme", ic_public_forwarded=False,
+        ic_operator_sources=["127.0.0.1/32", "198.51.100.7/32"],
+    ),
+    "public_default_forwarded": dict(
+        _PUBLIC, ic_public_tls="default", ic_public_forwarded=True,
+        ic_operator_sources=["127.0.0.1/32"],
+    ),
+}
 
 
 def _compose(**variables):
@@ -422,3 +444,102 @@ class TestTheSettingsScreen(TransactionCase):
         self.settings.write({'metrics_central_public_host': PUBLIC})
         self._save(job_retention_days=180)
         self.assertEqual(self.settings.metrics_central_public_host, PUBLIC)
+
+
+class TestTheDirectRouter(BaseCase):
+    """The central's direct name, on the host's direct entrypoint only."""
+
+    def _labels(self, **extra):
+        """Return vmauth's labels in a compose file with the direct name."""
+        doc = yaml.safe_load(_compose(ic_direct_host=DIRECT, **extra))
+        return doc["services"]["vmauth"]["labels"]
+
+    def test_without_a_direct_name_the_file_is_the_one_before(self):
+        for name, extra in _BEFORE.items():
+            with self.subTest(variant=name):
+                self.assertEqual(
+                    _compose(**extra), (_FIXTURES / f"{name}.yml").read_text(),
+                )
+
+    def test_the_four_account_prefixes_on_the_direct_entrypoint(self):
+        labels = self._labels()
+        rule = labels["traefik.http.routers.ic-central-direct.rule"]
+        self.assertTrue(rule.startswith(f"Host(`{DIRECT}`) && ("))
+        prefixes = {part.split("`")[1] for part in rule.split("PathPrefix(")[1:]}
+        self.assertEqual(prefixes, ACCOUNT_PREFIXES)
+        router = "traefik.http.routers.ic-central-direct"
+        self.assertEqual(labels[f"{router}.entrypoints"], "direct")
+        self.assertEqual(labels[f"{router}.service"], "ic-central-gateway")
+        self.assertEqual(labels[f"{router}.priority"], "10010")
+        self.assertEqual(labels[f"{router}.tls.certresolver"], "direct-dns")
+        self.assertEqual(labels[f"{router}.tls.options"], "direct@file")
+
+    def test_no_operator_route_answers_on_the_direct_entrypoint(self):
+        for extra in ({}, _BEFORE["public_acme"]):
+            labels = self._labels(**extra)
+            on_direct = {
+                key.split(".")[3] for key, value in labels.items()
+                if key.endswith(".entrypoints") and value == "direct"
+            }
+            self.assertEqual(on_direct, {"ic-central-direct"})
+
+    def test_grafana_joins_no_network_for_it(self):
+        doc = yaml.safe_load(_compose(ic_direct_host=DIRECT))
+        self.assertNotIn("networks", doc["services"]["grafana"])
+        self.assertNotIn("labels", doc["services"]["grafana"])
+        self.assertEqual(
+            doc["services"]["vmauth"]["networks"], ["default", "inverseproxy_shared"],
+        )
+        self.assertEqual(doc["networks"], {"inverseproxy_shared": {"external": True}})
+
+
+class TestTheDirectDeployment(ObservabilityExecutorCase):
+    """What the deployment hands the playbook, refuses and queues."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings.write({"metrics_central_direct_host": DIRECT})
+
+    def _refusal(self, cls):
+        """Run the pre-run checks of *cls* with the job's log write patched."""
+        executor = self._make(cls)
+        executor.job.instance_id = self.env["cloud.instance"]
+        with patch.object(cls, "_write_system_direct", autospec=True):
+            executor.pre_run_checks()
+
+    def _deployed(self, gateway="http://172.17.0.1:8428"):
+        """Run ``on_success`` as after a deployment that answered."""
+        return TestTheDeployment._deployed(self, gateway)
+
+    def test_the_playbook_gets_the_direct_name(self):
+        self.host.direct_port_shipped = 9443
+        extra = self._make(ObservabilityCentralExecutor).get_extra_vars()
+        self.assertEqual(extra["ic_direct_host"], DIRECT)
+
+    def test_without_a_direct_port_on_its_host_it_is_refused(self):
+        with self.assertRaisesRegex(JobRefused, "no direct port applied"):
+            self._refusal(ObservabilityCentralExecutor)
+
+    def test_the_account_sync_is_never_refused_for_it(self):
+        self._refusal(MetricsAclSyncExecutor)
+
+    def test_a_deployment_queues_the_probe_of_its_name(self):
+        self.host.direct_port_shipped = 9443
+        self._deployed()
+        self.assertTrue(self.env["cloud.job"].search([
+            ("host_id", "=", self.host.id),
+            ("job_type_id.code", "=", "sync_direct_path"),
+        ]))
+
+    def test_the_grafana_settings_it_shipped_are_told(self):
+        executor = self._make(ObservabilityCentralExecutor)
+        self.host.direct_port_shipped = 9443
+        executor.get_extra_vars()
+        executor._shipped_accounts = []
+        settings_cls = type(self.env["cloud.settings"])
+        with patch.object(
+            settings_cls, "_grafana_oidc_shipped", autospec=True,
+        ) as shipped:
+            executor._record_shipped_accounts()
+        shipped.assert_called_once()
+        self.assertEqual(shipped.call_args.args[1], executor._shipped_grafana_oidc)
