@@ -2,7 +2,6 @@
 
 import pathlib
 import re
-from unittest.mock import patch
 
 from lxml import etree
 
@@ -11,7 +10,7 @@ from odoo.tests import tagged
 from odoo.tests.common import BaseCase, HttpCase
 
 from ..models.cloud_settings import RESOURCE_PARAM
-from .common import McpUsersMixin
+from .common import McpUsersMixin, StandalonePanelMixin
 
 _CORE_SRC = pathlib.Path(get_module_path("incubacloud")) / "static" / "src"
 _OUR_SRC = pathlib.Path(get_module_path("incubacloud_mcp")) / "static" / "src"
@@ -184,7 +183,7 @@ _SETTINGS_PAGE = """
 
 
 @tagged("post_install", "-at_install")
-class TestTheSpaPages(McpUsersMixin, HttpCase):
+class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, HttpCase):
     """The page and the Settings tab, opened by a user of each role."""
 
     def setUp(self):
@@ -235,18 +234,12 @@ class TestTheSpaPages(McpUsersMixin, HttpCase):
         there: an address that is missing, and one the page will not put in a
         command (an IPv6 host, which the panel accepts)."""
         self._cloud_user("mcp-spa-tenant", group="group_cloud_user")
-        Settings = type(self.env["cloud.settings"])
         for resource, words in (
             ("ftp://x", "not configured yet"),
             ("https://[2001:db8::1]/mcp", "not a plain web address"),
         ):
             self.env["ir.config_parameter"].sudo().set_param(RESOURCE_PARAM, resource)
-            with (
-                self.subTest(resource=resource),
-                patch.object(
-                    Settings, "_mcp_settings_managed", autospec=True, return_value=True
-                ),
-            ):
+            with self.subTest(resource=resource), self._managed_panel():
                 self._open(
                     "/cloud/connect-agent",
                     ".ic-mcp-connect .ic-mcp-notice",
@@ -267,10 +260,7 @@ class TestTheSpaPages(McpUsersMixin, HttpCase):
     def test_where_the_platform_sets_them_the_fields_are_read_only(self):
         """On a panel set from above (a tenant's), both fields are read-only."""
         self._cloud_user("mcp-spa-mgr2", group="group_cloud_manager")
-        Settings = type(self.env["cloud.settings"])
-        with patch.object(
-            Settings, "_mcp_settings_managed", autospec=True, return_value=True
-        ):
+        with self._managed_panel():
             self._open(
                 "/cloud/settings?tab=agents",
                 ".ic-mcp-settings input",
