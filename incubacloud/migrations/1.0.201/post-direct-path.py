@@ -1,4 +1,4 @@
-"""Post-migrate for 1.0.200 -- the direct path, without re-applying anyone.
+"""Post-migrate for 1.0.201 -- the direct path, without re-applying anyone.
 
 Every host whose agents are installed gets ``metrics_agents_write_url`` =
 the remote-write URL in force, which is what they were installed with:
