@@ -1,9 +1,9 @@
 name: Docs
 
-# Run by hand only, until 1.0.200 is deployed: the guide describes that
-# release (Agency's own server, prices without VAT), and a push to 19.0
-# published it at docs.incubacloud.io before production ran it. Put the
-# push trigger back on deploy day.
+# Run by hand only, until 1.0.201 is deployed: the guide describes that
+# release (Agency's own server, prices without VAT, the AI agents' pages),
+# and a push to 19.0 published it at docs.incubacloud.io before production
+# ran it. Put the push trigger back on deploy day.
 on:
   workflow_dispatch:
 
