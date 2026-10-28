@@ -360,15 +360,16 @@ class AssistantTools(models.AbstractModel):
     def _readable(self, model, record_id):
         """Return the record of *model* the call names, read as the user.
 
-        Empty when there is none, so the card says the id and the route
-        answers that it is not found.
+        Empty when the call names no id: the card says so, and the route
+        refuses the call.
 
-        :raises AccessError: when it exists and the user may not read it,
-            as the route would: the card never describes it
+        :raises AccessError: for an id that does not exist, or that the user
+            may not read: the same error for both, so the card never
+            describes it and the answer never tells whether the id exists
         """
         ids = _ids(record_id)
         record = self.env[model].browse(ids[:1]).exists()
-        if record and not record.has_access("read"):
+        if ids and not (record and record.has_access("read")):
             raise AccessError(
                 self.env._("It does not exist, or you cannot see it in the panel.")
             )

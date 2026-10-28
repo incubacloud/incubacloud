@@ -2,7 +2,8 @@
 <templates xml:space="preserve">
 
 <t t-name="incubacloud_assistant.AssistantPanel">
-    <aside class="ic-asst-panel" role="dialog" aria-label="Assistant">
+    <aside class="ic-asst-panel" role="dialog" aria-label="Assistant" tabindex="-1"
+           t-ref="panel" t-on-keydown="onKeydown">
         <header class="ic-asst-head">
             <button t-if="state.view === 'chat'" class="ic-slideover-btn" aria-label="Back"
                     t-on-click="backToList"><i class="fa fa-arrow-left" aria-hidden="true"/></button>

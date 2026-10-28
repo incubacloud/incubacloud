@@ -155,7 +155,10 @@ export function mergeEvent(view, event) {
     return view;
 }
 
-/** Whether *url* goes to one of *hosts*, or to a subdomain of one. */
+/**
+ * Whether *url* goes to one of *hosts*, each by its own name: a subdomain of
+ * one is another host (on a server with a wildcard, another customer's).
+ */
 function linkAllowed(url, hosts) {
     let host = "";
     try {
@@ -163,7 +166,7 @@ function linkAllowed(url, hosts) {
     } catch {
         return false;
     }
-    return hosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
+    return hosts.includes(host);
 }
 
 /**

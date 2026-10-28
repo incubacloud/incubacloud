@@ -78,6 +78,32 @@ class TestAssistantPanel(AssistantMixin, HttpCase):
         """,
         )
 
+    def test_focus_goes_into_the_panel_and_back_and_esc_closes_it_from_inside(self):
+        """Opened, the focus is in the panel; Esc elsewhere on the page leaves it."""
+        self._read_notice()
+        self._open(
+            self.allowed.login,
+            """
+            const button = await until("the button", () => $(".ic-asst-btn"));
+            click(button);
+            const panel = await until("the panel", () => $(".ic-asst-panel"));
+            await until("the focus in the panel", () => panel.contains(
+                document.activeElement));
+            const esc = () => new KeyboardEvent("keydown", {
+                key: "Escape", bubbles: true, cancelable: true,
+            });
+            document.body.dispatchEvent(esc());
+            await sleep(300);
+            if (!$(".ic-asst-panel")) {
+                throw new Error("Esc outside the panel closed it");
+            }
+            document.activeElement.dispatchEvent(esc());
+            await until("the panel to close", () => !$(".ic-asst-panel"));
+            await until("the focus back on the button", () =>
+                document.activeElement === $(".ic-asst-btn"));
+        """,
+        )
+
     def test_switched_off_the_conversations_are_kept_to_read(self):
         """The button stays for what the person has: no new one, nothing to write."""
         self._read_notice()

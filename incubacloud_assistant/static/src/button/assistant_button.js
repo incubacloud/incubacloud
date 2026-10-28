@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, onMounted, onWillUnmount, useState } from "@odoo/owl";
+import { Component, onMounted, onWillUnmount, useRef, useState } from "@odoo/owl";
 import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
 import { buttonView } from "../assistant_format";
@@ -15,6 +15,7 @@ export class AssistantButton extends Component {
     /** Read whether the assistant is on for the person; follow its state changes. */
     setup() {
         this.state = useState({ status: { available: false }, open: false });
+        this.buttonRef = useRef("button");
         this.bus = useService("bus_service");
         this._onEvent = (payload) => {
             if (payload?.kind === "state") {
@@ -46,5 +47,11 @@ export class AssistantButton extends Component {
     /** Open or close the side panel. */
     toggle() {
         this.state.open = !this.state.open;
+    }
+
+    /** Close the side panel; the focus goes back to the button that opened it. */
+    close() {
+        this.state.open = false;
+        this.buttonRef.el?.focus();
     }
 }
