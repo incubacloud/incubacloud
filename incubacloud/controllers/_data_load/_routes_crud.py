@@ -897,10 +897,7 @@ class CrudMixin:
                     'action_icon': jt.action_icon or 'fa-cog',
                     'action_confirm': jt.action_confirm or '',
                 }
-                for jt in request.env['cloud.job.type'].search([
-                    ('show_as_action', '=', True),
-                    ('apply_to', '=', 'host'),
-                ], order='action_order, id')
+                for jt in host._offered_actions()
             ],
         }
 

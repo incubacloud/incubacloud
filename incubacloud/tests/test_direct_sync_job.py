@@ -218,3 +218,28 @@ class TestTheSyncJob(TransactionCase):
             ("host_id", "=", self.host.id),
             ("job_type_id.code", "=", "sync_direct_path"),
         ]))
+
+
+class TestTheButton(TransactionCase):
+    """The host page offers Sync Direct Path only where it can run.
+
+    The job refuses a host that publishes no direct port, and a tenant
+    panel's hosts never publish one: the button showed on all of them
+    (visual pass of the release candidate, 29-oct-2026).
+    """
+
+    def _offered(self, host):
+        """Return the codes of the actions *host*'s page offers."""
+        return host._offered_actions().mapped("code")
+
+    def test_a_host_without_a_direct_port_is_not_offered_it(self):
+        host = make_host(self.env, "sb-plain", "46.4.0.71", direct_port=9443)
+        self.assertNotIn("sync_direct_path", self._offered(host))
+        self.assertIn("push_trusted_proxies", self._offered(host))
+
+    def test_a_host_that_publishes_one_is(self):
+        host = make_host(
+            self.env, "sb-direct", "46.4.0.72",
+            direct_port=9443, direct_port_shipped=9443,
+        )
+        self.assertIn("sync_direct_path", self._offered(host))
