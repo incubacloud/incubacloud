@@ -84,79 +84,94 @@
                      ═══════════════════════════════════════════════════════════ -->
                 <t t-if="!isNew and state.host and env.permissions?.can_manage_hosts">
                     <div class="rl-abar ic-action-bar">
-                        <button class="rl-btn rl-btn-primary" title="Check host"
-                                t-on-click="runCheck">
-                            <t t-out="env.icon('refresh', 15)"/> Check
-                        </button>
-                        <button class="rl-btn rl-btn-ghost" title="Full setup"
-                                t-on-click="runFullSetup">
-                            <t t-out="env.icon('settings', 15)"/> Full Setup
-                        </button>
-                        <t t-if="state.host.hardened">
-                            <button class="rl-btn rl-btn-ghost"
-                                    title="Re-apply hardening (idempotent: re-runs are non-disruptive)"
-                                    t-on-click="() => this.openHardeningModal()">
-                                <t t-out="env.icon('shield', 15)"/> Re-apply Hardening
+                        <!-- Two groups, each kept whole on one line when it
+                             fits: what is done with the host, then its
+                             upkeep, which ends with the trash. A bar too
+                             long for one line breaks between them, never
+                             before a lone trash. -->
+                        <div class="ic-ab-group">
+                            <button class="rl-btn rl-btn-primary" title="Check host"
+                                    t-on-click="runCheck">
+                                <t t-out="env.icon('refresh', 15)"/> Check
                             </button>
-                        </t>
-                        <t t-else="">
-                            <button class="rl-btn rl-btn-ghost"
-                                    title="Apply hardening (Ubuntu 22.04+ or Debian 12+ with root or passwordless sudo)"
-                                    t-on-click="() => this.openHardeningModal()">
-                                <t t-out="env.icon('shield', 15)"/> Apply Hardening
+                            <button class="rl-btn rl-btn-ghost" title="Full setup"
+                                    t-on-click="runFullSetup">
+                                <t t-out="env.icon('settings', 15)"/> Full Setup
                             </button>
-                        </t>
-                        <button class="rl-btn rl-btn-ghost" title="Import existing instance"
-                                t-on-click="openImportBrowser">
-                            <t t-out="env.icon('download', 15)"/> Import Instance
-                        </button>
-                        <!-- Community / extension actions -->
-                        <t t-if="state.host.custom_actions?.length">
-                            <span class="rl-asep"/>
-                            <t t-foreach="state.host.custom_actions" t-as="action" t-key="action.code">
+                            <t t-if="state.host.hardened">
                                 <button class="rl-btn rl-btn-ghost"
-                                        t-att-title="action.name"
-                                        t-att-aria-label="action.name"
-                                        t-att-disabled="state.actionBusy ? true : null"
-                                        t-on-click="() => this.hostAction(action)">
-                                    <i t-if="state.actionBusy === action.code" class="fa fa-spinner fa-spin"/>
-                                    <i t-else="" t-att-class="'fa ' + (action.action_icon || 'fa-cog')"/>
-                                    <t t-esc="action.name"/>
+                                        title="Re-apply hardening (idempotent: re-runs are non-disruptive)"
+                                        t-on-click="() => this.openHardeningModal()">
+                                    <t t-out="env.icon('shield', 15)"/> Re-apply Hardening
                                 </button>
                             </t>
-                        </t>
-                        <span class="rl-asep"/>
-                        <button t-att-class="'rl-btn rl-btn-ghost' + (state.has_known_hosts_key ? '' : ' ic-ab-warn')"
-                                t-att-title="state.has_known_hosts_key ? 'Re-trust SSH host key' : 'Trust SSH host key (required before any SSH operation)'"
-                                t-att-disabled="state.trusting_host_key || null"
-                                t-on-click="trustHostKey">
-                            <i t-if="state.trusting_host_key" class="fa fa-spinner fa-spin"/>
-                            <i t-else="" class="fa fa-shield"/>
-                            <t t-if="state.has_known_hosts_key"> Re-trust Key</t>
-                            <t t-else=""> Trust SSH Key</t>
-                        </button>
-                        <span class="rl-asep"/>
-                        <!-- Same gate as the endpoint behind it
-                             (_check_can_manage_hosts): root on the whole
-                             machine is for whoever manages hosts. -->
-                        <button class="rl-btn rl-btn-ghost ic-ab-warn"
-                                title="Open an interactive shell directly on this host"
-                                aria-label="Open host shell"
-                                t-on-click="openHostShell">
-                            <t t-out="env.icon('terminal', 15)"/> Host Shell
-                        </button>
-                        <!-- Same trash as the instance header: the footer
-                             one sits below every form tab and is absent
-                             from Overview, where a host page opens.
-                             Extensions append their buttons inside the
-                             bar; the stylesheet keeps the trash last. -->
-                        <span class="rl-asep ic-ab-delete-sep"/>
-                        <button class="rl-iconbtn danger ic-ab-delete"
-                                title="Delete"
-                                aria-label="Delete host"
-                                t-on-click="deleteHost">
-                            <t t-out="env.icon('trash', 15)"/>
-                        </button>
+                            <t t-else="">
+                                <button class="rl-btn rl-btn-ghost"
+                                        title="Apply hardening (Ubuntu 22.04+ or Debian 12+ with root or passwordless sudo)"
+                                        t-on-click="() => this.openHardeningModal()">
+                                    <t t-out="env.icon('shield', 15)"/> Apply Hardening
+                                </button>
+                            </t>
+                            <button class="rl-btn rl-btn-ghost" title="Import existing instance"
+                                    t-on-click="openImportBrowser">
+                                <t t-out="env.icon('download', 15)"/> Import Instance
+                            </button>
+                        </div>
+                        <div class="ic-ab-group ic-ab-upkeep">
+                            <!-- Community / extension actions -->
+                            <t t-if="state.host.custom_actions?.length">
+                                <t t-foreach="state.host.custom_actions" t-as="action" t-key="action.code">
+                                    <button class="rl-btn rl-btn-ghost"
+                                            t-att-title="action.name"
+                                            t-att-aria-label="action.name"
+                                            t-att-disabled="state.actionBusy ? true : null"
+                                            t-on-click="() => this.hostAction(action)">
+                                        <i t-if="state.actionBusy === action.code" class="fa fa-spinner fa-spin"/>
+                                        <i t-else="" t-att-class="'fa ' + (action.action_icon || 'fa-cog')"/>
+                                        <t t-esc="action.name"/>
+                                    </button>
+                                </t>
+                            </t>
+                            <!-- The host key, the shell and the trash stay
+                                 together on one line, and the separators
+                                 sit inside, between buttons that cannot be
+                                 split from them: one between groups would
+                                 end a line when the bar wraps. -->
+                            <div class="ic-ab-tail">
+                                <button t-att-class="'rl-btn rl-btn-ghost' + (state.has_known_hosts_key ? '' : ' ic-ab-warn')"
+                                        t-att-title="state.has_known_hosts_key ? 'Re-trust SSH host key' : 'Trust SSH host key (required before any SSH operation)'"
+                                        t-att-disabled="state.trusting_host_key || null"
+                                        t-on-click="trustHostKey">
+                                    <i t-if="state.trusting_host_key" class="fa fa-spinner fa-spin"/>
+                                    <i t-else="" class="fa fa-shield"/>
+                                    <t t-if="state.has_known_hosts_key"> Re-trust Key</t>
+                                    <t t-else=""> Trust SSH Key</t>
+                                </button>
+                                <span class="rl-asep"/>
+                                <!-- Same gate as the endpoint behind it
+                                     (_check_can_manage_hosts): root on the whole
+                                     machine is for whoever manages hosts. -->
+                                <button class="rl-btn rl-btn-ghost ic-ab-warn"
+                                        title="Open an interactive shell directly on this host"
+                                        aria-label="Open host shell"
+                                        t-on-click="openHostShell">
+                                    <t t-out="env.icon('terminal', 15)"/> Host Shell
+                                </button>
+                                <!-- Same trash as the instance header: the footer
+                                     one sits below every form tab and is absent
+                                     from Overview, where a host page opens.
+                                     Extensions append their buttons inside the
+                                     bar; the stylesheet keeps this group, and
+                                     so the trash, last. -->
+                                <span class="rl-asep ic-ab-delete-sep"/>
+                                <button class="rl-iconbtn danger ic-ab-delete"
+                                        title="Delete"
+                                        aria-label="Delete host"
+                                        t-on-click="deleteHost">
+                                    <t t-out="env.icon('trash', 15)"/>
+                                </button>
+                            </div><!-- /ic-ab-tail -->
+                        </div>
                     </div>
                 </t>
 

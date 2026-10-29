@@ -807,6 +807,20 @@ class CloudHost(models.Model):
             "prefix": "metrics_central_direct",
         }]
 
+    def _offered_actions(self):
+        """Offer Sync Direct Path only on a host that publishes a direct port.
+
+        Elsewhere the job has nothing to apply and refuses to run: a
+        tenant panel's hosts, and a self-hosted panel's until a direct
+        port is applied.
+
+        :return: ``cloud.job.type`` records.
+        """
+        actions = super()._offered_actions()
+        if self.direct_port_shipped:
+            return actions
+        return actions.filtered(lambda job_type: job_type.code != "sync_direct_path")
+
     def _direct_allowlist_pending(self):
         """Whether the list in force on this host lags the one it should have.
 

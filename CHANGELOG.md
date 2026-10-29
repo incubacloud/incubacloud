@@ -51,7 +51,9 @@ marks no host pending.
   the proxy down.
 - **`sync_direct_path`**: applies the list without restarting Traefik, reads it back,
   and probes the direct names the host publishes; queued when a host comes or goes and
-  at least hourly.
+  at least hourly. Its button shows only on a host that publishes a direct port
+  (`cloud.host._offered_actions()`, which a layer can extend to drop an action from
+  the hosts it does not apply to).
 - **The central's direct name** (`metrics_central_direct_host`), published by the
   central's deployment on the direct entrypoint, with a probe state (`direct_path_down`,
   `direct_certificate_expiring`).
@@ -138,6 +140,16 @@ marks no host pending.
   host at the next reconciliation (every 15 minutes): each host's recorded URL is
   compared with the one it should have. Before, hosts kept the old URL until their
   agents were applied again by hand.
+- Settings shows *Save changes* only on a tab with something to save: not on one whose
+  sections failed to load (they show Retry), nor on a read-only one. A section drawn by
+  a module names its tab when it registers
+  (`env.registerSettingsSave(key, save, state, writeOnly, tab)`); one that names none
+  keeps Save on every tab, as before.
+- The host's action bar holds two groups, what is done with the host and its upkeep
+  (ending with the trash), and breaks between them when it does not fit on one line.
+  Buttons a module appends inside `ic-action-bar` sit between the two. The host key, the
+  shell and the trash form one unit of the upkeep group, with the separators between them,
+  so a separator never ends a line when the group wraps.
 
 ---
 

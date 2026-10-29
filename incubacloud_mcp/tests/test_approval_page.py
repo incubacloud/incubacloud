@@ -158,6 +158,19 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
         self.assertEqual(json.loads(html.unescape(block.group(1))), command)
         self.assertNotIn("\u202e", page)
 
+    def test_the_page_names_the_agent_only_when_it_gave_a_name(self):
+        """An agent may connect without a name: the page then names the tool
+        alone, with no dash where the name would go (visual pass of the
+        release candidate, 29-oct-2026)."""
+        self.approval.sudo().via_client = False
+        self.authenticate("mcp-page-mgr", "mcp-page-mgr")
+        page = self.url_open(self.path).text
+        self.assertIn("Asked with the tool", page)
+        self.assertNotIn("Asked through", page)
+        self.approval.sudo().via_client = "Claude Code"
+        page = self.url_open(self.path).text
+        self.assertRegex(page, r"Asked through Claude Code, with the tool\s*<code>")
+
     def test_the_page_speaks_the_user_s_language(self):
         """A user who reads the panel in Spanish gets the page in Spanish,
         and says so to a screen reader: its own words and the message the
@@ -180,6 +193,7 @@ class TestApprovalPage(McpUsersMixin, McpHttpMixin, HttpCase):
             'Borrar el proyecto "mcp-page-doomed". No se puede deshacer.',
             'value="approve">Aprobar</button>',
             'value="cancel">Cancelar</button>',
+            "Solicitada a través de",
         ):
             with self.subTest(words=words):
                 self.assertIn(words, page)
@@ -208,6 +222,8 @@ class TestTheApprovalPageTranslates(TransactionCase):
             "An agent connected to this panel with your account asks to:",
             "Approve",
             "Cancel",
+            "Asked through",
+            "Asked with the tool",
             "This approval link is not valid.",
         ):
             with self.subTest(words=words):

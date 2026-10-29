@@ -713,8 +713,8 @@
 
                 </div><!-- /rl-settings-body -->
 
-                <!-- ── Unified footer (persists across all tabs) ────────── -->
-                <div class="rl-formfoot">
+                <!-- ── Unified footer (on every tab with something to save) ── -->
+                <div class="rl-formfoot" t-if="canSaveTab">
                     <t t-if="hasUnsavedChanges">
                         <span class="rl-ff-hint">Unsaved changes</span>
                     </t>
