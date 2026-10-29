@@ -67,7 +67,10 @@ more than the monthly cap).
 
 ??? note "Ordering is refused on my plan"
     The Free plan cannot order on-demand VPS. Upgrade to a paid plan or
-    [connect your own server](connect.md).
+    [connect your own server](connect.md). On a paid plan, ordering needs a card
+    saved for your subscription and no unpaid invoices: add the card under
+    `My account → IncubaCloud → Payment method`, or pay the invoice under
+    `My account → Invoices`, and order again.
 
 ??? note "Provisioning failed: out of capacity"
     Hetzner sometimes runs out of stock in a specific region for a specific size.

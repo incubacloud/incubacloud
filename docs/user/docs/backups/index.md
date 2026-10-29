@@ -76,9 +76,14 @@ it are encrypted with your passphrase before they leave the host — see
 [Service limits](../reference/limits.md#where-managed-backups-are-stored).
 
 Usage is measured periodically; storage beyond the included amount is billed as
-overage on your subscription invoice. If you cancel the add-on, backups are kept
-for a 30-day retention window before the bucket is purged. Downgrading to a
-smaller tier gives you a grace period to get usage under the new limit.
+overage on your subscription invoice. Ordering a tier, or moving to a bigger
+one, charges your saved card right away for the days left in your current
+billing period, and it renews with your plan. Cancelling the add-on or moving
+to a smaller tier takes effect at your next renewal; until then the storage
+keeps working as it is, and nothing is refunded. After a cancellation, backups
+are kept for a 30-day retention window before the bucket is purged. A smaller
+tier applies at the renewal only if your usage fits in it by then; otherwise
+you stay on your current tier and we tell you.
 
 ## Encryption
 
