@@ -150,6 +150,11 @@ marks no host pending.
   Buttons a module appends inside `ic-action-bar` sit between the two. The host key, the
   shell and the trash form one unit of the upkeep group, with the separators between them,
   so a separator never ends a line when the group wraps.
+- The probe of a direct name takes 403 or 421 as the port's refusal of `/flags`: from
+  Traefik 2.11.47, a connection negotiated with the `direct` TLS options gets 421 at
+  `direct-deny` before its list runs, and hosts pull different 2.11 releases. A check of
+  `direct_probe.sh` may name several statuses (`GET:/flags:403,421`); 200 or any other
+  answer still fails it.
 
 ---
 

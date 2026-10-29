@@ -88,7 +88,7 @@ class TestTheSyncJob(TransactionCase):
         self.assertIn("46.4.0.70/32", apply_)
         self.assertIn(
             "direct_probe.sh direct.metrics.example.test 46.4.0.70 9443 "
-            "POST:/w/api/v1/write:401 GET:/flags:403",
+            "POST:/w/api/v1/write:401 GET:/flags:403,421",
             commands["Probe direct.metrics.example.test"],
         )
 
