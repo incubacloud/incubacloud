@@ -60,7 +60,8 @@ Free has no extras.
   current billing period: the unit price for your billing period × days left ÷
   days in the period. For example, an extra host on a monthly Starter
   subscription with 12 of its 31 days left costs 3 € × 12 ÷ 31 = 1.16 €, plus
-  VAT. From then on it renews with your plan.
+  VAT. An amount under 0.50 € is not charged at once: it is added to your next
+  renewal invoice. From then on it renews with your plan.
 - **Removing one** takes effect at your next renewal: you keep it until then, and
   it is not billed again. Nothing is refunded. One you are still using cannot be
   removed; free the host or instance first.
