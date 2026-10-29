@@ -25,18 +25,23 @@ from odoo.tests import HttpCase, new_test_user, tagged
 #: save, once that loaded) and wait for its answer, or check it does not
 #: show, read the "Unsaved changes" hint, leave for another screen, and
 #: the panel's requests from the moment it ran: those it made (``sent``),
-#: and some it can hold back or refuse (``delayRpc``, ``failRpc``),
-#: through the hook ``rpc`` keeps for tests.
+#: and some it can hold back or refuse (``delayRpc``, ``failRpc``,
+#: ``failRpcs`` for every url matching a pattern), through the hook
+#: ``rpc`` keeps for tests.
 #: Fields are found by their label among the rows on screen, since a
 #: tab left behind keeps its rows, hidden.
 _HELPERS = """
 const sent = [];
 const rpcStubs = {};
+const rpcRefused = [];
 const { rpc } = odoo.loader.modules.get('@web/core/network/rpc');
 const realRpc = rpc._rpc;
 rpc._rpc = function (url, ...rest) {
     sent.push(url);
     const call = () => realRpc.call(this, url, ...rest);
+    if (rpcRefused.some((pattern) => pattern.test(url))) {
+        return Promise.reject(new Error(`${url} refused`));
+    }
     return rpcStubs[url] ? rpcStubs[url](call) : call();
 };
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,6 +54,7 @@ const delayRpc = (url, ...delays) => {
 const failRpc = (url) => {
     rpcStubs[url] = () => Promise.reject(new Error(`${url} refused`));
 };
+const failRpcs = (pattern) => rpcRefused.push(pattern);
 const until = async (what, check) => {
     for (let i = 0; i < 200; i++) {
         const found = check();
@@ -255,23 +261,20 @@ class TestSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
         """Save shows on a tab only while something on it can be saved.
 
         It showed next to Retry on a tab that failed to load (visual pass
-        of the release candidate, 29-oct-2026). Rates may hold sections of
-        other modules that did load: Save then stays, for them.
+        of the release candidate, 29-oct-2026). Rates holds the sections
+        of other modules too, which load apart: every one is made to fail
+        here, so nothing on the tab can be saved. Retrying brings Save
+        back, and General keeps it throughout.
         """
-        self._in_settings('general', f"""
-            failRpc('/cloud/get_core_rate_limits');
+        self._in_settings('general', """
+            failRpcs(/\\/get_(core_rate_limits|rate_limit_settings)$|\\/mcp\\/get_settings$/);
             await openTab('Rates');
-            const failed = await until('the load to fail', () => [
-                ...document.querySelectorAll('.rl-stub[role=alert]'),
-            ].find((box) => box.textContent.includes(
-                'Failed to load rate-limit settings')));
+            await until('the load to fail', () => document.querySelector(
+                '.rl-stub[role=alert]'));
             await pause(500);
-            const editable = [...document.querySelectorAll('.rl-settings-body .rl-frow')]
-                .some((row) => row.offsetParent !== null);
-            if (!editable) expectNoSave();
-            if (editable && !saveButton()) throw new Error('no Save for what loaded');
-            delete rpcStubs['/cloud/get_core_rate_limits'];
-            failed.querySelector('button').click();
+            expectNoSave();
+            rpcRefused.length = 0;
+            document.querySelector('.rl-stub[role=alert] button').click();
             await until('Save, once Rates loads', saveButton);
             await openTab('General');
             await until('Save on General', saveButton);
