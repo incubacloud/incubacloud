@@ -95,8 +95,15 @@ Invoices are generated automatically and stored under
 charged at once — an upgrade, an extra, or Managed Backup Storage ordered,
 reactivated or moved to a bigger tier — gets its own invoice there, with the
 same taxes as your subscription invoices.
-Add your VAT number under `My account → Billing details` to have it appear
-on the invoice (and to apply reverse-charge if applicable).
+
+Prices are shown excluding VAT. Customers in Spain, and customers elsewhere in
+the EU without an EU VAT number validated in VIES, are charged Spanish VAT
+(21%); businesses elsewhere in the EU with a VIES-validated VAT number are
+invoiced under the reverse-charge mechanism; customers outside the EU are not
+charged VAT. Enter your VAT number in the billing address at checkout; we check
+it in VIES, and while the check is pending you are charged VAT. After your
+first order it can only be changed by us: contact us, and the change applies
+from your next renewal.
 
 ## Support
 
