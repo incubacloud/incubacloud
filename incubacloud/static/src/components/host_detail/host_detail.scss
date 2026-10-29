@@ -44,6 +44,18 @@
     min-width: 0;
 }
 
+// The host key, the shell and the trash make one unit inside the upkeep
+// group, with the separators between them: kept whole on one line while it
+// fits. A separator between that unit and the actions before it would end
+// a line when the group wraps, so there is none; the gap tells them apart.
+.ic-ab-tail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
 // The upkeep group, and the trash with it, closes the bar, as the trash does
 // on an instance, even when an extension appends its own buttons inside the
 // bar after it.

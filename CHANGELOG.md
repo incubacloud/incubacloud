@@ -147,7 +147,9 @@ marks no host pending.
   keeps Save on every tab, as before.
 - The host's action bar holds two groups, what is done with the host and its upkeep
   (ending with the trash), and breaks between them when it does not fit on one line.
-  Buttons a module appends inside `ic-action-bar` sit between the two.
+  Buttons a module appends inside `ic-action-bar` sit between the two. The host key, the
+  shell and the trash form one unit of the upkeep group, with the separators between them,
+  so a separator never ends a line when the group wraps.
 
 ---
 
