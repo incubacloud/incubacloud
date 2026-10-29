@@ -599,11 +599,14 @@ class CloudHost(models.Model):
         """Return the dynamic document every direct entrypoint reads.
 
         The two lists, the header stripper, the per-source rate limit and
-        the router that answers 403 to whatever has no router of its own
-        above priority 10000 (Traefik 2.11 attaches a router without
-        entry points to every one of them). The TLS option ``direct``
-        asks no client certificate; only the two routers allowed on the
-        port name it.
+        the router that refuses whatever has no router of its own above
+        priority 10000 (Traefik 2.11 attaches a router without entry
+        points to every one of them). The TLS option ``direct`` asks no
+        client certificate; only the two routers allowed on the port name
+        it. ``direct-deny`` has no domain, so it keeps the ``default``
+        options: from Traefik 2.11.47 a connection negotiated with
+        ``direct`` gets 421 at that router before its 403 list runs.
+        Either is a refusal by the proxy itself.
 
         :rtype: str
         """
@@ -745,7 +748,10 @@ class CloudHost(models.Model):
         return [{
             "prefix": "metrics_central_direct",
             "name": name,
-            "checks": ["POST:/w/api/v1/write:401", "GET:/flags:403"],
+            # Refused by the port either way: ``direct-deny``'s 403, or
+            # the 421 a Traefik from 2.11.47 answers first, as the
+            # connection's TLS options (``direct``) are not the router's.
+            "checks": ["POST:/w/api/v1/write:401", "GET:/flags:403,421"],
         }]
 
     def _direct_recently_refused(self):
