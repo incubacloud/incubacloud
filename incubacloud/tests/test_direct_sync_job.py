@@ -10,8 +10,10 @@ import asyncio
 import shlex
 from unittest.mock import MagicMock, patch
 
+from odoo.http import Request
 from odoo.tests.common import TransactionCase
 
+from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 from odoo.addons.incubacloud.models.abstract_executor import JobRefused
 from odoo.addons.incubacloud.models.full_setup_executor import FullSetupExecutor
 from odoo.addons.incubacloud.models.sync_direct_path_executor import (
@@ -243,3 +245,28 @@ class TestTheButton(TransactionCase):
             direct_port=9443, direct_port_shipped=9443,
         )
         self.assertIn("sync_direct_path", self._offered(host))
+
+    def _page_offers(self, host):
+        """Return the action codes the host page's route sends for *host*.
+
+        Calls the ``/cloud/get_host`` handler with a request on this
+        environment and reads its ``custom_actions``.
+        """
+        controller = _routes_crud.CrudMixin()
+        controller._sec = lambda: self.env["cloud.security.mixin"]
+        fake = MagicMock(spec=Request)
+        fake.env = self.env
+        with patch.object(_routes_crud, "request", fake):
+            data = controller.cloud_get_host(host_id=host.id)
+        return [action["code"] for action in data["custom_actions"]]
+
+    def test_the_host_page_sends_the_button_only_with_a_direct_port(self):
+        plain = make_host(self.env, "sb-page-plain", "46.4.0.73", direct_port=9443)
+        direct = make_host(
+            self.env, "sb-page-direct", "46.4.0.74",
+            direct_port=9443, direct_port_shipped=9443,
+        )
+        without = self._page_offers(plain)
+        self.assertNotIn("sync_direct_path", without)
+        self.assertIn("push_trusted_proxies", without)
+        self.assertIn("sync_direct_path", self._page_offers(direct))
