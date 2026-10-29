@@ -35,7 +35,7 @@ class TestDeleteInHeader(TransactionCase):
         )[0]
         upkeep = bar.xpath("div[contains(@class, 'ic-ab-upkeep')]")
         self.assertEqual(len(upkeep), 1)
-        trash = upkeep[0].xpath("*[last()]")[0]
+        trash = upkeep[0].xpath("(.//button)[last()]")[0]
         self.assertIn("ic-ab-delete", trash.get("class"))
         self.assertEqual(trash.get("t-on-click"), "deleteHost")
         self.assertIn("rl-iconbtn danger", trash.get("class"))
@@ -63,6 +63,30 @@ class TestDeleteInHeader(TransactionCase):
             ["ic-ab-group", "ic-ab-group ic-ab-upkeep"],
         )
         self.assertFalse(bar.xpath("button | span"), "every control sits in a group")
+
+    def test_no_host_bar_separator_can_end_a_line(self):
+        """A separator sits between buttons kept on one line, never between groups.
+
+        One between two items of a wrapping group ended a line at 768
+        pixels ("Sync Direct Path |", visual pass of the release
+        candidate, 29-oct-2026). The host key, the shell and the trash
+        form a unit that wraps whole, and the separators are inside it.
+        """
+        bar = _template("host_detail").xpath(
+            "//div[contains(@class, 'ic-action-bar')]"
+        )[0]
+        for group in bar.xpath("div"):
+            self.assertFalse(
+                group.xpath("*[contains(@class, 'rl-asep')]"),
+                "a separator between the items of a wrapping group",
+            )
+        tail = bar.xpath("div/div[contains(@class, 'ic-ab-tail')]")
+        self.assertEqual(len(tail), 1)
+        kinds = [
+            "sep" if "rl-asep" in child.get("class", "") else "button"
+            for child in tail[0].xpath("*")
+        ]
+        self.assertEqual(kinds, ["button", "sep", "button", "sep", "button"])
 
     def test_the_project_header_has_a_trash(self):
         trash = _template("project_detail").xpath(

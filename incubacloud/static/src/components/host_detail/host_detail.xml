@@ -131,40 +131,46 @@
                                         <t t-esc="action.name"/>
                                     </button>
                                 </t>
-                                <span class="rl-asep"/>
                             </t>
-                            <button t-att-class="'rl-btn rl-btn-ghost' + (state.has_known_hosts_key ? '' : ' ic-ab-warn')"
-                                    t-att-title="state.has_known_hosts_key ? 'Re-trust SSH host key' : 'Trust SSH host key (required before any SSH operation)'"
-                                    t-att-disabled="state.trusting_host_key || null"
-                                    t-on-click="trustHostKey">
-                                <i t-if="state.trusting_host_key" class="fa fa-spinner fa-spin"/>
-                                <i t-else="" class="fa fa-shield"/>
-                                <t t-if="state.has_known_hosts_key"> Re-trust Key</t>
-                                <t t-else=""> Trust SSH Key</t>
-                            </button>
-                            <span class="rl-asep"/>
-                            <!-- Same gate as the endpoint behind it
-                                 (_check_can_manage_hosts): root on the whole
-                                 machine is for whoever manages hosts. -->
-                            <button class="rl-btn rl-btn-ghost ic-ab-warn"
-                                    title="Open an interactive shell directly on this host"
-                                    aria-label="Open host shell"
-                                    t-on-click="openHostShell">
-                                <t t-out="env.icon('terminal', 15)"/> Host Shell
-                            </button>
-                            <!-- Same trash as the instance header: the footer
-                                 one sits below every form tab and is absent
-                                 from Overview, where a host page opens.
-                                 Extensions append their buttons inside the
-                                 bar; the stylesheet keeps this group, and
-                                 so the trash, last. -->
-                            <span class="rl-asep ic-ab-delete-sep"/>
-                            <button class="rl-iconbtn danger ic-ab-delete"
-                                    title="Delete"
-                                    aria-label="Delete host"
-                                    t-on-click="deleteHost">
-                                <t t-out="env.icon('trash', 15)"/>
-                            </button>
+                            <!-- The host key, the shell and the trash stay
+                                 together on one line, and the separators
+                                 sit inside, between buttons that cannot be
+                                 split from them: one between groups would
+                                 end a line when the bar wraps. -->
+                            <div class="ic-ab-tail">
+                                <button t-att-class="'rl-btn rl-btn-ghost' + (state.has_known_hosts_key ? '' : ' ic-ab-warn')"
+                                        t-att-title="state.has_known_hosts_key ? 'Re-trust SSH host key' : 'Trust SSH host key (required before any SSH operation)'"
+                                        t-att-disabled="state.trusting_host_key || null"
+                                        t-on-click="trustHostKey">
+                                    <i t-if="state.trusting_host_key" class="fa fa-spinner fa-spin"/>
+                                    <i t-else="" class="fa fa-shield"/>
+                                    <t t-if="state.has_known_hosts_key"> Re-trust Key</t>
+                                    <t t-else=""> Trust SSH Key</t>
+                                </button>
+                                <span class="rl-asep"/>
+                                <!-- Same gate as the endpoint behind it
+                                     (_check_can_manage_hosts): root on the whole
+                                     machine is for whoever manages hosts. -->
+                                <button class="rl-btn rl-btn-ghost ic-ab-warn"
+                                        title="Open an interactive shell directly on this host"
+                                        aria-label="Open host shell"
+                                        t-on-click="openHostShell">
+                                    <t t-out="env.icon('terminal', 15)"/> Host Shell
+                                </button>
+                                <!-- Same trash as the instance header: the footer
+                                     one sits below every form tab and is absent
+                                     from Overview, where a host page opens.
+                                     Extensions append their buttons inside the
+                                     bar; the stylesheet keeps this group, and
+                                     so the trash, last. -->
+                                <span class="rl-asep ic-ab-delete-sep"/>
+                                <button class="rl-iconbtn danger ic-ab-delete"
+                                        title="Delete"
+                                        aria-label="Delete host"
+                                        t-on-click="deleteHost">
+                                    <t t-out="env.icon('trash', 15)"/>
+                                </button>
+                            </div><!-- /ic-ab-tail -->
                         </div>
                     </div>
                 </t>
