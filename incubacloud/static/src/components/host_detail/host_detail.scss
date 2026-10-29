@@ -26,10 +26,28 @@
     margin-bottom: 10px;
 }
 
-// The delete trash closes the action bar, as on an instance, even when an
-// extension appends its own buttons inside the bar after it.
-.ic-action-bar > .ic-ab-delete-sep,
-.ic-action-bar > .ic-ab-delete {
+// The action bar holds two groups: what is done with the host, then its
+// upkeep, which ends with the trash. Each stays whole on one line while it
+// fits, so a bar too long for one line breaks between them and the trash
+// never ends up alone on a line of its own; a group wider than the line,
+// on a phone, wraps inside. A little more room between the groups than
+// between buttons tells them apart on one line.
+.ic-action-bar {
+    column-gap: 16px;
+}
+
+.ic-ab-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+// The upkeep group, and the trash with it, closes the bar, as the trash does
+// on an instance, even when an extension appends its own buttons inside the
+// bar after it.
+.ic-action-bar > .ic-ab-upkeep {
     order: 1;
 }
 
