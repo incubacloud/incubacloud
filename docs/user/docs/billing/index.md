@@ -56,14 +56,16 @@ Prices exclude VAT.
 
 Free has no extras.
 
-- **Adding one** charges your saved card right away for the whole current
-  billing period — a full year on annual billing — with no proration. From then
-  on it renews with your plan.
+- **Adding one** charges your saved card right away for the days left in your
+  current billing period: the unit price for your billing period × days left ÷
+  days in the period. For example, an extra host on a monthly Starter
+  subscription with 12 of its 31 days left costs 3 € × 12 ÷ 31 = 1.16 €, plus
+  VAT. From then on it renews with your plan.
 - **Removing one** takes effect at your next renewal: you keep it until then, and
-  it is not billed again. One you are still using cannot be removed; free the
-  host or instance first.
-- The price follows your plan: after a plan change, your extras renew at the new
-  plan's price.
+  it is not billed again. Nothing is refunded. One you are still using cannot be
+  removed; free the host or instance first.
+- The price of extras follows your plan: after a plan change, your extras renew
+  at the new plan's price.
 
 ## VPS billing
 
@@ -89,7 +91,10 @@ We use [Stripe](https://stripe.com). Payment is by card; the card is saved
 ## Invoices
 
 Invoices are generated automatically and stored under
-`My account → Invoices`. They're VAT-compliant for EU customers.
+`My account → Invoices`. They're VAT-compliant for EU customers. What is
+charged at once — an upgrade, an extra, or Managed Backup Storage ordered,
+reactivated or moved to a bigger tier — gets its own invoice there, with the
+same taxes as your subscription invoices.
 Add your VAT number under `My account → Billing details` to have it appear
 on the invoice (and to apply reverse-charge if applicable).
 
@@ -119,15 +124,25 @@ our first reply:
 
 - **Upgrading** — takes effect immediately: limits are raised on the spot, and
   your control plane may be briefly unavailable while the new plan is applied.
-  There is no proration: the current billing period stays at the price you
-  paid, and the new plan's price is billed from your next renewal. You can
-  upgrade once per billing cycle; after an upgrade, the next one is possible
-  from your next renewal.
+  Before applying it we show you what it costs, and your saved card is charged
+  the price difference between the two plans for the days left in your current
+  billing period: (new price − current price) × days left ÷ days in the period,
+  with the same taxes as your subscription invoices. For example, moving from
+  Starter to Professional on a monthly subscription with 12 of its 31 days left
+  costs (39 € − 19 €) × 12 ÷ 31 = 7.74 €. An amount under 0.50 € is not charged
+  at once: it is added to your next renewal invoice. From your next renewal the
+  subscription bills the new plan's price. If the payment fails, your plan does
+  not change and you are told so; update your card under
+  `My account → IncubaCloud → Payment method` and try again. The price of
+  extras follows your plan: after a plan change, your extras renew at the new
+  plan's price.
 - **From Free** — moving from Free to a paid plan goes through checkout: the new
   plan applies once that payment goes through.
 - **Downgrading** — scheduled for the start of your next billing cycle; you keep
   the higher tier until then. You can cancel a pending downgrade at any time
-  before it applies.
+  before it applies. Nothing is refunded when you downgrade, remove or cancel
+  something: you keep what you paid for until your next renewal, and the change
+  applies then.
 
 !!! warning "Downgrading with too many resources"
     A downgrade is refused while you use more hosts or instances than the target
