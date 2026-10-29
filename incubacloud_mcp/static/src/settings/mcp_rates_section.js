@@ -58,7 +58,9 @@ export class McpRatesSection extends Component {
      */
     _register() {
         if (this.state.loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.("McpRates", () => this._save(), this.state);
+            this.env.registerSettingsSave?.(
+                "McpRates", () => this._save(), this.state, [], "rates",
+            );
         }
     }
 

@@ -9,6 +9,9 @@ import { useNavGuard } from "../../utils/use_nav_guard";
 import { useFormValidation } from "../../utils/use_form_validation";
 import { confirmVia } from "../../utils/use_confirm";
 
+/** The tabs whose fields are Settings' own form, always saved. */
+export const OWN_SETTINGS_TABS = Object.freeze(["general", "github", "monitoring"]);
+
 export class Settings extends Component {
     static template = "incubacloud.Settings";
     static components = { IcConfirmDialog, CoreRatesTab, RlSelect };
@@ -99,21 +102,31 @@ export class Settings extends Component {
         // only while its form differs from what was loaded or last sent,
         // and such a difference is an unsaved change here, as one in
         // Settings' own form is. A tab that gives no state is saved every
-        // time, as before.
+        // time, as before. Each names the tab it is drawn on, so the
+        // footer shows on that tab only while something there can be
+        // saved: not while it shows a load error and Retry, nor when it
+        // is read-only and never registers. One that names none keeps the
+        // footer on every tab, as before.
         const _saveHandlers = new Map();
         // The tab's state is read through a proxy of Settings' own, so an
         // edit there re-renders the footer here. Reading its form once at
         // registration subscribes to it without rendering anything.
         const rerender = batched(() => this.render());
         useSubEnv({
-            registerSettingsSave: (key, save, state, writeOnly = []) => {
-                const tab = { save, writeOnly, state: state && reactive(state, rerender) };
+            registerSettingsSave: (key, save, state, writeOnly = [], tabName = null) => {
+                const tab = {
+                    save, writeOnly, tabName, state: state && reactive(state, rerender),
+                };
                 if (tab.state) {
                     tab.saved = JSON.stringify(tab.state.form);
                 }
                 _saveHandlers.set(key, tab);
+                rerender();
             },
-            unregisterSettingsSave: (key) => _saveHandlers.delete(key),
+            unregisterSettingsSave: (key) => {
+                _saveHandlers.delete(key);
+                rerender();
+            },
         });
         this._saveHandlers = _saveHandlers;
         this._savedForm = null;
@@ -200,6 +213,24 @@ export class Settings extends Component {
         }
         return [...this._saveHandlers.values()].some(
             (tab) => tab.state && this._tabChanged(tab),
+        );
+    }
+
+    /**
+     * Whether the tab on screen has something Save would send.
+     *
+     * Settings' own tabs always do. Another tab does once a section drawn
+     * on it registered, which it does only when it loaded and can be
+     * edited; a section that names no tab counts for every one.
+     *
+     * @returns {boolean} true when the footer with Save shows
+     */
+    get canSaveTab() {
+        if (OWN_SETTINGS_TABS.includes(this.state.tab)) {
+            return true;
+        }
+        return [...this._saveHandlers.values()].some(
+            (tab) => !tab.tabName || tab.tabName === this.state.tab,
         );
     }
 
