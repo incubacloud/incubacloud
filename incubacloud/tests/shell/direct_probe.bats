@@ -94,6 +94,23 @@ probe() {
     [[ "$output" == *"IC_DIRECT_ROUTE GET /flags 200 fail"* ]]
 }
 
+@test "a refusal check takes 403 or 421, and only those" {
+    for code in 403 421; do
+        STUB_OTHER=$code run bash "$SCRIPT" direct.metrics.example.test 46.4.0.60 9443 GET:/flags:403,421
+        [ "$status" -eq 0 ]
+        [[ "$output" == *"IC_DIRECT_ROUTE GET /flags $code ok"* ]]
+    done
+    for code in 200 404 4210 42; do
+        STUB_OTHER=$code run bash "$SCRIPT" direct.metrics.example.test 46.4.0.60 9443 GET:/flags:403,421
+        [[ "$output" == *"IC_DIRECT_ROUTE GET /flags $code fail"* ]]
+    done
+}
+
+@test "a check with one status takes that one only" {
+    STUB_OTHER=421 probe
+    [[ "$output" == *"IC_DIRECT_ROUTE GET /flags 421 fail"* ]]
+}
+
 @test "a JWKS without keys fails its check" {
     STUB_JWKS_BODY='{}' run bash "$SCRIPT" direct.www.example.test 46.4.0.60 9443 GET:/oauth/jwks:200:keys
     [[ "$output" == *"IC_DIRECT_ROUTE GET /oauth/jwks 200 fail"* ]]
@@ -117,4 +134,8 @@ probe() {
     [ "$status" -ne 0 ]
     run bash "$SCRIPT" direct.metrics.example.test 46.4.0.60 94a3 GET:/flags:403
     [ "$status" -ne 0 ]
+    for check in 'GET:/flags:403,' 'GET:/flags:,421' 'GET:/flags:403,42' 'GET:/flags:403;421'; do
+        run bash "$SCRIPT" direct.metrics.example.test 46.4.0.60 9443 "$check"
+        [ "$status" -ne 0 ]
+    done
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Check, from the host that publishes it, one direct name.
 #
-# Usage: direct_probe.sh <name> <ipv4> <port> <METHOD:PATH:STATUS[:WORD]>...
+# Usage: direct_probe.sh <name> <ipv4> <port> <METHOD:PATH:STATUS[,STATUS...][:WORD]>...
 #
 # The probe of the direct path (plan-trafico-interno-directo, piece 3):
 #
@@ -9,9 +9,12 @@
 #           has no AAAA;
 #   TLS     a handshake on <ipv4>:<port> validates the name's certificate
 #           against the system's roots; its expiry is read too;
-#   routes  each check, sent without credentials, answers its status (and
-#           its body holds WORD when one is given): vmauth's 401, a JWKS's
-#           200, the 403 of whatever the port does not serve.
+#   routes  each check, sent without credentials, answers its status, or
+#           one of them when several are given (and its body holds WORD
+#           when one is given): vmauth's 401, a JWKS's 200, and for
+#           whatever the port does not serve 403 (``direct-deny``) or 421
+#           (Traefik 2.11.47 and later refuses a connection negotiated with
+#           the ``direct`` TLS options before ``direct-deny`` runs).
 #
 # The connection goes to <ipv4> whatever the name resolves to: a wrong
 # record must not make this host test somebody else's server. DNS is
@@ -28,7 +31,7 @@ set -uo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
 
-ic_require_args 4 "$#" "direct_probe.sh <name> <ipv4> <port> <METHOD:PATH:STATUS[:WORD]>..."
+ic_require_args 4 "$#" "direct_probe.sh <name> <ipv4> <port> <METHOD:PATH:STATUS[,STATUS...][:WORD]>..."
 
 name="$1"
 ip="$2"
@@ -39,7 +42,7 @@ shift 3
 [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || ic_die "not an IPv4 address: $ip"
 [[ "$port" =~ ^[0-9]{4,5}$ ]] || ic_die "not a port: $port"
 for check in "$@"; do
-    [[ "$check" =~ ^(GET|POST):/[A-Za-z0-9/_.-]*:[0-9]{3}(:[A-Za-z0-9_]+)?$ ]] \
+    [[ "$check" =~ ^(GET|POST):/[A-Za-z0-9/_.-]*:[0-9]{3}(,[0-9]{3})*(:[A-Za-z0-9_]+)?$ ]] \
         || ic_die "not a check: $check"
 done
 
@@ -88,7 +91,7 @@ for check in "$@"; do
     got="$(curl -sS -o "$body" -w '%{http_code}' -X "$method" --max-time 10 \
         "${resolve[@]}" "$url$path" 2>/dev/null)"
     verdict=fail
-    if [ "$got" = "$status" ] && { [ -z "$word" ] || grep -q "$word" "$body"; }; then
+    if [[ ",$status," == *",$got,"* ]] && { [ -z "$word" ] || grep -q "$word" "$body"; }; then
         verdict=ok
     fi
     rm -f "$body"
