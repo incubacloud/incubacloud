@@ -21,11 +21,12 @@ from odoo.tests import HttpCase, new_test_user, tagged
 
 #: What the steps of a check can use: wait for something, open a tab,
 #: type into a field as a person does, read one back or check it is
-#: not on screen, press Save and wait for its answer, read the
-#: "Unsaved changes" hint, leave for another screen, and the panel's
-#: requests from the moment it ran: those it made (``sent``), and some
-#: it can hold back or refuse (``delayRpc``, ``failRpc``), through the
-#: hook ``rpc`` keeps for tests.
+#: not on screen, press Save once it shows (on a tab with something to
+#: save, once that loaded) and wait for its answer, or check it does not
+#: show, read the "Unsaved changes" hint, leave for another screen, and
+#: the panel's requests from the moment it ran: those it made (``sent``),
+#: and some it can hold back or refuse (``delayRpc``, ``failRpc``),
+#: through the hook ``rpc`` keeps for tests.
 #: Fields are found by their label among the rows on screen, since a
 #: tab left behind keeps its rows, hidden.
 _HELPERS = """
@@ -85,9 +86,9 @@ const expectValue = async (label, value) => {
         throw new Error(`"${label}" shows ${shown}, not ${value}`);
     }
 };
-const pressSave = () => [...document.querySelectorAll('.rl-formfoot button')]
-    .find((button) => button.textContent.trim() === 'Save changes')
-    .click();
+const pressSave = async () => (await until('the Save button', () => [
+    ...document.querySelectorAll('.rl-formfoot button'),
+].find((button) => button.textContent.trim() === 'Save changes'))).click();
 const saved = async () => {
     const said = await until('the save to answer', () => [
         ...document.querySelectorAll('.ic-toast-msg'),
@@ -96,10 +97,14 @@ const saved = async () => {
     if (said !== 'Changes saved') throw new Error(said);
 };
 const save = async () => {
-    pressSave();
+    await pressSave();
     await saved();
 };
 const hint = () => document.querySelector('.rl-formfoot .rl-ff-hint');
+const saveButton = () => document.querySelector('.rl-formfoot button');
+const expectNoSave = () => {
+    if (saveButton()) throw new Error('Save shows on a tab with nothing to save');
+};
 const expectUnsaved = () => until('the unsaved changes hint', hint);
 const expectAllSaved = () => until('the unsaved changes hint to go', () => !hint());
 const leaveFor = (entry) => [...document.querySelectorAll('.ic-nav-label')]
@@ -204,7 +209,7 @@ class TestSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
         self._in_settings('rates', f"""
             delayRpc('/cloud/save_core_rate_limits', 1500);
             await type('{self._FIELD}', '4321');
-            pressSave();
+            await pressSave();
             await until('the rates save to go out', () => sent.some(
                 (url) => url.endsWith('/cloud/save_core_rate_limits')));
             await type('{self._FIELD}', '4322');
@@ -234,8 +239,10 @@ class TestSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
             if (shownRow('{self._FIELD}')) {{
                 throw new Error('a tab that failed to load shows its form');
             }}
+            await openTab('General');
             await save();
             expectSent('/cloud/save_core_rate_limits', false);
+            await openTab('Rates');
             delete rpcStubs['/cloud/get_core_rate_limits'];
             failed.querySelector('button').click();
             await type('{self._FIELD}', '4321');
@@ -243,6 +250,32 @@ class TestSettingsTabsKeepTheirEdits(SettingsInBrowser, HttpCase):
         """)
         self.env.invalidate_all()
         self.assertEqual(settings.rate_limit_webhook_per_min, before)
+
+    def test_a_tab_that_failed_to_load_offers_no_save(self):
+        """Save shows on a tab only while something on it can be saved.
+
+        It showed next to Retry on a tab that failed to load (visual pass
+        of the release candidate, 29-oct-2026). Rates may hold sections of
+        other modules that did load: Save then stays, for them.
+        """
+        self._in_settings('general', f"""
+            failRpc('/cloud/get_core_rate_limits');
+            await openTab('Rates');
+            const failed = await until('the load to fail', () => [
+                ...document.querySelectorAll('.rl-stub[role=alert]'),
+            ].find((box) => box.textContent.includes(
+                'Failed to load rate-limit settings')));
+            await pause(500);
+            const editable = [...document.querySelectorAll('.rl-settings-body .rl-frow')]
+                .some((row) => row.offsetParent !== null);
+            if (!editable) expectNoSave();
+            if (editable && !saveButton()) throw new Error('no Save for what loaded');
+            delete rpcStubs['/cloud/get_core_rate_limits'];
+            failed.querySelector('button').click();
+            await until('Save, once Rates loads', saveButton);
+            await openTab('General');
+            await until('Save on General', saveButton);
+        """)
 
     def test_a_tab_cancelled_while_loading_does_not_stand_in(self):
         """Settings draws again while Rates loads: the tab on screen counts.

@@ -140,6 +140,11 @@ marks no host pending.
   host at the next reconciliation (every 15 minutes): each host's recorded URL is
   compared with the one it should have. Before, hosts kept the old URL until their
   agents were applied again by hand.
+- Settings shows *Save changes* only on a tab with something to save: not on one whose
+  sections failed to load (they show Retry), nor on a read-only one. A section drawn by
+  a module names its tab when it registers
+  (`env.registerSettingsSave(key, save, state, writeOnly, tab)`); one that names none
+  keeps Save on every tab, as before.
 - The host's action bar holds two groups, what is done with the host and its upkeep
   (ending with the trash), and breaks between them when it does not fit on one line.
   Buttons a module appends inside `ic-action-bar` sit between the two.

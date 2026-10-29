@@ -54,10 +54,14 @@ export class McpSettingsTab extends Component {
      * (Settings loading again), and that tab must not stand in for the
      * one now on screen. Settings then saves it, and counts it as an
      * unsaved change, only while its form differs from what was read.
+     * Read-only, where the platform sets both, it does not join: there
+     * is nothing to save, and Settings shows no Save on the tab.
      */
     _register() {
-        if (this._loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.("McpSettings", () => this._save(), this.state);
+        if (this._loaded && !this.view.readonly && status(this) === "mounted") {
+            this.env.registerSettingsSave?.(
+                "McpSettings", () => this._save(), this.state, [], "agents",
+            );
         }
     }
 

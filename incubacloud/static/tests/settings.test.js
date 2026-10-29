@@ -1,5 +1,5 @@
 import { describe, expect, test } from "@odoo/hoot";
-import { Settings } from "@incubacloud/components/settings/settings";
+import { OWN_SETTINGS_TABS, Settings } from "@incubacloud/components/settings/settings";
 import {
     CORE_RATE_DEFAULTS,
     CoreRatesTab,
@@ -207,5 +207,46 @@ describe("Settings — bounded GitHub import rates", () => {
         expect(typeof CoreRatesTab.prototype.load).toBe("function");
         expect(typeof CoreRatesTab.prototype.onIntInput).toBe("function");
         expect(typeof CoreRatesTab.prototype._save).toBe("function");
+    });
+});
+
+describe("Settings — the footer shows where something can be saved", () => {
+    /**
+     * Read `canSaveTab` for the tab on screen and the sections registered.
+     *
+     * @param {string} tab the tab on screen
+     * @param {Array<string|null>} tabNames the tab each registered section names
+     * @returns {boolean} whether the footer with Save shows
+     */
+    function canSave(tab, tabNames) {
+        const settings = Object.create(Settings.prototype);
+        settings.state = { tab };
+        settings._saveHandlers = new Map(
+            tabNames.map((tabName, index) => [`section${index}`, { tabName }]),
+        );
+        return settings.canSaveTab;
+    }
+
+    test("Settings' own tabs always offer Save", () => {
+        expect(OWN_SETTINGS_TABS).toEqual(["general", "github", "monitoring"]);
+        for (const tab of OWN_SETTINGS_TABS) {
+            expect(canSave(tab, [])).toBe(true);
+        }
+    });
+
+    test("a tab whose sections failed to load, or are read-only, offers none", () => {
+        // Neither registers: a failed load shows Retry, a read-only tab
+        // has nothing to send.
+        expect(canSave("agents", [])).toBe(false);
+        expect(canSave("saas", ["rates", "agents"])).toBe(false);
+    });
+
+    test("a tab offers Save once one of its sections registered", () => {
+        expect(canSave("rates", ["rates"])).toBe(true);
+        expect(canSave("agents", ["rates", "agents"])).toBe(true);
+    });
+
+    test("a section that names no tab keeps Save on every tab", () => {
+        expect(canSave("providers", [null])).toBe(true);
     });
 });
