@@ -83,7 +83,7 @@ class TestMcpSettingsTabsKeepTheirEdits(
             f"""
             delayRpc("/cloud/mcp/save_settings", 1500);
             await type("{self._ISSUER}", "https://a.example.test");
-            pressSave();
+            await pressSave();
             await until("the agents save to go out", () => sent.some(
                 (url) => url.endsWith("/cloud/mcp/save_settings")));
             await type("{self._ISSUER}", "https://b.example.test");
@@ -118,8 +118,11 @@ class TestMcpSettingsTabsKeepTheirEdits(
             if (shownRow("{self._ISSUER}")) {{
                 throw new Error("a tab that failed to load shows its form");
             }}
+            expectNoSave();
+            await openTab("General");
             await save();
             expectSent("/cloud/mcp/save_settings", false);
+            await openTab("Agents");
             delete rpcStubs["/cloud/mcp/get_settings"];
             failed.querySelector("button").click();
             await type("{self._ISSUER}", "{ISSUER}");
@@ -128,6 +131,24 @@ class TestMcpSettingsTabsKeepTheirEdits(
         )
         self.env.invalidate_all()
         self.assertEqual(settings.mcp_oauth_issuer, before)
+
+    def test_read_only_agents_offer_no_save(self):
+        """Where the platform sets both, the tab shows them and no Save.
+
+        A tenant's Agents tab showed "Save changes" under two read-only
+        fields (visual pass of the release candidate, 29-oct-2026).
+        """
+        with self._managed_panel():
+            self._in_settings(
+                "agents",
+                f"""
+                const issuer = await field("{self._ISSUER}");
+                if (!issuer.readOnly) throw new Error("the issuer is editable");
+                expectNoSave();
+                await openTab("General");
+                await until("Save on General", saveButton);
+            """,
+            )
 
     def test_a_tab_cancelled_while_loading_does_not_stand_in(self):
         """Agents left before its first load answers: the tab on screen counts.

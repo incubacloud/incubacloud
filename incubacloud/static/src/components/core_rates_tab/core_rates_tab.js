@@ -101,7 +101,9 @@ export class CoreRatesTab extends Component {
      */
     _register() {
         if (this.loaded && status(this) === "mounted") {
-            this.env.registerSettingsSave?.("CoreRates", () => this._save(), this.state);
+            this.env.registerSettingsSave?.(
+                "CoreRates", () => this._save(), this.state, [], "rates",
+            );
         }
     }
 

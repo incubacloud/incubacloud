@@ -67,8 +67,11 @@
             <p>An agent connected to this panel with your account asks to:</p>
             <pre class="message" t-out="message"/>
             <pre t-if="command" class="command" t-out="command"/>
+            <!-- The agent's name, when it gave one: an agent may connect
+                 without, and the line then names only the tool. -->
             <p class="meta">
-                Asked through <t t-out="approval.via_client or '-'"/>, with the tool
+                <t t-if="approval.via_client">Asked through <t t-out="approval.via_client"/>, with the tool</t>
+                <t t-else="">Asked with the tool</t>
                 <code t-out="approval.tool"/>. The request expires ten minutes after it
                 was made. Approve only what you asked your agent to do.
             </p>

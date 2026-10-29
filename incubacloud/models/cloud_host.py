@@ -2049,6 +2049,21 @@ class CloudHost(models.Model):
 
         Override in dependent modules to run post-creation logic."""
 
+    def _offered_actions(self):
+        """Return the job types this host's page offers as buttons.
+
+        Those shown as an action on a host, in their order. A layer whose
+        job only applies to some hosts drops it from the others here, so
+        the page offers nothing the job would refuse.
+
+        :return: ``cloud.job.type`` records.
+        """
+        self.ensure_one()
+        return self.env["cloud.job.type"].search([
+            ("show_as_action", "=", True),
+            ("apply_to", "=", "host"),
+        ], order="action_order, id")
+
     # ── Deletion guard ─────────────────────────────────────────────────────
 
     def _check_no_instances(self):

@@ -102,7 +102,7 @@ export class AssistantSettingsTab extends Component {
                 "api_key",
                 "clear_api_key",
                 "accept_ai_terms",
-            ]);
+            ], "assistant");
         }
     }
 

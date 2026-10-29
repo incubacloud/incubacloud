@@ -64,9 +64,10 @@
             <field name="code">sync_direct_path</field>
             <field name="apply_to">host</field>
             <field name="description">Applies the list of platform addresses admitted on the host's direct port, in nftables and in Traefik, reads it back, and probes the direct names the host publishes. Never restarts the proxy.</field>
-            <!-- Shown on the host page: after changing the list by hand,
-                 or to probe a direct name now rather than at the next
-                 pass of its cron. -->
+            <!-- Shown on the page of a host that publishes a direct port
+                 (cloud.host._offered_actions): after changing the list by
+                 hand, or to probe a direct name now rather than at the
+                 next pass of its cron. -->
             <field name="show_as_action">True</field>
             <field name="action_icon">fa-exchange</field>
             <field name="action_order">45</field>
