@@ -170,8 +170,8 @@ progressively, counting from the day the payment was found overdue:
 - **After ~14 days** — your control plane is suspended: stopped, with its data
   kept.
 - **After ~30 days** — your control plane is deleted, together with those VPS
-  snapshots and storage buckets. As on a cancellation, we keep one copy of the
-  control plane for 30 days: see [Coming back](#coming-back).
+  snapshots and storage buckets. We keep one copy of the control plane for 30
+  days: see [Coming back](#coming-back).
 
 Paying before the deletion brings your control plane back and gives you access
 to your Managed Backup Storage again. A released VPS is not rebuilt for you:
@@ -189,25 +189,43 @@ nothing is kept.
 
 ## Cancellation
 
-To stop paying, downgrade to Free — it applies at your next renewal — or ask us
-to cancel through the [contact form](https://www.incubacloud.io/contactus).
-Cancelling removes your control plane and closes your subscription. On paid
-plans we keep one copy of it for 30 days, as described below; if you want it
-destroyed sooner, say so in the request.
+You can cancel at any time from `My account → IncubaCloud → Cancel
+subscription`; only the owner of the account can. Before you confirm, the page
+lists what your account has — instances, servers, Managed Backup Storage and
+extras — so that you can download what you need first.
 
-Removing the control plane also releases every VPS you
-[ordered through the platform](../hosts/hire.md), as after non-payment: a
-snapshot of its disk is taken, the server is destroyed and is no longer billed,
-and we email you which ones were released. The disk snapshot, the server's IPv4
-address (when it could be held) and its firewall are kept for the same 30 days
-as the copy of your control plane, then deleted. Servers you connected yourself
-are not touched.
+- **A paid plan whose current period is paid** — your subscription is not
+  renewed: you keep the service until the last day you paid for, and nothing is
+  refunded. Until then you can undo the cancellation from the same page; while
+  it is scheduled you cannot change your plan or buy anything. The next day we
+  delete your control plane and its instances, every VPS you
+  [ordered through the platform](../hosts/hire.md) (without a snapshot), your
+  Managed Backup Storage and every backup we hold of them, and we keep no copy.
+  The VPS hours and the storage over your tier up to that day, and any amount
+  carried to your next renewal, are invoiced then and charged to your saved
+  card; that invoice stays due if the charge fails.
+- **Delete now** — the same page can delete everything straight away; you type
+  your subdomain to confirm. You give up the rest of the period you paid for and
+  nothing is refunded; the VPS hours until then and any amount carried to your
+  next renewal are invoiced.
+- **Free, an unpaid period, or a control plane not running yet** — there is no
+  paid period to keep, so your account is closed and deleted at once. Any unpaid
+  invoice stays due.
+
+Servers you connected yourself, and backups you send to storage of your own,
+are not touched. A deletion you ask for cannot be undone, and nothing can be
+recovered afterwards. We email you when it is done.
 
 ### Coming back
 
-When the control plane of a paid plan is removed — because you cancelled, or
-after non-payment — we keep **one copy of it for 30 days**. If you come back
-within that window, signing in and picking a plan offers you two paths:
+After a cancellation you asked for, nothing is kept: sign in and pick a plan
+whenever you like to start again with a new, empty control plane.
+
+When we remove the control plane of a paid plan for another reason — after
+non-payment, for example — we keep **one copy of it for 30 days**. The disk
+snapshot of a VPS released with it, the server's IPv4 address (when it could be
+held) and its firewall are kept for the same 30 days, then deleted. If you come
+back within that window, signing in and picking a plan offers you two paths:
 
 - **Recover my data** — we redeploy your control plane and restore that copy
   into it. Your subdomain, data and settings come back as they were at the
