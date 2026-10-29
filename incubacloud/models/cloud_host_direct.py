@@ -987,6 +987,14 @@ class CloudHost(models.Model):
     def _enqueue_direct_sync(self, reason, chained=False):
         """Queue ``sync_direct_path`` on this host, swallowing failures.
 
+        The caller's own pending writes are flushed first, outside the
+        guard: a conflict on them (a serialization failure) is the
+        caller's to retry, never something to swallow. The queueing runs
+        in a savepoint, so a failure of its own is rolled back alone and
+        leaves the caller's transaction usable (QA, 29-oct-2026: a VPS
+        reservation's sync swallowed an aborted transaction, and the
+        provisioning job then failed on it instead of being retried).
+
         :param str reason: for the log.
         :param bool chained: called from a job of this host that is still
             running: the sync belongs to it and goes to the head of the
@@ -994,14 +1002,18 @@ class CloudHost(models.Model):
         :return: the job id, or False.
         """
         self.ensure_one()
+        name = self.name
+        self.env.flush_all()
         try:
-            return self.env["cloud.job"].sudo().enqueue(
-                self.id, False, "sync_direct_path", bypass_running_check=chained,
-            )
+            with self.env.cr.savepoint():
+                return self.env["cloud.job"].sudo().enqueue(
+                    self.id, False, "sync_direct_path",
+                    bypass_running_check=chained,
+                )
         except Exception as exc:  # noqa: BLE001 — never fail the caller
             _logger.warning(
                 "[direct] could not queue the direct list on %s (%s): %s",
-                self.name, reason, exc,
+                name, reason, exc,
             )
             return False
 

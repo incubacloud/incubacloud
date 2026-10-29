@@ -7,9 +7,13 @@ differs from the one it should be, or the last good run is over an hour
 old; and after 30 minutes behind, it says so.
 """
 from datetime import timedelta
+from unittest.mock import patch
+
+import psycopg2.errors
 
 from odoo import fields
 from odoo.tests.common import TransactionCase
+from odoo.tools import mute_logger
 
 from odoo.addons.incubacloud.tests._direct import make_host
 
@@ -138,3 +142,27 @@ class TestTheCron(_TriggerCase):
         self.Host._cron_sync_direct_path()
         self.assertFalse(Alert.search(stale))
         self.assertFalse(self.publisher.direct_allowlist_stale_since)
+
+
+class TestAFailedQueueingLeavesTheCallerWhole(_TriggerCase):
+    """Queueing the direct list never breaks whoever asked for it (29-oct-2026)."""
+
+    def test_a_failure_of_the_queueing_is_rolled_back_alone(self):
+        def broken(job_model, *args, **kwargs):
+            """Abort the transaction, as a failed query inside the queueing does."""
+            job_model.env.cr.execute("SELECT 1/0")
+
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue", autospec=True, side_effect=broken,
+        ), mute_logger("odoo.sql_db", "odoo.addons.incubacloud.models.cloud_host_direct"):
+            self.assertFalse(self.publisher._enqueue_direct_sync("test"))
+        self.env.cr.execute("SELECT 1")
+        self.assertEqual(self.env.cr.fetchone(), (1,))
+
+    def test_a_conflict_on_the_callers_writes_is_not_swallowed(self):
+        """The caller's transaction is the one to retry, so the conflict reaches it."""
+        with self.assertRaises(psycopg2.errors.SerializationFailure), patch.object(
+            type(self.env), "flush_all", autospec=True,
+            side_effect=psycopg2.errors.SerializationFailure(),
+        ):
+            self.publisher._enqueue_direct_sync("test")
