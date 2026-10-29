@@ -140,6 +140,9 @@ marks no host pending.
   host at the next reconciliation (every 15 minutes): each host's recorded URL is
   compared with the one it should have. Before, hosts kept the old URL until their
   agents were applied again by hand.
+- The host's action bar holds two groups, what is done with the host and its upkeep
+  (ending with the trash), and breaks between them when it does not fit on one line.
+  Buttons a module appends inside `ic-action-bar` sit between the two.
 
 ---
 
