@@ -51,7 +51,9 @@ marks no host pending.
   the proxy down.
 - **`sync_direct_path`**: applies the list without restarting Traefik, reads it back,
   and probes the direct names the host publishes; queued when a host comes or goes and
-  at least hourly.
+  at least hourly. Its button shows only on a host that publishes a direct port
+  (`cloud.host._offered_actions()`, which a layer can extend to drop an action from
+  the hosts it does not apply to).
 - **The central's direct name** (`metrics_central_direct_host`), published by the
   central's deployment on the direct entrypoint, with a probe state (`direct_path_down`,
   `direct_certificate_expiring`).
