@@ -298,6 +298,11 @@ msgid "Asked through"
 msgstr "Solicitada a través de"
 
 #. module: incubacloud_mcp
+#: model_terms:ir.ui.view,arch_db:incubacloud_mcp.approval_page_html
+msgid "Asked with the tool"
+msgstr "Solicitada con la herramienta"
+
+#. module: incubacloud_mcp
 #: model:ir.model.fields,field_description:incubacloud_mcp.field_incubacloud_mcp_download__attachment_id
 msgid "Attachment"
 msgstr "Archivo adjunto"
