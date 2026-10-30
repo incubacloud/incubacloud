@@ -16,7 +16,7 @@ theme:
   logo: assets/logo.svg
   favicon: assets/favicon.svg
   font:
-    text: Onest
+    text: Hanken Grotesk
     code: JetBrains Mono
   palette:
     - media: "(prefers-color-scheme)"
