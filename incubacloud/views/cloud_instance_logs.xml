@@ -7,13 +7,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Logs — <t t-esc="instance_name"/></title>
     <link rel="icon" type="image/svg+xml" href="/incubacloud/static/src/img/icon-solid.svg"/>
+    <link rel="stylesheet" href="/incubacloud/static/fonts/fonts.css"/>
+    <link rel="preload" href="/incubacloud/static/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin=""/>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+            background: #0a0c0d;
+            color: #c3cad0;
+            font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, Consolas, monospace;
             font-size: 13px;
             display: flex;
             flex-direction: column;
@@ -23,8 +25,8 @@
 
         /* ── Header ── */
         .hdr {
-            background: #2d2d2d;
-            border-bottom: 1px solid #3e3e3e;
+            background: #101315;
+            border-bottom: 1px solid #262b2f;
             padding: 8px 14px;
             display: flex;
             align-items: center;
@@ -32,30 +34,27 @@
             flex-shrink: 0;
             flex-wrap: wrap;
         }
-        .dots { display: flex; gap: 6px; align-items: center; }
-        .dot { width: 12px; height: 12px; border-radius: 50%; }
-        .dot-red    { background: #ff5f57; }
-        .dot-yellow { background: #ffbd2e; }
-        .dot-green  { background: #28c840; }
+        .mark { width: 22px; height: 22px; color: #2fc78c; flex-shrink: 0; }
 
         .title {
-            font-size: 12px;
-            color: #ccc;
+            font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            color: #c3cad0;
             font-weight: 600;
             white-space: nowrap;
         }
 
         select, input[type="text"] {
-            background: #3a3a3a;
-            color: #d4d4d4;
-            border: 1px solid #555;
+            background: #181c1f;
+            color: #c3cad0;
+            border: 1px solid #333a3f;
             border-radius: 5px;
             padding: 4px 8px;
             font-size: 12px;
             font-family: inherit;
             outline: none;
         }
-        select:focus, input[type="text"]:focus { border-color: #60b8e0; }
+        select: focus, input[type="text"]:focus { border-color: #2fc78c; }
 
         #svc-select { cursor: pointer; }
 
@@ -64,7 +63,7 @@
             min-width: 140px;
             max-width: 280px;
         }
-        #search-input::placeholder { color: #666; }
+        #search-input::placeholder { color: #737d85; }
 
         .btn {
             padding: 4px 12px;
@@ -75,13 +74,13 @@
             cursor: pointer;
             white-space: nowrap;
         }
-        .btn-live-off { background: #3a3a3a; color: #ccc; }
-        .btn-live-off:hover { background: #4a4a4a; }
-        .btn-live-on  { background: #1e3a4a; color: #60b8e0; border: 1px solid #60b8e083; }
+        .btn-live-off { background: #181c1f; color: #c3cad0; }
+        .btn-live-off:hover { background: #20262a; }
+        .btn-live-on  { background: rgba(47,199,140,.15); color: #2fc78c; border: 1px solid rgba(47,199,140,.45); }
 
         .hdr-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
-        .line-count { font-size: 11px; color: #666; white-space: nowrap; }
+        .line-count { font-size: 11px; color: #737d85; white-space: nowrap; }
 
         /* ── Terminal ── */
         .terminal {
@@ -90,29 +89,31 @@
             padding: 10px 16px;
         }
         .terminal::-webkit-scrollbar { width: 6px; }
-        .terminal::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .terminal::-webkit-scrollbar-thumb { background: #333a3f; border-radius: 3px; }
 
         .log-line {
             line-height: 1.6;
             white-space: pre-wrap;
             word-break: break-all;
-            color: #c9d1d9;
+            color: #c3cad0;
         }
-        .log-line.hl { background: rgba(255, 220, 50, 0.12); border-radius: 2px; }
+        .log-line.hl { background: rgba(239,165,62,.14); border-radius: 2px; }
+        .log-line.lv-warn { color: #f0c987; }
+        .log-line.lv-err  { color: #ff9b9d; }
 
         .empty-msg {
-            color: #555;
+            color: #737d85;
             font-style: italic;
             padding: 20px 0;
         }
 
         /* ── Footer ── */
         .footer {
-            background: #2d2d2d;
-            border-top: 1px solid #3e3e3e;
+            background: #101315;
+            border-top: 1px solid #262b2f;
             padding: 5px 14px;
             font-size: 11px;
-            color: #666;
+            color: #737d85;
             display: flex;
             justify-content: space-between;
             flex-shrink: 0;
@@ -131,10 +132,10 @@
             min-width: 250px;
             max-height: 320px;
             overflow-y: auto;
-            background: #252526;
-            border: 1px solid #555;
+            background: #101315;
+            border: 1px solid #333a3f;
             border-radius: 6px;
-            box-shadow: 0 6px 18px rgba(0,0,0,.45);
+            box-shadow: 0 6px 18px rgba(0,0,0,.5);
             z-index: 30;
             padding: 4px 0;
         }
@@ -147,14 +148,14 @@
             justify-content: space-between;
             gap: 14px;
         }
-        .day-opt:hover, .day-opt.active { background: #37373d; }
-        .day-opt .meta { color: #888; }
-        .day-opt .hits { color: #e0c060; }
-        .day-empty { padding: 6px 10px; color: #888; }
+        .day-opt:hover, .day-opt.active { background: #20262a; }
+        .day-opt .meta { color: #8a949c; }
+        .day-opt .hits { color: #f0c987; }
+        .day-empty { padding: 6px 10px; color: #8a949c; }
         .day-step {
-            background: #3a3a3a;
-            color: #d4d4d4;
-            border: 1px solid #555;
+            background: #181c1f;
+            color: #c3cad0;
+            border: 1px solid #333a3f;
             border-radius: 5px;
             padding: 3px 7px;
             cursor: pointer;
@@ -162,22 +163,26 @@
         }
         .day-step:disabled { opacity: .4; cursor: default; }
         #search-hits {
-            color: #e0c060;
+            color: #f0c987;
             cursor: pointer;
             text-decoration: underline dotted;
         }
-        #status-text.loading { color: #60b8e0; }
-        #status-text.error   { color: #e06060; }
+        #status-text.loading { color: #9fd6e2; }
+        #status-text.error   { color: #ff9b9d; }
     </style>
 </head>
 <body>
 
     <div class="hdr">
-        <div class="dots">
-            <div class="dot dot-red"/>
-            <div class="dot dot-yellow"/>
-            <div class="dot dot-green"/>
-        </div>
+        <svg class="mark" viewBox="8 8 34 30" aria-hidden="true">
+            <mask id="ic-mark-cut">
+                <path d="M15.5 34.5h17.6a8.3 8.3 0 0 0 .9-16.55A10.4 10.4 0 0 0 13.6 21 7.2 7.2 0 0 0 15.5 34.5Z" fill="#fff"/>
+                <rect x="18.4" y="27.7" width="13.4" height="2.7" rx="1.35" fill="#000"/>
+                <rect x="20.4" y="23.8" width="9.4" height="2.7" rx="1.35" fill="#000"/>
+                <rect x="22.4" y="19.9" width="5.4" height="2.7" rx="1.35" fill="#000"/>
+            </mask>
+            <rect width="48" height="48" fill="currentColor" mask="url(#ic-mark-cut)"/>
+        </svg>
 
         <span class="title"><t t-esc="instance_name"/> — <t t-esc="instance_host"/></span>
 
@@ -187,7 +192,7 @@
             </t>
         </select>
 
-        <span id="archive-wrap" style="display:none;">
+        <span id="archive-wrap" style="display: none;">
             <span class="day-picker">
                 <button id="day-prev" class="day-step" title="Previous day">◀</button>
                 <input id="day-input" type="text" autocomplete="off"
@@ -198,10 +203,10 @@
             </span>
         </span>
 
-        <input id="search-input" type="text" placeholder="🔍 filter logs…"/>
+        <input id="search-input" type="text" placeholder="Filter logs…"/>
 
         <div class="hdr-right">
-            <button id="btn-download" class="btn" style="display:none;">⤓ Download</button>
+            <button id="btn-download" class="btn" style="display: none;">⤓ Download</button>
             <button id="btn-live" class="btn btn-live-off">▶ Live</button>
             <span class="line-count" id="line-count">0 lines</span>
         </div>
@@ -213,8 +218,8 @@
 
     <div class="footer">
         <span id="status-text">Ready.</span>
-        <span id="filter-info" style="display:none; color:#888;"></span>
-        <span id="search-hits" style="display:none;"></span>
+        <span id="filter-info" style="display: none; color: #8a949c;"></span>
+        <span id="search-hits" style="display: none;"></span>
     </div>
 
     <script type="text/javascript">
@@ -295,8 +300,8 @@
              * — kept inline to avoid an asset bundle for a standalone
              * HTML page. */
             var ANSI_BASIC = {
-                30:'#000', 31:'#e06060', 32:'#60c060', 33:'#e0c060', 34:'#6088e0', 35:'#c060c0', 36:'#4ec9b0', 37:'#d4d4d4',
-                90:'#666', 91:'#f48771', 92:'#8ae066', 93:'#ffd060', 94:'#88aaff', 95:'#ff88ff', 96:'#88ffff', 97:'#fff'
+                30:'#333a3f', 31:'#ff6063', 32:'#2fc78c', 33:'#efa53e', 34:'#4fb6c6', 35:'#ff9b9d', 36:'#9fd6e2', 37:'#c3cad0',
+                90:'#737d85', 91:'#ff9b9d', 92:'#9fe7c4', 93:'#f0c987', 94:'#9fd6e2', 95:'#ff9b9d', 96:'#e4f1f2', 97:'#eef1f3'
             };
             function ansi256(n) {
                 if (n &lt; 16) return ANSI_BASIC[n &lt; 8 ? 30 + n : 82 + n];
@@ -350,6 +355,18 @@
                 span.textContent = text;
                 parent.appendChild(span);
             }
+            /**
+             * The class that colours a line by its Odoo log level.
+             *
+             * @param {string} line  one raw log line
+             * @returns {string} ' lv-err' for ERROR and CRITICAL,
+             *     ' lv-warn' for WARNING, '' for anything else
+             */
+            function levelClass(line) {
+                if (/ (ERROR|CRITICAL) /.test(line)) return ' lv-err';
+                if (/ WARNING /.test(line)) return ' lv-warn';
+                return '';
+            }
             function appendAnsiText(parent, text) {
                 var re = /\x1b\[([0-9;]*)m/g;
                 var state = { fg: null, bg: null, bold: false, dim: false, italic: false, underline: false };
@@ -381,7 +398,7 @@
                     var frag = document.createDocumentFragment();
                     filtered.forEach(function (line) {
                         var div = document.createElement('div');
-                        div.className = 'log-line' + (query ? ' hl' : '');
+                        div.className = 'log-line' + (query ? ' hl' : '') + levelClass(line);
                         appendAnsiText(div, line);
                         frag.appendChild(div);
                     });
