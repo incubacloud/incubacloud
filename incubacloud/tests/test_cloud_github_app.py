@@ -4,6 +4,10 @@ Tier 2 — ORM integration tests for cloud.github.app.
 from odoo.tests.common import TransactionCase
 from odoo.exceptions import UserError
 
+from odoo.addons.incubacloud.models.cloud_github_event import (
+    GITHUB_APP_REVOKED_CODE,
+)
+
 _FAKE_PEM = (
     "-----BEGIN RSA PRIVATE KEY-----\n"
     "ZmFrZWtleWZha2VrZXlmYWtla2V5ZmFrZWtleQ==\n"
@@ -84,3 +88,53 @@ class TestCloudGitHubAppInstallationEvent(TransactionCase):
         self.App._process_installation_event({'installation': {'id': 42}})
         self.assertEqual(app.installation_id, '42')
         self.assertIsInstance(app.installation_id, str)
+
+
+class TestInstallationOfSomeoneElse(TransactionCase):
+    """The App is public: anyone may install it on their own account."""
+
+    def setUp(self):
+        super().setUp()
+        self.env['cloud.github.app'].search([]).unlink()
+        self.app = self.env['cloud.github.app'].create({
+            'app_id': '12345', 'private_key': _FAKE_PEM,
+            'installation_id': '4242',
+        })
+
+    def _dispatch(self, action, installation_id):
+        """Dispatch an ``installation`` event for *installation_id*."""
+        event = self.env['cloud.github.event'].create({
+            'event_type': 'installation',
+            'action': action,
+            'delivery_id': f'{action}-{installation_id}',
+            'payload': '{}',
+        })
+        event._dispatch({'installation': {'id': installation_id}})
+        return event
+
+    def _revocation_alert(self):
+        return self.env['cloud.alert'].search([
+            ('code', '=', GITHUB_APP_REVOKED_CODE), ('state', '=', 'active'),
+        ])
+
+    def test_a_stranger_deleting_theirs_raises_nothing(self):
+        for action in ('deleted', 'suspend'):
+            event = self._dispatch(action, 9999)
+            self.assertTrue(event.processed)
+        self.assertFalse(self._revocation_alert())
+        self.assertEqual(self.app.installation_id, '4242')
+
+    def test_a_stranger_installing_theirs_clears_no_real_alert(self):
+        self._dispatch('suspend', 4242)
+        self._dispatch('created', 9999)
+        self._dispatch('unsuspend', 9999)
+        self.assertTrue(self._revocation_alert())
+        self.assertEqual(self.app.installation_id, '4242')
+
+    def test_deleting_the_panels_own_lets_its_reinstall_in(self):
+        self._dispatch('deleted', 4242)
+        self.assertFalse(self.app.installation_id)
+        self.assertTrue(self._revocation_alert())
+        self._dispatch('created', 5151)
+        self.assertEqual(self.app.installation_id, '5151')
+        self.assertFalse(self._revocation_alert())

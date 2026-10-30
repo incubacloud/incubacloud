@@ -124,6 +124,22 @@ class CloudGitHubApp(models.Model):
 
         return False
 
+    @api.model
+    def _is_own_installation(self, payload: dict) -> bool:
+        """Return whether *payload* is about the installation this panel uses.
+
+        The App the manifest creates is public, so anyone may install it
+        on their own account and GitHub tells this panel about it.
+
+        :param dict payload: the decoded ``installation`` webhook body.
+        :return: ``True`` when its installation id is the stored one.
+        """
+        installation_id = str(payload.get("installation", {}).get("id", ""))
+        app = self.search([], limit=1)
+        return bool(installation_id) and installation_id == (
+            app.installation_id or ""
+        )
+
     # ── Odoo backend action ─────────────────────────────────────────────────
 
     def action_test_connection(self):
