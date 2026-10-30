@@ -228,6 +228,51 @@ class TestDestructiveMessages(PanelFixtureMixin, McpUsersMixin, TransactionCase)
             {"instance_id": self.staging.id, "confirm_name": "mcp-acme-staging"},
         )
 
+    def test_a_deployed_instance_is_taken_off_its_server_by_a_job(self):
+        """A deployed staging is deleted as the panel's Remove does: a
+        ``delete_instance`` job that does not keep it in the panel."""
+        self.staging.sudo().with_context(cloud_state_transition=True).write(
+            {"state": "deployed"}
+        )
+        Job = type(self.env["cloud.job"])
+        Tools = type(self.env["incubacloud.mcp.tools"])
+        with (
+            patch.object(Job, "enqueue", autospec=True, return_value=77) as enqueue,
+            patch.object(
+                Tools,
+                "_with_job_state",
+                autospec=True,
+                side_effect=lambda _tools, result: result,
+            ),
+        ):
+            answer = self.env["incubacloud.mcp.tools"].with_user(
+                self.manager
+            )._tool_delete_instance({"instance_id": self.staging.id})
+        self.assertEqual(answer, {"ok": True, "job_id": 77})
+        enqueue.assert_called_once_with(
+            self.env["cloud.job"],
+            self.host.id,
+            self.staging.id,
+            "delete_instance",
+            {"keep_in_panel": False},
+        )
+        self.assertTrue(self.staging.exists())
+
+    def test_one_never_deployed_is_deleted_by_the_route(self):
+        """An instance never deployed goes through the panel's route."""
+        Dispatch = type(self.env["incubacloud.mcp.dispatch"])
+        with patch.object(
+            Dispatch, "_call", autospec=True, return_value={"ok": True}
+        ) as call:
+            self.env["incubacloud.mcp.tools"].with_user(
+                self.manager
+            )._tool_delete_instance({"instance_id": self.staging.id})
+        call.assert_called_once_with(
+            self.env["incubacloud.mcp.dispatch"],
+            "/cloud/delete_instance",
+            {"instance_id": self.staging.id},
+        )
+
 
 @tagged("post_install", "-at_install")
 class TestDestructiveOverHttp(PanelFixtureMixin, McpUsersMixin, McpHttpMixin, HttpCase):
