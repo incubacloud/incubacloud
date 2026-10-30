@@ -124,7 +124,8 @@ class TestTheProbeOutput(BaseCase):
 class TestTheSettingsKeepTheState(TransactionCase):
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.settings = self.env["cloud.settings"].sudo()._get_system()
         self.settings.write({

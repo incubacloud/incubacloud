@@ -28,7 +28,7 @@ class TestSettingsRoutes(AssistantMixin, HttpCase):
             {
                 "name": "Portal",
                 "login": "asis-rs-portal",
-                "group_ids": [(6, 0, [self.env.ref("base.group_portal").id])],
+                "groups_id": [(6, 0, [self.env.ref("base.group_portal").id])],
             }
         )
         self._configure(users=[self.dev])

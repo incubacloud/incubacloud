@@ -36,7 +36,7 @@ class TestAlertResolutionNotify(TransactionCase):
                 "name": "hook-user",
                 "login": "hook-user@example.com",
                 "email": "hook-user@example.com",
-                "group_ids": [
+                "groups_id": [
                     (4, self.env.ref("base.group_user").id),
                     (
                         4,

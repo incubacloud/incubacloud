@@ -54,7 +54,8 @@ class TestReadCommittedCursor(TransactionCase):
         Attempting it anyway aborts the caller's transaction, which is
         a far worse outcome than inheriting an isolation level.
         """
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         with read_committed_cursor(self.env.registry) as cr:
             cr.execute("SELECT 1")
             self.assertEqual(cr.fetchone()[0], 1)
@@ -92,7 +93,8 @@ class TestLivenessCronIsolation(TransactionCase):
             with registry.cursor() as cr:
                 yield cr
 
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         settings = self.env["cloud.settings"].sudo()._get_system()
         settings.write({
             "metrics_enabled": True,
@@ -132,7 +134,8 @@ class TestExecutorOutcomeIsolation(TransactionCase):
             with registry.cursor() as cr:
                 yield cr
 
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         host = self.env["cloud.host"].create({
             "name": "iso-host",
             "ip_address": "192.0.2.65",

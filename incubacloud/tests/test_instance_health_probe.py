@@ -57,7 +57,8 @@ class TestHealthProbeClassification(TransactionCase):
         # see the records created here and the alert's foreign key to
         # the instance fails. Test mode wraps this transaction instead,
         # so the alert is really written and really rolled back.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "Probe Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "probe-host",
@@ -260,7 +261,8 @@ class TestUnresponsiveHysteresis(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "Hyst Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "hyst-host",
@@ -399,7 +401,8 @@ class TestRunningWhileMetricsOwnIt(TransactionCase):
     def setUp(self):
         """A production whose metrics were read just now."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.env["cloud.settings"].sudo()._get_system().write({
             "metrics_enabled": True,
         })
@@ -773,7 +776,8 @@ class TestJobsThatStopTheDatabase(TransactionCase):
 
     def _skip_a_pass(self):
         """Run a cycle that skips its pass, its outcome included."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         executor = self._executor()
         asyncio.run(executor.before_execute(None))
         self.assertEqual(executor.get_commands(), [("noop", "true")])

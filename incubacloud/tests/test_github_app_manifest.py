@@ -24,7 +24,7 @@ class TestGitHubAppManifest(HttpCase):
             "name": "manifest-manager",
             "login": "manifest-manager",
             "password": "manifest-manager",
-            "group_ids": [(6, 0, [
+            "groups_id": [(6, 0, [
                 self.env.ref("base.group_user").id,
                 self.env.ref("incubacloud.group_cloud_manager").id,
             ])],

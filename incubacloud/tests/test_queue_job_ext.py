@@ -245,7 +245,7 @@ class TestJobEmailNotificationFilters(TransactionCase):
             'name': 'mail-subscriber',
             'login': 'mail-subscriber',
             'email': 'ops@example.com',
-            'group_ids': [
+            'groups_id': [
                 (4, self.env.ref('base.group_user').id),
                 (4, self.env.ref('incubacloud.group_cloud_project_manager').id),
             ],
@@ -407,7 +407,7 @@ class TestJobEmailScoping(TransactionCase):
         gids = [self.env.ref('base.group_user').id]
         gids += [self.env.ref(x).id for x in group_xmlids]
         user.write({
-            'group_ids': [(4, gid) for gid in gids],
+            'groups_id': [(4, gid) for gid in gids],
             'cloud_notification_level': 'all',
         })
         return user

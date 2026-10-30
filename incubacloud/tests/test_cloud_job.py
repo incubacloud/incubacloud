@@ -671,7 +671,8 @@ class TestEnqueueBypassRunningCheck(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
         })
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.parent_jt = _ensure_job_type(self.env, 'test_parent_jt')
         self.follow_jt = _ensure_job_type(self.env, 'test_follow_jt')
         # Mimic an executor mid-on_success: parent job already started.
@@ -736,7 +737,8 @@ class TestHostScopedRacePrevention(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
         })
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host_jt = _ensure_job_type(self.env, 'test_host_jt', apply_to='host')
         self.host_jt2 = _ensure_job_type(self.env, 'test_host_jt2', apply_to='host')
         self.inst_jt = _ensure_job_type(self.env, 'test_inst_jt')
@@ -827,7 +829,8 @@ class TestRetryAndUnblockRespectTheGuard(TransactionCase):
             'host_id': self.host.id,
             'environment': 'staging',
         })
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.jt = _ensure_job_type(self.env, 'test_guard_jt')
 
     def _job(self, state):

@@ -9,7 +9,7 @@ from datetime import timedelta
 import psycopg2
 
 from odoo import api, fields, sql_db
-from odoo.orm.environments import Transaction
+from odoo.api import Transaction
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 from odoo.tools import mute_logger
@@ -30,7 +30,8 @@ class TestApprovals(McpUsersMixin, TransactionCase):
         which must see the test's.
         """
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.user = self._cloud_user("mcp-approval-mgr", group="group_cloud_manager")
         self.Approval = self.env["incubacloud.mcp.approval"].with_user(self.user)
 

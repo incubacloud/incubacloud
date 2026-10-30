@@ -50,7 +50,8 @@ class _DeferredUnlinkBase(TransactionCase):
         # The deferred unlink opens ``registry.cursor()``; outside test
         # mode that is a second connection which cannot see this
         # transaction's fixtures.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.project = self.env['cloud.project'].create({'name': 'du-proj'})
         self.host = self.env['cloud.host'].create({

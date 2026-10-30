@@ -71,7 +71,8 @@ class _QueueCase(TransactionCase):
         # own: in test mode they ride on this transaction, outside it they
         # would be real connections that see nothing of the test and wait
         # for its locks.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "queue-host",
             "ip_address": "10.0.0.81",

@@ -573,7 +573,8 @@ class TestPostPruneNetworkGuard(TransactionCase):
         # Same reason as the container guard below: the alert is written
         # on a cursor of its own and would not see this transaction's
         # host without test mode.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "Net Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "net-host",
@@ -650,7 +651,8 @@ class TestPostPruneGuard(TransactionCase):
         # instance created here, and the alert's foreign keys blow up.
         # Test mode makes the registry hand out cursors wrapping this
         # test's transaction, keeping the write real and rolled back.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "Guard Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "guard-host",

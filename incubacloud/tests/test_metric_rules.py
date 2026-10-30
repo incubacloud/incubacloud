@@ -571,7 +571,7 @@ class TestAlertConfirmation(TransactionCase):
     def test_a_suspicion_is_notified_only_once_confirmed(self):
         user = self.env["res.users"].create({
             "name": "pm", "login": "pm-confirm", "email": "pm@example.com",
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],

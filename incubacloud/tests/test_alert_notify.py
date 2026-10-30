@@ -62,7 +62,7 @@ class TestAlertNotifyEmail(TransactionCase):
             "name": login,
             "login": login,
             "email": f"{login}@example.com",
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
@@ -483,7 +483,7 @@ class TestSilentAlerts(TransactionCase):
             "name": "silent-reader",
             "login": "silent-reader",
             "email": "silent-reader@example.com",
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
@@ -638,7 +638,7 @@ class TestAlertNotifyExternal(TransactionCase):
             "name": login,
             "login": login,
             "email": f"{login}@example.com",
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
@@ -780,7 +780,7 @@ class TestAlertNotifyDigest(TransactionCase):
         vals = {
             "login": login,
             "partner_id": partner_id,
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],

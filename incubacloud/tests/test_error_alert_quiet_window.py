@@ -32,7 +32,8 @@ class TestErrorAlertQuietWindow(TransactionCase):
         super().setUp()
         # The probe writes alerts on a cursor of its own; test mode is
         # what lets that cursor see the records created here.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "Quiet Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "quiet-host",

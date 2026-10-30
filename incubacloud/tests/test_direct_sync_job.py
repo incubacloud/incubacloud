@@ -34,7 +34,8 @@ _GOOD_PROBE = (
 class TestTheSyncJob(TransactionCase):
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.host = make_host(
             self.env, "sj-central", "46.4.0.70",

@@ -37,7 +37,8 @@ class _PushCase(TransactionCase):
     def setUp(self):
         super().setUp()
         # For the dispatcher's cursor (see ``_run_after_commit``).
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env['cloud.host'].create({
             'name': 'merge-host',
             'ip_address': '10.0.0.91',

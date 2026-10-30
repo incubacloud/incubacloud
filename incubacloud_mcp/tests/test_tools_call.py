@@ -693,7 +693,8 @@ class TestUserLimit(McpUsersMixin, TransactionCase):
 
     def test_the_global_limit_counts_each_call(self):
         """With a cap of two, the third call in the minute is over it."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.env["cloud.settings"]._get_system().rate_limit_mcp_user_per_min = 2
         server = self.env["incubacloud.mcp.server"].with_context(force_rate_limit=True)
         user = self._cloud_user("mcp-limit-dev")

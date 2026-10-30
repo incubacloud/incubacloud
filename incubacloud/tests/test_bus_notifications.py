@@ -266,7 +266,7 @@ class TestBroadcastAudience(_BusTestCase):
         stakeholder = self.env['res.users'].create({
             'name': 'Stake Holder',
             'login': 'bus-stakeholder',
-            'group_ids': [
+            'groups_id': [
                 (4, self.env.ref('base.group_user').id),
                 (4, self.env.ref('incubacloud.group_cloud_user').id),
             ],

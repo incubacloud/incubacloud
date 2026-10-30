@@ -925,7 +925,8 @@ class TestOdooRestartedAroundTheDatabase(JobEndAssertions, _PitrCase):
     def setUp(self):
         """Archiving being switched; the cron lowered ``running`` meanwhile."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.inst.write({
             "pitr_enabled": True, "pitr_state": "enabling", "running": False,
         })

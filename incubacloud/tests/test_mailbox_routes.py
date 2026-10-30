@@ -46,7 +46,8 @@ _ONE_MESSAGE = json.dumps({
 class _MailboxCase(TransactionCase):
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.host = self.env["cloud.host"].create({
             "name": "mb-host",

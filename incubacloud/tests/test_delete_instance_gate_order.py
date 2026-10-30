@@ -72,7 +72,7 @@ class TestDeleteInstanceGateOrder(TransactionCase):
         cls.low_user = cls.env['res.users'].create({
             'name': 'gate-order-low',
             'login': 'gate-order-low',
-            'group_ids': [(6, 0, [
+            'groups_id': [(6, 0, [
                 cls.env.ref('base.group_user').id,
                 cls.env.ref('incubacloud.group_cloud_user').id,
             ])],
@@ -80,7 +80,7 @@ class TestDeleteInstanceGateOrder(TransactionCase):
         cls.portal_user = cls.env['res.users'].create({
             'name': 'gate-order-portal',
             'login': 'gate-order-portal',
-            'group_ids': [(6, 0, [cls.env.ref('base.group_portal').id])],
+            'groups_id': [(6, 0, [cls.env.ref('base.group_portal').id])],
         })
 
     def _delete_as(self, user, instance_id):

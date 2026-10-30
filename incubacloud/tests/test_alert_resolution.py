@@ -37,7 +37,7 @@ class TestAlertResolution(TransactionCase):
             "name": "resolution-watcher",
             "login": "resolution-watcher",
             "email": "resolution-watcher@example.com",
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],

@@ -1309,7 +1309,8 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
         self.assertEqual(set(chain.mapped("state")), {"queued"})
         # Only now: a test cursor cannot open under the route's mocked
         # request, and the dispatcher's cursor must be one.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         busy.queue_job_id.write({"state": "done"})
         _run_after_commit(self.env)
         self.assertEqual(chain.mapped("state"), ["pending", "wait_dependencies"])
@@ -1384,7 +1385,7 @@ class TestHostHardeningRoutes(TestCloudDeleteHostRoute):
                 autospec=True, return_value=list(proxy_ranges),
             ))
         self.startPatcher(patch.dict(
-            config.options.maps[0], {real_ip.TRUSTED_OPTION: real_ip_trusted},
+            config.options, {real_ip.TRUSTED_OPTION: real_ip_trusted},
         ))
 
     def _access(self, remote_addr):

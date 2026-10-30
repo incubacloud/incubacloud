@@ -32,7 +32,8 @@ _TOKEN = "cf-dns-token-value"
 class _DirectSetupCase(TransactionCase):
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.settings = self.env["cloud.settings"].sudo()._get_system()
         self.settings.acme_dns_cloudflare_token = _TOKEN

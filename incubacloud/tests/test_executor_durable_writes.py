@@ -96,7 +96,8 @@ class DurableCase(JobEndAssertions, TransactionCase):
     def setUp(self):
         """A probe executor on a real job, and settings in a known state."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host, self.job = make_probe_job(self.env)
         self.executor = _Probe(self.job, self.host)
         self.settings = self.env["cloud.settings"].sudo()._get_system()

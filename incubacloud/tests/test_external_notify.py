@@ -44,7 +44,7 @@ class TestExternalNotifyGates(TransactionCase):
                 "name": "ext-notify-user",
                 "login": "ext-notify-user",
                 "email": "ext@example.com",
-                "group_ids": [
+                "groups_id": [
                     (4, self.env.ref("base.group_user").id),
                     (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
                 ],
@@ -214,7 +214,7 @@ class TestExternalNotifyScoping(TransactionCase):
         gids += [self.env.ref(x).id for x in group_xmlids]
         user.write(
             {
-                "group_ids": [(4, gid) for gid in gids],
+                "groups_id": [(4, gid) for gid in gids],
                 "cloud_notification_level": "all",
                 "cloud_telegram_bot_token": "test-bot-token",
                 "cloud_telegram_chat_id": "123456789",
@@ -345,7 +345,7 @@ class TestExternalNotifyPreferences(TransactionCase):
             "name": "pref-user",
             "login": "pref-user",
             "email": "pref@example.com",
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
@@ -450,7 +450,7 @@ class TestTelegramSend(TransactionCase):
                 "name": "tg-user",
                 "login": "tg-user",
                 "email": "tg@example.com",
-                "group_ids": [
+                "groups_id": [
                     (4, self.env.ref("base.group_user").id),
                 ],
                 "cloud_notification_level": "all",
@@ -623,7 +623,7 @@ class TestWebhookSend(TransactionCase):
                 "name": "wh-user",
                 "login": "wh-user",
                 "email": "wh@example.com",
-                "group_ids": [
+                "groups_id": [
                     (4, self.env.ref("base.group_user").id),
                 ],
                 "cloud_notification_level": "all",
@@ -778,7 +778,7 @@ class TestExternalNotifyUnconfigured(TransactionCase):
                 "name": "no-token",
                 "login": "no-token",
                 "email": "notoken@example.com",
-                "group_ids": [
+                "groups_id": [
                     (4, self.env.ref("base.group_user").id),
                     (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
                 ],
@@ -799,7 +799,7 @@ class TestExternalNotifyUnconfigured(TransactionCase):
                 "name": "no-chat",
                 "login": "no-chat",
                 "email": "nochat@example.com",
-                "group_ids": [
+                "groups_id": [
                     (4, self.env.ref("base.group_user").id),
                     (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
                 ],
@@ -820,7 +820,7 @@ class TestExternalNotifyUnconfigured(TransactionCase):
                 "name": "no-url",
                 "login": "no-url",
                 "email": "nourl@example.com",
-                "group_ids": [
+                "groups_id": [
                     (4, self.env.ref("base.group_user").id),
                     (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
                 ],
@@ -883,7 +883,7 @@ class TestEmailToggle(TransactionCase):
             "name": "et-user",
             "login": "et-user",
             "email": "et@example.com",
-            "group_ids": [
+            "groups_id": [
                 (4, self.env.ref("base.group_user").id),
                 (4, self.env.ref("incubacloud.group_cloud_project_manager").id),
             ],
