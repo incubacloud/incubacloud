@@ -253,6 +253,9 @@ jobs:
         # PR → the target branch tip; push → the previous tip. A manual
         # run (workflow_dispatch) and a branch's first push name none:
         # the parent commit stands in, the step a push would have taken.
+        # So does a previous tip outside this history, as after a forced
+        # push: 18.0 replaced June's snapshot (core 1.0.6), from which no
+        # upgrade is supported (owner, 30-oct-2026).
         # Never skipped: green here means the upgrade really ran.
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -262,7 +265,8 @@ jobs:
             base="${{ github.event.before }}"
           fi
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
-             || ! git cat-file -e "$base" 2>/dev/null; then
+             || ! git cat-file -e "$base" 2>/dev/null \
+             || ! git merge-base --is-ancestor "$base" HEAD; then
             base="$(git rev-parse --verify --quiet HEAD^ || true)"
             echo "No previous tip: upgrading from the parent commit ($base)."
           fi
