@@ -1,6 +1,7 @@
 """Shared fixtures of the assistant's tests: users, settings, conversations."""
 
 import json
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 from odoo import fields
@@ -80,6 +81,22 @@ class AssistantMixin(McpUsersMixin, PanelFixtureMixin):
         self.env.flush_all()
         return settings
 
+    @contextmanager
+    def enter_registry_test_mode(self):
+        """Make new cursors on this registry reuse the test's own.
+
+        Odoo 19's ``BaseCase.enter_registry_test_mode``, which Odoo 18
+        lacks: changes are flushed before and invalidated after, since
+        they happen inside other cursors.
+        """
+        self.env.flush_all()
+        self.registry.enter_test_mode(self.cr)
+        try:
+            yield
+        finally:
+            self.registry.leave_test_mode()
+            self.env.invalidate_all()
+
 
 def answer(text="", calls=(), stop=None, usage=None, model="claude-opus-5-5"):
     """A provider's answer: *text*, and *calls* as ``(id, name, arguments)``."""
@@ -132,10 +149,7 @@ class EngineMixin(AssistantMixin):
             engine = engine.with_context(job_uuid=job_uuid)
         # A tool binds a request of its own (the runner's, the user's): the
         # test framework would refuse the cursors of a request without its cookie.
-        with (
-            patch.object(self, "http_request_allow_all", True),
-            self.enter_registry_test_mode(),
-        ):
+        with self.enter_registry_test_mode():
             engine._step(conversation.with_user(owner))
         conversation.invalidate_recordset()
 
