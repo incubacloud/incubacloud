@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import {
     ImportOdooshModal,
     ImportProjectModal,
@@ -283,7 +283,7 @@ describe("ImportProjectModal — the branch field waits for its list", () => {
     const url = "https://github.com/acme/project";
     // The placeholders are translated strings: read as text, with the
     // catalogue loaded as the web client has it.
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("is locked before any URL was looked up", () => {
         const cmp = modal({ repoUrl: url });

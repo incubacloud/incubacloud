@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import {
     PILL_CLASSES,
     ago,
@@ -14,7 +14,7 @@ import { OBJECTIVE_LABELS, STATE_LABELS } from "@incubacloud_pitr/components/pit
  */
 describe("pitr_format — states", () => {
     // Translated strings, read as text with the catalogue loaded.
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a healthy state says OK, not only that it archives", () => {
         expect(String(STATE_LABELS.ok)).toBe("OK · Archiving");

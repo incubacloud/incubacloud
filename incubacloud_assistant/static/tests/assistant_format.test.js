@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import {
     LINK_HOSTS,
     buttonView,
@@ -26,7 +26,7 @@ import {
 describe("assistant_format", () => {
     // Its labels are translated strings: read without a loaded catalogue
     // they throw, as they would before the web client loaded its own.
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     describe("the button", () => {
         test("hidden when the assistant is not available and nothing is kept", () => {

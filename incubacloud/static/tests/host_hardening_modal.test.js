@@ -3,7 +3,7 @@ import { click, waitFor } from "@odoo/hoot-dom";
 import { animationFrame } from "@odoo/hoot-mock";
 import { Component, markup, useState, xml } from "@odoo/owl";
 import {
-    allowTranslations,
+    patchTranslations,
     mountWithCleanup,
     patchWithCleanup,
 } from "@web/../tests/web_test_helpers";
@@ -36,7 +36,7 @@ function prompt(hostName) {
 }
 
 describe("HostHardeningModal production gate", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("asks in one sentence, the name drawn as code", () => {
         const sentence = prompt("saas-paid-202610082249");
@@ -142,7 +142,7 @@ function answeringApply(answer) {
 }
 
 describe("HostHardeningModal says who can open SSH", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("only the panel: the box offers the asker's address", () => {
         const comp = dialog(access("panel_only", { person: "offer", person_ip: PERSON }));
@@ -258,7 +258,7 @@ describe("HostHardeningModal says who can open SSH", () => {
  * an address nobody chose to.
  */
 describe("HostHardeningModal, mounted", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("the box is unticked on opening, and again on reopening", async () => {
         patchWithCleanup(rpc, {

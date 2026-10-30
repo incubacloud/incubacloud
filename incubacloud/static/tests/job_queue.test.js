@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { InstanceDetail } from "@incubacloud/components/instance_detail/instance_detail";
 import { HostDetail } from "@incubacloud/components/host_detail/host_detail";
@@ -121,7 +121,7 @@ function instanceDetail(response) {
 }
 
 describe("job queue — labels", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("a queued job says how many go before it", () => {
         expect(String(queuedLabel(0))).toBe("Queued · 0 ahead");
@@ -192,7 +192,7 @@ describe("job queue — a queue held by a failure", () => {
 });
 
 describe("job queue — cancelling a queued job", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     /**
      * A stand-in for the instance's or the host's list.
@@ -274,7 +274,7 @@ describe("job queue — cancelling a queued job", () => {
 });
 
 describe("job queue — the notice after a button", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     /**
      * The notice for *data*, its message as a plain string.
@@ -329,7 +329,7 @@ describe("job queue — the notice after a button", () => {
 });
 
 describe("job queue — no button opens the log", () => {
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     test("deploy opens no tab and says it started", async () => {
         const comp = instanceDetail(STARTED);
@@ -377,7 +377,7 @@ describe("job queue — every button that enqueues says what became of its job",
     };
 
     beforeEach(() => {
-        allowTranslations();
+        patchTranslations();
         answering(STATE_ROUTE);
     });
 
@@ -630,7 +630,7 @@ describe("job queue — every button that enqueues says what became of its job",
 
 describe("job queue — a state that cannot be read is not announced", () => {
     beforeEach(() => {
-        allowTranslations();
+        patchTranslations();
         answering({ "/cloud/get_job_state": new Error("the connection dropped") });
     });
 
