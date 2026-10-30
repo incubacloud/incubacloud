@@ -58,7 +58,7 @@ class TerminalController(TerminalProxyMixin, http.Controller):
     # ── Open session ───────────────────────────────────────────────────────
 
     @http.route(
-        '/cloud/terminal/open', type='jsonrpc', auth='user', methods=['POST']
+        '/cloud/terminal/open', type='json', auth='user', methods=['POST']
     )
     def terminal_open(self, instance_id, service='odoo'):
         """Create a terminal session for the given instance service.
@@ -209,7 +209,7 @@ class TerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/terminal/{_SID}/output',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def terminal_output(self, session_id, after_seq=0):
         """Return buffered output chunks with seq > after_seq."""
@@ -225,7 +225,7 @@ class TerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/terminal/{_SID}/input',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def terminal_input(self, session_id, data):
         """Send base64-encoded bytes to the remote PTY."""
@@ -237,7 +237,7 @@ class TerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/terminal/{_SID}/resize',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def terminal_resize(self, session_id, cols=80, rows=24):
         """Send a PTY resize event."""
@@ -250,7 +250,7 @@ class TerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/terminal/{_SID}/close',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def terminal_close(self, session_id):
         """Close the terminal session and update the audit record."""

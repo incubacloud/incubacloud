@@ -127,7 +127,7 @@ class AssistantChat(http.Controller):
         }
         return sorted(hosts)
 
-    @http.route("/cloud/assistant/status", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/status", type="json", auth="user")
     def assistant_status(self):
         """Whether the person may use the assistant, and what the button and panel show.
 
@@ -163,14 +163,14 @@ class AssistantChat(http.Controller):
             "link_hosts": self._link_hosts(),
         }
 
-    @http.route("/cloud/assistant/accept_notice", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/accept_notice", type="json", auth="user")
     def assistant_accept_notice(self):
         """The person read what the assistant sends to the provider."""
         self._available()
         request.env.user.sudo().assistant_notice_at = fields.Datetime.now()
         return {"ok": True}
 
-    @http.route("/cloud/assistant/conversations", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/conversations", type="json", auth="user")
     def assistant_conversations(self):
         """The person's conversations of the last 30 days, the latest first."""
         since = fields.Datetime.now() - timedelta(days=LISTED_DAYS)
@@ -179,7 +179,7 @@ class AssistantChat(http.Controller):
         )
         return {"conversations": [c._format() for c in conversations]}
 
-    @http.route("/cloud/assistant/conversation", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/conversation", type="json", auth="user")
     def assistant_conversation(self, conversation_id):
         """One conversation and its messages; it is read now."""
         conversation = self._conversation(conversation_id)
@@ -192,7 +192,7 @@ class AssistantChat(http.Controller):
             "messages": [message._format() for message in messages],
         }
 
-    @http.route("/cloud/assistant/send", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/send", type="json", auth="user")
     def assistant_send(self, text, conversation_id=None, context=None, model_id=None):
         """The person writes: in a new conversation, or in one of theirs."""
         self._available()
@@ -238,7 +238,7 @@ class AssistantChat(http.Controller):
             "message": message._format(),
         }
 
-    @http.route("/cloud/assistant/set_model", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/set_model", type="json", auth="user")
     def assistant_set_model(self, conversation_id, model_id):
         """Change the conversation's model, among the allowed ones."""
         self._available()
@@ -250,33 +250,33 @@ class AssistantChat(http.Controller):
         conversation.sudo().write({"model_id": model_id, "provider": config.provider})
         return {"ok": True}
 
-    @http.route("/cloud/assistant/stop", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/stop", type="json", auth="user")
     def assistant_stop(self, conversation_id):
         """Stop the conversation's task (at the next step's check if one runs)."""
         conversation = self._conversation(conversation_id)
         conversation._stop()
         return {"ok": True, "conversation": conversation._format()}
 
-    @http.route("/cloud/assistant/retry", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/retry", type="json", auth="user")
     def assistant_retry(self, conversation_id):
         """Go on after an error or a stop."""
         self._available()
         conversation = self._conversation(conversation_id)
         return {"ok": conversation._retry(), "conversation": conversation._format()}
 
-    @http.route("/cloud/assistant/confirm", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/confirm", type="json", auth="user")
     def assistant_confirm(self, message_id):
         """The person confirms a card."""
         self._available()
         return self._card(message_id)._confirm_card()
 
-    @http.route("/cloud/assistant/cancel", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/cancel", type="json", auth="user")
     def assistant_cancel(self, message_id):
         """The person cancels a card."""
         self._available()
         return self._card(message_id)._cancel_card()
 
-    @http.route("/cloud/assistant/delete", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/delete", type="json", auth="user")
     def assistant_delete(self, conversation_id):
         """Delete one of the person's conversations; its task stops first."""
         conversation = self._conversation(conversation_id)

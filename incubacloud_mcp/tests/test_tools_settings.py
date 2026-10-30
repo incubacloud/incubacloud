@@ -20,7 +20,7 @@ from .common import (
 class _ApprovalProbe(http.Controller):
     """What update_settings would ask the user to approve (test only)."""
 
-    @http.route("/cloud/mcp_test/approval_text", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/approval_text", type="json", auth="user")
     def mcp_test_approval_text(self, args):
         """Return the approval text of update_settings for *args*, or None."""
         spec = request.env["incubacloud.mcp.catalog"]._spec("update_settings")

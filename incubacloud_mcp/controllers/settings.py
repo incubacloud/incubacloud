@@ -18,7 +18,7 @@ _SAVABLE = _MANAGED | {"rate_limit_mcp_user_per_min"}
 class McpSettingsController(http.Controller):
     """What the Connect an agent page and the Agents tab of Settings read and save."""
 
-    @http.route("/cloud/mcp/config", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/config", type="json", auth="user")
     def mcp_config(self):
         """What the Connect an agent page shows. Every cloud role."""
         request.env["cloud.security.mixin"]._check_cloud_group("group_cloud_user")
@@ -34,7 +34,7 @@ class McpSettingsController(http.Controller):
             "preferences_url": PREFERENCES_URL if api_keys else "",
         }
 
-    @http.route("/cloud/mcp/get_settings", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/get_settings", type="json", auth="user")
     def mcp_get_settings(self):
         """The MCP's settings, for Settings. Managers."""
         request.env["cloud.security.mixin"]._check_can_manage_settings()
@@ -47,7 +47,7 @@ class McpSettingsController(http.Controller):
             "managed": Settings._mcp_settings_managed(),
         }
 
-    @http.route("/cloud/mcp/save_settings", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp/save_settings", type="json", auth="user")
     def mcp_save_settings(self, vals):
         """Save what *vals* holds of the MCP's settings. Managers.
 

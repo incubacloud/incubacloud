@@ -33,7 +33,7 @@ SAFE_ERROR_LOGGER = "odoo.addons.incubacloud.controllers._safe_error"
 class _CallProbes(http.Controller):
     """Routes with known behaviour (test only)."""
 
-    @http.route("/cloud/mcp_test/echo", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/echo", type="json", auth="user")
     def mcp_test_echo(self, text=""):
         """Say who ran it."""
         return {
@@ -44,24 +44,24 @@ class _CallProbes(http.Controller):
             "lang": request.env.lang,
         }
 
-    @http.route("/cloud/mcp_test/refuse", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/refuse", type="json", auth="user")
     def mcp_test_refuse(self, name="", vals=None):
         """Write, then answer the panel's refusal shape."""
         request.env["cloud.tag"].create({"name": name})
         return {"ok": False, "error": "Refused on purpose"}
 
-    @http.route("/cloud/mcp_test/write_then_deny", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/write_then_deny", type="json", auth="user")
     def mcp_test_write_then_deny(self, name=""):
         """Write, then raise."""
         request.env["cloud.tag"].create({"name": name})
         raise AccessError("Denied on purpose")
 
-    @http.route("/cloud/mcp_test/crash", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/crash", type="json", auth="user")
     def mcp_test_crash(self):
         """Fail with internal detail."""
         raise RuntimeError("internal detail /srv/very/private/path")
 
-    @http.route("/cloud/mcp_test/leak", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/leak", type="json", auth="user")
     def mcp_test_leak(self, host_id):
         """Answer a secret, by key and inside text."""
         host = request.env["cloud.host"].sudo().browse(host_id)
@@ -72,7 +72,7 @@ class _CallProbes(http.Controller):
             "log": f"connecting with {host.password}",
         }
 
-    @http.route("/cloud/mcp_test/rotate", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/rotate", type="json", auth="user")
     def mcp_test_rotate(self, host_id, new_value=""):
         """Change a host's password; answer the old and the new one."""
         host = request.env["cloud.host"].sudo().browse(host_id)
@@ -80,40 +80,40 @@ class _CallProbes(http.Controller):
         host.password = new_value
         return {"ok": True, "log": f"rotated {old} to {new_value}"}
 
-    @http.route("/cloud/mcp_test/rotate_then_fail", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/rotate_then_fail", type="json", auth="user")
     def mcp_test_rotate_then_fail(self, host_id, new_value=""):
         """Change a host's password, then fail quoting the new one."""
         host = request.env["cloud.host"].sudo().browse(host_id)
         host.password = new_value
         raise UserError(f"could not finish rotating to {new_value}")
 
-    @http.route("/cloud/mcp_test/huge_list", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/huge_list", type="json", auth="user")
     def mcp_test_huge_list(self):
         """Answer a list far over 64 KB."""
         return [{"n": index, "text": "y" * 1000} for index in range(500)]
 
-    @http.route("/cloud/mcp_test/nothing", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/nothing", type="json", auth="user")
     def mcp_test_nothing(self):
         """Do its job and answer nothing, as some panel routes do."""
         request.env["cloud.tag"].create({"name": "mcp-did-it"})
 
-    @http.route("/cloud/mcp_test/queued", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/queued", type="json", auth="user")
     def mcp_test_queued(self, job_id):
         """Answer a job id alone, as most routes that enqueue do."""
         return {"ok": True, "job_id": job_id}
 
-    @http.route("/cloud/mcp_test/link", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/link", type="json", auth="user")
     def mcp_test_link(self):
         """Answer a link that signs someone in."""
         return {"ok": True, "body": f"Reset: {RESET_LINK}"}
 
-    @http.route("/cloud/mcp_test/deny_quoting", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/deny_quoting", type="json", auth="user")
     def mcp_test_deny_quoting(self, host_id):
         """Refuse, quoting the host's password."""
         host = request.env["cloud.host"].sudo().browse(host_id)
         raise UserError(f"denied for {host.password}")
 
-    @http.route("/cloud/mcp_test/huge", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/huge", type="json", auth="user")
     def mcp_test_huge(self):
         """Answer far more than 64 KB, in a list and in one string."""
         return {

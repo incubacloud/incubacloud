@@ -121,14 +121,18 @@ class CloudInstance(models.Model):
     ]
     _description = "Cloud Instance"
 
-    _name_project_uniq = models.Constraint(
-        "unique (project_id, name)",
-        "Instance name must be unique within a project.",
-    )
-    _one_production_per_project = models.Constraint(
-        "EXCLUDE (project_id WITH =) WHERE (environment = 'production' AND project_id IS NOT NULL)",
-        "A project can only have one production instance.",
-    )
+    _sql_constraints = [
+        (
+            'name_project_uniq',
+            "unique (project_id, name)",
+            "Instance name must be unique within a project."
+        ),
+        (
+            'one_production_per_project',
+            "EXCLUDE (project_id WITH =) WHERE (environment = 'production' AND project_id IS NOT NULL)",
+            "A project can only have one production instance."
+        ),
+    ]
 
     active = fields.Boolean(default=True)
     auto_rebuild = fields.Boolean(

@@ -534,7 +534,7 @@ class CloudController(Controller):
                 status=500,
             )
 
-    @http.route(["/cloud/ping"], type="jsonrpc", auth="user")
+    @http.route(["/cloud/ping"], type="json", auth="user")
     def cloud_ping(self):
         return {"response": "pong"}
 

@@ -88,7 +88,7 @@ class AssistantSettingsRoutes(http.Controller):
                 [
                     ("share", "=", False),
                     ("active", "=", True),
-                    ("all_group_ids", "in", groups),
+                    ("groups_id", "in", groups),
                 ],
                 order="name",
             )
@@ -151,7 +151,7 @@ class AssistantSettingsRoutes(http.Controller):
             return None, text
         return [model.as_dict() for model in models if model.tools is not False], None
 
-    @http.route("/cloud/assistant/get_settings", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/get_settings", type="json", auth="user")
     def assistant_get_settings(self):
         """The assistant's settings, the provider's models, the panel's users."""
         self._check()
@@ -182,7 +182,7 @@ class AssistantSettingsRoutes(http.Controller):
             "terms_url": Settings._assistant_terms_url(),
         }
 
-    @http.route("/cloud/assistant/save_settings", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/save_settings", type="json", auth="user")
     def assistant_save_settings(self, vals):
         """Save what *vals* holds, all of it checked; a new key is tried first.
 
@@ -410,7 +410,7 @@ class AssistantSettingsRoutes(http.Controller):
             "assistant_terms_accepted_ip": kept["ip"],
         }
 
-    @http.route("/cloud/assistant/refresh_models", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/refresh_models", type="json", auth="user")
     def assistant_refresh_models(self):
         """Read the provider's models again with the key kept."""
         self._check()
@@ -425,7 +425,7 @@ class AssistantSettingsRoutes(http.Controller):
         Settings._assistant_save_models(listing)
         return {"ok": True, "models": self._models(Settings._assistant_config())}
 
-    @http.route("/cloud/assistant/usage", type="jsonrpc", auth="user")
+    @http.route("/cloud/assistant/usage", type="json", auth="user")
     def assistant_usage(self, months=12):
         """Each user's tokens and approximate cost, per month."""
         self._check()

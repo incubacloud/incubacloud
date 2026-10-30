@@ -11,7 +11,7 @@ from odoo.addons.incubacloud_mcp.protocol.tool_spec import ToolSpec, integer, ob
 class _ProbeBase(http.Controller):
     """A route as a module declares it (test only: not loaded in production)."""
 
-    @http.route("/cloud/mcp_test/probe", type="jsonrpc", auth="user")
+    @http.route("/cloud/mcp_test/probe", type="json", auth="user")
     def mcp_test_probe(self, value=0):
         """The version the declaring module wrote."""
         return {"version": "base", "value": value}

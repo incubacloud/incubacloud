@@ -35,6 +35,6 @@ class McpDispatch(models.AbstractModel):
             rule, path_args = adapter.match(path, method="POST", return_rule=True)
         except HTTPException as exc:
             raise UserError(self.env._("The panel has no route %s.", path)) from exc
-        if rule.endpoint.routing.get("type") != "jsonrpc":
+        if rule.endpoint.routing.get("type") != "json":
             raise UserError(self.env._("The panel has no route %s.", path))
         return rule.endpoint(**path_args, **params)

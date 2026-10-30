@@ -232,7 +232,7 @@ class GitHubMixin:
 
     # ── GitHub App endpoints ─────────────────────────────────────────────────
 
-    @http.route(['/cloud/get_github_app'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_github_app'], type='json', auth='user')
     def cloud_get_github_app(self):
         # Manager-gated like save_github_app. The read uses sudo, so
         # without this any logged-in user (even without a cloud role)
@@ -260,7 +260,7 @@ class GitHubMixin:
             'install_url': f'https://github.com/apps/{slug}/installations/new' if slug else '',
         }
 
-    @http.route(['/cloud/save_github_app'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_github_app'], type='json', auth='user')
     def cloud_save_github_app(self, vals):
         self._sec()._check_can_manage_settings()
         App = request.env['cloud.github.app'].sudo()
@@ -332,7 +332,7 @@ class GitHubMixin:
 
         return {'ok': True}
 
-    @http.route(['/cloud/save_github_pat'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/save_github_pat'], type='json', auth='user')
     def cloud_save_github_pat(self, pat):
         """Save PAT independently of the GitHub App."""
         self._sec()._check_can_manage_settings()
@@ -342,12 +342,12 @@ class GitHubMixin:
         request.env['cloud.settings']._get().write({'github_pat': pat})
         return {'ok': True}
 
-    @http.route(['/cloud/test_github_connection'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/test_github_connection'], type='json', auth='user')
     def cloud_test_github_connection(self):
         self._sec()._check_can_manage_settings()
         return request.env['cloud.github.credential.service'].sudo().test_connection()
 
-    @http.route(['/cloud/reset_github_app'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/reset_github_app'], type='json', auth='user')
     def cloud_reset_github_app(self):
         """Delete the GitHub App configuration, allowing a fresh setup."""
         self._sec()._check_can_manage_settings()
@@ -356,7 +356,7 @@ class GitHubMixin:
             app.unlink()
         return {'ok': True}
 
-    @http.route(['/cloud/detect_github_installation'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/detect_github_installation'], type='json', auth='user')
     def cloud_detect_github_installation(self):
         """List active installations via JWT and auto-update installation_id if exactly one."""
         self._sec()._check_can_manage_settings()
@@ -394,7 +394,7 @@ class GitHubMixin:
         }
     # ── GitHub repo introspection ─────────────────────────────────────────────
 
-    @http.route(['/cloud/get_repo_branches'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_repo_branches'], type='json', auth='user')
     def cloud_get_repo_branches(self, url):
         """Return branch names for a GitHub repo.
 
@@ -519,7 +519,7 @@ class GitHubMixin:
             "and your GitHub credentials."
         )
 
-    @http.route(['/cloud/get_branch_head'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_branch_head'], type='json', auth='user')
     def cloud_get_branch_head(self, url, branch):
         """Return the HEAD commit SHA of a branch (for freeze).
 
@@ -556,7 +556,7 @@ class GitHubMixin:
             }
         return error
 
-    @http.route(['/cloud/freeze_repo'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/freeze_repo'], type='json', auth='user')
     def cloud_freeze_repo(self, repo_id, model):
         """Freeze a repo to its current branch HEAD. Writes commit_sha to DB."""
         self._sec()._check_cloud_group('group_cloud_consultant')
@@ -571,7 +571,7 @@ class GitHubMixin:
         repo.write({'commit_sha': res['sha']})
         return {'ok': True, 'sha': res['sha']}
 
-    @http.route(['/cloud/unfreeze_repo'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/unfreeze_repo'], type='json', auth='user')
     def cloud_unfreeze_repo(self, repo_id, model):
         """Unfreeze a repo — clears commit_sha so rebuilds use branch tip."""
         self._sec()._check_cloud_group('group_cloud_consultant')
@@ -583,7 +583,7 @@ class GitHubMixin:
         repo.write({'commit_sha': False})
         return {'ok': True}
 
-    @http.route(['/cloud/freeze_all_repos'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/freeze_all_repos'], type='json', auth='user')
     def cloud_freeze_all_repos(self, repo_ids, model):
         """Freeze multiple repos at once."""
         self._sec()._check_cloud_group('group_cloud_consultant')
@@ -604,7 +604,7 @@ class GitHubMixin:
                 results[repo.id] = res['sha']
         return {'ok': True, 'results': results}
 
-    @http.route(['/cloud/unfreeze_all_repos'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/unfreeze_all_repos'], type='json', auth='user')
     def cloud_unfreeze_all_repos(self, repo_ids, model):
         """Unfreeze multiple repos at once."""
         self._sec()._check_cloud_group('group_cloud_consultant')
@@ -616,7 +616,7 @@ class GitHubMixin:
         repos.filtered('commit_sha').write({'commit_sha': False})
         return {'ok': True}
 
-    @http.route(['/cloud/get_repo_modules'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_repo_modules'], type='json', auth='user')
     def cloud_get_repo_modules(self, url, branch):
         """Return Odoo addon module names found at the root of a branch."""
         self._sec()._check_cloud_group('group_cloud_consultant')
@@ -673,7 +673,7 @@ class GitHubMixin:
                 extra={'modules': []},
             )
 
-    @http.route(['/cloud/get_repo_requirements'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/get_repo_requirements'], type='json', auth='user')
     def cloud_get_repo_requirements(self, url, branch):
         """Fetch requirements.txt from the root of a GitHub repo branch."""
         self._sec()._check_cloud_group('group_cloud_consultant')
@@ -756,7 +756,7 @@ class GitHubMixin:
         return {'ok': True, 'found': False, 'content': ''}
     # ── odoo.sh import wizard ────────────────────────────────────────────────
 
-    @http.route(['/cloud/fetch_odoojs_submodules'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/fetch_odoojs_submodules'], type='json', auth='user')
     def cloud_fetch_odoojs_submodules(self, repo_url, branch='main'):
         """Inspect submodules through the bounded GitHub API workflow."""
         self._sec()._check_cloud_group('group_cloud_consultant')
@@ -961,7 +961,7 @@ class GitHubMixin:
 
     # ── Project import (unified: doodba / odoo.sh / simple) ─────────────────
 
-    @http.route(['/cloud/import_project'], type='jsonrpc', auth='user')
+    @http.route(['/cloud/import_project'], type='json', auth='user')
     def cloud_import_project(self, url, branch='main'):
         """Import a GitHub repo as project + production instance.
 
