@@ -469,6 +469,18 @@ class TestRefreshGate(CloudSecurityBase):
         with self.assertRaises(AccessError):
             self.prod.with_user(self.consultant).clone_to_staging("gate-x")
 
+    def test_a_developer_clones_production_to_a_staging(self):
+        """The clone is a new staging, not production relabelled (QA,
+        30-oct-2026: the creation was checked as a write of production)."""
+        with patch.object(
+            type(self.env["cloud.job"]), "enqueue_chain",
+            return_value=[21, 22, 23],
+        ):
+            res = self.prod.with_user(self.developer).clone_to_staging("gate-clone")
+        staging = self.env["cloud.instance"].browse(res["staging_id"])
+        self.assertEqual(staging.environment, "staging")
+        self.assertEqual(self.prod.environment, "production")
+
     def test_a_developer_passes_the_gate(self):
         with patch.object(
             type(self.env["cloud.job"]), "enqueue_chain",
