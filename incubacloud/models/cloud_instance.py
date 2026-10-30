@@ -4102,7 +4102,10 @@ class CloudInstance(models.Model):
     def create(self, vals_list):
         self._check_can_create_instance()
         for vals in vals_list:
-            self._check_guarded_vals(vals)
+            # Checked as a creation whatever ``create`` was called on: a
+            # clone calls it on its production, whose environment the
+            # check would otherwise read as changed to staging.
+            self.browse()._check_guarded_vals(vals)
             # Seeding ``state`` on create is legal (that is how an
             # already-running instance is imported), but ``deployed`` is
             # derived: Odoo would accept it here and then quietly
