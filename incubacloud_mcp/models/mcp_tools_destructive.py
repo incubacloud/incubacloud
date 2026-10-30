@@ -43,10 +43,12 @@ TOOLS = (
     ),
     _destructive(
         "delete_instance",
-        "Delete an instance with its stack and data. A production one needs a manager.",
+        "Delete an instance with its stack and data. A production one needs a "
+        "manager. A deployed one is taken off its server by a job: answers the "
+        "job_id; follow it with get_job.",
         _CONSULTANT,
         obj({"instance_id": _INSTANCE}, required=("instance_id",)),
-        route="/cloud/delete_instance",
+        handler="_tool_delete_instance",
     ),
     _destructive(
         "delete_archived_instance",
@@ -165,7 +167,7 @@ class McpCatalogDestructive(models.AbstractModel):
 
 
 class McpToolsDestructive(models.AbstractModel):
-    """What each destructive tool asks the user, and the one with a handler."""
+    """What each destructive tool asks the user, and the ones with a handler."""
 
     _inherit = "incubacloud.mcp.tools"
 
@@ -193,6 +195,30 @@ class McpToolsDestructive(models.AbstractModel):
         return self._record(
             "cloud.instance", instance_id, self.env._("Instance not found")
         )
+
+    @api.model
+    def _tool_delete_instance(self, args):
+        """Delete an instance as the panel's Delete does.
+
+        A deployed instance is taken off its server by a ``delete_instance``
+        job and leaves the panel when it ends, as the panel's Remove does
+        without keeping it; the route deletes only one never deployed.
+
+        :param dict args: ``instance_id``
+        :return: the route's answer, or the job's id and state
+        :rtype: dict
+        """
+        instance = self._instance(args["instance_id"])
+        if not instance.deployed:
+            return self._route("/cloud/delete_instance", instance_id=instance.id)
+        self.env["cloud.security.mixin"]._check_can_delete_instance(instance)
+        job_id = self.env["cloud.job"].enqueue(
+            instance.host_id.id,
+            instance.id,
+            "delete_instance",
+            {"keep_in_panel": False},
+        )
+        return self._with_job_state({"ok": True, "job_id": job_id})
 
     @api.model
     def _tool_delete_archived_instance(self, args):
