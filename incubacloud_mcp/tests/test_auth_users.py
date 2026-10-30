@@ -69,10 +69,16 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
         self.assertIn("inactive", error.message)
         self.user.active = True
         # Odoo 18 keeps implied groups in groups_id: the developer role
-        # leaves its cloud user behind unless that goes too.
-        developer = self.env.ref("incubacloud.group_cloud_developer")
-        cloud_user = self.env.ref("incubacloud.group_cloud_user")
-        self.user.groups_id = [(3, developer.id), (3, cloud_user.id)]
+        # leaves the roles below it behind unless they go too.
+        self.user.groups_id = [
+            (3, self.env.ref(f"incubacloud.{group}").id)
+            for group in (
+                "group_cloud_developer",
+                "group_cloud_project_manager",
+                "group_cloud_consultant",
+                "group_cloud_user",
+            )
+        ]
         error = self._refused(f"Bearer {self._token()}", 403)
         self.assertIn("no role", error.message)
 
