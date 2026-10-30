@@ -1,18 +1,22 @@
-/* IncubaCloud palette overrides for mkdocs-material */
+/* IncubaCloud palette overrides for mkdocs-material: the website's green */
 :root {
-  --md-primary-fg-color:        #2563EB;
-  --md-primary-fg-color--light:  #3B82F6;
-  --md-primary-fg-color--dark:   #1E3A8A;
-  --md-accent-fg-color:          #60A5FA;
-  --md-accent-fg-color--transparent: rgba(96,165,250,.10);
+  --md-primary-fg-color:        #0C7A55;
+  --md-primary-fg-color--light:  #1A9B6C;
+  --md-primary-fg-color--dark:   #0A5F43;
+  --md-accent-fg-color:          #0A5F43;
+  --md-accent-fg-color--transparent: rgba(12,122,85,.10);
 }
 
 [data-md-color-scheme="slate"] {
-  --md-default-bg-color:        #0B1120;
-  --md-default-fg-color:        #E5E7EB;
-  --md-default-fg-color--light: #9CA3AF;
-  --md-code-bg-color:           #111827;
-  --md-code-fg-color:           #E5E7EB;
+  --md-default-bg-color:        #0E1512;
+  --md-default-fg-color:        #E5ECE8;
+  --md-default-fg-color--light: #9AA5A0;
+  --md-code-bg-color:           #141D19;
+  --md-code-fg-color:           #E5ECE8;
+  /* The header's green reads on dark; links need a lighter one */
+  --md-typeset-a-color:         #4CC79A;
+  --md-accent-fg-color:         #6FD9B0;
+  --md-accent-fg-color--transparent: rgba(76,199,154,.12);
 }
 
 /* Slightly tighter container width for comfortable line length */
