@@ -288,7 +288,7 @@ def get_commands(self):
 
 **The job's transaction is not written.** An executor runs inside the transaction `queue_job` opened for its job (which holds the lock on the `queue.job` row), and nothing written there through `self.env` can be relied on:
 
-- `cloud.job.execute()` ends with `env.clear()`, which in Odoo 19 drops every write not flushed yet. Core 1.0.135 started VictoriaMetrics with a deletion key the database never received that way.
+- `cloud.job.execute()` ends with `env.clear()`, which in Odoo 18 and 19 drops every write not flushed yet. Core 1.0.135 started VictoriaMetrics with a deletion key the database never received that way.
 - `queue_job` rolls the whole transaction back when the job fails or is retried, and refuses a commit midway (it would release the job's lock).
 - A write that does get flushed holds its row until the job ends; a hook writing the same row on its own cursor then waits for a transaction that is waiting for the hook.
 - The transaction is REPEATABLE READ and its snapshot dates from the job's start, so a value committed on another cursor stays invisible to it — invalidating the cache and reading again returns the old value (measured).
