@@ -16,6 +16,8 @@ from odoo.addons.incubacloud.models.cloud_github_event import (
     GITHUB_APP_REVOKED_CODE,
 )
 
+from .test_cloud_github_app import _FAKE_PEM
+
 _CHUNK_MODULE = 'odoo.addons.incubacloud.models.cloud_job_log_chunk'
 
 
@@ -219,6 +221,12 @@ class TestGitHubEventRetentionReach(TransactionCase):
         super().setUp()
         self.Event = self.env['cloud.github.event']
         self.Alert = self.env['cloud.alert']
+        # Only the panel's own installation raises or clears the alert.
+        self.env['cloud.github.app'].search([]).unlink()
+        self.env['cloud.github.app'].create({
+            'app_id': '12345', 'private_key': _FAKE_PEM,
+            'installation_id': '4242',
+        })
 
     def _event(self, event_type, action='', delivery='d0'):
         return self.Event.create({
@@ -251,23 +259,28 @@ class TestGitHubEventRetentionReach(TransactionCase):
     def test_installation_deleted_raises_a_critical_alert(self):
         """Losing the App silently disables auto-rebuild and PR previews."""
         ev = self._event('installation', 'deleted', 'leak-inst-deleted')
-        ev._dispatch({})
+        ev._dispatch({'installation': {'id': 4242}})
         alert = self._active_revocation_alert()
         self.assertEqual(len(alert), 1)
         self.assertEqual(alert.level, 'critical')
         self.assertTrue(ev.processed)
 
     def test_installation_suspend_raises_the_same_alert(self):
-        self._event('installation', 'suspend', 'leak-inst-susp')._dispatch({})
+        self._event('installation', 'suspend', 'leak-inst-susp')._dispatch(
+            {'installation': {'id': 4242}},
+        )
         self.assertTrue(self._active_revocation_alert())
 
     def test_unsuspend_clears_the_revocation_alert(self):
-        self._event('installation', 'suspend', 'leak-s1')._dispatch({})
-        self._event('installation', 'unsuspend', 'leak-s2')._dispatch({})
+        own = {'installation': {'id': 4242}}
+        self._event('installation', 'suspend', 'leak-s1')._dispatch(own)
+        self._event('installation', 'unsuspend', 'leak-s2')._dispatch(own)
         self.assertFalse(self._active_revocation_alert())
 
     def test_reinstalling_clears_the_revocation_alert(self):
-        self._event('installation', 'deleted', 'leak-r1')._dispatch({})
+        self._event('installation', 'deleted', 'leak-r1')._dispatch(
+            {'installation': {'id': 4242}},
+        )
         self._event('installation', 'created', 'leak-r2')._dispatch(
             {'installation': {'id': 77}},
         )
