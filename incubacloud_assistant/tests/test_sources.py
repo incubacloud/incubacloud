@@ -5,6 +5,9 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import requests
 
 from odoo.modules.module import get_module_path
 from odoo.tests import tagged
@@ -88,6 +91,91 @@ class TestSourcesOnATree(BaseCase):
             found["sections"][0]["url"],
             "https://docs.incubacloud.io/backups/restore/#from-another-server",
         )
+
+
+class TestSourcesPublished(BaseCase):
+    """Without a docs folder, as on a built image: the site's search index."""
+
+    INDEX = {
+        "docs": [
+            {"location": "agents/", "title": "AI agents", "text": "<p>Connect an agent.</p>"},
+            {
+                "location": "agents/#connect-an-mcp-client",
+                "title": "Connect an MCP client",
+                "text": "<p>Copy the panel&#39;s <code>MCP</code> address.</p>",
+            },
+        ]
+    }
+
+    def setUp(self):
+        """A tree with the module and no docs; nothing read from the site yet."""
+        super().setUp()
+        self.root = tempfile.mkdtemp()
+        Path(self.root, "incubacloud").mkdir()
+        patcher = patch.dict(sources._published, {"at": 0.0, "sections": None})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _site(self, *answers):
+        """Patch the site's answers in turn: an index, or an exception to raise."""
+        responses = []
+        for answer in answers:
+            if isinstance(answer, Exception):
+                responses.append(answer)
+                continue
+            response = MagicMock(spec=requests.Response)
+            response.json.return_value = answer
+            responses.append(response)
+        return patch.object(sources.requests, "get", side_effect=responses)
+
+    def test_the_published_index_answers_with_its_own_links(self):
+        """Its section, its text without markup, and the site's address of it."""
+        with self._site(self.INDEX) as get:
+            found = sources.search_docs(self.root, "connect MCP client", 1)
+        get.assert_called_once_with(
+            sources.PUBLISHED_INDEX_URL, timeout=sources.SEARCH_SECONDS
+        )
+        self.assertEqual(
+            found["sections"],
+            [
+                {
+                    "page": "agents/",
+                    "heading": "Connect an MCP client",
+                    "url": "https://docs.incubacloud.io/agents/#connect-an-mcp-client",
+                    "text": "Copy the panel's MCP address.",
+                }
+            ],
+        )
+
+    def test_the_index_is_read_once_an_hour(self):
+        """A second search reuses it; past the hour the site is read again."""
+        with self._site(self.INDEX, self.INDEX) as get:
+            sources.search_docs(self.root, "agent", 3)
+            sources.search_docs(self.root, "agent", 3)
+            self.assertEqual(get.call_count, 1)
+            sources._published["at"] -= sources.PUBLISHED_INDEX_SECONDS
+            sources.search_docs(self.root, "agent", 3)
+            self.assertEqual(get.call_count, 2)
+
+    def test_an_unreachable_site_serves_the_copy_last_read(self):
+        """An old copy rather than nothing; without one, where the docs are."""
+        with self._site(requests.ConnectionError("down")):
+            with self.assertRaisesRegex(sources.SourceError, "docs.incubacloud.io"):
+                sources.search_docs(self.root, "agent", 3)
+        with self._site(self.INDEX, requests.Timeout("slow")):
+            sources.search_docs(self.root, "agent", 3)
+            sources._published["at"] -= sources.PUBLISHED_INDEX_SECONDS
+            found = sources.search_docs(self.root, "agent", 3)
+        self.assertEqual(found["sections"][0]["page"], "agents/")
+
+    def test_a_docs_folder_is_searched_without_asking_the_site(self):
+        """A checkout, as on devel or in the CI, reads its own files."""
+        Path(self.root, *sources.DOCS_DIR).mkdir(parents=True)
+        Path(self.root, *sources.DOCS_DIR, "agents.md").write_text("# Agents\n\nConnect.\n")
+        with self._site() as get:
+            found = sources.search_docs(self.root, "connect", 3)
+        get.assert_not_called()
+        self.assertEqual(found["sections"][0]["url"], "https://docs.incubacloud.io/agents/#agents")
 
 
 @tagged("post_install", "-at_install")

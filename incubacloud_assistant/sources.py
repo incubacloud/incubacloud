@@ -5,13 +5,17 @@ module — and only its public entries, a closed list. Never anything else
 on the disk: on the master and on the tenant panels, saas's private code
 is installed beside it. A path with ``..``, a hidden part, a link that
 leaves the repository or a binary file is refused; a vendored library and
-a generated site are not searched.
+a generated site are not searched. Where the image carries no ``docs``
+folder, the documentation is searched on its published site instead.
 """
 
+import html
 import os
 import re
 import time
 import unicodedata
+
+import requests
 
 from odoo.modules.module import get_module_path
 
@@ -80,8 +84,17 @@ SEARCH_SECONDS = 5
 #: The user documentation, and where it is published.
 DOCS_DIR = ("docs", "user", "docs")
 DOCS_URL = "https://docs.incubacloud.io/"
+#: The search index mkdocs publishes with the site, read when an image
+#: carries no ``docs`` folder: Doodba's ``400-clean`` keeps only the
+#: modules of core's repository, on the master and on the tenant panels.
+PUBLISHED_INDEX_URL = DOCS_URL + "search/search_index.json"
+#: Seconds the published index is kept before it is read again.
+PUBLISHED_INDEX_SECONDS = 3600
+#: The published sections last read, and when: ``{"at", "sections"}``.
+_published = {"at": 0.0, "sections": None}
 _WORD_RE = re.compile(r"[a-z0-9]{3,}")
 _HEADING_RE = re.compile(r"^(#{1,4})\s+(.*)$")
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 class SourceError(ValueError):
@@ -260,9 +273,15 @@ def _page_url(relative):
     return DOCS_URL + (f"{page}/" if page and not page.endswith("/") else page)
 
 
-def _sections(root):
-    """Yield ``(relative file, heading, text)`` of every section of the docs."""
-    docs = os.path.join(root, *DOCS_DIR)
+def _sections(docs):
+    """Yield ``(page, heading, text, url)`` of every section of the docs folder."""
+    for relative, heading, text in _file_sections(docs):
+        url = _page_url(relative) + (f"#{_slug(heading)}" if heading else "")
+        yield relative, heading, text, url
+
+
+def _file_sections(docs):
+    """Yield ``(relative file, heading, text)`` of every section under *docs*."""
     for folder, dirs, files in os.walk(docs, followlinks=False):
         dirs[:] = sorted(name for name in dirs if not name.startswith("."))
         for name in sorted(files):
@@ -296,17 +315,54 @@ def search_docs(root, query, limit):
     terms = set(_words(query or ""))
     if not terms:
         raise SourceError("Give keywords, in English.")
+    docs = os.path.join(root, *DOCS_DIR)
+    found = _sections(docs) if os.path.isdir(docs) else _published_sections()
     scored = []
-    for relative, heading, text in _sections(root):
+    for page, heading, text, url in found:
         heading_words, text_words = _words(heading), _words(text)
         score = sum(3 * heading_words.count(t) + text_words.count(t) for t in terms)
         if score:
-            scored.append((score, relative, heading, text))
-    scored.sort(key=lambda item: (-item[0], item[1]))
-    sections = []
-    for _score, relative, heading, text in scored[:limit]:
-        url = _page_url(relative) + (f"#{_slug(heading)}" if heading else "")
-        sections.append(
-            {"page": relative, "heading": heading, "url": url, "text": text[:800]}
-        )
-    return {"sections": sections}
+            scored.append((score, page, heading, text, url))
+    scored.sort(key=lambda item: (-item[0], item[1], item[4]))
+    return {
+        "sections": [
+            {"page": page, "heading": heading, "url": url, "text": text[:800]}
+            for _score, page, heading, text, url in scored[:limit]
+        ]
+    }
+
+
+def _published_sections():
+    """Return ``[(page, heading, text, url)]`` of the published documentation.
+
+    Read from the site's search index and kept for
+    ``PUBLISHED_INDEX_SECONDS``; when the site cannot be read, the copy
+    last read serves, however old.
+
+    :raise SourceError: the site cannot be read and nothing was read before.
+    """
+    now = time.monotonic()
+    cached = _published["sections"]
+    if cached is not None and now - _published["at"] < PUBLISHED_INDEX_SECONDS:
+        return cached
+    try:
+        response = requests.get(PUBLISHED_INDEX_URL, timeout=SEARCH_SECONDS)
+        response.raise_for_status()
+        entries = response.json()["docs"]
+        sections = [
+            (
+                entry["location"].partition("#")[0],
+                entry["title"],
+                " ".join(html.unescape(_TAG_RE.sub(" ", entry["text"])).split()),
+                DOCS_URL + entry["location"],
+            )
+            for entry in entries
+        ]
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        if cached is not None:
+            return cached
+        raise SourceError(
+            f"The documentation cannot be searched right now; it is at {DOCS_URL}."
+        ) from None
+    _published.update(at=now, sections=sections)
+    return sections
