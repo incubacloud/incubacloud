@@ -18,6 +18,10 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
         "web",
         "bus",
         "queue_job",
+        # OCA queue_job 18's channel tree imports web_editor without
+        # depending on it: hoot loads only a module's dependencies, so
+        # the front-end tests would fail to load it. Installed anyway.
+        "web_editor",
     ],
     "data": [
         # Security loads first so groups and the cron bot user exist
@@ -102,12 +106,8 @@ S3 backups, GitHub webhook integration, and a full OWL single-page application.
             "web/static/src/views/fields/formatters.js",
             "web/static/lib/odoo_ui_icons/*",
             "bus/static/src/services/bus_service.js",
-            "bus/static/src/services/worker_service.js",
             "bus/static/src/bus_parameters_service.js",
-            "bus/static/src/legacy_multi_tab_service.js",
             "bus/static/src/multi_tab_service.js",
-            "bus/static/src/multi_tab_shared_worker_service.js",
-            "bus/static/src/multi_tab_fallback_service.js",
             "bus/static/src/workers/*",
         ],
         "incubacloud._assets_cloud": [

@@ -1,3 +1,4 @@
+from . import odoo18_mail  # noqa: F401  (must run before the tests)
 from . import (
     test_password_utils,
     test_deferred_unlink,
