@@ -21,7 +21,7 @@
         Inline styles only: email clients ignore stylesheets.
     -->
     <template id="mail_layout" name="Mail: company layout">
-<t t-set="accent" t-value="company.email_secondary_color or '#0c7a55'"/>
+<t t-set="accent" t-value="company.email_secondary_color or '#875A7B'"/>
 <t t-set="logo_url" t-value="company.env['ir.config_parameter'].sudo().get_param('incubacloud.mail_logo_url') or ('/logo.png?company=%s' % company.id)"/>
 <t t-set="site_label" t-value="(company.website or '').split('//')[-1].rstrip('/')"/>
 <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%"
