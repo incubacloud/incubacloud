@@ -324,7 +324,8 @@ class TestRefreshFromProduction(TransactionCase):
     def test_a_running_job_makes_the_refresh_wait(self):
         # Inherited from the staging's job queue: a smoke test, since
         # cloud.job owns the behaviour.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         job_type = self.env["cloud.job.type"].search(
             [("code", "=", "deploy_instance")], limit=1,
         )

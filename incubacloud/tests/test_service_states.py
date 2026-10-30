@@ -27,7 +27,8 @@ class _SleepAwareInstance(TransactionCase):
         super().setUp()
         # The probe writes alerts on a cursor of its own; without test
         # mode those writes cannot see the records created here.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "SvcProj"})
         self.host = self.env["cloud.host"].create({
             "name": "svc-host",

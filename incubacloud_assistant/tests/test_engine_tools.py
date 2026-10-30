@@ -434,7 +434,7 @@ class TestEngineTools(EngineMixin, TransactionCase):
         with trap_jobs():
             conversation = self._working(self.dev)
         conversation.sudo().write({"state": "waiting_job", "waiting_job_id": job.id})
-        self.dev.sudo().group_ids = [(6, 0, [self.env.ref("base.group_user").id])]
+        self.dev.sudo().groups_id = [(6, 0, [self.env.ref("base.group_user").id])]
         with trap_jobs() as trap:
             job.write({"state": "failed"})
         trap.assert_jobs_count(1)

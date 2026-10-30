@@ -577,7 +577,8 @@ class TestTheConsumedGrantOutlivesTheJob(JobEndAssertions, TransactionCase):
     def setUp(self):
         """A restore job that consumes a checked upload grant."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "consumed-host",
             "ip_address": "198.51.100.22",
@@ -656,7 +657,8 @@ class TestTheJobSecretIsTheServers(TransactionCase):
     def setUp(self):
         """A project with a stakeholder and a developer, and an instance."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "secret-reader-host",
             "ip_address": "198.51.100.24",
@@ -1052,7 +1054,8 @@ class TestPeopleReadGrantsAndNeverWriteThem(TransactionCase):
     def setUp(self):
         """A developer of a project, an instance of it, and a grant."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "grant-writer-host", "ip_address": "198.51.100.27",
             "user": "root", "wildcard_domain": "grant-writer.example",
@@ -1134,7 +1137,8 @@ class TestAGrantIsReadOnlyByThoseWhoSeeItsInstance(TransactionCase):
     def setUp(self):
         """Two projects with an instance and a grant each, and their people."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         host = self.env["cloud.host"].create({
             "name": "grant-scope-host", "ip_address": "198.51.100.28",
             "user": "root", "wildcard_domain": "grant-scope.example",

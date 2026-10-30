@@ -591,7 +591,8 @@ class TestInstanceMove(TransactionCase):
     def test_the_rollback_cleanup_reads_the_markers_again_after_its_wait(self):
         """Waited out, it went on «anyway»: by then the rollback may have
         ended and a new move begun."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self._rolling_back()
         executor = self._rollback_cleanup(self.target)
         executor.pre_run_checks()
@@ -625,7 +626,8 @@ class TestInstanceMove(TransactionCase):
         """Refused before it connects: nothing at all runs on the source."""
         # The refusal is logged on cursors of their own, riding on the
         # test's transaction only in this mode.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.inst.write({
             'move_origin_host_id': self.source.id,
             'move_target_host_id': self.target.id,

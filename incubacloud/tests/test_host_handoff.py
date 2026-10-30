@@ -498,7 +498,8 @@ class TestARestoreRetriedAfterAFailure(_HandoffBase):
         return [c.args[0] for c in transport.execute.await_args_list], exc
 
     def test_the_archive_survives_the_failure_and_goes_after_success(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         source, pair = self._restore_pair(self.host_a)
         first = RestoreInstanceExecutor(pair.job, self.host_a)
         handoff = handoff_dir(self.env, source.id)
@@ -676,7 +677,8 @@ class TestAHandoffNobodyWaitsFor(_HandoffBase):
         two steps of one chain."""
         super().setUp()
         # The download reads its chain on a cursor of its own.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.source, ex = self._restore_pair(self.host_b)
         self.restore = ex.job
         (self.source | self.restore).write({

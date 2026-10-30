@@ -79,7 +79,8 @@ class _EscrowCase(JobEndAssertions, TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "esc-host", "ip_address": "192.0.2.50", "user": "ubuntu",
             "wildcard_domain": "esc.example.com",

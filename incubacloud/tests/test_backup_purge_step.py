@@ -79,7 +79,8 @@ class _PurgeBase(TransactionCase):
         # Executors write alerts on their own cursor; without test mode
         # that connection cannot see this transaction's records and the
         # INSERT dies on the instance/host foreign key.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.project = self.env["cloud.project"].create({"name": "pg-proj"})
         self.host = self.env["cloud.host"].create({

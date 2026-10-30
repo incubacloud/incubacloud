@@ -124,7 +124,8 @@ class _StagingCase(TransactionCase):
         super().setUp()
         # The run's hooks and Full Setup's status write use their own
         # cursor.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         cert, key = make_pair(("*.staging-secrets.example.com",))
         self.host = self.env["cloud.host"].create({
             "name": "staging-secrets-host",

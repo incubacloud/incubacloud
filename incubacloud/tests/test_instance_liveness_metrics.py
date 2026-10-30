@@ -111,7 +111,8 @@ class InstanceLivenessCase(TransactionCase):
         # COMMITTED (see ``models/_concurrency``). Without test mode
         # that cursor is a real one: its writes would commit for good
         # and leak into the next test.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.settings = self.env["cloud.settings"].sudo()._get_system()
         self.settings.write({
             "metrics_enabled": True,

@@ -32,7 +32,8 @@ class _NoticeCase(TransactionCase):
     def setUp(self):
         """A deployed staging on a host; Spanish active, two types named in it."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.env["res.lang"]._activate_lang("es_ES")
         self.host = self.env["cloud.host"].create({
             "name": "notice-host",

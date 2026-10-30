@@ -25,7 +25,8 @@ from odoo.addons.incubacloud.controllers._data_load import _routes_crud
 class _ArchivedBase(TransactionCase):
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.project = self.env["cloud.project"].create({"name": "ar-proj"})
         self.host = self.env["cloud.host"].create({

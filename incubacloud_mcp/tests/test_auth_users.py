@@ -69,7 +69,7 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
         self.assertIn("inactive", error.message)
         self.user.active = True
         developer = self.env.ref("incubacloud.group_cloud_developer")
-        self.user.group_ids = [(3, developer.id)]
+        self.user.groups_id = [(3, developer.id)]
         error = self._refused(f"Bearer {self._token()}", 403)
         self.assertIn("no role", error.message)
 
@@ -156,7 +156,7 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
     def test_a_portal_user_with_a_key_is_403(self):
         """A portal user's API key is a 403: agents act for internal users."""
         portal = self._cloud_user("mcp-auth-portal", group="group_cloud_user")
-        portal.group_ids = [(6, 0, [self.env.ref("base.group_portal").id])]
+        portal.groups_id = [(6, 0, [self.env.ref("base.group_portal").id])]
         error = self._refused(f"Bearer {self._api_key(portal)}", 403)
         self.assertIn("internal users only", error.message)
 
@@ -174,7 +174,8 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
 
     def test_sixty_failures_from_an_address_block_it(self):
         """The sixtieth failure in a minute blocks that address only."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         auth = self.auth.with_context(force_rate_limit=True)
         for _i in range(AUTH_FAILURES_PER_MIN - 1):
             auth._count_failure("198.51.100.7")
@@ -185,7 +186,8 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
 
     def test_a_failure_says_whether_its_address_is_within_the_limit(self):
         """Counting a failure answers whether the address is still within it."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         auth = self.auth.with_context(force_rate_limit=True)
         within = [
             auth._count_failure("198.51.100.9")
@@ -195,7 +197,8 @@ class TestAuthenticate(JwtMixin, McpUsersMixin, TransactionCase):
 
     def test_failures_from_one_ipv6_network_count_together(self):
         """IPv6 failures are counted per /64: one host has the whole block."""
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         auth = self.auth.with_context(force_rate_limit=True)
         for index in range(1, AUTH_FAILURES_PER_MIN + 1):
             auth._count_failure(f"2001:db8:1:2::{index:x}")

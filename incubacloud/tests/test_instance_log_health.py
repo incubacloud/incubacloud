@@ -303,7 +303,8 @@ class TestLogHealthAlerts(TransactionCase):
         super().setUp()
         # The probe writes alerts on a cursor of its own; test mode lets
         # that cursor see the records created here.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create(
             {"name": "LogAlert Proj"},
         )

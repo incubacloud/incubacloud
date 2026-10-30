@@ -66,7 +66,7 @@ class TestJobBrief(HttpCase):
             'name': login,
             'login': login,
             'password': login,
-            'group_ids': [(6, 0, [self.env.ref(g).id for g in groups])],
+            'groups_id': [(6, 0, [self.env.ref(g).id for g in groups])],
         })
 
     def _job(self, uuid, final_state, exc_message=None):

@@ -23,7 +23,8 @@ class TestTheSshAllowlistChangesLive(TransactionCase):
         super().setUp()
         # The list is kept on a cursor of its own: test mode makes it ride
         # on this transaction, so the write is seen and rolled back.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env['cloud.host'].create({
             'name': 'al-host', 'ip_address': '192.0.2.60', 'user': 'ubuntu',
             'wildcard_domain': 'al.example.com',
@@ -138,7 +139,8 @@ class TestTheAllowlistHoldsAddresses(TransactionCase):
         """A host with no list yet; the list is kept on a cursor of its
         own, which test mode makes ride on this transaction."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env['cloud.host'].create({
             'name': 'al-norm-host', 'ip_address': '192.0.2.61', 'user': 'ubuntu',
             'wildcard_domain': 'al-norm.example.com',

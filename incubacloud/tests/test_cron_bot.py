@@ -20,14 +20,14 @@ class TestCronBotUser(TransactionCase):
 
     def test_user_is_in_cloud_manager_group(self):
         g_manager = self.env.ref('incubacloud.group_cloud_manager')
-        self.assertIn(g_manager, self.bot.all_group_ids)
+        self.assertIn(g_manager, self.bot.groups_id)
 
     def test_user_is_NOT_system_administrator(self):
         """Scope check: if the bot ever inherits ``base.group_system``
         (superuser), the whole exercise is pointless. Catch it here."""
         g_system = self.env.ref('base.group_system')
         self.assertNotIn(
-            g_system, self.bot.all_group_ids,
+            g_system, self.bot.groups_id,
             "cron bot must not inherit base.group_system",
         )
 
@@ -84,9 +84,9 @@ class TestCronBotUser(TransactionCase):
         offenders = []
         for cron in crons:
             action = cron.ir_actions_server_id.sudo()
-            groups = action.group_ids
+            groups = action.groups_id
             if groups:
-                if not (groups & cron.user_id.all_group_ids):
+                if not (groups & cron.user_id.groups_id):
                     offenders.append(
                         "%s: user %s is in none of the action groups %s"
                         % (cron.cron_name, cron.user_id.login,

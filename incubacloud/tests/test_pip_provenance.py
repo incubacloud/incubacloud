@@ -169,7 +169,8 @@ class TestResyncExecutor(JobEndAssertions, TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env['cloud.project'].create({
             'name': 'Resync Project',
             'pip_dependencies': 'libx==1.0\n',

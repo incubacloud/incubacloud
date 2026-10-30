@@ -12,7 +12,7 @@ import asyncssh
 from asyncssh.misc import _ACMWrapper
 
 from odoo import api, sql_db
-from odoo.orm.environments import Transaction
+from odoo.api import Transaction
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
 

@@ -25,7 +25,8 @@ class TestHealthCheckLog(TransactionCase):
         # Alerts and log lines are written on the executor's own cursor;
         # test mode makes it ride on this transaction, so both are
         # really written and really rolled back.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.project = self.env["cloud.project"].create({"name": "HLog Proj"})
         self.host = self.env["cloud.host"].create({
             "name": "hlog-host",

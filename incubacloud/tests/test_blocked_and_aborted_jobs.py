@@ -61,7 +61,8 @@ class _DeployJobCase(TransactionCase):
     def setUp(self):
         """An instance in 'deploying' on two repositories, and its deploy job."""
         super().setUp()
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         self.host = self.env["cloud.host"].create({
             "name": "blocked-host",
             "ip_address": "10.0.0.71",
@@ -767,7 +768,7 @@ class TestCronBotInbox(TransactionCase):
         self.assertEqual(bot.notification_type, "inbox")
         self.assertIn(
             self.env.ref("mail.group_mail_notification_type_inbox"),
-            bot.group_ids,
+            bot.groups_id,
         )
 
 

@@ -29,7 +29,8 @@ from odoo.addons.incubacloud.models.purge_archived_executor import (
 class _ArchivedPurgeBase(TransactionCase):
 
     def setUp(self):
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.project = self.env["cloud.project"].create({"name": "pa-proj"})
         self.host = self.env["cloud.host"].create({

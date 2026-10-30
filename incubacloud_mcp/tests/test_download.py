@@ -136,7 +136,7 @@ class TestDownload(
     def test_a_user_who_lost_the_role_cannot_use_it(self):
         """A link of a user who is no longer a developer serves nothing."""
         path = self._link()
-        self.dev.group_ids = [(3, self.env.ref("incubacloud.group_cloud_developer").id)]
+        self.dev.groups_id = [(3, self.env.ref("incubacloud.group_cloud_developer").id)]
         self.env.flush_all()
         self.assertEqual(self._get(path).status_code, 404)
 

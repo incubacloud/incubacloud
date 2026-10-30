@@ -40,7 +40,8 @@ class _UncheckedCase(TransactionCase):
         """Create the instance the jobs run on, not running and in 'error'."""
         # The outcome hooks write on a cursor of their own; without test
         # mode it cannot see this transaction's records.
-        self.registry_enter_test_mode()
+        self.registry.enter_test_mode(self.cr)
+        self.addCleanup(self.registry.leave_test_mode)
         super().setUp()
         self.project = self.env["cloud.project"].create({"name": "cu-proj"})
         self.host = self.env["cloud.host"].create({
