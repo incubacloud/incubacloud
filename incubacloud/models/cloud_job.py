@@ -2088,8 +2088,17 @@ class CloudJob(models.Model):
         it would turn a job that succeeded into a failure, with its alert
         and its mail.
 
+        What the transaction wrote before the hooks is flushed outside
+        their savepoint: it is the transition itself, and a concurrent
+        update it meets is the runner's to retry (queue_job postpones the
+        job). Flushed by the savepoint, the failure came before the
+        savepoint existed, was taken for the hook's and left the
+        transaction aborted: a rebuild that succeeded ended failed (QA,
+        30-oct-2026).
+
         :param str new_state: ``done``, ``failed`` or ``cancelled``
         """
+        self.env.flush_all()
         for job in self:
             try:
                 with self.env.cr.savepoint():

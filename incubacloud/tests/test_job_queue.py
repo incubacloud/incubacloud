@@ -26,6 +26,7 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 from psycopg2 import IntegrityError
+from psycopg2.errors import SerializationFailure
 
 from odoo import fields, http
 from odoo.exceptions import AccessError, UserError, ValidationError
@@ -3314,6 +3315,26 @@ class TestDispatchAfterCommit(_QueueCase):
         ]))
         _run_after_commit(self.env)
         self.assertEqual(restart.state, "pending")
+
+    def test_a_concurrent_update_of_the_transition_is_the_runners_to_retry(self):
+        """The transition's own writes flush outside the hooks' savepoint:
+        a serialization failure reaches queue_job, which postpones the job,
+        instead of being logged as the hook's and failing it."""
+        rebuild = self._enqueue("rebuild_instance")
+        rebuild.queue_job_id.write({"state": "started"})
+        conflict = SerializationFailure(
+            "could not serialize access due to concurrent update"
+        )
+        # The test's own savepoint first: assertRaises flushes on entry.
+        with (
+            self.assertRaises(SerializationFailure),
+            patch.object(type(self.Job), "_after_job_terminal", autospec=True) as hook,
+            patch.object(
+                type(self.env), "flush_all", autospec=True, side_effect=conflict,
+            ),
+        ):
+            rebuild.queue_job_id.write({"state": "done"})
+        hook.assert_not_called()
 
     def test_a_target_busy_for_a_fresh_read_keeps_the_new_job_waiting(self):
         """This snapshot sees the instance free, a READ COMMITTED read
