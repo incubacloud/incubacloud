@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["19.0"]
+    branches: ["18.0"]
   pull_request:
-    branches: ["19.0"]
+    branches: ["18.0"]
   # A run lost to an Actions outage cannot be recovered: GitHub keeps
   # reporting it queued while cancel, rerun and force-cancel all refuse
   # it as already completed. Without a manual trigger the only way back
@@ -17,9 +17,9 @@ permissions: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # queue_job as production runs it (19.0.2.1.6), the commit repos.yaml
-  # pins: the head of OCA's 19.0 moves under a release otherwise.
-  OCA_QUEUE_REF: da2664795eb525698f93dfdd63f6ba5c4c9fccba
+  # queue_job 18.0, the commit the 18.0 root clones: the head of OCA's
+  # 18.0 moves under a release otherwise.
+  OCA_QUEUE_REF: 4ccc50b153fdfd4ea48292978070043cda2e9aee
 
 jobs:
   lint:
@@ -117,15 +117,11 @@ jobs:
     permissions:
       contents: read
     # CN-011: Pinned to digest to prevent silent image changes.
-    # Update intentionally: docker pull ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
-    #   then: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest
+    # Update intentionally: docker pull ghcr.io/oca/oca-ci/py3.10-odoo18.0:latest
+    #   then: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/oca/oca-ci/py3.10-odoo18.0:latest
     #
-    # Known gap vs runtime: prod/devel run Python 3.12 (Doodba's
-    # 19.0-onbuild image). OCA does not publish a py3.12 variant for
-    # Odoo 19.0 — their build matrix (OCA/oca-ci/.github/workflows/ci.yaml)
-    # tops out at py3.10 for this Odoo version. This is outside our
-    # control; revisit once OCA adds a py3.12-odoo19.0 image.
-    container: ghcr.io/oca/oca-ci/py3.10-odoo19.0@sha256:9147149654ace4f05a16a4b76772a9f5e4021932291fdffcc8918a13ae80446c
+    # Python 3.10, as Doodba's 18.0 image runs it.
+    container: ghcr.io/oca/oca-ci/py3.10-odoo18.0@sha256:1ee28d2a45acd175c63a9fdf00d20ac815a97aa5c1d915610c610129d96b9234
 
     services:
       postgres:
@@ -223,7 +219,7 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: read
-    container: ghcr.io/oca/oca-ci/py3.10-odoo19.0@sha256:9147149654ace4f05a16a4b76772a9f5e4021932291fdffcc8918a13ae80446c
+    container: ghcr.io/oca/oca-ci/py3.10-odoo18.0@sha256:1ee28d2a45acd175c63a9fdf00d20ac815a97aa5c1d915610c610129d96b9234
 
     services:
       postgres:
@@ -452,7 +448,7 @@ jobs:
       # (dependencies/pip.txt) so the linter judges the playbooks
       # against the version that will actually run them.
       - name: Install ansible-lint
-        run: pip install 'ansible-core==2.21.2' 'ansible-lint==26.6.0'
+        run: pip install 'ansible-core==2.17.14' 'ansible-lint==26.6.0'
 
       - name: Run ansible-lint
         run: ansible-lint incubacloud/ansible
