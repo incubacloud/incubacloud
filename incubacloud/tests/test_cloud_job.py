@@ -1072,7 +1072,7 @@ class TestLoadHistoryAccessControl(TransactionCase):
     def test_user_lacks_queue_job_manager_group(self):
         # Sanity: confirm we're testing the right scenario.
         manager_group = self.env.ref('queue_job.group_queue_job_manager')
-        self.assertNotIn(self.user, manager_group.user_ids)
+        self.assertNotIn(self.user, manager_group.users)
 
     def test_load_history_does_not_raise_for_cloud_user(self):
         result = (
