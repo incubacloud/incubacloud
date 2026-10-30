@@ -42,7 +42,7 @@
             display: inline-block;
             font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
             font-size: 13px;
-            color: #8fd0dc;
+            color: #9fd6e2;
             background: #19201b;
             border: 1px solid #2b382f;
             border-radius: 6px;
@@ -52,9 +52,9 @@
         }
 
         .warn {
-            background: #2e2614;
-            border: 1px solid #6b5a2d;
-            color: #f0d080;
+            background: rgba(239,165,62,.14);
+            border: 1px solid rgba(239,165,62,.4);
+            color: #f0c987;
             border-radius: 10px;
             padding: 12px 14px;
             font-size: 13px;
@@ -82,8 +82,8 @@
             font-family: inherit;
             font-size: 15px;
             font-weight: 600;
-            color: #fff;
-            background: linear-gradient(135deg, #2fc78c, #14a06e);
+            color: #06140d;
+            background: #2fc78c;
             cursor: pointer;
             transition: opacity 150ms;
         }

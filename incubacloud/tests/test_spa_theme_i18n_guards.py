@@ -39,10 +39,8 @@ _TOKEN_FILES = {"scss/relay.scss", "scss/variables.scss"}
 _SCRIM_OR_SHADOW_RE = re.compile(r"rgba\(\s*(?:0\s*,\s*0\s*,\s*0|6\s*,\s*10\s*,\s*8)")
 
 # Deliberate survivors, one (file, literal) pair each. The violet sync
-# tag has no token on purpose: it reads fine in both themes.
-_COLOR_ALLOWLIST = {
-    ("components/instance_detail/instance_detail.scss", "#8b5cf6"),
-}
+# tag that was one draws with Relay's cyan since 30-oct-2026.
+_COLOR_ALLOWLIST = set()
 
 _COLOR_RE = re.compile(r"#[0-9a-fA-F]{3,8}\b|rgba?\(\s*\d")
 
