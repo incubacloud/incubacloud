@@ -226,15 +226,20 @@ the model refresh), never through the ORM by a manager.
 
 `sources.py` serves `search_docs`, `search_code` and `read_code`. The documentation is
 `docs/user/docs/**/*.md` of core's repository, searched by keywords (in English), by
-section, answering the page's link and anchor. The code is a **closed list** of
-top-level entries of core's repository (`PUBLIC_ENTRIES`), found from the real path
-of the `incubacloud` module: on the master and on tenant panels the private code of
-saas is installed beside it, and nothing else on the disk is read. `AGENTS.md`, the
-repository's tooling and notes (`NOT_READ`) stay out. Only text files of known
-extensions, no hidden folder, `static/lib`, `site` or caches, 256 KB a file, 5 s a
-search; a path with `..`, a link out of the folder or a binary file is refused. A test
-compares the list with `git ls-files`. These tools are the assistant's own and are not
-in the MCP's catalog: an external agent has its own means of reading public code.
+section, answering the page's link and anchor. A built image has no `docs` folder
+(Doodba's `400-clean` keeps only the modules of each repository), so on the master and
+on the tenant panels the same search runs on the index mkdocs publishes with the site
+(`search/search_index.json`), read at most once an hour; when the site cannot be read
+the copy last read serves, and with none the tool answers where the documentation is.
+What the assistant finds is therefore the published guide, not the image's. The code is
+a **closed list** of top-level entries of core's repository (`PUBLIC_ENTRIES`), found
+from the real path of the `incubacloud` module: on the master and on tenant panels the
+private code of saas is installed beside it, and nothing else on the disk is read.
+`AGENTS.md`, the repository's tooling and notes (`NOT_READ`) stay out. Only text files
+of known extensions, no hidden folder, `static/lib`, `site` or caches, 256 KB a file, 5
+s a search; a path with `..`, a link out of the folder or a binary file is refused. A
+test compares the list with `git ls-files`. These tools are the assistant's own and are
+not in the MCP's catalog: an external agent has its own means of reading public code.
 
 ## Extending
 
