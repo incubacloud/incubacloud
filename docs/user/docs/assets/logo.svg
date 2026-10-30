@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="9.5 10.3 32 24.3" role="img" aria-label="IncubaCloud">
+  <mask id="c"><path d="M15.5 34.5h17.6a8.3 8.3 0 0 0 .9-16.55A10.4 10.4 0 0 0 13.6 21 7.2 7.2 0 0 0 15.5 34.5Z" fill="#fff"/><rect x="18.4" y="27.7" width="13.4" height="2.7" rx="1.35" fill="#000"/><rect x="20.4" y="23.8" width="9.4" height="2.7" rx="1.35" fill="#000"/><rect x="22.4" y="19.9" width="5.4" height="2.7" rx="1.35" fill="#000"/></mask>
+  <rect x="9.5" y="10.3" width="32" height="24.3" fill="#fff" mask="url(#c)"/>
+</svg>
