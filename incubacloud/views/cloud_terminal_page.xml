@@ -13,13 +13,15 @@
     <script src="/incubacloud/static/lib/xterm/xterm.min.js"></script>
     <script src="/incubacloud/static/lib/xterm/xterm-addon-fit.min.js"></script>
 
+    <link rel="stylesheet" href="/incubacloud/static/fonts/fonts.css"/>
+    <link rel="preload" href="/incubacloud/static/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin=""/>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+            background: #0a0c0d;
+            color: #c3cad0;
+            font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, Consolas, monospace;
             font-size: 13px;
             display: flex;
             flex-direction: column;
@@ -29,8 +31,8 @@
 
         /* ── Header ── */
         .terminal-header {
-            background: #2d2d2d;
-            border-bottom: 1px solid #3e3e3e;
+            background: #101315;
+            border-bottom: 1px solid #262b2f;
             padding: 8px 16px;
             display: flex;
             align-items: center;
@@ -40,14 +42,15 @@
 
         .terminal-title {
             flex: 1;
-            font-size: 13px;
-            color: #ccc;
+            font-family: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            color: #c3cad0;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
 
-        .terminal-title strong { color: #fff; }
+        .terminal-title strong { color: #eef1f3; }
 
         .terminal-badge {
             font-size: 11px;
@@ -56,15 +59,15 @@
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            background: #1e3a4a;
-            color: #60b8e0;
+            background: rgba(79,182,198,.14);
+            color: #9fd6e2;
         }
 
-        .terminal-badge.connected { background: #1e3a1e; color: #60c060; }
-        .terminal-badge.error     { background: #3a1e1e; color: #e06060; }
-        .terminal-badge.closed    { background: #3a3a3a; color: #999; }
-        .terminal-badge.idle      { background: #4a3a1a; color: #e0a040; }
-        .terminal-badge.paused    { background: #2a2a2a; color: #888; }
+        .terminal-badge.connected { background: rgba(47,199,140,.15); color: #9fe7c4; }
+        .terminal-badge.error     { background: rgba(255,96,99,.15); color: #ff9b9d; }
+        .terminal-badge.closed    { background: #181c1f; color: #8a949c; }
+        .terminal-badge.idle      { background: rgba(239,165,62,.14); color: #f0c987; }
+        .terminal-badge.paused    { background: #181c1f; color: #8a949c; }
 
         /* ── Terminal body ── */
         #terminal-container {
@@ -78,11 +81,11 @@
 
         /* ── Footer ── */
         .terminal-footer {
-            background: #2d2d2d;
-            border-top: 1px solid #3e3e3e;
+            background: #101315;
+            border-top: 1px solid #262b2f;
             padding: 5px 16px;
             font-size: 11px;
-            color: #666;
+            color: #737d85;
             display: flex;
             justify-content: space-between;
             flex-shrink: 0;
@@ -108,7 +111,10 @@
     <script type="text/javascript">
         var odoo = <t t-out="json.dumps({'csrf_token': csrf_token, '__session_info__': session_info})"/>;
 
-        (function () {
+        // xterm measures its cells once, when it opens: it waits for the
+        // brand's mono font, or a font that arrives later leaves the grid
+        // misaligned.
+        document.fonts.load("13px 'JetBrains Mono'").catch(function () {}).then(function () {
             var SESSION_ID   = '<t t-esc="session_id"/>';
             var CSRF         = odoo.csrf_token;
             var POLL_MS      = 80;
@@ -123,11 +129,18 @@
             var term = new Terminal({
                 cursorBlink: true,
                 fontSize: 13,
-                fontFamily: "'Cascadia Code', 'Fira Mono', Consolas, monospace",
+                fontFamily: "'JetBrains Mono', 'Fira Code', ui-monospace, Consolas, monospace",
                 theme: {
-                    background: '#1e1e1e',
-                    foreground: '#d4d4d4',
-                    cursor: '#60b8e0',
+                    background: '#0a0c0d',
+                    foreground: '#c3cad0',
+                    cursor: '#2fc78c',
+                    cursorAccent: '#0a0c0d',
+                    selectionBackground: 'rgba(47,199,140,.3)',
+                    black: '#333a3f', red: '#ff6063', green: '#2fc78c', yellow: '#efa53e',
+                    blue: '#4fb6c6', magenta: '#ff9b9d', cyan: '#9fd6e2', white: '#c3cad0',
+                    brightBlack: '#737d85', brightRed: '#ff9b9d', brightGreen: '#9fe7c4',
+                    brightYellow: '#f0c987', brightBlue: '#9fd6e2', brightMagenta: '#ff9b9d',
+                    brightCyan: '#e4f1f2', brightWhite: '#eef1f3',
                 },
                 allowProposedApi: true,
             });
@@ -335,7 +348,7 @@
 
             // ── Cleanup on page close ─────────────────────────────────────
             window.addEventListener('beforeunload', closeSession);
-        })();
+        });
     </script>
 
 </body>
