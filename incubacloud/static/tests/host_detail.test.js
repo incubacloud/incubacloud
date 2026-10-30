@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
+import { patchTranslations, patchWithCleanup } from "@web/../tests/web_test_helpers";
 import { rpc } from "@web/core/network/rpc";
 import { HostDetail } from "@incubacloud/components/host_detail/host_detail";
 
@@ -601,7 +601,7 @@ describe("HostDetail — hostAction", () => {
     // The notice reads the job's state back from the server: here, a job
     // that started.
     beforeEach(() => {
-        allowTranslations();
+        patchTranslations();
         patchWithCleanup(rpc, {
             _rpc: (url, params) => Promise.resolve({
                 ok: true, job_id: params.job_id, state: "pending",

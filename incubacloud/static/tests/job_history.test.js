@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "@odoo/hoot";
-import { allowTranslations } from "@web/../tests/web_test_helpers";
+import { patchTranslations } from "@web/../tests/web_test_helpers";
 import { JobHistory } from "@incubacloud/components/job_history/job_history";
 
 /**
@@ -85,7 +85,7 @@ describe("JobHistory — formatDate helper", () => {
 describe("JobHistory — stateLabel helper", () => {
     // The labels are translated strings: read without a loaded catalogue
     // they throw, as they would before the web client loaded its own.
-    beforeEach(() => allowTranslations());
+    beforeEach(() => patchTranslations());
 
     function stateName(state) {
         return String(JobHistory.prototype.stateLabel(state));
