@@ -56,6 +56,14 @@
       secureJsonData:
         basicAuthPassword: "{{ item.0.password }}"
     status_code: [200]
+  # Grafana answered 500 "Failed to add datasource" to the fifth of five
+  # organisations a minute after it started, and the central failed with
+  # it (QA, 30-oct-2026): a write its database refused for the moment.
+  # Nothing is created on a 500, so the same request goes again.
+  register: ic_created_ds
+  retries: 5
+  delay: 3
+  until: ic_created_ds is succeeded
   when: ic_existing_ds.status == 404
 
 - name: Correct this organisation's scoped datasource if the credential drifted
