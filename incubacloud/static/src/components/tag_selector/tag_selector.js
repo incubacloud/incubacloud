@@ -1,17 +1,19 @@
 import { Component, useState } from "@odoo/owl";
 
-// 10-color palette matching the `color` index stored on cloud.tag
+// 10-color palette matching the `color` index stored on cloud.tag. The values
+// are the --rl-tag-* tokens of relay.scss, one set per panel theme: a
+// single set drew pale text on the light theme's paper (30-oct-2026).
 export const TAG_COLORS = [
-    { bg: "rgba(99,102,241,0.18)",  text: "#818CF8" },  // 0 indigo
-    { bg: "rgba(139,92,246,0.18)",  text: "#A78BFA" },  // 1 violet
-    { bg: "rgba(236,72,153,0.18)",  text: "#F472B6" },  // 2 pink
-    { bg: "rgba(239,68,68,0.18)",   text: "#F87171" },  // 3 red
-    { bg: "rgba(245,158,11,0.18)",  text: "#FCD34D" },  // 4 amber
-    { bg: "rgba(34,197,94,0.18)",   text: "#4ADE80" },  // 5 green
-    { bg: "rgba(59,130,246,0.18)",  text: "#60A5FA" },  // 6 blue
-    { bg: "rgba(20,184,166,0.18)",  text: "#2DD4BF" },  // 7 teal
-    { bg: "rgba(249,115,22,0.18)",  text: "#FB923C" },  // 8 orange
-    { bg: "rgba(107,114,128,0.22)", text: "#9CA3AF" },  // 9 gray
+    { bg: "var(--rl-tag-0-bg)", text: "var(--rl-tag-0)" },  // 0 indigo
+    { bg: "var(--rl-tag-1-bg)", text: "var(--rl-tag-1)" },  // 1 violet
+    { bg: "var(--rl-tag-2-bg)", text: "var(--rl-tag-2)" },  // 2 pink
+    { bg: "var(--rl-tag-3-bg)", text: "var(--rl-tag-3)" },  // 3 red
+    { bg: "var(--rl-tag-4-bg)", text: "var(--rl-tag-4)" },  // 4 amber
+    { bg: "var(--rl-tag-5-bg)", text: "var(--rl-tag-5)" },  // 5 green
+    { bg: "var(--rl-tag-6-bg)", text: "var(--rl-tag-6)" },  // 6 blue
+    { bg: "var(--rl-tag-7-bg)", text: "var(--rl-tag-7)" },  // 7 teal
+    { bg: "var(--rl-tag-8-bg)", text: "var(--rl-tag-8)" },  // 8 orange
+    { bg: "var(--rl-tag-9-bg)", text: "var(--rl-tag-9)" },  // 9 gray
 ];
 
 export function tagStyle(tag) {

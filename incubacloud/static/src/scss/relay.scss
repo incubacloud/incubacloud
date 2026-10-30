@@ -88,6 +88,38 @@
 }
 [data-ic-theme="light"] body, [data-ic-theme="light"] .ic-app { color-scheme: light; }
 
+// ── Tag colours ────────────────────────────────────────────────────────────────
+// The ten colours a tag can hold (cloud.tag.color), by index. Green, amber, red
+// and cyan are Relay's own state text colours; Relay has no indigo, violet,
+// pink, blue or orange, so those are set at the same lightness to sit beside
+// them. Light text on the dark theme, dark text on the light one: one set for
+// both drew pale yellow and green on the light theme's paper (30-oct-2026).
+:root {
+    --rl-tag-0:#b0b0f0; --rl-tag-0-bg:rgba(176,176,240,.15);  // indigo
+    --rl-tag-1:#c9a8ee; --rl-tag-1-bg:rgba(201,168,238,.15);  // violet
+    --rl-tag-2:#f0a3c8; --rl-tag-2-bg:rgba(240,163,200,.15);  // pink
+    --rl-tag-3:#ff9b9d; --rl-tag-3-bg:rgba(255,155,157,.15);  // red
+    --rl-tag-4:#f0c987; --rl-tag-4-bg:rgba(240,201,135,.15);  // amber
+    --rl-tag-5:#6fd9b0; --rl-tag-5-bg:rgba(111,217,176,.15);  // green
+    --rl-tag-6:#9ab8ec; --rl-tag-6-bg:rgba(154,184,236,.15);  // blue
+    --rl-tag-7:#9fd6e2; --rl-tag-7-bg:rgba(159,214,226,.15);  // teal
+    --rl-tag-8:#f5b07a; --rl-tag-8-bg:rgba(245,176,122,.15);  // orange
+    --rl-tag-9:#a5aeb5; --rl-tag-9-bg:rgba(165,174,181,.15);  // gray
+}
+
+:root[data-ic-theme="light"] {
+    --rl-tag-0:#4a4fb0; --rl-tag-0-bg:rgba(74,79,176,.11);  // indigo
+    --rl-tag-1:#6b45a8; --rl-tag-1-bg:rgba(107,69,168,.11);  // violet
+    --rl-tag-2:#a8366e; --rl-tag-2-bg:rgba(168,54,110,.11);  // pink
+    --rl-tag-3:#c0393c; --rl-tag-3-bg:rgba(192,57,60,.11);  // red
+    --rl-tag-4:#865602; --rl-tag-4-bg:rgba(134,86,2,.11);  // amber
+    --rl-tag-5:#0c7a55; --rl-tag-5-bg:rgba(12,122,85,.11);  // green
+    --rl-tag-6:#2d5fa8; --rl-tag-6-bg:rgba(45,95,168,.11);  // blue
+    --rl-tag-7:#0a6270; --rl-tag-7-bg:rgba(10,98,112,.11);  // teal
+    --rl-tag-8:#a4531a; --rl-tag-8-bg:rgba(164,83,26,.11);  // orange
+    --rl-tag-9:#5d6b63; --rl-tag-9-bg:rgba(93,107,99,.11);  // gray
+}
+
 // ── Keyframes (global names, rl- prefixed to avoid collisions) ──────────────
 @keyframes rl-pulse { 50% { opacity:.4; } }
 @keyframes rl-sp { to { transform:rotate(360deg); } }
