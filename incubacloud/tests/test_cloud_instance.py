@@ -527,18 +527,24 @@ class TestCronRefreshBackupList(TransactionCase):
         """Patch ``cloud.instance.list_backups`` and return the call log."""
         calls = []
         Model = self.env["cloud.instance"]
-        original = type(Model).list_backups
 
         def _mock(self_model):
             for rec in self_model:
                 calls.append(rec.id)
             return 0
 
+        # What the class holds itself, if anything: restoring must leave it
+        # as it was, not with an attribute of its own it never had.
+        own = vars(type(Model)).get("list_backups")
         type(Model).list_backups = _mock
-        return calls, original, type(Model)
+        return calls, own, type(Model)
 
-    def _restore_list_backups(self, original, model_class):
-        model_class.list_backups = original
+    def _restore_list_backups(self, own, model_class):
+        """Put ``list_backups`` back as ``_patch_list_backups`` found it."""
+        if own is None:
+            del model_class.list_backups
+        else:
+            model_class.list_backups = own
 
     def test_instance_with_backup_service_gets_enqueued(self):
         inst = self._create_instance("paid-prod", "odoo,db,backup,smtp")
