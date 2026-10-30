@@ -4,7 +4,6 @@ import re
 from psycopg2 import IntegrityError
 
 from odoo import api, fields, models, _
-from odoo.fields import Domain
 from odoo.tools import SQL, Query, mute_logger
 from odoo.exceptions import AccessError, UserError, ValidationError
 
@@ -58,12 +57,21 @@ class CloudProject(models.Model):
     # archived one too if the model ever gets the flag; no folder is no
     # claim. The message is a plain string on purpose: it is reflected
     # into ``ir.model.constraint.message`` and translated from there.
-    _remote_folder_uniq = models.UniqueIndex(
-        "(lower(remote_folder)) WHERE remote_folder IS NOT NULL AND remote_folder <> ''",
-        "The remote folder of a project must be unique, whatever its case: "
-        "the directories of its instances on the hosts are named after it. "
-        "Choose another remote folder.",
-    )
+    #: The remote folder of a project must be unique, whatever its case: the
+    #: directories of its instances on the hosts are named after it. Choose
+    #: another remote folder.
+    def init(self):
+        """Create the unique index on (lower(remote_folder)).
+
+        Odoo 19 declares it with ``models.UniqueIndex``; Odoo 18 has no
+        such declaration, so the index is created here, under the name
+        Odoo 19 gives it.
+        """
+        super().init()
+        self.env.cr.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS cloud_project_remote_folder_uniq "
+            "ON cloud_project (lower(remote_folder)) WHERE remote_folder IS NOT NULL AND remote_folder <> ''"
+        )
 
     remote_folder = fields.Char(
         string='Remote Folder',

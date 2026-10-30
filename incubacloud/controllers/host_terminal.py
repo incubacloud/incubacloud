@@ -63,7 +63,7 @@ class HostTerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         '/cloud/host_terminal/open',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def host_terminal_open(self, host_id):
         """Open a login shell on *host_id* for the current user.
@@ -212,7 +212,7 @@ class HostTerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/host_terminal/{_SID}/output',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def host_terminal_output(self, session_id, after_seq=0):
         """Return buffered output chunks with seq > after_seq."""
@@ -223,7 +223,7 @@ class HostTerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/host_terminal/{_SID}/input',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def host_terminal_input(self, session_id, data):
         """Send base64-encoded bytes to the remote PTY."""
@@ -233,7 +233,7 @@ class HostTerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/host_terminal/{_SID}/resize',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def host_terminal_resize(self, session_id, cols=80, rows=24):
         """Send a PTY resize event."""
@@ -244,7 +244,7 @@ class HostTerminalController(TerminalProxyMixin, http.Controller):
 
     @http.route(
         f'/cloud/host_terminal/{_SID}/close',
-        type='jsonrpc', auth='user', methods=['POST'],
+        type='json', auth='user', methods=['POST'],
     )
     def host_terminal_close(self, session_id):
         """Close the shell, seal its audit row and drop its route."""

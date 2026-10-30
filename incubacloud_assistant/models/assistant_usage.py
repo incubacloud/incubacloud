@@ -31,10 +31,13 @@ class AssistantUsage(models.Model):
         readonly=True, help="Tokens of calls whose price is not known."
     )
 
-    _user_month_model = models.Constraint(
-        "UNIQUE(user_id, month, provider, model)",
-        "One row per user, month and model.",
-    )
+    _sql_constraints = [
+        (
+            'user_month_model',
+            "UNIQUE(user_id, month, provider, model)",
+            "One row per user, month and model."
+        ),
+    ]
 
     @api.model
     def _add(self, user_id, provider, model, usage, cost):

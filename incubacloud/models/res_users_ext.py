@@ -499,7 +499,7 @@ class ResUsers(models.Model):
             # 'inbox' set at creation only holds while the bot is in it.
             self.env.ref('mail.group_mail_notification_type_inbox').id,
         ]
-        user.sudo().write({'group_ids': [(4, gid) for gid in required]})
+        user.sudo().write({'groups_id': [(4, gid) for gid in required]})
 
     @api.model
     def _incubacloud_assign_cron_user_id(self, module_name):
@@ -535,8 +535,8 @@ class ResUsers(models.Model):
                 len(stale), module_name,
             )
 
-        # Odoo 19 hardened ``ir.actions.server.run()``: when an action
-        # carries no ``group_ids``, ``_can_execute_action_on_records``
+        # ``ir.actions.server.run()`` (Odoo 18 and 19): when an action
+        # carries no ``groups_id``, ``run()``
         # requires the executing user to have *write* access on the
         # action's model. The cron bot is a cloud manager but deliberately
         # lacks write on append-only / abstract orchestration models
@@ -550,5 +550,5 @@ class ResUsers(models.Model):
         if bot_crons:
             manager_group = self.env.ref('incubacloud.group_cloud_manager')
             bot_crons.ir_actions_server_id.write({
-                'group_ids': [(4, manager_group.id)],
+                'groups_id': [(4, manager_group.id)],
             })

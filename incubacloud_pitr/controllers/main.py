@@ -24,7 +24,7 @@ def _job_or_error(call):
 
 class PitrController(http.Controller):
 
-    @http.route("/cloud/pitr/status", type="jsonrpc", auth="user")
+    @http.route("/cloud/pitr/status", type="json", auth="user")
     def pitr_status(self, instance_id):
         """What the tab shows: state, objective and the restorable window."""
         inst = _instance(instance_id)
@@ -32,7 +32,7 @@ class PitrController(http.Controller):
             return {"ok": False, "error": _("Instance not found")}
         return {"ok": True, **inst._pitr_status_vals()}
 
-    @http.route("/cloud/pitr/enable", type="jsonrpc", auth="user")
+    @http.route("/cloud/pitr/enable", type="json", auth="user")
     def pitr_enable(self, instance_id, objective=None):
         """Switch it on (manager): a rebuild, then archiving."""
         inst = _instance(instance_id)
@@ -40,7 +40,7 @@ class PitrController(http.Controller):
             return {"ok": False, "error": _("Instance not found")}
         return _job_or_error(lambda: inst.action_pitr_enable(objective))
 
-    @http.route("/cloud/pitr/disable", type="jsonrpc", auth="user")
+    @http.route("/cloud/pitr/disable", type="json", auth="user")
     def pitr_disable(self, instance_id):
         """Switch it off (manager)."""
         inst = _instance(instance_id)
@@ -48,7 +48,7 @@ class PitrController(http.Controller):
             return {"ok": False, "error": _("Instance not found")}
         return _job_or_error(inst.action_pitr_disable)
 
-    @http.route("/cloud/pitr/set_objective", type="jsonrpc", auth="user")
+    @http.route("/cloud/pitr/set_objective", type="json", auth="user")
     def pitr_set_objective(self, instance_id, objective):
         """Change the recovery objective (manager)."""
         inst = _instance(instance_id)
@@ -56,7 +56,7 @@ class PitrController(http.Controller):
             return {"ok": False, "error": _("Instance not found")}
         return _job_or_error(lambda: inst.action_pitr_set_objective(str(objective)))
 
-    @http.route("/cloud/pitr/restore", type="jsonrpc", auth="user")
+    @http.route("/cloud/pitr/restore", type="json", auth="user")
     def pitr_restore(self, instance_id, target, confirm_name):
         """Restore to a moment (manager), confirmed by typing the name."""
         inst = _instance(instance_id)

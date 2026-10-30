@@ -77,10 +77,13 @@ class CloudRestoreUploadGrant(models.Model):
     _description = "Temporary SSH access to upload one restore archive"
     _order = "id desc"
 
-    _token_uniq = models.Constraint(
-        "unique (token)",
-        "Grant token must be unique.",
-    )
+    _sql_constraints = [
+        (
+            'token_uniq',
+            "unique (token)",
+            "Grant token must be unique."
+        ),
+    ]
 
     instance_id = fields.Many2one(
         comodel_name="cloud.instance",

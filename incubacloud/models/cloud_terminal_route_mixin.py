@@ -68,10 +68,13 @@ class CloudTerminalRouteMixin(models.AbstractModel):
              "boundary, so it is what the GC cron reaps by.",
     )
 
-    _session_id_uniq = models.Constraint(
-        'unique (session_id)',
-        'One row per terminal session.',
-    )
+    _sql_constraints = [
+        (
+            'session_id_uniq',
+            'unique (session_id)',
+            'One row per terminal session.'
+        ),
+    ]
 
     #: Concrete models point this at their session/audit model so the GC
     #: can reconcile sessions abandoned without an explicit /close.

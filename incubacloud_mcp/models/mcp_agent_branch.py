@@ -28,10 +28,13 @@ class McpAgentBranch(models.Model):
     branch = fields.Char(required=True, readonly=True)
     via_client = fields.Char(readonly=True)
 
-    _user_repository_branch = models.Constraint(
-        "UNIQUE(user_id, repository, branch)",
-        "A branch is remembered once per user.",
-    )
+    _sql_constraints = [
+        (
+            'user_repository_branch',
+            "UNIQUE(user_id, repository, branch)",
+            "A branch is remembered once per user."
+        ),
+    ]
 
     @api.model
     def _remember(self, repository, branch):

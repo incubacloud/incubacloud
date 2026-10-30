@@ -195,13 +195,22 @@ class CloudMetricRule(models.Model):
     # plain string on purpose: it is reflected into
     # ``ir.model.constraint.message`` (``translate=True``) and
     # translated from there, not through gettext at runtime.
-    _code_uniq = models.UniqueIndex(
-        "(code) WHERE active IS TRUE",
-        "A metric rule code must be unique among active rules. The code "
-        "is the alert's dedup key, so two active rules sharing one would "
-        "fight over the same alert: whichever does not fire resolves the "
-        "other's. Archive the old rule or give this one its own code.",
-    )
+    #: A metric rule code must be unique among active rules. The code is the
+    #: alert's dedup key, so two active rules sharing one would fight over the
+    #: same alert: whichever does not fire resolves the other's. Archive the
+    #: old rule or give this one its own code.
+    def init(self):
+        """Create the unique index on (code).
+
+        Odoo 19 declares it with ``models.UniqueIndex``; Odoo 18 has no
+        such declaration, so the index is created here, under the name
+        Odoo 19 gives it.
+        """
+        super().init()
+        self.env.cr.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS cloud_metric_rule_code_uniq "
+            "ON cloud_metric_rule (code) WHERE active IS TRUE"
+        )
 
     # ===============================
     # EVALUATION

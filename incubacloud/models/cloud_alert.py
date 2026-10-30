@@ -1095,10 +1095,19 @@ class CloudAlertSuspicion(models.Model):
     # For the reason ``cloud_alert_active_identity_uidx`` exists: two
     # producers under snapshot isolation cannot see each other's row, so
     # only the database can keep one count per target.
-    _target_uniq = models.UniqueIndex(
-        "(code, COALESCE(host_id, 0), COALESCE(instance_id, 0))",
-        "One suspicion per alert code and target.",
-    )
+    #: One suspicion per alert code and target.
+    def init(self):
+        """Create the unique index on (code, COALESCE(host_id, 0), COALESCE(instance_id, 0)).
+
+        Odoo 19 declares it with ``models.UniqueIndex``; Odoo 18 has no
+        such declaration, so the index is created here, under the name
+        Odoo 19 gives it.
+        """
+        super().init()
+        self.env.cr.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS cloud_alert_suspicion_target_uniq "
+            "ON cloud_alert_suspicion (code, COALESCE(host_id, 0), COALESCE(instance_id, 0))"
+        )
 
     #: Sightings older than this are not worth keeping: no window a
     #: producer uses comes close, and a condition that stops being seen
@@ -1213,9 +1222,12 @@ class CloudAlertPolicy(models.Model):
              "would have cost.",
     )
 
-    _code_uniq = models.Constraint(
-        "UNIQUE(code)", "One confirmation policy per alert code.",
-    )
+    _sql_constraints = [
+        (
+            'code_uniq',
+            "UNIQUE(code)", "One confirmation policy per alert code."
+        ),
+    ]
 
     #: What ``_for_code`` answers for a code nobody listed.
     _DEFAULT = (1, 900)
