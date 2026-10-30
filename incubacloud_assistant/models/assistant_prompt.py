@@ -72,5 +72,16 @@ SUMMARY_PROMPT = (
 
 
 def system_prompt(language):
-    """Return the rules for a conversation in *language*."""
-    return f"{SYSTEM}\n\nThe person writes in {language}: answer in it."
+    """Return the rules for a conversation whose panel is in *language*.
+
+    The panel's language is not the person's: one who writes in Spanish
+    from a panel in English got the answers in English (QA, 30-oct-2026).
+    It decides only when their message does not.
+
+    :param str language: the name of the panel's language, e.g. ``English``.
+    :rtype: str
+    """
+    return (
+        f"{SYSTEM}\n\nAnswer in the language of the person's last message; "
+        f"when it is unclear, in {language}."
+    )
