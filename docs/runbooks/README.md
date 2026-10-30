@@ -37,6 +37,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-24](RB-24-direct-path.md) | Direct path: down, a host not admitted, rotate the DNS token, roll back | high | `direct_path_down`, `direct_allowlist_stale`, `direct_certificate_expiring`, `direct_path_unreachable_from_host`; Grafana refusing logins |
 | [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
 | [RB-26](RB-26-agency-own-server.md) | Agency: its own server | planned | A tenant signs up for or changes to Agency; an Agency tenant downgrades or is deleted |
+| [RB-27](RB-27-illegal-content-notice.md) | A notice of illegal content | high | Someone reports illegal content to `support@`, or an authority writes to it as our point of contact |
 
 ## Conventions
 
