@@ -664,8 +664,8 @@
 }
 
 .ic-sync-tag-pull {
-    background: rgba(#8b5cf6, 0.15);
-    color: #8b5cf6;
+    background: rgba(var(--rl-cyan-rgb), 0.15);
+    color: var(--rl-cyan-text);
 }
 
 .ic-sync-tag-conflict {

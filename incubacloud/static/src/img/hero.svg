@@ -72,11 +72,11 @@
     <text x="438" y="435" font-family="system-ui, sans-serif" font-size="10" fill="#2fc78c">Done</text>
     <rect x="310" y="445" width="200" height="8" rx="2" fill="#8ba095" opacity="0.6"/>
     <rect x="310" y="460" width="80" height="6" rx="2" fill="#5f7068" opacity="0.4"/>
-    <circle cx="288" cy="490" r="5" fill="#f2575b" />
+    <circle cx="288" cy="490" r="5" fill="#ff6063" />
     <rect x="310" y="485" width="110" height="12" rx="3" fill="#e8efea" />
-    <rect x="430" y="483" width="45" height="16" rx="4" fill="#f2575b" opacity="0.2"/>
-    <text x="438" y="495" font-family="system-ui, sans-serif" font-size="10" fill="#f2575b">Failed</text>
-    <rect x="310" y="505" width="350" height="8" rx="2" fill="#f2575b" opacity="0.6"/>
+    <rect x="430" y="483" width="45" height="16" rx="4" fill="#ff6063" opacity="0.2"/>
+    <text x="438" y="495" font-family="system-ui, sans-serif" font-size="10" fill="#ff6063">Failed</text>
+    <rect x="310" y="505" width="350" height="8" rx="2" fill="#ff6063" opacity="0.6"/>
     <rect x="310" y="520" width="80" height="6" rx="2" fill="#5f7068" opacity="0.4"/>
     <rect x="760" y="495" width="60" height="24" rx="4" fill="#2b382f" stroke="#3a4a40" stroke-width="1"/>
     <text x="790" y="511" font-family="system-ui, sans-serif" font-size="10" fill="#e8efea" text-anchor="middle">Retry</text>
