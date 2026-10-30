@@ -8,6 +8,7 @@ page saved the state erased it: the customer came back from GitHub to
 is now signed for the user who started the setup.
 """
 import re
+from urllib.parse import urlencode
 
 from odoo.tests import tagged
 from odoo.tests.common import HttpCase, TransactionCase
@@ -88,9 +89,10 @@ class TestSetupCallbackWithoutTheSession(HttpCase):
 
     def _get(self, path, **params):
         """GET *path* as the browser would behind the proxy."""
+        if params:
+            path = f"{path}?{urlencode(params)}"
         return self.url_open(
             path,
-            params=params,
             headers={'X-Forwarded-Proto': 'https'},
             allow_redirects=False,
         )

@@ -840,7 +840,8 @@ class CloudSettings(models.Model):
 
     @api.constrains("github_pat")
     def _check_singleton(self):
-        if self.env["cloud.settings"].search_count([]) > 1:
+        # Odoo 19 runs constraints as superuser; 18 as the writer.
+        if self.env["cloud.settings"].sudo().search_count([]) > 1:
             raise UserError(
                 _("Only one IncubaCloud settings record is allowed.")
             )

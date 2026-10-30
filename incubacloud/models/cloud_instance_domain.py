@@ -119,8 +119,9 @@ class CloudInstanceDomain(models.Model):
         # Only active instances reserve a domain. A deployed instance that
         # is deleted gets archived (active=False) rather than unlinked, so
         # its domain rows survive; those must not block a new instance from
-        # reusing the same hostname.
-        all_with_same = self.search([
+        # reusing the same hostname. Odoo 19 runs constraints as superuser;
+        # 18 as the writer, who may not see the other instance's domain.
+        all_with_same = self.sudo().search([
             ('hostname', 'in', hostnames),
             ('instance_id.active', '=', True),
         ])

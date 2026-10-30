@@ -1,8 +1,11 @@
 """The module is there, with exactly the dependencies the design names."""
 
+from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
 
+# Odoo 18 runs at_install tests while the module is still "to install".
+@tagged("post_install", "-at_install")
 class TestTheModuleIsInstalled(TransactionCase):
     """The module, as installed in the test database."""
 

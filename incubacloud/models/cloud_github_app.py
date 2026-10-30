@@ -67,7 +67,8 @@ class CloudGitHubApp(models.Model):
 
     @api.constrains("app_id")
     def _check_singleton(self):
-        if self.env["cloud.github.app"].search_count([]) > 1:
+        # Odoo 19 runs constraints as superuser; 18 as the writer.
+        if self.env["cloud.github.app"].sudo().search_count([]) > 1:
             raise UserError(
                 _("Only one GitHub App configuration is allowed per system.")
             )
