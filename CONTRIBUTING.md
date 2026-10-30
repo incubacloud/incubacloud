@@ -48,7 +48,7 @@ pip install asyncssh cryptography boto3 PyYAML bcrypt refurb
 
 ### Python
 
-- Target **Python 3.10+** (the CI test image runs 3.10) and **Odoo 19.0** APIs.
+- Target **Python 3.10+** (the CI test image runs 3.10) and **Odoo 18.0** APIs on this branch. Changes land in `19.0` first and are ported here.
 - Follow [refurb](https://github.com/dosisod/refurb) idioms:
   - `str.removeprefix()` / `str.removesuffix()` instead of conditional slicing
   - `with suppress(ExcType):` instead of `try/except: pass`

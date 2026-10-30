@@ -68,8 +68,9 @@ conversation is read and in the daily cron.
 ## Why each tool runs in a request of the user's own
 
 The panel's routes read `request.env`. Inside a queue job the live request is the
-runner's (`/queue_job/runjob`): with the pinned `queue_job` (19.0.2.1.6, `da26647`) it
-does `request.update_env(user=SUPERUSER_ID)`; in earlier versions it has no user.
+runner's (`/queue_job/runjob`): with the pinned `queue_job` (18.0.4.1.2, `4ccc50b`) it
+has no user, since `runjob` builds its own environment as the superuser and leaves the
+request's as it was; on 19.0 `queue_job` does `request.update_env(user=SUPERUSER_ID)`.
 Neither will do: a tool would run as the superuser, or fail. `request_scope.tool_request`
 binds a request of the user's own — their environment, on the call's cursor — while the
 tool runs, with the mark that audit rows and jobs read (`VIA_REQUEST_ATTR`). The MCP's

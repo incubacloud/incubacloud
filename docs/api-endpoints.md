@@ -1,6 +1,6 @@
 # API Endpoints
 
-All endpoints are defined in `incubacloud/controllers/`. Unless noted, endpoints are JSON-RPC (`type="jsonrpc"`, the Odoo 19 dispatcher), require `auth="user"` (logged-in internal Odoo session) and are called via POST. The SPA additionally calls a few `cloud.job` model methods through the standard Odoo ORM RPC (`/web/dataset/call_kw`) — see [Jobs](#jobs-and-audit-log).
+All endpoints are defined in `incubacloud/controllers/`. Unless noted, endpoints are JSON-RPC (`type="json"`, the Odoo 18 dispatcher), require `auth="user"` (logged-in internal Odoo session) and are called via POST. The SPA additionally calls a few `cloud.job` model methods through the standard Odoo ORM RPC (`/web/dataset/call_kw`) — see [Jobs](#jobs-and-audit-log).
 
 Access control is layered:
 
