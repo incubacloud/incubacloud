@@ -373,19 +373,31 @@ class CloudGitHubEvent(models.Model):
         auto-rebuild plus PR previews simply stop happening with nothing
         anywhere in the panel to explain why. Raise a critical alert so the
         silence becomes visible. ``unsuspend`` clears it, as does a fresh
-        ``created`` after a reinstall.
+        ``created`` after a reinstall: ``deleted`` forgets the installation
+        id so that the reinstall's is the one taken.
+
+        Only the panel's own installation counts. The App is public, so a
+        stranger may install, suspend or delete it on their account, and
+        that must neither raise the panel's alert nor clear a real one.
 
         :param dict payload: the decoded webhook body
         """
         self.ensure_one()
         action = self.action or payload.get('action', '')
+        App = self.env['cloud.github.app'].sudo()
         Alert = self.env['cloud.alert'].sudo()
         if action == 'created':
-            self.env['cloud.github.app'].sudo()._process_installation_event(
-                payload,
+            App._process_installation_event(payload)
+        if not App._is_own_installation(payload):
+            _logger.info(
+                "GitHub App installation %s %s is not this panel's: ignored.",
+                payload.get('installation', {}).get('id'), action,
             )
+        elif action == 'created':
             Alert.resolve_alert(GITHUB_APP_REVOKED_CODE)
         elif action in ('deleted', 'suspend'):
+            if action == 'deleted':
+                App.search([], limit=1).write({'installation_id': False})
             Alert.raise_alert(
                 GITHUB_APP_REVOKED_CODE,
                 _(
