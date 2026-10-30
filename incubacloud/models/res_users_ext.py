@@ -348,7 +348,7 @@ class ResUsers(models.Model):
             'done_count': len(done),
             'alert_count': len(alert_rows),
             'console_url': f'{base_url}/cloud/ui',
-            'accent': self.env.company.email_secondary_color or '#0c7a55',
+            'accent': self.env.company.email_secondary_color or '#875A7B',
         }
 
     @api.model
