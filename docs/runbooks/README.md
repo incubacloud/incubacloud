@@ -38,6 +38,7 @@ All commands assume you run them from the doodba checkout root
 | [RB-25](RB-25-visitor-address-behind-a-cdn.md) | The visitor's address behind a CDN | planned | Putting a panel behind a CDN, sessions showing the CDN's addresses, Odoo sharing its network |
 | [RB-26](RB-26-agency-own-server.md) | Agency: its own server | planned | A tenant signs up for or changes to Agency; an Agency tenant downgrades or is deleted |
 | [RB-27](RB-27-illegal-content-notice.md) | A notice of illegal content | high | Someone reports illegal content to `support@`, or an authority writes to it as our point of contact |
+| [RB-28](RB-28-personal-data-breach.md) | A personal-data breach | critical | Personal data may have been read, copied, changed or lost by someone who should not have, or a sub-processor reports a breach |
 
 ## Conventions
 
