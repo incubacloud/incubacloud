@@ -63,6 +63,9 @@ extra:
       link: https://github.com/incubacloud
     - icon: fontawesome/solid/globe
       link: https://www.incubacloud.io
+    - icon: fontawesome/solid/signal
+      link: https://status.incubacloud.io
+      name: Service status
   generator: false
 
 extra_css:
