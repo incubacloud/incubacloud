@@ -65,7 +65,7 @@ example, an encrypted copy lost whose key is safe); the AEPD's
   brechas de datos personales», with the company's certificate;
 - with what article 33.3 asks: the nature of the breach, the categories
   and approximate numbers of people and records, a contact
-  (`legal@incubacloud.io`), the likely consequences and the measures
+  (`privacy@incubacloud.io`, the one the Privacy Policy gives), the likely consequences and the measures
   taken or proposed;
 - in phases when not everything is known yet: the first notice within
   the 72 hours, the rest as it is found. A notice after 72 hours says
