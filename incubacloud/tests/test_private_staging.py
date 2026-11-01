@@ -551,7 +551,7 @@ class TestTheProxySecretsAreStagedPrivately(_StagingCase):
             commands["Move traefik config files"],
         )
         self.assertIn(
-            f"mv {executor._job_path('default.key')} ~/traefik/certs/default.key",
+            f"ic_put {executor._job_path('default.key')} ~/traefik/certs/default.key",
             commands["Install the default certificate"],
         )
         executor, _transport = self._prepared(

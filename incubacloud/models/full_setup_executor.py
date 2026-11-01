@@ -41,8 +41,10 @@ from .cloud_host_direct import (
     publishes_direct_port,
 )
 from .setup_whitelist_executor import (
+    _WL_DIR,
+    _WL_FILE,
+    _WL_PROJECT,
     build_whitelist_compose,
-    _WL_DIR, _WL_FILE, _WL_PROJECT,
 )
 
 _logger = logging.getLogger(__name__)
@@ -334,13 +336,19 @@ class FullSetupExecutor(
     def get_commands(self):
         stage = self._job_path
         ships_cert, ships_ca = self._proxy_ships()
+        # A host set up by hand may hold the certificate as root: the push
+        # of the proxy settings falls back to sudo the same way, and a Full
+        # Setup without it failed on Tenants1 (1-nov-2026).
+        put = 'ic_put() { mv "$1" "$2" 2>/dev/null || sudo mv "$1" "$2"; };'
         if ships_cert:
             install_cert = (
-                "mkdir -p ~/traefik/certs ~/traefik/dynamic"
-                f" && mv {stage('default.crt')} ~/traefik/certs/default.crt"
-                f" && mv {stage('default.key')} ~/traefik/certs/default.key"
-                " && chmod 600 ~/traefik/certs/default.key"
-                f" && mv {stage('tls.yml')} ~/traefik/dynamic/tls-default.yml"
+                f"{put}"
+                " mkdir -p ~/traefik/certs ~/traefik/dynamic"
+                f" && ic_put {stage('default.crt')} ~/traefik/certs/default.crt"
+                f" && ic_put {stage('default.key')} ~/traefik/certs/default.key"
+                " && { chmod 600 ~/traefik/certs/default.key 2>/dev/null"
+                " || sudo chmod 600 ~/traefik/certs/default.key; }"
+                f" && ic_put {stage('tls.yml')} ~/traefik/dynamic/tls-default.yml"
             )
         else:
             install_cert = (
