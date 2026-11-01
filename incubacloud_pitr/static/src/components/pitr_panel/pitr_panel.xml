@@ -16,6 +16,11 @@
             <t t-elif="state.error">
                 <div class="ic-pitr-muted" role="alert" t-esc="state.error"/>
             </t>
+            <t t-elif="state.data and !state.data.postgres_supported">
+                <div class="ic-pitr-muted">
+                    Needs PostgreSQL 12 or later, which this Odoo series does not run on.
+                </div>
+            </t>
             <t t-elif="state.data and !state.data.available">
                 <div class="ic-pitr-muted">
                     Needs a backup backend: this instance could then be restored to any minute of its backup window.

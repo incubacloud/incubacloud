@@ -567,7 +567,7 @@
       when: ic_scrape_cfg is changed and ic_agents_compose is not changed
       changed_when: true
 
-    - name: Restart promtail when its configuration changed
+    - name: Restart promtail when its configuration changed  # noqa: no-handler
       # Same reason as vmagent's: a new push URL alone does not recreate
       # the container, and promtail reads its file at start only. Whether
       # the compose file changed too says nothing: a new URL for vmagent
