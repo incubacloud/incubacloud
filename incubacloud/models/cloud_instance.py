@@ -1451,6 +1451,17 @@ class CloudInstance(models.Model):
         """
         self.ensure_one()
 
+    def _restore_is_followed_by_a_rebuild(self):
+        """Whether the restore that just ended is followed by a rebuild.
+
+        Nothing in core does that: a layer that brings a copy back to current
+        code says so, and whoever would run beside the rebuild waits for it.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        return False
+
     def _after_restore_hook(self, kind):
         """Called once the instance's database has been replaced.
 

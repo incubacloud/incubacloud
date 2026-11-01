@@ -536,10 +536,14 @@ class CloudInstance(models.Model):
         to a moment (``pitr``) needs nothing here: its job has recorded
         the timeline it started and queued a full base copy of it
         (``PitrRestoreExecutor._restored``), and a second one would run
-        beside it.
+        beside it. Nor beside a rebuild that follows the restore: it
+        restarts the database under the copy, and the watch queues the copy
+        when it ends (``_pitr_base_due``).
         """
         super()._after_restore_hook(kind)
         if kind == "pitr" or not self._pitr_active() or self.move_origin_host_id:
+            return
+        if self._restore_is_followed_by_a_rebuild():
             return
         code = "pitr_enable" if kind == "move" else "pitr_base_backup"
         if self.pitr_stack_external:
@@ -550,6 +554,21 @@ class CloudInstance(models.Model):
         self.env["cloud.job"].sudo().enqueue(
             self.host_id.id, self.id, code, bypass_running_check=True,
         )
+
+    def revive(self, host_id=None):
+        """An archived instance comes back on a new cluster, with no archiving.
+
+        Its stack was removed with the deletion, wal-g included, so the state
+        it was deleted with says nothing: a base copy queued on it failed on
+        the first panel brought back (QA, 1-nov-2026). Off, the deploy switches
+        it on as it does for any new instance (``_after_stack_rendered``).
+
+        :param host_id: as for core's ``revive``
+        :return: as for core's ``revive``
+        """
+        result = super().revive(host_id=host_id)
+        self.sudo().pitr_state = "off"
+        return result
 
     def _after_stack_rendered(self):
         """Switch archiving on or off once a rebuild shipped the pieces.
