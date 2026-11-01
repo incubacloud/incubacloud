@@ -315,6 +315,13 @@ msgstr "Momento (su hora local)"
 #. module: incubacloud_pitr
 #. odoo-javascript
 #: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
+msgid "Needs PostgreSQL 12 or later, which this Odoo series does not run on."
+msgstr ""
+"Necesita PostgreSQL 12 o superior, y esta serie de Odoo no funciona con él."
+
+#. module: incubacloud_pitr
+#. odoo-javascript
+#: code:addons/incubacloud_pitr/static/src/components/pitr_panel/pitr_panel.xml:0
 msgid ""
 "Needs a backup backend: this instance could then be restored to any minute "
 "of its backup window."
