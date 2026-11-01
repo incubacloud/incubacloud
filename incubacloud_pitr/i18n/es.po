@@ -172,6 +172,12 @@ msgstr "Recuperación continua"
 #. module: incubacloud_pitr
 #. odoo-python
 #: code:addons/incubacloud_pitr/models/cloud_instance.py:0
+msgid "Continuous recovery needs PostgreSQL 12 or later."
+msgstr "La recuperación continua necesita PostgreSQL 12 o superior."
+
+#. module: incubacloud_pitr
+#. odoo-python
+#: code:addons/incubacloud_pitr/models/cloud_instance.py:0
 msgid ""
 "Continuous recovery needs a production instance with an S3 backup backend."
 msgstr ""

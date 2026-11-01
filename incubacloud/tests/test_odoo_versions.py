@@ -34,21 +34,27 @@ class TestTheSeriesCards(BaseCase):
         Printed on failure as the table a reader expects, so the diff
         says which series moved and in what.
         """
-        expected = {
-            v: {
-                "offered": True, "postgres": (14, 18, 17),
-                "db_tool": "click-odoo", "template_min": None,
+        def card(postgres, neutralize="odoo", db_tool="click-odoo", template=None):
+            return {
+                "offered": True, "postgres": postgres, "db_tool": db_tool,
+                "neutralize": neutralize, "template_min": template,
             }
-            for v in (
-                "7.0", "8.0", "9.0", "10.0", "11.0", "12.0", "13.0",
-                "14.0", "15.0", "16.0", "17.0", "18.0", "19.0",
-            )
-        }
-        # Offered since core 1.0.198: PostgreSQL 16 to 18, odoo db,
-        # template v10.0.3 (plan Odoo 20, lab of 22-oct-2026).
-        expected["20.0"] = {
-            "offered": True, "postgres": (16, 18, 17),
-            "db_tool": "odoo-db", "template_min": "v10.0.3",
+
+        expected = {
+            # What doodba's template v10.0.8 allows each (its copier.yml),
+            # and no neutralization of Odoo's own before 16.0.
+            **dict.fromkeys(
+                ("7.0", "8.0", "9.0", "10.0"), card(("9.6", "9.6", "9.6"), "sql"),
+            ),
+            **dict.fromkeys(("11.0", "12.0"), card(("9.6", "13", "13"), "sql")),
+            **dict.fromkeys(("13.0", "14.0"), card(("10", "16", "16"), "sql")),
+            "15.0": card(("10", "17", "17"), "sql"),
+            **dict.fromkeys(
+                ("16.0", "17.0", "18.0", "19.0"), card(("14", "18", "17")),
+            ),
+            # Offered since core 1.0.198: PostgreSQL 16 to 18, odoo db,
+            # template v10.0.3 (plan Odoo 20, lab of 22-oct-2026).
+            "20.0": card(("16", "18", "17"), db_tool="odoo-db", template="v10.0.3"),
         }
         self.assertEqual(dict(versions.VERSIONS), expected)
 
@@ -56,10 +62,14 @@ class TestTheSeriesCards(BaseCase):
         for version, card in versions.VERSIONS.items():
             with self.subTest(version=version):
                 self.assertEqual(
-                    set(card), {"offered", "postgres", "db_tool", "template_min"},
+                    set(card),
+                    {"offered", "postgres", "db_tool", "neutralize", "template_min"},
                 )
                 self.assertIn(card["db_tool"], versions.DB_TOOLS)
-                lowest, highest, default = card["postgres"]
+                self.assertIn(card["neutralize"], versions.NEUTRALIZERS)
+                lowest, highest, default = (
+                    versions.POSTGRES_MAJORS.index(p) for p in card["postgres"]
+                )
                 self.assertLessEqual(lowest, default)
                 self.assertLessEqual(default, highest)
 
@@ -93,7 +103,10 @@ class TestTheSeriesCards(BaseCase):
         self.assertIn(("20.0", "20.0"), versions.ODOO_VERSION_SELECTION)
         self.assertEqual(versions.offered_versions()[-1], "20.0")
         self.assertEqual(versions.postgres_versions("20.0"), ("16", "17", "18"))
-        self.assertEqual(versions.script_env("20.0"), {"IC_DB_TOOL": "odoo-db"})
+        self.assertEqual(
+            versions.script_env("20.0"),
+            {"IC_DB_TOOL": "odoo-db", "IC_NEUTRALIZE": "odoo"},
+        )
 
     def test_the_pickers_get_each_offered_series(self):
         facts = versions.picker_facts()
@@ -193,7 +206,7 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
     def test_the_scripts_get_the_series_tool(self):
         self.assertEqual(
             versions.script_env(self.instance.odoo_version),
-            {"IC_DB_TOOL": "click-odoo"},
+            {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "odoo"},
         )
 
     def test_a_postgres_outside_the_series_range_is_refused(self):
@@ -202,6 +215,15 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
             with self.subTest(major=major), self.assertRaises(ValidationError):
                 self.instance20.postgres_version = major
         self.instance20.postgres_version = "16"
+
+    def test_a_new_instance_gets_the_postgres_of_its_series(self):
+        """The field's default, 17, does not run 7.0 to 14.0."""
+        old = self.env["cloud.instance"].create({
+            "name": "series-seven", "project_id": self.project.id,
+            "environment": "staging", "host_id": self.host.id,
+            "odoo_version": "7.0",
+        })
+        self.assertEqual(old.postgres_version, "9.6")
 
     def test_every_postgres_of_the_range_is_taken(self):
         for major in versions.postgres_versions("19.0"):
@@ -226,10 +248,18 @@ class TestWhatHangsOffTheCard(SeriesCardCase):
         self.assertIn("RB-15", str(caught.exception))
         self.instance20._check_template_ref("v10.0.8")
 
+    def test_a_series_before_sixteen_is_neutralized_by_the_panel(self):
+        for series in ("7.0", "15.0"):
+            with self.subTest(series=series):
+                self.assertEqual(
+                    versions.script_env(series),
+                    {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "sql"},
+                )
+
     def test_a_series_on_odoo_db_gets_it(self):
         self.assertEqual(
             versions.script_env(self.instance20.odoo_version),
-            {"IC_DB_TOOL": "odoo-db"},
+            {"IC_DB_TOOL": "odoo-db", "IC_NEUTRALIZE": "odoo"},
         )
 
     def test_the_deploy_and_the_rebuild_ask_before_uploading(self):
