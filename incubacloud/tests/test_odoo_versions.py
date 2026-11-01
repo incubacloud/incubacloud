@@ -75,11 +75,11 @@ class TestTheSeriesCards(BaseCase):
 
     def test_a_card_refuses_what_the_scripts_do_not_implement(self):
         with self.assertRaises(ValueError):
-            versions._card(True, (14, 18, 17), "pg_dump", None)
+            versions._card(True, ("14", "18", "17"), "pg_dump", None)
         with self.assertRaises(ValueError):
-            versions._card(True, (16, 18, 15), "click-odoo", None)
+            versions._card(True, ("16", "18", "15"), "click-odoo", None)
         with self.assertRaises(ValueError):
-            versions._card(True, (14, 18, 17), "click-odoo", "10")
+            versions._card(True, ("14", "18", "17"), "click-odoo", "10")
 
     def test_the_field_knows_every_series_the_pickers_the_offered(self):
         """A series that stops being offered stays a valid value of the
@@ -431,7 +431,7 @@ class TestOnlyAnAdministratorChoosesASeriesNotOffered(CloudSecurityBase):
     def setUp(self):
         super().setUp()
         self.startPatcher(patch.dict(versions.VERSIONS, {
-            "20.0": versions._card(False, (16, 18, 17), "odoo-db", "v10.0.3"),
+            "20.0": versions._card(False, ("16", "18", "17"), "odoo-db", "v10.0.3"),
         }))
         self.manager = self._create_user("series_manager", "group_cloud_manager")
         self.assertFalse(self.manager.has_group("base.group_system"))
