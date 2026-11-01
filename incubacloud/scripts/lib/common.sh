@@ -51,6 +51,25 @@ ic_expand_home() {
     esac
 }
 
+# Run copier with a git cache of the template all its own.
+#
+# Copier keeps one mirror of the template per account, and every run writes to
+# the mirror's config ("git submodule sync"). Git does not wait for that file's
+# lock: two runs meeting there fail with "could not lock config file", and a
+# panel claimed in the same second as another on its host stayed in error (load
+# test, 2-nov-2026). The mirror is 3 MB, so one per run costs a second or two,
+# and every run already asks GitHub for what is new. Copier 9.15, on the oldest
+# hosts, has no cache and ignores the variable.
+#
+# Arguments: what copier takes. Returns copier's exit status.
+ic_copier() {
+    local cache status=0
+    cache="$(mktemp -d -t ic-copier-cache.XXXXXXXX)"
+    COPIER_CACHE_DIR="$cache" "$HOME/.local/bin/copier" "$@" || status=$?
+    rm -rf "$cache"
+    return "$status"
+}
+
 # Keep a path of the copier project out of its git repository's index.
 #
 # The project directory is a git repository, and a rebuild commits

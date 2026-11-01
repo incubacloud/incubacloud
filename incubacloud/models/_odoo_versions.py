@@ -94,19 +94,23 @@ def _card(offered, postgres, db_tool, template_min, neutralize="odoo"):
 # render is the series a new project, or an instance outside one, gets
 # (``default_version``); the platform's own panels name theirs.
 VERSIONS = {
+    # 7.0 to 17.0 are not offered at the launch (owner, 2-nov-2026): each
+    # opens here once its own run of the series passes on the code that
+    # will serve it. A record that holds one keeps it, and an administrator
+    # can still deploy one, which is how that run tests it.
     # 7.0 to 15.0 run on what the doodba template allows each (v10.0.8's
     # copier.yml): 14 to 18, as they had, did not deploy (QA, 1-nov-2026).
-    "7.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
-    "8.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
-    "9.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
-    "10.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
-    "11.0": _card(True, ("9.6", "13", "13"), "click-odoo", None, "sql"),
-    "12.0": _card(True, ("9.6", "13", "13"), "click-odoo", None, "sql"),
-    "13.0": _card(True, ("10", "16", "16"), "click-odoo", None, "sql"),
-    "14.0": _card(True, ("10", "16", "16"), "click-odoo", None, "sql"),
-    "15.0": _card(True, ("10", "17", "17"), "click-odoo", None, "sql"),
-    "16.0": _card(True, ("14", "18", "17"), "click-odoo", None),
-    "17.0": _card(True, ("14", "18", "17"), "click-odoo", None),
+    "7.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "8.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "9.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "10.0": _card(False, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "11.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
+    "12.0": _card(False, ("9.6", "13", "13"), "click-odoo", None, "sql"),
+    "13.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
+    "14.0": _card(False, ("10", "16", "16"), "click-odoo", None, "sql"),
+    "15.0": _card(False, ("10", "17", "17"), "click-odoo", None, "sql"),
+    "16.0": _card(False, ("14", "18", "17"), "click-odoo", None),
+    "17.0": _card(False, ("14", "18", "17"), "click-odoo", None),
     "18.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     "19.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     # Offered since core 1.0.198 (plan Odoo 20, phase 2); the run of the

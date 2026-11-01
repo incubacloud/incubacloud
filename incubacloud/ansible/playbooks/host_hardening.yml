@@ -831,12 +831,20 @@
         state: directory
         mode: "0755"
 
+    # The address pools: Docker's own hold about 30 networks and each instance
+    # takes one, so a host stopped deploying long before running out of memory
+    # or disk. 1024 networks of 254 addresses, in a range no host has used, so
+    # one already running keeps its networks and takes new ones from here. The
+    # bridge stays where it has always been: the observability gateway and the
+    # metrics rules name 172.17.0.1. Same values in full_setup_install.sh.
     - name: Write the Docker daemon hardening
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
         mode: "0644"
         content: |
           {
+            "bip": "172.17.0.1/16",
+            "default-address-pools": [{"base": "10.200.0.0/14", "size": 24}],
             "live-restore": true,
             "userland-proxy": false,
             "log-driver": "json-file",

@@ -34,6 +34,34 @@ command -v docker >/dev/null 2>&1 \
     || (curl -fsSL https://get.docker.com | sudo sh) \
     || ic_die "Docker install failed"
 
+# Docker's own address pools hold about 30 networks and each instance takes one,
+# so a host would stop deploying long before running out of memory or disk. Same
+# values as host_hardening, which has already written them on a hardened host.
+# Only with no containers: the option needs Docker restarted, which without
+# live-restore stops them; hardening a host that is already running applies it.
+ic_log "Widening Docker's address pools..."
+daemon_json="${IC_DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}"
+if ! sudo grep -q default-address-pools "$daemon_json" 2>/dev/null; then
+    if [ -n "$(sudo docker ps -aq 2>/dev/null)" ]; then
+        ic_warn "containers are running: Docker's address pools stay as they are (about 30 networks)"
+    else
+        merged="$( (sudo cat "$daemon_json" 2>/dev/null || echo '{}') | python3 -c '
+import json, sys
+config = json.load(sys.stdin)
+config["bip"] = "172.17.0.1/16"
+config["default-address-pools"] = [{"base": "10.200.0.0/14", "size": 24}]
+print(json.dumps(config, indent=2))
+')"
+        if [ -n "$merged" ]; then
+            sudo mkdir -p "$(dirname "$daemon_json")"
+            if ! { printf '%s\n' "$merged" | sudo tee "$daemon_json" >/dev/null \
+                && sudo systemctl restart docker; }; then
+                ic_warn "could not widen Docker's address pools"
+            fi
+        fi
+    fi
+fi
+
 ic_log "Adding $USER to the docker group..."
 groups | grep -q docker \
     || sudo usermod -aG docker "$USER" \
@@ -62,9 +90,11 @@ ic_log "Ensuring ~/.local/bin on PATH in ~/.bashrc..."
 grep -q '.local/bin' ~/.bashrc 2>/dev/null \
     || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 
-for tool in copier invoke pre-commit; do
+# Copier pinned: it runs every deploy, and how it behaves must not depend on the
+# day a host was set up (its cache came with an unasked-for upgrade).
+for tool in copier==9.19.1 invoke pre-commit; do
     ic_log "Installing $tool (pipx)..."
-    pipx install "$tool" 2>/dev/null || pipx upgrade "$tool" \
+    pipx install "$tool" 2>/dev/null || pipx upgrade "${tool%%==*}" \
         || ic_warn "pipx install/upgrade of $tool reported an issue"
 done
 

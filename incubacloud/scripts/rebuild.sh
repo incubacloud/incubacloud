@@ -93,11 +93,11 @@ case "$op" in
         # either way.
         if [ -n "$vcs_ref" ]; then
             ic_log "running copier update in $dir (template @ $vcs_ref)"
-            "$HOME/.local/bin/copier" update --defaults --trust \
+            ic_copier update --defaults --trust \
                 --vcs-ref "$vcs_ref" --data-file "$answers" "$dir"
         else
             ic_log "running copier update in $dir (template @ latest — unpinned)"
-            "$HOME/.local/bin/copier" update --defaults --trust \
+            ic_copier update --defaults --trust \
                 --data-file "$answers" "$dir"
         fi
         ;;
