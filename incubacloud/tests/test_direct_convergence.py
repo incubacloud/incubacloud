@@ -125,6 +125,10 @@ class TestAHostGoneQuiet(_ConvergenceCase):
         self.assertEqual(self._queued(), 0)
 
     def test_when_every_direct_host_is_quiet_nobody_is_re_applied(self):
+        # A copy of production holds real hosts, whose agents do write.
+        self.env["cloud.host"].search([("id", "!=", self.host.id)]).write({
+            "metrics_last_seen": fields.Datetime.now() - timedelta(minutes=30),
+        })
         other = make_host(
             self.env, "cv-other", "46.4.0.92",
             metrics_agents_state="installed", metrics_agents_write_url=OFFER,

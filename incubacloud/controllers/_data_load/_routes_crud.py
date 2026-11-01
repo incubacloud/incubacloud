@@ -883,6 +883,11 @@ class CrudMixin:
                 host.direct_allowlist_shipped or ''
             ).split(),
             'direct_allowlist_pending': host._direct_allowlist_pending(),
+            'metrics_agents_state': host.metrics_agents_state,
+            'metrics_last_seen': (
+                host.metrics_last_seen.isoformat()
+                if host.metrics_last_seen else ''
+            ),
             'metrics_agents_write_url': host.metrics_agents_write_url or '',
             'direct_reach_reason': host.direct_reach_reason or '',
             'allocated_cpus': round(host.allocated_cpus, 2),
