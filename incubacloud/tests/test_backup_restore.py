@@ -51,6 +51,21 @@ class TestBackupRestoreCommands(BaseCase):
         super().setUpClass()
         cls.cmds = _make_executor().get_commands()
 
+    def test_latest_reaches_duplicity_as_now(self):
+        # ``dup restore --time latest`` is refused: every revive of an
+        # archived copy, which asks for 'latest', failed on it.
+        cmds = _make_executor(time='latest').get_commands()
+        step = _find(cmds, "Restore from backup")[1]
+        self.assertNotIn('latest', step)
+        self.assertIn('now', step)
+
+    def test_the_health_probe_waits_for_a_restore(self):
+        # It stops Odoo; graded then, a tenant being revived goes to draft.
+        from odoo.addons.incubacloud.models.instance_health_executor import (
+            _BLOCKING_JOB_TYPES,
+        )
+        self.assertIn('backup_restore', _BLOCKING_JOB_TYPES)
+
     def test_restore_step_has_stop_on_failure(self):
         # A failed dup restore must abort before dropdb/createdb, or the
         # production database is destroyed and a stale/absent dump imported.
