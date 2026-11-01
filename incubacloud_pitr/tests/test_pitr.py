@@ -530,6 +530,29 @@ class TestTheActions(_PitrCase):
         self.assertEqual(self.inst.pitr_objective, "15")
         self.assertEqual(self.inst.pitr_state, "enabling")
 
+    def test_an_instance_brought_back_has_no_archiving_until_it_is_switched_on(self):
+        """Its stack went with the deletion, so its old state says nothing."""
+        self.inst.pitr_state = "ok"
+        core = next(
+            cls for cls in type(self.inst).__mro__
+            if cls.__module__ == "odoo.addons.incubacloud.models.cloud_instance"
+        )
+        with patch.object(core, "revive", autospec=True, return_value=[1]):
+            self.assertEqual(self.inst.revive(), [1])
+        self.assertEqual(self.inst.pitr_state, "off")
+
+    def test_no_base_copy_beside_a_rebuild_that_follows_the_restore(self):
+        self.inst.write({"pitr_enabled": True, "pitr_state": "ok"})
+        with (
+            patch.object(
+                type(self.inst), "_restore_is_followed_by_a_rebuild",
+                autospec=True, return_value=True,
+            ),
+            patch.object(self.Job, "enqueue", autospec=True) as enqueue,
+        ):
+            self.inst._after_restore_hook("backup_restore")
+        enqueue.assert_not_called()
+
     def test_a_postgres_before_twelve_cannot_be_switched_on(self):
         """``pitr.sh`` recovers with ``recovery.signal``, from 12 on."""
         self.inst.write({"odoo_version": "10.0", "postgres_version": "9.6"})
