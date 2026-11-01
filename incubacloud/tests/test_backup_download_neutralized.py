@@ -90,7 +90,10 @@ class NeutralizedCase(BaseCase):
     def assertToldTheTool(self, step, told=True):
         """Assert *step* is, or is not, handed the series' database tool."""
         env = _env_and_argv(step)[0]
-        self.assertEqual(env, {"IC_DB_TOOL": "click-odoo"} if told else {})
+        self.assertEqual(
+            env,
+            {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "odoo"} if told else {},
+        )
 
 
 class TestNeutralizedProd(NeutralizedCase):

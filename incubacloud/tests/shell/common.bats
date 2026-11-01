@@ -296,6 +296,28 @@ _repo_with_tracked_walg() {
     [ "${IC_DB_ARGS[*]}" = "odoo db load --neutralize --force prod /mnt/restore.zip" ]
 }
 
+@test "a series without Odoo's neutralization loads plainly, then runs the SQL" {
+    export IC_NEUTRALIZE=sql
+    ic_db_load_args prod /mnt/restore.zip 1
+    [ "${IC_DB_ARGS[*]}" = "click-odoo-restoredb --copy --force prod /mnt/restore.zip" ]
+    ic_db_neutralize_args prod
+    [ "${IC_DB_ARGS[0]}" = "psql" ]
+    [[ "${IC_DB_ARGS[*]}" == *"database.is_neutralized"* ]]
+}
+
+@test "with Odoo's own neutralization there is nothing to run after the load" {
+    unset IC_NEUTRALIZE
+    ic_db_neutralize_args prod
+    [ "${#IC_DB_ARGS[@]}" -eq 0 ]
+}
+
+@test "an unknown neutralizer is refused" {
+    export IC_NEUTRALIZE=other
+    run ic_neutralizer
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"unknown neutralizer: other"* ]]
+}
+
 @test "the argv keeps a path with spaces as one word" {
     unset IC_DB_TOOL
     ic_db_dump_args prod "/host tmp/out.zip" all

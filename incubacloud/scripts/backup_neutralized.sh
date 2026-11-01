@@ -80,6 +80,10 @@ case "$op" in
         ic_log "restoring into $neutral_db with neutralization"
         ic_db_load_args "$neutral_db" "$src_in_odoo" 1
         docker compose exec -T odoo "${IC_DB_ARGS[@]}"
+        ic_db_neutralize_args "$neutral_db"
+        if [ "${#IC_DB_ARGS[@]}" -gt 0 ]; then
+            docker compose exec -T odoo "${IC_DB_ARGS[@]}"
+        fi
         ;;
 
     redump-full)

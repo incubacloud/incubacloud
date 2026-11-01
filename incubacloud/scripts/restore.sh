@@ -80,6 +80,12 @@ case "$op" in
         ic_db_load_args "$dbname" /mnt/restore.zip "$neutralize"
         ic_compose_run --rm -v "$remote:/mnt/restore.zip:ro" \
             odoo "${IC_DB_ARGS[@]}"
+        if [ "$neutralize" = "1" ]; then
+            ic_db_neutralize_args "$dbname"
+            if [ "${#IC_DB_ARGS[@]}" -gt 0 ]; then
+                ic_compose_run --rm odoo "${IC_DB_ARGS[@]}"
+            fi
+        fi
         ;;
 
     set-base-url)
