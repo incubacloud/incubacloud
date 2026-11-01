@@ -123,6 +123,10 @@ _BLOCKING_JOB_TYPES = (
     'rebuild_instance',
     'full_setup',
     'restore_instance',
+    # It stops Odoo while the database is replaced. Graded in that window,
+    # the instance goes to ``error``, and a tenant being revived back to
+    # draft with its restore still running.
+    'backup_restore',
 )
 
 # Odoo log line prefix: "2026-05-17 18:30:21,415 1 ERROR devel module.path: "
