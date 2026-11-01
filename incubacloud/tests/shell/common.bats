@@ -416,3 +416,34 @@ _oneoff_docker() {
     [ "$status" -eq 0 ]
     [ "$output" = "db" ]
 }
+
+@test "ic_copier: each run has a cache of its own, gone when it ends" {
+    export HOME="$TMP/home"
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/copier" <<STUB
+#!/bin/bash
+[ -d "\$COPIER_CACHE_DIR" ] || exit 7
+echo "\$COPIER_CACHE_DIR" >> "$TMP/caches"
+STUB
+    chmod +x "$HOME/.local/bin/copier"
+    ic_copier update first
+    ic_copier update second
+    [ "$(sort -u "$TMP/caches" | wc -l)" -eq 2 ]
+    while read -r cache; do
+        [ ! -e "$cache" ]
+    done < "$TMP/caches"
+}
+
+@test "ic_copier: copier's own failure comes back, and the cache still goes" {
+    export HOME="$TMP/home"
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/copier" <<STUB
+#!/bin/bash
+echo "\$COPIER_CACHE_DIR" > "$TMP/cache"
+exit 3
+STUB
+    chmod +x "$HOME/.local/bin/copier"
+    run ic_copier update
+    [ "$status" -eq 3 ]
+    [ ! -e "$(cat "$TMP/cache")" ]
+}
