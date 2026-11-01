@@ -28,6 +28,28 @@ from .deploy_instance_executor import DeployInstanceExecutor
 # executing after its budget: nothing was updated, so the job is worth
 # retrying rather than failing.
 _EXIT_CRONS_BUSY = 75
+#: What a failed image build waits before its one repetition, in seconds.
+_BUILD_RETRY_WAIT_S = 60
+
+
+def _build_retried_once(build):
+    """Return a shell command that repeats a failed image build once.
+
+    The build clones every repository of the image, so a passing failure
+    at GitHub would otherwise fail the whole rebuild (QA, 31-oct-2026). The
+    repetition also runs for a build that fails for good: it only costs that
+    build's time, and the job then fails with the same error.
+
+    :param str build: the ``docker compose build`` command to run.
+    :return: the command, exiting with the status of its last attempt.
+    :rtype: str
+    """
+    return (
+        f"{{ {build} || {{"
+        f" echo 'The image build failed: trying once more"
+        f" in {_BUILD_RETRY_WAIT_S} s.';"
+        f" sleep {_BUILD_RETRY_WAIT_S}; {build}; }}; }}"
+    )
 
 
 class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
@@ -207,11 +229,9 @@ class RebuildInstanceExecutor(HostBuildLockMixin, DeployInstanceExecutor):
             #     affects the image has changed; cached otherwise.
             (
                 "Rebuild Odoo image",
-                (
-                    f"cd {d} && docker compose build"
-                    f" --pull --no-cache odoo"
-                ) if needs_full_rebuild else (
-                    f"cd {d} && docker compose build odoo"
+                f"cd {d} && " + _build_retried_once(
+                    "docker compose build --pull --no-cache odoo"
+                    if needs_full_rebuild else "docker compose build odoo"
                 ),
                 {"stop_on_failure": True},
             ),
