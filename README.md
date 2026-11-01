@@ -6,6 +6,8 @@
 
 **IncubaCloud** is an Odoo-native platform for deploying, managing and monitoring remote Odoo instances — host management, instance lifecycle, GitHub integration, backups, terminals and audit trails, all from inside your ERP.
 
+Built on Odoo Community: the panel itself uses no Enterprise modules, so you don't need an Enterprise license to run it. It deploys both editions.
+
 ---
 
 ## What IncubaCloud does
@@ -17,6 +19,8 @@
 - Interactive terminals (xterm.js) and container log viewer
 - Connect-as: passwordless login to managed instances
 - 5-tier role-based access control with full audit trail
+- AI assistant inside the panel, with your own AI key
+- MCP server: Claude, Cursor or another AI agent looks at projects, reads logs, deploys, backs up or clones a staging, under your permissions, and asks for approval before deleting or spending ([guide](https://www.incubacloud.io/docs/ai-agents))
 
 ---
 
