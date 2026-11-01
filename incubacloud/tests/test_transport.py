@@ -679,7 +679,7 @@ class TestBackupCreateGetCommands(BaseCase):
         tool named for it: ``run --rm`` out of Traefik, the ZIP landing
         on the host through the /tmp bind mount, no exec and no cp."""
         env, argv = self._live_dump(self._make_executor(environment="staging"))
-        self.assertEqual(env, {"IC_DB_TOOL": "click-odoo"})
+        self.assertEqual(env, {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "odoo"})
         self.assertEqual(argv[6], "all")
 
     def test_non_prod_default_payload_includes_filestore(self):
@@ -919,7 +919,9 @@ class TestBackupDownloadGetCommands(BaseCase):
         """The dump runs inside the instance's image, whose tool the
         series' card names; the store's restores run no Odoo tool."""
         live = self._make_executor("staging", mode="all").get_commands()[0]
-        self.assertEqual(self._env(live), {"IC_DB_TOOL": "click-odoo"})
+        self.assertEqual(
+            self._env(live), {"IC_DB_TOOL": "click-odoo", "IC_NEUTRALIZE": "odoo"},
+        )
         stored = self._make_executor("production", mode="dump").get_commands()[0]
         self.assertEqual(self._env(stored), {})
 

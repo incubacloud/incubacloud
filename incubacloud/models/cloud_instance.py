@@ -373,7 +373,7 @@ class CloudInstance(models.Model):
     )
 
     postgres_version = fields.Selection(
-        [("14", "14"), ("15", "15"), ("16", "16"), ("17", "17"), ("18", "18")],
+        [(major, major) for major in _odoo_versions.POSTGRES_MAJORS],
         string="PostgreSQL Version",
         default="17",
     )
@@ -4106,6 +4106,11 @@ class CloudInstance(models.Model):
             # clone calls it on its production, whose environment the
             # check would otherwise read as changed to staging.
             self.browse()._check_guarded_vals(vals)
+            # The field's default suits the newest series only: 7.0 to 14.0
+            # do not run on it.
+            series = vals.get("odoo_version")
+            if series and not vals.get("postgres_version"):
+                vals["postgres_version"] = _odoo_versions.postgres_default(series)
             # Seeding ``state`` on create is legal (that is how an
             # already-running instance is imported), but ``deployed`` is
             # derived: Odoo would accept it here and then quietly

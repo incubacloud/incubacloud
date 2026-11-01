@@ -283,6 +283,60 @@ ic_db_dump_args() {
     esac
 }
 
+# Print the way a copy is neutralized, refusing one this library does not
+# implement. Unset means Odoo's own, as for a script run by hand.
+ic_neutralizer() {
+    local way="${IC_NEUTRALIZE:-odoo}"
+    case "$way" in
+        odoo|sql) printf '%s\n' "$way" ;;
+        *) ic_die "unknown neutralizer: $way (expected odoo or sql)" ;;
+    esac
+}
+
+# Fill IC_DB_ARGS with the argv that neutralizes <db> after its load, for a
+# series without Odoo's own (before 16.0); empty when the load did it. What
+# 16.0's neutralize.sql files do that matters on a copy: no scheduled action
+# but the vacuum, no mail in or out, no payment provider charging. The tables
+# differ between series, so each is looked for first.
+#   ic_db_neutralize_args <db>
+# shellcheck disable=SC2034  # IC_DB_ARGS is read by the calling script
+ic_db_neutralize_args() {
+    local database="$1" way
+    way="$(ic_neutralizer)" || exit 1
+    IC_DB_ARGS=()
+    [ "$way" = sql ] || return 0
+    IC_DB_ARGS=(psql -v ON_ERROR_STOP=1 -d "$database" -c "$(cat <<'SQL'
+DO $$
+BEGIN
+    UPDATE ir_cron SET active = false WHERE id NOT IN (
+        SELECT res_id FROM ir_model_data
+        WHERE module = 'base' AND name = 'autovacuum_job'
+    );
+    IF to_regclass('ir_mail_server') IS NOT NULL THEN
+        UPDATE ir_mail_server SET active = false;
+    END IF;
+    IF to_regclass('fetchmail_server') IS NOT NULL THEN
+        UPDATE fetchmail_server SET active = false;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'payment_acquirer' AND column_name = 'state'
+    ) THEN
+        UPDATE payment_acquirer SET state = 'disabled';
+    ELSIF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'payment_acquirer' AND column_name = 'environment'
+    ) THEN
+        UPDATE payment_acquirer SET environment = 'test';
+    END IF;
+    DELETE FROM ir_config_parameter WHERE key = 'database.is_neutralized';
+    INSERT INTO ir_config_parameter (key, value)
+        VALUES ('database.is_neutralized', 'true');
+END $$;
+SQL
+)")
+}
+
 # Fill IC_DB_ARGS with the argv that loads <archive> into <db>, replacing
 # a database of that name, as a copy (a new database uuid, so the copy
 # never answers for the original) and neutralized when <neutralize> is 1.
@@ -292,7 +346,10 @@ ic_db_load_args() {
     local database="$1" archive="$2" neutralize="${3:-0}" tool
     tool="$(ic_db_tool)" || exit 1
     local flags=()
-    [ "$neutralize" = 1 ] && flags+=(--neutralize)
+    # A series without Odoo's own neutralization loads plainly, and its
+    # script then runs what ic_db_neutralize_args builds.
+    [ "$neutralize" = 1 ] && [ "$(ic_neutralizer)" = odoo ] \
+        && flags+=(--neutralize)
     case "$tool" in
         click-odoo)
             IC_DB_ARGS=(click-odoo-restoredb "${flags[@]}" --copy --force "$database" "$archive")

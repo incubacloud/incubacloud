@@ -191,8 +191,30 @@ case "$op" in
         # host sees the files: postgres would otherwise try to replay WAL
         # from a backup, and once the mount is chowned to UID 70 the host
         # user can no longer remove anything in there.
+        # 9.6, the only PostgreSQL of 7.0 to 10.0, ships with replication
+        # off, and pg_basebackup is a replication client. Turning it on
+        # takes one restart of the database, once; later majors have it on.
+        senders="$(docker compose exec -T db psql -U "$pg_user" -d postgres -Atc \
+            'SHOW max_wal_senders' | tr -d '[:space:]')"
+        if [ "$senders" = "0" ]; then
+            ic_log "turning replication on: this PostgreSQL ships with it off"
+            docker compose exec -T db psql -U "$pg_user" -d postgres \
+                -c "ALTER SYSTEM SET wal_level = 'replica'" \
+                -c "ALTER SYSTEM SET max_wal_senders = 2"
+            docker compose restart db
+            for _ in $(seq 1 60); do
+                docker compose exec -T db pg_isready -U "$pg_user" >/dev/null 2>&1 && break
+                sleep 1
+            done
+        fi
+        # --no-sync does not exist on 9.6's.
+        no_sync=""
+        if docker compose exec -T db pg_basebackup --help | grep -q -- --no-sync; then
+            no_sync="--no-sync"
+        fi
+        # shellcheck disable=SC2086  # empty on purpose when not supported
         docker compose exec -T db pg_basebackup -U "$pg_user" \
-            -D "$backup_in_db" --checkpoint=fast --no-sync -X fetch
+            -D "$backup_in_db" --checkpoint=fast $no_sync -X fetch
         docker compose exec -T db rm -f "$backup_in_db/backup_label"
         docker compose cp "db:$backup_in_db" "$clone_on_host"
         docker compose exec -T db rm -rf "$backup_in_db"
