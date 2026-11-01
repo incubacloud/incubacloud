@@ -23,13 +23,17 @@ Fields of a card:
     new project, or an instance outside one, gets (``default_version``).
 ``postgres``
     ``(lowest, highest, default)`` major versions of PostgreSQL the
-    series runs on. The picker shows that range and ``cloud.instance``
-    refuses any other.
+    series runs on, as the strings of ``POSTGRES_MAJORS``. The picker
+    shows that range and ``cloud.instance`` refuses any other.
 ``db_tool``
     The tool that dumps and loads the instance's database inside its
     ``odoo`` container, one of ``DB_TOOLS``. ``scripts/lib/common.sh``
     implements each (``ic_db_dump_args`` / ``ic_db_load_args``) and the
     executors name the one in use through ``IC_DB_TOOL``.
+``neutralize``
+    How a copy of the series is neutralized, one of ``NEUTRALIZERS``.
+    ``scripts/lib/common.sh`` implements each and the scripts learn the
+    one in use through ``IC_NEUTRALIZE``.
 ``template_min``
     The lowest doodba copier template (``vX.Y.Z``) able to render the
     series, or None when any does. A deploy or rebuild whose pin is
@@ -44,29 +48,44 @@ import re
 #: where click-odoo-contrib 1.24 refuses to run its database commands).
 DB_TOOLS = ("click-odoo", "odoo-db")
 
+#: How a copy is neutralized. ``odoo``: Odoo's own (``--neutralize``, from
+#: 16.0). ``sql``: older series have no such thing, and
+#: ``scripts/lib/common.sh`` turns off what would reach the outside.
+NEUTRALIZERS = ("odoo", "sql")
+
+#: The PostgreSQL majors the panel can run, oldest first.
+POSTGRES_MAJORS = (
+    "9.6", "10", "11", "12", "13", "14", "15", "16", "17", "18",
+)
+
 _TEMPLATE_TAG_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
 
 
-def _card(offered, postgres, db_tool, template_min):
+def _card(offered, postgres, db_tool, template_min, neutralize="odoo"):
     """Build one series' card, checking its values.
 
     :param bool offered: see the module docstring.
-    :param tuple postgres: ``(lowest, highest, default)`` majors as ints.
+    :param tuple postgres: ``(lowest, highest, default)`` of
+        ``POSTGRES_MAJORS``.
     :param str db_tool: one of ``DB_TOOLS``.
     :param template_min: ``vX.Y.Z`` or None.
+    :param str neutralize: one of ``NEUTRALIZERS``.
     :rtype: dict
     """
-    lowest, highest, default = postgres
+    lowest, highest, default = (POSTGRES_MAJORS.index(p) for p in postgres)
     if not lowest <= default <= highest:
-        raise ValueError(f"PostgreSQL default {default} outside {lowest}-{highest}")
+        raise ValueError(f"PostgreSQL default outside its range: {postgres}")
     if db_tool not in DB_TOOLS:
         raise ValueError(f"unknown db tool {db_tool!r}")
+    if neutralize not in NEUTRALIZERS:
+        raise ValueError(f"unknown neutralizer {neutralize!r}")
     if template_min is not None and not _TEMPLATE_TAG_RE.match(template_min):
         raise ValueError(f"template_min must be a vX.Y.Z tag, got {template_min!r}")
     return {
         "offered": bool(offered),
-        "postgres": (int(lowest), int(highest), int(default)),
+        "postgres": tuple(postgres),
         "db_tool": db_tool,
+        "neutralize": neutralize,
         "template_min": template_min,
     }
 
@@ -75,19 +94,21 @@ def _card(offered, postgres, db_tool, template_min):
 # render is the series a new project, or an instance outside one, gets
 # (``default_version``); the platform's own panels name theirs.
 VERSIONS = {
-    "7.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "8.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "9.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "10.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "11.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "12.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "13.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "14.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "15.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "16.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "17.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "18.0": _card(True, (14, 18, 17), "click-odoo", None),
-    "19.0": _card(True, (14, 18, 17), "click-odoo", None),
+    # 7.0 to 15.0 run on what the doodba template allows each (v10.0.8's
+    # copier.yml): 14 to 18, as they had, did not deploy (QA, 1-nov-2026).
+    "7.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "8.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "9.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "10.0": _card(True, ("9.6", "9.6", "9.6"), "click-odoo", None, "sql"),
+    "11.0": _card(True, ("9.6", "13", "13"), "click-odoo", None, "sql"),
+    "12.0": _card(True, ("9.6", "13", "13"), "click-odoo", None, "sql"),
+    "13.0": _card(True, ("10", "16", "16"), "click-odoo", None, "sql"),
+    "14.0": _card(True, ("10", "16", "16"), "click-odoo", None, "sql"),
+    "15.0": _card(True, ("10", "17", "17"), "click-odoo", None, "sql"),
+    "16.0": _card(True, ("14", "18", "17"), "click-odoo", None),
+    "17.0": _card(True, ("14", "18", "17"), "click-odoo", None),
+    "18.0": _card(True, ("14", "18", "17"), "click-odoo", None),
+    "19.0": _card(True, ("14", "18", "17"), "click-odoo", None),
     # Offered since core 1.0.198 (plan Odoo 20, phase 2); the run of the
     # series (``qa-run -m versiones``) tests it with the rest. PostgreSQL 16
     # to 18, as the template requires; odoo db, since click-odoo-contrib
@@ -95,7 +116,7 @@ VERSIONS = {
     # template v10.0.3, the first whose tasks also use odoo db on 20
     # (v10.0.2 renders it, but its ``invoke resetdb`` would fail in an
     # exported copy).
-    "20.0": _card(True, (16, 18, 17), "odoo-db", "v10.0.3"),
+    "20.0": _card(True, ("16", "18", "17"), "odoo-db", "v10.0.3"),
 }
 
 
@@ -189,7 +210,9 @@ def postgres_versions(version):
     :rtype: tuple
     """
     lowest, highest, _default = card(version)["postgres"]
-    return tuple(str(major) for major in range(lowest, highest + 1))
+    return POSTGRES_MAJORS[
+        POSTGRES_MAJORS.index(lowest) : POSTGRES_MAJORS.index(highest) + 1
+    ]
 
 
 def postgres_default(version):
@@ -198,7 +221,7 @@ def postgres_default(version):
     :param str version: a series.
     :rtype: str
     """
-    return str(card(version)["postgres"][2])
+    return card(version)["postgres"][2]
 
 
 def db_tool(version):
@@ -214,15 +237,18 @@ def script_env(version):
     """Return the environment the operation scripts run with for *version*.
 
     What a script needs to know of the series and no operation passes
-    by argument: today the database tool (``IC_DB_TOOL``,
-    ``scripts/lib/common.sh``). Handed to
+    by argument: the database tool (``IC_DB_TOOL``) and the way a copy is
+    neutralized (``IC_NEUTRALIZE``), both ``scripts/lib/common.sh``. Handed to
     ``AbstractExecutor.run_script`` as ``env``; it reads the version
     alone, so an executor's test may describe its instance as plain data.
 
     :param str version: a series.
     :rtype: dict
     """
-    return {"IC_DB_TOOL": db_tool(version)}
+    return {
+        "IC_DB_TOOL": db_tool(version),
+        "IC_NEUTRALIZE": card(version)["neutralize"],
+    }
 
 
 def template_ref_allows(version, ref):

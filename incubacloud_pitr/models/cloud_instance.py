@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
+from odoo.addons.incubacloud.models import _odoo_versions
 from odoo.addons.incubacloud.models.encrypted_char import EncryptedChar
 
 from ._constants import (
@@ -179,7 +180,8 @@ class CloudInstance(models.Model):
         """Whether this instance can archive at all.
 
         Production only — a staging is a copy with no backups of its own
-        and never archives — with an S3 backup backend.
+        and never archives — with an S3 backup backend, on a PostgreSQL
+        ``pitr.sh`` can recover (``_pitr_postgres_supported``).
 
         :rtype: bool
         """
@@ -190,7 +192,21 @@ class CloudInstance(models.Model):
             and backend
             and backend.backend_type == "s3"
             and backend.s3_bucket
+            and self._pitr_postgres_supported()
         )
+
+    def _pitr_postgres_supported(self):
+        """Whether this instance's PostgreSQL can be recovered by ``pitr.sh``.
+
+        It writes ``recovery.signal``, from 12 on; before, recovery was
+        another file and other settings. That leaves out the series that
+        run only on an older one, 7.0 to 10.0.
+
+        :rtype: bool
+        """
+        self.ensure_one()
+        majors = _odoo_versions.POSTGRES_MAJORS
+        return majors.index(self.postgres_version or "17") >= majors.index("12")
 
     def _pitr_active(self):
         """Wanted and applicable: what the stack is rendered for.
@@ -764,6 +780,8 @@ class CloudInstance(models.Model):
         self.ensure_one()
         self._pitr_check_manager()
         self._pitr_refuse_external()
+        if not self._pitr_postgres_supported():
+            raise UserError(_("Continuous recovery needs PostgreSQL 12 or later."))
         if not self._pitr_applicable():
             raise UserError(_(
                 "Continuous recovery needs a production instance with an "

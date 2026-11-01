@@ -530,6 +530,14 @@ class TestTheActions(_PitrCase):
         self.assertEqual(self.inst.pitr_objective, "15")
         self.assertEqual(self.inst.pitr_state, "enabling")
 
+    def test_a_postgres_before_twelve_cannot_be_switched_on(self):
+        """``pitr.sh`` recovers with ``recovery.signal``, from 12 on."""
+        self.inst.write({"odoo_version": "10.0", "postgres_version": "9.6"})
+        self.assertFalse(self.inst._pitr_applicable())
+        with self.assertRaisesRegex(UserError, "PostgreSQL 12"):
+            self.inst.action_pitr_enable()
+        self.assertFalse(self.inst.pitr_enabled)
+
     def test_a_copy_switched_on_gets_a_key_of_its_own(self):
         self.inst.pitr_key = False
         self._chain(self.inst.action_pitr_enable)
