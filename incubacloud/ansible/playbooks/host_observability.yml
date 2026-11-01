@@ -569,13 +569,15 @@
 
     - name: Restart promtail when its configuration changed
       # Same reason as vmagent's: a new push URL alone does not recreate
-      # the container, and promtail reads its file at start only.
+      # the container, and promtail reads its file at start only. Whether
+      # the compose file changed too says nothing: a new URL for vmagent
+      # changes it, and only vmagent is recreated (1-nov-2026).
       ansible.builtin.command:
         cmd:
           docker compose -p incubacloud-observability -f docker-compose.yaml restart
           promtail
         chdir: "{{ ic_obs_dir }}"
-      when: ic_promtail_cfg is changed and ic_agents_compose is not changed
+      when: ic_promtail_cfg is changed
       changed_when: true
 
     - name: Wait for the agents to report healthy
