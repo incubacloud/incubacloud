@@ -50,6 +50,12 @@ class BackupRestoreExecutor(AbstractSSHExecutor):
         d = self._inst_dir(inst)
         payload = self.job.payload or {}
         time = payload['time']
+        # ``validate_dup_time`` admits 'latest' for the download jobs,
+        # which leave the flag out for it. ``dup restore --time`` takes
+        # the value as it comes and only knows 'now': the revive of an
+        # archived copy asks for 'latest' and failed here on every try.
+        if time == 'latest':
+            time = 'now'
         dbname = inst.postgres_dbname or 'prod'
 
         return [
