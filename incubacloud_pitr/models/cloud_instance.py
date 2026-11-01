@@ -957,6 +957,7 @@ class CloudInstance(models.Model):
         window = self._pitr_window()
         return {
             "available": self._pitr_applicable(),
+            "postgres_supported": self._pitr_postgres_supported(),
             "enabled": bool(self.pitr_enabled),
             "external": bool(self.pitr_stack_external),
             "state": self.pitr_state or "off",

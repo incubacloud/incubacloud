@@ -4109,7 +4109,7 @@ class CloudInstance(models.Model):
             # The field's default suits the newest series only: 7.0 to 14.0
             # do not run on it.
             series = vals.get("odoo_version")
-            if series and not vals.get("postgres_version"):
+            if series in _odoo_versions.VERSIONS and not vals.get("postgres_version"):
                 vals["postgres_version"] = _odoo_versions.postgres_default(series)
             # Seeding ``state`` on create is legal (that is how an
             # already-running instance is imported), but ``deployed`` is
