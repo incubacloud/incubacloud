@@ -236,6 +236,13 @@ class TestRebuildCommandsBootTest(BaseCase):
         self.assertEqual(len(cmd), 3)
         self.assertTrue(cmd[2].get("stop_on_failure"))
 
+    def test_a_failed_build_is_repeated_once(self):
+        """A passing failure at GitHub must not fail the whole rebuild."""
+        build = _find_cmd(self.cmds, "Rebuild Odoo image")[1]
+        self.assertEqual(build.count("docker compose build"), 2)
+        self.assertIn("|| {", build)
+        self.assertIn("sleep 60", build)
+
 
 # ---------------------------------------------------------------------------
 # Class 4: TestDeployCommandsChecksums
