@@ -58,12 +58,12 @@ case "$op" in
         # impossible to investigate.
         if [ -n "$vcs_ref" ]; then
             ic_log "running copier into $dir (template $template_ref @ $vcs_ref)"
-            "$HOME/.local/bin/copier" copy --defaults --overwrite --trust \
+            ic_copier copy --defaults --overwrite --trust \
                 --vcs-ref "$vcs_ref" \
                 --data-file "$answers" "$template_ref" "$dir"
         else
             ic_log "running copier into $dir (template $template_ref @ default branch — unpinned)"
-            "$HOME/.local/bin/copier" copy --defaults --overwrite --trust \
+            ic_copier copy --defaults --overwrite --trust \
                 --data-file "$answers" "$template_ref" "$dir"
         fi
         ;;
