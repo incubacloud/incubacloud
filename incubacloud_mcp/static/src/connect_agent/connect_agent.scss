@@ -59,10 +59,31 @@
         align-items: center;
     }
 
-    .ic-mcp-copied {
-        align-self: center;
-        font-size: 12px;
-        color: var(--rl-muted);
+    // Wide enough for "✓ Copied" and "✓ Copiado", so the row never
+    // changes width when the label does.
+    .ic-mcp-copy-btn {
+        flex: none;
+        min-inline-size: 7.5rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transition: background-color .2s, color .2s, border-color .2s;
+
+        .ic-mcp-copy-check {
+            display: none;
+        }
+
+        &.ic-mcp-copy-btn--done {
+            background: var(--rl-green-soft);
+            color: var(--rl-green);
+            border-color: var(--rl-green);
+
+            .ic-mcp-copy-check {
+                display: inline-block;
+                animation: ic-mcp-copy-check .2s ease-out;
+            }
+        }
     }
 
     .ic-mcp-url {
@@ -92,4 +113,19 @@
 .ic-mcp-via {
     color: var(--rl-muted);
     font-size: 0.85em;
+}
+
+@keyframes ic-mcp-copy-check {
+    from { transform: scale(.4); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ic-mcp-copy .ic-mcp-copy-btn {
+        transition: none;
+
+        .ic-mcp-copy-check {
+            animation: none;
+        }
+    }
 }
