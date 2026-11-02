@@ -214,3 +214,66 @@
   loop_control:
     label: "{{ item.name }}"
   when: ic_account_names | length > 0 and ic_stale_orgs | length > 0
+
+# ── Users left without an organisation ────────────────────────────────
+# Deleting an account's organisation left its user behind, tied to a
+# panel login that no longer exists. Whoever came back with the same
+# e-mail then got "User sync failed": Grafana tried to create them again
+# and the login was taken (2-nov-2026, a tenant closed and re-created).
+# A Grafana user holds no data of its own — dashboards and datasources
+# belong to the organisation — and is created again at its next login.
+# Only users who came in through the panel's sign-in are candidates, and
+# only when they belong to no organisation at all: ``admin`` and anyone
+# made by hand are left alone.
+
+- name: List the users who signed in through the panel
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/users/search?perpage=1000"
+    method: GET
+    status_code: [200]
+  register: ic_all_users
+  when: ic_account_names | length > 0
+
+- name: Keep only the panel's sign-ins
+  ansible.builtin.set_fact:
+    ic_panel_users: >-
+      {{ ic_all_users.json.users
+         | selectattr('authLabels', 'defined')
+         | selectattr('authLabels', 'contains', 'Generic OAuth')
+         | rejectattr('login', 'equalto', 'admin')
+         | list }}
+  when: ic_account_names | length > 0
+
+- name: Look up the organisations of each of them
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/users/{{ item.id }}/orgs"
+    method: GET
+    status_code: [200]
+  loop: "{{ ic_panel_users }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: ic_panel_user_orgs
+  when: ic_account_names | length > 0 and ic_panel_users | length > 0
+
+- name: Delete the users left without an organisation
+  ansible.builtin.uri:
+    url_username: operator
+    url_password: "{{ ic_operator_plain }}"
+    force_basic_auth: true
+    url: "http://{{ ic_gateway_bind }}/gadmin/api/admin/users/{{ item.item.id }}"
+    method: DELETE
+    status_code: [200]
+  loop: "{{ ic_panel_user_orgs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+  when:
+    - ic_account_names | length > 0
+    - ic_panel_users | length > 0
+    - item.json is defined
+    - item.json | length == 0
