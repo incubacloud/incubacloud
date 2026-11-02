@@ -73,7 +73,13 @@ teardown() {
 
 @test "the proxy is told to reopen the file after rotating" {
     "$SCRIPT" install
-    grep -q "docker kill --signal=USR1 inverseproxy-proxy-1" "$CONF"
+    grep -q "docker exec inverseproxy-proxy-1 kill -USR1 1" "$CONF"
+}
+
+@test "the signal never goes through docker kill, which marks the proxy stopped" {
+    "$SCRIPT" install
+    run grep -q "docker kill" "$CONF"
+    [ "$status" -ne 0 ]
 }
 
 @test "the entry is checked with logrotate" {

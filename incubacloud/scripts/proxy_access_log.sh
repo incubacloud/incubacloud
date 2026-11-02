@@ -60,6 +60,12 @@ case "$1" in
                 || ic_warn "could not install logrotate: the access log will not be rotated"
         fi
 
+        # The proxy reopens the file on USR1, sent from inside the
+        # container to its PID 1 (Traefik). Not ``docker kill --signal``:
+        # Docker marks any container it kills as stopped by hand, whatever
+        # the signal, so the restart policy no longer brought the proxy
+        # back after a reboot. On 2 November 2026 saas-free rebooted at
+        # 04:00, its proxy stayed down, and the next prune deleted it.
         conf="$LOGROTATE_DIR/incubacloud-traefik"
         tmp="$(mktemp)"
         cat > "$tmp" <<CONF
@@ -79,7 +85,7 @@ $LOG_DIR/access.log {
     dateformat .%Y-%m-%d-%s
     sharedscripts
     postrotate
-        docker kill --signal=USR1 $PROXY_CONTAINER >/dev/null 2>&1 || true
+        docker exec $PROXY_CONTAINER kill -USR1 1 >/dev/null 2>&1 || true
     endscript
 }
 CONF
