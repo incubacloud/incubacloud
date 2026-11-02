@@ -8,6 +8,7 @@ from lxml import etree
 from odoo.modules.module import get_module_path
 from odoo.tests import tagged
 from odoo.tests.common import BaseCase, HttpCase
+from odoo.addons.incubacloud.tests._browser import ChromeStartRetry
 
 from ..models.cloud_settings import RESOURCE_PARAM
 from .common import McpUsersMixin, StandalonePanelMixin
@@ -183,7 +184,7 @@ _SETTINGS_PAGE = """
 
 
 @tagged("post_install", "-at_install")
-class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, HttpCase):
+class TestTheSpaPages(StandalonePanelMixin, McpUsersMixin, ChromeStartRetry, HttpCase):
     """The page and the Settings tab, opened by a user of each role."""
 
     def setUp(self):
