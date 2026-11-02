@@ -34,6 +34,12 @@ class TestChromeStartRetry(HttpCase):
             result, calls = self._run(_HUNG, "ok")
         self.assertEqual((result, calls), ("ok", 2))
 
+    def test_a_page_chrome_never_started_opening_gets_one_more_run(self):
+        hung = TimeoutError("Page.navigate({'url': 'http://127.0.0.1:8069/cloud'})")
+        with self.assertLogs("odoo.addons.incubacloud.tests._browser", "WARNING"):
+            result, calls = self._run(hung, "ok")
+        self.assertEqual((result, calls), ("ok", 2))
+
     def test_it_is_only_once(self):
         with self.assertLogs("odoo.addons.incubacloud.tests._browser", "WARNING"):
             result, calls = self._run(_HUNG, _HUNG)
