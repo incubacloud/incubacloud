@@ -5,9 +5,15 @@
         <div t-att-class="props.inline ? 'ic-mcp-copy ic-mcp-copy--inline' : 'ic-mcp-copy'">
             <code t-if="props.inline" class="ic-mcp-url" t-esc="props.text"/>
             <pre t-else="" class="ic-mcp-code" t-esc="props.text"/>
-            <button class="rl-btn rl-btn-ghost rl-btn-sm" type="button"
-                    t-att-aria-label="props.label" t-on-click="copy">Copy</button>
-            <span class="ic-mcp-copied" role="status"><t t-if="state.copied">Copied</t></span>
+            <!-- The button itself says it copied, at a fixed width: a label
+                 beside it widened the row and moved the command (3-nov-2026).
+                 Screen readers hear it from the hidden status. -->
+            <button type="button" t-att-aria-label="props.label" t-on-click="copy"
+                    t-att-class="'rl-btn rl-btn-ghost rl-btn-sm ic-mcp-copy-btn' + (state.copied ? ' ic-mcp-copy-btn--done' : '')">
+                <span class="ic-mcp-copy-check" aria-hidden="true">✓</span>
+                <t t-if="state.copied">Copied</t><t t-else="">Copy</t>
+            </button>
+            <span class="ic-mcp-copied ic-visually-hidden" role="status"><t t-if="state.copied">Copied</t></span>
         </div>
     </t>
 

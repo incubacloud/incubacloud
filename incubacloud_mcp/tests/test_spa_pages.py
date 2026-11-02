@@ -127,6 +127,15 @@ _API_KEY_PAGE = """
             if (!copy.querySelector(":scope > [role=status]")) {{
                 fail("a Copy without its status beside the button");
             }}
+            // The status is for screen readers only, and the button keeps
+            // its width whatever it says (3-nov-2026: "Copied" beside the
+            // button moved the command).
+            if (copy.querySelector(":scope > [role=status]").getBoundingClientRect().width > 1) {{
+                fail("a Copy status that takes room beside the button");
+            }}
+            if (parseFloat(getComputedStyle(button).minInlineSize || "0") <= 0) {{
+                fail("a Copy button without a fixed width");
+            }}
         }}
     }}
     const claudeTab = tabs.find((tab) => tab.textContent.includes("Claude and Claude"));
