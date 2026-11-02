@@ -34,6 +34,10 @@ services:
     #
     # Also note that dollar signs should NOT be doubled when they not evaluated (e.g. Ansible docker_container module).
     labels:
+      # Never swept by the nightly prune (host_maintenance.yml), even
+      # stopped: a stopped proxy is one to start again, and without it
+      # no instance on the host answers.
+      - "incubacloud.protect=1"
       - "traefik.enable=true"
       - "traefik.docker.network=shared"
       - "traefik.http.routers.api.rule=Host(`traefik.mycustomdomain.com`)"
