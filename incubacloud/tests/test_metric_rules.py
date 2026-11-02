@@ -158,6 +158,20 @@ class TestSeededRules(TransactionCase):
             "an age-based watchdog needs a real staleness threshold",
         )
 
+    def test_a_host_without_its_proxy_is_named(self):
+        """2-nov-2026: saas-free ran nine hours with no proxy, unnoticed.
+
+        The rule names a host that reports but whose proxy container does
+        not: on the live backend the expression is empty with every proxy
+        up, and names every host when asked for a container none runs.
+        """
+        rule = self._rule("metric_rule_proxy_down")
+        self.assertEqual(rule.level, "critical")
+        self.assertIn('container_last_seen{name="inverseproxy-proxy-1"}', rule.expression)
+        self.assertIn("unless on (host_id)", rule.expression)
+        self.assertEqual((rule.comparator, rule.threshold), ("gt", 0))
+        self.assertGreaterEqual(rule.confirm_cycles, 2, "a recreated proxy is gone for seconds")
+
     def test_no_seeded_rule_aggregates_its_own_label_away(self):
         """A rule must not lose the label its alert is attributed by.
 
