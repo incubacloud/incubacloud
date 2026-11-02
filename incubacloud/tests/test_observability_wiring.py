@@ -1541,3 +1541,20 @@ class TestUsersOfGoneAccountsAreRemoved(BaseCase):
             when = task["when"]
             when = when if isinstance(when, list) else [when]
             self.assertIn("ic_account_names | length > 0", when[0], task["name"])
+
+
+class TestMonitoringExplainsAnEmptyFleet(BaseCase):
+    """2-nov-2026: a tenant without a server saw every chart read "No data"."""
+
+    _TEMPLATE = _ROOT / "static" / "src" / "components" / "monitoring" / "monitoring.xml"
+
+    def test_the_empty_fleet_is_explained_before_any_dashboard_is_embedded(self):
+        page = ElementTree.parse(self._TEMPLATE).find(".//t[@t-name='incubacloud.Monitoring']/div")
+        branches = [
+            el for el in page
+            if el.tag == "t" and ({"t-if", "t-elif", "t-else"} & set(el.attrib))
+        ]
+        empty = next(i for i, el in enumerate(branches) if el.get("t-elif") == "!hasHosts")
+        embed = next(i for i, el in enumerate(branches) if el.find(".//iframe") is not None)
+        self.assertLess(empty, embed)
+        self.assertIn("No servers yet", ElementTree.tostring(branches[empty], encoding="unicode"))
